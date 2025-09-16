@@ -1,118 +1,140 @@
-let teamPlayers = [];
-let currentSortField = 'year';
-let currentSortOrder = 'asc';
+let teamData = [];
+let currentTeam = "";
 
-function getQueryParam(param) {
-  const urlParams = new URLSearchParams(window.location.search);
-  return urlParams.get(param);
+// Trim whitespace in names/teams/seasons
+function cleanData(data) {
+  return data.map(p => ({
+    ...p,
+    name: p.name ? p.name.trim() : "",
+    team: p.team ? p.team.trim() : "",
+    season: p.season ? p.season.trim() : ""
+  }));
 }
 
-async function loadTeamData() {
-  try {
-    const response = await fetch('data.json');
-    if (!response.ok) throw new Error('Failed to load data.json');
-    const players = await response.json();
+// Load JSON and filter for current team
+fetch('data.json')
+  .then(res => res.json())
+  .then(data => {
+    const params = new URLSearchParams(window.location.search);
+    currentTeam = params.get('team') || "";
+    teamData = cleanData(data).filter(p => p.team === currentTeam);
 
-    const teamName = getQueryParam('team');
-    document.getElementById('teamName').textContent = teamName || "Team Stats";
+    document.getElementById("team-name").textContent = currentTeam;
+    populateFilters(teamData);
+    renderTable(teamData);
+  })
+  .catch(err => console.error("Error loading team data:", err));
 
-    teamPlayers = players.filter(p => p.team === teamName);
-    renderTable();
-  } catch (error) {
-    console.error('Error loading team data:', error);
-  }
+// Populate Year/Season dropdowns dynamically
+function populateFilters(data) {
+  const yearSet = new Set();
+  const seasonSet = new Set();
+
+  data.forEach(p => {
+    if (p.year) yearSet.add(p.year);
+    if (p.season) seasonSet.add(p.season);
+  });
+
+  const yearFilter = document.getElementById("yearFilter");
+  const seasonFilter = document.getElementById("seasonFilter");
+
+  [...yearSet].sort((a,b)=>b-a).forEach(y => {
+    const opt = document.createElement("option");
+    opt.value = y;
+    opt.textContent = y;
+    yearFilter.appendChild(opt);
+  });
+
+  [...seasonSet].sort().forEach(s => {
+    const opt = document.createElement("option");
+    opt.value = s;
+    opt.textContent = s;
+    seasonFilter.appendChild(opt);
+  });
+
+  yearFilter.addEventListener("change", applyFilters);
+  seasonFilter.addEventListener("change", applyFilters);
 }
 
-function isSubstitute(p) {
-  return p.Sub === "Yes";
+// Apply filters and rerender table
+function applyFilters() {
+  const yearVal = document.getElementById("yearFilter").value;
+  const seasonVal = document.getElementById("seasonFilter").value;
+
+  let filtered = teamData.filter(p => 
+    (yearVal === "" || p.year == yearVal) &&
+    (seasonVal === "" || p.season === seasonVal)
+  );
+
+  renderTable(filtered);
 }
 
-function renderTable() {
-  const tbody = document.querySelector("#teamStatsTable tbody");
+// Render table
+function renderTable(data) {
+  const tbody = document.querySelector("#team-stats-table tbody");
   tbody.innerHTML = "";
 
-  if (teamPlayers.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;">No players found</td></tr>`;
-    renderTeamSummary();
-    return;
-  }
+  data.forEach(p => {
+    const atBats = Number(p.atBats) || 0;
+    const hits = Number(p.hits) || 0;
+    const walks = Number(p.walks) || 0;
+    const games = Number(p.games) || 0;
+    const runs = Number(p.runs) || 0;
+    const AcesWar = !isNaN(Number(p.AcesWar)) ? Number(p.AcesWar).toFixed(2) : "N/A";
 
-  // Sort
-  if (currentSortField) {
-    teamPlayers.sort((a, b) => {
-      let valA = a[currentSortField];
-      let valB = b[currentSortField];
+    const BA = atBats > 0 ? (hits / atBats).toFixed(3) : "0.000";
+    const OBP = (atBats + walks) > 0 ? ((hits + walks) / (atBats + walks)).toFixed(3) : "0.000";
 
-      if (currentSortField === "AcesWar") {
-        valA = (valA === null || valA === "N/A" || valA === "") ? -Infinity : Number(valA);
-        valB = (valB === null || valB === "N/A" || valB === "") ? -Infinity : Number(valB);
-      } else if (currentSortField === "Sub") {
-        valA = isSubstitute(a) ? 1 : 0;
-        valB = isSubstitute(b) ? 1 : 0;
-      } else {
-        if (typeof valA === 'string') valA = valA.toUpperCase();
-        if (typeof valB === 'string') valB = valB.toUpperCase();
+    const row = document.createElement('tr');
+    row.innerHTML = `
+      <td>${p.year ?? ""}</td>
+      <td>${p.season ?? ""}</td>
+      <td><a href="player.html?name=${encodeURIComponent(p.name ?? "")}">${p.name ?? ""}</a></td>
+      <td>${games.toLocaleString()}</td>
+      <td>${atBats.toLocaleString()}</td>
+      <td>${hits.toLocaleString()}</td>
+      <td>${runs.toLocaleString()}</td>
+      <td>${walks.toLocaleString()}</td>
+      <td>${AcesWar}</td>
+      <td>${BA}</td>
+      <td>${OBP}</td>
+      <td>${p.Sub ?? ""}</td>
+    `;
+    tbody.appendChild(row);
+  });
+}
+
+// Basic column sorting
+function sortTable(n) {
+  const table = document.getElementById("team-stats-table");
+  let switching = true;
+  let dir = "asc";
+  let switchcount = 0;
+
+  while (switching) {
+    switching = false;
+    const rows = table.rows;
+    for (let i = 1; i < rows.length - 1; i++) {
+      let shouldSwitch = false;
+      let x = rows[i].getElementsByTagName("td")[n];
+      let y = rows[i + 1].getElementsByTagName("td")[n];
+
+      let xContent = isNaN(x.innerText) ? x.innerText.toLowerCase() : parseFloat(x.innerText.replace(/,/g, ""));
+      let yContent = isNaN(y.innerText) ? y.innerText.toLowerCase() : parseFloat(y.innerText.replace(/,/g, ""));
+
+      if (dir === "asc" && xContent > yContent) shouldSwitch = true;
+      if (dir === "desc" && xContent < yContent) shouldSwitch = true;
+
+      if (shouldSwitch) {
+        rows[i].parentNode.insertBefore(rows[i + 1], rows[i]);
+        switching = true;
+        switchcount++;
+        break;
       }
-
-      if (valA < valB) return currentSortOrder === 'asc' ? -1 : 1;
-      if (valA > valB) return currentSortOrder === 'asc' ? 1 : -1;
-      return 0;
-    });
+    }
+    if (switchcount === 0 && dir === "asc") {
+      dir = "desc";
+      switching = true;
+    }
   }
-
-  teamPlayers.forEach(p => {
-    const acesWarDisplay = (p.AcesWar === null || p.AcesWar === "N/A" || p.AcesWar === "") ? "N/A" : p.AcesWar;
-    const row = `<tr>
-      <td><a href="player.html?name=${encodeURIComponent(p.name)}">${p.name}</a></td>
-      <td>${p.year}</td>
-      <td>${p.season}</td>
-      <td>${p.games}</td>
-      <td>${p.atBats}</td>
-      <td>${p.hits}</td>
-      <td>${p.runs}</td>
-      <td>${p.walks}</td>
-      <td>${acesWarDisplay}</td>
-      <td>${isSubstitute(p) ? "Yes" : "No"}</td>
-    </tr>`;
-    tbody.innerHTML += row;
-  });
-
-  renderTeamSummary();
-
-  document.querySelectorAll("th[data-field]").forEach(th => {
-    const span = th.querySelector(".sort-arrow");
-    span.textContent = (th.dataset.field === currentSortField) ? (currentSortOrder === 'asc' ? '▲' : '▼') : '';
-  });
 }
-
-function sortTable(field) {
-  if (currentSortField === field) {
-    currentSortOrder = currentSortOrder === 'asc' ? 'desc' : 'asc';
-  } else {
-    currentSortField = field;
-    currentSortOrder = 'asc';
-  }
-  renderTable();
-}
-
-function renderTeamSummary() {
-  if (teamPlayers.length === 0) {
-    document.getElementById("teamSummary").textContent = "No players found for this team.";
-    return;
-  }
-
-  const totalGames = teamPlayers.reduce((sum, p) => sum + Number(p.games || 0), 0);
-  const totalAtBats = teamPlayers.reduce((sum, p) => sum + Number(p.atBats || 0), 0);
-  const totalHits = teamPlayers.reduce((sum, p) => sum + Number(p.hits || 0), 0);
-  const totalRuns = teamPlayers.reduce((sum, p) => sum + Number(p.runs || 0), 0);
-  const totalWalks = teamPlayers.reduce((sum, p) => sum + Number(p.walks || 0), 0);
-
-  const acesValues = teamPlayers.map(p => Number(p.AcesWar)).filter(v => !isNaN(v));
-  const avgAcesWar = acesValues.length ? (acesValues.reduce((a,b)=>a+b,0)/acesValues.length).toFixed(2) : "N/A";
-
-  document.getElementById("teamSummary").textContent =
-    `Totals → Games: ${totalGames}, At Bats: ${totalAtBats}, Hits: ${totalHits}, Runs: ${totalRuns}, Walks: ${totalWalks}, Avg AcesWar: ${avgAcesWar}`;
-}
-
-loadTeamData();
-
