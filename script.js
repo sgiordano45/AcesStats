@@ -1,79 +1,31 @@
-let players = [];
-let currentSortField = null;
-let currentSortOrder = 'asc'; // ascending by default
+let players = []; // populated from data.json
+let currentSortField = 'year';
+let currentSortOrder = 'asc';
 
 // Load player data
 async function loadData() {
   try {
-    const response = await fetch("data.json");
-    if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
+    const response = await fetch('data.json');
+    if (!response.ok) throw new Error('Failed to load data.json');
     players = await response.json();
-
-    populateFilters();
     renderTable();
+    populateFilters();
   } catch (error) {
-    console.error("Error loading player data:", error);
-    showError("⚠️ Could not load player data. Check data.json.");
+    console.error('Error loading data:', error);
   }
 }
 
-// Show error message
-function showError(message) {
-  const container = document.querySelector("#statsTable tbody");
-  container.innerHTML = `<tr><td colspan="11" style="color:red; text-align:center;">${message}</td></tr>`;
-}
-
-// Robust substitute detection
+// Simplified substitute detection
 function isSubstitute(p) {
-  if (p.sub === null || p.sub === undefined) return false;
-  const val = String(p.sub).trim().toLowerCase();
-  return val === "true" || val === "yes" || val === "1";
+  return p.sub === "Yes";
 }
 
-// Populate filter dropdowns
-function populateFilters() {
-  const yearSelect = document.getElementById("filterYear");
-  const seasonSelect = document.getElementById("filterSeason");
-
-  const selectedYear = yearSelect.value || "all";
-  const selectedSeason = seasonSelect.value || "all";
-
-  yearSelect.innerHTML = `<option value="all">All Years</option>`;
-  seasonSelect.innerHTML = `<option value="all">All Seasons</option>`;
-
-  let yearOptions = [...new Set(players.map(p => p.year))].sort();
-  let seasonOptions = [...new Set(players.map(p => p.season))].sort();
-
-  if (selectedSeason !== "all") {
-    yearOptions = [...new Set(players.filter(p => p.season === selectedSeason).map(p => p.year))].sort();
-  }
-
-  if (selectedYear !== "all") {
-    seasonOptions = [...new Set(players.filter(p => p.year.toString() === selectedYear).map(p => p.season))].sort();
-  }
-
-  yearOptions.forEach(y => {
-    const opt = document.createElement("option");
-    opt.value = y;
-    opt.textContent = y;
-    if (y.toString() === selectedYear) opt.selected = true;
-    yearSelect.appendChild(opt);
-  });
-
-  seasonOptions.forEach(s => {
-    const opt = document.createElement("option");
-    opt.value = s;
-    opt.textContent = s;
-    if (s === selectedSeason) opt.selected = true;
-    seasonSelect.appendChild(opt);
-  });
-}
-
-// Render table
+// Render the main table
 function renderTable() {
   const filterYear = document.getElementById("filterYear").value;
   const filterSeason = document.getElementById("filterSeason").value;
   const filterSub = document.getElementById("filterSub").value;
+
   const tbody = document.querySelector("#statsTable tbody");
   tbody.innerHTML = "";
 
@@ -127,15 +79,11 @@ function renderTable() {
       <td>${acesWarDisplay}</td>
       <td>${isSubstitute(p) ? "Yes" : "No"}</td>
     </tr>`;
-
     tbody.innerHTML += row;
   });
-
-  populateFilters();
 }
 
-
-// Sorting helper with arrows
+// Sort table
 function sortTable(field) {
   if (currentSortField === field) {
     currentSortOrder = currentSortOrder === 'asc' ? 'desc' : 'asc';
@@ -143,24 +91,8 @@ function sortTable(field) {
     currentSortField = field;
     currentSortOrder = 'asc';
   }
-
-  document.querySelectorAll("th[data-field]").forEach(th => {
-    const span = th.querySelector(".sort-arrow");
-    span.textContent = (th.dataset.field === currentSortField) ? (currentSortOrder === 'asc' ? '▲' : '▼') : '';
-  });
-
-  renderTable();
-}
-
-// Reset filters
-function resetFilters() {
-  document.getElementById("filterYear").value = "all";
-  document.getElementById("filterSeason").value = "all";
-  document.getElementById("filterSub").value = "all";
   renderTable();
 }
 
 // Initialize
 loadData();
-
-
