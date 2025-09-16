@@ -2,7 +2,7 @@ let allData = [];
 let currentSortField = null;
 let currentSortAsc = true;
 
-// Clean whitespace from name/team/season
+// Trim whitespace from name/team/season
 function cleanData(data) {
   return data.map(p => ({
     ...p,
@@ -77,25 +77,28 @@ function renderTable(data) {
   tbody.innerHTML = "";
 
   data.forEach(p => {
-    const acesWarDisplay = (!p.AcesWar || p.AcesWar === "N/A") ? "N/A" : p.AcesWar;
-    const BA = p.atBats ? (p.hits / p.atBats).toFixed(3) : "N/A";
-    const OBP = p.atBats ? ((p.hits + p.walks) / (p.atBats+ p.walks)).toFixed(3) : "N/A";
+    const BA = p.atBats && p.atBats > 0 ? (p.hits / p.atBats).toFixed(3) : "0.000";
+    const OBP = (p.atBats + p.walks) && (p.atBats + p.walks) > 0
+                ? ((p.hits + p.walks) / (p.atBats + p.walks)).toFixed(3)
+                : "0.000";
 
-    const row = `<tr>
-      <td>${p.year}</td>
-      <td>${p.season}</td>
-      <td>${p.team}</td>
-      <td>${p.games}</td>
-      <td>${p.atBats}</td>
-      <td>${p.hits}</td>
-      <td>${p.runs}</td>
-      <td>${p.walks}</td>
-      <td>${acesWarDisplay}</td>
+    const row = document.createElement('tr');
+    row.innerHTML = `
+      <td><a href="player.html?name=${encodeURIComponent(p.name ?? "")}">${p.name ?? ""}</a></td>
+      <td><a href="team.html?team=${encodeURIComponent(p.team ?? "")}">${p.team ?? ""}</a></td>
+      <td>${p.year ?? ""}</td>
+      <td>${p.season ?? ""}</td>
+      <td>${p.games !== undefined ? Number(p.games).toLocaleString() : ""}</td>
+      <td>${p.atBats !== undefined ? Number(p.atBats).toLocaleString() : ""}</td>
+      <td>${p.hits !== undefined ? Number(p.hits).toLocaleString() : ""}</td>
+      <td>${p.runs !== undefined ? Number(p.runs).toLocaleString() : ""}</td>
+      <td>${p.walks !== undefined ? Number(p.walks).toLocaleString() : ""}</td>
+      <td>${!isNaN(Number(p.AcesWar)) ? Number(p.AcesWar).toFixed(2) : "N/A"}</td>
       <td>${BA}</td>
       <td>${OBP}</td>
-      <td>${isSubstitute(p) ? "Yes" : "No"}</td>
-    </tr>`;
-    tbody.innerHTML += row;
+      <td>${p.Sub ?? ""}</td>
+    `;
+    tbody.appendChild(row);
   });
 }
 
@@ -132,5 +135,3 @@ document.querySelectorAll('#statsTable th').forEach(th => {
     renderTable(sorted);
   });
 });
-
-
