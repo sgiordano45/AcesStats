@@ -89,7 +89,7 @@ function renderTable() {
       <td>${p.runs}</td>
       <td>${p.walks}</td>
       <td>${p.sub ? "Yes" : "No"}</td>
-      <td>${p.AcesWar}</td>
+       <td>${p.AcesWar}</td>
     </tr>`;
     tbody.innerHTML += row;
   });
@@ -125,15 +125,5 @@ function renderChart(filteredPlayers) {
   });
 }
 
-// Reset all filters
-function resetFilters() {
-  document.getElementById("filterYear").value = "all";
-  document.getElementById("filterSeason").value = "all";
-  document.getElementById("filterSub").value = "all";
-  renderTable();
-}
-
-
 // Run when page loads
 loadData();
-
