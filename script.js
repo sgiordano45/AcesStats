@@ -14,6 +14,29 @@ async function loadData() {
     console.error('Error loading player data:', error);
   }
 }
+async function debugJSON() {
+  try {
+    const response = await fetch('data.json');
+    if (!response.ok) throw new Error('Failed to load data.json');
+    const players = await response.json();
+
+    if (players.length === 0) {
+      console.log("No players found in JSON!");
+      return;
+    }
+
+    console.log("First player object:", players[0]);
+
+    console.log("Keys in the first player object:");
+    Object.keys(players[0]).forEach(key => console.log(key));
+
+  } catch (error) {
+    console.error("Error loading JSON:", error);
+  }
+}
+
+// Call this to debug
+debugJSON();
 
 // Robust Substitute check using exact JSON field "Sub"
 function isSubstitute(p) {
@@ -138,5 +161,6 @@ function renderLeagueSummary(filteredPlayers) {
 
 // Initial load
 loadData();
+
 
 
