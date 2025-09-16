@@ -1,47 +1,130 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>Team Stats</title>
-  <style>
-    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-    th, td { border: 1px solid #ccc; padding: 6px; text-align: center; }
-    th { background-color: #f4f4f4; cursor: pointer; }
-    .sort-arrow { font-size: 0.8em; }
-    #teamSummary { font-weight: bold; margin-top: 10px; margin-bottom: 20px; }
-    #backButton { margin-bottom: 10px; }
-  </style>
-</head>
-<body>
-  <button id="backButton" onclick="goBack()">← Back to League Stats</button>
-  <h1 id="teamName">Team Stats</h1>
+let teamData = [];
+let currentTeam = "";
 
-  <div id="teamSummary"></div>
+// Load JSON and filter for the team
+fetch('data.json')
+  .then(res => res.json())
+  .then(data => {
+    const params = new URLSearchParams(window.location.search);
+    currentTeam = params.get('team');
 
-  <table id="teamStatsTable">
-    <thead>
-      <tr>
-        <th data-field="name" onclick="sortTable('name')">Player <span class="sort-arrow"></span></th>
-        <th data-field="year" onclick="sortTable('year')">Year <span class="sort-arrow"></span></th>
-        <th data-field="season" onclick="sortTable('season')">Season <span class="sort-arrow"></span></th>
-        <th data-field="games" onclick="sortTable('games')">Games <span class="sort-arrow"></span></th>
-        <th data-field="atBats" onclick="sortTable('atBats')">At Bats <span class="sort-arrow"></span></th>
-        <th data-field="hits" onclick="sortTable('hits')">Hits <span class="sort-arrow"></span></th>
-        <th data-field="runs" onclick="sortTable('runs')">Runs <span class="sort-arrow"></span></th>
-        <th data-field="walks" onclick="sortTable('walks')">Walks <span class="sort-arrow"></span></th>
-        <th data-field="AcesWar" onclick="sortTable('AcesWar')">AcesWar <span class="sort-arrow"></span></th>
-        <th data-field="Sub" onclick="sortTable('Sub')">Substitute <span class="sort-arrow"></span></th>
-      </tr>
-    </thead>
-    <tbody></tbody>
-  </table>
+    teamData = cleanData(data).filter(p => p.team === currentTeam);
 
-  <script src="team.js"></script>
-  <script>
-    function goBack() {
-      window.location.href = "index.html";
+    document.getElementById("team-name").textContent = currentTeam;
+
+    populateFilters(teamData);
+    renderTable(teamData);
+  });
+
+// Trim whitespace in names/teams/seasons
+function cleanData(data) {
+  return data.map(p => ({
+    ...p,
+    name: p.name ? p.name.trim() : p.name,
+    team: p.team ? p.team.trim() : p.team,
+    season: p.season ? p.season.trim() : p.season
+  }));
+}
+
+// Fill dropdowns dynamically
+function populateFilters(data) {
+  const years = [...new Set(data.map(p => p.year))].sort();
+  const seasons = [...new Set(data.map(p => p.season))].sort();
+
+  const yearFilter = document.getElementById("yearFilter");
+  const seasonFilter = document.getElementById("seasonFilter");
+
+  years.forEach(y => {
+    let opt = document.createElement("option");
+    opt.value = y;
+    opt.textContent = y;
+    yearFilter.appendChild(opt);
+  });
+
+  seasons.forEach(s => {
+    let opt = document.createElement("option");
+    opt.value = s;
+    opt.textContent = s;
+    seasonFilter.appendChild(opt);
+  });
+
+  yearFilter.addEventListener("change", applyFilters);
+  seasonFilter.addEventListener("change", applyFilters);
+}
+
+// Apply filters and rerender
+function applyFilters() {
+  const yearVal = document.getElementById("yearFilter").value;
+  const seasonVal = document.getElementById("seasonFilter").value;
+
+  let filtered = teamData.filter(p =>
+    (yearVal === "" || p.year == yearVal) &&
+    (seasonVal === "" || p.season === seasonVal)
+  );
+
+  renderTable(filtered);
+}
+
+// Render the table
+function renderTable(data) {
+  const tbody = document.querySelector("#team-stats-table tbody");
+  tbody.innerHTML = "";
+
+  data.forEach(p => {
+    const row = document.createElement("tr");
+
+    row.innerHTML = `
+      <td>${p.year}</td>
+      <td>${p.season}</td>
+      <td><a href="player.html?name=${encodeURIComponent(p.name)}">${p.name}</a></td>
+      <td>${p.games}</td>
+      <td>${p.atBats}</td>
+      <td>${p.hits}</td>
+      <td>${p.runs}</td>
+      <td>${p.walks}</td>
+      <td>${p.Sub}</td>
+      <td>${Number(p.AcesWar).toFixed(2)}</td>
+    `;
+
+    tbody.appendChild(row);
+  });
+}
+
+// Basic column sorting
+function sortTable(n) {
+  const table = document.getElementById("team-stats-table");
+  let switching = true, dir = "asc", switchcount = 0;
+
+  while (switching) {
+    switching = false;
+    const rows = table.rows;
+
+    for (let i = 1; i < rows.length - 1; i++) {
+      let shouldSwitch = false;
+      let x = rows[i].getElementsByTagName("td")[n];
+      let y = rows[i + 1].getElementsByTagName("td")[n];
+
+      let xContent = isNaN(x.innerText) ? x.innerText.toLowerCase() : parseFloat(x.innerText.replace(/,/g, ""));
+      let yContent = isNaN(y.innerText) ? y.innerText.toLowerCase() : parseFloat(y.innerText.replace(/,/g, ""));
+
+      if (dir === "asc" && xContent > yContent) {
+        shouldSwitch = true;
+        break;
+      }
+      if (dir === "desc" && xContent < yContent) {
+        shouldSwitch = true;
+        break;
+      }
     }
-  </script>
-</body>
-</html>
-
+    if (shouldSwitch) {
+      rows[i].parentNode.insertBefore(rows[i + 1], rows[i]);
+      switching = true;
+      switchcount++;
+    } else {
+      if (switchcount === 0 && dir === "asc") {
+        dir = "desc";
+        switching = true;
+      }
+    }
+  }
+}
