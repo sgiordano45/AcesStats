@@ -6,21 +6,22 @@ async function loadPlayerData() {
     const response = await fetch('data.json');
     if (!response.ok) throw new Error('Failed to load data.json');
     const allPlayers = await response.json();
-    
-    let playerData = allPlayers.filter(p => p.name === playerName);
 
-    // Split into regular and sub, sorted by year descending
+    const playerData = allPlayers.filter(p => p.name === playerName);
+
+    // Separate Regular and Sub tables
     const regularSeasons = playerData.filter(p => !isSubstitute(p))
                                      .sort((a,b) => b.year - a.year);
     const subSeasons = playerData.filter(p => isSubstitute(p))
                                  .sort((a,b) => b.year - a.year);
 
+    // Render tables
     renderTable('regularStatsTable', regularSeasons);
     renderTable('subStatsTable', subSeasons);
     renderCareerStats(playerData, regularSeasons, subSeasons);
 
-  } catch (error) {
-    console.error('Error loading player data:', error);
+  } catch (err) {
+    console.error("Error loading player data:", err);
   }
 }
 
@@ -69,9 +70,9 @@ function renderCareerStats(all, regular, subs) {
   const totalsSub = calcTotals(subs);
 
   const rows = [
-    {label:"Total", stats:totalsAll},
-    {label:"Regular Only", stats:totalsRegular},
-    {label:"Substitute Only", stats:totalsSub}
+    {label: "Total", stats: totalsAll},
+    {label: "Regular Only", stats: totalsRegular},
+    {label: "Substitute Only", stats: totalsSub}
   ];
 
   rows.forEach(r => {
@@ -92,4 +93,5 @@ function goBack() {
   window.history.back();
 }
 
+// Load the data on page load
 loadPlayerData();
