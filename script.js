@@ -53,7 +53,7 @@ function renderTable() {
       } else if (currentSortField === "Sub") {
         valA = isSubstitute(a) ? 1 : 0;
         valB = isSubstitute(b) ? 1 : 0;
-      } else if (currentSortField === "Team" || typeof valA === 'string') {
+      } else if (currentSortField === "team" || typeof valA === 'string') {
         valA = valA ? valA.toString().toUpperCase() : "";
         valB = valB ? valB.toString().toUpperCase() : "";
       }
@@ -69,7 +69,7 @@ function renderTable() {
     const acesWarDisplay = (p.AcesWar === null || p.AcesWar === "N/A" || p.AcesWar === "") ? "N/A" : p.AcesWar;
     const row = `<tr>
       <td><a href="player.html?name=${encodeURIComponent(p.name)}">${p.name}</a></td>
-      <td><a href="team.html?team=${encodeURIComponent(p.Team)}">${p.Team || "N/A"}</a></td>
+      <td><a href="team.html?team=${encodeURIComponent(p.team)}">${p.team || "N/A"}</a></td>
       <td>${p.year}</td>
       <td>${p.season}</td>
       <td>${p.games}</td>
@@ -138,4 +138,5 @@ function renderLeagueSummary(filteredPlayers) {
 
 // Initial load
 loadData();
+
 
