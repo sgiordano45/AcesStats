@@ -1,64 +1,82 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Softball League Stats</title>
-  <style>
-    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-    th, td { border: 1px solid #ccc; padding: 6px; text-align: center; }
-    th { background-color: #f4f4f4; cursor: pointer; }
-    .sort-arrow { font-size: 0.8em; }
-    select { margin-right: 10px; }
-    #leagueSummary { font-weight: bold; margin-top: 10px; margin-bottom: 20px; }
-  </style>
+<meta charset="UTF-8">
+<title>Aces Stats</title>
+<style>
+  table { border-collapse: collapse; width: 100%; }
+  th, td { border: 1px solid #ccc; padding: 5px; text-align: center; }
+  th { background-color: #eee; cursor: pointer; }
+  th.sorted-asc::after { content: " ▲"; }
+  th.sorted-desc::after { content: " ▼"; }
+  a { text-decoration: none; color: blue; }
+</style>
 </head>
 <body>
-  <h1>Mountainside Aces League Stats</h1>
 
-  <div id="leagueSummary"></div>
+<h1>Mountainside Aces Historical Batting Stats</h1>
 
-  <label>Year:
-    <select id="filterYear" onchange="renderTable()">
-      <option value="all">All</option>
-    </select>
-  </label>
+<table id="statsTable">
+  <thead>
+    <tr>
+      <th data-sort="name">Name</th>
+      <th data-sort="team">Team</th>
+      <th data-sort="year">Year</th>
+      <th data-sort="season">Season</th>
+      <th data-sort="games">Games</th>
+      <th data-sort="atBats">At Bats</th>
+      <th data-sort="hits">Hits</th>
+      <th data-sort="runs">Runs</th>
+      <th data-sort="walks">Walks</th>
+      <th data-sort="acesWar">AcesWar</th>
+      <th data-sort="BA">BA</th>
+      <th data-sort="OBP">OBP</th>
+      <th data-sort="Sub">Sub</th>
+    </tr>
+  </thead>
+  <tbody></tbody>
+</table>
 
-  <label>Season:
-    <select id="filterSeason" onchange="renderTable()">
-      <option value="all">All</option>
-    </select>
-  </label>
+<script src="script.js"></script>
+<script>
+// Sorting logic
+const table = document.getElementById('statsTable');
+const headers = table.querySelectorAll('th');
+let sortDirection = {};
 
-  <label>Substitute:
-    <select id="filterSub" onchange="renderTable()">
-      <option value="all">All</option>
-      <option value="regular">No (Regular)</option>
-      <option value="Subs">Yes (Substitute)</option>
-    </select>
-  </label>
+headers.forEach(header => {
+  header.addEventListener('click', () => {
+    const sortKey = header.dataset.sort;
+    const tbody = table.querySelector('tbody');
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+    
+    const currentDir = sortDirection[sortKey] === 'asc' ? 'desc' : 'asc';
+    sortDirection = {}; // reset
+    sortDirection[sortKey] = currentDir;
 
-  <table id="statsTable">
-    <thead>
-      <tr>
-        <th data-field="name" onclick="sortTable('name')">Player <span class="sort-arrow"></span></th>
-        <th data-field="team" onclick="sortTable('team')">Team <span class="sort-arrow"></span></th>
-        <th data-field="year" onclick="sortTable('year')">Year <span class="sort-arrow"></span></th>
-        <th data-field="season" onclick="sortTable('season')">Season <span class="sort-arrow"></span></th>
-        <th data-field="games" onclick="sortTable('games')">Games <span class="sort-arrow"></span></th>
-        <th data-field="atBats" onclick="sortTable('atBats')">At Bats <span class="sort-arrow"></span></th>
-        <th data-field="hits" onclick="sortTable('hits')">Hits <span class="sort-arrow"></span></th>
-        <th data-field="runs" onclick="sortTable('runs')">Runs <span class="sort-arrow"></span></th>
-        <th data-field="walks" onclick="sortTable('walks')">Walks <span class="sort-arrow"></span></th>
-        <th data-field="AcesWar" onclick="sortTable('AcesWar')">AcesWar <span class="sort-arrow"></span></th>
-        <th data-field="Sub" onclick="sortTable('Sub')">Substitute <span class="sort-arrow"></span></th>
-      </tr>
-    </thead>
-    <tbody></tbody>
-  </table>
+    // Remove previous sorted class
+    headers.forEach(h => h.classList.remove('sorted-asc','sorted-desc'));
+    header.classList.add(currentDir === 'asc' ? 'sorted-asc' : 'sorted-desc');
 
-  <script src="script.js"></script>
+    rows.sort((a,b) => {
+      let aText = a.querySelector(`td:nth-child(${header.cellIndex+1})`).textContent;
+      let bText = b.querySelector(`td:nth-child(${header.cellIndex+1})`).textContent;
+
+      const numA = parseFloat(aText.replace(/,/g,''));
+      const numB = parseFloat(bText.replace(/,/g,''));
+
+      if(!isNaN(numA) && !isNaN(numB)){
+        return currentDir==='asc' ? numA-numB : numB-numA;
+      } else {
+        return currentDir==='asc' ? aText.localeCompare(bText) : bText.localeCompare(aText);
+      }
+    });
+
+    tbody.innerHTML = '';
+    rows.forEach(r => tbody.appendChild(r));
+  });
+});
+</script>
+
 </body>
 </html>
-
-
-
