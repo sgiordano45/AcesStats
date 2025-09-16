@@ -15,10 +15,10 @@ async function loadData() {
   }
 }
 
-// Robust substitute check
+// Robust substitute check using exact JSON field "Sub"
 function isSubstitute(p) {
-  if (!p.sub) return false;
-  return p.sub.toString().trim().toLowerCase() === "yes";
+  if (!p.Sub) return false;
+  return p.Sub.toString().trim().toLowerCase() === "yes";
 }
 
 // Render main table
@@ -39,7 +39,7 @@ function renderTable() {
   if (filterSub === "subs") filteredPlayers = filteredPlayers.filter(p => isSubstitute(p));
 
   // Debug log to verify substitutes
-  console.log(filteredPlayers.map(p => ({name: p.name, sub: p.sub, isSub: isSubstitute(p)})));
+  console.log(filteredPlayers.map(p => ({name: p.name, Sub: p.Sub, isSub: isSubstitute(p)})));
 
   // Sort table
   if (currentSortField) {
@@ -50,12 +50,12 @@ function renderTable() {
       if (currentSortField === "AcesWar") {
         valA = (valA === null || valA === "N/A" || valA === "") ? -Infinity : Number(valA);
         valB = (valB === null || valB === "N/A" || valB === "") ? -Infinity : Number(valB);
-      } else if (currentSortField === "sub") {
+      } else if (currentSortField === "Sub") {
         valA = isSubstitute(a) ? 1 : 0;
         valB = isSubstitute(b) ? 1 : 0;
-      } else {
-        if (typeof valA === 'string') valA = valA.toUpperCase();
-        if (typeof valB === 'string') valB = valB.toUpperCase();
+      } else if (currentSortField === "Team" || typeof valA === 'string') {
+        valA = valA ? valA.toString().toUpperCase() : "";
+        valB = valB ? valB.toString().toUpperCase() : "";
       }
 
       if (valA < valB) return currentSortOrder === 'asc' ? -1 : 1;
@@ -69,7 +69,7 @@ function renderTable() {
     const acesWarDisplay = (p.AcesWar === null || p.AcesWar === "N/A" || p.AcesWar === "") ? "N/A" : p.AcesWar;
     const row = `<tr>
       <td><a href="player.html?name=${encodeURIComponent(p.name)}">${p.name}</a></td>
-      <td><a href="team.html?team=${encodeURIComponent(p.team)}">${p.team || "N/A"}</a></td>
+      <td><a href="team.html?team=${encodeURIComponent(p.Team)}">${p.Team || "N/A"}</a></td>
       <td>${p.year}</td>
       <td>${p.season}</td>
       <td>${p.games}</td>
@@ -129,17 +129,11 @@ function renderLeagueSummary(filteredPlayers) {
   const totalRuns = filteredPlayers.reduce((sum, p) => sum + Number(p.runs || 0), 0);
   const totalWalks = filteredPlayers.reduce((sum, p) => sum + Number(p.walks || 0), 0);
 
-  const topHits = filteredPlayers.reduce((max, p) => p.hits > max.hits ? p : max, filteredPlayers[0]);
-  const topRuns = filteredPlayers.reduce((max, p) => p.runs > max.runs ? p : max, filteredPlayers[0]);
-  const topWalks = filteredPlayers.reduce((max, p) => p.walks > max.walks ? p : max, filteredPlayers[0]);
-
   const acesValues = filteredPlayers.map(p => Number(p.AcesWar)).filter(v => !isNaN(v));
-  const topAcesWar = acesValues.length ? filteredPlayers.find(p => Number(p.AcesWar) === Math.max(...acesValues)) : null;
+  const avgAcesWar = acesValues.length ? (acesValues.reduce((a,b)=>a+b,0)/acesValues.length).toFixed(2) : "N/A";
 
-  document.getElementById("leagueSummary").innerHTML =
-    `Totals → Games: ${totalGames}, At Bats: ${totalAtBats}, Hits: ${totalHits}, Runs: ${totalRuns}, Walks: ${totalWalks} <br>
-    Top Hits: ${topHits.name} (${topHits.hits}) | Top Runs: ${topRuns.name} (${topRuns.runs}) | Top Walks: ${topWalks.name} (${topWalks.walks})` +
-    (topAcesWar ? ` | Top AcesWar: ${topAcesWar.name} (${topAcesWar.AcesWar})` : '');
+  document.getElementById("leagueSummary").textContent =
+    `Totals → Games: ${totalGames}, At Bats: ${totalAtBats}, Hits: ${totalHits}, Runs: ${totalRuns}, Walks: ${totalWalks}, Avg AcesWar: ${avgAcesWar}`;
 }
 
 // Initial load
