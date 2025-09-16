@@ -60,9 +60,12 @@ function renderCareerStats(all, regular, subs) {
     const totalHits = arr.reduce((sum,p) => sum + Number(p.hits || 0), 0);
     const totalRuns = arr.reduce((sum,p) => sum + Number(p.runs || 0), 0);
     const totalWalks = arr.reduce((sum,p) => sum + Number(p.walks || 0), 0);
+
+    // Calculate average AcesWar
     const acesValues = arr.map(p => Number(p.AcesWar)).filter(v => !isNaN(v));
-    const totalAcesWar = acesValues.length ? acesValues.reduce((a,b)=>a+b,0).toFixed(2) : "N/A";
-    return { totalGames, totalAtBats, totalHits, totalRuns, totalWalks, totalAcesWar };
+    const avgAcesWar = acesValues.length ? (acesValues.reduce((a,b)=>a+b,0)/acesValues.length).toFixed(2) : "N/A";
+
+    return { totalGames, totalAtBats, totalHits, totalRuns, totalWalks, avgAcesWar };
   }
 
   const totalsAll = calcTotals(all);
@@ -83,7 +86,7 @@ function renderCareerStats(all, regular, subs) {
       <td>${r.stats.totalHits}</td>
       <td>${r.stats.totalRuns}</td>
       <td>${r.stats.totalWalks}</td>
-      <td>${r.stats.totalAcesWar}</td>
+      <td>${r.stats.avgAcesWar}</td>
     </tr>`;
     tbody.innerHTML += row;
   });
@@ -95,3 +98,4 @@ function goBack() {
 
 // Load the data on page load
 loadPlayerData();
+
