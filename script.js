@@ -6,9 +6,9 @@ let currentSortAsc = true;
 function cleanData(data) {
   return data.map(p => ({
     ...p,
-    name: p.name ? p.name.trim() : p.name,
-    team: p.team ? p.team.trim() : p.team,
-    season: p.season ? p.season.trim() : p.season
+    name: p.name ? p.name.trim() : "",
+    team: p.team ? p.team.trim() : "",
+    season: p.season ? p.season.trim() : ""
   }));
 }
 
@@ -54,7 +54,7 @@ function populateFilters(data) {
   seasonFilter.addEventListener('change', applyFilters);
 }
 
-// Apply dropdown filters
+// Apply filters
 function applyFilters() {
   const selectedYear = document.getElementById('yearFilter').value;
   const selectedSeason = document.getElementById('seasonFilter').value;
@@ -71,7 +71,7 @@ function applyFilters() {
   renderTable(filtered);
 }
 
-// Render table rows
+// Render table
 function renderTable(data) {
   const tbody = document.querySelector('#statsTable tbody');
   tbody.innerHTML = "";
