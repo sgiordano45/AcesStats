@@ -15,9 +15,10 @@ async function loadData() {
   }
 }
 
-// Corrected function for substitutes (Yes/No)
+// Robust substitute check
 function isSubstitute(p) {
-  return p.sub === "Yes";
+  if (!p.sub) return false;
+  return p.sub.toString().trim().toLowerCase() === "yes";
 }
 
 // Render main table
@@ -36,6 +37,9 @@ function renderTable() {
   if (filterSeason !== "all") filteredPlayers = filteredPlayers.filter(p => p.season === filterSeason);
   if (filterSub === "regular") filteredPlayers = filteredPlayers.filter(p => !isSubstitute(p));
   if (filterSub === "subs") filteredPlayers = filteredPlayers.filter(p => isSubstitute(p));
+
+  // Debug log to verify substitutes
+  console.log(filteredPlayers.map(p => ({name: p.name, sub: p.sub, isSub: isSubstitute(p)})));
 
   // Sort table
   if (currentSortField) {
