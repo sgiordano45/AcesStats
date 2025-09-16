@@ -9,7 +9,7 @@ async function loadPlayerData() {
     
     let playerData = allPlayers.filter(p => p.name === playerName);
 
-    // Split into regular and sub
+    // Split into regular and sub, sorted by year descending
     const regularSeasons = playerData.filter(p => !isSubstitute(p))
                                      .sort((a,b) => b.year - a.year);
     const subSeasons = playerData.filter(p => isSubstitute(p))
@@ -45,6 +45,7 @@ function renderTable(tableId, data) {
       <td>${p.runs}</td>
       <td>${p.walks}</td>
       <td>${acesWarDisplay}</td>
+      <td>${isSubstitute(p) ? "Yes" : "No"}</td>
     </tr>`;
     tbody.innerHTML += row;
   });
@@ -95,5 +96,5 @@ function goBack() {
   window.history.back();
 }
 
-// Load
+// Load player data on page load
 loadPlayerData();
