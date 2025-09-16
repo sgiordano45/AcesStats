@@ -24,9 +24,11 @@ function showError(message) {
   container.innerHTML = `<tr><td colspan="11" style="color:red; text-align:center;">${message}</td></tr>`;
 }
 
-// Helper: normalize substitute values
+// Robust substitute detection
 function isSubstitute(p) {
-  return p.sub === true || p.sub === "true" || p.sub === "Yes" || p.sub === "YES";
+  if (p.sub === null || p.sub === undefined) return false;
+  const val = String(p.sub).trim().toLowerCase();
+  return val === "true" || val === "yes" || val === "1";
 }
 
 // Populate filter dropdowns
@@ -132,7 +134,7 @@ function renderTable() {
   populateFilters();
 }
 
-// Sorting helper with arrow indicators
+// Sorting helper with arrows
 function sortTable(field) {
   if (currentSortField === field) {
     currentSortOrder = currentSortOrder === 'asc' ? 'desc' : 'asc';
