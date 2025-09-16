@@ -79,18 +79,21 @@ function renderTable(data) {
   data.forEach(p => {
     const row = document.createElement('tr');
     row.innerHTML = `
-      <td>${p.year ?? ""}</td>
-      <td>${p.season ?? ""}</td>
-      <td><a href="player.html?name=${encodeURIComponent(p.name ?? "")}">${p.name ?? ""}</a></td>
-      <td><a href="team.html?team=${encodeURIComponent(p.team ?? "")}">${p.team ?? ""}</a></td>
-      <td>${p.games !== undefined ? Number(p.games).toLocaleString() : ""}</td>
-      <td>${p.atBats !== undefined ? Number(p.atBats).toLocaleString() : ""}</td>
-      <td>${p.hits !== undefined ? Number(p.hits).toLocaleString() : ""}</td>
-      <td>${p.runs !== undefined ? Number(p.runs).toLocaleString() : ""}</td>
-      <td>${p.walks !== undefined ? Number(p.walks).toLocaleString() : ""}</td>
-      <td>${p.Sub ?? ""}</td>
-      <td>${!isNaN(Number(p.AcesWar)) ? Number(p.AcesWar).toFixed(2) : "N/A"}</td>
-    `;
+  <td><a href="player.html?name=${encodeURIComponent(p.name ?? "")}">${p.name ?? ""}</a></td>
+  <td><a href="team.html?team=${encodeURIComponent(p.team ?? "")}">${p.team ?? ""}</a></td>
+  <td>${p.year ?? ""}</td>
+  <td>${p.season ?? ""}</td>
+  <td>${p.games !== undefined ? Number(p.games).toLocaleString() : ""}</td>
+  <td>${p.atBats !== undefined ? Number(p.atBats).toLocaleString() : ""}</td>
+  <td>${p.hits !== undefined ? Number(p.hits).toLocaleString() : ""}</td>
+  <td>${p.runs !== undefined ? Number(p.runs).toLocaleString() : ""}</td>
+  <td>${p.walks !== undefined ? Number(p.walks).toLocaleString() : ""}</td>
+  <td>${!isNaN(Number(p.AcesWar)) ? Number(p.AcesWar).toFixed(2) : "N/A"}</td>
+  <td>${p.atBats && p.atBats > 0 ? (p.hits / p.atBats).toFixed(3) : "0.000"}</td>
+  <td>${p.atBats + p.walks && (p.atBats + p.walks) > 0 ? ((p.hits + p.walks) / (p.atBats + p.walks)).toFixed(3) : "0.000"}</td>
+  <td>${p.Sub ?? ""}</td>
+`;
+
     tbody.appendChild(row);
   });
 }
@@ -128,3 +131,4 @@ document.querySelectorAll('#statsTable th').forEach(th => {
     renderTable(sorted);
   });
 });
+
