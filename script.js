@@ -2,6 +2,7 @@ let players = [];
 let currentSortField = 'year';
 let currentSortOrder = 'asc';
 
+// Load player data
 async function loadData() {
   try {
     const response = await fetch('data.json');
@@ -10,14 +11,16 @@ async function loadData() {
     renderTable();
     populateFilters();
   } catch (error) {
-    console.error('Error loading data:', error);
+    console.error('Error loading player data:', error);
   }
 }
 
+// Corrected function for substitutes (Yes/No)
 function isSubstitute(p) {
   return p.sub === "Yes";
 }
 
+// Render main table
 function renderTable() {
   const filterYear = document.getElementById("filterYear").value;
   const filterSeason = document.getElementById("filterSeason").value;
@@ -28,12 +31,13 @@ function renderTable() {
 
   let filteredPlayers = players;
 
+  // Apply filters
   if (filterYear !== "all") filteredPlayers = filteredPlayers.filter(p => p.year.toString() === filterYear);
   if (filterSeason !== "all") filteredPlayers = filteredPlayers.filter(p => p.season === filterSeason);
   if (filterSub === "regular") filteredPlayers = filteredPlayers.filter(p => !isSubstitute(p));
   if (filterSub === "subs") filteredPlayers = filteredPlayers.filter(p => isSubstitute(p));
 
-  // Sort
+  // Sort table
   if (currentSortField) {
     filteredPlayers.sort((a, b) => {
       let valA = a[currentSortField];
@@ -56,10 +60,7 @@ function renderTable() {
     });
   }
 
-  if (filteredPlayers.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="11" style="text-align:center;">No results found</td></tr>`;
-  }
-
+  // Render table rows
   filteredPlayers.forEach(p => {
     const acesWarDisplay = (p.AcesWar === null || p.AcesWar === "N/A" || p.AcesWar === "") ? "N/A" : p.AcesWar;
     const row = `<tr>
@@ -81,12 +82,14 @@ function renderTable() {
   renderLeagueSummary(filteredPlayers);
   populateFilters();
 
+  // Update sort arrows
   document.querySelectorAll("th[data-field]").forEach(th => {
     const span = th.querySelector(".sort-arrow");
     span.textContent = (th.dataset.field === currentSortField) ? (currentSortOrder === 'asc' ? '▲' : '▼') : '';
   });
 }
 
+// Sorting function
 function sortTable(field) {
   if (currentSortField === field) {
     currentSortOrder = currentSortOrder === 'asc' ? 'desc' : 'asc';
@@ -97,6 +100,7 @@ function sortTable(field) {
   renderTable();
 }
 
+// Populate Year and Season filters
 function populateFilters() {
   const yearSelect = document.getElementById("filterYear");
   const seasonSelect = document.getElementById("filterSeason");
@@ -108,6 +112,7 @@ function populateFilters() {
   seasonSelect.innerHTML = `<option value="all">All</option>` + seasons.map(s => `<option value="${s}">${s}</option>`).join("");
 }
 
+// Render league summary
 function renderLeagueSummary(filteredPlayers) {
   if (!filteredPlayers.length) {
     document.getElementById("leagueSummary").textContent = "No players found for selected filters.";
@@ -133,4 +138,5 @@ function renderLeagueSummary(filteredPlayers) {
     (topAcesWar ? ` | Top AcesWar: ${topAcesWar.name} (${topAcesWar.AcesWar})` : '');
 }
 
+// Initial load
 loadData();
