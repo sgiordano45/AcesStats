@@ -18,7 +18,8 @@ fetch('data.json')
     allData = cleanData(data);
     populateFilters(allData);
     renderTable(allData);
-  })
+  }
+       console.log("Sample row:", data[0]);)
   .catch(err => console.error("Error loading player data:", err));
 
 function populateFilters(data) {
@@ -120,3 +121,4 @@ document.querySelectorAll('#statsTable th').forEach(th => {
     renderTable(sorted);
   });
 });
+
