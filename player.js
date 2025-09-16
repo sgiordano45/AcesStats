@@ -8,9 +8,9 @@ function getQueryParam(param) {
   return urlParams.get(param);
 }
 
-// Simplified substitute detection
+// Simplified Substitute detection
 function isSubstitute(p) {
-  return p.sub === "Yes";
+  return p.Sub === "Yes";
 }
 
 // Compute career summary
@@ -90,7 +90,7 @@ function renderTable(highlightYear) {
       if (currentSortField === "AcesWar") {
         valA = (valA === null || valA === "N/A" || valA === "") ? -Infinity : Number(valA);
         valB = (valB === null || valB === "N/A" || valB === "") ? -Infinity : Number(valB);
-      } else if (currentSortField === "sub") {
+      } else if (currentSortField === "Sub") {
         valA = isSubstitute(a) ? 1 : 0;
         valB = isSubstitute(b) ? 1 : 0;
       } else {
@@ -143,3 +143,4 @@ function sortTable(field) {
 
 // Initialize
 loadPlayerData();
+
