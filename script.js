@@ -45,9 +45,10 @@ function renderTable() {
       if (currentSortField === "AcesWar") {
         valA = (valA === null || valA === "N/A" || valA === "") ? -Infinity : Number(valA);
         valB = (valB === null || valB === "N/A" || valB === "") ? -Infinity : Number(valB);
+      } else if (currentSortField === "sub") {
+        valA = isSubstitute(a) ? 1 : 0;
+        valB = isSubstitute(b) ? 1 : 0;
       } else {
-        if (valA === null || valA === "N/A") valA = -Infinity;
-        if (valB === null || valB === "N/A") valB = -Infinity;
         if (typeof valA === 'string') valA = valA.toUpperCase();
         if (typeof valB === 'string') valB = valB.toUpperCase();
       }
@@ -68,7 +69,7 @@ function renderTable() {
 
     const row = `<tr>
       <td><a href="player.html?name=${encodeURIComponent(p.name)}">${p.name}</a></td>
-      <td>${p.team || "N/A"}</td>
+      <td><a href="team.html?team=${encodeURIComponent(p.team)}">${p.team || "N/A"}</a></td>
       <td>${p.year}</td>
       <td>${p.season}</td>
       <td>${p.games}</td>
@@ -81,6 +82,8 @@ function renderTable() {
     </tr>`;
     tbody.innerHTML += row;
   });
+
+  populateFilters();
 }
 
 // Sort table
@@ -92,6 +95,20 @@ function sortTable(field) {
     currentSortOrder = 'asc';
   }
   renderTable();
+}
+
+// Populate Year and Season filters dynamically
+function populateFilters() {
+  const yearSelect = document.getElementById("filterYear");
+  const seasonSelect = document.getElementById("filterSeason");
+
+  // Populate Year
+  const years = [...new Set(players.map(p => p.year))].sort((a, b) => b - a);
+  yearSelect.innerHTML = `<option value="all">All</option>` + years.map(y => `<option value="${y}">${y}</option>`).join("");
+
+  // Populate Season
+  const seasons = [...new Set(players.map(p => p.season))];
+  seasonSelect.innerHTML = `<option value="all">All</option>` + seasons.map(s => `<option value="${s}">${s}</option>`).join("");
 }
 
 // Initialize
