@@ -38,7 +38,7 @@ function renderTable(tableId, data) {
     const row = `<tr>
       <td>${p.year}</td>
       <td>${p.season}</td>
-      <td>${p.Team}</td>
+      <td>${p.team}</td>
       <td>${p.games}</td>
       <td>${p.atBats}</td>
       <td>${p.hits}</td>
@@ -98,3 +98,4 @@ function goBack() {
 
 // Load player data on page load
 loadPlayerData();
+
