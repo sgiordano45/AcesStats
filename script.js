@@ -7,15 +7,6 @@ async function loadPlayerStats() {
 
     allData = await response.json();
   
-  function cleanData(data) {
-  return data.map(p => ({
-    ...p,
-    name: p.name ? p.name.trim() : p.name, // remove leading/trailing whitespace
-    team: p.team ? p.team.trim() : p.team, // also clean team names just in case
-    season: p.season ? p.season.trim() : p.season
-  }));
-}
-
 // Example usage when loading:
 fetch('data.json')
   .then(response => response.json())
@@ -24,7 +15,15 @@ fetch('data.json')
     populateFilters(allData);
     renderTable(allData);
   });
-
+  
+    function cleanData(data) {
+  return data.map(p => ({
+    ...p,
+    name: p.name ? p.name.trim() : p.name, // remove leading/trailing whitespace
+    team: p.team ? p.team.trim() : p.team, // also clean team names just in case
+    season: p.season ? p.season.trim() : p.season
+  }));
+}
     // Precompute BA, OBP, formatted AcesWar, and formatted numbers
     allData.forEach(p => {
       p.BA = p.atBats ? (p.hits / p.atBats).toFixed(3) : "N/A";
@@ -168,5 +167,6 @@ headers.forEach(header => {
 
 // Load data on page load
 loadPlayerStats();
+
 
 
