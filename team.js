@@ -1,5 +1,7 @@
 let teamData = [];
 let currentTeam = "";
+let currentSortField = null;
+let currentSortAsc = true;
 
 // Trim whitespace in names/teams/seasons
 function cleanData(data) {
@@ -102,39 +104,60 @@ function renderTable(data) {
     `;
     tbody.appendChild(row);
   });
+
+  // Update sort arrows in header
+  document.querySelectorAll('#team-stats-table th').forEach((th, index) => {
+    th.classList.remove('asc', 'desc');
+    th.textContent = th.textContent.replace(/ ▲| ▼/g, '');
+    if (index === currentSortField) {
+      th.textContent += currentSortAsc ? ' ▲' : ' ▼';
+    }
+  });
 }
 
-// Basic column sorting
-function sortTable(n) {
-  const table = document.getElementById("team-stats-table");
-  let switching = true;
-  let dir = "asc";
-  let switchcount = 0;
+// Make all headers sortable
+document.querySelectorAll('#team-stats-table th').forEach((th, index) => {
+  th.style.cursor = 'pointer';
+  th.addEventListener('click', () => {
+    if (!th) return;
 
-  while (switching) {
-    switching = false;
-    const rows = table.rows;
-    for (let i = 1; i < rows.length - 1; i++) {
-      let shouldSwitch = false;
-      let x = rows[i].getElementsByTagName("td")[n];
-      let y = rows[i + 1].getElementsByTagName("td")[n];
+    if (currentSortField === index) currentSortAsc = !currentSortAsc;
+    else {
+      currentSortField = index;
+      currentSortAsc = true;
+    }
 
-      let xContent = isNaN(x.innerText) ? x.innerText.toLowerCase() : parseFloat(x.innerText.replace(/,/g, ""));
-      let yContent = isNaN(y.innerText) ? y.innerText.toLowerCase() : parseFloat(y.innerText.replace(/,/g, ""));
+    const sorted = [...teamData].sort((a, b) => {
+      let valA, valB;
 
-      if (dir === "asc" && xContent > yContent) shouldSwitch = true;
-      if (dir === "desc" && xContent < yContent) shouldSwitch = true;
-
-      if (shouldSwitch) {
-        rows[i].parentNode.insertBefore(rows[i + 1], rows[i]);
-        switching = true;
-        switchcount++;
-        break;
+      switch(index) {
+        case 0: valA = a.year; valB = b.year; break;
+        case 1: valA = a.season; valB = b.season; break;
+        case 2: valA = a.name; valB = b.name; break;
+        case 3: valA = Number(a.games) || 0; valB = Number(b.games) || 0; break;
+        case 4: valA = Number(a.atBats) || 0; valB = Number(b.atBats) || 0; break;
+        case 5: valA = Number(a.hits) || 0; valB = Number(b.hits) || 0; break;
+        case 6: valA = Number(a.runs) || 0; valB = Number(b.runs) || 0; break;
+        case 7: valA = Number(a.walks) || 0; valB = Number(b.walks) || 0; break;
+        case 8: 
+          valA = !isNaN(Number(a.AcesWar)) ? Number(a.AcesWar) : (currentSortAsc ? -Infinity : Infinity);
+          valB = !isNaN(Number(b.AcesWar)) ? Number(b.AcesWar) : (currentSortAsc ? -Infinity : Infinity);
+          break;
+        case 9: valA = (Number(a.hits)/Number(a.atBats)) || 0; valB = (Number(b.hits)/Number(b.atBats)) || 0; break;
+        case 10: valA = ((Number(a.hits)+Number(a.walks))/(Number(a.atBats)+Number(a.walks))) || 0;
+                 valB = ((Number(b.hits)+Number(b.walks))/(Number(b.atBats)+Number(b.walks))) || 0; break;
+        case 11: valA = a.Sub ?? ""; valB = b.Sub ?? ""; break;
+        default: valA = ""; valB = "";
       }
-    }
-    if (switchcount === 0 && dir === "asc") {
-      dir = "desc";
-      switching = true;
-    }
-  }
-}
+
+      if (typeof valA === 'string') valA = valA.toLowerCase();
+      if (typeof valB === 'string') valB = valB.toLowerCase();
+
+      if (valA < valB) return currentSortAsc ? -1 : 1;
+      if (valA > valB) return currentSortAsc ? 1 : -1;
+      return 0;
+    });
+
+    renderTable(sorted);
+  });
+});
