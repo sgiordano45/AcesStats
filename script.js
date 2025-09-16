@@ -90,7 +90,6 @@ function renderTable() {
       let valA = a[currentSortField];
       let valB = b[currentSortField];
 
-      // Numeric handling for AcesWar
       if (currentSortField === "AcesWar") {
         valA = (valA === null || valA === "N/A" || valA === "") ? -Infinity : Number(valA);
         valB = (valB === null || valB === "N/A" || valB === "") ? -Infinity : Number(valB);
@@ -109,12 +108,14 @@ function renderTable() {
 
   if (filteredPlayers.length === 0) {
     tbody.innerHTML = `<tr><td colspan="11" style="text-align:center;">No results found</td></tr>`;
+    return;
   }
 
   filteredPlayers.forEach(p => {
     const acesWarDisplay = (p.AcesWar === null || p.AcesWar === "N/A" || p.AcesWar === "") ? "N/A" : p.AcesWar;
+
     const row = `<tr>
-      <td>${p.name}</td>
+      <td><a href="player.html?name=${encodeURIComponent(p.name)}">${p.name}</a></td>
       <td>${p.team || "N/A"}</td>
       <td>${p.year}</td>
       <td>${p.season}</td>
@@ -126,14 +127,13 @@ function renderTable() {
       <td>${acesWarDisplay}</td>
       <td>${isSubstitute(p) ? "Yes" : "No"}</td>
     </tr>`;
+
     tbody.innerHTML += row;
   });
-  <td>
-  <a href="player.html?name=${encodeURIComponent(p.name)}">${p.name}</a>
-</td>
 
   populateFilters();
 }
+
 
 // Sorting helper with arrows
 function sortTable(field) {
@@ -162,4 +162,5 @@ function resetFilters() {
 
 // Initialize
 loadData();
+
 
