@@ -68,7 +68,7 @@ function populateFilters() {
   });
 }
 
-// Render table with filters and sorting
+// Render table
 function renderTable() {
   const filterYear = document.getElementById("filterYear").value;
   const filterSeason = document.getElementById("filterSeason").value;
@@ -83,21 +83,19 @@ function renderTable() {
   if (filterSub === "regular") filteredPlayers = filteredPlayers.filter(p => !isSubstitute(p));
   if (filterSub === "subs") filteredPlayers = filteredPlayers.filter(p => isSubstitute(p));
 
-  // Sort by currentSortField
+  // Sort
   if (currentSortField) {
     filteredPlayers.sort((a, b) => {
       let valA = a[currentSortField];
       let valB = b[currentSortField];
 
-      // Special numeric handling for AcesWar
+      // Numeric handling for AcesWar
       if (currentSortField === "AcesWar") {
         valA = (valA === null || valA === "N/A" || valA === "") ? -Infinity : Number(valA);
         valB = (valB === null || valB === "N/A" || valB === "") ? -Infinity : Number(valB);
       } else {
-        // Handle null/N/A for other fields
         if (valA === null || valA === "N/A") valA = -Infinity;
         if (valB === null || valB === "N/A") valB = -Infinity;
-
         if (typeof valA === 'string') valA = valA.toUpperCase();
         if (typeof valB === 'string') valB = valB.toUpperCase();
       }
@@ -134,7 +132,7 @@ function renderTable() {
   populateFilters();
 }
 
-// Sorting helper for column headers
+// Sorting helper with arrow indicators
 function sortTable(field) {
   if (currentSortField === field) {
     currentSortOrder = currentSortOrder === 'asc' ? 'desc' : 'asc';
@@ -142,10 +140,16 @@ function sortTable(field) {
     currentSortField = field;
     currentSortOrder = 'asc';
   }
+
+  document.querySelectorAll("th[data-field]").forEach(th => {
+    const span = th.querySelector(".sort-arrow");
+    span.textContent = (th.dataset.field === currentSortField) ? (currentSortOrder === 'asc' ? '▲' : '▼') : '';
+  });
+
   renderTable();
 }
 
-// Reset all filters
+// Reset filters
 function resetFilters() {
   document.getElementById("filterYear").value = "all";
   document.getElementById("filterSeason").value = "all";
@@ -153,7 +157,7 @@ function resetFilters() {
   renderTable();
 }
 
-// Render chart (AcesWar example)
+// Render chart
 function renderChart(filteredPlayers) {
   const ctx = document.getElementById("hitsChart").getContext("2d");
   if (chart) chart.destroy();
@@ -179,5 +183,5 @@ function renderChart(filteredPlayers) {
   });
 }
 
-// Run on page load
+// Initialize
 loadData();
