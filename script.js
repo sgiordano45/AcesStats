@@ -79,8 +79,10 @@ function renderTable() {
 
   if (filterYear !== "all") filteredPlayers = filteredPlayers.filter(p => p.year.toString() === filterYear);
   if (filterSeason !== "all") filteredPlayers = filteredPlayers.filter(p => p.season === filterSeason);
-  if (filterSub === "regular") filteredPlayers = filteredPlayers.filter(p => !p.sub);
-  if (filterSub === "subs") filteredPlayers = filteredPlayers.filter(p => p.sub);
+if (filterSub === "regular") 
+    filteredPlayers = filteredPlayers.filter(p => p.sub === false || p.sub === "false");
+if (filterSub === "subs") 
+    filteredPlayers = filteredPlayers.filter(p => p.sub === true || p.sub === "true");
 
   if (filteredPlayers.length === 0) {
     tbody.innerHTML = `<tr><td colspan="11" style="text-align:center;">No results found</td></tr>`;
@@ -141,3 +143,4 @@ function resetFilters() {
 
 // Run on page load
 loadData();
+
