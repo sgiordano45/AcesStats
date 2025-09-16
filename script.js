@@ -1,8 +1,7 @@
-let players = []; // populated from data.json
+let players = [];
 let currentSortField = 'year';
 let currentSortOrder = 'asc';
 
-// Load player data
 async function loadData() {
   try {
     const response = await fetch('data.json');
@@ -15,12 +14,10 @@ async function loadData() {
   }
 }
 
-// Simplified substitute detection
 function isSubstitute(p) {
   return p.sub === "Yes";
 }
 
-// Render the main table
 function renderTable() {
   const filterYear = document.getElementById("filterYear").value;
   const filterSeason = document.getElementById("filterSeason").value;
@@ -61,12 +58,10 @@ function renderTable() {
 
   if (filteredPlayers.length === 0) {
     tbody.innerHTML = `<tr><td colspan="11" style="text-align:center;">No results found</td></tr>`;
-    return;
   }
 
   filteredPlayers.forEach(p => {
     const acesWarDisplay = (p.AcesWar === null || p.AcesWar === "N/A" || p.AcesWar === "") ? "N/A" : p.AcesWar;
-
     const row = `<tr>
       <td><a href="player.html?name=${encodeURIComponent(p.name)}">${p.name}</a></td>
       <td><a href="team.html?team=${encodeURIComponent(p.team)}">${p.team || "N/A"}</a></td>
@@ -83,10 +78,15 @@ function renderTable() {
     tbody.innerHTML += row;
   });
 
+  renderLeagueSummary(filteredPlayers);
   populateFilters();
+
+  document.querySelectorAll("th[data-field]").forEach(th => {
+    const span = th.querySelector(".sort-arrow");
+    span.textContent = (th.dataset.field === currentSortField) ? (currentSortOrder === 'asc' ? '▲' : '▼') : '';
+  });
 }
 
-// Sort table
 function sortTable(field) {
   if (currentSortField === field) {
     currentSortOrder = currentSortOrder === 'asc' ? 'desc' : 'asc';
@@ -97,19 +97,40 @@ function sortTable(field) {
   renderTable();
 }
 
-// Populate Year and Season filters dynamically
 function populateFilters() {
   const yearSelect = document.getElementById("filterYear");
   const seasonSelect = document.getElementById("filterSeason");
 
-  // Populate Year
-  const years = [...new Set(players.map(p => p.year))].sort((a, b) => b - a);
+  const years = [...new Set(players.map(p => p.year))].sort((a,b) => b-a);
   yearSelect.innerHTML = `<option value="all">All</option>` + years.map(y => `<option value="${y}">${y}</option>`).join("");
 
-  // Populate Season
   const seasons = [...new Set(players.map(p => p.season))];
   seasonSelect.innerHTML = `<option value="all">All</option>` + seasons.map(s => `<option value="${s}">${s}</option>`).join("");
 }
 
-// Initialize
+function renderLeagueSummary(filteredPlayers) {
+  if (!filteredPlayers.length) {
+    document.getElementById("leagueSummary").textContent = "No players found for selected filters.";
+    return;
+  }
+
+  const totalGames = filteredPlayers.reduce((sum, p) => sum + Number(p.games || 0), 0);
+  const totalAtBats = filteredPlayers.reduce((sum, p) => sum + Number(p.atBats || 0), 0);
+  const totalHits = filteredPlayers.reduce((sum, p) => sum + Number(p.hits || 0), 0);
+  const totalRuns = filteredPlayers.reduce((sum, p) => sum + Number(p.runs || 0), 0);
+  const totalWalks = filteredPlayers.reduce((sum, p) => sum + Number(p.walks || 0), 0);
+
+  const topHits = filteredPlayers.reduce((max, p) => p.hits > max.hits ? p : max, filteredPlayers[0]);
+  const topRuns = filteredPlayers.reduce((max, p) => p.runs > max.runs ? p : max, filteredPlayers[0]);
+  const topWalks = filteredPlayers.reduce((max, p) => p.walks > max.walks ? p : max, filteredPlayers[0]);
+
+  const acesValues = filteredPlayers.map(p => Number(p.AcesWar)).filter(v => !isNaN(v));
+  const topAcesWar = acesValues.length ? filteredPlayers.find(p => Number(p.AcesWar) === Math.max(...acesValues)) : null;
+
+  document.getElementById("leagueSummary").innerHTML =
+    `Totals → Games: ${totalGames}, At Bats: ${totalAtBats}, Hits: ${totalHits}, Runs: ${totalRuns}, Walks: ${totalWalks} <br>
+    Top Hits: ${topHits.name} (${topHits.hits}) | Top Runs: ${topRuns.name} (${topRuns.runs}) | Top Walks: ${topWalks.name} (${topWalks.walks})` +
+    (topAcesWar ? ` | Top AcesWar: ${topAcesWar.name} (${topAcesWar.AcesWar})` : '');
+}
+
 loadData();
