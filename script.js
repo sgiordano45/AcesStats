@@ -77,22 +77,31 @@ function renderTable() {
 
   let filteredPlayers = players;
 
+  // Filter by year
   if (filterYear !== "all") filteredPlayers = filteredPlayers.filter(p => p.year.toString() === filterYear);
-  if (filterSeason !== "all") filteredPlayers = filteredPlayers.filter(p => p.season === filterSeason);
-if (filterSub === "regular") 
-    filteredPlayers = filteredPlayers.filter(p => p.sub === false || p.sub === "false");
-if (filterSub === "subs") 
-    filteredPlayers = filteredPlayers.filter(p => p.sub === true || p.sub === "true");
 
+  // Filter by season
+  if (filterSeason !== "all") filteredPlayers = filteredPlayers.filter(p => p.season === filterSeason);
+
+  // Filter by Regular/Substitute robustly
+  if (filterSub === "regular") {
+    filteredPlayers = filteredPlayers.filter(p => p.sub === false || p.sub === "false");
+  }
+  if (filterSub === "subs") {
+    filteredPlayers = filteredPlayers.filter(p => p.sub === true || p.sub === "true");
+  }
+
+  // If no results, show message
   if (filteredPlayers.length === 0) {
     tbody.innerHTML = `<tr><td colspan="11" style="text-align:center;">No results found</td></tr>`;
   }
 
+  // Populate table rows
   filteredPlayers.forEach(p => {
-    const acesWarDisplay = (p.AcesWar === null || p.AcesWar === "N/A") ? "N/A" : p.AcesWar;
+    const acesWarDisplay = (p.AcesWar === null || p.AcesWar === "N/A" || p.AcesWar === "") ? "N/A" : p.AcesWar;
     const row = `<tr>
       <td>${p.name}</td>
-      <td>${p.team}</td>
+      <td>${p.team || "N/A"}</td>
       <td>${p.year}</td>
       <td>${p.season}</td>
       <td>${p.games}</td>
@@ -101,12 +110,15 @@ if (filterSub === "subs")
       <td>${p.runs}</td>
       <td>${p.walks}</td>
       <td>${acesWarDisplay}</td>
-      <td>${p.sub ? "Yes" : "No"}</td>
+      <td>${(p.sub === true || p.sub === "true") ? "Yes" : "No"}</td>
     </tr>`;
     tbody.innerHTML += row;
   });
 
+  // Render chart
   renderChart(filteredPlayers);
+
+  // Repopulate filters in case dynamic changes are needed
   populateFilters();
 }
 
@@ -144,5 +156,6 @@ function resetFilters() {
 
 // Run on page load
 loadData();
+
 
 
