@@ -2,17 +2,15 @@ let playerEntries = [];
 let currentSortField = 'year';
 let currentSortOrder = 'asc';
 
-// Helper to get query parameter
+// Get URL parameter
 function getQueryParam(param) {
   const urlParams = new URLSearchParams(window.location.search);
   return urlParams.get(param);
 }
 
-// Robust substitute detection
+// Simplified substitute detection
 function isSubstitute(p) {
-  if (p.sub === null || p.sub === undefined) return false;
-  const val = String(p.sub).trim().toLowerCase();
-  return val === "true" || val === "yes" || val === "1";
+  return p.sub === "Yes";
 }
 
 // Compute career summary
@@ -78,7 +76,7 @@ async function loadPlayerData() {
   }
 }
 
-// Render table
+// Render player table
 function renderTable(highlightYear) {
   const tbody = document.querySelector("#playerStatsTable tbody");
   tbody.innerHTML = "";
@@ -123,14 +121,14 @@ function renderTable(highlightYear) {
     tbody.innerHTML += row;
   });
 
-  // Update arrows
+  // Update sorting arrows
   document.querySelectorAll("th[data-field]").forEach(th => {
     const span = th.querySelector(".sort-arrow");
     span.textContent = (th.dataset.field === currentSortField) ? (currentSortOrder === 'asc' ? '▲' : '▼') : '';
   });
 }
 
-// Sort table by column
+// Sort table
 function sortTable(field) {
   if (currentSortField === field) {
     currentSortOrder = currentSortOrder === 'asc' ? 'desc' : 'asc';
