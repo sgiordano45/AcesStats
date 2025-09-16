@@ -89,6 +89,7 @@ function renderTable() {
       <td>${p.runs}</td>
       <td>${p.walks}</td>
       <td>${p.sub ? "Yes" : "No"}</td>
+      <td>${p.AcesWar}</td>
     </tr>`;
     tbody.innerHTML += row;
   });
@@ -135,3 +136,4 @@ function resetFilters() {
 
 // Run when page loads
 loadData();
+
