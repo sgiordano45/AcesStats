@@ -1,34 +1,35 @@
 let players = [];
-let hitsChart = null;
+let chart = null;
+let currentSortField = null;
+let currentSortOrder = 'asc'; // ascending by default
 
-// Load player data from JSON
+// Load player data
 async function loadData() {
   try {
     const response = await fetch("data.json");
     if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
-    
     players = await response.json();
-    console.log("Loaded players:", players);
 
     populateFilters();
     renderTable();
   } catch (error) {
     console.error("Error loading player data:", error);
-    showError("⚠️ Could not load player data. Check that <b>data.json</b> is in the same folder as <b>index.html</b> or published on GitHub Pages.");
+    showError("⚠️ Could not load player data. Check data.json.");
   }
 }
 
 // Show error message
 function showError(message) {
-  const container = document.getElementById("statsTable");
+  const container = document.querySelector("#statsTable tbody");
   container.innerHTML = `<tr><td colspan="11" style="color:red; text-align:center;">${message}</td></tr>`;
-  const ctx = document.getElementById("hitsChart").getContext("2d");
-  ctx.font = "16px Arial";
-  ctx.fillStyle = "red";
-  ctx.fillText("⚠️ No chart data (data.json missing or invalid)", 10, 50);
 }
 
-// Populate Year and Season dropdowns dynamically
+// Helper: normalize substitute values
+function isSubstitute(p) {
+  return p.sub === true || p.sub === "true" || p.sub === "Yes" || p.sub === "YES";
+}
+
+// Populate filter dropdowns
 function populateFilters() {
   const yearSelect = document.getElementById("filterYear");
   const seasonSelect = document.getElementById("filterSeason");
@@ -67,7 +68,7 @@ function populateFilters() {
   });
 }
 
-// Render the stats table
+// Render table with filters and sorting
 function renderTable() {
   const filterYear = document.getElementById("filterYear").value;
   const filterSeason = document.getElementById("filterSeason").value;
@@ -75,33 +76,42 @@ function renderTable() {
   const tbody = document.querySelector("#statsTable tbody");
   tbody.innerHTML = "";
 
-  // Helper to normalize substitute values
-  function isSubstitute(p) {
-    return p.sub === true || p.sub === "true" || p.sub === "Yes" || p.sub === "YES";
-  }
-
   let filteredPlayers = players;
 
-  // Filter by year
   if (filterYear !== "all") filteredPlayers = filteredPlayers.filter(p => p.year.toString() === filterYear);
-
-  // Filter by season
   if (filterSeason !== "all") filteredPlayers = filteredPlayers.filter(p => p.season === filterSeason);
+  if (filterSub === "regular") filteredPlayers = filteredPlayers.filter(p => !isSubstitute(p));
+  if (filterSub === "subs") filteredPlayers = filteredPlayers.filter(p => isSubstitute(p));
 
-  // Filter by Regular/Substitute
-  if (filterSub === "regular") {
-    filteredPlayers = filteredPlayers.filter(p => !isSubstitute(p));
-  }
-  if (filterSub === "subs") {
-    filteredPlayers = filteredPlayers.filter(p => isSubstitute(p));
+  // Sort by currentSortField
+  if (currentSortField) {
+    filteredPlayers.sort((a, b) => {
+      let valA = a[currentSortField];
+      let valB = b[currentSortField];
+
+      // Special numeric handling for AcesWar
+      if (currentSortField === "AcesWar") {
+        valA = (valA === null || valA === "N/A" || valA === "") ? -Infinity : Number(valA);
+        valB = (valB === null || valB === "N/A" || valB === "") ? -Infinity : Number(valB);
+      } else {
+        // Handle null/N/A for other fields
+        if (valA === null || valA === "N/A") valA = -Infinity;
+        if (valB === null || valB === "N/A") valB = -Infinity;
+
+        if (typeof valA === 'string') valA = valA.toUpperCase();
+        if (typeof valB === 'string') valB = valB.toUpperCase();
+      }
+
+      if (valA < valB) return currentSortOrder === 'asc' ? -1 : 1;
+      if (valA > valB) return currentSortOrder === 'asc' ? 1 : -1;
+      return 0;
+    });
   }
 
-  // If no results, show message
   if (filteredPlayers.length === 0) {
     tbody.innerHTML = `<tr><td colspan="11" style="text-align:center;">No results found</td></tr>`;
   }
 
-  // Populate table rows
   filteredPlayers.forEach(p => {
     const acesWarDisplay = (p.AcesWar === null || p.AcesWar === "N/A" || p.AcesWar === "") ? "N/A" : p.AcesWar;
     const row = `<tr>
@@ -120,37 +130,20 @@ function renderTable() {
     tbody.innerHTML += row;
   });
 
-  // Render chart
   renderChart(filteredPlayers);
-
-  // Repopulate filters dynamically
   populateFilters();
 }
 
-
-// Render chart with Chart.js
-function renderChart(filteredPlayers) {
-  const ctx = document.getElementById("hitsChart").getContext("2d");
-  if (hitsChart) hitsChart.destroy();
-  if (filteredPlayers.length === 0) return;
-
-  hitsChart = new Chart(ctx, {
-    type: "bar",
-    data: {
-      labels: filteredPlayers.map(p => `${p.name} (${p.season} ${p.year})`),
-      datasets: [{
-        label: "Hits",
-        data: filteredPlayers.map(p => p.hits),
-        backgroundColor: "rgba(75, 192, 192, 0.6)"
-      }]
-    },
-    options: {
-      responsive: true,
-      scales: { y: { beginAtZero: true } }
-    }
-  });
+// Sorting helper for column headers
+function sortTable(field) {
+  if (currentSortField === field) {
+    currentSortOrder = currentSortOrder === 'asc' ? 'desc' : 'asc';
+  } else {
+    currentSortField = field;
+    currentSortOrder = 'asc';
+  }
+  renderTable();
 }
-console.log(players.map(p => ({name: p.name, sub: p.sub, type: typeof p.sub})));
 
 // Reset all filters
 function resetFilters() {
@@ -160,9 +153,31 @@ function resetFilters() {
   renderTable();
 }
 
+// Render chart (AcesWar example)
+function renderChart(filteredPlayers) {
+  const ctx = document.getElementById("hitsChart").getContext("2d");
+  if (chart) chart.destroy();
+  if (filteredPlayers.length === 0) return;
+
+  chart = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels: filteredPlayers.map(p => `${p.name} (${p.season} ${p.year})`),
+      datasets: [{
+        label: "AcesWar",
+        data: filteredPlayers.map(p => {
+          const val = p.AcesWar;
+          return (val === null || val === "N/A" || val === "") ? 0 : Number(val);
+        }),
+        backgroundColor: "rgba(153, 102, 255, 0.6)"
+      }]
+    },
+    options: {
+      responsive: true,
+      scales: { y: { beginAtZero: true } }
+    }
+  });
+}
+
 // Run on page load
 loadData();
-
-
-
-
