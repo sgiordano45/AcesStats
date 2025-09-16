@@ -128,6 +128,9 @@ function renderTable() {
     </tr>`;
     tbody.innerHTML += row;
   });
+  <td>
+  <a href="player.html?name=${encodeURIComponent(p.name)}">${p.name}</a>
+</td>
 
   populateFilters();
 }
@@ -159,3 +162,4 @@ function resetFilters() {
 
 // Initialize
 loadData();
+
