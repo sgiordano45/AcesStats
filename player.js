@@ -34,6 +34,9 @@ function renderTable(tableId, data) {
   tbody.innerHTML = "";
   data.forEach(p => {
     const acesWarDisplay = (!p.AcesWar || p.AcesWar === "N/A") ? "N/A" : p.AcesWar;
+    const BA = p.atBats ? (p.hits / p.atBats).toFixed(3) : "N/A";
+    const OBP = p.atBats ? ((p.hits + p.walks) / (p.atBats+ p.walks)).toFixed(3) : "N/A";
+
     const row = `<tr>
       <td>${p.year}</td>
       <td>${p.season}</td>
@@ -44,6 +47,8 @@ function renderTable(tableId, data) {
       <td>${p.runs}</td>
       <td>${p.walks}</td>
       <td>${acesWarDisplay}</td>
+      <td>${BA}</td>
+      <td>${OBP}</td>
       <td>${isSubstitute(p) ? "Yes" : "No"}</td>
     </tr>`;
     tbody.innerHTML += row;
@@ -54,31 +59,29 @@ function renderCareerStats(all, regular, subs) {
   const tbody = document.querySelector('#careerStatsTable tbody');
   tbody.innerHTML = "";
 
-  const calcTotals = (arr) => {
+  const calcStats = (arr) => {
     const totalGames = arr.reduce((sum,p) => sum + Number(p.games || 0), 0);
     const totalAtBats = arr.reduce((sum,p) => sum + Number(p.atBats || 0), 0);
     const totalHits = arr.reduce((sum,p) => sum + Number(p.hits || 0), 0);
     const totalRuns = arr.reduce((sum,p) => sum + Number(p.runs || 0), 0);
     const totalWalks = arr.reduce((sum,p) => sum + Number(p.walks || 0), 0);
 
-    // Calculate average AcesWar
     const acesValues = arr.map(p => Number(p.AcesWar)).filter(v => !isNaN(v));
     const avgAcesWar = acesValues.length ? (acesValues.reduce((a,b)=>a+b,0)/acesValues.length).toFixed(2) : "N/A";
 
-    return { totalGames, totalAtBats, totalHits, totalRuns, totalWalks, avgAcesWar };
+    const BA = totalAtBats ? (totalHits / totalAtBats).toFixed(3) : "N/A";
+    const OBP = totalAtBats ? ((totalHits + totalWalks) / (totalAtBats+ totalWalks)).toFixed(3) : "N/A";
+
+    return { totalGames, totalAtBats, totalHits, totalRuns, totalWalks, avgAcesWar, BA, OBP };
   }
 
-  const totalsAll = calcTotals(all);
-  const totalsRegular = calcTotals(regular);
-  const totalsSub = calcTotals(subs);
-
-  const rows = [
-    {label: "Total", stats: totalsAll},
-    {label: "Regular Only", stats: totalsRegular},
-    {label: "Substitute Only", stats: totalsSub}
+  const rowsData = [
+    { label: "Total", stats: calcStats(all) },
+    { label: "Regular Only", stats: calcStats(regular) },
+    { label: "Substitute Only", stats: calcStats(subs) }
   ];
 
-  rows.forEach(r => {
+  rowsData.forEach(r => {
     const row = `<tr>
       <td>${r.label}</td>
       <td>${r.stats.totalGames}</td>
@@ -87,10 +90,13 @@ function renderCareerStats(all, regular, subs) {
       <td>${r.stats.totalRuns}</td>
       <td>${r.stats.totalWalks}</td>
       <td>${r.stats.avgAcesWar}</td>
+      <td>${r.stats.BA}</td>
+      <td>${r.stats.OBP}</td>
     </tr>`;
     tbody.innerHTML += row;
   });
 }
+
 
 function goBack() {
   window.history.back();
@@ -98,4 +104,5 @@ function goBack() {
 
 // Load the data on page load
 loadPlayerData();
+
 
