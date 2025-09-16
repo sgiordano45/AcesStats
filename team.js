@@ -24,7 +24,7 @@ async function loadTeamData() {
 }
 
 function isSubstitute(p) {
-  return p.sub === "Yes";
+  return p.Sub === "Yes";
 }
 
 function renderTable() {
@@ -46,7 +46,7 @@ function renderTable() {
       if (currentSortField === "AcesWar") {
         valA = (valA === null || valA === "N/A" || valA === "") ? -Infinity : Number(valA);
         valB = (valB === null || valB === "N/A" || valB === "") ? -Infinity : Number(valB);
-      } else if (currentSortField === "sub") {
+      } else if (currentSortField === "Sub") {
         valA = isSubstitute(a) ? 1 : 0;
         valB = isSubstitute(b) ? 1 : 0;
       } else {
@@ -115,3 +115,4 @@ function renderTeamSummary() {
 }
 
 loadTeamData();
+
