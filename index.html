@@ -2,22 +2,21 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Aces Historical Batting</title>
 <style>
   table { border-collapse: collapse; width: 100%; margin-top: 10px; }
-  th, td { border: 1px solid #ccc; padding: 5px; text-align: center; }
-  th { background-color: #eee; cursor: pointer; }
-  th.sorted-asc::after { content: " ▲"; }
-  th.sorted-desc::after { content: " ▼"; }
-  a { text-decoration: none; color: blue; }
-  .filters { margin-bottom: 10px; }
+  th, td { border: 1px solid #ccc; padding: 6px 10px; text-align: center; }
+  th { cursor: pointer; background-color: #f0f0f0; user-select: none; }
+  th.asc::after { content: " ▲"; }
+  th.desc::after { content: " ▼"; }
+  select { margin: 5px; padding: 4px; }
 </style>
 </head>
 <body>
-
 <h1>Mountainside Aces Batting Stats</h1>
 
-<div class="filters">
+<div>
   <label for="yearFilter">Year:</label>
   <select id="yearFilter">
     <option value="All">All</option>
@@ -32,154 +31,26 @@
 <table id="statsTable">
   <thead>
     <tr>
-      <th data-sort="name">Name</th>
-      <th data-sort="team">Team</th>
-      <th data-sort="year">Year</th>
-      <th data-sort="season">Season</th>
-      <th data-sort="games">Games</th>
-      <th data-sort="atBats">At Bats</th>
-      <th data-sort="hits">Hits</th>
-      <th data-sort="runs">Runs</th>
-      <th data-sort="walks">Walks</th>
-      <th data-sort="acesWar">AcesWar</th>
-      <th data-sort="BA">BA</th>
-      <th data-sort="OBP">OBP</th>
-      <th data-sort="Sub">Sub</th>
+      <th data-field="name">Name</th>
+      <th data-field="team">Team</th>
+      <th data-field="year">Year</th>
+      <th data-field="season">Season</th>
+      <th data-field="games">Games</th>
+      <th data-field="atBats">At Bats</th>
+      <th data-field="hits">Hits</th>
+      <th data-field="runs">Runs</th>
+      <th data-field="walks">Walks</th>
+      <th data-field="AcesWar">AcesWar</th>
+      <th data-field="BA">BA</th>
+      <th data-field="OBP">OBP</th>
+      <th data-field="Sub">Sub</th>
     </tr>
   </thead>
-  <tbody></tbody>
+  <tbody>
+    <!-- Rows will be dynamically added by script.js -->
+  </tbody>
 </table>
 
 <script src="script.js"></script>
-<script>
-// Sorting logic
-const table = document.getElementById('statsTable');
-const headers = table.querySelectorAll('th');
-let sortDirection = {};
-
-headers.forEach(header => {
-  header.addEventListener('click', () => {
-    const sortKey = header.dataset.sort;
-    const tbody = table.querySelector('tbody');
-    const rows = Array.from(tbody.querySelectorAll('tr'));
-    
-    const currentDir = sortDirection[sortKey] === 'asc' ? 'desc' : 'asc';
-    sortDirection = {};
-    sortDirection[sortKey] = currentDir;
-
-    headers.forEach(h => h.classList.remove('sorted-asc','sorted-desc'));
-    header.classList.add(currentDir==='asc' ? 'sorted-asc' : 'sorted-desc');
-
-    rows.sort((a,b) => {
-      let aText = a.querySelector(`td:nth-child(${header.cellIndex+1})`).textContent;
-      let bText = b.querySelector(`td:nth-child(${header.cellIndex+1})`).textContent;
-
-      const numA = parseFloat(aText.replace(/,/g,''));
-      const numB = parseFloat(bText.replace(/,/g,''));
-
-      if(!isNaN(numA) && !isNaN(numB)){
-        return currentDir==='asc' ? numA-numB : numB-numA;
-      } else {
-        return currentDir==='asc' ? aText.localeCompare(bText) : bText.localeCompare(aText);
-      }
-    });
-
-    tbody.innerHTML = '';
-    rows.forEach(r => tbody.appendChild(r));
-  });
-});
-
-// Filter logic
-document.getElementById('yearFilter').addEventListener('change', applyFilters);
-document.getElementById('seasonFilter').addEventListener('change', applyFilters);
-
-let allData = [];
-
-async function loadPlayerStats() {
-  try {
-    const response = await fetch('data.json');
-    if (!response.ok) throw new Error('Failed to load data.json');
-
-    allData = await response.json();
-
-    populateFilters(allData);
-    renderTable(allData);
-
-  } catch (err) {
-    console.error('Error loading data:', err);
-  }
-}
-
-function populateFilters(data) {
-  const yearSet = new Set();
-  const seasonSet = new Set();
-
-  data.forEach(p => {
-    yearSet.add(p.year);
-    seasonSet.add(p.season);
-  });
-
-  const yearFilter = document.getElementById('yearFilter');
-  const seasonFilter = document.getElementById('seasonFilter');
-
-  [...yearSet].sort((a,b)=>b-a).forEach(y => {
-    const opt = document.createElement('option');
-    opt.value = y; opt.textContent = y;
-    yearFilter.appendChild(opt);
-  });
-
-  [...seasonSet].sort().forEach(s => {
-    const opt = document.createElement('option');
-    opt.value = s; opt.textContent = s;
-    seasonFilter.appendChild(opt);
-  });
-}
-
-function applyFilters() {
-  const selectedYear = document.getElementById('yearFilter').value;
-  const selectedSeason = document.getElementById('seasonFilter').value;
-
-  let filtered = allData;
-
-  if(selectedYear !== 'All') filtered = filtered.filter(p => p.year == selectedYear);
-  if(selectedSeason !== 'All') filtered = filtered.filter(p => p.season === selectedSeason);
-
-  renderTable(filtered);
-}
-
-function isSubstitute(player) {
-  return player.Sub && player.Sub.toString().trim().toLowerCase() === 'yes';
-}
-
-function renderTable(data) {
-  const tbody = document.querySelector('#statsTable tbody');
-  tbody.innerHTML = '';
-
-  data.forEach(player => {
-    const acesWar = (!player.AcesWar || player.AcesWar === "N/A") ? "N/A" : Number(player.AcesWar).toFixed(2);
-    const BA = player.atBats ? (player.hits / player.atBats).toFixed(3) : "N/A";
-    const OBP = player.atBats ? ((player.hits + player.walks) / player.atBats).toFixed(3) : "N/A";
-
-    const row = `<tr>
-      <td><a href="player.html?name=${encodeURIComponent(player.name)}">${player.name}</a></td>
-      <td><a href="team.html?team=${encodeURIComponent(player.team)}">${player.team}</a></td>
-      <td>${player.year}</td>
-      <td>${player.season}</td>
-      <td>${Number(player.games).toLocaleString()}</td>
-      <td>${Number(player.atBats).toLocaleString()}</td>
-      <td>${Number(player.hits).toLocaleString()}</td>
-      <td>${Number(player.runs).toLocaleString()}</td>
-      <td>${Number(player.walks).toLocaleString()}</td>
-      <td>${acesWar}</td>
-      <td>${BA}</td>
-      <td>${OBP}</td>
-      <td>${isSubstitute(player) ? "Yes" : "No"}</td>
-    </tr>`;
-
-    tbody.innerHTML += row;
-  });
-}
-
-// Load table on page load
-loadPlayerStats();
-
+</body>
+</html>
