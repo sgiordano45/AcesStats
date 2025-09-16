@@ -15,7 +15,7 @@ async function loadData() {
   }
 }
 
-// Robust substitute check using exact JSON field "Sub"
+// Robust Substitute check using exact JSON field "Sub"
 function isSubstitute(p) {
   if (!p.Sub) return false;
   return p.Sub.toString().trim().toLowerCase() === "yes";
@@ -36,9 +36,9 @@ function renderTable() {
   if (filterYear !== "all") filteredPlayers = filteredPlayers.filter(p => p.year.toString() === filterYear);
   if (filterSeason !== "all") filteredPlayers = filteredPlayers.filter(p => p.season === filterSeason);
   if (filterSub === "regular") filteredPlayers = filteredPlayers.filter(p => !isSubstitute(p));
-  if (filterSub === "subs") filteredPlayers = filteredPlayers.filter(p => isSubstitute(p));
+  if (filterSub === "Subs") filteredPlayers = filteredPlayers.filter(p => isSubstitute(p));
 
-  // Debug log to verify substitutes
+  // Debug log to verify Substitutes
   console.log(filteredPlayers.map(p => ({name: p.name, Sub: p.Sub, isSub: isSubstitute(p)})));
 
   // Sort table
@@ -138,3 +138,4 @@ function renderLeagueSummary(filteredPlayers) {
 
 // Initial load
 loadData();
+
