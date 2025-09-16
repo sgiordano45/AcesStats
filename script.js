@@ -21,7 +21,7 @@ function renderTable(data) {
   tbody.innerHTML = '';
 
   data.forEach(player => {
-    const acesWarDisplay = (!player.AcesWar || player.AcesWar === "N/A") ? "N/A" : player.AcesWar;
+    const acesWar = (!player.AcesWar || player.AcesWar === "N/A") ? "N/A" : Number(player.AcesWar).toFixed(2);
     const BA = player.atBats ? (player.hits / player.atBats).toFixed(3) : "N/A";
     const OBP = player.atBats ? ((player.hits + player.walks) / player.atBats).toFixed(3) : "N/A";
 
@@ -30,12 +30,12 @@ function renderTable(data) {
       <td><a href="team.html?team=${encodeURIComponent(player.team)}">${player.team}</a></td>
       <td>${player.year}</td>
       <td>${player.season}</td>
-      <td>${player.games}</td>
-      <td>${player.atBats}</td>
-      <td>${player.hits}</td>
-      <td>${player.runs}</td>
-      <td>${player.walks}</td>
-      <td>${acesWarDisplay}</td>
+      <td>${Number(player.games).toLocaleString()}</td>
+      <td>${Number(player.atBats).toLocaleString()}</td>
+      <td>${Number(player.hits).toLocaleString()}</td>
+      <td>${Number(player.runs).toLocaleString()}</td>
+      <td>${Number(player.walks).toLocaleString()}</td>
+      <td>${acesWar}</td>
       <td>${BA}</td>
       <td>${OBP}</td>
       <td>${isSubstitute(player) ? "Yes" : "No"}</td>
@@ -45,5 +45,7 @@ function renderTable(data) {
   });
 }
 
+
 // Load table on page load
 loadPlayerStats();
+
