@@ -75,6 +75,11 @@ function renderTable() {
   const tbody = document.querySelector("#statsTable tbody");
   tbody.innerHTML = "";
 
+  // Helper to normalize substitute values
+  function isSubstitute(p) {
+    return p.sub === true || p.sub === "true" || p.sub === "Yes" || p.sub === "YES";
+  }
+
   let filteredPlayers = players;
 
   // Filter by year
@@ -83,12 +88,12 @@ function renderTable() {
   // Filter by season
   if (filterSeason !== "all") filteredPlayers = filteredPlayers.filter(p => p.season === filterSeason);
 
-  // Filter by Regular/Substitute robustly
+  // Filter by Regular/Substitute
   if (filterSub === "regular") {
-    filteredPlayers = filteredPlayers.filter(p => p.sub === false || p.sub === "false");
+    filteredPlayers = filteredPlayers.filter(p => !isSubstitute(p));
   }
   if (filterSub === "subs") {
-    filteredPlayers = filteredPlayers.filter(p => p.sub === true || p.sub === "true");
+    filteredPlayers = filteredPlayers.filter(p => isSubstitute(p));
   }
 
   // If no results, show message
@@ -110,7 +115,7 @@ function renderTable() {
       <td>${p.runs}</td>
       <td>${p.walks}</td>
       <td>${acesWarDisplay}</td>
-      <td>${(p.sub === true || p.sub === "true") ? "Yes" : "No"}</td>
+      <td>${isSubstitute(p) ? "Yes" : "No"}</td>
     </tr>`;
     tbody.innerHTML += row;
   });
@@ -118,9 +123,10 @@ function renderTable() {
   // Render chart
   renderChart(filteredPlayers);
 
-  // Repopulate filters in case dynamic changes are needed
+  // Repopulate filters dynamically
   populateFilters();
 }
+
 
 // Render chart with Chart.js
 function renderChart(filteredPlayers) {
@@ -156,6 +162,7 @@ function resetFilters() {
 
 // Run on page load
 loadData();
+
 
 
 
