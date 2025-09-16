@@ -132,6 +132,7 @@ function renderChart(filteredPlayers) {
     }
   });
 }
+console.log(players.map(p => ({name: p.name, sub: p.sub, type: typeof p.sub})));
 
 // Reset all filters
 function resetFilters() {
@@ -143,4 +144,5 @@ function resetFilters() {
 
 // Run on page load
 loadData();
+
 
