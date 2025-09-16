@@ -1,5 +1,4 @@
 let players = [];
-let chart = null;
 let currentSortField = null;
 let currentSortOrder = 'asc'; // ascending by default
 
@@ -130,7 +129,6 @@ function renderTable() {
     tbody.innerHTML += row;
   });
 
-  renderChart(filteredPlayers);
   populateFilters();
 }
 
@@ -157,32 +155,6 @@ function resetFilters() {
   document.getElementById("filterSeason").value = "all";
   document.getElementById("filterSub").value = "all";
   renderTable();
-}
-
-// Render chart
-function renderChart(filteredPlayers) {
-  const ctx = document.getElementById("hitsChart").getContext("2d");
-  if (chart) chart.destroy();
-  if (filteredPlayers.length === 0) return;
-
-  chart = new Chart(ctx, {
-    type: "bar",
-    data: {
-      labels: filteredPlayers.map(p => `${p.name} (${p.season} ${p.year})`),
-      datasets: [{
-        label: "AcesWar",
-        data: filteredPlayers.map(p => {
-          const val = p.AcesWar;
-          return (val === null || val === "N/A" || val === "") ? 0 : Number(val);
-        }),
-        backgroundColor: "rgba(153, 102, 255, 0.6)"
-      }]
-    },
-    options: {
-      responsive: true,
-      scales: { y: { beginAtZero: true } }
-    }
-  });
 }
 
 // Initialize
