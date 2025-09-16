@@ -70,33 +70,41 @@ function populateFilters(data) {
   const seasonSet = new Set();
 
   data.forEach(p => {
-    yearSet.add(p.year);
-    seasonSet.add(p.season);
+    if (p.year) yearSet.add(parseInt(p.year)); // ensure numeric
+    if (p.season) seasonSet.add(p.season);
   });
 
   const yearFilter = document.getElementById('yearFilter');
   const seasonFilter = document.getElementById('seasonFilter');
 
-  [...yearSet].sort((a,b)=>b-a).forEach(y => {
+  [...yearSet].sort((a, b) => b - a).forEach(y => {
     const opt = document.createElement('option');
-    opt.value = y; opt.textContent = y;
+    opt.value = y;
+    opt.textContent = y;
     yearFilter.appendChild(opt);
   });
 
   [...seasonSet].sort().forEach(s => {
     const opt = document.createElement('option');
-    opt.value = s; opt.textContent = s;
+    opt.value = s;
+    opt.textContent = s;
     seasonFilter.appendChild(opt);
   });
 }
+
 
 function applyFilters() {
   const selectedYear = document.getElementById('yearFilter').value;
   const selectedSeason = document.getElementById('seasonFilter').value;
 
   let filtered = allData;
-  if(selectedYear !== 'All') filtered = filtered.filter(p => p.year == selectedYear);
-  if(selectedSeason !== 'All') filtered = filtered.filter(p => p.season === selectedSeason);
+
+  if (selectedYear !== 'All') {
+    filtered = filtered.filter(p => p.year == selectedYear); // string vs string
+  }
+  if (selectedSeason !== 'All') {
+    filtered = filtered.filter(p => p.season === selectedSeason);
+  }
 
   renderTable(filtered);
 }
@@ -142,3 +150,4 @@ headers.forEach(header => {
 
 // Load data on page load
 loadPlayerStats();
+
