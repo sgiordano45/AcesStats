@@ -83,12 +83,14 @@ function renderTable() {
       <td>${p.name}</td>
       <td>${p.year}</td>
       <td>${p.season}</td>
+      <td>${p.team}</td>
       <td>${p.games}</td>
       <td>${p.atBats}</td>
       <td>${p.hits}</td>
       <td>${p.runs}</td>
       <td>${p.walks}</td>
       <td>${p.sub ? "Yes" : "No"}</td>
+      <td>${p.AcesWar}</td>
     </tr>`;
     tbody.innerHTML += row;
   });
@@ -135,3 +137,4 @@ function resetFilters() {
 
 // Run when page loads
 loadData();
+
