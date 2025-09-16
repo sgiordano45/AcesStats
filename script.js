@@ -1,93 +1,32 @@
 let allData = [];
+let currentSortField = null;
+let currentSortAsc = true;
 
-async function loadPlayerStats() {
-  try {
-    const response = await fetch('data.json');
-    if (!response.ok) throw new Error('Failed to load data.json');
+// Clean whitespace from name/team/season
+function cleanData(data) {
+  return data.map(p => ({
+    ...p,
+    name: p.name ? p.name.trim() : p.name,
+    team: p.team ? p.team.trim() : p.team,
+    season: p.season ? p.season.trim() : p.season
+  }));
+}
 
-    allData = await response.json();
-  
-// Example usage when loading:
 fetch('data.json')
-  .then(response => response.json())
+  .then(res => res.json())
   .then(data => {
     allData = cleanData(data);
     populateFilters(allData);
     renderTable(allData);
-  });
-  
-    function cleanData(data) {
-  return data.map(p => ({
-    ...p,
-    name: p.name ? p.name.trim() : p.name, // remove leading/trailing whitespace
-    team: p.team ? p.team.trim() : p.team, // also clean team names just in case
-    season: p.season ? p.season.trim() : p.season
-  }));
-}
-    // Precompute BA, OBP, formatted AcesWar, and formatted numbers
-    allData.forEach(p => {
-      p.BA = p.atBats ? (p.hits / p.atBats).toFixed(3) : "N/A";
-      p.OBP = p.atBats ? ((p.hits + p.walks) / (p.atBats+ p.walks)).toFixed(3) : "N/A";
-      p.formattedAcesWar = (!p.AcesWar || p.AcesWar === "N/A") ? "N/A" : Number(p.AcesWar).toFixed(2);
-      p.formattedGames = Number(p.games).toLocaleString();
-      p.formattedAtBats = Number(p.atBats).toLocaleString();
-      p.formattedHits = Number(p.hits).toLocaleString();
-      p.formattedRuns = Number(p.runs).toLocaleString();
-      p.formattedWalks = Number(p.walks).toLocaleString();
-    });
-
-    populateFilters(allData);
-    renderTable(allData);
-
-  } catch (err) {
-    console.error('Error loading data:', err);
-  }
-}
-
-function isSubstitute(player) {
-  return player.Sub && player.Sub.toString().trim().toLowerCase() === 'yes';
-}
-
-// Render table using DocumentFragment for faster DOM updates
-function renderTable(data) {
-  const tbody = document.querySelector('#statsTable tbody');
-  tbody.innerHTML = '';
-
-  const fragment = document.createDocumentFragment();
-
-  data.forEach(player => {
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td><a href="player.html?name=${encodeURIComponent(player.name)}">${player.name}</a></td>
-      <td><a href="team.html?team=${encodeURIComponent(player.team)}">${player.team}</a></td>
-      <td>${player.year}</td>
-      <td>${player.season}</td>
-      <td>${player.formattedGames}</td>
-      <td>${player.formattedAtBats}</td>
-      <td>${player.formattedHits}</td>
-      <td>${player.formattedRuns}</td>
-      <td>${player.formattedWalks}</td>
-      <td>${player.formattedAcesWar}</td>
-      <td>${player.BA}</td>
-      <td>${player.OBP}</td>
-      <td>${isSubstitute(player) ? "Yes" : "No"}</td>
-    `;
-    fragment.appendChild(tr);
-  });
-
-  tbody.appendChild(fragment);
-}
-
-// Filter logic
-document.getElementById('yearFilter').addEventListener('change', applyFilters);
-document.getElementById('seasonFilter').addEventListener('change', applyFilters);
+  })
+  .catch(err => console.error("Error loading player data:", err));
 
 function populateFilters(data) {
   const yearSet = new Set();
   const seasonSet = new Set();
 
   data.forEach(p => {
-    if (p.year) yearSet.add(parseInt(p.year)); // ensure numeric
+    if (p.year) yearSet.add(p.year); // already a string, fine for filter
     if (p.season) seasonSet.add(p.season);
   });
 
@@ -107,8 +46,10 @@ function populateFilters(data) {
     opt.textContent = s;
     seasonFilter.appendChild(opt);
   });
-}
 
+  yearFilter.addEventListener('change', applyFilters);
+  seasonFilter.addEventListener('change', applyFilters);
+}
 
 function applyFilters() {
   const selectedYear = document.getElementById('yearFilter').value;
@@ -117,7 +58,7 @@ function applyFilters() {
   let filtered = allData;
 
   if (selectedYear !== 'All') {
-    filtered = filtered.filter(p => p.year == selectedYear); // string vs string
+    filtered = filtered.filter(p => p.year == selectedYear);
   }
   if (selectedSeason !== 'All') {
     filtered = filtered.filter(p => p.season === selectedSeason);
@@ -126,47 +67,56 @@ function applyFilters() {
   renderTable(filtered);
 }
 
-// Sorting logic (kept same as before)
-const table = document.getElementById('statsTable');
-const headers = table.querySelectorAll('th');
-let sortDirection = {};
+function renderTable(data) {
+  const tbody = document.querySelector('#statsTable tbody');
+  tbody.innerHTML = "";
 
-headers.forEach(header => {
-  header.addEventListener('click', () => {
-    const sortKey = header.dataset.sort;
-    const tbody = table.querySelector('tbody');
-    const rows = Array.from(tbody.querySelectorAll('tr'));
-    
-    const currentDir = sortDirection[sortKey] === 'asc' ? 'desc' : 'asc';
-    sortDirection = {};
-    sortDirection[sortKey] = currentDir;
+  data.forEach(p => {
+    const row = document.createElement('tr');
+    row.innerHTML = `
+      <td>${p.year}</td>
+      <td>${p.season}</td>
+      <td><a href="player.html?name=${encodeURIComponent(p.name)}">${p.name}</a></td>
+      <td><a href="team.html?team=${encodeURIComponent(p.team)}">${p.team}</a></td>
+      <td>${p.games.toLocaleString()}</td>
+      <td>${p.atBats.toLocaleString()}</td>
+      <td>${p.hits.toLocaleString()}</td>
+      <td>${p.runs.toLocaleString()}</td>
+      <td>${p.walks.toLocaleString()}</td>
+      <td>${p.Sub}</td>
+      <td>${isNaN(p.AcesWar) ? "N/A" : Number(p.AcesWar).toFixed(2)}</td>
+    `;
+    tbody.appendChild(row);
+  });
+}
 
-    headers.forEach(h => h.classList.remove('sorted-asc','sorted-desc'));
-    header.classList.add(currentDir==='asc' ? 'sorted-asc' : 'sorted-desc');
+// Sorting
+document.querySelectorAll('#statsTable th').forEach(th => {
+  th.addEventListener('click', () => {
+    const field = th.dataset.field;
+    if (!field) return;
 
-    rows.sort((a,b) => {
-      let aText = a.querySelector(`td:nth-child(${header.cellIndex+1})`).textContent;
-      let bText = b.querySelector(`td:nth-child(${header.cellIndex+1})`).textContent;
+    if (currentSortField === field) {
+      currentSortAsc = !currentSortAsc;
+    } else {
+      currentSortField = field;
+      currentSortAsc = true;
+    }
 
-      const numA = parseFloat(aText.replace(/,/g,''));
-      const numB = parseFloat(bText.replace(/,/g,''));
+    const sorted = [...allData].sort((a, b) => {
+      let valA = a[field];
+      let valB = b[field];
 
-      if(!isNaN(numA) && !isNaN(numB)){
-        return currentDir==='asc' ? numA-numB : numB-numA;
-      } else {
-        return currentDir==='asc' ? aText.localeCompare(bText) : bText.localeCompare(aText);
+      if (!isNaN(valA) && !isNaN(valB)) {
+        valA = Number(valA);
+        valB = Number(valB);
       }
+
+      if (valA < valB) return currentSortAsc ? -1 : 1;
+      if (valA > valB) return currentSortAsc ? 1 : -1;
+      return 0;
     });
 
-    tbody.innerHTML = '';
-    const fragment = document.createDocumentFragment();
-    rows.forEach(r => fragment.appendChild(r));
-    tbody.appendChild(fragment);
+    renderTable(sorted);
   });
 });
-
-// Load data on page load
-loadPlayerStats();
-
-
-
