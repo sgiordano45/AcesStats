@@ -11,21 +11,26 @@ if (!currentTeam) {
   document.body.innerHTML = '<h1>Error: No team specified</h1><p><a href="index.html">Return to main page</a></p>';
 } else {
   document.getElementById("team-name").textContent = currentTeam;
+  // Set team logo
+  const logoElement = document.getElementById("team-logo");
+  logoElement.src = `logos/${currentTeam.toLowerCase()}.png`;
+  logoElement.alt = `${currentTeam} Logo`;
+  logoElement.style.display = "inline";
   loadTeamData();
 }
 
 async function loadTeamData() {
-  try {
-    // Check for Kings team and block access
-    if (currentTeam.toLowerCase() === "kings") {
-      document.body.innerHTML = `
-        <h1>Team Not Available</h1>
-        <p>The requested team page is not accessible.</p>
-        <p><a href="teams.html">View all available teams</a> | <a href="index.html">Return to main page</a></p>
-      `;
-      return;
-    }
+  // Check for Kings team first, before any data loading
+  if (currentTeam.toLowerCase() === "kings") {
+    document.body.innerHTML = `
+      <h1>Team Not Available</h1>
+      <p>The requested team page is not accessible.</p>
+      <p><a href="teams.html">View all available teams</a> | <a href="index.html">Return to main page</a></p>
+    `;
+    return;
+  }
 
+  try {
     // Load both statistics and awards data
     const [statsResponse, awardsResponse] = await Promise.all([
       fetch("data.json"),
