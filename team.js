@@ -1,4 +1,5 @@
 let teamData = [];
+let allAwards = [];
 let currentSort = { column: null, dir: "asc" };
 let currentTeam = null;
 
@@ -15,11 +16,19 @@ if (!currentTeam) {
 
 async function loadTeamData() {
   try {
-    const response = await fetch("data.json");
-    if (!response.ok) throw new Error('Failed to load data.json');
-    const data = await response.json();
+    // Load both statistics and awards data
+    const [statsResponse, awardsResponse] = await Promise.all([
+      fetch("data.json"),
+      fetch("awards.json")
+    ]);
     
-    teamData = cleanData(data).filter(p => p.team === currentTeam);
+    if (!statsResponse.ok) throw new Error('Failed to load data.json');
+    if (!awardsResponse.ok) throw new Error('Failed to load awards.json');
+    
+    const statsData = await statsResponse.json();
+    allAwards = await awardsResponse.json();
+    
+    teamData = cleanData(statsData).filter(p => p.team === currentTeam);
     
     if (teamData.length === 0) {
       document.body.innerHTML = `
@@ -35,7 +44,7 @@ async function loadTeamData() {
     console.error("Error loading team data:", error);
     document.body.innerHTML = `
       <h1>Error loading team data</h1>
-      <p>Could not load statistics. Please check that data.json is available.</p>
+      <p>Could not load statistics or awards. Please check that data files are available.</p>
       <p><a href="index.html">Return to main page</a></p>
     `;
   }
@@ -200,7 +209,98 @@ function renderLeadersTable(data) {
     </table>
   `;
   
+  // Add awards section
+  leadersTableHTML += renderAwardsSection(data);
+  
   document.getElementById("leadersText").innerHTML = leadersTableHTML;
+}
+
+function renderAwardsSection(data) {
+  // Get current filter values
+  const yearVal = document.getElementById("yearFilter").value;
+  const seasonVal = document.getElementById("seasonFilter").value;
+  
+  // Filter awards based on current team and year/season filters
+  let filteredAwards = allAwards.filter(award => {
+    // Must match team (or be a league-wide award with a team member)
+    const teamMatch = award.Team === currentTeam;
+    
+    // Must match year filter
+    const yearMatch = yearVal === "All" || award.Year === yearVal;
+    
+    // Must match season filter
+    const seasonMatch = seasonVal === "All" || award.Season === seasonVal;
+    
+    // Must have valid award name
+    const validAward = award.Award && award.Award.trim() !== "";
+    
+    return teamMatch && yearMatch && seasonMatch && validAward;
+  });
+  
+  if (filteredAwards.length === 0) {
+    return '';
+  }
+  
+  // Group awards by category
+  const awardCategories = {
+    'Team MVP': [],
+    'All Aces': [],
+    'Gold Glove': [],
+    'Other Awards': []
+  };
+  
+  filteredAwards.forEach(award => {
+    if (award.Award === 'Team MVP') {
+      awardCategories['Team MVP'].push(award);
+    } else if (award.Award === 'All Aces') {
+      awardCategories['All Aces'].push(award);
+    } else if (award.Award === 'Gold Glove') {
+      awardCategories['Gold Glove'].push(award);
+    } else {
+      awardCategories['Other Awards'].push(award);
+    }
+  });
+  
+  let awardsHTML = `
+    <h3>Team Awards</h3>
+    <table style="margin-bottom: 20px; width: 100%;">
+      <thead>
+        <tr>
+          <th>Award</th>
+          <th>Player</th>
+          <th>Position</th>
+          <th>Year</th>
+        </tr>
+      </thead>
+      <tbody>
+  `;
+  
+  // Render each category
+  Object.entries(awardCategories).forEach(([category, awards]) => {
+    if (awards.length > 0) {
+      awards.forEach((award, index) => {
+        const playerLink = award.Player ? 
+          `<a href="player.html?name=${encodeURIComponent(award.Player)}">${award.Player}</a>` : 
+          '';
+        
+        awardsHTML += `
+          <tr>
+            <td><strong>${award.Award}</strong></td>
+            <td>${playerLink}</td>
+            <td>${award.Position || ''}</td>
+            <td>${award.Year} ${award.Season}</td>
+          </tr>
+        `;
+      });
+    }
+  });
+  
+  awardsHTML += `
+      </tbody>
+    </table>
+  `;
+  
+  return awardsHTML;
 }
 
 function calculateLeaders(data, type) {
