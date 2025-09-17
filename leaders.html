@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Career Leaders - Aces Stats</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .leaders-container {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+    gap: 30px;
+    margin-top: 20px;
+  }
+  
+  .leader-section {
+    background-color: #f9f9f9;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  
+  .leader-section h3 {
+    background-color: #333;
+    color: white;
+    margin: 0;
+    padding: 15px;
+    font-size: 1.2em;
+    text-align: center;
+  }
+  
+  .leader-table {
+    width: 100%;
+    margin: 0;
+  }
+  
+  .leader-table th,
+  .leader-table td {
+    padding: 8px 12px;
+    text-align: left;
+    border-bottom: 1px solid #eee;
+  }
+  
+  .leader-table th {
+    background-color: #f5f5f5;
+    font-weight: bold;
+  }
+  
+  .leader-table tr:nth-child(even) {
+    background-color: #fafafa;
+  }
+  
+  .leader-table tr:hover {
+    background-color: #f0f0f0;
+  }
+  
+  .rank {
+    text-align: center;
+    font-weight: bold;
+    color: #666;
+    width: 40px;
+  }
+  
+  .stat-value {
+    text-align: center;
+    font-weight: bold;
+    min-width: 80px;
+  }
+  
+  .back-nav {
+    margin-bottom: 20px;
+  }
+  
+  .back-nav a {
+    padding: 8px 15px;
+    background-color: #f0f0f0;
+    border: 1px solid #ccc;
+    text-decoration: none;
+    border-radius: 3px;
+    margin-right: 10px;
+  }
+  
+  .back-nav a:hover {
+    background-color: #e0e0e0;
+  }
+  
+  .minimum-note {
+    font-style: italic;
+    color: #666;
+    text-align: center;
+    padding: 10px;
+    font-size: 0.9em;
+    background-color: #f5f5f5;
+  }
+</style>
+</head>
+<body>
+<div class="back-nav">
+  <a href="index.html">← Back to Main</a>
+  <a href="teams.html">All Teams</a>
+  <a href="awards.html">League Awards</a>
+</div>
+
+<h1>Mountainside Aces - Career Leaders</h1>
+
+<div id="leaders-container" class="leaders-container">
+  <!-- Leader tables will be generated dynamically -->
+</div>
+
+<script>
+let allData = [];
+
+fetch("data.json")
+  .then(res => res.json())
+  .then(data => {
+    allData = cleanData(data);
+    generateLeaderboards();
+  })
+  .catch(error => {
+    console.error("Error loading data:", error);
+    document.getElementById("leaders-container").innerHTML = 
+      '<p>Error loading statistics data. Please check that data.json is available.</p>';
+  });
+
+function cleanData(data) {
+  return data.map(p => ({
+    ...p,
+    name: p.name ? p.name.trim() : "",
+    team: p.team ? p.team.trim() : "",
+    games: Number(p.games) || 0,
+    atBats: Number(p.atBats) || 0,
+    hits: Number(p.hits) || 0,
+    runs: Number(p.runs) || 0,
+    walks: Number(p.walks) || 0,
+    AcesWar: p.AcesWar === "N/A" || !p.AcesWar ? "N/A" : Number(p.AcesWar)
+  }));
+}
+
+function aggregatePlayerStats() {
+  const playerStats = {};
+  
+  allData.forEach(p => {
+    if (!p.name) return;
+    
+    if (!playerStats[p.name]) {
+      playerStats[p.name] = {
+        name: p.name,
+        games: 0,
+        atBats: 0,
+        hits: 0,
+        runs: 0,
+        walks: 0,
+        plateAppearances: 0,
+        acesWarValues: []
+      };
+    }
+    
+    playerStats[p.name].games += p.games;
+    playerStats[p.name].atBats += p.atBats;
+    playerStats[p.name].hits += p.hits;
+    playerStats[p.name].runs += p.runs;
+    playerStats[p.name].walks += p.walks;
+    playerStats[p.name].plateAppearances += (p.atBats + p.walks);
+    
+    if (p.AcesWar !== "N/A" && !isNaN(p.AcesWar)) {
+      playerStats[p.name].acesWarValues.push(Number(p.AcesWar));
+    }
+  });
+  
+  // Calculate derived stats
+  return Object.values(playerStats).map(p => ({
+    ...p,
+    battingAverage: p.atBats > 0 ? p.hits / p.atBats : 0,
+    onBasePercentage: p.plateAppearances > 0 ? (p.hits + p.walks) / p.plateAppearances : 0,
+    avgAcesWar: p.acesWarValues.length > 0 ? 
+      p.acesWarValues.reduce((a, b) => a + b, 0) / p.acesWarValues.length : 0
+  }));
+}
+
+function generateLeaderboards() {
+  const players = aggregatePlayerStats();
+  const container = document.getElementById("leaders-container");
+  
+  // Define leaderboard categories
+  const categories = [
+    {
+      title: "Games Played",
+      stat: "games",
+      format: (val) => val.toString(),
+      minimum: 0
+    },
+    {
+      title: "At-Bats",
+      stat: "atBats", 
+      format: (val) => val.toString(),
+      minimum: 0
+    },
+    {
+      title: "Hits",
+      stat: "hits",
+      format: (val) => val.toString(), 
+      minimum: 0
+    },
+    {
+      title: "Runs Scored",
+      stat: "runs",
+      format: (val) => val.toString(),
+      minimum: 0
+    },
+    {
+      title: "Walks",
+      stat: "walks",
+      format: (val) => val.toString(),
+      minimum: 0
+    },
+    {
+      title: "Batting Average",
+      stat: "battingAverage",
+      format: (val) => val.toFixed(3),
+      minimum: 40,
+      minimumField: "plateAppearances",
+      minimumNote: "Minimum 40 plate appearances"
+    },
+    {
+      title: "On-Base Percentage", 
+      stat: "onBasePercentage",
+      format: (val) => val.toFixed(3),
+      minimum: 40,
+      minimumField: "plateAppearances", 
+      minimumNote: "Minimum 40 plate appearances"
+    },
+    {
+      title: "AcesWar (Average)",
+      stat: "avgAcesWar",
+      format: (val) => val.toFixed(2),
+      minimum: 0,
+      filter: (p) => p.acesWarValues.length > 0
+    }
+  ];
+  
+  categories.forEach(category => {
+    const leaderHTML = generateLeaderTable(players, category);
+    container.innerHTML += leaderHTML;
+  });
+}
+
+function generateLeaderTable(players, category) {
+  // Filter players based on minimum requirements
+  let qualifyingPlayers = players.filter(p => {
+    if (category.filter && !category.filter(p)) return false;
+    if (category.minimumField) {
+      return p[category.minimumField] >= category.minimum;
+    }
+    return p[category.stat] >= category.minimum;
+  });
+  
+  // Sort by the stat (descending)
+  qualifyingPlayers.sort((a, b) => b[category.stat] - a[category.stat]);
+  
+  // Take top 10
+  const top10 = qualifyingPlayers.slice(0, 10);
+  
+  let html = `
+    <div class="leader-section">
+      <h3>${category.title}</h3>
+      ${category.minimumNote ? `<div class="minimum-note">${category.minimumNote}</div>` : ''}
+      <table class="leader-table">
+        <thead>
+          <tr>
+            <th class="rank">Rank</th>
+            <th>Player</th>
+            <th class="stat-value">${category.title}</th>
+          </tr>
+        </thead>
+        <tbody>
+  `;
+  
+  top10.forEach((player, index) => {
+    const rank = index + 1;
+    const statValue = category.format(player[category.stat]);
+    
+    html += `
+      <tr>
+        <td class="rank">${rank}</td>
+        <td><a href="player.html?name=${encodeURIComponent(player.name)}">${player.name}</a></td>
+        <td class="stat-value">${statValue}</td>
+      </tr>
+    `;
+  });
+  
+  html += `
+        </tbody>
+      </table>
+    </div>
+  `;
+  
+  return html;
+}
+</script>
+</body>
+</html>
