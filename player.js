@@ -1,4 +1,5 @@
 let playerName = new URLSearchParams(window.location.search).get('name');
+let allAwards = [];
 
 if (!playerName) {
   document.body.innerHTML = '<h1>Error: No player specified</h1><p><a href="index.html">Return to main page</a></p>';
@@ -9,9 +10,19 @@ if (!playerName) {
 
 async function loadPlayerData() {
   try {
-    const response = await fetch('data.json');
-    if (!response.ok) throw new Error('Failed to load data.json');
-    const allPlayers = await response.json();
+    // Load both statistics and awards data
+    const [statsResponse, awardsResponse] = await Promise.all([
+      fetch('data.json'),
+      fetch('awards.json')
+    ]);
+    
+    if (!statsResponse.ok) throw new Error('Failed to load data.json');
+    // Awards are optional - don't fail if missing
+    if (awardsResponse.ok) {
+      allAwards = await awardsResponse.json();
+    }
+    
+    const allPlayers = await statsResponse.json();
 
     // Filter for this player first
     const rawPlayerData = allPlayers.filter(p => p.name && p.name.trim() === playerName);
@@ -57,6 +68,7 @@ async function loadPlayerData() {
     renderTable('regularStatsTable', regularSeasons);
     renderTable('subStatsTable', subSeasons);
     renderCareerStats(playerData, regularSeasons, subSeasons);
+    renderPlayerAwards(playerData);
 
   } catch (err) {
     console.error("Error loading player data:", err);
