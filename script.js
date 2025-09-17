@@ -92,12 +92,39 @@ function renderTable(data) {
     leaders[stat] = maxPlayer.name || "N/A";
   });
 
+  // BA, OBP, AcesWar Leaders
+  let bestBA = data.reduce((prev, curr) => {
+    let ba = curr.atBats > 0 ? curr.hits / curr.atBats : -1;
+    let prevBa = prev.atBats > 0 ? prev.hits / prev.atBats : -1;
+    return ba > prevBa ? curr : prev;
+  }, {});
+  leaders.BA = bestBA.name || "N/A";
+
+  let bestOBP = data.reduce((prev, curr) => {
+    let obp = (curr.atBats + curr.walks) > 0
+      ? (curr.hits + curr.walks) / (curr.atBats + curr.walks)
+      : -1;
+    let prevObp = (prev.atBats + prev.walks) > 0
+      ? (prev.hits + prev.walks) / (prev.atBats + prev.walks)
+      : -1;
+    return obp > prevObp ? curr : prev;
+  }, {});
+  leaders.OBP = bestOBP.name || "N/A";
+
+  let bestWAR = data.reduce((prev, curr) => {
+    let war = (!isNaN(curr.AcesWar) && curr.AcesWar !== null) ? Number(curr.AcesWar) : -Infinity;
+    let prevWar = (!isNaN(prev.AcesWar) && prev.AcesWar !== null) ? Number(prev.AcesWar) : -Infinity;
+    return war > prevWar ? curr : prev;
+  }, {});
+  leaders.AcesWar = bestWAR.name || "N/A";
+
   // Update summary text
   document.getElementById("totalsText").textContent =
     `Totals – Games: ${totals.games}, At Bats: ${totals.atBats}, Hits: ${totals.hits}, Runs: ${totals.runs}, Walks: ${totals.walks}`;
 
   document.getElementById("leadersText").textContent =
-    `Leaders – Games: ${leaders.games}, At Bats: ${leaders.atBats}, Hits: ${leaders.hits}, Runs: ${leaders.runs}, Walks: ${leaders.walks}`;
+    `Leaders – Games: ${leaders.games}, At Bats: ${leaders.atBats}, Hits: ${leaders.hits}, Runs: ${leaders.runs}, Walks: ${leaders.walks}, 
+    BA: ${leaders.BA}, OBP: ${leaders.OBP}, AcesWar: ${leaders.AcesWar}`;
 
   // Rows
   data.forEach(p => {
