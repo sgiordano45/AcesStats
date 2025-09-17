@@ -148,8 +148,10 @@ function renderTable(data) {
   document.getElementById("totalsText").textContent =
     `Totals — Games: ${totals.games}, At Bats: ${totals.atBats}, Hits: ${totals.hits}, Runs: ${totals.runs}, Walks: ${totals.walks}`;
 
-  document.getElementById("leadersText").textContent =
-    `Leaders — Games: ${leaders.games}, At Bats: ${leaders.atBats}, Hits: ${leaders.hits}, Runs: ${leaders.runs}, Walks: ${leaders.walks}, BA: ${leaders.BA}, OBP: ${leaders.OBP}, AcesWar: ${leaders.AcesWar}`;
+  document.getElementById("leadersText").innerHTML = `
+    Season Leaders — Games: ${leaders.games}, At Bats: ${leaders.atBats}, Hits: ${leaders.hits}, Runs: ${leaders.runs}, Walks: ${leaders.walks}, BA: ${leaders.BA}, OBP: ${leaders.OBP}, AcesWar: ${leaders.AcesWar}<br>
+    <a href="leaders.html" style="color: #0066cc; text-decoration: none; font-weight: normal;">Career Leaders →</a>
+  `;
 
   // Generate table rows
   data.forEach(p => {
