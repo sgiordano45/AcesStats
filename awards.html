@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>League Awards - Aces Stats</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .awards-filters {
+    margin: 20px 0;
+    padding: 15px;
+    background-color: #f0f0f0;
+    border-radius: 5px;
+  }
+  
+  .awards-filters select, .awards-filters label {
+    margin: 5px;
+  }
+  
+  .awards-section {
+    margin: 30px 0;
+  }
+  
+  .awards-section h3 {
+    background-color: #333;
+    color: white;
+    padding: 10px;
+    margin: 0 0 10px 0;
+    border-radius: 5px 5px 0 0;
+  }
+  
+  .back-nav {
+    margin-bottom: 20px;
+  }
+  
+  .back-nav a {
+    padding: 8px 15px;
+    background-color: #f0f0f0;
+    border: 1px solid #ccc;
+    text-decoration: none;
+    border-radius: 3px;
+    margin-right: 10px;
+  }
+  
+  .back-nav a:hover {
+    background-color: #e0e0e0;
+  }
+  
+  .award-table {
+    margin-bottom: 40px;
+  }
+  
+  .no-awards {
+    text-align: center;
+    color: #666;
+    font-style: italic;
+    padding: 20px;
+  }
+</style>
+</head>
+<body>
+<div class="back-nav">
+  <a href="index.html">← Back to Main</a>
+  <a href="teams.html">All Teams</a>
+</div>
+
+<h1>Mountainside Aces - League Awards</h1>
+
+<div class="awards-filters">
+  <label for="yearFilter">Year:</label>
+  <select id="yearFilter">
+    <option value="All">All Years</option>
+  </select>
+
+  <label for="seasonFilter">Season:</label>
+  <select id="seasonFilter">
+    <option value="All">All Seasons</option>
+  </select>
+  
+  <label for="awardTypeFilter">Award Type:</label>
+  <select id="awardTypeFilter">
+    <option value="All">All Awards</option>
+  </select>
+</div>
+
+<div id="awards-content">
+  <!-- Awards tables will be generated dynamically -->
+</div>
+
+<script>
+let allAwards = [];
+let allStats = [];
+
+Promise.all([
+  fetch("awards.json").then(res => res.json()),
+  fetch("data.json").then(res => res.json())
+])
+.then(([awards, stats]) => {
+  allAwards = awards.filter(award => award.Award && award.Award.trim() !== "");
+  allStats = stats;
+  populateFilters();
+  renderAwards();
+})
+.catch(error => {
+  console.error("Error loading data:", error);
+  document.getElementById("awards-content").innerHTML = 
+    '<div class="no-awards">Error loading awards data. Please check that the data files are available.</div>';
+});
+
+function populateFilters() {
+  // Populate year filter
+  const years = [...new Set(allAwards.map(a => a.Year))].sort((a, b) => b - a);
+  const yearFilter = document.getElementById("yearFilter");
+  years.forEach(year => {
+    const option = document.createElement("option");
+    option.value = year;
+    option.textContent = year;
+    yearFilter.appendChild(option);
+  });
+
+  // Populate season filter
+  const seasons = [...new Set(allAwards.map(a => a.Season))].sort();
+  const seasonFilter = document.getElementById("seasonFilter");
+  seasons.forEach(season => {
+    const option = document.createElement("option");
+    option.value = season;
+    option.textContent = season;
+    seasonFilter.appendChild(option);
+  });
+
+  // Populate award type filter
+  const awardTypes = [...new Set(allAwards.map(a => a.Award))].sort();
+  const awardTypeFilter = document.getElementById("awardTypeFilter");
+  awardTypes.forEach(award => {
+    const option = document.createElement("option");
+    option.value = award;
+    option.textContent = award;
+    awardTypeFilter.appendChild(option);
+  });
+
+  // Add event listeners
+  yearFilter.addEventListener("change", renderAwards);
+  seasonFilter.addEventListener("change", renderAwards);
+  awardTypeFilter.addEventListener("change", renderAwards);
+}
+
+function renderAwards() {
+  const yearVal = document.getElementById("yearFilter").value;
+  const seasonVal = document.getElementById("seasonFilter").value;
+  const awardTypeVal = document.getElementById("awardTypeFilter").value;
+
+  // Filter awards based on selections
+  let filteredAwards = allAwards.filter(award => {
+    return (yearVal === "All" || award.Year === yearVal) &&
+           (seasonVal === "All" || award.Season === seasonVal) &&
+           (awardTypeVal === "All" || award.Award === awardTypeVal);
+  });
+
+  if (filteredAwards.length === 0) {
+    document.getElementById("awards-content").innerHTML = 
+      '<div class="no-awards">No awards match the current filters.</div>';
+    return;
+  }
+
+  // Group awards by year and season
+  const groupedAwards = {};
+  filteredAwards.forEach(award => {
+    const key = `${award.Year} ${award.Season}`;
+    if (!groupedAwards[key]) {
+      groupedAwards[key] = [];
+    }
+    groupedAwards[key].push(award);
+  });
+
+  // Sort groups by year/season (most recent first)
+  const sortedGroups = Object.entries(groupedAwards).sort((a, b) => {
+    const [yearA, seasonA] = a[0].split(' ');
+    const [yearB, seasonB] = b[0].split(' ');
+    if (yearA !== yearB) return yearB - yearA;
+    return seasonB.localeCompare(seasonA);
+  });
+
+  let html = '';
+
+  sortedGroups.forEach(([period, awards]) => {
+    html += `<div class="awards-section">`;
+    html += `<h3>${period} Awards</h3>`;
+    
+    // Group awards by type within each period
+    const awardsByType = {};
+    awards.forEach(award => {
+      if (!awardsByType[award.Award]) {
+        awardsByType[award.Award] = [];
+      }
+      awardsByType[award.Award].push(award);
+    });
+
+    // Order award types logically
+    const awardOrder = [
+      'Team MVP', 'All Aces', 'Gold Glove', 'Team of the Year',
+      'Rookie of the Year', 'Most Improved Ace', 'Comeback Player of the Year',
+      'Slugger of the Year', 'Pitcher of the Year', 'Captain of the Year',
+      'Al Pineda Good Guy Award', 'Iron Man Award', 'Sub of the Year',
+      'Andrew Streaman Boner Award', 'Erik Lund Perservenance Award',
+      'Mr. Streaman Award for Excellence'
+    ];
+
+    // Display awards in order
+    awardOrder.forEach(awardType => {
+      if (awardsByType[awardType]) {
+        html += renderAwardTypeTable(awardType, awardsByType[awardType]);
+        delete awardsByType[awardType];
+      }
+    });
+
+    // Display any remaining award types
+    Object.entries(awardsByType).forEach(([awardType, awardList]) => {
+      html += renderAwardTypeTable(awardType, awardList);
+    });
+
+    html += `</div>`;
+  });
+
+  document.getElementById("awards-content").innerHTML = html;
+}
+
+function renderAwardTypeTable(awardType, awards) {
+  // Sort awards within type
+  awards.sort((a, b) => {
+    if (a.Position && b.Position && a.Position !== b.Position) {
+      return a.Position.localeCompare(b.Position);
+    }
+    return a.Player.localeCompare(b.Player);
+  });
+
+  let html = `
+    <div class="award-table">
+      <h4>${awardType}</h4>
+      <table style="width: 100%; margin-bottom: 20px;">
+        <thead>
+          <tr>
+            <th>Player</th>
+            <th>Team</th>
+            ${awards.some(a => a.Position) ? '<th>Position</th>' : ''}
+          </tr>
+        </thead>
+        <tbody>
+  `;
+
+  awards.forEach(award => {
+    const playerLink = award.Player ? 
+      `<a href="player.html?name=${encodeURIComponent(award.Player)}">${award.Player}</a>` : 
+      'Team Award';
+    const teamLink = award.Team ? 
+      `<a href="team.html?team=${encodeURIComponent(award.Team)}">${award.Team}</a>` : 
+      '';
+
+    html += `
+      <tr>
+        <td>${playerLink}</td>
+        <td>${teamLink}</td>
+        ${awards.some(a => a.Position) ? `<td>${award.Position || ''}</td>` : ''}
+      </tr>
+    `;
+  });
+
+  html += `
+        </tbody>
+      </table>
+    </div>
+  `;
+
+  return html;
+}
+</script>
+</body>
+</html>
