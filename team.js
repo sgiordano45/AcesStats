@@ -1,54 +1,44 @@
 let teamData = [];
-let currentTeam = "";
-let currentSortField = null;
-let currentSortAsc = true;
+let currentSort = { column: null, dir: "asc" };
 
-// Trim whitespace in names/teams/seasons
-function cleanData(data) {
-  return data.map(p => ({
-    ...p,
-    name: p.name ? p.name.trim() : "",
-    team: p.team ? p.team.trim() : "",
-    season: p.season ? p.season.trim() : ""
-  }));
-}
-
-// Load JSON and filter for current team
-fetch('data.json')
+fetch("data.json")
   .then(res => res.json())
   .then(data => {
     const params = new URLSearchParams(window.location.search);
-    currentTeam = params.get('team') || "";
+    const currentTeam = params.get("team");
     teamData = cleanData(data).filter(p => p.team === currentTeam);
 
     document.getElementById("team-name").textContent = currentTeam;
     populateFilters(teamData);
     renderTable(teamData);
-  })
-  .catch(err => console.error("Error loading team data:", err));
-
-// Populate Year/Season dropdowns dynamically
-function populateFilters(data) {
-  const yearSet = new Set();
-  const seasonSet = new Set();
-
-  data.forEach(p => {
-    if (p.year) yearSet.add(p.year);
-    if (p.season) seasonSet.add(p.season);
   });
+
+function cleanData(data) {
+  return data.map(p => ({
+    ...p,
+    name: p.name ? p.name.trim() : "",
+    team: p.team ? p.team.trim() : "",
+    season: p.season ? p.season.trim() : "",
+    year: p.year ? String(p.year).trim() : "",
+  }));
+}
+
+function populateFilters(data) {
+  const years = [...new Set(data.map(p => p.year))].sort();
+  const seasons = [...new Set(data.map(p => p.season))].sort();
 
   const yearFilter = document.getElementById("yearFilter");
   const seasonFilter = document.getElementById("seasonFilter");
 
-  [...yearSet].sort((a,b)=>b-a).forEach(y => {
-    const opt = document.createElement("option");
+  years.forEach(y => {
+    let opt = document.createElement("option");
     opt.value = y;
     opt.textContent = y;
     yearFilter.appendChild(opt);
   });
 
-  [...seasonSet].sort().forEach(s => {
-    const opt = document.createElement("option");
+  seasons.forEach(s => {
+    let opt = document.createElement("option");
     opt.value = s;
     opt.textContent = s;
     seasonFilter.appendChild(opt);
@@ -58,106 +48,125 @@ function populateFilters(data) {
   seasonFilter.addEventListener("change", applyFilters);
 }
 
-// Apply filters and rerender table
 function applyFilters() {
   const yearVal = document.getElementById("yearFilter").value;
   const seasonVal = document.getElementById("seasonFilter").value;
 
-  let filtered = teamData.filter(p => 
-    (yearVal === "" || p.year == yearVal) &&
-    (seasonVal === "" || p.season === seasonVal)
+  let filtered = teamData.filter(
+    p =>
+      (yearVal === "" || p.year === yearVal) &&
+      (seasonVal === "" || p.season === seasonVal)
   );
 
   renderTable(filtered);
 }
 
-// Render table
 function renderTable(data) {
   const tbody = document.querySelector("#team-stats-table tbody");
   tbody.innerHTML = "";
 
+  // Totals
+  let totals = {
+    games: 0,
+    atBats: 0,
+    hits: 0,
+    runs: 0,
+    walks: 0,
+  };
+
   data.forEach(p => {
-    const atBats = Number(p.atBats) || 0;
-    const hits = Number(p.hits) || 0;
-    const walks = Number(p.walks) || 0;
-    const games = Number(p.games) || 0;
-    const runs = Number(p.runs) || 0;
-    const AcesWar = !isNaN(Number(p.AcesWar)) ? Number(p.AcesWar).toFixed(2) : "N/A";
+    totals.games += Number(p.games) || 0;
+    totals.atBats += Number(p.atBats) || 0;
+    totals.hits += Number(p.hits) || 0;
+    totals.runs += Number(p.runs) || 0;
+    totals.walks += Number(p.walks) || 0;
+  });
 
-    const BA = atBats > 0 ? (hits / atBats).toFixed(3) : "0.000";
-    const OBP = (atBats + walks) > 0 ? ((hits + walks) / (atBats + walks)).toFixed(3) : "0.000";
+  // Leaders
+  let leaders = {};
+  ["games", "atBats", "hits", "runs", "walks"].forEach(stat => {
+    let maxPlayer = data.reduce((prev, curr) =>
+      (Number(curr[stat]) || 0) > (Number(prev[stat]) || 0) ? curr : prev,
+      {}
+    );
+    leaders[stat] = maxPlayer.name || "N/A";
+  });
 
-    const row = document.createElement('tr');
+  document.getElementById("totalsText").textContent =
+    `Totals – Games: ${totals.games}, At Bats: ${totals.atBats}, Hits: ${totals.hits}, Runs: ${totals.runs}, Walks: ${totals.walks}`;
+
+  document.getElementById("leadersText").textContent =
+    `Leaders – Games: ${leaders.games}, At Bats: ${leaders.atBats}, Hits: ${leaders.hits}, Runs: ${leaders.runs}, Walks: ${leaders.walks}`;
+
+  // Rows
+  data.forEach(p => {
+    const row = document.createElement("tr");
+    const BA = p.atBats > 0 ? (p.hits / p.atBats).toFixed(3) : "N/A";
+    const OBP =
+      p.atBats + p.walks > 0
+        ? ((Number(p.hits) + Number(p.walks)) / (Number(p.atBats) + Number(p.walks))).toFixed(3)
+        : "N/A";
+    const AcesWar = p.AcesWar && !isNaN(p.AcesWar)
+      ? Number(p.AcesWar).toFixed(2)
+      : "N/A";
+
     row.innerHTML = `
-      <td>${p.year ?? ""}</td>
-      <td>${p.season ?? ""}</td>
-      <td><a href="player.html?name=${encodeURIComponent(p.name ?? "")}">${p.name ?? ""}</a></td>
-      <td>${games.toLocaleString()}</td>
-      <td>${atBats.toLocaleString()}</td>
-      <td>${hits.toLocaleString()}</td>
-      <td>${runs.toLocaleString()}</td>
-      <td>${walks.toLocaleString()}</td>
+      <td>${p.year}</td>
+      <td>${p.season}</td>
+      <td><a href="player.html?name=${encodeURIComponent(p.name)}">${p.name}</a></td>
+      <td>${p.games}</td>
+      <td>${p.atBats}</td>
+      <td>${p.hits}</td>
+      <td>${p.runs}</td>
+      <td>${p.walks}</td>
       <td>${AcesWar}</td>
       <td>${BA}</td>
       <td>${OBP}</td>
-      <td>${p.Sub ?? ""}</td>
+      <td>${p.Sub || ""}</td>
     `;
     tbody.appendChild(row);
   });
 
-  // Update sort arrows in header
-  document.querySelectorAll('#team-stats-table th').forEach((th, index) => {
-    th.classList.remove('asc', 'desc');
-    th.textContent = th.textContent.replace(/ ▲| ▼/g, '');
-    if (index === currentSortField) {
-      th.textContent += currentSortAsc ? ' ▲' : ' ▼';
-    }
+  attachSorting();
+}
+
+// Sorting
+function attachSorting() {
+  const headers = document.querySelectorAll("#team-stats-table th");
+  headers.forEach((th, idx) => {
+    th.onclick = () => sortTable(idx);
   });
 }
 
-// Make all headers sortable
-document.querySelectorAll('#team-stats-table th').forEach((th, index) => {
-  th.style.cursor = 'pointer';
-  th.addEventListener('click', () => {
-    if (!th) return;
+function sortTable(n) {
+  const table = document.getElementById("team-stats-table");
+  const rows = Array.from(table.rows).slice(1);
 
-    if (currentSortField === index) currentSortAsc = !currentSortAsc;
-    else {
-      currentSortField = index;
-      currentSortAsc = true;
+  let dir = currentSort.column === n && currentSort.dir === "asc" ? "desc" : "asc";
+  currentSort = { column: n, dir };
+
+  rows.sort((a, b) => {
+    let x = a.cells[n].innerText;
+    let y = b.cells[n].innerText;
+
+    let xVal = parseFloat(x.replace(/,/g, ""));
+    let yVal = parseFloat(y.replace(/,/g, ""));
+
+    if (n === 8) { // AcesWar column index
+      if (x === "N/A") return 1;
+      if (y === "N/A") return -1;
     }
 
-    const sorted = [...teamData].sort((a, b) => {
-      let valA, valB;
-
-      switch(index) {
-        case 0: valA = a.year; valB = b.year; break;
-        case 1: valA = a.season; valB = b.season; break;
-        case 2: valA = a.name; valB = b.name; break;
-        case 3: valA = Number(a.games) || 0; valB = Number(b.games) || 0; break;
-        case 4: valA = Number(a.atBats) || 0; valB = Number(b.atBats) || 0; break;
-        case 5: valA = Number(a.hits) || 0; valB = Number(b.hits) || 0; break;
-        case 6: valA = Number(a.runs) || 0; valB = Number(b.runs) || 0; break;
-        case 7: valA = Number(a.walks) || 0; valB = Number(b.walks) || 0; break;
-        case 8: 
-          valA = !isNaN(Number(a.AcesWar)) ? Number(a.AcesWar) : (currentSortAsc ? -Infinity : Infinity);
-          valB = !isNaN(Number(b.AcesWar)) ? Number(b.AcesWar) : (currentSortAsc ? -Infinity : Infinity);
-          break;
-        case 9: valA = (Number(a.hits)/Number(a.atBats)) || 0; valB = (Number(b.hits)/Number(b.atBats)) || 0; break;
-        case 10: valA = ((Number(a.hits)+Number(a.walks))/(Number(a.atBats)+Number(a.walks))) || 0;
-                 valB = ((Number(b.hits)+Number(b.walks))/(Number(b.atBats)+Number(b.walks))) || 0; break;
-        case 11: valA = a.Sub ?? ""; valB = b.Sub ?? ""; break;
-        default: valA = ""; valB = "";
-      }
-
-      if (typeof valA === 'string') valA = valA.toLowerCase();
-      if (typeof valB === 'string') valB = valB.toLowerCase();
-
-      if (valA < valB) return currentSortAsc ? -1 : 1;
-      if (valA > valB) return currentSortAsc ? 1 : -1;
-      return 0;
-    });
-
-    renderTable(sorted);
+    if (!isNaN(xVal) && !isNaN(yVal)) {
+      return dir === "asc" ? xVal - yVal : yVal - xVal;
+    }
+    return dir === "asc"
+      ? x.localeCompare(y)
+      : y.localeCompare(x);
   });
-});
+
+  rows.forEach(r => table.tBodies[0].appendChild(r));
+
+  document.querySelectorAll("#team-stats-table th").forEach(th => th.classList.remove("asc", "desc"));
+  table.rows[0].cells[n].classList.add(dir);
+}
