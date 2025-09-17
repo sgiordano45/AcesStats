@@ -241,7 +241,31 @@ function renderAwardsSection(data) {
     return '';
   }
   
-  // Group awards by category
+  // Consolidate awards by player and award type
+  const consolidatedAwards = {};
+  
+  filteredAwards.forEach(award => {
+    const key = `${award.Player}|${award.Award}|${award.Position || ''}`;
+    
+    if (!consolidatedAwards[key]) {
+      consolidatedAwards[key] = {
+        player: award.Player,
+        award: award.Award,
+        position: award.Position || '',
+        years: []
+      };
+    }
+    
+    consolidatedAwards[key].years.push(`${award.Year} ${award.Season}`);
+  });
+  
+  // Convert to array and sort
+  const consolidatedArray = Object.values(consolidatedAwards).map(item => ({
+    ...item,
+    years: item.years.sort((a, b) => b.localeCompare(a)) // Most recent first
+  }));
+  
+  // Group by award category for display
   const awardCategories = {
     'Team MVP': [],
     'All Aces': [],
@@ -249,15 +273,15 @@ function renderAwardsSection(data) {
     'Other Awards': []
   };
   
-  filteredAwards.forEach(award => {
-    if (award.Award === 'Team MVP') {
-      awardCategories['Team MVP'].push(award);
-    } else if (award.Award === 'All Aces') {
-      awardCategories['All Aces'].push(award);
-    } else if (award.Award === 'Gold Glove') {
-      awardCategories['Gold Glove'].push(award);
+  consolidatedArray.forEach(item => {
+    if (item.award === 'Team MVP') {
+      awardCategories['Team MVP'].push(item);
+    } else if (item.award === 'All Aces') {
+      awardCategories['All Aces'].push(item);
+    } else if (item.award === 'Gold Glove') {
+      awardCategories['Gold Glove'].push(item);
     } else {
-      awardCategories['Other Awards'].push(award);
+      awardCategories['Other Awards'].push(item);
     }
   });
   
@@ -269,7 +293,7 @@ function renderAwardsSection(data) {
           <th>Award</th>
           <th>Player</th>
           <th>Position</th>
-          <th>Year</th>
+          <th>Years</th>
         </tr>
       </thead>
       <tbody>
@@ -278,17 +302,23 @@ function renderAwardsSection(data) {
   // Render each category
   Object.entries(awardCategories).forEach(([category, awards]) => {
     if (awards.length > 0) {
-      awards.forEach((award, index) => {
-        const playerLink = award.Player ? 
-          `<a href="player.html?name=${encodeURIComponent(award.Player)}">${award.Player}</a>` : 
+      // Sort by player name within each category
+      awards.sort((a, b) => a.player.localeCompare(b.player));
+      
+      awards.forEach(item => {
+        const playerLink = item.player ? 
+          `<a href="player.html?name=${encodeURIComponent(item.player)}">${item.player}</a>` : 
           '';
+        
+        const yearsDisplay = item.years.join(', ');
+        const countDisplay = item.years.length > 1 ? ` (${item.years.length}×)` : '';
         
         awardsHTML += `
           <tr>
-            <td><strong>${award.Award}</strong></td>
+            <td><strong>${item.award}${countDisplay}</strong></td>
             <td>${playerLink}</td>
-            <td>${award.Position || ''}</td>
-            <td>${award.Year} ${award.Season}</td>
+            <td>${item.position}</td>
+            <td>${yearsDisplay}</td>
           </tr>
         `;
       });
