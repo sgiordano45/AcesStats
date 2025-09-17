@@ -10,26 +10,15 @@ currentTeam = params.get("team");
 if (!currentTeam) {
   document.body.innerHTML = '<h1>Error: No team specified</h1><p><a href="index.html">Return to main page</a></p>';
 } else {
-  // Check for Kings with explicit logging
-  const teamLower = currentTeam.toLowerCase().trim();
-  
-  if (teamLower === "kings") {
-    document.body.innerHTML = `
-      <h1>Team Not Available</h1>
-      <p>The requested team page is not accessible.</p>
-      <p><a href="teams.html">View all available teams</a> | <a href="index.html">Return to main page</a></p>
-    `;
-  } else {
-    document.getElementById("team-name").textContent = currentTeam;
-    // Set team logo
-    const logoElement = document.getElementById("team-logo");
-    if (logoElement) {
-      logoElement.src = `logos/${currentTeam.toLowerCase()}.png`;
-      logoElement.alt = `${currentTeam} Logo`;
-      logoElement.style.display = "inline";
-    }
-    loadTeamData();
+  document.getElementById("team-name").textContent = currentTeam;
+  // Set team logo
+  const logoElement = document.getElementById("team-logo");
+  if (logoElement) {
+    logoElement.src = `logos/${currentTeam.toLowerCase()}.png`;
+    logoElement.alt = `${currentTeam} Logo`;
+    logoElement.style.display = "inline";
   }
+  loadTeamData();
 }
 
 async function loadTeamData() {
