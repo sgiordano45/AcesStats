@@ -134,7 +134,7 @@ function renderTable(data) {
       curr[stat] > prev[stat] ? curr : prev,
       { [stat]: -1 }
     );
-    leaders[stat] = maxPlayer.name || "N/A";
+    leaders[stat] = maxPlayer.name ? `${maxPlayer.name} (${maxPlayer[stat]})` : "N/A";
   });
 
   // Batting Average leader (minimum 10 at-bats)
@@ -143,7 +143,8 @@ function renderTable(data) {
     let prevBA = prev.atBats > 0 ? prev.hits / prev.atBats : 0;
     return currBA > prevBA ? curr : prev;
   }, { atBats: 0, hits: 0 });
-  leaders.BA = bestBA.name || "N/A";
+  leaders.BA = bestBA.name ? 
+    `${bestBA.name} (${(bestBA.hits / bestBA.atBats).toFixed(3)})` : "N/A";
 
   // On-Base Percentage leader
   let bestOBP = qualifyingPlayers.reduce((prev, curr) => {
@@ -155,7 +156,8 @@ function renderTable(data) {
       : 0;
     return currOBP > prevOBP ? curr : prev;
   }, { atBats: 0, hits: 0, walks: 0 });
-  leaders.OBP = bestOBP.name || "N/A";
+  leaders.OBP = bestOBP.name ? 
+    `${bestOBP.name} (${((bestOBP.hits + bestOBP.walks) / (bestOBP.atBats + bestOBP.walks)).toFixed(3)})` : "N/A";
 
   // AcesWar leader
   let bestWAR = data.reduce((prev, curr) => {
@@ -163,7 +165,8 @@ function renderTable(data) {
     let prevWAR = (prev.AcesWar !== "N/A" && !isNaN(prev.AcesWar)) ? Number(prev.AcesWar) : -Infinity;
     return currWAR > prevWAR ? curr : prev;
   }, { AcesWar: -Infinity });
-  leaders.AcesWar = bestWAR.name || "N/A";
+  leaders.AcesWar = bestWAR.name ? 
+    `${bestWAR.name} (${Number(bestWAR.AcesWar).toFixed(2)})` : "N/A";
 
   // Update summary text with proper em-dashes
   document.getElementById("totalsText").textContent =
