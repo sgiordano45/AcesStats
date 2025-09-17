@@ -1,5 +1,11 @@
 let playerName = new URLSearchParams(window.location.search).get('name');
-document.getElementById("playerName").textContent = playerName;
+
+if (!playerName) {
+  document.body.innerHTML = '<h1>Error: No player specified</h1><p><a href="index.html">Return to main page</a></p>';
+} else {
+  document.getElementById("playerName").textContent = playerName;
+  loadPlayerData();
+}
 
 async function loadPlayerData() {
   try {
@@ -7,13 +13,33 @@ async function loadPlayerData() {
     if (!response.ok) throw new Error('Failed to load data.json');
     const allPlayers = await response.json();
 
-    const playerData = allPlayers.filter(p => p.name === playerName);
+    // Filter and clean data for this player
+    const playerData = allPlayers
+      .filter(p => p.name && p.name.trim() === playerName)
+      .map(p => ({
+        ...p,
+        games: Number(p.games) || 0,
+        atBats: Number(p.atBats) || 0,
+        hits: Number(p.hits) || 0,
+        runs: Number(p.runs) || 0,
+        walks: Number(p.walks) || 0,
+        AcesWar: p.AcesWar === "N/A" || !p.AcesWar ? "N/A" : Number(p.AcesWar),
+        Sub: p.Sub || p.sub || ""
+      }));
+
+    if (playerData.length === 0) {
+      document.body.innerHTML = `
+        <h1>Player "${playerName}" not found</h1>
+        <p><a href="index.html">Return to main page</a></p>
+      `;
+      return;
+    }
 
     // Separate Regular and Sub tables
     const regularSeasons = playerData.filter(p => !isSubstitute(p))
-                                     .sort((a,b) => b.year - a.year);
+                                     .sort((a, b) => b.year - a.year || (b.season > a.season ? 1 : -1));
     const subSeasons = playerData.filter(p => isSubstitute(p))
-                                 .sort((a,b) => b.year - a.year);
+                                 .sort((a, b) => b.year - a.year || (b.season > a.season ? 1 : -1));
 
     // Render tables
     renderTable('regularStatsTable', regularSeasons);
@@ -22,20 +48,34 @@ async function loadPlayerData() {
 
   } catch (err) {
     console.error("Error loading player data:", err);
+    document.body.innerHTML = `
+      <h1>Error loading player data</h1>
+      <p>Could not load statistics. Please check that data.json is available.</p>
+      <p><a href="index.html">Return to main page</a></p>
+    `;
   }
 }
 
 function isSubstitute(p) {
-  return p.Sub && p.Sub.toString().trim().toLowerCase() === "yes";
+  const subValue = p.Sub || p.sub || "";
+  return subValue.toString().trim().toLowerCase() === "yes";
 }
 
 function renderTable(tableId, data) {
   const tbody = document.querySelector(`#${tableId} tbody`);
   tbody.innerHTML = "";
+  
+  if (data.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="12">No data available</td></tr>';
+    return;
+  }
+
   data.forEach(p => {
-    const acesWarDisplay = (!p.AcesWar || p.AcesWar === "N/A") ? "N/A" : p.AcesWar;
-    const BA = p.atBats ? (p.hits / p.atBats).toFixed(3) : "N/A";
-    const OBP = p.atBats ? ((p.hits + p.walks) / (p.atBats+ p.walks)).toFixed(3) : "N/A";
+    const acesWarDisplay = (p.AcesWar === "N/A" || isNaN(p.AcesWar)) ? "N/A" : Number(p.AcesWar).toFixed(2);
+    const BA = p.atBats > 0 ? (p.hits / p.atBats).toFixed(3) : ".000";
+    const OBP = (p.atBats + p.walks) > 0 
+      ? ((p.hits + p.walks) / (p.atBats + p.walks)).toFixed(3) 
+      : ".000";
 
     const row = `<tr>
       <td>${p.year}</td>
@@ -60,20 +100,41 @@ function renderCareerStats(all, regular, subs) {
   tbody.innerHTML = "";
 
   const calcStats = (arr) => {
-    const totalGames = arr.reduce((sum,p) => sum + Number(p.games || 0), 0);
-    const totalAtBats = arr.reduce((sum,p) => sum + Number(p.atBats || 0), 0);
-    const totalHits = arr.reduce((sum,p) => sum + Number(p.hits || 0), 0);
-    const totalRuns = arr.reduce((sum,p) => sum + Number(p.runs || 0), 0);
-    const totalWalks = arr.reduce((sum,p) => sum + Number(p.walks || 0), 0);
+    if (arr.length === 0) {
+      return {
+        totalGames: 0,
+        totalAtBats: 0,
+        totalHits: 0,
+        totalRuns: 0,
+        totalWalks: 0,
+        avgAcesWar: "N/A",
+        BA: ".000",
+        OBP: ".000"
+      };
+    }
 
-    const acesValues = arr.map(p => Number(p.AcesWar)).filter(v => !isNaN(v));
-    const avgAcesWar = acesValues.length ? (acesValues.reduce((a,b)=>a+b,0)/acesValues.length).toFixed(2) : "N/A";
+    const totalGames = arr.reduce((sum, p) => sum + p.games, 0);
+    const totalAtBats = arr.reduce((sum, p) => sum + p.atBats, 0);
+    const totalHits = arr.reduce((sum, p) => sum + p.hits, 0);
+    const totalRuns = arr.reduce((sum, p) => sum + p.runs, 0);
+    const totalWalks = arr.reduce((sum, p) => sum + p.walks, 0);
 
-    const BA = totalAtBats ? (totalHits / totalAtBats).toFixed(3) : "N/A";
-    const OBP = totalAtBats ? ((totalHits + totalWalks) / (totalAtBats+ totalWalks)).toFixed(3) : "N/A";
+    // Calculate average AcesWar (only from non-N/A values)
+    const acesValues = arr
+      .map(p => p.AcesWar)
+      .filter(v => v !== "N/A" && !isNaN(v))
+      .map(v => Number(v));
+    const avgAcesWar = acesValues.length > 0 
+      ? (acesValues.reduce((a, b) => a + b, 0) / acesValues.length).toFixed(2) 
+      : "N/A";
+
+    const BA = totalAtBats > 0 ? (totalHits / totalAtBats).toFixed(3) : ".000";
+    const OBP = (totalAtBats + totalWalks) > 0 
+      ? ((totalHits + totalWalks) / (totalAtBats + totalWalks)).toFixed(3) 
+      : ".000";
 
     return { totalGames, totalAtBats, totalHits, totalRuns, totalWalks, avgAcesWar, BA, OBP };
-  }
+  };
 
   const rowsData = [
     { label: "Total", stats: calcStats(all) },
@@ -83,7 +144,7 @@ function renderCareerStats(all, regular, subs) {
 
   rowsData.forEach(r => {
     const row = `<tr>
-      <td>${r.label}</td>
+      <td><strong>${r.label}</strong></td>
       <td>${r.stats.totalGames}</td>
       <td>${r.stats.totalAtBats}</td>
       <td>${r.stats.totalHits}</td>
@@ -97,12 +158,12 @@ function renderCareerStats(all, regular, subs) {
   });
 }
 
-
 function goBack() {
-  window.history.back();
+  if (window.history.length > 1) {
+    window.history.back();
+  } else {
+    window.location.href = 'index.html';
+  }
 }
 
-// Load the data on page load
-loadPlayerData();
-
-
+// Load the data on page load - this is handled by the initial check above
