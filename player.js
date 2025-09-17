@@ -24,13 +24,10 @@ async function loadPlayerData() {
     
     const allPlayers = await statsResponse.json();
 
-    // Filter for this player first
-    const rawPlayerData = allPlayers.filter(p => p.name && p.name.trim() === playerName);
-    
-    console.log(`Raw data for ${playerName}:`, rawPlayerData);
-    
-    // Then clean the data
-    const playerData = rawPlayerData.map(p => ({
+    // Filter and clean data for this player
+    const playerData = allPlayers
+      .filter(p => p.name && p.name.trim() === playerName)
+      .map(p => ({
         ...p,
         games: Number(p.games) || 0,
         atBats: Number(p.atBats) || 0,
@@ -38,14 +35,8 @@ async function loadPlayerData() {
         runs: Number(p.runs) || 0,
         walks: Number(p.walks) || 0,
         AcesWar: p.AcesWar === "N/A" || !p.AcesWar ? "N/A" : Number(p.AcesWar),
-        // Normalize the Sub field - handle both "Sub" and "sub" from the original data
-        Sub: (p.Sub || p.sub || "").toString().trim(),
-        // Keep original for debugging
-        originalSub: p.Sub,
-        originalLowerSub: p.sub
+        Sub: (p.Sub || p.sub || "").toString().trim()
       }));
-
-    console.log(`Cleaned data for ${playerName}:`, playerData);
 
     if (playerData.length === 0) {
       document.body.innerHTML = `
@@ -60,9 +51,6 @@ async function loadPlayerData() {
                                      .sort((a, b) => b.year - a.year || (b.season > a.season ? 1 : -1));
     const subSeasons = playerData.filter(p => isSubstitute(p))
                                  .sort((a, b) => b.year - a.year || (b.season > a.season ? 1 : -1));
-
-    console.log(`Regular seasons: ${regularSeasons.length}, Sub seasons: ${subSeasons.length}`);
-    console.log("Sub seasons data:", subSeasons);
 
     // Render tables
     renderTable('regularStatsTable', regularSeasons);
@@ -81,16 +69,8 @@ async function loadPlayerData() {
 }
 
 function isSubstitute(p) {
-  // Check the cleaned/normalized Sub field
   const subValue = p.Sub || "";
-  const subCheck = subValue.toString().trim().toLowerCase();
-  
-  // Debug logging
-  if (p.name === playerName) {
-    console.log(`Checking substitute status for ${p.year} ${p.season}: "${subValue}" -> ${subCheck === "yes"}`);
-  }
-  
-  return subCheck === "yes";
+  return subValue.toString().trim().toLowerCase() === "yes";
 }
 
 function renderTable(tableId, data) {
@@ -190,6 +170,67 @@ function renderCareerStats(all, regular, subs) {
   });
 }
 
+function renderPlayerAwards(playerData) {
+  // Filter awards for this specific player
+  const playerAwards = allAwards.filter(award => 
+    award.Player && award.Player.trim() === playerName && award.Award && award.Award.trim() !== ""
+  );
+  
+  if (playerAwards.length === 0) {
+    return; // Don't show awards section if no awards
+  }
+  
+  // Sort awards by year (most recent first), then by award name
+  playerAwards.sort((a, b) => {
+    if (b.Year !== a.Year) return b.Year - a.Year;
+    if (b.Season !== a.Season) return b.Season.localeCompare(a.Season);
+    return a.Award.localeCompare(b.Award);
+  });
+  
+  // Create awards section HTML
+  let awardsHTML = `
+    <h2>Career Awards & Honors</h2>
+    <table style="border-collapse: collapse; width: 100%; margin-bottom: 20px;">
+      <thead>
+        <tr style="background-color: #f2f2f2;">
+          <th style="border: 1px solid #ccc; padding: 8px; text-align: left;">Year</th>
+          <th style="border: 1px solid #ccc; padding: 8px; text-align: left;">Award</th>
+          <th style="border: 1px solid #ccc; padding: 8px; text-align: center;">Team</th>
+          <th style="border: 1px solid #ccc; padding: 8px; text-align: center;">Position</th>
+        </tr>
+      </thead>
+      <tbody>
+  `;
+  
+  playerAwards.forEach(award => {
+    const teamLink = award.Team ? 
+      `<a href="team.html?team=${encodeURIComponent(award.Team)}">${award.Team}</a>` : 
+      '';
+    
+    awardsHTML += `
+      <tr>
+        <td style="border: 1px solid #ccc; padding: 8px;">${award.Year} ${award.Season}</td>
+        <td style="border: 1px solid #ccc; padding: 8px;"><strong>${award.Award}</strong></td>
+        <td style="border: 1px solid #ccc; padding: 8px; text-align: center;">${teamLink}</td>
+        <td style="border: 1px solid #ccc; padding: 8px; text-align: center;">${award.Position || ''}</td>
+      </tr>
+    `;
+  });
+  
+  awardsHTML += `
+      </tbody>
+    </table>
+  `;
+  
+  // Insert awards section after the career stats table
+  const careerStatsTable = document.getElementById('careerStatsTable');
+  if (careerStatsTable && careerStatsTable.parentNode) {
+    const awardsDiv = document.createElement('div');
+    awardsDiv.innerHTML = awardsHTML;
+    careerStatsTable.parentNode.insertBefore(awardsDiv, careerStatsTable.nextSibling);
+  }
+}
+
 function goBack() {
   if (window.history.length > 1) {
     window.history.back();
@@ -197,5 +238,3 @@ function goBack() {
     window.location.href = 'index.html';
   }
 }
-
-// Load the data on page load - this is handled by the initial check above
