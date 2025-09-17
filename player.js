@@ -9,25 +9,14 @@ if (!playerName) {
 }
 
 function getAwardIcon(awardType) {
-  const iconMap = {
-    'Team MVP': '🏆',
-    'All Aces': '🥇', 
-    'Gold Glove': '🧤',
-    'Rookie of the Year': '⭐',
-    'Most Improved Ace': '📈',
-    'Comeback Player of the Year': '💪',
-    'Al Pineda Good Guy Award': '😇',
-    'Iron Man Award': '⚡',
-    'Sub of the Year': '🔄',
-    'Andrew Streaman Boner Award': '🤡',
-    'Erik Lund Perservenance Award': '🛡️',
-    'Slugger of the Year': '⚾',
-    'Pitcher of the Year': '🎯',
-    'Captain of the Year': '👑',
-    'Mr. Streaman Award for Excellence': '🍕'
-  };
+  // Create filename from award type - convert to lowercase and replace spaces/special chars with underscores
+  const filename = awardType
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, ''); // Remove leading/trailing underscores
   
-  return iconMap[awardType] || '🎖️';
+  return `awards/${filename}.png`;
 }
 
 function updatePlayerNameWithAwards() {
@@ -47,10 +36,12 @@ function updatePlayerNameWithAwards() {
   const awardIcons = uniqueAwardTypes
     .sort() // Sort alphabetically for consistency
     .map(awardType => {
-      const icon = getAwardIcon(awardType);
+      const iconSrc = getAwardIcon(awardType);
       const count = playerAwards.filter(a => a.Award === awardType).length;
-      const countDisplay = count > 1 ? `${count}` : '';
-      return `<span title="${awardType}${count > 1 ? ` (${count}×)` : ''}" style="font-size: 1.2em; margin-right: 8px; cursor: help;">${icon}${countDisplay > 1 ? `⁽${countDisplay}⁾` : ''}</span>`;
+      const countDisplay = count > 1 ? `<sup style="color: #666; font-size: 0.7em;">${count}</sup>` : '';
+      return `<span title="${awardType}${count > 1 ? ` (${count}×)` : ''}" style="margin-right: 8px; cursor: help; display: inline-block;">
+        <img src="${iconSrc}" alt="${awardType}" style="height: 24px; width: auto; vertical-align: middle;" onerror="this.style.display='none';">${countDisplay}
+      </span>`;
     })
     .join('');
   
@@ -58,7 +49,7 @@ function updatePlayerNameWithAwards() {
   const playerNameElement = document.getElementById("playerName");
   playerNameElement.innerHTML = `
     ${playerName}
-    <div style="margin-top: 10px; font-size: 0.8em;">
+    <div style="margin-top: 10px;">
       ${awardIcons}
     </div>
   `;
