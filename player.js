@@ -8,6 +8,62 @@ if (!playerName) {
   loadPlayerData();
 }
 
+function getAwardIcon(awardType) {
+  const iconMap = {
+    'Team MVP': '🏆',
+    'All Aces': '🥇', 
+    'Gold Glove': '🧤',
+    'Rookie of the Year': '⭐',
+    'Most Improved Ace': '📈',
+    'Comeback Player of the Year': '💪',
+    'Al Pineda Good Guy Award': '😇',
+    'Iron Man Award': '⚡',
+    'Sub of the Year': '🔄',
+    'Andrew Streaman Boner Award': '🤡',
+    'Erik Lund Perservenance Award': '🛡️',
+    'Slugger of the Year': '⚾',
+    'Pitcher of the Year': '🎯',
+    'Captain of the Year': '👑',
+    'Mr. Streaman Award for Excellence': '🍕'
+  };
+  
+  return iconMap[awardType] || '🎖️';
+}
+
+function updatePlayerNameWithAwards() {
+  if (allAwards.length === 0) return;
+  
+  // Get unique award types for this player
+  const playerAwards = allAwards.filter(award => 
+    award.Player && award.Player.trim() === playerName && award.Award && award.Award.trim() !== ""
+  );
+  
+  if (playerAwards.length === 0) return;
+  
+  // Get unique award types (don't show duplicates)
+  const uniqueAwardTypes = [...new Set(playerAwards.map(award => award.Award))];
+  
+  // Create award icons display
+  const awardIcons = uniqueAwardTypes
+    .sort() // Sort alphabetically for consistency
+    .map(awardType => {
+      const icon = getAwardIcon(awardType);
+      const count = playerAwards.filter(a => a.Award === awardType).length;
+      const countDisplay = count > 1 ? `${count}` : '';
+      return `<span title="${awardType}${count > 1 ? ` (${count}×)` : ''}" style="font-size: 1.2em; margin-right: 8px; cursor: help;">${icon}${countDisplay > 1 ? `⁽${countDisplay}⁾` : ''}</span>`;
+    })
+    .join('');
+  
+  // Update the player name display
+  const playerNameElement = document.getElementById("playerName");
+  playerNameElement.innerHTML = `
+    ${playerName}
+    <div style="margin-top: 10px; font-size: 0.8em;">
+      ${awardIcons}
+    </div>
+  `;
+}
+
 async function loadPlayerData() {
   try {
     // Load both statistics and awards data
@@ -57,6 +113,9 @@ async function loadPlayerData() {
     renderTable('subStatsTable', subSeasons);
     renderCareerStats(playerData, regularSeasons, subSeasons);
     renderPlayerAwards(playerData);
+    
+    // Add award icons to player name
+    updatePlayerNameWithAwards();
 
   } catch (err) {
     console.error("Error loading player data:", err);
