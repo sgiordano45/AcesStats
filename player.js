@@ -13,10 +13,13 @@ async function loadPlayerData() {
     if (!response.ok) throw new Error('Failed to load data.json');
     const allPlayers = await response.json();
 
-    // Filter and clean data for this player
-    const playerData = allPlayers
-      .filter(p => p.name && p.name.trim() === playerName)
-      .map(p => ({
+    // Filter for this player first
+    const rawPlayerData = allPlayers.filter(p => p.name && p.name.trim() === playerName);
+    
+    console.log(`Raw data for ${playerName}:`, rawPlayerData);
+    
+    // Then clean the data
+    const playerData = rawPlayerData.map(p => ({
         ...p,
         games: Number(p.games) || 0,
         atBats: Number(p.atBats) || 0,
@@ -24,8 +27,14 @@ async function loadPlayerData() {
         runs: Number(p.runs) || 0,
         walks: Number(p.walks) || 0,
         AcesWar: p.AcesWar === "N/A" || !p.AcesWar ? "N/A" : Number(p.AcesWar),
-        Sub: p.Sub || p.sub || ""
+        // Normalize the Sub field - handle both "Sub" and "sub" from the original data
+        Sub: (p.Sub || p.sub || "").toString().trim(),
+        // Keep original for debugging
+        originalSub: p.Sub,
+        originalLowerSub: p.sub
       }));
+
+    console.log(`Cleaned data for ${playerName}:`, playerData);
 
     if (playerData.length === 0) {
       document.body.innerHTML = `
@@ -40,6 +49,9 @@ async function loadPlayerData() {
                                      .sort((a, b) => b.year - a.year || (b.season > a.season ? 1 : -1));
     const subSeasons = playerData.filter(p => isSubstitute(p))
                                  .sort((a, b) => b.year - a.year || (b.season > a.season ? 1 : -1));
+
+    console.log(`Regular seasons: ${regularSeasons.length}, Sub seasons: ${subSeasons.length}`);
+    console.log("Sub seasons data:", subSeasons);
 
     // Render tables
     renderTable('regularStatsTable', regularSeasons);
@@ -57,8 +69,16 @@ async function loadPlayerData() {
 }
 
 function isSubstitute(p) {
-  const subValue = p.Sub || p.sub || "";
-  return subValue.toString().trim().toLowerCase() === "yes";
+  // Check the cleaned/normalized Sub field
+  const subValue = p.Sub || "";
+  const subCheck = subValue.toString().trim().toLowerCase();
+  
+  // Debug logging
+  if (p.name === playerName) {
+    console.log(`Checking substitute status for ${p.year} ${p.season}: "${subValue}" -> ${subCheck === "yes"}`);
+  }
+  
+  return subCheck === "yes";
 }
 
 function renderTable(tableId, data) {
