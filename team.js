@@ -302,8 +302,23 @@ function renderAwardsSection(data) {
   // Render each category
   Object.entries(awardCategories).forEach(([category, awards]) => {
     if (awards.length > 0) {
-      // Sort by player name within each category
-      awards.sort((a, b) => a.player.localeCompare(b.player));
+      // Sort by award name first, then by earliest year, then by player name
+      awards.sort((a, b) => {
+        // First, sort by award name
+        if (a.award !== b.award) {
+          return a.award.localeCompare(b.award);
+        }
+        
+        // Then by earliest year (most recent first)
+        const aEarliest = Math.max(...a.years.map(y => parseInt(y.split(' ')[0])));
+        const bEarliest = Math.max(...b.years.map(y => parseInt(y.split(' ')[0])));
+        if (aEarliest !== bEarliest) {
+          return bEarliest - aEarliest;
+        }
+        
+        // Finally by player name
+        return a.player.localeCompare(b.player);
+      });
       
       awards.forEach(item => {
         const playerLink = item.player ? 
