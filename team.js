@@ -7,24 +7,19 @@ let currentTeam = null;
 const params = new URLSearchParams(window.location.search);
 currentTeam = params.get("team");
 
-console.log("Current team:", currentTeam); // Debug log
-
 if (!currentTeam) {
   document.body.innerHTML = '<h1>Error: No team specified</h1><p><a href="index.html">Return to main page</a></p>';
 } else {
   // Check for Kings with explicit logging
   const teamLower = currentTeam.toLowerCase().trim();
-  console.log("Team lowercase:", teamLower); // Debug log
   
   if (teamLower === "kings") {
-    console.log("Blocking Kings access"); // Debug log
     document.body.innerHTML = `
       <h1>Team Not Available</h1>
       <p>The requested team page is not accessible.</p>
       <p><a href="teams.html">View all available teams</a> | <a href="index.html">Return to main page</a></p>
     `;
   } else {
-    console.log("Loading team:", currentTeam); // Debug log
     document.getElementById("team-name").textContent = currentTeam;
     // Set team logo
     const logoElement = document.getElementById("team-logo");
@@ -136,7 +131,7 @@ function renderTable(data) {
     tbody.innerHTML = '<tr><td colspan="12">No data matches the current filters.</td></tr>';
     document.getElementById("totalsText").textContent = "No data to display.";
     document.getElementById("leadersText").innerHTML = "";
-    renderLeadersTable([]); // Clear leaders table
+    renderLeadersTable([]);
     return;
   }
 
