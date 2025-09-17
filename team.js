@@ -244,12 +244,19 @@ function calculateLeaders(data, type) {
     aggregatedData = data;
   }
 
-  const qualifyingPlayers = aggregatedData.filter(p => p.atBats >= 10);
+  // For season leaders, filter BA/OBP candidates to non-subs with 20+ at-bats
+  const qualifyingPlayersForAverages = type === 'season' 
+    ? aggregatedData.filter(p => p.atBats >= 20 && (!p.Sub || p.Sub.toString().trim().toLowerCase() !== "yes"))
+    : aggregatedData.filter(p => p.atBats >= 10);
+
+  // For counting stats, use all players (including subs)
+  const qualifyingPlayersForCounting = aggregatedData;
+  
   let leaders = {};
   
-  // Counting stats leaders
+  // Counting stats leaders (games, at-bats, hits, runs, walks) - include all players
   ["games", "atBats", "hits", "runs", "walks"].forEach(stat => {
-    let maxPlayer = aggregatedData.reduce((prev, curr) =>
+    let maxPlayer = qualifyingPlayersForCounting.reduce((prev, curr) =>
       curr[stat] > prev[stat] ? curr : prev,
       { [stat]: -1 }
     );
@@ -263,14 +270,14 @@ function calculateLeaders(data, type) {
     }
   });
 
-  // Batting Average leader
-  let bestBA = qualifyingPlayers.reduce((prev, curr) => {
+  // Batting Average leader (season: non-subs with 20+ AB, career: 10+ AB)
+  let bestBA = qualifyingPlayersForAverages.reduce((prev, curr) => {
     let currBA = curr.atBats > 0 ? curr.hits / curr.atBats : 0;
     let prevBA = prev.atBats > 0 ? prev.hits / prev.atBats : 0;
     return currBA > prevBA ? curr : prev;
   }, { atBats: 0, hits: 0 });
   
-  if (bestBA.name) {
+  if (bestBA.name && bestBA.atBats > 0) {
     const ba = (bestBA.hits / bestBA.atBats).toFixed(3);
     if (type === 'season') {
       const playerRecord = data.find(p => p.name === bestBA.name && p.atBats === bestBA.atBats);
@@ -282,8 +289,8 @@ function calculateLeaders(data, type) {
     leaders.BA = "N/A";
   }
 
-  // On-Base Percentage leader
-  let bestOBP = qualifyingPlayers.reduce((prev, curr) => {
+  // On-Base Percentage leader (season: non-subs with 20+ AB, career: 10+ AB)
+  let bestOBP = qualifyingPlayersForAverages.reduce((prev, curr) => {
     let currOBP = (curr.atBats + curr.walks) > 0 ? 
       (curr.hits + curr.walks) / (curr.atBats + curr.walks) : 0;
     let prevOBP = (prev.atBats + prev.walks) > 0 ? 
@@ -291,7 +298,7 @@ function calculateLeaders(data, type) {
     return currOBP > prevOBP ? curr : prev;
   }, { atBats: 0, hits: 0, walks: 0 });
   
-  if (bestOBP.name) {
+  if (bestOBP.name && (bestOBP.atBats + bestOBP.walks) > 0) {
     const obp = ((bestOBP.hits + bestOBP.walks) / (bestOBP.atBats + bestOBP.walks)).toFixed(3);
     if (type === 'season') {
       const playerRecord = data.find(p => p.name === bestOBP.name && 
@@ -304,14 +311,14 @@ function calculateLeaders(data, type) {
     leaders.OBP = "N/A";
   }
 
-  // AcesWar leader
-  let bestWAR = aggregatedData.reduce((prev, curr) => {
+  // AcesWar leader (all players)
+  let bestWAR = qualifyingPlayersForCounting.reduce((prev, curr) => {
     let currWAR = (curr.AcesWar !== "N/A" && !isNaN(curr.AcesWar)) ? Number(curr.AcesWar) : -Infinity;
     let prevWAR = (prev.AcesWar !== "N/A" && !isNaN(prev.AcesWar)) ? Number(prev.AcesWar) : -Infinity;
     return currWAR > prevWAR ? curr : prev;
   }, { AcesWar: -Infinity });
   
-  if (bestWAR.name) {
+  if (bestWAR.name && bestWAR.AcesWar !== -Infinity) {
     const war = Number(bestWAR.AcesWar).toFixed(2);
     if (type === 'season') {
       const playerRecord = data.find(p => p.name === bestWAR.name && Number(p.AcesWar) === Number(bestWAR.AcesWar));
