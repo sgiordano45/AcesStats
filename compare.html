@@ -192,8 +192,6 @@
   <a href="index.html">← Batting Stats</a>
   <a href="leaders.html">Career Leaders</a>
   <a href="players.html">All Players</a>
-  <a href="teams.html">All Teams</a>
-  <a href="seasons.html">All Seasons</a>
   <a href="milestones.html">Batting Milestones</a>
 </div>
 
@@ -391,7 +389,12 @@ function renderComparison() {
   if (currentComparison === 'career') {
     resultsDiv.innerHTML = renderCareerComparison();
   } else {
-    resultsDiv.innerHTML = renderSeasonComparison();
+    const selectedSeason = document.getElementById('seasonSelect').value;
+    if (selectedSeason) {
+      resultsDiv.innerHTML = renderSeasonComparison(selectedSeason);
+    } else {
+      resultsDiv.innerHTML = '<div class="no-comparison">Please select a season to compare</div>';
+    }
   }
 }
 
@@ -492,86 +495,119 @@ function renderCareerComparison() {
   `;
 }
 
-function renderSeasonComparison() {
-  // Sort both players' data by year/season
-  const player1Seasons = player1Data.sort((a, b) => {
-    if (a.year !== b.year) return parseInt(a.year) - parseInt(b.year);
-    return a.season.localeCompare(b.season);
-  });
+function renderSeasonComparison(selectedSeason) {
+  const [year, season] = selectedSeason.split('-');
   
-  const player2Seasons = player2Data.sort((a, b) => {
-    if (a.year !== b.year) return parseInt(a.year) - parseInt(b.year);
-    return a.season.localeCompare(b.season);
-  });
+  // Find the specific season data for each player
+  const player1Season = player1Data.find(s => s.year === year && s.season === season);
+  const player2Season = player2Data.find(s => s.year === year && s.season === season);
   
-  let tableHTML = `
-    <div class="season-comparison">
-      <table>
-        <thead>
-          <tr>
-            <th>Player</th>
-            <th>Year</th>
-            <th>Season</th>
-            <th>Team</th>
-            <th>Games</th>
-            <th>At Bats</th>
-            <th>Hits</th>
-            <th>Runs</th>
-            <th>Walks</th>
-            <th>AcesBPI</th>
-            <th>BA</th>
-            <th>OBP</th>
-          </tr>
-        </thead>
-        <tbody>
-  `;
+  // Get season awards for both players
+  const player1SeasonAwards = getSeasonAwards(player1Data[0].name, year, season);
+  const player2SeasonAwards = getSeasonAwards(player2Data[0].name, year, season);
   
-  // Combine and sort all seasons
-  const allSeasons = [
-    ...player1Seasons.map(s => ({...s, playerNum: 1})),
-    ...player2Seasons.map(s => ({...s, playerNum: 2}))
-  ].sort((a, b) => {
-    if (a.year !== b.year) return parseInt(b.year) - parseInt(a.year);
-    if (a.season !== b.season) return b.season.localeCompare(a.season);
-    return a.playerNum - b.playerNum;
-  });
-  
-  allSeasons.forEach(season => {
-    const BA = season.atBats > 0 ? (season.hits / season.atBats).toFixed(3) : ".000";
-    const OBP = (season.atBats + season.walks) > 0 
-      ? ((season.hits + season.walks) / (season.atBats + season.walks)).toFixed(3) 
-      : ".000";
-    const AcesWar = season.AcesWar !== "N/A" && !isNaN(season.AcesWar) 
-      ? Number(season.AcesWar).toFixed(2) 
-      : "N/A";
-    
-    const rowClass = season.playerNum === 1 ? 'player1-row' : 'player2-row';
-    
-    tableHTML += `
-      <tr class="${rowClass}">
-        <td><strong>${season.name}</strong></td>
-        <td>${season.year}</td>
-        <td>${season.season}</td>
-        <td>${season.team}</td>
-        <td>${season.games}</td>
-        <td>${season.atBats}</td>
-        <td>${season.hits}</td>
-        <td>${season.runs}</td>
-        <td>${season.walks}</td>
-        <td>${AcesWar}</td>
-        <td>${BA}</td>
-        <td>${OBP}</td>
-      </tr>
-    `;
-  });
-  
-  tableHTML += `
-        </tbody>
-      </table>
+  return `
+    <div class="career-comparison">
+      <div class="player-career-stats">
+        <h4>${player1Data[0].name} - ${year} ${season}</h4>
+        ${player1Season ? renderSeasonStats(player1Season, player1SeasonAwards) : '<div style="text-align: center; color: #666; font-style: italic;">Did not play this season</div>'}
+      </div>
+      
+      <div class="comparison-divider">VS</div>
+      
+      <div class="player-career-stats">
+        <h4>${player2Data[0].name} - ${year} ${season}</h4>
+        ${player2Season ? renderSeasonStats(player2Season, player2SeasonAwards) : '<div style="text-align: center; color: #666; font-style: italic;">Did not play this season</div>'}
+      </div>
     </div>
   `;
+}
+
+function renderSeasonStats(seasonData, seasonAwards) {
+  const BA = seasonData.atBats > 0 ? (seasonData.hits / seasonData.atBats).toFixed(3) : ".000";
+  const OBP = (seasonData.atBats + seasonData.walks) > 0 
+    ? ((seasonData.hits + seasonData.walks) / (seasonData.atBats + seasonData.walks)).toFixed(3) 
+    : ".000";
+  const AcesWar = seasonData.AcesWar !== "N/A" && !isNaN(seasonData.AcesWar) 
+    ? Number(seasonData.AcesWar).toFixed(2) 
+    : "N/A";
+  const subStatus = (seasonData.Sub || "").toString().trim().toLowerCase() === "yes" ? "Yes" : "No";
   
-  return tableHTML;
+  return `
+    <div class="stat-row">
+      <span class="stat-label">Team:</span>
+      <span class="stat-value">${seasonData.team}</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">Games:</span>
+      <span class="stat-value">${seasonData.games}</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">At Bats:</span>
+      <span class="stat-value">${seasonData.atBats}</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">Hits:</span>
+      <span class="stat-value">${seasonData.hits}</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">Runs:</span>
+      <span class="stat-value">${seasonData.runs}</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">Walks:</span>
+      <span class="stat-value">${seasonData.walks}</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">AcesBPI:</span>
+      <span class="stat-value">${AcesWar}</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">Batting Average:</span>
+      <span class="stat-value">${BA}</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">On-Base %:</span>
+      <span class="stat-value">${OBP}</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">Substitute:</span>
+      <span class="stat-value">${subStatus}</span>
+    </div>
+    ${seasonAwards ? `
+    <div class="stat-row">
+      <span class="stat-label">Season Awards:</span>
+      <span class="stat-value">${seasonAwards}</span>
+    </div>
+    ` : ''}
+  `;
+}
+
+function getSeasonAwards(playerName, year, season) {
+  const seasonAwards = allAwards.filter(award => 
+    award.Player && award.Player.trim() === playerName &&
+    award.Year === year && award.Season === season &&
+    award.Award && award.Award.trim() !== ""
+  );
+  
+  if (seasonAwards.length === 0) return null;
+  
+  // Group awards by type and count
+  const awardCounts = {};
+  seasonAwards.forEach(award => {
+    const awardType = award.Award.trim();
+    if (!awardCounts[awardType]) {
+      awardCounts[awardType] = 0;
+    }
+    awardCounts[awardType]++;
+  });
+  
+  // Format awards as "Award Type: Count | Award Type: Count"
+  const formattedAwards = Object.entries(awardCounts)
+    .sort(([a], [b]) => a.localeCompare(b)) // Sort alphabetically
+    .map(([awardType, count]) => count > 1 ? `${awardType}: ${count}` : awardType);
+  
+  return formattedAwards.join(' | ');
 }
 
 function aggregatePlayerStats(playerData) {
