@@ -226,20 +226,25 @@
 
 <script>
 let allData = [];
+let allAwards = [];
 let currentComparison = 'career';
 let player1Data = null;
 let player2Data = null;
 
-fetch("data.json")
-  .then(res => res.json())
-  .then(data => {
-    allData = cleanData(data);
+// Load both batting data and awards
+Promise.all([
+  fetch("data.json").then(res => res.json()),
+  fetch("awards.json").then(res => res.ok ? res.json() : [])
+])
+  .then(([battingData, awardsData]) => {
+    allData = cleanData(battingData);
+    allAwards = awardsData;
     populatePlayerSelects();
   })
   .catch(error => {
     console.error("Error loading data:", error);
     document.getElementById("comparisonResults").innerHTML = 
-      '<div class="no-comparison">Error loading player data. Please check that data.json is available.</div>';
+      '<div class="no-comparison">Error loading player data. Please check that data files are available.</div>';
   });
 
 function cleanData(data) {
@@ -378,6 +383,12 @@ function renderCareerComparison() {
           <span class="stat-label">Seasons Played:</span>
           <span class="stat-value">${player1Stats.seasonsPlayed}</span>
         </div>
+        ${player1Stats.awards.length > 0 ? `
+        <div class="stat-row">
+          <span class="stat-label">Awards:</span>
+          <span class="stat-value">${player1Stats.awards.join(', ')}</span>
+        </div>
+        ` : ''}
       </div>
       
       <div class="comparison-divider">VS</div>
@@ -516,8 +527,17 @@ function aggregatePlayerStats(playerData) {
     totalRuns: 0,
     totalWalks: 0,
     acesWarValues: [],
-    seasonsPlayed: playerData.length
+    seasonsPlayed: 0, // Will count only non-sub seasons
+    awards: []
   };
+  
+  // Count only non-substitute seasons
+  const nonSubSeasons = playerData.filter(season => {
+    const subStatus = (season.Sub || "").toString().trim().toLowerCase();
+    return subStatus !== "yes";
+  });
+  
+  stats.seasonsPlayed = nonSubSeasons.length;
   
   playerData.forEach(season => {
     stats.totalGames += season.games;
@@ -530,6 +550,26 @@ function aggregatePlayerStats(playerData) {
       stats.acesWarValues.push(Number(season.AcesWar));
     }
   });
+  
+  // Calculate awards for this player
+  const playerAwards = allAwards.filter(award => 
+    award.Player && award.Player.trim() === stats.name && award.Award && award.Award.trim() !== ""
+  );
+  
+  // Group awards by type and count
+  const awardCounts = {};
+  playerAwards.forEach(award => {
+    const awardType = award.Award.trim();
+    if (!awardCounts[awardType]) {
+      awardCounts[awardType] = 0;
+    }
+    awardCounts[awardType]++;
+  });
+  
+  // Format awards as "Award Type | Count"
+  stats.awards = Object.entries(awardCounts)
+    .sort(([a], [b]) => a.localeCompare(b)) // Sort alphabetically
+    .map(([awardType, count]) => `${awardType} | ${count}`);
   
   stats.battingAverage = stats.totalAtBats > 0 ? 
     (stats.totalHits / stats.totalAtBats).toFixed(3) : ".000";
