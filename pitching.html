@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aces Pitching Stats</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  table { border-collapse: collapse; width: 100%; margin-top: 10px; }
+  th, td { border: 1px solid #ccc; padding: 6px 10px; text-align: center; }
+  th { cursor: pointer; background-color: #f0f0f0; user-select: none; }
+  th.asc::after { content: " ▲"; }
+  th.desc::after { content: " ▼"; }
+  select { margin: 5px; padding: 4px; }
+  #summary { margin-bottom: 10px; font-weight: bold; }
+</style>
+</head>
+<body>
+<h1>Mountainside Aces Pitching Stats</h1>
+
+<div id="summary">
+  <p id="totalsText"></p>
+  <p id="leadersText"></p>
+</div>
+
+<div>
+  <label for="yearFilter">Year:</label>
+  <select id="yearFilter">
+    <option value="All">All</option>
+  </select>
+
+  <label for="seasonFilter">Season:</label>
+  <select id="seasonFilter">
+    <option value="All">All</option>
+  </select>
+  
+  <span style="margin-left: 30px;">
+    <a href="index.html" style="margin-right: 15px; padding: 8px 15px; background-color: #f0f0f0; border: 1px solid #ccc; text-decoration: none; border-radius: 3px;">Batting Stats</a>
+    <a href="teams.html" style="margin-right: 15px; padding: 8px 15px; background-color: #f0f0f0; border: 1px solid #ccc; text-decoration: none; border-radius: 3px;">View All Teams</a>
+    <a href="pitching_leaders.html" style="padding: 8px 15px; background-color: #f0f0f0; border: 1px solid #ccc; text-decoration: none; border-radius: 3px;">Pitching Leaders</a>
+  </span>
+</div>
+
+<table id="pitchingTable">
+  <thead>
+    <tr>
+      <th data-field="name">Name</th>
+      <th data-field="team">Team</th>
+      <th data-field="year">Year</th>
+      <th data-field="season">Season</th>
+      <th data-field="games">Games</th>
+      <th data-field="IP">Innings Pitched</th>
+      <th data-field="runsAllowed">Runs Allowed</th>
+      <th data-field="ERA">ERA</th>
+    </tr>
+  </thead>
+  <tbody>
+    <!-- Rows generated dynamically -->
+  </tbody>
+</table>
+
+<script>
+let allData = [];
+let currentSort = { column: null, dir: "asc" };
+
+fetch("pitching.json")
+  .then(res => res.json())
+  .then(data => {
+    allData = cleanData(data);
+    populateFilters(allData);
+    renderTable(allData);
+  })
+  .catch(error => {
+    console.error("Error loading data:", error);
+    document.body.innerHTML = "<h1>Error loading pitching statistics data. Please check that pitching.json is available.</h1>";
+  });
+
+function cleanData(data) {
+  return data.map(p => ({
+    ...p,
+    name: p.name ? p.name.trim() : "",
+    team: p.team ? p.team.trim() : "",
+    season: p.season ? p.season.trim() : "",
+    year: p.year ? String(p.year).trim() : "",
+    games: Number(p.games) || 0,
+    IP: p.IP ? String(p.IP).trim() : "0",
+    runsAllowed: Number(p["runs allowed"]) || 0,
+    ERA: p.ERA === "N/A" || !p.ERA ? "N/A" : Number(p.ERA)
+  }));
+}
+
+function populateFilters(data) {
+  const years = [...new Set(data.map(p => p.year))].sort((a, b) => b - a);
+  const seasons = [...new Set(data.map(p => p.season))].sort();
+
+  const yearFilter = document.getElementById("yearFilter");
+  const seasonFilter = document.getElementById("seasonFilter");
+
+  years.forEach(y => {
+    let opt = document.createElement("option");
+    opt.value = y;
+    opt.textContent = y;
+    yearFilter.appendChild(opt);
+  });
+
+  seasons.forEach(s => {
+    let opt = document.createElement("option");
+    opt.value = s;
+    opt.textContent = s;
+    seasonFilter.appendChild(opt);
+  });
+
+  yearFilter.addEventListener("change", applyFilters);
+  seasonFilter.addEventListener("change", applyFilters);
+}
+
+function applyFilters() {
+  const yearVal = document.getElementById("yearFilter").value;
+  const seasonVal = document.getElementById("seasonFilter").value;
+
+  let filtered = allData.filter(
+    p =>
+      (yearVal === "All" || p.year === yearVal) &&
+      (seasonVal === "All" || p.season === seasonVal)
+  );
+
+  renderTable(filtered);
+}
+
+function renderTable(data) {
+  const tbody = document.querySelector("#pitchingTable tbody");
+  tbody.innerHTML = "";
+
+  if (data.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="8">No data matches the current filters.</td></tr>';
+    document.getElementById("totalsText").textContent = "No data to display.";
+    document.getElementById("leadersText").textContent = "";
+    return;
+  }
+
+  // Calculate totals
+  let totals = {
+    games: 0,
+    totalIP: 0,
+    runsAllowed: 0,
+  };
+
+  data.forEach(p => {
+    totals.games += p.games;
+    totals.totalIP += parseFloat(p.IP) || 0;
+    totals.runsAllowed += p.runsAllowed;
+  });
+
+  // Find leaders - only consider pitchers with meaningful innings
+  const qualifyingPitchers = data.filter(p => parseFloat(p.IP) >= 10);
+  let leaders = {};
+  
+  // Counting stats leaders
+  ["games", "runsAllowed"].forEach(stat => {
+    let maxPitcher = data.reduce((prev, curr) =>
+      curr[stat] > prev[stat] ? curr : prev,
+      { [stat]: -1 }
+    );
+    leaders[stat] = maxPitcher.name ? `${maxPitcher.name} (${maxPitcher[stat]})` : "N/A";
+  });
+
+  // Innings Pitched leader
+  let mostIP = data.reduce((prev, curr) => {
+    let currIP = parseFloat(curr.IP) || 0;
+    let prevIP = parseFloat(prev.IP) || 0;
+    return currIP > prevIP ? curr : prev;
+  }, { IP: "0" });
+  leaders.IP = mostIP.name ? `${mostIP.name} (${mostIP.IP})` : "N/A";
+
+  // ERA leader (minimum 10 innings)
+  let bestERA = qualifyingPitchers.reduce((prev, curr) => {
+    let currERA = (curr.ERA !== "N/A" && !isNaN(curr.ERA)) ? Number(curr.ERA) : Infinity;
+    let prevERA = (prev.ERA !== "N/A" && !isNaN(prev.ERA)) ? Number(prev.ERA) : Infinity;
+    return currERA < prevERA ? curr : prev;
+  }, { ERA: Infinity });
+  leaders.ERA = bestERA.name ? 
+    `${bestERA.name} (${Number(bestERA.ERA).toFixed(2)})` : "N/A";
+
+  // Update summary text
+  document.getElementById("totalsText").textContent =
+    `Totals — Games: ${totals.games}, Innings Pitched: ${totals.totalIP.toFixed(1)}, Runs Allowed: ${totals.runsAllowed}`;
+
+  document.getElementById("leadersText").innerHTML = `
+    Season Leaders — Games: ${leaders.games}, Innings Pitched: ${leaders.IP}, Runs Allowed: ${leaders.runsAllowed}, Best ERA: ${leaders.ERA}<br>
+    <a href="pitching_leaders.html" style="color: #0066cc; text-decoration: none; font-weight: normal;">Pitching Career Leaders →</a>
+  `;
+
+  // Generate table rows
+  data.forEach(p => {
+    const row = document.createElement("tr");
+    
+    const ERA = p.ERA !== "N/A" && !isNaN(p.ERA)
+      ? Number(p.ERA).toFixed(2)
+      : "N/A";
+
+    row.innerHTML = `
+      <td><a href="pitcher.html?name=${encodeURIComponent(p.name)}">${p.name}</a></td>
+      <td><a href="team.html?team=${encodeURIComponent(p.team)}">${p.team}</a></td>
+      <td>${p.year}</td>
+      <td>${p.season}</td>
+      <td>${p.games}</td>
+      <td>${p.IP}</td>
+      <td>${p.runsAllowed}</td>
+      <td>${ERA}</td>
+    `;
+    tbody.appendChild(row);
+  });
+
+  attachSorting();
+}
+
+function attachSorting() {
+  const headers = document.querySelectorAll("#pitchingTable th");
+  headers.forEach((th, idx) => {
+    th.onclick = () => sortTable(idx, th.getAttribute("data-field"));
+  });
+}
+
+function sortTable(columnIndex, field) {
+  const table = document.getElementById("pitchingTable");
+  const rows = Array.from(table.rows).slice(1);
+
+  let dir = currentSort.column === field && currentSort.dir === "asc" ? "desc" : "asc";
+  currentSort = { column: field, dir };
+
+  rows.sort((a, b) => {
+    let x = a.cells[columnIndex].innerText.trim();
+    let y = b.cells[columnIndex].innerText.trim();
+
+    // Handle special cases
+    if (field === "ERA") {
+      // Move N/A values to the end
+      if (x === "N/A" && y !== "N/A") return 1;
+      if (y === "N/A" && x !== "N/A") return -1;
+      if (x === "N/A" && y === "N/A") return 0;
+    }
+
+    // Handle IP field (innings pitched can have decimals)
+    if (field === "IP") {
+      let xNum = parseFloat(x);
+      let yNum = parseFloat(y);
+      if (!isNaN(xNum) && !isNaN(yNum)) {
+        return dir === "asc" ? xNum - yNum : yNum - xNum;
+      }
+    }
+
+    // Try parsing as numbers first
+    let xNum = parseFloat(x.replace(/,/g, ""));
+    let yNum = parseFloat(y.replace(/,/g, ""));
+
+    if (!isNaN(xNum) && !isNaN(yNum)) {
+      return dir === "asc" ? xNum - yNum : yNum - xNum;
+    }
+
+    // Fall back to string comparison
+    return dir === "asc" ? x.localeCompare(y) : y.localeCompare(x);
+  });
+
+  // Re-append sorted rows
+  rows.forEach(row => table.tBodies[0].appendChild(row));
+
+  // Update sort indicators
+  document.querySelectorAll("#pitchingTable th").forEach(th => th.classList.remove("asc", "desc"));
+  table.rows[0].cells[columnIndex].classList.add(dir);
+}
+</script>
+</body>
+</html>

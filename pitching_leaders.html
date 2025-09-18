@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pitching Career Leaders - Aces Stats</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .leaders-container {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+    gap: 30px;
+    margin-top: 20px;
+  }
+  
+  .leader-section {
+    background-color: #f9f9f9;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  
+  .leader-section h3 {
+    background-color: #333;
+    color: white;
+    margin: 0;
+    padding: 15px;
+    font-size: 1.2em;
+    text-align: center;
+  }
+  
+  .leader-table {
+    width: 100%;
+    margin: 0;
+  }
+  
+  .leader-table th,
+  .leader-table td {
+    padding: 8px 12px;
+    text-align: left;
+    border-bottom: 1px solid #eee;
+  }
+  
+  .leader-table th {
+    background-color: #f5f5f5;
+    font-weight: bold;
+  }
+  
+  .leader-table tr:nth-child(even) {
+    background-color: #fafafa;
+  }
+  
+  .leader-table tr:hover {
+    background-color: #f0f0f0;
+  }
+  
+  .rank {
+    text-align: center;
+    font-weight: bold;
+    color: #666;
+    width: 40px;
+  }
+  
+  .stat-value {
+    text-align: center;
+    font-weight: bold;
+    min-width: 80px;
+  }
+  
+  .back-nav {
+    margin-bottom: 20px;
+  }
+  
+  .back-nav a {
+    padding: 8px 15px;
+    background-color: #f0f0f0;
+    border: 1px solid #ccc;
+    text-decoration: none;
+    border-radius: 3px;
+    margin-right: 10px;
+  }
+  
+  .back-nav a:hover {
+    background-color: #e0e0e0;
+  }
+  
+  .minimum-note {
+    font-style: italic;
+    color: #666;
+    text-align: center;
+    padding: 10px;
+    font-size: 0.9em;
+    background-color: #f5f5f5;
+  }
+</style>
+</head>
+<body>
+<div class="back-nav">
+  <a href="pitching.html">← Back to Pitching Stats</a>
+  <a href="index.html">Batting Stats</a>
+  <a href="teams.html">All Teams</a>
+</div>
+
+<h1>Mountainside Aces - Pitching Career Leaders</h1>
+
+<div id="leaders-container" class="leaders-container">
+  <!-- Leader tables will be generated dynamically -->
+</div>
+
+<script>
+let allData = [];
+
+fetch("pitching.json")
+  .then(res => res.json())
+  .then(data => {
+    allData = cleanData(data);
+    generateLeaderboards();
+  })
+  .catch(error => {
+    console.error("Error loading data:", error);
+    document.getElementById("leaders-container").innerHTML = 
+      '<p>Error loading pitching statistics data. Please check that pitching.json is available.</p>';
+  });
+
+function cleanData(data) {
+  return data.map(p => ({
+    ...p,
+    name: p.name ? p.name.trim() : "",
+    team: p.team ? p.team.trim() : "",
+    games: Number(p.games) || 0,
+    IP: p.IP ? String(p.IP).trim() : "0",
+    runsAllowed: Number(p["runs allowed"]) || 0,
+    ERA: p.ERA === "N/A" || !p.ERA ? "N/A" : Number(p.ERA)
+  }));
+}
+
+function aggregatePitcherStats() {
+  const pitcherStats = {};
+  
+  allData.forEach(p => {
+    if (!p.name) return;
+    
+    if (!pitcherStats[p.name]) {
+      pitcherStats[p.name] = {
+        name: p.name,
+        games: 0,
+        totalIP: 0,
+        runsAllowed: 0,
+        eraValues: []
+      };
+    }
+    
+    pitcherStats[p.name].games += p.games;
+    pitcherStats[p.name].totalIP += parseFloat(p.IP) || 0;
+    pitcherStats[p.name].runsAllowed += p.runsAllowed;
+    
+    if (p.ERA !== "N/A" && !isNaN(p.ERA)) {
+      // For career ERA calculation, we need to weight by innings pitched
+      const ip = parseFloat(p.IP) || 0;
+      if (ip > 0) {
+        pitcherStats[p.name].eraValues.push({
+          era: Number(p.ERA),
+          innings: ip
+        });
+      }
+    }
+  });
+  
+  // Calculate career ERA as weighted average
+  return Object.values(pitcherStats).map(p => {
+    let careerERA = 0;
+    if (p.eraValues.length > 0) {
+      // Calculate weighted average ERA
+      let totalEarnedRuns = 0;
+      let totalInnings = 0;
+      
+      p.eraValues.forEach(era => {
+        const earnedRuns = (era.era * era.innings) / 7;
+        totalEarnedRuns += earnedRuns;
+        totalInnings += era.innings;
+      });
+      
+      careerERA = totalInnings > 0 ? (totalEarnedRuns * 7) / totalInnings : 0;
+    }
+    
+    return {
+      ...p,
+      careerERA: careerERA
+    };
+  });
+}
+
+function generateLeaderboards() {
+  const pitchers = aggregatePitcherStats();
+  const container = document.getElementById("leaders-container");
+  
+  // Define leaderboard categories
+  const categories = [
+    {
+      title: "Games Pitched",
+      stat: "games",
+      format: (val) => val.toString(),
+      minimum: 0
+    },
+    {
+      title: "Innings Pitched",
+      stat: "totalIP", 
+      format: (val) => val.toFixed(1),
+      minimum: 0
+    },
+    {
+      title: "Runs Allowed",
+      stat: "runsAllowed",
+      format: (val) => val.toString(), 
+      minimum: 0
+    },
+    {
+      title: "Career ERA",
+      stat: "careerERA",
+      format: (val) => val.toFixed(2),
+      minimum: 15,
+      minimumField: "totalIP",
+      minimumNote: "Minimum 15 innings pitched",
+      sortAscending: true
+    }
+  ];
+  
+  categories.forEach(category => {
+    const leaderHTML = generateLeaderTable(pitchers, category);
+    container.innerHTML += leaderHTML;
+  });
+}
+
+function generateLeaderTable(pitchers, category) {
+  // Filter pitchers based on minimum requirements
+  let qualifyingPitchers = pitchers.filter(p => {
+    if (category.minimumField) {
+      return p[category.minimumField] >= category.minimum;
+    }
+    return p[category.stat] >= category.minimum;
+  });
+  
+  // Sort by the stat
+  const sortAscending = category.sortAscending || false;
+  qualifyingPitchers.sort((a, b) => {
+    if (sortAscending) {
+      return a[category.stat] - b[category.stat];
+    } else {
+      return b[category.stat] - a[category.stat];
+    }
+  });
+  
+  // Take top 10
+  const top10 = qualifyingPitchers.slice(0, 10);
+  
+  let html = `
+    <div class="leader-section">
+      <h3>${category.title}</h3>
+      ${category.minimumNote ? `<div class="minimum-note">${category.minimumNote}</div>` : ''}
+      <table class="leader-table">
+        <thead>
+          <tr>
+            <th class="rank">Rank</th>
+            <th>Player</th>
+            <th class="stat-value">${category.title}</th>
+          </tr>
+        </thead>
+        <tbody>
+  `;
+  
+  top10.forEach((pitcher, index) => {
+    const rank = index + 1;
+    const statValue = category.format(pitcher[category.stat]);
+    
+    html += `
+      <tr>
+        <td class="rank">${rank}</td>
+        <td><a href="pitcher.html?name=${encodeURIComponent(pitcher.name)}">${pitcher.name}</a></td>
+        <td class="stat-value">${statValue}</td>
+      </tr>
+    `;
+  });
+  
+  html += `
+        </tbody>
+      </table>
+    </div>
+  `;
+  
+  return html;
+}
+</script>
+</body>
+</html>

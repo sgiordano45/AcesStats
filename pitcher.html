@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pitcher Stats</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  table { border-collapse: collapse; width: 100%; margin-bottom: 20px; }
+  th, td { border: 1px solid #ccc; padding: 8px; text-align: center; }
+  th { background-color: #f2f2f2; }
+  .back-button { 
+    margin: 20px 0; 
+    padding: 10px 20px; 
+    background-color: #f0f0f0; 
+    border: 1px solid #ccc; 
+    cursor: pointer; 
+  }
+  .back-button:hover { background-color: #e0e0e0; }
+</style>
+</head>
+<body>
+
+<h1 id="pitcherName">Pitcher Name</h1>
+
+<h2>Season Pitching Stats</h2>
+<table id="seasonStatsTable">
+  <thead>
+    <tr>
+      <th>Year</th>
+      <th>Season</th>
+      <th>Team</th>
+      <th>Games</th>
+      <th>Innings Pitched</th>
+      <th>Runs Allowed</th>
+      <th>ERA</th>
+    </tr>
+  </thead>
+  <tbody></tbody>
+</table>
+
+<h2>Career Pitching Stats</h2>
+<table id="careerStatsTable">
+  <thead>
+    <tr>
+      <th>Category</th>
+      <th>Games</th>
+      <th>Innings Pitched</th>
+      <th>Runs Allowed</th>
+      <th>Career ERA</th>
+    </tr>
+  </thead>
+  <tbody></tbody>
+</table>
+
+<button class="back-button" onclick="goBack()">← Back to Pitching Stats</button>
+<script>
+let pitcherName = new URLSearchParams(window.location.search).get('name');
+
+if (!pitcherName) {
+  document.body.innerHTML = '<h1>Error: No pitcher specified</h1><p><a href="pitching.html">Return to pitching stats</a></p>';
+} else {
+  document.getElementById("pitcherName").textContent = pitcherName;
+  loadPitcherData();
+}
+
+async function loadPitcherData() {
+  try {
+    const response = await fetch('pitching.json');
+    
+    if (!response.ok) throw new Error('Failed to load pitching.json');
+    
+    const allPitchers = await response.json();
+
+    // Filter and clean data for this pitcher
+    const pitcherData = allPitchers
+      .filter(p => p.name && p.name.trim() === pitcherName)
+      .map(p => ({
+        ...p,
+        name: p.name.trim(),
+        team: p.team.trim(),
+        year: p.year,
+        season: p.season.trim(),
+        games: Number(p.games) || 0,
+        IP: p.IP ? String(p.IP).trim() : "0",
+        runsAllowed: Number(p["runs allowed"]) || 0,
+        ERA: p.ERA === "N/A" || !p.ERA ? "N/A" : Number(p.ERA)
+      }));
+
+    if (pitcherData.length === 0) {
+      document.body.innerHTML = `
+        <h1>Pitcher "${pitcherName}" not found</h1>
+        <p><a href="pitching.html">Return to pitching stats</a></p>
+      `;
+      return;
+    }
+
+    // Sort by year (most recent first), then by season
+    const sortedSeasons = pitcherData.sort((a, b) => b.year - a.year || (b.season > a.season ? 1 : -1));
+
+    // Render tables
+    renderSeasonTable(sortedSeasons);
+    renderCareerStats(pitcherData);
+
+  } catch (err) {
+    console.error("Error loading pitcher data:", err);
+    document.body.innerHTML = `
+      <h1>Error loading pitcher data</h1>
+      <p>Could not load pitching statistics. Please check that pitching.json is available.</p>
+      <p><a href="pitching.html">Return to pitching stats</a></p>
+    `;
+  }
+}
+
+function renderSeasonTable(data) {
+  const tbody = document.querySelector('#seasonStatsTable tbody');
+  tbody.innerHTML = "";
+  
+  if (data.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="7">No data available</td></tr>';
+    return;
+  }
+
+  data.forEach(p => {
+    const eraDisplay = (p.ERA === "N/A" || isNaN(p.ERA)) ? "N/A" : Number(p.ERA).toFixed(2);
+
+    const row = `<tr>
+      <td>${p.year}</td>
+      <td>${p.season}</td>
+      <td>${p.team}</td>
+      <td>${p.games}</td>
+      <td>${p.IP}</td>
+      <td>${p.runsAllowed}</td>
+      <td>${eraDisplay}</td>
+    </tr>`;
+    tbody.innerHTML += row;
+  });
+}
+
+function renderCareerStats(data) {
+  const tbody = document.querySelector('#careerStatsTable tbody');
+  tbody.innerHTML = "";
+
+  if (data.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="5">No data available</td></tr>';
+    return;
+  }
+
+  // Calculate career totals
+  const totalGames = data.reduce((sum, p) => sum + p.games, 0);
+  const totalIP = data.reduce((sum, p) => sum + (parseFloat(p.IP) || 0), 0);
+  const totalRunsAllowed = data.reduce((sum, p) => sum + p.runsAllowed, 0);
+
+  // Calculate career ERA as weighted average
+  let careerERA = "N/A";
+  const validERASeasons = data.filter(p => p.ERA !== "N/A" && !isNaN(p.ERA) && parseFloat(p.IP) > 0);
+  
+  if (validERASeasons.length > 0) {
+    let totalEarnedRuns = 0;
+    let totalInnings = 0;
+    
+    validERASeasons.forEach(p => {
+      const ip = parseFloat(p.IP);
+      const earnedRuns = (Number(p.ERA) * ip) / 7;
+      totalEarnedRuns += earnedRuns;
+      totalInnings += ip;
+    });
+    
+    if (totalInnings > 0) {
+      careerERA = ((totalEarnedRuns * 7) / totalInnings).toFixed(2);
+    }
+  }
+
+  const row = `<tr>
+    <td><strong>Career Total</strong></td>
+    <td>${totalGames}</td>
+    <td>${totalIP.toFixed(1)}</td>
+    <td>${totalRunsAllowed}</td>
+    <td>${careerERA}</td>
+  </tr>`;
+  tbody.innerHTML = row;
+}
+
+function goBack() {
+  if (window.history.length > 1) {
+    window.history.back();
+  } else {
+    window.location.href = 'pitching.html';
+  }
+}
+</script>
+</body>
+</html>
