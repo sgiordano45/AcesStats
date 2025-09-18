@@ -141,7 +141,7 @@ function renderTable(data) {
     let prevWAR = (prev.AcesWar !== "N/A" && !isNaN(prev.AcesWar)) ? Number(prev.AcesWar) : -Infinity;
     return currWAR > prevWAR ? curr : prev;
   }, { AcesWar: -Infinity });
-  leaders.AcesWar = bestWAR.name ? 
+  leaders.AcesBPI = bestWAR.name ? 
     `${bestWAR.name} (${Number(bestWAR.AcesWar).toFixed(2)})` : "N/A";
 
   // Update summary text with proper em-dashes
@@ -149,7 +149,7 @@ function renderTable(data) {
     `Totals — Games: ${totals.games}, At Bats: ${totals.atBats}, Hits: ${totals.hits}, Runs: ${totals.runs}, Walks: ${totals.walks}`;
 
   document.getElementById("leadersText").innerHTML = `
-    Season Leaders — Games: ${leaders.games}, At Bats: ${leaders.atBats}, Hits: ${leaders.hits}, Runs: ${leaders.runs}, Walks: ${leaders.walks}, BA: ${leaders.BA}, OBP: ${leaders.OBP}, AcesWar: ${leaders.AcesWar}<br>
+    Season Leaders — Games: ${leaders.games}, At Bats: ${leaders.atBats}, Hits: ${leaders.hits}, Runs: ${leaders.runs}, Walks: ${leaders.walks}, BA: ${leaders.BA}, OBP: ${leaders.OBP}, AcesBPI: ${leaders.AcesWar}<br>
     <a href="leaders.html" style="color: #0066cc; text-decoration: none; font-weight: normal;">Career Leaders →</a>
   `;
 
@@ -208,7 +208,7 @@ function sortTable(columnIndex, field) {
     let y = b.cells[columnIndex].innerText.trim();
 
     // Handle special cases
-    if (field === "AcesWar" || field === "BA" || field === "OBP") {
+    if (field === "AceBPI" || field === "BA" || field === "OBP") {
       // Move N/A values to the end
       if (x === "N/A" && y !== "N/A") return 1;
       if (y === "N/A" && x !== "N/A") return -1;
@@ -234,3 +234,4 @@ function sortTable(columnIndex, field) {
   document.querySelectorAll("#statsTable th").forEach(th => th.classList.remove("asc", "desc"));
   table.rows[0].cells[columnIndex].classList.add(dir);
 }
+
