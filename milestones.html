@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Batting Milestones - Aces Stats</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .milestones-container {
+    display: flex;
+    flex-direction: column;
+    gap: 40px;
+    margin-top: 20px;
+  }
+  
+  .milestone-category {
+    background-color: #f9f9f9;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  
+  .milestone-category h2 {
+    background-color: #333;
+    color: white;
+    margin: 0;
+    padding: 20px;
+    font-size: 1.4em;
+    text-align: center;
+  }
+  
+  .milestone-tables {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+    gap: 20px;
+    padding: 20px;
+  }
+  
+  .milestone-table-container {
+    background-color: white;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    overflow: hidden;
+  }
+  
+  .milestone-table-container h3 {
+    background-color: #0066cc;
+    color: white;
+    margin: 0;
+    padding: 12px;
+    font-size: 1.1em;
+    text-align: center;
+  }
+  
+  .milestone-table {
+    width: 100%;
+    margin: 0;
+  }
+  
+  .milestone-table th,
+  .milestone-table td {
+    padding: 8px 12px;
+    text-align: left;
+    border-bottom: 1px solid #eee;
+  }
+  
+  .milestone-table th {
+    background-color: #f5f5f5;
+    font-weight: bold;
+  }
+  
+  .milestone-table tr:nth-child(even) {
+    background-color: #fafafa;
+  }
+  
+  .milestone-table tr:hover {
+    background-color: #f0f0f0;
+  }
+  
+  .rank {
+    text-align: center;
+    font-weight: bold;
+    color: #666;
+    width: 40px;
+  }
+  
+  .stat-value {
+    text-align: center;
+    font-weight: bold;
+    min-width: 80px;
+  }
+  
+  .back-nav {
+    margin-bottom: 20px;
+  }
+  
+  .back-nav a {
+    padding: 8px 15px;
+    background-color: #f0f0f0;
+    border: 1px solid #ccc;
+    text-decoration: none;
+    border-radius: 3px;
+    margin-right: 10px;
+  }
+  
+  .back-nav a:hover {
+    background-color: #e0e0e0;
+  }
+  
+  .pitching-link {
+    background-color: #e6ffe6 !important;
+    border-color: #00aa00 !important;
+    color: #006600 !important;
+  }
+  
+  .summary {
+    background-color: #f0f0f0;
+    padding: 15px;
+    margin-bottom: 20px;
+    border-radius: 5px;
+    border-left: 4px solid #333;
+  }
+  
+  .summary p {
+    margin: 5px 0;
+    font-weight: bold;
+  }
+  
+  .empty-milestone {
+    text-align: center;
+    padding: 20px;
+    color: #666;
+    font-style: italic;
+  }
+</style>
+</head>
+<body>
+<div class="back-nav">
+  <a href="index.html">← Batting Stats</a>
+  <a href="pitching.html" class="pitching-link">Pitching Stats</a>
+  <a href="leaders.html">Career Leaders</a>
+  <a href="teams.html">All Teams</a>
+  <a href="players.html">All Players</a>
+  <a href="seasons.html">All Seasons</a>
+</div>
+
+<h1>Mountainside Aces - Batting Milestones</h1>
+
+<div id="summary" class="summary">
+  <p>Career milestone achievements for batting statistics</p>
+  <p id="milestoneSummary">Loading milestone data...</p>
+</div>
+
+<div id="milestones-container" class="milestones-container">
+  <!-- Milestone categories will be generated dynamically -->
+</div>
+
+<script>
+let allData = [];
+
+fetch("data.json")
+  .then(res => res.json())
+  .then(data => {
+    allData = cleanData(data);
+    generateMilestones();
+  })
+  .catch(error => {
+    console.error("Error loading data:", error);
+    document.getElementById("milestones-container").innerHTML = 
+      '<p>Error loading batting statistics data. Please check that data.json is available.</p>';
+  });
+
+function cleanData(data) {
+  return data.map(p => ({
+    ...p,
+    name: p.name ? p.name.trim() : "",
+    team: p.team ? p.team.trim() : "",
+    games: Number(p.games) || 0,
+    atBats: Number(p.atBats) || 0,
+    hits: Number(p.hits) || 0,
+    runs: Number(p.runs) || 0,
+    walks: Number(p.walks) || 0
+  }));
+}
+
+function aggregatePlayerStats() {
+  const playerStats = {};
+  
+  allData.forEach(p => {
+    if (!p.name) return;
+    
+    if (!playerStats[p.name]) {
+      playerStats[p.name] = {
+        name: p.name,
+        totalHits: 0,
+        totalRuns: 0,
+        totalWalks: 0
+      };
+    }
+    
+    playerStats[p.name].totalHits += p.hits;
+    playerStats[p.name].totalRuns += p.runs;
+    playerStats[p.name].totalWalks += p.walks;
+  });
+  
+  return Object.values(playerStats);
+}
+
+function generateMilestones() {
+  const players = aggregatePlayerStats();
+  const container = document.getElementById("milestones-container");
+  
+  // Define milestone categories and thresholds
+  const milestoneCategories = [
+    {
+      title: "Career Hits Milestones",
+      stat: "totalHits",
+      thresholds: [100, 200, 300],
+      format: (val) => val.toString()
+    },
+    {
+      title: "Career Runs Milestones", 
+      stat: "totalRuns",
+      thresholds: [50, 100, 150, 200],
+      format: (val) => val.toString()
+    },
+    {
+      title: "Career Walks Milestones",
+      stat: "totalWalks", 
+      thresholds: [10, 20, 30],
+      format: (val) => val.toString()
+    }
+  ];
+  
+  let totalMilestones = 0;
+  
+  milestoneCategories.forEach(category => {
+    const categoryHTML = generateMilestoneCategory(players, category);
+    container.innerHTML += categoryHTML;
+    
+    // Count milestones for summary
+    category.thresholds.forEach(threshold => {
+      const achievers = players.filter(p => p[category.stat] >= threshold);
+      totalMilestones += achievers.length;
+    });
+  });
+  
+  // Update summary
+  document.getElementById("milestoneSummary").textContent = 
+    `${totalMilestones} total milestone achievements across all categories`;
+}
+
+function generateMilestoneCategory(players, category) {
+  let categoryHTML = `
+    <div class="milestone-category">
+      <h2>${category.title}</h2>
+      <div class="milestone-tables">
+  `;
+  
+  category.thresholds.forEach(threshold => {
+    const achievers = players
+      .filter(p => p[category.stat] >= threshold)
+      .sort((a, b) => b[category.stat] - a[category.stat]); // Sort by stat value descending
+    
+    categoryHTML += `
+      <div class="milestone-table-container">
+        <h3>${threshold}+ ${category.title.split(' ')[1]}</h3>
+    `;
+    
+    if (achievers.length === 0) {
+      categoryHTML += `
+        <div class="empty-milestone">
+          No players have reached this milestone yet
+        </div>
+      `;
+    } else {
+      categoryHTML += `
+        <table class="milestone-table">
+          <thead>
+            <tr>
+              <th class="rank">Rank</th>
+              <th>Player</th>
+              <th class="stat-value">${category.title.split(' ')[1]}</th>
+            </tr>
+          </thead>
+          <tbody>
+      `;
+      
+      achievers.forEach((player, index) => {
+        const rank = index + 1;
+        const statValue = category.format(player[category.stat]);
+        
+        categoryHTML += `
+          <tr>
+            <td class="rank">${rank}</td>
+            <td><a href="player.html?name=${encodeURIComponent(player.name)}">${player.name}</a></td>
+            <td class="stat-value">${statValue}</td>
+          </tr>
+        `;
+      });
+      
+      categoryHTML += `
+          </tbody>
+        </table>
+      `;
+    }
+    
+    categoryHTML += `</div>`;
+  });
+  
+  categoryHTML += `
+      </div>
+    </div>
+  `;
+  
+  return categoryHTML;
+}
+</script>
+</body>
+</html>
