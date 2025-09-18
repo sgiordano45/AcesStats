@@ -141,7 +141,7 @@ function renderTable(data) {
     let prevWAR = (prev.AcesWar !== "N/A" && !isNaN(prev.AcesWar)) ? Number(prev.AcesWar) : -Infinity;
     return currWAR > prevWAR ? curr : prev;
   }, { AcesWar: -Infinity });
-  leaders.AcesBPI = bestWAR.name ? 
+  leaders.AcesWar = bestWAR.name ? 
     `${bestWAR.name} (${Number(bestWAR.AcesWar).toFixed(2)})` : "N/A";
 
   // Update summary text with proper em-dashes
@@ -234,5 +234,6 @@ function sortTable(columnIndex, field) {
   document.querySelectorAll("#statsTable th").forEach(th => th.classList.remove("asc", "desc"));
   table.rows[0].cells[columnIndex].classList.add(dir);
 }
+
 
 
