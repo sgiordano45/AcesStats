@@ -116,34 +116,6 @@
     font-weight: bold;
   }
   
-  .season-comparison {
-    overflow-x: auto;
-  }
-  
-  .season-comparison table {
-    width: 100%;
-    min-width: 800px;
-  }
-  
-  .season-comparison th {
-    background-color: #333;
-    color: white;
-    padding: 10px;
-  }
-  
-  .season-comparison td {
-    padding: 8px;
-    text-align: center;
-  }
-  
-  .player1-row {
-    background-color: #e6f3ff;
-  }
-  
-  .player2-row {
-    background-color: #fff2e6;
-  }
-  
   .back-nav {
     margin-bottom: 20px;
   }
@@ -346,22 +318,18 @@ function switchComparison(type) {
 function populateSeasonSelector() {
   const seasonSelect = document.getElementById('seasonSelect');
   
-  if (!player1Data && !player2Data) return;
+  if (!player1Data || !player2Data) return;
   
   // Get all unique seasons from both players
   const allSeasons = new Set();
   
-  if (player1Data) {
-    player1Data.forEach(season => {
-      allSeasons.add(`${season.year}-${season.season}`);
-    });
-  }
+  player1Data.forEach(season => {
+    allSeasons.add(`${season.year}-${season.season}`);
+  });
   
-  if (player2Data) {
-    player2Data.forEach(season => {
-      allSeasons.add(`${season.year}-${season.season}`);
-    });
-  }
+  player2Data.forEach(season => {
+    allSeasons.add(`${season.year}-${season.season}`);
+  });
   
   // Clear existing options except first
   seasonSelect.innerHTML = '<option value="">Choose a season...</option>';
@@ -383,7 +351,10 @@ function populateSeasonSelector() {
     seasonSelect.appendChild(option);
   });
   
-  seasonSelect.addEventListener('change', renderComparison);
+  // Remove existing event listeners and add new one
+  const newSeasonSelect = seasonSelect.cloneNode(true);
+  seasonSelect.parentNode.replaceChild(newSeasonSelect, seasonSelect);
+  newSeasonSelect.addEventListener('change', renderComparison);
 }
 
 function renderComparison() {
@@ -447,7 +418,7 @@ function renderCareerComparison() {
           <span class="stat-label">Seasons Played:</span>
           <span class="stat-value">${player1Stats.seasonsPlayed}</span>
         </div>
-        ${player1Stats.awards && player1Stats.awards.length > 0 ? `
+        ${player1Stats.awards && player1Stats.awards !== '' ? `
         <div class="stat-row">
           <span class="stat-label">Awards:</span>
           <span class="stat-value">${player1Stats.awards}</span>
@@ -495,6 +466,12 @@ function renderCareerComparison() {
           <span class="stat-label">Seasons Played:</span>
           <span class="stat-value">${player2Stats.seasonsPlayed}</span>
         </div>
+        ${player2Stats.awards && player2Stats.awards !== '' ? `
+        <div class="stat-row">
+          <span class="stat-label">Awards:</span>
+          <span class="stat-value">${player2Stats.awards}</span>
+        </div>
+        ` : ''}
       </div>
     </div>
   `;
@@ -625,7 +602,7 @@ function aggregatePlayerStats(playerData) {
     totalWalks: 0,
     acesWarValues: [],
     seasonsPlayed: 0, // Will count only non-sub seasons
-    awards: []
+    awards: ''
   };
   
   // Count only non-substitute seasons
@@ -668,7 +645,7 @@ function aggregatePlayerStats(playerData) {
     .sort(([a], [b]) => a.localeCompare(b)) // Sort alphabetically
     .map(([awardType, count]) => `${awardType}: ${count}`);
   
-  stats.awards = formattedAwards.join(' | ');
+  stats.awards = formattedAwards.length > 0 ? formattedAwards.join(' | ') : '';
   
   stats.battingAverage = stats.totalAtBats > 0 ? 
     (stats.totalHits / stats.totalAtBats).toFixed(3) : ".000";
