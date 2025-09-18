@@ -181,7 +181,7 @@ function renderCareerStats(all, regular, subs) {
     const totalRuns = arr.reduce((sum, p) => sum + p.runs, 0);
     const totalWalks = arr.reduce((sum, p) => sum + p.walks, 0);
 
-    // Calculate average AcesWar (only from non-N/A values)
+    // Calculate average AcesBPI (only from non-N/A values)
     const acesValues = arr
       .map(p => p.AcesWar)
       .filter(v => v !== "N/A" && !isNaN(v))
@@ -288,3 +288,4 @@ function goBack() {
     window.location.href = 'index.html';
   }
 }
+
