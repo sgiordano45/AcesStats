@@ -110,11 +110,6 @@
   <a href="awards.html">League Awards</a>
 </div>
 
-<div style="margin-bottom: 20px; text-align: center;">
-  <button id="pitchingLeadersBtn" onclick="switchToView('pitching')" style="padding: 10px 20px; background-color: #f0f0f0; border: 1px solid #ccc; border-radius: 3px; cursor: pointer; font-size: 16px;">Pitching Leaders</button>
-  <button id="battingLeadersBtn" onclick="switchToView('batting')" style="padding: 10px 20px; margin-right: 5px; background-color: #0066cc; color: white; border: 1px solid #0066cc; border-radius: 3px; cursor: pointer; font-size: 16px;">Batting Leaders</button>
-</div> 
-  
 <h1>Mountainside Aces - Batting Career Leaders</h1>
 
 <div id="leaders-container" class="leaders-container">
@@ -122,62 +117,21 @@
 </div>
 
 <script>
-let allPitchingData = [];
-let allBattingData = [];
-let currentView = 'pitching';
+let allData = [];
 
-// Load both pitching and batting data
-Promise.all([
-  fetch("pitching.json").then(res => res.json()),
-  fetch("data.json").then(res => res.json())
-])
-  .then(([pitchingData, battingData]) => {
-    allPitchingData = cleanPitchingData(pitchingData);
-    allBattingData = cleanBattingData(battingData);
+fetch("data.json")
+  .then(res => res.json())
+  .then(data => {
+    allData = cleanData(data);
     generateLeaderboards();
   })
   .catch(error => {
     console.error("Error loading data:", error);
     document.getElementById("leaders-container").innerHTML = 
-      '<p>Error loading statistics data. Please check that data files are available.</p>';
+      '<p>Error loading statistics data. Please check that data.json is available.</p>';
   });
-function switchToView(view) {
-  currentView = view;
-  
-  // Update button styles
-  const pitchingBtn = document.getElementById('pitchingLeadersBtn');
-  const battingBtn = document.getElementById('battingLeadersBtn');
-  
-  if (view === 'pitching') {
-    pitchingBtn.style.backgroundColor = '#0066cc';
-    pitchingBtn.style.color = 'white';
-    battingBtn.style.backgroundColor = '#f0f0f0';
-    battingBtn.style.color = 'black';
-    document.getElementById('pageTitle').textContent = 'Mountainside Aces - Pitching Career Leaders';
-  } else {
-    battingBtn.style.backgroundColor = '#0066cc';
-    battingBtn.style.color = 'white';
-    pitchingBtn.style.backgroundColor = '#f0f0f0';
-    pitchingBtn.style.color = 'black';
-    document.getElementById('pageTitle').textContent = 'Mountainside Aces - Batting Career Leaders';
-  }
-  
-  generateLeaderboards();
-}
-  
-function cleanPitchingData(data) {
-  return data.map(p => ({
-    ...p,
-    name: p.name ? p.name.trim() : "",
-    team: p.team ? p.team.trim() : "",
-    games: Number(p.games) || 0,
-    IP: p.IP ? String(p.IP).trim() : "0",
-    runsAllowed: Number(p["runs allowed"]) || 0,
-    ERA: p.ERA === "N/A" || !p.ERA ? "N/A" : Number(p.ERA)
-  }));
-}
 
-function cleanBattingData(data) {
+function cleanData(data) {
   return data.map(p => ({
     ...p,
     name: p.name ? p.name.trim() : "",
@@ -191,66 +145,10 @@ function cleanBattingData(data) {
   }));
 }
 
-function aggregatePitcherStats() {
-  const pitcherStats = {};
-  
-  allPitchingData.forEach(p => {
-    if (!p.name) return;
-    
-    if (!pitcherStats[p.name]) {
-      pitcherStats[p.name] = {
-        name: p.name,
-        games: 0,
-        totalIP: 0,
-        runsAllowed: 0,
-        eraValues: []
-      };
-    }
-    
-    pitcherStats[p.name].games += p.games;
-    pitcherStats[p.name].totalIP += parseFloat(p.IP) || 0;
-    pitcherStats[p.name].runsAllowed += p.runsAllowed;
-    
-    if (p.ERA !== "N/A" && !isNaN(p.ERA)) {
-      // For career ERA calculation, we need to weight by innings pitched
-      const ip = parseFloat(p.IP) || 0;
-      if (ip > 0) {
-        pitcherStats[p.name].eraValues.push({
-          era: Number(p.ERA),
-          innings: ip
-        });
-      }
-    }
-  });
-  
-  // Calculate career ERA as weighted average
-  return Object.values(pitcherStats).map(p => {
-    let careerERA = 0;
-    if (p.eraValues.length > 0) {
-      // Calculate weighted average ERA
-      let totalEarnedRuns = 0;
-      let totalInnings = 0;
-      
-      p.eraValues.forEach(era => {
-        const earnedRuns = (era.era * era.innings) / 7;
-        totalEarnedRuns += earnedRuns;
-        totalInnings += era.innings;
-      });
-      
-      careerERA = totalInnings > 0 ? (totalEarnedRuns * 7) / totalInnings : 0;
-    }
-    
-    return {
-      ...p,
-      careerERA: careerERA
-    };
-  });
-}
-
 function aggregatePlayerStats() {
   const playerStats = {};
   
-  allBattingData.forEach(p => {
+  allData.forEach(p => {
     if (!p.name) return;
     
     if (!playerStats[p.name]) {
@@ -289,58 +187,6 @@ function aggregatePlayerStats() {
 }
 
 function generateLeaderboards() {
-  const container = document.getElementById("leaders-container");
-  container.innerHTML = "";
-  
-  if (currentView === 'pitching') {
-    generatePitchingLeaderboards();
-  } else {
-    generateBattingLeaderboards();
-  }
-}
-
-function generatePitchingLeaderboards() {
-  const pitchers = aggregatePitcherStats();
-  const container = document.getElementById("leaders-container");
-  
-  // Define leaderboard categories
-  const categories = [
-    {
-      title: "Games Pitched",
-      stat: "games",
-      format: (val) => val.toString(),
-      minimum: 0
-    },
-    {
-      title: "Innings Pitched",
-      stat: "totalIP", 
-      format: (val) => val.toFixed(1),
-      minimum: 0
-    },
-    {
-      title: "Runs Allowed",
-      stat: "runsAllowed",
-      format: (val) => val.toString(), 
-      minimum: 0
-    },
-    {
-      title: "Career ERA",
-      stat: "careerERA",
-      format: (val) => val.toFixed(2),
-      minimum: 15,
-      minimumField: "totalIP",
-      minimumNote: "Minimum 15 innings pitched",
-      sortAscending: true
-    }
-  ];
-  
-  categories.forEach(category => {
-    const leaderHTML = generateLeaderTable(pitchers, category);
-    container.innerHTML += leaderHTML;
-  });
-}
-
-function generateBattingLeaderboards() {
   const players = aggregatePlayerStats();
   const container = document.getElementById("leaders-container");
   
@@ -393,7 +239,7 @@ function generateBattingLeaderboards() {
       minimumNote: "Minimum 40 plate appearances"
     },
     {
-      title: "AcesWar (Average)",
+      title: "AcesBPI (Average)",
       stat: "avgAcesWar",
       format: (val) => val.toFixed(2),
       minimum: 0,
@@ -417,15 +263,8 @@ function generateLeaderTable(players, category) {
     return p[category.stat] >= category.minimum;
   });
   
-  // Sort by the stat
-  const sortAscending = category.sortAscending || false;
-  qualifyingPlayers.sort((a, b) => {
-    if (sortAscending) {
-      return a[category.stat] - b[category.stat];
-    } else {
-      return b[category.stat] - a[category.stat];
-    }
-  });
+  // Sort by the stat (descending)
+  qualifyingPlayers.sort((a, b) => b[category.stat] - a[category.stat]);
   
   // Take top 10
   const top10 = qualifyingPlayers.slice(0, 10);
@@ -449,15 +288,10 @@ function generateLeaderTable(players, category) {
     const rank = index + 1;
     const statValue = category.format(player[category.stat]);
     
-    // Link to appropriate player page based on current view
-    const playerLink = currentView === 'pitching' ? 
-      `pitcher.html?name=${encodeURIComponent(player.name)}` :
-      `player.html?name=${encodeURIComponent(player.name)}`;
-    
     html += `
       <tr>
         <td class="rank">${rank}</td>
-        <td><a href="${playerLink}">${player.name}</a></td>
+        <td><a href="player.html?name=${encodeURIComponent(player.name)}">${player.name}</a></td>
         <td class="stat-value">${statValue}</td>
       </tr>
     `;
@@ -472,7 +306,5 @@ function generateLeaderTable(players, category) {
   return html;
 }
 </script>
-</body>
-</html>
 </body>
 </html>
