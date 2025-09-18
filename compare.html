@@ -217,7 +217,14 @@
 
 <div class="comparison-type">
   <button id="careerBtn" onclick="switchComparison('career')" class="active">Career Comparison</button>
-  <button id="seasonBtn" onclick="switchComparison('season')">Season-by-Season</button>
+  <button id="seasonBtn" onclick="switchComparison('season')">Season Comparison</button>
+</div>
+
+<div id="seasonSelector" style="display: none; text-align: center; margin-bottom: 20px;">
+  <label for="seasonSelect" style="margin-right: 10px; font-weight: bold;">Select Season:</label>
+  <select id="seasonSelect" style="padding: 8px; font-size: 14px; border: 1px solid #ccc; border-radius: 4px;">
+    <option value="">Choose a season...</option>
+  </select>
 </div>
 
 <div id="comparisonResults" class="comparison-results">
@@ -317,16 +324,63 @@ function switchComparison(type) {
   // Update button styles
   const careerBtn = document.getElementById('careerBtn');
   const seasonBtn = document.getElementById('seasonBtn');
+  const seasonSelector = document.getElementById('seasonSelector');
   
   if (type === 'career') {
     careerBtn.classList.add('active');
     seasonBtn.classList.remove('active');
+    seasonSelector.style.display = 'none';
   } else {
     seasonBtn.classList.add('active');
     careerBtn.classList.remove('active');
+    seasonSelector.style.display = 'block';
+    populateSeasonSelector();
   }
   
   renderComparison();
+}
+
+function populateSeasonSelector() {
+  const seasonSelect = document.getElementById('seasonSelect');
+  
+  if (!player1Data && !player2Data) return;
+  
+  // Get all unique seasons from both players
+  const allSeasons = new Set();
+  
+  if (player1Data) {
+    player1Data.forEach(season => {
+      allSeasons.add(`${season.year}-${season.season}`);
+    });
+  }
+  
+  if (player2Data) {
+    player2Data.forEach(season => {
+      allSeasons.add(`${season.year}-${season.season}`);
+    });
+  }
+  
+  // Clear existing options except first
+  seasonSelect.innerHTML = '<option value="">Choose a season...</option>';
+  
+  // Sort seasons (most recent first)
+  const sortedSeasons = Array.from(allSeasons).sort((a, b) => {
+    const [yearA, seasonA] = a.split('-');
+    const [yearB, seasonB] = b.split('-');
+    
+    if (yearB !== yearA) return parseInt(yearB) - parseInt(yearA);
+    return seasonB.localeCompare(seasonA);
+  });
+  
+  sortedSeasons.forEach(seasonKey => {
+    const [year, season] = seasonKey.split('-');
+    const option = document.createElement('option');
+    option.value = seasonKey;
+    option.textContent = `${year} ${season}`;
+    seasonSelect.appendChild(option);
+  });
+  
+  seasonSelect.addEventListener('change', renderComparison);
 }
 
 function renderComparison() {
