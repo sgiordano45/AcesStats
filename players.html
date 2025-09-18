@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>All Players - Aces Stats</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .players-container {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 30px;
+    margin-top: 20px;
+  }
+  
+  .team-section {
+    background-color: #f9f9f9;
+    border: 2px solid #ddd;
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  
+  .team-header {
+    background-color: #333;
+    color: white;
+    padding: 15px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+  }
+  
+  .team-logo {
+    height: 40px;
+    max-width: 60px;
+    margin-right: 15px;
+    object-fit: contain;
+  }
+  
+  .team-header h3 {
+    margin: 0;
+    font-size: 1.3em;
+  }
+  
+  .player-count {
+    position: absolute;
+    right: 15px;
+    font-size: 0.9em;
+    color: #ccc;
+  }
+  
+  .players-list {
+    padding: 0;
+    margin: 0;
+    list-style: none;
+  }
+  
+  .player-item {
+    border-bottom: 1px solid #eee;
+    transition: background-color 0.2s ease;
+  }
+  
+  .player-item:last-child {
+    border-bottom: none;
+  }
+  
+  .player-item:hover {
+    background-color: #f0f0f0;
+  }
+  
+  .player-link {
+    display: block;
+    padding: 12px 15px;
+    text-decoration: none;
+    color: #333;
+  }
+  
+  .player-name {
+    font-weight: bold;
+    font-size: 1.1em;
+    margin-bottom: 4px;
+  }
+  
+  .player-stats {
+    font-size: 0.9em;
+    color: #666;
+  }
+  
+  .back-nav {
+    margin-bottom: 20px;
+  }
+  
+  .back-nav a {
+    padding: 8px 15px;
+    background-color: #f0f0f0;
+    border: 1px solid #ccc;
+    text-decoration: none;
+    border-radius: 3px;
+    margin-right: 10px;
+  }
+  
+  .back-nav a:hover {
+    background-color: #e0e0e0;
+  }
+  
+  .pitching-link {
+    background-color: #e6ffe6 !important;
+    border-color: #00aa00 !important;
+    color: #006600 !important;
+  }
+  
+  .summary {
+    background-color: #f0f0f0;
+    padding: 15px;
+    margin-bottom: 20px;
+    border-radius: 5px;
+    border-left: 4px solid #333;
+  }
+  
+  .summary p {
+    margin: 5px 0;
+    font-weight: bold;
+  }
+</style>
+</head>
+<body>
+<div class="back-nav">
+  <a href="index.html">← Batting Stats</a>
+  <a href="pitching.html" class="pitching-link">Pitching Stats</a>
+  <a href="teams.html">All Teams</a>
+  <a href="awards.html">League Awards</a>
+</div>
+
+<h1>Mountainside Aces - All Players by Current Team</h1>
+
+<div id="summary" class="summary">
+  <p id="totalPlayersText"></p>
+  <p>Players are grouped by their most recent team assignment</p>
+</div>
+
+<div id="players-container" class="players-container">
+  <!-- Team sections will be generated dynamically -->
+</div>
+
+<script>
+let allData = [];
+
+// Load statistics data
+fetch("data.json")
+  .then(res => res.json())
+  .then(data => {
+    allData = data.map(p => ({
+      ...p,
+      name: p.name ? p.name.trim() : "",
+      team: p.team ? p.team.trim() : "",
+      year: p.year ? String(p.year).trim() : "",
+      season: p.season ? p.season.trim() : "",
+      games: Number(p.games) || 0,
+      atBats: Number(p.atBats) || 0,
+      hits: Number(p.hits) || 0,
+      runs: Number(p.runs) || 0,
+      walks: Number(p.walks) || 0
+    }));
+    
+    generatePlayersByTeam();
+  })
+  .catch(error => {
+    console.error("Error loading data:", error);
+    document.getElementById("players-container").innerHTML = 
+      '<p>Error loading player data. Please check that data.json is available.</p>';
+  });
+
+function generatePlayersByTeam() {
+  // Get each player's most recent team assignment
+  const playerTeams = {};
+  
+  allData.forEach(p => {
+    if (!p.name || !p.team) return;
+    
+    // Skip the "Kings" team
+    if (p.team.toLowerCase() === "kings") return;
+    
+    if (!playerTeams[p.name]) {
+      playerTeams[p.name] = {
+        name: p.name,
+        team: p.team,
+        year: p.year,
+        season: p.season,
+        totalGames: 0,
+        totalAtBats: 0,
+        totalHits: 0,
+        totalRuns: 0,
+        totalWalks: 0
+      };
+    }
+    
+    // Keep track of most recent assignment
+    const currentEntry = playerTeams[p.name];
+    const currentYear = parseInt(currentEntry.year) || 0;
+    const newYear = parseInt(p.year) || 0;
+    
+    // Update to more recent team if this record is newer
+    if (newYear > currentYear || 
+        (newYear === currentYear && p.season > currentEntry.season)) {
+      currentEntry.team = p.team;
+      currentEntry.year = p.year;
+      currentEntry.season = p.season;
+    }
+    
+    // Accumulate career stats
+    currentEntry.totalGames += p.games;
+    currentEntry.totalAtBats += p.atBats;
+    currentEntry.totalHits += p.hits;
+    currentEntry.totalRuns += p.runs;
+    currentEntry.totalWalks += p.walks;
+  });
+  
+  // Group players by their most recent team
+  const teamGroups = {};
+  Object.values(playerTeams).forEach(player => {
+    if (!teamGroups[player.team]) {
+      teamGroups[player.team] = [];
+    }
+    teamGroups[player.team].push(player);
+  });
+  
+  // Sort teams alphabetically
+  const sortedTeams = Object.keys(teamGroups).sort();
+  
+  // Update summary
+  const totalPlayers = Object.keys(playerTeams).length;
+  document.getElementById("totalPlayersText").textContent = 
+    `Total Players: ${totalPlayers} across ${sortedTeams.length} teams`;
+  
+  const container = document.getElementById("players-container");
+  
+  sortedTeams.forEach(teamName => {
+    const players = teamGroups[teamName];
+    
+    // Sort players alphabetically by name
+    players.sort((a, b) => a.name.localeCompare(b.name));
+    
+    // Calculate team batting average for display
+    const teamTotalAtBats = players.reduce((sum, p) => sum + p.totalAtBats, 0);
+    const teamTotalHits = players.reduce((sum, p) => sum + p.totalHits, 0);
+    const teamBA = teamTotalAtBats > 0 ? (teamTotalHits / teamTotalAtBats).toFixed(3) : ".000";
+    
+    const teamHTML = `
+      <div class="team-section">
+        <div class="team-header">
+          <img src="logos/${teamName.toLowerCase()}.png" alt="${teamName} Logo" class="team-logo" onerror="this.style.display='none';">
+          <h3>${teamName}</h3>
+          <div class="player-count">${players.length} players</div>
+        </div>
+        <ul class="players-list">
+          ${players.map(player => {
+            const playerBA = player.totalAtBats > 0 ? 
+              (player.totalHits / player.totalAtBats).toFixed(3) : ".000";
+            const playerOBP = (player.totalAtBats + player.totalWalks) > 0 ?
+              ((player.totalHits + player.totalWalks) / (player.totalAtBats + player.totalWalks)).toFixed(3) : ".000";
+            
+            return `
+              <li class="player-item">
+                <a href="player.html?name=${encodeURIComponent(player.name)}" class="player-link">
+                  <div class="player-name">${player.name}</div>
+                  <div class="player-stats">
+                    ${player.totalGames} games, ${player.totalHits}/${player.totalAtBats} hits, BA: ${playerBA}, OBP: ${playerOBP}
+                  </div>
+                </a>
+              </li>
+            `;
+          }).join('')}
+        </ul>
+      </div>
+    `;
+    
+    container.innerHTML += teamHTML;
+  });
+}
+</script>
+</body>
+</html>
