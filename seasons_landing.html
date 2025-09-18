@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>All Seasons - Aces Stats</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .seasons-container {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 20px;
+    margin-top: 20px;
+  }
+  
+  .season-card {
+    border: 2px solid #ccc;
+    border-radius: 8px;
+    padding: 20px;
+    text-align: center;
+    background-color: #f9f9f9;
+    transition: all 0.3s ease;
+    position: relative;
+  }
+  
+  .season-card:hover {
+    background-color: #f0f0f0;
+    border-color: #999;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+  }
+  
+  .season-card h3 {
+    margin: 0 0 15px 0;
+    font-size: 1.8em;
+    color: #333;
+  }
+  
+  .season-card a {
+    text-decoration: none;
+    color: inherit;
+  }
+  
+  .season-stats {
+    font-size: 0.9em;
+    color: #666;
+    line-height: 1.6;
+  }
+  
+  .season-stats p {
+    margin: 8px 0;
+  }
+  
+  .season-highlight {
+    background-color: #e6f3ff;
+    border: 1px solid #b3d9ff;
+    border-radius: 4px;
+    padding: 8px;
+    margin: 10px 0;
+    font-size: 0.85em;
+  }
+  
+  .back-nav {
+    margin-bottom: 20px;
+  }
+  
+  .back-nav a {
+    padding: 8px 15px;
+    background-color: #f0f0f0;
+    border: 1px solid #ccc;
+    text-decoration: none;
+    border-radius: 3px;
+    margin-right: 10px;
+  }
+  
+  .back-nav a:hover {
+    background-color: #e0e0e0;
+  }
+  
+  .pitching-link {
+    background-color: #e6ffe6 !important;
+    border-color: #00aa00 !important;
+    color: #006600 !important;
+  }
+  
+  .summary {
+    background-color: #f0f0f0;
+    padding: 15px;
+    margin-bottom: 20px;
+    border-radius: 5px;
+    border-left: 4px solid #333;
+  }
+  
+  .summary p {
+    margin: 5px 0;
+    font-weight: bold;
+  }
+</style>
+</head>
+<body>
+<div class="back-nav">
+  <a href="index.html">← Batting Stats</a>
+  <a href="pitching.html" class="pitching-link">Pitching Stats</a>
+  <a href="teams.html">All Teams</a>
+  <a href="players.html">All Players</a>
+  <a href="awards.html">League Awards</a>
+</div>
+
+<h1>Mountainside Aces - Season Overviews</h1>
+
+<div id="summary" class="summary">
+  <p id="totalSeasonsText"></p>
+  <p>Click on any season to view detailed statistics, leaders, and awards</p>
+</div>
+
+<div id="seasons-container" class="seasons-container">
+  <!-- Season cards will be generated dynamically -->
+</div>
+
+<script>
+let allBattingData = [];
+let allPitchingData = [];
+let allAwards = [];
+
+// Load all data
+Promise.all([
+  fetch("data.json").then(res => res.json()),
+  fetch("pitching.json").then(res => res.ok ? res.json() : []),
+  fetch("awards.json").then(res => res.ok ? res.json() : [])
+])
+  .then(([battingData, pitchingData, awardsData]) => {
+    allBattingData = cleanBattingData(battingData);
+    allPitchingData = cleanPitchingData(pitchingData);
+    allAwards = awardsData;
+    
+    generateSeasonCards();
+  })
+  .catch(error => {
+    console.error("Error loading data:", error);
+    document.getElementById("seasons-container").innerHTML = 
+      '<p>Error loading season data. Please check that data files are available.</p>';
+  });
+
+function cleanBattingData(data) {
+  return data.map(p => ({
+    ...p,
+    name: p.name ? p.name.trim() : "",
+    team: p.team ? p.team.trim() : "",
+    season: p.season ? p.season.trim() : "",
+    year: p.year ? String(p.year).trim() : "",
+    games: Number(p.games) || 0,
+    atBats: Number(p.atBats) || 0,
+    hits: Number(p.hits) || 0,
+    runs: Number(p.runs) || 0,
+    walks: Number(p.walks) || 0
+  }));
+}
+
+function cleanPitchingData(data) {
+  return data.map(p => ({
+    ...p,
+    name: p.name ? p.name.trim() : "",
+    team: p.team ? p.team.trim() : "",
+    season: p.season ? p.season.trim() : "",
+    year: p.year ? String(p.year).trim() : "",
+    games: Number(p.games) || 0,
+    IP: parseFloat(p.IP) || 0,
+    runsAllowed: Number(p["runs allowed"]) || 0,
+    ERA: p.ERA === "N/A" || !p.ERA ? "N/A" : Number(p.ERA)
+  }));
+}
+
+function generateSeasonCards() {
+  // Get unique seasons from batting data
+  const seasons = new Map();
+  
+  allBattingData.forEach(p => {
+    if (!p.year || !p.season) return;
+    
+    const seasonKey = `${p.year}-${p.season}`;
+    if (!seasons.has(seasonKey)) {
+      seasons.set(seasonKey, {
+        year: p.year,
+        season: p.season,
+        battingPlayers: new Set(),
+        pitchingPlayers: new Set(),
+        teams: new Set(),
+        totalGames: 0,
+        totalAtBats: 0,
+        totalHits: 0
+      });
+    }
+    
+    const seasonData = seasons.get(seasonKey);
+    seasonData.battingPlayers.add(p.name);
+    if (p.team && p.team.toLowerCase() !== "kings") {
+      seasonData.teams.add(p.team);
+    }
+    seasonData.totalGames += p.games;
+    seasonData.totalAtBats += p.atBats;
+    seasonData.totalHits += p.hits;
+  });
+  
+  // Add pitching data
+  allPitchingData.forEach(p => {
+    if (!p.year || !p.season) return;
+    
+    const seasonKey = `${p.year}-${p.season}`;
+    if (seasons.has(seasonKey)) {
+      const seasonData = seasons.get(seasonKey);
+      seasonData.pitchingPlayers.add(p.name);
+      if (p.team && p.team.toLowerCase() !== "kings") {
+        seasonData.teams.add(p.team);
+      }
+    }
+  });
+  
+  // Sort seasons by year (desc) then season
+  const sortedSeasons = Array.from(seasons.values()).sort((a, b) => {
+    if (b.year !== a.year) return parseInt(b.year) - parseInt(a.year);
+    return b.season.localeCompare(a.season);
+  });
+  
+  // Update summary
+  document.getElementById("totalSeasonsText").textContent = 
+    `Total Seasons: ${sortedSeasons.length} across ${sortedSeasons[0]?.year || ''} - ${sortedSeasons[sortedSeasons.length - 1]?.year || ''}`;
+  
+  const container = document.getElementById("seasons-container");
+  
+  sortedSeasons.forEach(season => {
+    // Count awards for this season
+    const seasonAwards = allAwards.filter(award => 
+      award.Year === season.year && award.Season === season.season
+    );
+    
+    // Find MVP for highlight
+    const mvpAward = seasonAwards.find(award => award.Award === "Team MVP");
+    const mvpText = mvpAward ? `MVP: ${mvpAward.Player}` : "";
+    
+    // Calculate league batting average
+    const leagueBA = season.totalAtBats > 0 ? 
+      (season.totalHits / season.totalAtBats).toFixed(3) : ".000";
+    
+    const seasonHTML = `
+      <a href="season.html?year=${encodeURIComponent(season.year)}&season=${encodeURIComponent(season.season)}">
+        <div class="season-card">
+          <h3>${season.year} ${season.season}</h3>
+          <div class="season-stats">
+            <p><strong>${season.battingPlayers.size}</strong> batting players</p>
+            <p><strong>${season.pitchingPlayers.size}</strong> pitching players</p>
+            <p><strong>${season.teams.size}</strong> teams</p>
+            <p><strong>${seasonAwards.length}</strong> awards given</p>
+            <p>League BA: <strong>${leagueBA}</strong></p>
+          </div>
+          ${mvpText ? `<div class="season-highlight">${mvpText}</div>` : ''}
+        </div>
+      </a>
+    `;
+    
+    container.innerHTML += seasonHTML;
+  });
+}
+</script>
+</body>
+</html>
