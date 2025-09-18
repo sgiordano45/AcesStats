@@ -135,7 +135,7 @@ function renderTable(data) {
   leaders.OBP = bestOBP.name ? 
     `${bestOBP.name} (${((bestOBP.hits + bestOBP.walks) / (bestOBP.atBats + bestOBP.walks)).toFixed(3)})` : "N/A";
 
-  // AcesWar leader
+  // AcesBPI leader
   let bestWAR = data.reduce((prev, curr) => {
     let currWAR = (curr.AcesWar !== "N/A" && !isNaN(curr.AcesWar)) ? Number(curr.AcesWar) : -Infinity;
     let prevWAR = (prev.AcesWar !== "N/A" && !isNaN(prev.AcesWar)) ? Number(prev.AcesWar) : -Infinity;
@@ -234,4 +234,5 @@ function sortTable(columnIndex, field) {
   document.querySelectorAll("#statsTable th").forEach(th => th.classList.remove("asc", "desc"));
   table.rows[0].cells[columnIndex].classList.add(dir);
 }
+
 
