@@ -190,7 +190,8 @@ function generatePlayersByTeam() {
         totalAtBats: 0,
         totalHits: 0,
         totalRuns: 0,
-        totalWalks: 0
+        totalWalks: 0,
+        currentTeamGames: 0
       };
     }
     
@@ -215,6 +216,15 @@ function generatePlayersByTeam() {
     currentEntry.totalWalks += p.walks;
   });
   
+  // Calculate current team games for each player
+  Object.values(playerTeams).forEach(player => {
+    // Find all games played for the player's current team
+    const currentTeamData = allData.filter(p => 
+      p.name === player.name && p.team === player.team
+    );
+    player.currentTeamGames = currentTeamData.reduce((sum, p) => sum + p.games, 0);
+  });
+  
   // Group players by their most recent team
   const teamGroups = {};
   Object.values(playerTeams).forEach(player => {
@@ -237,8 +247,13 @@ function generatePlayersByTeam() {
   sortedTeams.forEach(teamName => {
     const players = teamGroups[teamName];
     
-    // Sort players alphabetically by name
-    players.sort((a, b) => a.name.localeCompare(b.name));
+    // Sort players by current team games (descending), then by name
+    players.sort((a, b) => {
+      if (b.currentTeamGames !== a.currentTeamGames) {
+        return b.currentTeamGames - a.currentTeamGames;
+      }
+      return a.name.localeCompare(b.name);
+    });
     
     // Calculate team batting average for display
     const teamTotalAtBats = players.reduce((sum, p) => sum + p.totalAtBats, 0);
@@ -264,7 +279,7 @@ function generatePlayersByTeam() {
                 <a href="player.html?name=${encodeURIComponent(player.name)}" class="player-link">
                   <div class="player-name">${player.name}</div>
                   <div class="player-stats">
-                    ${player.totalGames} games, ${player.totalHits}/${player.totalAtBats} hits, BA: ${playerBA}, OBP: ${playerOBP}
+                    ${player.currentTeamGames} Games (${player.totalGames} Total), ${player.totalHits}/${player.totalAtBats} hits, BA: ${playerBA}, OBP: ${playerOBP}
                   </div>
                 </a>
               </li>
