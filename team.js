@@ -1,7 +1,9 @@
 let teamData = [];
+let teamPitchingData = [];
 let allAwards = [];
 let currentSort = { column: null, dir: "asc" };
 let currentTeam = null;
+let currentView = 'batting'; // 'batting' or 'pitching'
 
 // Initialize page
 const params = new URLSearchParams(window.location.search);
@@ -23,21 +25,27 @@ if (!currentTeam) {
 
 async function loadTeamData() {
   try {
-    // Load both statistics and awards data
-    const [statsResponse, awardsResponse] = await Promise.all([
+    // Load batting stats, pitching stats, and awards data
+    const [battingResponse, pitchingResponse, awardsResponse] = await Promise.all([
       fetch("data.json"),
+      fetch("pitching.json"),
       fetch("awards.json")
     ]);
     
-    if (!statsResponse.ok) throw new Error('Failed to load data.json');
+    if (!battingResponse.ok) throw new Error('Failed to load data.json');
+    if (!pitchingResponse.ok) {
+      console.warn('Failed to load pitching.json - pitching stats will not be available');
+    }
     if (!awardsResponse.ok) throw new Error('Failed to load awards.json');
     
-    const statsData = await statsResponse.json();
+    const battingData = await battingResponse.json();
+    const pitchingData = pitchingResponse.ok ? await pitchingResponse.json() : [];
     allAwards = await awardsResponse.json();
     
-    teamData = cleanData(statsData).filter(p => p.team === currentTeam);
+    teamData = cleanBattingData(battingData).filter(p => p.team === currentTeam);
+    teamPitchingData = cleanPitchingData(pitchingData).filter(p => p.team === currentTeam);
     
-    if (teamData.length === 0) {
+    if (teamData.length === 0 && teamPitchingData.length === 0) {
       document.body.innerHTML = `
         <h1>Team "${currentTeam}" not found</h1>
         <p><a href="index.html">Return to main page</a></p>
@@ -45,8 +53,11 @@ async function loadTeamData() {
       return;
     }
 
-    populateFilters(teamData);
-    renderTable(teamData);
+    // Add view switching buttons
+    addViewSwitcher();
+    
+    populateFilters();
+    switchToView('batting');
   } catch (error) {
     console.error("Error loading team data:", error);
     document.body.innerHTML = `
@@ -57,7 +68,76 @@ async function loadTeamData() {
   }
 }
 
-function cleanData(data) {
+function addViewSwitcher() {
+  const filtersDiv = document.querySelector('div:has(#yearFilter)');
+  const viewSwitcher = document.createElement('div');
+  viewSwitcher.innerHTML = `
+    <span style="margin-left: 30px;">
+      <button id="battingViewBtn" onclick="switchToView('batting')" style="padding: 8px 15px; margin-right: 5px; background-color: #0066cc; color: white; border: 1px solid #0066cc; border-radius: 3px; cursor: pointer;">Batting Stats</button>
+      <button id="pitchingViewBtn" onclick="switchToView('pitching')" style="padding: 8px 15px; background-color: #f0f0f0; border: 1px solid #ccc; border-radius: 3px; cursor: pointer;">Pitching Stats</button>
+    </span>
+  `;
+  filtersDiv.appendChild(viewSwitcher);
+}
+
+function switchToView(view) {
+  currentView = view;
+  
+  // Update button styles
+  const battingBtn = document.getElementById('battingViewBtn');
+  const pitchingBtn = document.getElementById('pitchingViewBtn');
+  
+  if (view === 'batting') {
+    battingBtn.style.backgroundColor = '#0066cc';
+    battingBtn.style.color = 'white';
+    pitchingBtn.style.backgroundColor = '#f0f0f0';
+    pitchingBtn.style.color = 'black';
+  } else {
+    pitchingBtn.style.backgroundColor = '#0066cc';
+    pitchingBtn.style.color = 'white';
+    battingBtn.style.backgroundColor = '#f0f0f0';
+    battingBtn.style.color = 'black';
+  }
+  
+  // Update table headers
+  updateTableHeaders(view);
+  
+  // Re-apply filters for the current view
+  applyFilters();
+}
+
+function updateTableHeaders(view) {
+  const thead = document.querySelector("#team-stats-table thead tr");
+  
+  if (view === 'batting') {
+    thead.innerHTML = `
+      <th>Year</th>
+      <th>Season</th>
+      <th>Name</th>
+      <th>Games</th>
+      <th>At Bats</th>
+      <th>Hits</th>
+      <th>Runs</th>
+      <th>Walks</th>
+      <th>AcesWar</th>
+      <th>BA</th>
+      <th>OBP</th>
+      <th>Sub</th>
+    `;
+  } else {
+    thead.innerHTML = `
+      <th>Year</th>
+      <th>Season</th>
+      <th>Name</th>
+      <th>Games</th>
+      <th>Innings Pitched</th>
+      <th>Runs Allowed</th>
+      <th>ERA</th>
+    `;
+  }
+}
+
+function cleanBattingData(data) {
   return data.map(p => ({
     ...p,
     name: p.name ? p.name.trim() : "",
@@ -74,12 +154,31 @@ function cleanData(data) {
   }));
 }
 
-function populateFilters(data) {
-  const years = [...new Set(data.map(p => p.year))].sort((a, b) => b - a);
-  const seasons = [...new Set(data.map(p => p.season))].sort();
+function cleanPitchingData(data) {
+  return data.map(p => ({
+    ...p,
+    name: p.name ? p.name.trim() : "",
+    team: p.team ? p.team.trim() : "",
+    season: p.season ? p.season.trim() : "",
+    year: p.year ? String(p.year).trim() : "",
+    games: Number(p.games) || 0,
+    IP: p.IP ? String(p.IP).trim() : "0",
+    runsAllowed: Number(p["runs allowed"]) || 0,
+    ERA: p.ERA === "N/A" || !p.ERA ? "N/A" : Number(p.ERA)
+  }));
+}
+
+function populateFilters() {
+  const allData = currentView === 'batting' ? teamData : teamPitchingData;
+  const years = [...new Set(allData.map(p => p.year))].sort((a, b) => b - a);
+  const seasons = [...new Set(allData.map(p => p.season))].sort();
 
   const yearFilter = document.getElementById("yearFilter");
   const seasonFilter = document.getElementById("seasonFilter");
+
+  // Clear existing options except "All"
+  yearFilter.innerHTML = '<option value="All">All</option>';
+  seasonFilter.innerHTML = '<option value="All">All</option>';
 
   years.forEach(y => {
     let opt = document.createElement("option");
@@ -103,24 +202,28 @@ function applyFilters() {
   const yearVal = document.getElementById("yearFilter").value;
   const seasonVal = document.getElementById("seasonFilter").value;
 
-  let filtered = teamData.filter(
+  const sourceData = currentView === 'batting' ? teamData : teamPitchingData;
+  let filtered = sourceData.filter(
     p =>
       (yearVal === "All" || p.year === yearVal) &&
       (seasonVal === "All" || p.season === seasonVal)
   );
 
-  renderTable(filtered);
+  if (currentView === 'batting') {
+    renderBattingTable(filtered);
+  } else {
+    renderPitchingTable(filtered);
+  }
 }
 
-function renderTable(data) {
+function renderBattingTable(data) {
   const tbody = document.querySelector("#team-stats-table tbody");
   tbody.innerHTML = "";
 
   if (data.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="12">No data matches the current filters.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="12">No batting data matches the current filters.</td></tr>';
     document.getElementById("totalsText").textContent = "No data to display.";
     document.getElementById("leadersText").innerHTML = "";
-    renderLeadersTable([]);
     return;
   }
 
@@ -143,10 +246,10 @@ function renderTable(data) {
 
   // Update totals text
   document.getElementById("totalsText").textContent =
-    `Team Totals — Games: ${totals.games}, At Bats: ${totals.atBats}, Hits: ${totals.hits}, Runs: ${totals.runs}, Walks: ${totals.walks}`;
+    `Team Batting Totals — Games: ${totals.games}, At Bats: ${totals.atBats}, Hits: ${totals.hits}, Runs: ${totals.runs}, Walks: ${totals.walks}`;
 
   // Render leaders table
-  renderLeadersTable(data);
+  renderBattingLeadersTable(data);
 
   // Generate player stats rows
   data.forEach(p => {
@@ -179,22 +282,68 @@ function renderTable(data) {
   attachSorting();
 }
 
-function renderLeadersTable(data) {
-  let leadersTableHTML = '';
-  
+function renderPitchingTable(data) {
+  const tbody = document.querySelector("#team-stats-table tbody");
+  tbody.innerHTML = "";
+
   if (data.length === 0) {
-    document.getElementById("leadersText").innerHTML = '';
+    tbody.innerHTML = '<tr><td colspan="7">No pitching data matches the current filters.</td></tr>';
+    document.getElementById("totalsText").textContent = "No data to display.";
+    document.getElementById("leadersText").innerHTML = "";
     return;
   }
 
-  // Calculate season leaders (from filtered data)
-  const seasonLeaders = calculateLeaders(data, 'season');
-  
-  // Calculate career leaders (from all team data, not just filtered)
-  const careerLeaders = calculateLeaders(teamData, 'career');
+  // Calculate totals
+  let totals = {
+    games: 0,
+    totalIP: 0,
+    runsAllowed: 0,
+  };
 
-  leadersTableHTML = `
-    <h3>Team Leaders</h3>
+  data.forEach(p => {
+    totals.games += p.games;
+    totals.totalIP += parseFloat(p.IP) || 0;
+    totals.runsAllowed += p.runsAllowed;
+  });
+
+  // Update totals text
+  document.getElementById("totalsText").textContent =
+    `Team Pitching Totals — Games: ${totals.games}, Innings Pitched: ${totals.totalIP.toFixed(1)}, Runs Allowed: ${totals.runsAllowed}`;
+
+  // Render leaders table
+  renderPitchingLeadersTable(data);
+
+  // Generate pitcher stats rows
+  data.forEach(p => {
+    const row = document.createElement("tr");
+    const ERA = p.ERA !== "N/A" && !isNaN(p.ERA)
+      ? Number(p.ERA).toFixed(2)
+      : "N/A";
+
+    row.innerHTML = `
+      <td>${p.year}</td>
+      <td>${p.season}</td>
+      <td><a href="pitcher.html?name=${encodeURIComponent(p.name)}">${p.name}</a></td>
+      <td>${p.games}</td>
+      <td>${p.IP}</td>
+      <td>${p.runsAllowed}</td>
+      <td>${ERA}</td>
+    `;
+    tbody.appendChild(row);
+  });
+
+  attachSorting();
+}
+
+function renderBattingLeadersTable(data) {
+  // Calculate season leaders (from filtered data)
+  const seasonLeaders = calculateBattingLeaders(data, 'season');
+  
+  // Calculate career leaders (from all team batting data, not just filtered)
+  const careerLeaders = calculateBattingLeaders(teamData, 'career');
+
+  const leadersTableHTML = `
+    <h3>Team Batting Leaders</h3>
     <table style="margin-bottom: 20px; width: 100%;">
       <thead>
         <tr>
@@ -217,145 +366,44 @@ function renderLeadersTable(data) {
   `;
   
   // Add awards section
-  leadersTableHTML += renderAwardsSection(data);
+  const awardsHTML = renderAwardsSection(data);
   
-  document.getElementById("leadersText").innerHTML = leadersTableHTML;
+  document.getElementById("leadersText").innerHTML = leadersTableHTML + awardsHTML;
 }
 
-function renderAwardsSection(data) {
-  // Get current filter values
-  const yearVal = document.getElementById("yearFilter").value;
-  const seasonVal = document.getElementById("seasonFilter").value;
+function renderPitchingLeadersTable(data) {
+  // Calculate season leaders (from filtered data)
+  const seasonLeaders = calculatePitchingLeaders(data, 'season');
   
-  // Filter awards based on current team and year/season filters
-  let filteredAwards = allAwards.filter(award => {
-    // Must match team (or be a league-wide award with a team member)
-    const teamMatch = award.Team === currentTeam;
-    
-    // Must match year filter
-    const yearMatch = yearVal === "All" || award.Year === yearVal;
-    
-    // Must match season filter
-    const seasonMatch = seasonVal === "All" || award.Season === seasonVal;
-    
-    // Must have valid award name
-    const validAward = award.Award && award.Award.trim() !== "";
-    
-    return teamMatch && yearMatch && seasonMatch && validAward;
-  });
-  
-  if (filteredAwards.length === 0) {
-    return '';
-  }
-  
-  // Consolidate awards by player and award type
-  const consolidatedAwards = {};
-  
-  filteredAwards.forEach(award => {
-    const key = `${award.Player}|${award.Award}|${award.Position || ''}`;
-    
-    if (!consolidatedAwards[key]) {
-      consolidatedAwards[key] = {
-        player: award.Player,
-        award: award.Award,
-        position: award.Position || '',
-        years: []
-      };
-    }
-    
-    consolidatedAwards[key].years.push(`${award.Year} ${award.Season}`);
-  });
-  
-  // Convert to array and sort
-  const consolidatedArray = Object.values(consolidatedAwards).map(item => ({
-    ...item,
-    years: item.years.sort((a, b) => b.localeCompare(a)) // Most recent first
-  }));
-  
-  // Group by award category for display
-  const awardCategories = {
-    'Team MVP': [],
-    'All Aces': [],
-    'Gold Glove': [],
-    'Other Awards': []
-  };
-  
-  consolidatedArray.forEach(item => {
-    if (item.award === 'Team MVP') {
-      awardCategories['Team MVP'].push(item);
-    } else if (item.award === 'All Aces') {
-      awardCategories['All Aces'].push(item);
-    } else if (item.award === 'Gold Glove') {
-      awardCategories['Gold Glove'].push(item);
-    } else {
-      awardCategories['Other Awards'].push(item);
-    }
-  });
-  
-  let awardsHTML = `
-    <h3>Team Awards</h3>
+  // Calculate career leaders (from all team pitching data, not just filtered)
+  const careerLeaders = calculatePitchingLeaders(teamPitchingData, 'career');
+
+  const leadersTableHTML = `
+    <h3>Team Pitching Leaders</h3>
     <table style="margin-bottom: 20px; width: 100%;">
       <thead>
         <tr>
-          <th>Award</th>
-          <th>Player</th>
-          <th>Position</th>
-          <th>Years</th>
+          <th>Statistic</th>
+          <th>Season Leader</th>
+          <th>Career Leader</th>
         </tr>
       </thead>
       <tbody>
-  `;
-  
-  // Render each category
-  Object.entries(awardCategories).forEach(([category, awards]) => {
-    if (awards.length > 0) {
-      // Sort by award name first, then by earliest year, then by player name
-      awards.sort((a, b) => {
-        // First, sort by award name
-        if (a.award !== b.award) {
-          return a.award.localeCompare(b.award);
-        }
-        
-        // Then by earliest year (most recent first)
-        const aEarliest = Math.max(...a.years.map(y => parseInt(y.split(' ')[0])));
-        const bEarliest = Math.max(...b.years.map(y => parseInt(y.split(' ')[0])));
-        if (aEarliest !== bEarliest) {
-          return bEarliest - aEarliest;
-        }
-        
-        // Finally by player name
-        return a.player.localeCompare(b.player);
-      });
-      
-      awards.forEach(item => {
-        const playerLink = item.player ? 
-          `<a href="player.html?name=${encodeURIComponent(item.player)}">${item.player}</a>` : 
-          '';
-        
-        const yearsDisplay = item.years.join(', ');
-        const countDisplay = item.years.length > 1 ? ` (${item.years.length}×)` : '';
-        
-        awardsHTML += `
-          <tr>
-            <td><strong>${item.award}${countDisplay}</strong></td>
-            <td>${playerLink}</td>
-            <td>${item.position}</td>
-            <td>${yearsDisplay}</td>
-          </tr>
-        `;
-      });
-    }
-  });
-  
-  awardsHTML += `
+        <tr><td><strong>Games</strong></td><td>${seasonLeaders.games}</td><td>${careerLeaders.games}</td></tr>
+        <tr><td><strong>Innings Pitched</strong></td><td>${seasonLeaders.IP}</td><td>${careerLeaders.IP}</td></tr>
+        <tr><td><strong>Runs Allowed</strong></td><td>${seasonLeaders.runsAllowed}</td><td>${careerLeaders.runsAllowed}</td></tr>
+        <tr><td><strong>ERA</strong></td><td>${seasonLeaders.ERA}</td><td>${careerLeaders.ERA}</td></tr>
       </tbody>
     </table>
   `;
   
-  return awardsHTML;
+  // Add awards section
+  const awardsHTML = renderAwardsSection(data);
+  
+  document.getElementById("leadersText").innerHTML = leadersTableHTML + awardsHTML;
 }
 
-function calculateLeaders(data, type) {
+function calculateBattingLeaders(data, type) {
   if (data.length === 0) {
     return {
       games: "N/A", atBats: "N/A", hits: "N/A", runs: "N/A", walks: "N/A",
@@ -492,6 +540,263 @@ function calculateLeaders(data, type) {
   return leaders;
 }
 
+function calculatePitchingLeaders(data, type) {
+  if (data.length === 0) {
+    return {
+      games: "N/A", IP: "N/A", runsAllowed: "N/A", ERA: "N/A"
+    };
+  }
+
+  let aggregatedData = [];
+  
+  if (type === 'career') {
+    // Aggregate career stats by pitcher
+    const pitcherStats = {};
+    data.forEach(p => {
+      if (!pitcherStats[p.name]) {
+        pitcherStats[p.name] = {
+          name: p.name,
+          games: 0,
+          totalIP: 0,
+          runsAllowed: 0,
+          eraValues: []
+        };
+      }
+      pitcherStats[p.name].games += p.games;
+      pitcherStats[p.name].totalIP += parseFloat(p.IP) || 0;
+      pitcherStats[p.name].runsAllowed += p.runsAllowed;
+      
+      if (p.ERA !== "N/A" && !isNaN(p.ERA)) {
+        const ip = parseFloat(p.IP) || 0;
+        if (ip > 0) {
+          pitcherStats[p.name].eraValues.push({
+            era: Number(p.ERA),
+            innings: ip
+          });
+        }
+      }
+    });
+    
+    // Calculate career ERA as weighted average
+    aggregatedData = Object.values(pitcherStats).map(p => {
+      let careerERA = "N/A";
+      if (p.eraValues.length > 0) {
+        let totalEarnedRuns = 0;
+        let totalInnings = 0;
+        
+        p.eraValues.forEach(era => {
+          const earnedRuns = (era.era * era.innings) / 7;
+          totalEarnedRuns += earnedRuns;
+          totalInnings += era.innings;
+        });
+        
+        careerERA = totalInnings > 0 ? (totalEarnedRuns * 7) / totalInnings : "N/A";
+      }
+      
+      return {
+        ...p,
+        IP: p.totalIP,
+        ERA: careerERA
+      };
+    });
+  } else {
+    // For season leaders, use individual season records
+    aggregatedData = data;
+  }
+
+  // Filter ERA candidates to those with meaningful innings
+  const qualifyingPitchersForERA = aggregatedData.filter(p => parseFloat(p.IP) >= 10);
+  
+  let leaders = {};
+  
+  // Counting stats leaders
+  ["games", "runsAllowed"].forEach(stat => {
+    let maxPitcher = aggregatedData.reduce((prev, curr) =>
+      curr[stat] > prev[stat] ? curr : prev,
+      { [stat]: -1 }
+    );
+    
+    if (type === 'season' && maxPitcher.name) {
+      const pitcherRecord = data.find(p => p.name === maxPitcher.name && p[stat] === maxPitcher[stat]);
+      leaders[stat] = `${maxPitcher.name} (${maxPitcher[stat]} - ${pitcherRecord?.year || ''} ${pitcherRecord?.season || ''})`;
+    } else {
+      leaders[stat] = maxPitcher.name ? `${maxPitcher.name} (${maxPitcher[stat]})` : "N/A";
+    }
+  });
+
+  // Innings Pitched leader
+  let mostIP = aggregatedData.reduce((prev, curr) => {
+    let currIP = parseFloat(curr.IP) || 0;
+    let prevIP = parseFloat(prev.IP) || 0;
+    return currIP > prevIP ? curr : prev;
+  }, { IP: "0" });
+  
+  if (mostIP.name) {
+    if (type === 'season') {
+      const pitcherRecord = data.find(p => p.name === mostIP.name && p.IP === mostIP.IP);
+      leaders.IP = `${mostIP.name} (${mostIP.IP} - ${pitcherRecord?.year || ''} ${pitcherRecord?.season || ''})`;
+    } else {
+      leaders.IP = `${mostIP.name} (${parseFloat(mostIP.IP).toFixed(1)})`;
+    }
+  } else {
+    leaders.IP = "N/A";
+  }
+
+  // ERA leader (minimum 10 innings)
+  let bestERA = qualifyingPitchersForERA.reduce((prev, curr) => {
+    let currERA = (curr.ERA !== "N/A" && !isNaN(curr.ERA)) ? Number(curr.ERA) : Infinity;
+    let prevERA = (prev.ERA !== "N/A" && !isNaN(prev.ERA)) ? Number(prev.ERA) : Infinity;
+    return currERA < prevERA ? curr : prev;
+  }, { ERA: Infinity });
+  
+  if (bestERA.name && bestERA.ERA !== Infinity) {
+    const era = Number(bestERA.ERA).toFixed(2);
+    if (type === 'season') {
+      const pitcherRecord = data.find(p => p.name === bestERA.name && Number(p.ERA) === Number(bestERA.ERA));
+      leaders.ERA = `${bestERA.name} (${era} - ${pitcherRecord?.year || ''} ${pitcherRecord?.season || ''})`;
+    } else {
+      leaders.ERA = `${bestERA.name} (${era})`;
+    }
+  } else {
+    leaders.ERA = "N/A";
+  }
+
+  return leaders;
+}
+
+function renderAwardsSection(data) {
+  // Get current filter values
+  const yearVal = document.getElementById("yearFilter").value;
+  const seasonVal = document.getElementById("seasonFilter").value;
+  
+  // Filter awards based on current team and year/season filters
+  let filteredAwards = allAwards.filter(award => {
+    // Must match team (or be a league-wide award with a team member)
+    const teamMatch = award.Team === currentTeam;
+    
+    // Must match year filter
+    const yearMatch = yearVal === "All" || award.Year === yearVal;
+    
+    // Must match season filter
+    const seasonMatch = seasonVal === "All" || award.Season === seasonVal;
+    
+    // Must have valid award name
+    const validAward = award.Award && award.Award.trim() !== "";
+    
+    return teamMatch && yearMatch && seasonMatch && validAward;
+  });
+  
+  if (filteredAwards.length === 0) {
+    return '';
+  }
+  
+  // Consolidate awards by player and award type
+  const consolidatedAwards = {};
+  
+  filteredAwards.forEach(award => {
+    const key = `${award.Player}|${award.Award}|${award.Position || ''}`;
+    
+    if (!consolidatedAwards[key]) {
+      consolidatedAwards[key] = {
+        player: award.Player,
+        award: award.Award,
+        position: award.Position || '',
+        years: []
+      };
+    }
+    
+    consolidatedAwards[key].years.push(`${award.Year} ${award.Season}`);
+  });
+  
+  // Convert to array and sort
+  const consolidatedArray = Object.values(consolidatedAwards).map(item => ({
+    ...item,
+    years: item.years.sort((a, b) => b.localeCompare(a)) // Most recent first
+  }));
+  
+  // Group by award category for display
+  const awardCategories = {
+    'Team MVP': [],
+    'All Aces': [],
+    'Gold Glove': [],
+    'Other Awards': []
+  };
+  
+  consolidatedArray.forEach(item => {
+    if (item.award === 'Team MVP') {
+      awardCategories['Team MVP'].push(item);
+    } else if (item.award === 'All Aces') {
+      awardCategories['All Aces'].push(item);
+    } else if (item.award === 'Gold Glove') {
+      awardCategories['Gold Glove'].push(item);
+    } else {
+      awardCategories['Other Awards'].push(item);
+    }
+  });
+  
+  let awardsHTML = `
+    <h3>Team Awards</h3>
+    <table style="margin-bottom: 20px; width: 100%;">
+      <thead>
+        <tr>
+          <th>Award</th>
+          <th>Player</th>
+          <th>Position</th>
+          <th>Years</th>
+        </tr>
+      </thead>
+      <tbody>
+  `;
+  
+  // Render each category
+  Object.entries(awardCategories).forEach(([category, awards]) => {
+    if (awards.length > 0) {
+      // Sort by award name first, then by earliest year, then by player name
+      awards.sort((a, b) => {
+        // First, sort by award name
+        if (a.award !== b.award) {
+          return a.award.localeCompare(b.award);
+        }
+        
+        // Then by earliest year (most recent first)
+        const aEarliest = Math.max(...a.years.map(y => parseInt(y.split(' ')[0])));
+        const bEarliest = Math.max(...b.years.map(y => parseInt(y.split(' ')[0])));
+        if (aEarliest !== bEarliest) {
+          return bEarliest - aEarliest;
+        }
+        
+        // Finally by player name
+        return a.player.localeCompare(b.player);
+      });
+      
+      awards.forEach(item => {
+        const playerLink = item.player ? 
+          `<a href="player.html?name=${encodeURIComponent(item.player)}">${item.player}</a>` : 
+          '';
+        
+        const yearsDisplay = item.years.join(', ');
+        const countDisplay = item.years.length > 1 ? ` (${item.years.length}×)` : '';
+        
+        awardsHTML += `
+          <tr>
+            <td><strong>${item.award}${countDisplay}</strong></td>
+            <td>${playerLink}</td>
+            <td>${item.position}</td>
+            <td>${yearsDisplay}</td>
+          </tr>
+        `;
+      });
+    }
+  });
+  
+  awardsHTML += `
+      </tbody>
+    </table>
+  `;
+  
+  return awardsHTML;
+}
+
 // Sorting functionality
 function attachSorting() {
   const headers = document.querySelectorAll("#team-stats-table th");
@@ -511,11 +816,30 @@ function sortTable(columnIndex) {
     let x = a.cells[columnIndex].innerText.trim();
     let y = b.cells[columnIndex].innerText.trim();
 
-    // Handle AcesWar column (index 8)
-    if (columnIndex === 8) {
-      if (x === "N/A" && y !== "N/A") return 1;
-      if (y === "N/A" && x !== "N/A") return -1;
-      if (x === "N/A" && y === "N/A") return 0;
+    // Handle special cases for different views
+    if (currentView === 'batting') {
+      // Handle AcesWar column (index 8)
+      if (columnIndex === 8) {
+        if (x === "N/A" && y !== "N/A") return 1;
+        if (y === "N/A" && x !== "N/A") return -1;
+        if (x === "N/A" && y === "N/A") return 0;
+      }
+    } else if (currentView === 'pitching') {
+      // Handle ERA column (index 6) 
+      if (columnIndex === 6) {
+        if (x === "N/A" && y !== "N/A") return 1;
+        if (y === "N/A" && x !== "N/A") return -1;
+        if (x === "N/A" && y === "N/A") return 0;
+      }
+      
+      // Handle IP field (innings pitched can have decimals)
+      if (columnIndex === 4) {
+        let xNum = parseFloat(x);
+        let yNum = parseFloat(y);
+        if (!isNaN(xNum) && !isNaN(yNum)) {
+          return dir === "asc" ? xNum - yNum : yNum - xNum;
+        }
+      }
     }
 
     // Try parsing as numbers
