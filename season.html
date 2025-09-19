@@ -337,8 +337,8 @@ function initializePage() {
   
   renderSeasonSummary();
   renderAwards();
-  renderGameResults();
   renderStandings();
+  renderGameResults();
   switchView('batting');
 }
 
@@ -346,10 +346,25 @@ function renderSeasonSummary() {
   const uniquePlayers = new Set([...seasonBattingData.map(p => p.name), ...seasonPitchingData.map(p => p.name)]);
   const uniqueTeams = new Set([...seasonBattingData.map(p => p.team), ...seasonPitchingData.map(p => p.team)].filter(t => t.toLowerCase() !== "kings"));
   
-  const totalGames = seasonBattingData.reduce((sum, p) => sum + p.games, 0);
+  // Calculate team games from games.json for this season
+  const seasonGames = allGames.filter(g => g.year === currentYear && g.season === currentSeason);
+  const regularSeasonGames = seasonGames.filter(g => g.game_type === 'Regular');
+  const playoffGames = seasonGames.filter(g => g.game_type === 'Playoff');
+  
+  const totalTeamGames = seasonGames.length;
   const totalAtBats = seasonBattingData.reduce((sum, p) => sum + p.atBats, 0);
   const totalHits = seasonBattingData.reduce((sum, p) => sum + p.hits, 0);
   const leagueBA = totalAtBats > 0 ? (totalHits / totalAtBats).toFixed(3) : ".000";
+  
+  // Create games display with breakdown
+  let gamesDisplay = `${totalTeamGames}`;
+  if (regularSeasonGames.length > 0 && playoffGames.length > 0) {
+    gamesDisplay += ` (${regularSeasonGames.length} Regular, ${playoffGames.length} Playoff)`;
+  } else if (regularSeasonGames.length > 0) {
+    gamesDisplay += ` (${regularSeasonGames.length} Regular Season)`;
+  } else if (playoffGames.length > 0) {
+    gamesDisplay += ` (${playoffGames.length} Playoff)`;
+  }
   
   const summaryHTML = `
     <div class="summary-item">
@@ -361,8 +376,8 @@ function renderSeasonSummary() {
       <div class="summary-label">Teams</div>
     </div>
     <div class="summary-item">
-      <div class="summary-number">${totalGames}</div>
-      <div class="summary-label">Total Games</div>
+      <div class="summary-number" style="font-size: ${gamesDisplay.length > 15 ? '1.1em' : '1.5em'};">${gamesDisplay}</div>
+      <div class="summary-label">Games</div>
     </div>
     <div class="summary-item">
       <div class="summary-number">${leagueBA}</div>
@@ -421,8 +436,8 @@ function renderGameResults() {
   
   if (seasonGames.length === 0) return;
   
-  // Add game results section after awards
-  const awardsContainer = document.querySelector('.leaders-awards-container');
+  // Add game results section after standings
+  const standingsSection = document.querySelector('.standings-section');
   
   const gameResultsHTML = `
     <div class="game-results-section" style="margin-top: 30px;">
@@ -433,7 +448,9 @@ function renderGameResults() {
     </div>
   `;
   
-  awardsContainer.insertAdjacentHTML('afterend', gameResultsHTML);
+  if (standingsSection) {
+    standingsSection.insertAdjacentHTML('afterend', gameResultsHTML);
+  }
 }
 
 function renderGameResultsTable(games) {
@@ -511,12 +528,21 @@ function renderGameRow(game) {
     scoreDisplay = `${homeScore} - ${awayScore}`;
   }
   
+  // Check if teams have pages (filter out teams like KPMG, DILFs, etc.)
+  const homeTeamLink = shouldShowTeamLink(game["home team"]) ? 
+    `<a href="team.html?team=${encodeURIComponent(game["home team"])}">${game["home team"]}</a>` : 
+    game["home team"];
+    
+  const awayTeamLink = shouldShowTeamLink(game["away team"]) ? 
+    `<a href="team.html?team=${encodeURIComponent(game["away team"])}">${game["away team"]}</a>` : 
+    game["away team"];
+  
   return `
     <tr>
       <td style="padding: 5px;">${game.date}</td>
-      <td style="padding: 5px;">${game["home team"]}</td>
+      <td style="padding: 5px;">${homeTeamLink}</td>
       <td style="padding: 5px; text-align: center; font-weight: bold;">${scoreDisplay}${forfeit}</td>
-      <td style="padding: 5px;">${game["away team"]}</td>
+      <td style="padding: 5px;">${awayTeamLink}</td>
       <td style="padding: 5px; font-weight: bold;">${game.winner}</td>
     </tr>
   `;
@@ -527,8 +553,8 @@ function renderStandings() {
   
   if (seasonGames.length === 0) return;
   
-  // Add standings section
-  const gameResultsSection = document.querySelector('.game-results-section');
+  // Add standings section after awards
+  const awardsContainer = document.querySelector('.leaders-awards-container');
   
   const standingsHTML = `
     <div class="standings-section" style="margin-top: 30px;">
@@ -539,9 +565,7 @@ function renderStandings() {
     </div>
   `;
   
-  if (gameResultsSection) {
-    gameResultsSection.insertAdjacentHTML('afterend', standingsHTML);
-  }
+  awardsContainer.insertAdjacentHTML('afterend', standingsHTML);
 }
 
 function renderStandingsTable(games) {
@@ -569,7 +593,9 @@ function renderStandingsTable(games) {
         <tbody>
           ${regularStandings.map((team, index) => `
             <tr style="${index % 2 === 0 ? 'background-color: #fafafa;' : ''}">
-              <td style="padding: 8px; font-weight: bold;">${team.name}</td>
+              <td style="padding: 8px; font-weight: bold;">${shouldShowTeamLink(team.name) ? 
+                `<a href="team.html?team=${encodeURIComponent(team.name)}">${team.name}</a>` : 
+                team.name}</td>
               <td style="padding: 8px; text-align: center;">${team.wins}</td>
               <td style="padding: 8px; text-align: center;">${team.losses}</td>
               <td style="padding: 8px; text-align: center;">${team.ties}</td>
@@ -601,7 +627,9 @@ function renderStandingsTable(games) {
         <tbody>
           ${playoffStandings.map((team, index) => `
             <tr style="${index % 2 === 0 ? 'background-color: #fafafa;' : ''}">
-              <td style="padding: 8px; font-weight: bold;">${team.name}</td>
+              <td style="padding: 8px; font-weight: bold;">${shouldShowTeamLink(team.name) ? 
+                `<a href="team.html?team=${encodeURIComponent(team.name)}">${team.name}</a>` : 
+                team.name}</td>
               <td style="padding: 8px; text-align: center;">${team.wins}</td>
               <td style="padding: 8px; text-align: center;">${team.losses}</td>
               <td style="padding: 8px; text-align: center;">${team.ties}</td>
@@ -681,6 +709,18 @@ function calculateStandings(games) {
   });
   
   return standings;
+}
+
+// Helper function to determine if a team should have a clickable link
+function shouldShowTeamLink(teamName) {
+  // Only show links for teams that have dedicated team pages
+  // Filter out historical teams like KPMG, DILFs, etc. that don't have current team pages
+  const teamsWithPages = new Set([
+    ...seasonBattingData.map(p => p.team),
+    ...seasonPitchingData.map(p => p.team)
+  ].filter(t => t && t.toLowerCase() !== "kings"));
+  
+  return teamsWithPages.has(teamName);
 }
 
 function switchView(view) {
