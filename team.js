@@ -86,11 +86,11 @@ function addViewSwitcher() {
 function addGameResultsSection() {
   if (!teamGames || teamGames.length === 0) return;
   
-  const table = document.getElementById('team-stats-table');
-  if (!table) return;
+  const summaryDiv = document.getElementById('summary');
+  if (!summaryDiv) return;
   
   const gameResultsHTML = `
-    <div class="team-game-results" style="margin-top: 30px;">
+    <div class="team-game-results" style="margin-top: 30px; margin-bottom: 30px;">
       <h3>Game Results & Team Record</h3>
       <div id="teamGameResults">
         ${renderTeamGameResults()}
@@ -98,7 +98,7 @@ function addGameResultsSection() {
     </div>
   `;
   
-  table.insertAdjacentHTML('afterend', gameResultsHTML);
+  summaryDiv.insertAdjacentHTML('afterend', gameResultsHTML);
 }
 
 function renderTeamGameResults() {
@@ -120,14 +120,21 @@ function renderTeamGameResults() {
   }
   
   const record = calculateTeamRecord(filteredGames);
+  const championships = getTeamChampionships();
   const regularGames = filteredGames.filter(g => g.game_type === 'Regular');
   const playoffGames = filteredGames.filter(g => g.game_type === 'Playoff');
+  
+  let championshipText = '';
+  if (championships.length > 0) {
+    const championshipYears = championships.map(c => `${c.year} ${c.season}`).join(', ');
+    championshipText = ` | Championships: ${championshipYears}`;
+  }
   
   let html = `
     <div class="team-record" style="background-color: #f0f0f0; padding: 15px; margin-bottom: 20px; border-radius: 5px; text-align: center;">
       <h4>Team Record: ${record.wins}-${record.losses}-${record.ties} (${record.winPct} Win%)</h4>
       <p>Regular Season: ${record.regular.wins}-${record.regular.losses}-${record.regular.ties} | 
-         Playoffs: ${record.playoff.wins}-${record.playoff.losses}-${record.playoff.ties}</p>
+         Playoffs: ${record.playoff.wins}-${record.playoff.losses}-${record.playoff.ties}${championshipText}</p>
     </div>
   `;
   
@@ -260,6 +267,109 @@ function calculateTeamRecord(games) {
     regular: { wins: regularWins, losses: regularLosses, ties: regularTies },
     playoff: { wins: playoffWins, losses: playoffLosses, ties: playoffTies }
   };
+}
+
+function getTeamChampionships() {
+  const championships = [];
+  
+  // Get all unique season combinations from team's games
+  const teamSeasons = [...new Set(teamGames.map(g => `${g.year}-${g.season}`))];
+  
+  teamSeasons.forEach(seasonKey => {
+    const [year, season] = seasonKey.split('-');
+    
+    // Get all games for this season (not just team's games)
+    const allSeasonGames = teamGames.filter(g => g.year === year && g.season === season);
+    
+    // Only check seasons that have playoff games
+    const playoffGames = allSeasonGames.filter(g => g.game_type === 'Playoff');
+    if (playoffGames.length === 0) return;
+    
+    // Calculate standings for this season's playoff games
+    const playoffStandings = calculateSeasonStandings(year, season, 'Playoff');
+    
+    // Check if current team won the championship (is at top of playoff standings)
+    if (playoffStandings.length > 0 && playoffStandings[0].name === currentTeam) {
+      championships.push({ year, season });
+    }
+  });
+  
+  return championships;
+}
+
+function calculateSeasonStandings(year, season, gameType) {
+  // We need to get ALL games for this season, not just the team's games
+  // Since we only have teamGames, we'll work with what we have but this is a limitation
+  const seasonGames = teamGames.filter(g => 
+    g.year === year && 
+    g.season === season && 
+    g.game_type === gameType
+  );
+  
+  if (seasonGames.length === 0) return [];
+  
+  const teamStats = {};
+  
+  seasonGames.forEach(game => {
+    const homeTeam = game["home team"];
+    const awayTeam = game["away team"];
+    const winner = game.winner;
+    
+    // Initialize teams if not exists
+    if (!teamStats[homeTeam]) {
+      teamStats[homeTeam] = { name: homeTeam, wins: 0, losses: 0, ties: 0, games: 0 };
+    }
+    if (!teamStats[awayTeam]) {
+      teamStats[awayTeam] = { name: awayTeam, wins: 0, losses: 0, ties: 0, games: 0 };
+    }
+    
+    // Count games
+    teamStats[homeTeam].games++;
+    teamStats[awayTeam].games++;
+    
+    // Count results
+    if (winner === "Tie") {
+      teamStats[homeTeam].ties++;
+      teamStats[awayTeam].ties++;
+    } else if (winner === homeTeam) {
+      teamStats[homeTeam].wins++;
+      teamStats[awayTeam].losses++;
+    } else if (winner === awayTeam) {
+      teamStats[awayTeam].wins++;
+      teamStats[homeTeam].losses++;
+    } else if (winner.includes("Forfeit")) {
+      const actualWinner = winner.replace("Forfeit - ", "").replace("Tie", "");
+      if (actualWinner && actualWinner !== "Tie") {
+        if (actualWinner === homeTeam) {
+          teamStats[homeTeam].wins++;
+          teamStats[awayTeam].losses++;
+        } else if (actualWinner === awayTeam) {
+          teamStats[awayTeam].wins++;
+          teamStats[homeTeam].losses++;
+        }
+      } else {
+        teamStats[homeTeam].ties++;
+        teamStats[awayTeam].ties++;
+      }
+    }
+  });
+  
+  // Calculate win percentage and sort
+  const standings = Object.values(teamStats).map(team => {
+    const totalDecidedGames = team.wins + team.losses;
+    team.winPct = totalDecidedGames > 0 ? (team.wins / totalDecidedGames).toFixed(3) : '.000';
+    return team;
+  });
+  
+  // Sort by win percentage (descending), then by wins (descending)
+  standings.sort((a, b) => {
+    if (parseFloat(b.winPct) !== parseFloat(a.winPct)) {
+      return parseFloat(b.winPct) - parseFloat(a.winPct);
+    }
+    return b.wins - a.wins;
+  });
+  
+  return standings;
 }
 
 function switchToView(view) {
