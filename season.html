@@ -1,117 +1,4 @@
-function switchView(view) {
-  currentView = view;
-  
-  // Update button styles
-  const battingBtn = document.getElementById('battingViewBtn');
-  const pitchingBtn = document.getElementById('pitchingViewBtn');
-  
-  if (view === 'batting') {
-    battingBtn.classList.add('active');
-    pitchingBtn.classList.remove('active');
-  } else {
-    pitchingBtn.classList.add('active');
-    battingBtn.classList.remove('active');
-  }
-  
-  renderLeaders();
-  renderStatsTable();
-}
-
-function renderLeaders() {
-  const leadersTitle = document.getElementById('leadersTitle');
-  const tbody = document.getElementById('leadersTableBody');
-  
-  if (currentView === 'batting') {
-    leadersTitle.textContent = 'Batting Leaders';
-    renderBattingLeaders(tbody);
-  } else {
-    leadersTitle.textContent = 'Pitching Leaders';
-    renderPitchingLeaders(tbody);
-  }
-}
-
-function renderBattingLeaders(tbody) {
-  if (seasonBattingData.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="3">No batting data available</td></tr>';
-    return;
-  }
-  
-  const qualifyingBatters = seasonBattingData.filter(p => p.atBats >= 20);
-  
-  // Calculate leaders
-  const leaders = {
-    'Games': seasonBattingData.reduce((prev, curr) => curr.games > prev.games ? curr : prev, {games: -1}),
-    'At Bats': seasonBattingData.reduce((prev, curr) => curr.atBats > prev.atBats ? curr : prev, {atBats: -1}),
-    'Hits': seasonBattingData.reduce((prev, curr) => curr.hits > prev.hits ? curr : prev, {hits: -1}),
-    'Runs': seasonBattingData.reduce((prev, curr) => curr.runs > prev.runs ? curr : prev, {runs: -1}),
-    'Walks': seasonBattingData.reduce((prev, curr) => curr.walks > prev.walks ? curr : prev, {walks: -1}),
-    'Batting Average': qualifyingBatters.reduce((prev, curr) => {
-      const currBA = curr.atBats > 0 ? curr.hits / curr.atBats : 0;
-      const prevBA = prev.atBats > 0 ? prev.hits / prev.atBats : 0;
-      return currBA > prevBA ? curr : prev;
-    }, {atBats: 0, hits: 0}),
-    'AcesBPI': seasonBattingData.reduce((prev, curr) => {
-      const currWAR = curr.AcesWar !== "N/A" && !isNaN(curr.AcesWar) ? Number(curr.AcesWar) : -Infinity;
-      const prevWAR = prev.AcesWar !== "N/A" && !isNaN(prev.AcesWar) ? Number(prev.AcesWar) : -Infinity;
-      return currWAR > prevWAR ? curr : prev;
-    }, {AcesWar: -Infinity})
-  };
-  
-  tbody.innerHTML = '';
-  Object.entries(leaders).forEach(([stat, player]) => {
-    if (!player.name) return;
-    
-    let value = '';
-    switch(stat) {
-      case 'Games': value = player.games; break;
-      case 'At Bats': value = player.atBats; break;
-      case 'Hits': value = player.hits; break;
-      case 'Runs': value = player.runs; break;
-      case 'Walks': value = player.walks; break;
-      case 'Batting Average': value = player.atBats > 0 ? (player.hits / player.atBats).toFixed(3) : '.000'; break;
-      case 'AcesBPI': value = player.AcesWar !== "N/A" ? Number(player.AcesWar).toFixed(2) : 'N/A'; break;
-    }
-    
-    tbody.innerHTML += `
-      <tr>
-        <td><strong>${stat}</strong></td>
-        <td><a href="player.html?name=${encodeURIComponent(player.name)}">${player.name}</a></td>
-        <td class="stat-value">${value}</td>
-      </tr>
-    `;
-  });
-}
-
-function renderPitchingLeaders(tbody) {
-  if (seasonPitchingData.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="3">No pitching data available</td></tr>';
-    return;
-  }
-  
-  const qualifyingPitchers = seasonPitchingData.filter(p => p.IP >= 10);
-  
-  // Calculate leaders
-  const leaders = {
-    'Games': seasonPitchingData.reduce((prev, curr) => curr.games > prev.games ? curr : prev, {games: -1}),
-    'Innings Pitched': seasonPitchingData.reduce((prev, curr) => curr.IP > prev.IP ? curr : prev, {IP: -1}),
-    'Runs Allowed': seasonPitchingData.reduce((prev, curr) => curr.runsAllowed > prev.runsAllowed ? curr : prev, {runsAllowed: -1}),
-    'Best ERA': qualifyingPitchers.reduce((prev, curr) => {
-      const currERA = curr.ERA !== "N/A" && !isNaN(curr.ERA) ? Number(curr.ERA) : Infinity;
-      const prevERA = prev.ERA !== "N/A" && !isNaN(prev.ERA) ? Number(prev.ERA) : Infinity;
-      return currERA < prevERA ? curr : prev;
-    }, {ERA: Infinity})
-  };
-  
-  tbody.innerHTML = '';
-  Object.entries(leaders).forEach(([stat, player]) => {
-    if (!player.name) return;
-    
-    let value = '';
-    switch(stat) {
-      case 'Games': value = player.games; break;
-      case 'Innings Pitched': value = player.IP.toFixed(1); break;
-      case 'Runs Allowed': value = player.runsAllowed; break;
-      case 'Best ERA': value = player.ERA !== "N/A" ? Number(player.ERA).toFixed(2) :<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -795,3 +682,269 @@ function calculateStandings(games) {
   
   return standings;
 }
+
+function switchView(view) {
+  currentView = view;
+  
+  // Update button styles
+  const battingBtn = document.getElementById('battingViewBtn');
+  const pitchingBtn = document.getElementById('pitchingViewBtn');
+  
+  if (view === 'batting') {
+    battingBtn.classList.add('active');
+    pitchingBtn.classList.remove('active');
+  } else {
+    pitchingBtn.classList.add('active');
+    battingBtn.classList.remove('active');
+  }
+  
+  renderLeaders();
+  renderStatsTable();
+}
+
+function renderLeaders() {
+  const leadersTitle = document.getElementById('leadersTitle');
+  const tbody = document.getElementById('leadersTableBody');
+  
+  if (currentView === 'batting') {
+    leadersTitle.textContent = 'Batting Leaders';
+    renderBattingLeaders(tbody);
+  } else {
+    leadersTitle.textContent = 'Pitching Leaders';
+    renderPitchingLeaders(tbody);
+  }
+}
+
+function renderBattingLeaders(tbody) {
+  if (seasonBattingData.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="3">No batting data available</td></tr>';
+    return;
+  }
+  
+  const qualifyingBatters = seasonBattingData.filter(p => p.atBats >= 20);
+  
+  // Calculate leaders
+  const leaders = {
+    'Games': seasonBattingData.reduce((prev, curr) => curr.games > prev.games ? curr : prev, {games: -1}),
+    'At Bats': seasonBattingData.reduce((prev, curr) => curr.atBats > prev.atBats ? curr : prev, {atBats: -1}),
+    'Hits': seasonBattingData.reduce((prev, curr) => curr.hits > prev.hits ? curr : prev, {hits: -1}),
+    'Runs': seasonBattingData.reduce((prev, curr) => curr.runs > prev.runs ? curr : prev, {runs: -1}),
+    'Walks': seasonBattingData.reduce((prev, curr) => curr.walks > prev.walks ? curr : prev, {walks: -1}),
+    'Batting Average': qualifyingBatters.reduce((prev, curr) => {
+      const currBA = curr.atBats > 0 ? curr.hits / curr.atBats : 0;
+      const prevBA = prev.atBats > 0 ? prev.hits / prev.atBats : 0;
+      return currBA > prevBA ? curr : prev;
+    }, {atBats: 0, hits: 0}),
+    'AcesBPI': seasonBattingData.reduce((prev, curr) => {
+      const currWAR = curr.AcesWar !== "N/A" && !isNaN(curr.AcesWar) ? Number(curr.AcesWar) : -Infinity;
+      const prevWAR = prev.AcesWar !== "N/A" && !isNaN(prev.AcesWar) ? Number(prev.AcesWar) : -Infinity;
+      return currWAR > prevWAR ? curr : prev;
+    }, {AcesWar: -Infinity})
+  };
+  
+  tbody.innerHTML = '';
+  Object.entries(leaders).forEach(([stat, player]) => {
+    if (!player.name) return;
+    
+    let value = '';
+    switch(stat) {
+      case 'Games': value = player.games; break;
+      case 'At Bats': value = player.atBats; break;
+      case 'Hits': value = player.hits; break;
+      case 'Runs': value = player.runs; break;
+      case 'Walks': value = player.walks; break;
+      case 'Batting Average': value = player.atBats > 0 ? (player.hits / player.atBats).toFixed(3) : '.000'; break;
+      case 'AcesBPI': value = player.AcesWar !== "N/A" ? Number(player.AcesWar).toFixed(2) : 'N/A'; break;
+    }
+    
+    tbody.innerHTML += `
+      <tr>
+        <td><strong>${stat}</strong></td>
+        <td><a href="player.html?name=${encodeURIComponent(player.name)}">${player.name}</a></td>
+        <td class="stat-value">${value}</td>
+      </tr>
+    `;
+  });
+}
+
+function renderPitchingLeaders(tbody) {
+  if (seasonPitchingData.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="3">No pitching data available</td></tr>';
+    return;
+  }
+  
+  const qualifyingPitchers = seasonPitchingData.filter(p => p.IP >= 10);
+  
+  // Calculate leaders
+  const leaders = {
+    'Games': seasonPitchingData.reduce((prev, curr) => curr.games > prev.games ? curr : prev, {games: -1}),
+    'Innings Pitched': seasonPitchingData.reduce((prev, curr) => curr.IP > prev.IP ? curr : prev, {IP: -1}),
+    'Runs Allowed': seasonPitchingData.reduce((prev, curr) => curr.runsAllowed > prev.runsAllowed ? curr : prev, {runsAllowed: -1}),
+    'Best ERA': qualifyingPitchers.reduce((prev, curr) => {
+      const currERA = curr.ERA !== "N/A" && !isNaN(curr.ERA) ? Number(curr.ERA) : Infinity;
+      const prevERA = prev.ERA !== "N/A" && !isNaN(prev.ERA) ? Number(prev.ERA) : Infinity;
+      return currERA < prevERA ? curr : prev;
+    }, {ERA: Infinity})
+  };
+  
+  tbody.innerHTML = '';
+  Object.entries(leaders).forEach(([stat, player]) => {
+    if (!player.name) return;
+    
+    let value = '';
+    switch(stat) {
+      case 'Games': value = player.games; break;
+      case 'Innings Pitched': value = player.IP.toFixed(1); break;
+      case 'Runs Allowed': value = player.runsAllowed; break;
+      case 'Best ERA': value = player.ERA !== "N/A" ? Number(player.ERA).toFixed(2) : 'N/A'; break;
+    }
+    
+    tbody.innerHTML += `
+      <tr>
+        <td><strong>${stat}</strong></td>
+        <td><a href="pitcher.html?name=${encodeURIComponent(player.name)}">${player.name}</a></td>
+        <td class="stat-value">${value}</td>
+      </tr>
+    `;
+  });
+}
+
+function renderStatsTable() {
+  const tableHead = document.getElementById('tableHead');
+  const tbody = document.querySelector('#seasonStatsTable tbody');
+  
+  if (currentView === 'batting') {
+    // Batting table headers
+    tableHead.innerHTML = `
+      <tr>
+        <th data-field="name">Name</th>
+        <th data-field="team">Team</th>
+        <th data-field="games">Games</th>
+        <th data-field="atBats">At Bats</th>
+        <th data-field="hits">Hits</th>
+        <th data-field="runs">Runs</th>
+        <th data-field="walks">Walks</th>
+        <th data-field="AcesWar">AcesBPI</th>
+        <th data-field="BA">BA</th>
+        <th data-field="OBP">OBP</th>
+        <th data-field="Sub">Sub</th>
+      </tr>
+    `;
+    
+    tbody.innerHTML = '';
+    seasonBattingData.forEach(p => {
+      const BA = p.atBats > 0 ? (p.hits / p.atBats).toFixed(3) : ".000";
+      const OBP = (p.atBats + p.walks) > 0
+        ? ((p.hits + p.walks) / (p.atBats + p.walks)).toFixed(3)
+        : ".000";
+      const AcesWar = p.AcesWar !== "N/A" && !isNaN(p.AcesWar)
+        ? Number(p.AcesWar).toFixed(2)
+        : "N/A";
+
+      tbody.innerHTML += `
+        <tr>
+          <td><a href="player.html?name=${encodeURIComponent(p.name)}">${p.name}</a></td>
+          <td><a href="team.html?team=${encodeURIComponent(p.team)}">${p.team}</a></td>
+          <td>${p.games}</td>
+          <td>${p.atBats}</td>
+          <td>${p.hits}</td>
+          <td>${p.runs}</td>
+          <td>${p.walks}</td>
+          <td>${AcesWar}</td>
+          <td>${BA}</td>
+          <td>${OBP}</td>
+          <td>${p.Sub || ""}</td>
+        </tr>
+      `;
+    });
+  } else {
+    // Pitching table headers
+    tableHead.innerHTML = `
+      <tr>
+        <th data-field="name">Name</th>
+        <th data-field="team">Team</th>
+        <th data-field="games">Games</th>
+        <th data-field="IP">Innings Pitched</th>
+        <th data-field="runsAllowed">Runs Allowed</th>
+        <th data-field="ERA">ERA</th>
+      </tr>
+    `;
+    
+    tbody.innerHTML = '';
+    seasonPitchingData.forEach(p => {
+      const ERA = p.ERA !== "N/A" && !isNaN(p.ERA)
+        ? Number(p.ERA).toFixed(2)
+        : "N/A";
+
+      tbody.innerHTML += `
+        <tr>
+          <td><a href="pitcher.html?name=${encodeURIComponent(p.name)}">${p.name}</a></td>
+          <td><a href="team.html?team=${encodeURIComponent(p.team)}">${p.team}</a></td>
+          <td>${p.games}</td>
+          <td>${p.IP.toFixed(1)}</td>
+          <td>${p.runsAllowed}</td>
+          <td>${ERA}</td>
+        </tr>
+      `;
+    });
+  }
+  
+  attachSorting();
+}
+
+function attachSorting() {
+  const headers = document.querySelectorAll("#seasonStatsTable th");
+  headers.forEach((th, idx) => {
+    th.onclick = () => sortTable(idx, th.getAttribute("data-field"));
+  });
+}
+
+function sortTable(columnIndex, field) {
+  const table = document.getElementById("seasonStatsTable");
+  const rows = Array.from(table.rows).slice(1);
+
+  let dir = currentSort.column === field && currentSort.dir === "asc" ? "desc" : "asc";
+  currentSort = { column: field, dir };
+
+  rows.sort((a, b) => {
+    let x = a.cells[columnIndex].innerText.trim();
+    let y = b.cells[columnIndex].innerText.trim();
+
+    // Handle special cases
+    if (field === "AcesWar" || field === "ERA") {
+      if (x === "N/A" && y !== "N/A") return 1;
+      if (y === "N/A" && x !== "N/A") return -1;
+      if (x === "N/A" && y === "N/A") return 0;
+    }
+
+    // Handle IP field (innings pitched can have decimals)
+    if (field === "IP") {
+      let xNum = parseFloat(x);
+      let yNum = parseFloat(y);
+      if (!isNaN(xNum) && !isNaN(yNum)) {
+        return dir === "asc" ? xNum - yNum : yNum - xNum;
+      }
+    }
+
+    // Try parsing as numbers first
+    let xNum = parseFloat(x.replace(/,/g, ""));
+    let yNum = parseFloat(y.replace(/,/g, ""));
+
+    if (!isNaN(xNum) && !isNaN(yNum)) {
+      return dir === "asc" ? xNum - yNum : yNum - xNum;
+    }
+
+    // Fall back to string comparison
+    return dir === "asc" ? x.localeCompare(y) : y.localeCompare(x);
+  });
+
+  // Re-append sorted rows
+  rows.forEach(row => table.tBodies[0].appendChild(row));
+
+  // Update sort indicators
+  document.querySelectorAll("#seasonStatsTable th").forEach(th => th.classList.remove("asc", "desc"));
+  table.rows[0].cells[columnIndex].classList.add(dir);
+}
+</script>
+</body>
+</html>
