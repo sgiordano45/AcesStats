@@ -101,12 +101,15 @@
 
 <script>
 let allData = [];
+let allGames = [];
 
-// Load statistics data
-fetch("data.json")
-  .then(res => res.json())
-  .then(data => {
-    allData = data.map(p => ({
+// Load statistics data and games data
+Promise.all([
+  fetch("data.json").then(res => res.json()),
+  fetch("games.json").then(res => res.ok ? res.json() : [])
+])
+  .then(([battingData, gamesData]) => {
+    allData = battingData.map(p => ({
       ...p,
       name: p.name ? p.name.trim() : "",
       team: p.team ? p.team.trim() : "",
@@ -116,12 +119,14 @@ fetch("data.json")
       hits: Number(p.hits) || 0
     }));
     
+    allGames = gamesData;
+    
     generateTeamCards();
   })
   .catch(error => {
     console.error("Error loading data:", error);
     document.getElementById("teams-container").innerHTML = 
-      '<p>Error loading team data. Please check that data.json is available.</p>';
+      '<p>Error loading team data. Please check that data files are available.</p>';
   });
 
 function generateTeamCards() {
@@ -135,13 +140,26 @@ function generateTeamCards() {
     const teamData = allData.filter(p => p.team === teamName);
     const years = [...new Set(teamData.map(p => p.year))].sort();
     const totalPlayers = new Set(teamData.map(p => p.name)).size;
-    const totalGames = teamData.reduce((sum, p) => sum + p.games, 0);
+    
+    // Calculate team games from games.json
+    const teamGames = allGames.filter(g => 
+      g["home team"] === teamName || g["away team"] === teamName
+    );
+    const totalTeamGames = teamGames.length;
+    const regularSeasonGames = teamGames.filter(g => g.game_type === 'Regular').length;
+    const playoffGames = teamGames.filter(g => g.game_type === 'Playoff').length;
+    
+    // Calculate championships (team finished first in playoff standings)
+    const championships = calculateTeamChampionships(teamName);
     
     return {
       name: teamName,
       years: years,
       totalPlayers: totalPlayers,
-      totalGames: totalGames,
+      totalTeamGames: totalTeamGames,
+      regularSeasonGames: regularSeasonGames,
+      playoffGames: playoffGames,
+      championships: championships,
       firstYear: years[0],
       lastYear: years[years.length - 1]
     };
@@ -153,6 +171,25 @@ function generateTeamCards() {
     const yearsText = team.years.length > 1 ? 
       `${team.firstYear} - ${team.lastYear}` : 
       team.firstYear;
+    
+    // Create games breakdown text
+    let gamesText = `${team.totalTeamGames} total games`;
+    if (team.regularSeasonGames > 0 && team.playoffGames > 0) {
+      gamesText = `${team.totalTeamGames} games (${team.regularSeasonGames} regular, ${team.playoffGames} playoff)`;
+    } else if (team.regularSeasonGames > 0) {
+      gamesText = `${team.totalTeamGames} games (${team.regularSeasonGames} regular season)`;
+    } else if (team.playoffGames > 0) {
+      gamesText = `${team.totalTeamGames} games (${team.playoffGames} playoff)`;
+    }
+    
+    // Add championship text if any
+    let championshipHTML = '';
+    if (team.championships.length > 0) {
+      const championshipText = team.championships.length === 1 ? 
+        `🏆 ${team.championships[0]}` : 
+        `🏆 ${team.championships.length} Championships`;
+      championshipHTML = `<p style="color: #d4af37; font-weight: bold; margin-top: 10px;">${championshipText}</p>`;
+    }
       
     const cardHTML = `
       <a href="team.html?team=${encodeURIComponent(team.name)}">
@@ -162,15 +199,113 @@ function generateTeamCards() {
           <p><strong>Active:</strong> ${yearsText}</p>
           <div class="team-stats">
             <p>${team.totalPlayers} total players</p>
-            <p>${team.totalGames} total games</p>
+            <p>${gamesText}</p>
             <p>${team.years.length} season${team.years.length !== 1 ? 's' : ''}</p>
           </div>
+          ${championshipHTML}
         </div>
       </a>
     `;
     
     container.innerHTML += cardHTML;
   });
+}
+
+function calculateTeamChampionships(teamName) {
+  const championships = [];
+  
+  // Get all games for this team
+  const teamGames = allGames.filter(g => 
+    g["home team"] === teamName || g["away team"] === teamName
+  );
+  
+  // Get unique seasons for this team
+  const teamSeasons = [...new Set(teamGames.map(g => `${g.year}-${g.season}`))];
+  
+  teamSeasons.forEach(seasonKey => {
+    const [year, season] = seasonKey.split('-');
+    
+    // Get all playoff games for this season (for all teams, not just current team)
+    const allPlayoffGames = allGames.filter(g => 
+      g.year === year && 
+      g.season === season && 
+      g.game_type === 'Playoff'
+    );
+    
+    if (allPlayoffGames.length === 0) return; // No playoffs this season
+    
+    // Calculate playoff standings for this season
+    const playoffStandings = calculatePlayoffStandings(allPlayoffGames);
+    
+    // Check if current team won the championship (is at top of standings)
+    if (playoffStandings.length > 0 && playoffStandings[0].name === teamName) {
+      championships.push(`${year} ${season}`);
+    }
+  });
+  
+  return championships;
+}
+
+function calculatePlayoffStandings(playoffGames) {
+  const teamStats = {};
+  
+  playoffGames.forEach(game => {
+    const homeTeam = game["home team"];
+    const awayTeam = game["away team"];
+    const winner = game.winner;
+    
+    // Initialize teams if not exists
+    if (!teamStats[homeTeam]) {
+      teamStats[homeTeam] = { name: homeTeam, wins: 0, losses: 0, ties: 0 };
+    }
+    if (!teamStats[awayTeam]) {
+      teamStats[awayTeam] = { name: awayTeam, wins: 0, losses: 0, ties: 0 };
+    }
+    
+    // Count results
+    if (winner === "Tie") {
+      teamStats[homeTeam].ties++;
+      teamStats[awayTeam].ties++;
+    } else if (winner === homeTeam) {
+      teamStats[homeTeam].wins++;
+      teamStats[awayTeam].losses++;
+    } else if (winner === awayTeam) {
+      teamStats[awayTeam].wins++;
+      teamStats[homeTeam].losses++;
+    } else if (winner.includes("Forfeit")) {
+      // Handle forfeit cases
+      const actualWinner = winner.replace("Forfeit - ", "").replace("Tie", "");
+      if (actualWinner && actualWinner !== "Tie") {
+        if (actualWinner === homeTeam) {
+          teamStats[homeTeam].wins++;
+          teamStats[awayTeam].losses++;
+        } else if (actualWinner === awayTeam) {
+          teamStats[awayTeam].wins++;
+          teamStats[homeTeam].losses++;
+        }
+      } else {
+        teamStats[homeTeam].ties++;
+        teamStats[awayTeam].ties++;
+      }
+    }
+  });
+  
+  // Calculate win percentage and sort
+  const standings = Object.values(teamStats).map(team => {
+    const totalDecidedGames = team.wins + team.losses;
+    team.winPct = totalDecidedGames > 0 ? team.wins / totalDecidedGames : 0;
+    return team;
+  });
+  
+  // Sort by win percentage (descending), then by wins (descending)
+  standings.sort((a, b) => {
+    if (b.winPct !== a.winPct) {
+      return b.winPct - a.winPct;
+    }
+    return b.wins - a.wins;
+  });
+  
+  return standings;
 }
 </script>
 </body>
