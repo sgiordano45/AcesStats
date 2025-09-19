@@ -4,7 +4,7 @@ let allAwards = [];
 let teamGames = [];
 let currentSort = { column: null, dir: "asc" };
 let currentTeam = null;
-let currentView = 'batting'; // 'batting' or 'pitching'
+let currentView = 'batting';
 
 // Initialize page
 const params = new URLSearchParams(window.location.search);
@@ -26,7 +26,6 @@ if (!currentTeam) {
 
 async function loadTeamData() {
   try {
-    // Load all data including games
     const [battingResponse, pitchingResponse, awardsResponse, gamesResponse] = await Promise.all([
       fetch("data.json"),
       fetch("pitching.json"),
@@ -44,7 +43,6 @@ async function loadTeamData() {
     teamData = cleanBattingData(battingData).filter(p => p.team === currentTeam);
     teamPitchingData = cleanPitchingData(pitchingData).filter(p => p.team === currentTeam);
     
-    // Filter games for this team
     teamGames = gamesData.filter(g => 
       g["home team"] === currentTeam || g["away team"] === currentTeam
     );
@@ -57,17 +55,15 @@ async function loadTeamData() {
       return;
     }
 
-    // Add view switching buttons and game results
-    addViewSwitcher();
     addGameResultsSection();
-    
+    addViewSwitcher();
     populateFilters();
     switchToView('batting');
   } catch (error) {
     console.error("Error loading team data:", error);
     document.body.innerHTML = `
       <h1>Error loading team data</h1>
-      <p>Could not load statistics or awards. Please check that data files are available.</p>
+      <p>Could not load statistics. Please check that data files are available.</p>
       <p><a href="index.html">Return to main page</a></p>
     `;
   }
@@ -75,10 +71,7 @@ async function loadTeamData() {
 
 function addViewSwitcher() {
   const filtersDiv = document.querySelector('div:has(#yearFilter)');
-  if (!filtersDiv) {
-    console.error('Could not find filters div');
-    return;
-  }
+  if (!filtersDiv) return;
   
   const viewSwitcher = document.createElement('div');
   viewSwitcher.innerHTML = `
@@ -93,12 +86,8 @@ function addViewSwitcher() {
 function addGameResultsSection() {
   if (!teamGames || teamGames.length === 0) return;
   
-  // Add game results section after the table
   const table = document.getElementById('team-stats-table');
-  if (!table) {
-    console.error('Could not find team stats table');
-    return;
-  }
+  if (!table) return;
   
   const gameResultsHTML = `
     <div class="team-game-results" style="margin-top: 30px;">
@@ -116,14 +105,11 @@ function renderTeamGameResults() {
   const yearFilter = document.getElementById("yearFilter");
   const seasonFilter = document.getElementById("seasonFilter");
   
-  if (!yearFilter || !seasonFilter) {
-    return '<p>Loading filters...</p>';
-  }
+  if (!yearFilter || !seasonFilter) return '<p>Loading...</p>';
   
   const yearVal = yearFilter.value;
   const seasonVal = seasonFilter.value;
   
-  // Filter games based on current filters
   let filteredGames = teamGames.filter(game => 
     (yearVal === "All" || game.year === yearVal) &&
     (seasonVal === "All" || game.season === seasonVal)
@@ -133,10 +119,7 @@ function renderTeamGameResults() {
     return '<p>No games found for the selected filters.</p>';
   }
   
-  // Calculate team record
   const record = calculateTeamRecord(filteredGames);
-  
-  // Separate regular season and playoff games
   const regularGames = filteredGames.filter(g => g.game_type === 'Regular');
   const playoffGames = filteredGames.filter(g => g.game_type === 'Playoff');
   
@@ -148,7 +131,6 @@ function renderTeamGameResults() {
     </div>
   `;
   
-  // Regular season games
   if (regularGames.length > 0) {
     html += `
       <h4>Regular Season Games (${regularGames.length})</h4>
@@ -173,7 +155,6 @@ function renderTeamGameResults() {
     `;
   }
   
-  // Playoff games
   if (playoffGames.length > 0) {
     html += `
       <h4>Playoff Games (${playoffGames.length})</h4>
@@ -210,7 +191,6 @@ function renderTeamGameRow(game) {
   const awayScore = game["away score"];
   const forfeit = game.forfeit === "Yes" ? " (Forfeit)" : "";
   
-  // Determine result
   let result = "T";
   let resultStyle = "color: #666;";
   
@@ -222,7 +202,6 @@ function renderTeamGameRow(game) {
     resultStyle = "color: red; font-weight: bold;";
   }
   
-  // Format score
   let scoreDisplay;
   if (homeScore === "W" || homeScore === "L") {
     scoreDisplay = isHome ? 
@@ -286,7 +265,6 @@ function calculateTeamRecord(games) {
 function switchToView(view) {
   currentView = view;
   
-  // Update button styles
   const battingBtn = document.getElementById('battingViewBtn');
   const pitchingBtn = document.getElementById('pitchingViewBtn');
   
@@ -304,10 +282,7 @@ function switchToView(view) {
     }
   }
   
-  // Update table headers
   updateTableHeaders(view);
-  
-  // Re-apply filters for the current view
   applyFilters();
 }
 
@@ -375,13 +350,8 @@ function cleanPitchingData(data) {
 }
 
 function populateFilters() {
-  // Use batting data as primary source, fallback to pitching if no batting data
   const primaryData = teamData.length > 0 ? teamData : teamPitchingData;
-  
-  if (primaryData.length === 0) {
-    console.warn('No data available for filters');
-    return;
-  }
+  if (primaryData.length === 0) return;
   
   const years = [...new Set(primaryData.map(p => p.year))].sort((a, b) => b - a);
   const seasons = [...new Set(primaryData.map(p => p.season))].sort();
@@ -389,12 +359,8 @@ function populateFilters() {
   const yearFilter = document.getElementById("yearFilter");
   const seasonFilter = document.getElementById("seasonFilter");
   
-  if (!yearFilter || !seasonFilter) {
-    console.error('Filter elements not found');
-    return;
-  }
+  if (!yearFilter || !seasonFilter) return;
 
-  // Clear existing options except "All"
   yearFilter.innerHTML = '<option value="All">All</option>';
   seasonFilter.innerHTML = '<option value="All">All</option>';
 
@@ -438,7 +404,6 @@ function applyFilters() {
     renderPitchingTable(filtered);
   }
   
-  // Update game results if they exist
   const gameResultsDiv = document.getElementById('teamGameResults');
   if (gameResultsDiv && teamGames) {
     gameResultsDiv.innerHTML = renderTeamGameResults();
@@ -460,7 +425,6 @@ function renderBattingTable(data) {
     return;
   }
 
-  // Calculate totals
   let totals = {
     games: 0,
     atBats: 0,
@@ -477,16 +441,13 @@ function renderBattingTable(data) {
     totals.walks += p.walks;
   });
 
-  // Update totals text
   const totalsText = document.getElementById("totalsText");
   if (totalsText) {
     totalsText.textContent = `Team Batting Totals — Games: ${totals.games}, At Bats: ${totals.atBats}, Hits: ${totals.hits}, Runs: ${totals.runs}, Walks: ${totals.walks}`;
   }
 
-  // Render leaders table
   renderBattingLeadersTable(data);
 
-  // Generate player stats rows
   data.forEach(p => {
     const row = document.createElement("tr");
     const BA = p.atBats > 0 ? (p.hits / p.atBats).toFixed(3) : ".000";
@@ -532,7 +493,6 @@ function renderPitchingTable(data) {
     return;
   }
 
-  // Calculate totals
   let totals = {
     games: 0,
     totalIP: 0,
@@ -545,16 +505,13 @@ function renderPitchingTable(data) {
     totals.runsAllowed += p.runsAllowed;
   });
 
-  // Update totals text
   const totalsText = document.getElementById("totalsText");
   if (totalsText) {
     totalsText.textContent = `Team Pitching Totals — Games: ${totals.games}, Innings Pitched: ${totals.totalIP.toFixed(1)}, Runs Allowed: ${totals.runsAllowed}`;
   }
 
-  // Render leaders table
   renderPitchingLeadersTable(data);
 
-  // Generate pitcher stats rows
   data.forEach(p => {
     const row = document.createElement("tr");
     const ERA = p.ERA !== "N/A" && !isNaN(p.ERA)
@@ -576,32 +533,20 @@ function renderPitchingTable(data) {
   attachSorting();
 }
 
-// Simplified leaders functions - keeping the essential parts
 function renderBattingLeadersTable(data) {
   const leadersText = document.getElementById("leadersText");
-  if (!leadersText) return;
-  
-  if (data.length === 0) {
-    leadersText.innerHTML = '<p>No batting data available.</p>';
-    return;
-  }
+  if (!leadersText || data.length === 0) return;
   
   leadersText.innerHTML = '<h3>Team Batting Leaders</h3><p>Batting statistics and leaders for this team.</p>';
 }
 
 function renderPitchingLeadersTable(data) {
   const leadersText = document.getElementById("leadersText");
-  if (!leadersText) return;
-  
-  if (data.length === 0) {
-    leadersText.innerHTML = '<p>No pitching data available.</p>';
-    return;
-  }
+  if (!leadersText || data.length === 0) return;
   
   leadersText.innerHTML = '<h3>Team Pitching Leaders</h3><p>Pitching statistics and leaders for this team.</p>';
 }
 
-// Sorting functionality
 function attachSorting() {
   const headers = document.querySelectorAll("#team-stats-table th");
   headers.forEach((th, idx) => {
@@ -622,23 +567,19 @@ function sortTable(columnIndex) {
     let x = a.cells[columnIndex].innerText.trim();
     let y = b.cells[columnIndex].innerText.trim();
 
-    // Handle special cases for different views
     if (currentView === 'batting') {
-      // Handle AcesWar column (index 8)
       if (columnIndex === 8) {
         if (x === "N/A" && y !== "N/A") return 1;
         if (y === "N/A" && x !== "N/A") return -1;
         if (x === "N/A" && y === "N/A") return 0;
       }
     } else if (currentView === 'pitching') {
-      // Handle ERA column (index 6) 
       if (columnIndex === 6) {
         if (x === "N/A" && y !== "N/A") return 1;
         if (y === "N/A" && x !== "N/A") return -1;
         if (x === "N/A" && y === "N/A") return 0;
       }
       
-      // Handle IP field (innings pitched can have decimals)
       if (columnIndex === 4) {
         let xNum = parseFloat(x);
         let yNum = parseFloat(y);
@@ -648,7 +589,6 @@ function sortTable(columnIndex) {
       }
     }
 
-    // Try parsing as numbers
     let xNum = parseFloat(x.replace(/,/g, ""));
     let yNum = parseFloat(y.replace(/,/g, ""));
 
@@ -656,7 +596,6 @@ function sortTable(columnIndex) {
       return dir === "asc" ? xNum - yNum : yNum - xNum;
     }
 
-    // Fall back to string comparison
     return dir === "asc" ? x.localeCompare(y) : y.localeCompare(x);
   });
 
