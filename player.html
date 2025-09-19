@@ -138,6 +138,91 @@
     margin-left: 10px;
   }
   
+  /* Awards Section */
+  .awards-section {
+    background-color: white;
+    border: 1px solid #e9ecef;
+    border-radius: 8px;
+    padding: 20px;
+    margin-bottom: 30px;
+  }
+  
+  .awards-section h2 {
+    margin: 0 0 15px 0;
+    color: #333;
+    font-size: 1.3em;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  
+  .awards-section h2::before {
+    content: "🏅";
+    font-size: 1.2em;
+  }
+  
+  .awards-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 15px;
+  }
+  
+  .award-item {
+    background-color: #f8f9fa;
+    padding: 12px 15px;
+    border-radius: 8px;
+    border-left: 4px solid #0066cc;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  
+  .award-icon {
+    width: 24px;
+    height: 24px;
+    flex-shrink: 0;
+    object-fit: contain;
+  }
+  
+  .award-icon.fallback {
+    font-size: 1.3em;
+    width: auto;
+    height: auto;
+  }
+  
+  .award-details {
+    flex: 1;
+  }
+  
+  .award-name {
+    font-weight: bold;
+    color: #333;
+    margin-bottom: 2px;
+  }
+  
+  .award-season {
+    font-size: 0.9em;
+    color: #666;
+  }
+  
+  .award-count {
+    background-color: #0066cc;
+    color: white;
+    border-radius: 12px;
+    padding: 2px 8px;
+    font-size: 0.8em;
+    font-weight: bold;
+    margin-left: auto;
+    flex-shrink: 0;
+  }
+  
+  .no-awards {
+    text-align: center;
+    color: #666;
+    font-style: italic;
+    padding: 20px;
+  }
+  
   /* Mobile responsive */
   @media (max-width: 768px) {
     .player-header {
@@ -178,6 +263,13 @@
     <div class="player-details" id="playerDetails">
       <!-- Player details will be populated dynamically -->
     </div>
+  </div>
+</div>
+
+<div class="awards-section" id="awardsSection" style="display: none;">
+  <h2>Awards & Recognition</h2>
+  <div class="awards-grid" id="awardsGrid">
+    <!-- Awards will be populated dynamically -->
   </div>
 </div>
 
@@ -273,6 +365,22 @@ async function loadPlayerData() {
       }
     } catch (error) {
       console.log('Player info not available yet');
+    }
+
+    // Try to load awards data
+    try {
+      const awardsResponse = await fetch('awards.json');
+      if (awardsResponse.ok) {
+        const allAwards = await awardsResponse.json();
+        const playerAwards = allAwards.filter(award => 
+          award.Player && award.Player.trim() === playerName
+        );
+        if (playerAwards.length > 0) {
+          populatePlayerAwards(playerAwards);
+        }
+      }
+    } catch (error) {
+      console.log('Awards data not available');
     }
 
     // Filter and clean data for this player
@@ -434,6 +542,125 @@ function populateBasicPlayerDetails(playerData) {
       <div class="detail-value">${totalSeasons}</div>
     </div>
   `;
+}
+
+function populatePlayerAwards(awards) {
+  const awardsSection = document.getElementById('awardsSection');
+  const awardsGrid = document.getElementById('awardsGrid');
+  
+  if (awards.length === 0) {
+    return; // Keep section hidden if no awards
+  }
+  
+  // Group awards by type and count them
+  const awardGroups = {};
+  awards.forEach(award => {
+    const awardType = award.Award.trim();
+    if (!awardGroups[awardType]) {
+      awardGroups[awardType] = {
+        name: awardType,
+        count: 0,
+        seasons: []
+      };
+    }
+    awardGroups[awardType].count++;
+    awardGroups[awardType].seasons.push(`${award.Year} ${award.Season}`);
+  });
+  
+  // Define award icons mapping to PNG files
+  const awardIcons = {
+    'Team MVP': 'team_mvp.png',
+    'All Aces': 'all_aces.png',
+    'Gold Glove': 'gold_glove.png',
+    'Team of the Year': 'team_of_the_year.png',
+    'Rookie of the Year': 'rookie_of_the_year.png',
+    'Most Improved Ace': 'most_improved_ace.png',
+    'Comeback Player of the Year': 'comeback_player.png',
+    'Slugger of the Year': 'slugger_of_the_year.png',
+    'Pitcher of the Year': 'pitcher_of_the_year.png',
+    'Captain of the Year': 'captain_of_the_year.png',
+    'Al Pineda Good Guy Award': 'al_pineda_good_guy.png',
+    'Iron Man Award': 'iron_man.png',
+    'Sub of the Year': 'sub_of_the_year.png',
+    'Andrew Streaman Boner Award': 'andrew_streaman_boner.png',
+    'Erik Lund Perservenance Award': 'erik_lund_perservenance.png',
+    'Mr. Streaman Award for Excellence': 'mr_streaman_excellence.png'
+  };
+  
+  // Fallback emoji for awards without PNG files
+  const fallbackEmojis = {
+    'Team MVP': '👑',
+    'All Aces': '⭐',
+    'Gold Glove': '🥇',
+    'Team of the Year': '🏆',
+    'Rookie of the Year': '🌟',
+    'Most Improved Ace': '📈',
+    'Comeback Player of the Year': '🔄',
+    'Slugger of the Year': '💪',
+    'Pitcher of the Year': '🥎',
+    'Captain of the Year': '🎖️',
+    'Al Pineda Good Guy Award': '🤝',
+    'Iron Man Award': '💯',
+    'Sub of the Year': '🏅',
+    'Andrew Streaman Boner Award': '🎪',
+    'Erik Lund Perservenance Award': '⚡',
+    'Mr. Streaman Award for Excellence': '🌟'
+  };
+  
+  // Sort awards by importance/rarity
+  const awardOrder = [
+    'Team MVP', 'All Aces', 'Gold Glove', 'Team of the Year',
+    'Rookie of the Year', 'Most Improved Ace', 'Comeback Player of the Year',
+    'Slugger of the Year', 'Pitcher of the Year', 'Captain of the Year',
+    'Al Pineda Good Guy Award', 'Iron Man Award', 'Sub of the Year',
+    'Andrew Streaman Boner Award', 'Erik Lund Perservenance Award',
+    'Mr. Streaman Award for Excellence'
+  ];
+  
+  // Sort award groups by order, then alphabetically
+  const sortedAwards = Object.values(awardGroups).sort((a, b) => {
+    const aIndex = awardOrder.indexOf(a.name);
+    const bIndex = awardOrder.indexOf(b.name);
+    
+    if (aIndex !== -1 && bIndex !== -1) return aIndex - bIndex;
+    if (aIndex !== -1) return -1;
+    if (bIndex !== -1) return 1;
+    return a.name.localeCompare(b.name);
+  });
+  
+  // Generate award items
+  awardsGrid.innerHTML = '';
+  sortedAwards.forEach(award => {
+    const iconFileName = awardIcons[award.name];
+    const fallbackEmoji = fallbackEmojis[award.name] || '🏅';
+    const seasonsText = award.seasons.length <= 3 ? 
+      award.seasons.join(', ') : 
+      `${award.seasons.slice(0, 2).join(', ')}, +${award.seasons.length - 2} more`;
+    
+    // Create icon element - try PNG first, fallback to emoji
+    let iconElement;
+    if (iconFileName) {
+      iconElement = `<img src="awards/${iconFileName}" alt="${award.name}" class="award-icon" onerror="this.outerHTML='<span class=\\"award-icon fallback\\">${fallbackEmoji}</span>';">`;
+    } else {
+      iconElement = `<span class="award-icon fallback">${fallbackEmoji}</span>`;
+    }
+    
+    const awardHTML = `
+      <div class="award-item">
+        ${iconElement}
+        <div class="award-details">
+          <div class="award-name">${award.name}</div>
+          <div class="award-season">${seasonsText}</div>
+        </div>
+        ${award.count > 1 ? `<span class="award-count">${award.count}×</span>` : ''}
+      </div>
+    `;
+    
+    awardsGrid.innerHTML += awardHTML;
+  });
+  
+  // Show the awards section
+  awardsSection.style.display = 'block';
 }
 
 function renderSeasonTable(data, tableId) {
