@@ -73,7 +73,7 @@
     position: sticky;
     left: 0;
     z-index: 5;
-    min-width: 100px;
+    min-width: 120px;
   }
   
   .h2h-grid .corner-cell {
@@ -82,6 +82,35 @@
     left: 0;
     top: 0;
     z-index: 15;
+  }
+  
+  .team-header {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    white-space: nowrap;
+  }
+  
+  .team-header img {
+    width: 24px;
+    height: 24px;
+    object-fit: contain;
+  }
+  
+  .team-row-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    justify-content: flex-start;
+    padding-left: 8px;
+  }
+  
+  .team-row-header img {
+    width: 20px;
+    height: 20px;
+    object-fit: contain;
+    flex-shrink: 0;
   }
   
   .diagonal-cell {
@@ -212,6 +241,20 @@
       font-size: 0.8em;
     }
     
+    .team-header {
+      gap: 2px;
+    }
+    
+    .team-header img {
+      width: 18px;
+      height: 18px;
+    }
+    
+    .team-row-header img {
+      width: 16px;
+      height: 16px;
+    }
+    
     .legend {
       flex-direction: column;
       align-items: center;
@@ -233,6 +276,16 @@
     .h2h-grid td {
       padding: 4px;
       font-size: 0.75em;
+    }
+    
+    .team-header img {
+      width: 16px;
+      height: 16px;
+    }
+    
+    .team-row-header img {
+      width: 14px;
+      height: 14px;
     }
   }
 </style>
@@ -291,6 +344,33 @@ let allBattingData = [];
 let allGames = [];
 let teams = [];
 
+// Function to get team logo path
+function getTeamLogoPath(teamName) {
+  // Convert team name to lowercase and replace spaces with underscores for filename
+  const logoFileName = teamName.toLowerCase().replace(/\s+/g, '_') + '.png';
+  return `logos/${logoFileName}`;
+}
+
+// Function to create team header with logo
+function createTeamHeader(teamName) {
+  return `
+    <div class="team-header">
+      <img src="${getTeamLogoPath(teamName)}" alt="${teamName}" onerror="this.style.display='none'">
+      <div>${teamName}</div>
+    </div>
+  `;
+}
+
+// Function to create team row header with logo
+function createTeamRowHeader(teamName) {
+  return `
+    <div class="team-row-header">
+      <img src="${getTeamLogoPath(teamName)}" alt="${teamName}" onerror="this.style.display='none'">
+      <div>${teamName}</div>
+    </div>
+  `;
+}
+
 // Load batting data and games data
 Promise.all([
   fetch("data.json").then(res => res.json()),
@@ -325,14 +405,14 @@ function generateH2HGrid() {
   // Create header row
   let headerRow = '<tr><th class="corner-cell">Team</th>';
   teams.forEach(team => {
-    headerRow += `<th>${team}</th>`;
+    headerRow += `<th>${createTeamHeader(team)}</th>`;
   });
   headerRow += '</tr>';
   
   // Create data rows
   let dataRows = '';
   teams.forEach(homeTeam => {
-    let row = `<tr><td class="row-header">${homeTeam}</td>`;
+    let row = `<tr><td class="row-header">${createTeamRowHeader(homeTeam)}</td>`;
     
     teams.forEach(awayTeam => {
       if (homeTeam === awayTeam) {
@@ -376,7 +456,7 @@ function calculateHeadToHead(team1, team2) {
     
     // Handle different winner formats
     let actualWinner = winner;
-    if (winner.includes("Forfeit")) {
+    if (winner && winner.includes("Forfeit")) {
       actualWinner = winner.replace("Forfeit - ", "").replace("Tie", "");
     }
     
@@ -443,7 +523,7 @@ function generateSummaryStats() {
   let totalGames = 0;
   let competitiveMatchups = 0; // Matchups with games played
   let mostGamesMatchup = { teams: '', games: 0 };
-  let longestWinStreak = { team: '', opponent: '', wins: 0 };
+  let biggestRivalryLead = { team: '', opponent: '', wins: 0, losses: 0 };
   
   teams.forEach(team1 => {
     teams.forEach(team2 => {
@@ -462,23 +542,27 @@ function generateSummaryStats() {
                 games: h2h.totalGames
               };
             }
-            
-            // Check for win streaks
-            const team1Wins = h2h.team1 === team1 ? h2h.team1Wins : h2h.team2Wins;
-            const team2Wins = h2h.team1 === team1 ? h2h.team2Wins : h2h.team1Wins;
-            
-            if (team1Wins > longestWinStreak.wins) {
-              longestWinStreak = {
+          }
+          
+          // Check for biggest rivalry lead (difference in wins)
+          const team1Wins = h2h.team1 === team1 ? h2h.team1Wins : h2h.team2Wins;
+          const team2Wins = h2h.team1 === team1 ? h2h.team2Wins : h2h.team1Wins;
+          const leadDifference = Math.abs(team1Wins - team2Wins);
+          
+          if (leadDifference > Math.abs(biggestRivalryLead.wins - biggestRivalryLead.losses)) {
+            if (team1Wins > team2Wins) {
+              biggestRivalryLead = {
                 team: team1,
                 opponent: team2,
-                wins: team1Wins
+                wins: team1Wins,
+                losses: team2Wins
               };
-            }
-            if (team2Wins > longestWinStreak.wins) {
-              longestWinStreak = {
+            } else if (team2Wins > team1Wins) {
+              biggestRivalryLead = {
                 team: team2,
                 opponent: team1,
-                wins: team2Wins
+                wins: team2Wins,
+                losses: team1Wins
               };
             }
           }
@@ -515,8 +599,8 @@ function generateSummaryStats() {
     </div>
     <div class="stat-item">
       <div class="stat-label">Biggest Rivalry Lead</div>
-      <div class="stat-value">${longestWinStreak.wins}-${longestWinStreak.wins > 0 ? '?' : '0'}</div>
-      <div class="stat-label" style="font-size: 0.8em; margin-top: 2px;">${longestWinStreak.team} over ${longestWinStreak.opponent}</div>
+      <div class="stat-value">${biggestRivalryLead.wins}-${biggestRivalryLead.losses}</div>
+      <div class="stat-label" style="font-size: 0.8em; margin-top: 2px;">${biggestRivalryLead.team} over ${biggestRivalryLead.opponent}</div>
     </div>
   `;
   
