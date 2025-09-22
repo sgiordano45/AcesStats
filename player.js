@@ -103,7 +103,7 @@ async function loadPlayerData() {
     renderTable('regularStatsTable', regularSeasons);
     renderTable('subStatsTable', subSeasons);
     renderCareerStats(playerData, regularSeasons, subSeasons);
-    renderPlayerAwards(playerData);
+    await renderPlayerAwards(playerData);
     
     // Add award icons to player name
     updatePlayerNameWithAwards();
@@ -220,17 +220,14 @@ function renderCareerStats(all, regular, subs) {
   });
 }
 
-function renderPlayerAwards(playerData) {
+async function renderPlayerAwards(playerData) {
   // Filter awards for this specific player
   const playerAwards = allAwards.filter(award => 
     award.Player && award.Player.trim() === playerName && award.Award && award.Award.trim() !== ""
   );
   
-  // Calculate player's career stats for Top 10 checking
-  const playerCareerStats = calculatePlayerCareerStats(playerName);
-  
-  // Calculate Top 10 rankings
-  const top10Rankings = calculateTop10Rankings(playerCareerStats);
+const playerCareerStats = await calculatePlayerCareerStats(playerName);
+const top10Rankings = await calculateTop10Rankings(playerCareerStats);
   
   if (playerAwards.length === 0 && top10Rankings.length === 0) {
     return; // Don't show awards section if no awards or top 10 stats
@@ -401,178 +398,191 @@ function renderPlayerAwards(playerData) {
   }
 }
 
-function calculatePlayerCareerStats(playerName) {
-  // Get all stats for this player
-  const playerStats = allData.filter(p => p.name && p.name.trim() === playerName);
-  
-  if (playerStats.length === 0) return null;
-  
-  // Aggregate career totals
-  let careerStats = {
-    totalGames: 0,
-    totalAtBats: 0,
-    totalHits: 0,
-    totalRuns: 0,
-    totalWalks: 0,
-    acesWarValues: []
-  };
-  
-  playerStats.forEach(p => {
-    careerStats.totalGames += Number(p.games) || 0;
-    careerStats.totalAtBats += Number(p.atBats) || 0;
-    careerStats.totalHits += Number(p.hits) || 0;
-    careerStats.totalRuns += Number(p.runs) || 0;
-    careerStats.totalWalks += Number(p.walks) || 0;
+async function calculatePlayerCareerStats(playerName) {
+  try {
+    // Load all player data
+    const allPlayers = await fetch('data.json').then(res => res.json());
+    const playerStats = allPlayers.filter(p => p.name && p.name.trim() === playerName);
     
-    if (p.AcesWar && p.AcesWar !== "N/A" && !isNaN(p.AcesWar)) {
-      careerStats.acesWarValues.push(Number(p.AcesWar));
-    }
-  });
-  
-  // Calculate derived stats
-  careerStats.battingAverage = careerStats.totalAtBats > 0 ? careerStats.totalHits / careerStats.totalAtBats : 0;
-  careerStats.onBasePercentage = (careerStats.totalAtBats + careerStats.totalWalks) > 0 ? 
-    (careerStats.totalHits + careerStats.totalWalks) / (careerStats.totalAtBats + careerStats.totalWalks) : 0;
-  careerStats.avgAcesWar = careerStats.acesWarValues.length > 0 ? 
-    careerStats.acesWarValues.reduce((a, b) => a + b, 0) / careerStats.acesWarValues.length : 0;
-  careerStats.plateAppearances = careerStats.totalAtBats + careerStats.totalWalks;
-  
-  return careerStats;
-}
-
-function calculateTop10Rankings(playerCareerStats) {
-  if (!playerCareerStats) return [];
-  
-  // Calculate all players' career stats for comparison
-  const allPlayerStats = {};
-  
-  allData.forEach(p => {
-    if (!p.name || !p.name.trim()) return;
+    if (playerStats.length === 0) return null;
     
-    const name = p.name.trim();
-    if (!allPlayerStats[name]) {
-      allPlayerStats[name] = {
-        name: name,
-        totalGames: 0,
-        totalAtBats: 0,
-        totalHits: 0,
-        totalRuns: 0,
-        totalWalks: 0,
-        plateAppearances: 0,
-        acesWarValues: []
-      };
-    }
+    // Aggregate career totals
+    let careerStats = {
+      totalGames: 0,
+      totalAtBats: 0,
+      totalHits: 0,
+      totalRuns: 0,
+      totalWalks: 0,
+      acesWarValues: []
+    };
     
-    allPlayerStats[name].totalGames += Number(p.games) || 0;
-    allPlayerStats[name].totalAtBats += Number(p.atBats) || 0;
-    allPlayerStats[name].totalHits += Number(p.hits) || 0;
-    allPlayerStats[name].totalRuns += Number(p.runs) || 0;
-    allPlayerStats[name].totalWalks += Number(p.walks) || 0;
-    allPlayerStats[name].plateAppearances += (Number(p.atBats) || 0) + (Number(p.walks) || 0);
-    
-    if (p.AcesWar && p.AcesWar !== "N/A" && !isNaN(p.AcesWar)) {
-      allPlayerStats[name].acesWarValues.push(Number(p.AcesWar));
-    }
-  });
-  
-  // Calculate derived stats for all players
-  const allPlayersArray = Object.values(allPlayerStats).map(p => ({
-    ...p,
-    battingAverage: p.totalAtBats > 0 ? p.totalHits / p.totalAtBats : 0,
-    onBasePercentage: p.plateAppearances > 0 ? (p.totalHits + p.totalWalks) / p.plateAppearances : 0,
-    avgAcesWar: p.acesWarValues.length > 0 ? p.acesWarValues.reduce((a, b) => a + b, 0) / p.acesWarValues.length : 0
-  }));
-  
-  const rankings = [];
-  
-  // Define categories to check for Top 10
-  const categories = [
-    {
-      name: "Career Games",
-      stat: "totalGames",
-      format: (val) => val.toString(),
-      minimum: 0
-    },
-    {
-      name: "Career At-Bats", 
-      stat: "totalAtBats",
-      format: (val) => val.toString(),
-      minimum: 0
-    },
-    {
-      name: "Career Hits",
-      stat: "totalHits",
-      format: (val) => val.toString(),
-      minimum: 0
-    },
-    {
-      name: "Career Runs",
-      stat: "totalRuns", 
-      format: (val) => val.toString(),
-      minimum: 0
-    },
-    {
-      name: "Career Walks",
-      stat: "totalWalks",
-      format: (val) => val.toString(),
-      minimum: 0
-    },
-    {
-      name: "Career Batting Average",
-      stat: "battingAverage",
-      format: (val) => val.toFixed(3),
-      minimum: 40,
-      minimumField: "plateAppearances"
-    },
-    {
-      name: "Career On-Base Percentage", 
-      stat: "onBasePercentage",
-      format: (val) => val.toFixed(3),
-      minimum: 40,
-      minimumField: "plateAppearances"
-    },
-    {
-      name: "Career Average AcesBPI",
-      stat: "avgAcesWar",
-      format: (val) => val.toFixed(2),
-      minimum: 0,
-      filter: (p) => p.acesWarValues.length > 0
-    }
-  ];
-  
-  categories.forEach(category => {
-    // Filter qualifying players
-    let qualifyingPlayers = allPlayersArray.filter(p => {
-      if (category.filter && !category.filter(p)) return false;
-      if (category.minimumField) {
-        return p[category.minimumField] >= category.minimum;
+    playerStats.forEach(p => {
+      careerStats.totalGames += Number(p.games) || 0;
+      careerStats.totalAtBats += Number(p.atBats) || 0;
+      careerStats.totalHits += Number(p.hits) || 0;
+      careerStats.totalRuns += Number(p.runs) || 0;
+      careerStats.totalWalks += Number(p.walks) || 0;
+      
+      if (p.AcesWar && p.AcesWar !== "N/A" && !isNaN(p.AcesWar)) {
+        careerStats.acesWarValues.push(Number(p.AcesWar));
       }
-      return p[category.stat] >= category.minimum;
     });
     
-    // Sort by stat (descending for most stats, ascending for ERA if we had it)
-    qualifyingPlayers.sort((a, b) => b[category.stat] - a[category.stat]);
+    // Calculate derived stats
+    careerStats.battingAverage = careerStats.totalAtBats > 0 ? careerStats.totalHits / careerStats.totalAtBats : 0;
+    careerStats.onBasePercentage = (careerStats.totalAtBats + careerStats.totalWalks) > 0 ? 
+      (careerStats.totalHits + careerStats.totalWalks) / (careerStats.totalAtBats + careerStats.totalWalks) : 0;
+    careerStats.avgAcesWar = careerStats.acesWarValues.length > 0 ? 
+      careerStats.acesWarValues.reduce((a, b) => a + b, 0) / careerStats.acesWarValues.length : 0;
+    careerStats.plateAppearances = careerStats.totalAtBats + careerStats.totalWalks;
     
-    // Find player's rank
-    const playerRank = qualifyingPlayers.findIndex(p => p.name === playerName) + 1;
-    
-    // Only include if in top 10
-    if (playerRank > 0 && playerRank <= 10) {
-      rankings.push({
-        category: category.name,
-        rank: playerRank,
-        value: category.format(playerCareerStats[category.stat]),
-        rawValue: playerCareerStats[category.stat]
-      });
-    }
-  });
-  
-  // Sort rankings by rank (best ranks first)
-  rankings.sort((a, b) => a.rank - b.rank);
-  
-  return rankings;
+    return careerStats;
+  } catch (error) {
+    console.error("Error calculating player career stats:", error);
+    return null;
+  }
 }
 
+async function calculateTop10Rankings(playerCareerStats) {
+  if (!playerCareerStats) return [];
+  
+  try {
+    // Load all player data for comparison
+    const allPlayers = await fetch('data.json').then(res => res.json());
+    
+    // Calculate all players' career stats for comparison
+    const allPlayerStats = {};
+    
+    allPlayers.forEach(p => {
+      if (!p.name || !p.name.trim()) return;
+      
+      const name = p.name.trim();
+      if (!allPlayerStats[name]) {
+        allPlayerStats[name] = {
+          name: name,
+          totalGames: 0,
+          totalAtBats: 0,
+          totalHits: 0,
+          totalRuns: 0,
+          totalWalks: 0,
+          plateAppearances: 0,
+          acesWarValues: []
+        };
+      }
+      
+      allPlayerStats[name].totalGames += Number(p.games) || 0;
+      allPlayerStats[name].totalAtBats += Number(p.atBats) || 0;
+      allPlayerStats[name].totalHits += Number(p.hits) || 0;
+      allPlayerStats[name].totalRuns += Number(p.runs) || 0;
+      allPlayerStats[name].totalWalks += Number(p.walks) || 0;
+      allPlayerStats[name].plateAppearances += (Number(p.atBats) || 0) + (Number(p.walks) || 0);
+      
+      if (p.AcesWar && p.AcesWar !== "N/A" && !isNaN(p.AcesWar)) {
+        allPlayerStats[name].acesWarValues.push(Number(p.AcesWar));
+      }
+    });
+    
+    // Calculate derived stats for all players
+    const allPlayersArray = Object.values(allPlayerStats).map(p => ({
+      ...p,
+      battingAverage: p.totalAtBats > 0 ? p.totalHits / p.totalAtBats : 0,
+      onBasePercentage: p.plateAppearances > 0 ? (p.totalHits + p.totalWalks) / p.plateAppearances : 0,
+      avgAcesWar: p.acesWarValues.length > 0 ? p.acesWarValues.reduce((a, b) => a + b, 0) / p.acesWarValues.length : 0
+    }));
+    
+    const rankings = [];
+    
+    // Define categories to check for Top 10
+    const categories = [
+      {
+        name: "Career Games",
+        stat: "totalGames",
+        format: (val) => val.toString(),
+        minimum: 0
+      },
+      {
+        name: "Career At-Bats", 
+        stat: "totalAtBats",
+        format: (val) => val.toString(),
+        minimum: 0
+      },
+      {
+        name: "Career Hits",
+        stat: "totalHits",
+        format: (val) => val.toString(),
+        minimum: 0
+      },
+      {
+        name: "Career Runs",
+        stat: "totalRuns", 
+        format: (val) => val.toString(),
+        minimum: 0
+      },
+      {
+        name: "Career Walks",
+        stat: "totalWalks",
+        format: (val) => val.toString(),
+        minimum: 0
+      },
+      {
+        name: "Career Batting Average",
+        stat: "battingAverage",
+        format: (val) => val.toFixed(3),
+        minimum: 40,
+        minimumField: "plateAppearances"
+      },
+      {
+        name: "Career On-Base Percentage", 
+        stat: "onBasePercentage",
+        format: (val) => val.toFixed(3),
+        minimum: 40,
+        minimumField: "plateAppearances"
+      },
+      {
+        name: "Career Average AcesBPI",
+        stat: "avgAcesWar",
+        format: (val) => val.toFixed(2),
+        minimum: 0,
+        filter: (p) => p.acesWarValues.length > 0
+      }
+    ];
+    
+    categories.forEach(category => {
+      // Filter qualifying players
+      let qualifyingPlayers = allPlayersArray.filter(p => {
+        if (category.filter && !category.filter(p)) return false;
+        if (category.minimumField) {
+          return p[category.minimumField] >= category.minimum;
+        }
+        return p[category.stat] >= category.minimum;
+      });
+      
+      // Sort by stat (descending for most stats, ascending for ERA if we had it)
+      qualifyingPlayers.sort((a, b) => b[category.stat] - a[category.stat]);
+      
+      // Find player's rank
+      const playerRank = qualifyingPlayers.findIndex(p => p.name === playerName) + 1;
+      
+      // Only include if in top 10
+      if (playerRank > 0 && playerRank <= 10) {
+        rankings.push({
+          category: category.name,
+          rank: playerRank,
+          value: category.format(playerCareerStats[category.stat]),
+          rawValue: playerCareerStats[category.stat]
+        });
+      }
+    });
+    
+    // Sort rankings by rank (best ranks first)
+    rankings.sort((a, b) => a.rank - b.rank);
+    
+    return rankings;
+  } catch (error) {
+    console.error("Error calculating top 10 rankings:", error);
+    return [];
+  }
+}
 
 function goBack() {
   if (window.history.length > 1) {
@@ -581,5 +591,6 @@ function goBack() {
     window.location.href = 'index.html';
   }
 }
+
 
 
