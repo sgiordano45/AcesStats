@@ -56,6 +56,7 @@ async function loadTeamData() {
     }
 
     addGameResultsSection();
+    addCareerStatsSection(); // New section for career stats
     addViewSwitcher();
     populateFilters();
     switchToView('batting');
@@ -101,6 +102,118 @@ function addGameResultsSection() {
   summaryDiv.insertAdjacentHTML('afterend', gameResultsHTML);
 }
 
+function addCareerStatsSection() {
+  const gameResultsDiv = document.querySelector('.team-game-results');
+  if (!gameResultsDiv) return;
+  
+  const careerStatsHTML = `
+    <div class="career-stats-section" style="margin-top: 30px; margin-bottom: 30px;">
+      <h3>Career Stats for ${currentTeam} Players (Non-Sub Seasons Only)</h3>
+      <p style="color: #666; margin-bottom: 15px;">Career statistics for players during their non-substitute seasons with ${currentTeam}</p>
+      <div id="careerStatsContainer">
+        ${renderCareerStats()}
+      </div>
+    </div>
+  `;
+  
+  gameResultsDiv.insertAdjacentHTML('afterend', careerStatsHTML);
+}
+
+function renderCareerStats() {
+  // Get all non-sub seasons for this team
+  const nonSubSeasons = teamData.filter(p => {
+    const subStatus = String(p.Sub || "").toLowerCase().trim();
+    return subStatus !== "yes";
+  });
+  
+  if (nonSubSeasons.length === 0) {
+    return '<p>No non-substitute seasons found for this team.</p>';
+  }
+  
+  // Group by player and calculate career totals
+  const playerStats = {};
+  
+  nonSubSeasons.forEach(p => {
+    if (!playerStats[p.name]) {
+      playerStats[p.name] = {
+        name: p.name,
+        seasons: 0,
+        games: 0,
+        atBats: 0,
+        hits: 0,
+        runs: 0,
+        walks: 0,
+        acesBPI: [] // Store all AcesBPI values for average calculation
+      };
+    }
+    
+    const player = playerStats[p.name];
+    player.seasons++;
+    player.games += p.games;
+    player.atBats += p.atBats;
+    player.hits += p.hits;
+    player.runs += p.runs;
+    player.walks += p.walks;
+    
+    if (p.AcesWar !== "N/A" && !isNaN(p.AcesWar)) {
+      player.acesBPI.push(Number(p.AcesWar));
+    }
+  });
+  
+  // Convert to array and sort by games (descending), then by name
+  const sortedPlayers = Object.values(playerStats).sort((a, b) => {
+    if (b.games !== a.games) return b.games - a.games;
+    return a.name.localeCompare(b.name);
+  });
+  
+  let html = `
+    <table style="width: 100%; border-collapse: collapse; font-size: 0.9em;">
+      <thead style="background-color: #f0f0f0;">
+        <tr>
+          <th style="padding: 8px; border: 1px solid #ccc; text-align: left;">Player</th>
+          <th style="padding: 8px; border: 1px solid #ccc;">Seasons</th>
+          <th style="padding: 8px; border: 1px solid #ccc;">Games</th>
+          <th style="padding: 8px; border: 1px solid #ccc;">At Bats</th>
+          <th style="padding: 8px; border: 1px solid #ccc;">Hits</th>
+          <th style="padding: 8px; border: 1px solid #ccc;">Runs</th>
+          <th style="padding: 8px; border: 1px solid #ccc;">Walks</th>
+          <th style="padding: 8px; border: 1px solid #ccc;">BA</th>
+          <th style="padding: 8px; border: 1px solid #ccc;">OBP</th>
+          <th style="padding: 8px; border: 1px solid #ccc;">Avg AcesBPI</th>
+        </tr>
+      </thead>
+      <tbody>
+  `;
+  
+  sortedPlayers.forEach(player => {
+    const BA = player.atBats > 0 ? (player.hits / player.atBats).toFixed(3) : ".000";
+    const OBP = (player.atBats + player.walks) > 0
+      ? ((player.hits + player.walks) / (player.atBats + player.walks)).toFixed(3)
+      : ".000";
+    const avgAcesBPI = player.acesBPI.length > 0 
+      ? (player.acesBPI.reduce((sum, val) => sum + val, 0) / player.acesBPI.length).toFixed(2)
+      : "N/A";
+    
+    html += `
+      <tr>
+        <td style="padding: 8px; border: 1px solid #ccc;"><a href="player.html?name=${encodeURIComponent(player.name)}">${player.name}</a></td>
+        <td style="padding: 8px; border: 1px solid #ccc; text-align: center;">${player.seasons}</td>
+        <td style="padding: 8px; border: 1px solid #ccc; text-align: center;">${player.games}</td>
+        <td style="padding: 8px; border: 1px solid #ccc; text-align: center;">${player.atBats}</td>
+        <td style="padding: 8px; border: 1px solid #ccc; text-align: center;">${player.hits}</td>
+        <td style="padding: 8px; border: 1px solid #ccc; text-align: center;">${player.runs}</td>
+        <td style="padding: 8px; border: 1px solid #ccc; text-align: center;">${player.walks}</td>
+        <td style="padding: 8px; border: 1px solid #ccc; text-align: center;">${BA}</td>
+        <td style="padding: 8px; border: 1px solid #ccc; text-align: center;">${OBP}</td>
+        <td style="padding: 8px; border: 1px solid #ccc; text-align: center;">${avgAcesBPI}</td>
+      </tr>
+    `;
+  });
+  
+  html += '</tbody></table>';
+  return html;
+}
+
 function renderTeamGameResults() {
   const yearFilter = document.getElementById("yearFilter");
   const seasonFilter = document.getElementById("seasonFilter");
@@ -111,7 +224,7 @@ function renderTeamGameResults() {
   const seasonVal = seasonFilter.value;
   
   let filteredGames = teamGames.filter(game => 
-    (yearVal === "All" || game.year === yearVal) &&
+    (yearVal === "All" || String(game.year) === yearVal) &&
     (seasonVal === "All" || game.season === seasonVal)
   );
   
@@ -120,28 +233,24 @@ function renderTeamGameResults() {
   }
   
   const record = calculateTeamRecord(filteredGames);
-  const championships = getTeamChampionships();
   const regularGames = filteredGames.filter(g => g.game_type === 'Regular');
   const playoffGames = filteredGames.filter(g => g.game_type === 'Playoff');
   
-  let championshipText = '';
-  if (championships.length > 0) {
-    const championshipYears = championships.map(c => `${c.year} ${c.season}`).join(', ');
-    championshipText = ` | Championships: ${championshipYears}`;
+  let html = `
+    <div style="margin-bottom: 20px;">
+      <strong>Overall Record:</strong> ${record.wins}-${record.losses}${record.ties > 0 ? `-${record.ties}` : ''} (${record.winPct})
+  `;
+  
+  if (regularGames.length > 0 && playoffGames.length > 0) {
+    html += `<br><strong>Regular Season:</strong> ${record.regular.wins}-${record.regular.losses}${record.regular.ties > 0 ? `-${record.regular.ties}` : ''} | <strong>Playoffs:</strong> ${record.playoff.wins}-${record.playoff.losses}${record.playoff.ties > 0 ? `-${record.playoff.ties}` : ''}`;
   }
   
-  let html = `
-    <div class="team-record" style="background-color: #f0f0f0; padding: 15px; margin-bottom: 20px; border-radius: 5px; text-align: center;">
-      <h4>Team Record: ${record.wins}-${record.losses}-${record.ties} (${record.winPct} Win%)</h4>
-      <p>Regular Season: ${record.regular.wins}-${record.regular.losses}-${record.regular.ties} | 
-         Playoffs: ${record.playoff.wins}-${record.playoff.losses}-${record.playoff.ties}${championshipText}</p>
-    </div>
-  `;
+  html += '</div>';
   
   if (regularGames.length > 0) {
     html += `
       <h4>Regular Season Games (${regularGames.length})</h4>
-      <div style="max-height: 300px; overflow-y: auto; margin-bottom: 20px;">
+      <div style="max-height: 300px; overflow-y: auto;">
         <table style="width: 100%; font-size: 0.9em; border-collapse: collapse;">
           <thead style="position: sticky; top: 0; background-color: #f0f0f0;">
             <tr>
@@ -269,165 +378,6 @@ function calculateTeamRecord(games) {
   };
 }
 
-function getTeamChampionships() {
-  const championships = [];
-  
-  // Get all unique season combinations from team's games
-  const teamSeasons = [...new Set(teamGames.map(g => `${g.year}-${g.season}`))];
-  
-  teamSeasons.forEach(seasonKey => {
-    const [year, season] = seasonKey.split('-');
-    
-    // Get all games for this season (not just team's games)
-    const allSeasonGames = teamGames.filter(g => g.year === year && g.season === season);
-    
-    // Only check seasons that have playoff games
-    const playoffGames = allSeasonGames.filter(g => g.game_type === 'Playoff');
-    if (playoffGames.length === 0) return;
-    
-    // Calculate standings for this season's playoff games
-    const playoffStandings = calculateSeasonStandings(year, season, 'Playoff');
-    
-    // Check if current team won the championship (is at top of playoff standings)
-    if (playoffStandings.length > 0 && playoffStandings[0].name === currentTeam) {
-      championships.push({ year, season });
-    }
-  });
-  
-  return championships;
-}
-
-function calculateSeasonStandings(year, season, gameType) {
-  // We need to get ALL games for this season, not just the team's games
-  // Since we only have teamGames, we'll work with what we have but this is a limitation
-  const seasonGames = teamGames.filter(g => 
-    g.year === year && 
-    g.season === season && 
-    g.game_type === gameType
-  );
-  
-  if (seasonGames.length === 0) return [];
-  
-  const teamStats = {};
-  
-  seasonGames.forEach(game => {
-    const homeTeam = game["home team"];
-    const awayTeam = game["away team"];
-    const winner = game.winner;
-    
-    // Initialize teams if not exists
-    if (!teamStats[homeTeam]) {
-      teamStats[homeTeam] = { name: homeTeam, wins: 0, losses: 0, ties: 0, games: 0 };
-    }
-    if (!teamStats[awayTeam]) {
-      teamStats[awayTeam] = { name: awayTeam, wins: 0, losses: 0, ties: 0, games: 0 };
-    }
-    
-    // Count games
-    teamStats[homeTeam].games++;
-    teamStats[awayTeam].games++;
-    
-    // Count results
-    if (winner === "Tie") {
-      teamStats[homeTeam].ties++;
-      teamStats[awayTeam].ties++;
-    } else if (winner === homeTeam) {
-      teamStats[homeTeam].wins++;
-      teamStats[awayTeam].losses++;
-    } else if (winner === awayTeam) {
-      teamStats[awayTeam].wins++;
-      teamStats[homeTeam].losses++;
-    } else if (winner.includes("Forfeit")) {
-      const actualWinner = winner.replace("Forfeit - ", "").replace("Tie", "");
-      if (actualWinner && actualWinner !== "Tie") {
-        if (actualWinner === homeTeam) {
-          teamStats[homeTeam].wins++;
-          teamStats[awayTeam].losses++;
-        } else if (actualWinner === awayTeam) {
-          teamStats[awayTeam].wins++;
-          teamStats[homeTeam].losses++;
-        }
-      } else {
-        teamStats[homeTeam].ties++;
-        teamStats[awayTeam].ties++;
-      }
-    }
-  });
-  
-  // Calculate win percentage and sort
-  const standings = Object.values(teamStats).map(team => {
-    const totalDecidedGames = team.wins + team.losses;
-    team.winPct = totalDecidedGames > 0 ? (team.wins / totalDecidedGames).toFixed(3) : '.000';
-    return team;
-  });
-  
-  // Sort by win percentage (descending), then by wins (descending)
-  standings.sort((a, b) => {
-    if (parseFloat(b.winPct) !== parseFloat(a.winPct)) {
-      return parseFloat(b.winPct) - parseFloat(a.winPct);
-    }
-    return b.wins - a.wins;
-  });
-  
-  return standings;
-}
-
-function switchToView(view) {
-  currentView = view;
-  
-  const battingBtn = document.getElementById('battingViewBtn');
-  const pitchingBtn = document.getElementById('pitchingViewBtn');
-  
-  if (battingBtn && pitchingBtn) {
-    if (view === 'batting') {
-      battingBtn.style.backgroundColor = '#0066cc';
-      battingBtn.style.color = 'white';
-      pitchingBtn.style.backgroundColor = '#f0f0f0';
-      pitchingBtn.style.color = 'black';
-    } else {
-      pitchingBtn.style.backgroundColor = '#0066cc';
-      pitchingBtn.style.color = 'white';
-      battingBtn.style.backgroundColor = '#f0f0f0';
-      battingBtn.style.color = 'black';
-    }
-  }
-  
-  updateTableHeaders(view);
-  applyFilters();
-}
-
-function updateTableHeaders(view) {
-  const thead = document.querySelector("#team-stats-table thead tr");
-  if (!thead) return;
-  
-  if (view === 'batting') {
-    thead.innerHTML = `
-      <th>Year</th>
-      <th>Season</th>
-      <th>Name</th>
-      <th>Games</th>
-      <th>At Bats</th>
-      <th>Hits</th>
-      <th>Runs</th>
-      <th>Walks</th>
-      <th>AcesWar</th>
-      <th>BA</th>
-      <th>OBP</th>
-      <th>Sub</th>
-    `;
-  } else {
-    thead.innerHTML = `
-      <th>Year</th>
-      <th>Season</th>
-      <th>Name</th>
-      <th>Games</th>
-      <th>Innings Pitched</th>
-      <th>Runs Allowed</th>
-      <th>ERA</th>
-    `;
-  }
-}
-
 function cleanBattingData(data) {
   return data.map(p => ({
     ...p,
@@ -457,6 +407,34 @@ function cleanPitchingData(data) {
     runsAllowed: Number(p["runs allowed"]) || 0,
     ERA: p.ERA === "N/A" || !p.ERA ? "N/A" : Number(p.ERA)
   }));
+}
+
+// Custom sorting function for seasons: Fall -> Summer within each year
+function sortByYearSeason(a, b) {
+  const yearA = parseInt(a.year);
+  const yearB = parseInt(b.year);
+  
+  // Sort by year descending first (most recent year first)
+  if (yearB !== yearA) return yearB - yearA;
+  
+  // Within the same year, Fall comes before Summer
+  const seasonOrder = { 'Fall': 1, 'Summer': 2 };
+  const orderA = seasonOrder[a.season] || 999;
+  const orderB = seasonOrder[b.season] || 999;
+  
+  return orderA - orderB;
+}
+
+// Function to count unique team games instead of player games
+function countTeamGames(data) {
+  const uniqueGames = new Set();
+  
+  data.forEach(p => {
+    // Create a unique identifier for each game a player participated in
+    uniqueGames.add(`${p.year}-${p.season}-${p.team}`);
+  });
+  
+  return uniqueGames.size;
 }
 
 function populateFilters() {
@@ -535,8 +513,9 @@ function renderBattingTable(data) {
     return;
   }
 
+  // Calculate totals - now using team games instead of player games
+  let playerGameTotals = 0; // Sum of all individual player games
   let totals = {
-    games: 0,
     atBats: 0,
     hits: 0,
     runs: 0,
@@ -544,21 +523,27 @@ function renderBattingTable(data) {
   };
 
   data.forEach(p => {
-    totals.games += p.games;
+    playerGameTotals += p.games;
     totals.atBats += p.atBats;
     totals.hits += p.hits;
     totals.runs += p.runs;
     totals.walks += p.walks;
   });
 
+  // Count unique team games
+  const teamGamesCount = countTeamGames(data);
+
   const totalsText = document.getElementById("totalsText");
   if (totalsText) {
-    totalsText.textContent = `Team Batting Totals — Games: ${totals.games}, At Bats: ${totals.atBats}, Hits: ${totals.hits}, Runs: ${totals.runs}, Walks: ${totals.walks}`;
+    totalsText.textContent = `Team Batting Totals — Team Games: ${teamGamesCount}, At Bats: ${totals.atBats}, Hits: ${totals.hits}, Runs: ${totals.runs}, Walks: ${totals.walks}`;
   }
 
   renderBattingLeadersTable(data);
 
-  data.forEach(p => {
+  // Sort data by year/season before rendering
+  const sortedData = [...data].sort(sortByYearSeason);
+
+  sortedData.forEach(p => {
     const row = document.createElement("tr");
     const BA = p.atBats > 0 ? (p.hits / p.atBats).toFixed(3) : ".000";
     const OBP = (p.atBats + p.walks) > 0
@@ -603,26 +588,33 @@ function renderPitchingTable(data) {
     return;
   }
 
+  // Calculate totals
+  let playerGameTotals = 0;
   let totals = {
-    games: 0,
     totalIP: 0,
     runsAllowed: 0,
   };
 
   data.forEach(p => {
-    totals.games += p.games;
+    playerGameTotals += p.games;
     totals.totalIP += parseFloat(p.IP) || 0;
     totals.runsAllowed += p.runsAllowed;
   });
 
+  // Count unique team games
+  const teamGamesCount = countTeamGames(data);
+
   const totalsText = document.getElementById("totalsText");
   if (totalsText) {
-    totalsText.textContent = `Team Pitching Totals — Games: ${totals.games}, Innings Pitched: ${totals.totalIP.toFixed(1)}, Runs Allowed: ${totals.runsAllowed}`;
+    totalsText.textContent = `Team Pitching Totals — Team Games: ${teamGamesCount}, Innings Pitched: ${totals.totalIP.toFixed(1)}, Runs Allowed: ${totals.runsAllowed}`;
   }
 
   renderPitchingLeadersTable(data);
 
-  data.forEach(p => {
+  // Sort data by year/season before rendering
+  const sortedData = [...data].sort(sortByYearSeason);
+
+  sortedData.forEach(p => {
     const row = document.createElement("tr");
     const ERA = p.ERA !== "N/A" && !isNaN(p.ERA)
       ? Number(p.ERA).toFixed(2)
@@ -657,6 +649,66 @@ function renderPitchingLeadersTable(data) {
   leadersText.innerHTML = '<h3>Team Pitching Leaders</h3><p>Pitching statistics and leaders for this team.</p>';
 }
 
+function switchToView(view) {
+  currentView = view;
+  
+  // Update button styles
+  const battingBtn = document.getElementById('battingViewBtn');
+  const pitchingBtn = document.getElementById('pitchingViewBtn');
+  
+  if (battingBtn && pitchingBtn) {
+    if (view === 'batting') {
+      battingBtn.style.backgroundColor = '#0066cc';
+      battingBtn.style.color = 'white';
+      pitchingBtn.style.backgroundColor = '#f0f0f0';
+      pitchingBtn.style.color = '#333';
+    } else {
+      pitchingBtn.style.backgroundColor = '#0066cc';
+      pitchingBtn.style.color = 'white';
+      battingBtn.style.backgroundColor = '#f0f0f0';
+      battingBtn.style.color = '#333';
+    }
+  }
+  
+  // Update table headers based on view
+  updateTableHeaders(view);
+  
+  // Apply current filters to show appropriate data
+  applyFilters();
+}
+
+function updateTableHeaders(view) {
+  const tableHeader = document.querySelector("#team-stats-table thead tr");
+  if (!tableHeader) return;
+  
+  if (view === 'batting') {
+    tableHeader.innerHTML = `
+      <th>Year</th>
+      <th>Season</th>
+      <th>Name</th>
+      <th>Games</th>
+      <th>At Bats</th>
+      <th>Hits</th>
+      <th>Runs</th>
+      <th>Walks</th>
+      <th>AcesBPI</th>
+      <th>BA</th>
+      <th>OBP</th>
+      <th>Sub</th>
+    `;
+  } else {
+    tableHeader.innerHTML = `
+      <th>Year</th>
+      <th>Season</th>
+      <th>Name</th>
+      <th>Games</th>
+      <th>IP</th>
+      <th>Runs Allowed</th>
+      <th>ERA</th>
+    `;
+  }
+}
+
 function attachSorting() {
   const headers = document.querySelectorAll("#team-stats-table th");
   headers.forEach((th, idx) => {
@@ -678,19 +730,19 @@ function sortTable(columnIndex) {
     let y = b.cells[columnIndex].innerText.trim();
 
     if (currentView === 'batting') {
-      if (columnIndex === 8) {
+      if (columnIndex === 8) { // AcesBPI column
         if (x === "N/A" && y !== "N/A") return 1;
         if (y === "N/A" && x !== "N/A") return -1;
         if (x === "N/A" && y === "N/A") return 0;
       }
     } else if (currentView === 'pitching') {
-      if (columnIndex === 6) {
+      if (columnIndex === 6) { // ERA column
         if (x === "N/A" && y !== "N/A") return 1;
         if (y === "N/A" && x !== "N/A") return -1;
         if (x === "N/A" && y === "N/A") return 0;
       }
       
-      if (columnIndex === 4) {
+      if (columnIndex === 4) { // IP column
         let xNum = parseFloat(x);
         let yNum = parseFloat(y);
         if (!isNaN(xNum) && !isNaN(yNum)) {
