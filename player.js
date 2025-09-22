@@ -119,9 +119,18 @@ function populatePlayerBanner(playerData) {
   const totalSeasons = playerData.filter(p => !isSubstitute(p)).length;
   
   // Get the most recent team from non-substitute seasons
+  // Since data is sorted by year desc, then Fall before Summer, 
+  // the first non-substitute entry should be the most recent
   const regularSeasons = playerData.filter(p => !isSubstitute(p));
+  
+  // Debug: Let's see what we're getting
+  console.log('Player Data (first 3):', playerData.slice(0, 3).map(p => ({year: p.year, season: p.season, team: p.team, sub: isSubstitute(p)})));
+  console.log('Regular Seasons (first 3):', regularSeasons.slice(0, 3).map(p => ({year: p.year, season: p.season, team: p.team})));
+  
   const currentTeam = regularSeasons.length > 0 ? regularSeasons[0].team : 
                     (playerData.length > 0 ? playerData[0].team : null);
+  
+  console.log('Current Team Selected:', currentTeam);
   
   // Call the HTML function to populate player details
   if (typeof populatePlayerDetails === 'function') {
