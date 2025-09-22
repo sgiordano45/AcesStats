@@ -222,7 +222,7 @@
 
 <div id="summary" class="summary">
   <p id="totalPlayersText"></p>
-  <p>Browse all players organized by team. Click on any player to view their detailed statistics.</p>
+  <p>Browse all players organized by their most recent team assignment (2025 Fall if available, otherwise 2025 Summer). Click on any player to view their detailed statistics.</p>
 </div>
 
 <div id="players-container" class="players-container">
@@ -257,7 +257,7 @@ fetch("data.json")
   });
 
 function generatePlayersByTeam() {
-  // Get each player's most recent team assignment
+  // Find each player's most recent team assignment
   const playerTeams = {};
   
   allData.forEach(p => {
@@ -286,9 +286,13 @@ function generatePlayersByTeam() {
     const currentYear = parseInt(currentEntry.year) || 0;
     const newYear = parseInt(p.year) || 0;
     
+    // Season priority: Fall > Summer (within same year)
+    const currentSeasonPriority = currentEntry.season === 'Fall' ? 2 : 1;
+    const newSeasonPriority = p.season === 'Fall' ? 2 : 1;
+    
     // Update to more recent team if this record is newer
     if (newYear > currentYear || 
-        (newYear === currentYear && p.season > currentEntry.season)) {
+        (newYear === currentYear && newSeasonPriority > currentSeasonPriority)) {
       currentEntry.team = p.team;
       currentEntry.year = p.year;
       currentEntry.season = p.season;
@@ -326,7 +330,7 @@ function generatePlayersByTeam() {
   // Update summary
   const totalPlayers = Object.keys(playerTeams).length;
   document.getElementById("totalPlayersText").textContent = 
-    `Total Players: ${totalPlayers} across ${sortedTeams.length} teams`;
+    `Total Players: ${totalPlayers} across ${sortedTeams.length} teams (based on most recent season assignments)`;
   
   const container = document.getElementById("players-container");
   container.innerHTML = '';
@@ -395,7 +399,7 @@ function generatePlayersByTeam() {
         (player.totalHits / player.totalAtBats).toFixed(3) : '0.000';
       
       playerStats.textContent = 
-        `${player.totalGames} games • ${player.totalHits}/${player.totalAtBats} (.${careerBA.slice(2)}) • ${player.currentTeamGames} with ${teamName}`;
+        `${player.totalGames} games • ${player.totalHits}/${player.totalAtBats} (.${careerBA.slice(2)}) • ${player.currentTeamGames} with ${teamName} • Last: ${player.year} ${player.season}`;
       
       playerLink.appendChild(playerName);
       playerLink.appendChild(playerStats);
