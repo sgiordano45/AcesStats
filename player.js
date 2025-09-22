@@ -71,7 +71,13 @@ async function loadPlayerData() {
     }
 
     // Sort data properly: Year descending, then Fall before Summer
-    
+    const sortPlayerData = (data) => {
+      return data.sort((a, b) => {
+        // First sort by year (descending)
+        if (b.year !== a.year) return b.year - a.year;
+        
+        // Then sort by season (Fall before Summer)
+        const seasonOrder = { 'Fall': 0, 'Summer': 1 };
         const aSeasonOrder = seasonOrder[a.season] !== undefined ? seasonOrder[a.season] : 999;
         const bSeasonOrder = seasonOrder[b.season] !== undefined ? seasonOrder[b.season] : 999;
         return aSeasonOrder - bSeasonOrder;
@@ -105,22 +111,6 @@ function isSubstitute(p) {
   const subValue = p.Sub || "";
   return subValue.toString().trim().toLowerCase() === "yes";
 }
-
-
-// 🔑 Make sortPlayerData global so all functions can use it
-function sortPlayerData(data) {
-  return data.sort((a, b) => {
-    // First sort by year (descending)
-    if (b.year !== a.year) return b.year - a.year;
-    
-    // Then sort by season (Fall before Summer)
-    const seasonOrder = { 'Fall': 0, 'Summer': 1 };
-    const aSeasonOrder = seasonOrder[a.season] !== undefined ? seasonOrder[a.season] : 999;
-    const bSeasonOrder = seasonOrder[b.season] !== undefined ? seasonOrder[b.season] : 999;
-    return aSeasonOrder - bSeasonOrder;
-  });
-}
-
 
 // Function to populate player banner with data from player_info.json
 function populatePlayerBanner(playerData) {
