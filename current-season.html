@@ -887,27 +887,66 @@
     }
 
     function updateUpcomingSchedule(games) {
-      // Since we don't have future games in the data, we'll show this as a placeholder
-      // In a real system, this would show upcoming scheduled games
+      // Filter for future games (games with future dates and no winner or empty winner field)
+      const upcomingGames = games
+        .filter(g => {
+          const gameDate = parseGameDate(g.date);
+          const isFuture = gameDate >= today;
+          const noWinner = !g.winner || g.winner.trim() === "";
+          return isFuture && noWinner;
+        })
+        .sort((a, b) => parseGameDate(a.date) - parseGameDate(b.date))
+        .slice(0, 10);
+
+      if (upcomingGames.length === 0) {
+        document.getElementById('scheduleContent').innerHTML = `
+          <div class="no-data">
+            <h4>No Upcoming Games</h4>
+            <p>No upcoming games scheduled at this time.</p>
+            <p><em>Check back for playoff schedule updates as the regular season concludes.</em></p>
+          </div>
+        `;
+        return;
+      }
+
       const html = `
-        <div class="no-data">
-          <h4>Upcoming Games</h4>
-          <p>No upcoming games scheduled at this time.</p>
-          <p><em>Check back for playoff schedule updates as the regular season concludes.</em></p>
-        </div>
+        <table class="schedule-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Home Team</th>
+              <th>vs</th>
+              <th>Away Team</th>
+              <th>Type</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${upcomingGames.map(game => `
+              <tr class="upcoming">
+                <td class="game-date">${game.date}</td>
+                <td class="team-name">${game["home team"]}</td>
+                <td class="game-score">vs</td>
+                <td class="team-name">${game["away team"]}</td>
+                <td>${game.game_type}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
       `;
+
       document.getElementById('scheduleContent').innerHTML = html;
     }
 
     function updateRecentResults(games) {
-      // Get the most recent 10 games
+      // Get the most recent 10 completed games
       const recentGames = games
-        .sort((a, b) => new Date(b.date) - new Date(a.date))
+        .filter(g => parseGameDate(g.date) < today && g.winner && g.winner.trim() !== "")
+        .sort((a, b) => parseGameDate(b.date) - parseGameDate(a.date))
         .slice(0, 10);
 
       if (recentGames.length === 0) {
         document.getElementById('resultsContent').innerHTML = 
-          '<div class="no-data">No games played yet this season.</div>';
+          '<div class="no-data">No completed games yet this season.</div>';
         return;
       }
 
@@ -955,136 +994,39 @@
     }
 
     function updatePlayoffBracket(games) {
-      const playoffGames = games.filter(g => g.game_type === 'Playoff');
+      // Get completed games for standings
+      const completedGames = games.filter(g => 
+        g.winner && g.winner.trim() !== "" && 
+        parseGameDate(g.date) < today
+      );
       
-      if (playoffGames.length === 0) {
+      const regularGames = completedGames.filter(g => g.game_type === 'Regular');
+      const playoffGames = completedGames.filter(g => g.game_type === 'Playoff');
+      
+      // Get regular season standings to determine playoff seeding
+      const regularStandings = calculateStandings(regularGames);
+      
+      if (regularStandings.length === 0) {
         document.getElementById('bracketContent').innerHTML = `
           <div class="no-data">
             <h4>Playoff Bracket</h4>
-            <p>Playoffs have not started yet.</p>
-            <p><em>The bracket will be updated as teams qualify and playoff games begin.</em></p>
+            <p>Regular season must be completed to generate playoff bracket.</p>
           </div>
         `;
         return;
       }
 
-      // Generate double elimination bracket
-      const bracketHtml = generateDoubleEliminationBracket(playoffGames);
+      let bracketHtml = '';
+
+      if (playoffGames.length === 0) {
+        // Generate projected bracket based on current standings
+        bracketHtml = generateProjectedBracket(regularStandings);
+      } else {
+        // Show actual playoff results with bracket
+        bracketHtml = generateActualPlayoffBracket(playoffGames, regularStandings);
+      }
+
       document.getElementById('bracketContent').innerHTML = bracketHtml;
-    }
-
-    function generateDoubleEliminationBracket(playoffGames) {
-      // Get all teams that participated in playoffs
-      const playoffTeams = new Set();
-      playoffGames.forEach(game => {
-        playoffTeams.add(game["home team"]);
-        playoffTeams.add(game["away team"]);
-      });
-
-      // Calculate current playoff standings to determine bracket position
-      const playoffStandings = calculateStandings(playoffGames);
-      
-      // Group games by date to show bracket progression
-      const gamesByDate = {};
-      playoffGames.forEach(game => {
-        if (!gamesByDate[game.date]) {
-          gamesByDate[game.date] = [];
-        }
-        gamesByDate[game.date].push(game);
-      });
-
-      const sortedDates = Object.keys(gamesByDate).sort((a, b) => new Date(a) - new Date(b));
-
-      let html = `
-        <div class="bracket-title">Double Elimination Tournament</div>
-        <div class="bracket-section">
-          <h4>Current Playoff Standings</h4>
-          <table class="bracket-table">
-            <thead>
-              <tr>
-                <th>Rank</th>
-                <th>Team</th>
-                <th>Wins</th>
-                <th>Losses</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${playoffStandings.map((team, index) => {
-                let status = 'Active';
-                if (team.losses >= 2) status = 'Eliminated';
-                else if (index === 0 && team.wins >= 2) status = 'Champion';
-                
-                return `
-                  <tr>
-                    <td>${index + 1}</td>
-                    <td class="team-name">${team.name}</td>
-                    <td>${team.wins}</td>
-                    <td>${team.losses}</td>
-                    <td class="${status.toLowerCase()}">${status}</td>
-                  </tr>
-                `;
-              }).join('')}
-            </tbody>
-          </table>
-        </div>
-
-        <div class="bracket-section">
-          <h4>Game Results by Date</h4>
-      `;
-
-      sortedDates.forEach(date => {
-        const dateGames = gamesByDate[date];
-        html += `
-          <div class="bracket-title">${date}</div>
-          <div class="bracket-visual">
-        `;
-
-        dateGames.forEach((game, index) => {
-          const forfeit = game.forfeit === "Yes" ? " (Forfeit)" : "";
-          let scoreDisplay;
-          
-          if (game["home score"] === "W" && game["away score"] === "L") {
-            scoreDisplay = "W - L";
-          } else if (game["home score"] === "L" && game["away score"] === "W") {
-            scoreDisplay = "L - W";
-          } else {
-            scoreDisplay = `${game["home score"]} - ${game["away score"]}`;
-          }
-
-          html += `
-            <div class="matchup">
-              <div class="team-in-bracket ${game.winner === game["home team"] ? 'winner' : ''}">
-                <span>${game["home team"]}</span>
-                <span>${game["home score"]}</span>
-              </div>
-              <div class="team-in-bracket ${game.winner === game["away team"] ? 'winner' : ''}">
-                <span>${game["away team"]}</span>
-                <span>${game["away score"]}</span>
-              </div>
-              <div style="text-align: center; margin-top: 0.5rem; font-size: 0.9rem; color: #666;">
-                Winner: <strong>${game.winner}</strong>${forfeit}
-              </div>
-            </div>
-          `;
-        });
-
-        html += `
-          </div>
-        `;
-      });
-
-      html += `
-        </div>
-        <div class="bracket-section">
-          <div class="no-data">
-            <p><em>Double elimination format: Teams are eliminated after losing 2 games. 
-            The winner's bracket champion needs to be beaten twice by the loser's bracket champion to lose the tournament.</em></p>
-          </div>
-        </div>
-      `;
-
-      return html;
     }
 
     function showError() {
