@@ -224,132 +224,144 @@ Promise.all([
   fetch("pitching.json").then(res => res.ok ? res.json() : []),
   fetch("awards.json").then(res => res.ok ? res.json() : [])
 ]).then(([battingData, pitchingData, awards]) => {
-  allBattingData = battingData;
-  allPitchingData = pitchingData;
+  allBattingData = cleanBattingData(battingData);
+  allPitchingData = cleanPitchingData(pitchingData);
   allAwards = awards;
   
-  displayAllSeasons();
+  generateSeasonCards();
 }).catch(error => {
   console.error('Error loading data:', error);
   document.getElementById('summary').innerHTML = '<p>Error loading season data. Please try refreshing the page.</p>';
 });
 
-function displayAllSeasons() {
-  // Get all unique seasons
-  const seasons = new Set();
-  allBattingData.forEach(game => seasons.add(game.Season));
-  allPitchingData.forEach(game => seasons.add(game.Season));
+function cleanBattingData(data) {
+  return data.map(p => ({
+    ...p,
+    name: p.name ? p.name.trim() : "",
+    team: p.team ? p.team.trim() : "",
+    season: p.season ? p.season.trim() : "",
+    year: p.year ? String(p.year).trim() : "",
+    games: Number(p.games) || 0,
+    atBats: Number(p.atBats) || 0,
+    hits: Number(p.hits) || 0,
+    runs: Number(p.runs) || 0,
+    walks: Number(p.walks) || 0
+  }));
+}
+
+function cleanPitchingData(data) {
+  return data.map(p => ({
+    ...p,
+    name: p.name ? p.name.trim() : "",
+    team: p.team ? p.team.trim() : "",
+    season: p.season ? p.season.trim() : "",
+    year: p.year ? String(p.year).trim() : "",
+    games: Number(p.games) || 0,
+    IP: parseFloat(p.IP) || 0,
+    runsAllowed: Number(p["runs allowed"]) || 0,
+    ERA: p.ERA === "N/A" || !p.ERA ? "N/A" : Number(p.ERA)
+  }));
+}
+
+function generateSeasonCards() {
+  // Get unique seasons from batting data
+  const seasons = new Map();
   
-  const sortedSeasons = Array.from(seasons).sort((a, b) => {
-    // Parse seasons for proper sorting (e.g., "Fall 2022", "Spring 2023")
-    const parseSeasonForSort = (season) => {
-      const parts = season.split(' ');
-      const year = parseInt(parts[parts.length - 1]);
-      const term = parts.slice(0, -1).join(' ').toLowerCase();
-      
-      // Spring comes before Fall in the same year
-      const termOrder = { 'spring': 0, 'summer': 1, 'fall': 2, 'winter': 3 };
-      const termValue = termOrder[term] !== undefined ? termOrder[term] : 999;
-      
-      return year * 10 + termValue;
-    };
+  allBattingData.forEach(p => {
+    if (!p.year || !p.season) return;
     
-    return parseSeasonForSort(a) - parseSeasonForSort(b);
+    const seasonKey = `${p.year}-${p.season}`;
+    if (!seasons.has(seasonKey)) {
+      seasons.set(seasonKey, {
+        year: p.year,
+        season: p.season,
+        battingPlayers: new Set(),
+        pitchingPlayers: new Set(),
+        teams: new Set(),
+        totalGames: 0,
+        totalAtBats: 0,
+        totalHits: 0
+      });
+    }
+    
+    const seasonData = seasons.get(seasonKey);
+    seasonData.battingPlayers.add(p.name);
+    if (p.team && p.team.toLowerCase() !== "kings") {
+      seasonData.teams.add(p.team);
+    }
+    seasonData.totalGames += p.games;
+    seasonData.totalAtBats += p.atBats;
+    seasonData.totalHits += p.hits;
   });
   
-  document.getElementById('totalSeasonsText').textContent = `${sortedSeasons.length} seasons of Mountainside Aces baseball`;
+  // Add pitching data
+  allPitchingData.forEach(p => {
+    if (!p.year || !p.season) return;
+    
+    const seasonKey = `${p.year}-${p.season}`;
+    if (seasons.has(seasonKey)) {
+      const seasonData = seasons.get(seasonKey);
+      seasonData.pitchingPlayers.add(p.name);
+      if (p.team && p.team.toLowerCase() !== "kings") {
+        seasonData.teams.add(p.team);
+      }
+    }
+  });
   
-  const container = document.getElementById('seasons-container');
+  // Sort seasons by year (desc) then season
+  const sortedSeasons = Array.from(seasons.values()).sort((a, b) => {
+    // First sort by year (descending)
+    if (b.year !== a.year) return parseInt(b.year) - parseInt(a.year);
+    
+    // Then sort by season with Summer before Fall
+    const seasonOrder = { 'Fall': 1, 'Summer': 2 };
+    const orderA = seasonOrder[a.season] || 999;
+    const orderB = seasonOrder[b.season] || 999;
+    
+    return orderA - orderB;
+  });
+  
+  // Update summary
+  document.getElementById("totalSeasonsText").textContent = 
+    `Total Seasons: ${sortedSeasons.length} across ${sortedSeasons[0]?.year || ''} - ${sortedSeasons[sortedSeasons.length - 1]?.year || ''}`;
+  
+  const container = document.getElementById("seasons-container");
   container.innerHTML = '';
   
   sortedSeasons.forEach(season => {
-    const seasonBattingData = allBattingData.filter(game => game.Season === season);
-    const seasonPitchingData = allPitchingData.filter(game => game.Season === season);
-    const seasonAwards = allAwards.filter(award => award.Season === season);
+    // Count awards for this season
+    const seasonAwards = allAwards.filter(award => 
+      award.Year === season.year && award.Season === season.season
+    );
+    
+    // Find Team of the Year for highlight
+    const teamOfYearAward = seasonAwards.find(award => award.Award === "Team of the Year");
+    const teamOfYearText = teamOfYearAward ? 
+      `<div class="season-highlight">Team of the Year: ${teamOfYearAward.Team}</div>` : '';
+    
+    // Calculate season batting average
+    const seasonBA = season.totalAtBats > 0 ? 
+      (season.totalHits / season.totalAtBats).toFixed(3) : '.000';
     
     const seasonCard = document.createElement('div');
     seasonCard.className = 'season-card';
     
-    const seasonLink = document.createElement('a');
-    seasonLink.href = `season.html?season=${encodeURIComponent(season)}`;
-    
-    const seasonTitle = document.createElement('h3');
-    seasonTitle.textContent = season;
-    
-    const seasonStats = document.createElement('div');
-    seasonStats.className = 'season-stats';
-    
-    // Calculate season statistics
-    const totalGames = seasonBattingData.length;
-    const totalTeams = new Set([...seasonBattingData.map(g => g.Team), ...seasonPitchingData.map(g => g.Team)]).size;
-    const totalPlayers = new Set([...seasonBattingData.map(g => g.Player), ...seasonPitchingData.map(g => g.Player)]).size;
-    
-    // Find season highlights
-    let highlights = [];
-    
-    // Batting leaders
-    if (seasonBattingData.length > 0) {
-      const playerStats = calculatePlayerStats(seasonBattingData, season);
-      const avgLeader = playerStats.reduce((max, p) => p.avg > max.avg ? p : max);
-      const hrLeader = playerStats.reduce((max, p) => p.hr > max.hr ? p : max);
-      
-      if (avgLeader.avg > 0) {
-        highlights.push(`Batting Avg Leader: ${avgLeader.player} (.${avgLeader.avg.toFixed(3).slice(2)})`);
-      }
-      if (hrLeader.hr > 0) {
-        highlights.push(`HR Leader: ${hrLeader.player} (${hrLeader.hr})`);
-      }
-    }
-    
-    // Awards
-    if (seasonAwards.length > 0) {
-      highlights.push(`${seasonAwards.length} award${seasonAwards.length !== 1 ? 's' : ''} given`);
-    }
-    
-    const statsHTML = `
-      <p><strong>${totalGames}</strong> games played</p>
-      <p><strong>${totalTeams}</strong> teams • <strong>${totalPlayers}</strong> players</p>
-      ${highlights.length > 0 ? `<div class="season-highlight">${highlights.slice(0, 2).join('<br>')}</div>` : ''}
+    seasonCard.innerHTML = `
+      <a href="season.html?year=${encodeURIComponent(season.year)}&season=${encodeURIComponent(season.season)}">
+        <h3>${season.year} ${season.season}</h3>
+        <div class="season-stats">
+          <p><strong>${season.battingPlayers.size}</strong> batting players</p>
+          <p><strong>${season.pitchingPlayers.size}</strong> pitching players</p>
+          <p><strong>${season.teams.size}</strong> teams</p>
+          <p>${season.totalGames} games • .${seasonBA.slice(2)} BA</p>
+          ${seasonAwards.length > 0 ? `<p>${seasonAwards.length} award${seasonAwards.length !== 1 ? 's' : ''} given</p>` : ''}
+        </div>
+        ${teamOfYearText}
+      </a>
     `;
     
-    seasonStats.innerHTML = statsHTML;
-    
-    seasonLink.appendChild(seasonTitle);
-    seasonLink.appendChild(seasonStats);
-    seasonCard.appendChild(seasonLink);
     container.appendChild(seasonCard);
   });
-}
-
-function calculatePlayerStats(battingData, season) {
-  const players = {};
-  
-  battingData.forEach(game => {
-    const key = `${game.Player}-${game.Team}`;
-    if (!players[key]) {
-      players[key] = {
-        player: game.Player,
-        team: game.Team,
-        hits: 0,
-        ab: 0,
-        hr: 0,
-        rbi: 0,
-        runs: 0
-      };
-    }
-    
-    players[key].hits += parseInt(game.H) || 0;
-    players[key].ab += parseInt(game.AB) || 0;
-    players[key].hr += parseInt(game.HR) || 0;
-    players[key].rbi += parseInt(game.RBI) || 0;
-    players[key].runs += parseInt(game.R) || 0;
-  });
-  
-  // Calculate averages and return array
-  return Object.values(players).map(player => ({
-    ...player,
-    avg: player.ab > 0 ? player.hits / player.ab : 0
-  }));
 }
 </script>
 
