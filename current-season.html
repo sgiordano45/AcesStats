@@ -1,4 +1,287 @@
-<!DOCTYPE html>
+    function updatePlayoffBracket(games) {
+      const completedGames = games.filter(g => isGameInPast(g.date) && g.winner && g.winner.trim() !== "");
+      const regularGames = completedGames.filter(g => g.game_type === 'Regular');
+      const playoffGames = completedGames.filter(g => g.game_type === 'Playoff');
+      
+      // Get regular season standings to determine playoff seeding
+      const regularStandings = calculateStandings(regularGames);
+      
+      if (regularStandings.length === 0) {
+        document.getElementById('bracketContent').innerHTML = `
+          <div class="no-data">
+            <h4>Playoff Bracket</h4>
+            <p>Regular season must be completed to generate playoff bracket.</p>
+          </div>
+        `;
+        return;
+      }
+
+      let bracketHtml = '';
+
+      if (playoffGames.length === 0) {
+        // Generate projected bracket based on current standings
+        bracketHtml = generateProjectedBracket(regularStandings);
+      } else {
+        // Show actual playoff results with bracket
+        bracketHtml = generateActualPlayoffBracket(playoffGames, regularStandings);
+      }
+
+      document.getElementById('bracketContent').innerHTML = bracketHtml;
+    }
+
+    function generateProjectedBracket(standings) {
+      if (standings.length < 10) {
+        return `
+          <div class="no-data">
+            <h4>Projected Playoff Bracket</h4>
+            <p>Need at least 10 teams to generate playoff bracket. Currently have ${standings.length} teams.</p>
+          </div>
+        `;
+      }
+
+      // Top 10 teams make playoffs
+      const playoffTeams = standings.slice(0, 10);
+      
+      return `
+        <div class="bracket-title">Projected Double Elimination Playoff Bracket</div>
+        <div class="bracket-section">
+          <h4>Playoff Seeding (Top 10 Teams)</h4>
+          <table class="bracket-table">
+            <thead>
+              <tr>
+                <th>Seed</th>
+                <th>Team</th>
+                <th>Record</th>
+                <th>Win%</th>
+                <th>Run Diff</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${playoffTeams.map((team, index) => `
+                <tr>
+                  <td><strong>${index + 1}</strong></td>
+                  <td class="team-name">${team.name}</td>
+                  <td>${team.wins}-${team.losses}${team.ties > 0 ? `-${team.ties}` : ''}</td>
+                  <td class="win-pct">${(team.winPct * 100).toFixed(1)}%</td>
+                  <td style="color: ${team.runDifferential >= 0 ? '#28a745' : '#dc3545'}">${team.runDifferential >= 0 ? '+' : ''}${team.runDifferential}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+
+        <div class="bracket-section">
+          <h4>First Round Playoff Matchups</h4>
+          <div class="bracket-visual">
+            <div class="bracket-round">
+              <h4>Play-in Game 1</h4>
+              <div class="matchup">
+                <div class="team-in-bracket">
+                  <span><strong>#7</strong> ${playoffTeams[6].name}</span>
+                  <span>${playoffTeams[6].wins}-${playoffTeams[6].losses}</span>
+                </div>
+                <div class="team-in-bracket">
+                  <span><strong>#10</strong> ${playoffTeams[9].name}</span>
+                  <span>${playoffTeams[9].wins}-${playoffTeams[9].losses}</span>
+                </div>
+                <div style="text-align: center; margin-top: 0.5rem; font-size: 0.9rem; color: #666;">
+                  Winner plays #2 seed
+                </div>
+              </div>
+            </div>
+
+            <div class="bracket-round">
+              <h4>Play-in Game 2</h4>
+              <div class="matchup">
+                <div class="team-in-bracket">
+                  <span><strong>#8</strong> ${playoffTeams[7].name}</span>
+                  <span>${playoffTeams[7].wins}-${playoffTeams[7].losses}</span>
+                </div>
+                <div class="team-in-bracket">
+                  <span><strong>#9</strong> ${playoffTeams[8].name}</span>
+                  <span>${playoffTeams[8].wins}-${playoffTeams[8].losses}</span>
+                </div>
+                <div style="text-align: center; margin-top: 0.5rem; font-size: 0.9rem; color: #666;">
+                  Winner plays #1 seed
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <h4>First Round Byes</h4>
+          <div class="bracket-visual">
+            <div class="bracket-round">
+              <h4>Awaiting Play-in Results</h4>
+              <div class="matchup">
+                <div class="team-in-bracket">
+                  <span><strong>#1</strong> ${playoffTeams[0].name}</span>
+                  <span>BYE</span>
+                </div>
+                <div style="text-align: center; margin-top: 0.5rem; font-size: 0.9rem; color: #666;">
+                  vs Winner of 8v9
+                </div>
+              </div>
+              
+              <div class="matchup">
+                <div class="team-in-bracket">
+                  <span><strong>#2</strong> ${playoffTeams[1].name}</span>
+                  <span>BYE</span>
+                </div>
+                <div style="text-align: center; margin-top: 0.5rem; font-size: 0.9rem; color: #666;">
+                  vs Winner of 7v10
+                </div>
+              </div>
+            </div>
+
+            <div class="bracket-round">
+              <h4>Direct to Round 2</h4>
+              ${[3, 4, 5, 6].map(seed => {
+                const team = playoffTeams[seed - 1];
+                return `
+                  <div class="matchup">
+                    <div class="team-in-bracket">
+                      <span><strong>#${seed}</strong> ${team.name}</span>
+                      <span>${team.wins}-${team.losses}</span>
+                    </div>
+                    <div style="text-align: center; margin-top: 0.5rem; font-size: 0.9rem; color: #666;">
+                      Awaits bracket setup
+                    </div>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          </div>
+        </div>
+
+        <div class="bracket-section">
+          <div class="no-data">
+            <p><em>Double elimination format: Teams are eliminated after losing 2 games. 
+            Play-in games determine final bracket positioning. Higher seeds get advantageous bracket placement.</em></p>
+          </div>
+        </div>
+      `;
+    }
+
+    function generateActualPlayoffBracket(playoffGames, regularStandings) {
+      // Calculate current playoff standings
+      const playoffStandings = calculateStandings(playoffGames);
+      
+      // Group games by date to show bracket progression
+      const gamesByDate = {};
+      playoffGames.forEach(game => {
+        if (!gamesByDate[game.date]) {
+          gamesByDate[game.date] = [];
+        }
+        gamesByDate[game.date].push(game);
+      });
+
+      const sortedDates = Object.keys(gamesByDate).sort((a, b) => parseGameDate(a) - parseGameDate(b));
+
+      let html = `
+        <div class="bracket-title">Double Elimination Tournament - Live Results</div>
+        <div class="bracket-section">
+          <h4>Current Playoff Standings</h4>
+          <table class="bracket-table">
+            <thead>
+              <tr>
+                <th>Rank</th>
+                <th>Team</th>
+                <th>Wins</th>
+                <th>Losses</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${playoffStandings.map((team, index) => {
+                let status = 'Active';
+                if (team.losses >= 2) status = 'Eliminated';
+                else if (index === 0 && team.wins >= 2 && playoffStandings.length > 1 && playoffStandings[1].losses >= 2) status = 'Champion';
+                
+                return `
+                  <tr>
+                    <td>${index + 1}</td>
+                    <td class="team-name">${team.name}</td>
+                    <td>${team.wins}</td>
+                    <td>${team.losses}</td>
+                    <td class="${status.toLowerCase()}">${status}</td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+
+        <div class="bracket-section">
+          <h4>Game Results by Date</h4>
+      `;
+
+      sortedDates.forEach(date => {
+        const dateGames = gamesByDate[date];
+        html += `
+          <div class="bracket-title">${date}</div>
+          <div class="bracket-visual">
+        `;
+
+        dateGames.forEach((game, index) => {
+          const forfeit = game.forfeit === "Yes" ? " (Forfeit)" : "";
+          let scoreDisplay;
+          
+          if (game["home score"] === "W" && game["away score"] === "L") {
+            scoreDisplay = "W - L";
+          } else if (game["home score"] === "L" && game["away score"] === "W") {
+            scoreDisplay = "L - W";
+          } else {
+            scoreDisplay = `${game["home score"]} - ${game["away score"]}`;
+          }
+
+          html += `
+            <div class="matchup">
+              <div class="team-in-bracket ${game.winner === game["home team"] ? 'winner' : ''}">
+                <span>${game["home team"]}</span>
+                <span>${game["home score"]}</span>
+              </div>
+              <div class="team-in-bracket ${game.winner === game["away team"] ? 'winner' : ''}">
+                <span>${game["away team"]}</span>
+                <span>${game["away score"]}</span>
+              </div>
+              <div style="text-align: center; margin-top: 0.5rem; font-size: 0.9rem; color: #666;">
+                Winner: <strong>${game.winner}</strong>${forfeit}
+              </div>
+            </div>
+          `;
+        });
+
+        html += `
+          </div>
+        `;
+      });
+
+      html += `
+        </div>
+        <div class="bracket-section">
+          <div class="no-data">
+            <p><em>Double elimination format: Teams are eliminated after losing 2 games. 
+            The winner's bracket champion needs to be beaten twice by the loser's bracket champion to lose the tournament.</em></p>
+          </div>
+        </div>
+      `;
+
+      return html;
+    }
+
+    function showError() {
+      const errorHtml = '<div class="no-data">Error loading season data. Please try again later.</div>';
+      document.getElementById('standingsContent').innerHTML = errorHtml;
+      document.getElementById('scheduleContent').innerHTML = errorHtml;
+      document.getElementById('resultsContent').innerHTML = errorHtml;
+      document.getElementById('bracketContent').innerHTML = errorHtml;
+    }
+
+    // Initialize the page
+    document.addEventListener('DOMContentLoaded', loadData);
+  </script>
+</body>
+</html><!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -367,6 +650,7 @@
     let allGames = [];
     const currentSeason = "Fall";
     const currentYear = "2025";
+    const today = new Date();
 
     // Load games data and initialize page
     async function loadData() {
@@ -393,10 +677,27 @@
       }
     }
 
+    function parseGameDate(dateStr) {
+      // Handle different date formats that might be in the data
+      return new Date(dateStr);
+    }
+
+    function isGameInPast(gameDate) {
+      const game = parseGameDate(gameDate);
+      return game < today;
+    }
+
+    function isGameInFuture(gameDate) {
+      const game = parseGameDate(gameDate);
+      return game >= today;
+    }
+
     function updateSeasonSummary(games) {
       const teams = new Set();
-      const regularGames = games.filter(g => g.game_type === 'Regular');
-      const playoffGames = games.filter(g => g.game_type === 'Playoff');
+      const pastGames = games.filter(g => isGameInPast(g.date));
+      const futureGames = games.filter(g => isGameInFuture(g.date));
+      const regularGames = pastGames.filter(g => g.game_type === 'Regular');
+      const playoffGames = pastGames.filter(g => g.game_type === 'Playoff');
 
       games.forEach(g => {
         teams.add(g["home team"]);
@@ -404,14 +705,16 @@
       });
 
       document.getElementById('totalTeams').textContent = teams.size;
-      document.getElementById('gamesPlayed').textContent = games.length;
+      document.getElementById('gamesPlayed').textContent = pastGames.length;
       document.getElementById('regularSeasonGames').textContent = regularGames.length;
       document.getElementById('playoffGames').textContent = playoffGames.length;
     }
 
     function updateStandings(games) {
-      const regularGames = games.filter(g => g.game_type === 'Regular');
-      const playoffGames = games.filter(g => g.game_type === 'Playoff');
+      // Only use completed games for standings
+      const completedGames = games.filter(g => isGameInPast(g.date) && g.winner && g.winner.trim() !== "");
+      const regularGames = completedGames.filter(g => g.game_type === 'Regular');
+      const playoffGames = completedGames.filter(g => g.game_type === 'Playoff');
       
       let html = '';
       
@@ -426,7 +729,7 @@
       }
 
       if (!html) {
-        html = '<div class="no-data">No games played yet this season.</div>';
+        html = '<div class="no-data">No completed games yet this season.</div>';
       }
 
       document.getElementById('standingsContent').innerHTML = html;
@@ -439,23 +742,67 @@
         const homeTeam = game["home team"];
         const awayTeam = game["away team"];
         const winner = game.winner;
+        const homeScore = parseInt(game["home score"]) || 0;
+        const awayScore = parseInt(game["away score"]) || 0;
 
         if (!teamStats[homeTeam]) {
-          teamStats[homeTeam] = { name: homeTeam, wins: 0, losses: 0, ties: 0 };
+          teamStats[homeTeam] = { 
+            name: homeTeam, 
+            wins: 0, 
+            losses: 0, 
+            ties: 0, 
+            runsFor: 0, 
+            runsAgainst: 0,
+            games: [],
+            h2h: {}
+          };
         }
         if (!teamStats[awayTeam]) {
-          teamStats[awayTeam] = { name: awayTeam, wins: 0, losses: 0, ties: 0 };
+          teamStats[awayTeam] = { 
+            name: awayTeam, 
+            wins: 0, 
+            losses: 0, 
+            ties: 0, 
+            runsFor: 0, 
+            runsAgainst: 0,
+            games: [],
+            h2h: {}
+          };
+        }
+
+        // Record the game for H2H tiebreaking
+        teamStats[homeTeam].games.push(game);
+        teamStats[awayTeam].games.push(game);
+
+        // Add runs
+        teamStats[homeTeam].runsFor += homeScore;
+        teamStats[homeTeam].runsAgainst += awayScore;
+        teamStats[awayTeam].runsFor += awayScore;
+        teamStats[awayTeam].runsAgainst += homeScore;
+
+        // Record H2H results
+        if (!teamStats[homeTeam].h2h[awayTeam]) {
+          teamStats[homeTeam].h2h[awayTeam] = { wins: 0, losses: 0, ties: 0 };
+        }
+        if (!teamStats[awayTeam].h2h[homeTeam]) {
+          teamStats[awayTeam].h2h[homeTeam] = { wins: 0, losses: 0, ties: 0 };
         }
 
         if (winner === "Tie") {
           teamStats[homeTeam].ties++;
           teamStats[awayTeam].ties++;
+          teamStats[homeTeam].h2h[awayTeam].ties++;
+          teamStats[awayTeam].h2h[homeTeam].ties++;
         } else if (winner === homeTeam) {
           teamStats[homeTeam].wins++;
           teamStats[awayTeam].losses++;
+          teamStats[homeTeam].h2h[awayTeam].wins++;
+          teamStats[awayTeam].h2h[homeTeam].losses++;
         } else if (winner === awayTeam) {
           teamStats[awayTeam].wins++;
           teamStats[homeTeam].losses++;
+          teamStats[awayTeam].h2h[homeTeam].wins++;
+          teamStats[homeTeam].h2h[awayTeam].losses++;
         }
       });
 
@@ -463,9 +810,37 @@
         .map(team => {
           const totalDecided = team.wins + team.losses;
           team.winPct = totalDecided > 0 ? (team.wins / totalDecided) : 0;
+          team.runDifferential = team.runsFor - team.runsAgainst;
           return team;
         })
-        .sort((a, b) => b.winPct - a.winPct || b.wins - a.wins);
+        .sort((a, b) => {
+          // Primary: Win percentage
+          if (a.winPct !== b.winPct) return b.winPct - a.winPct;
+          
+          // Secondary: Head-to-head record
+          const h2hComparison = compareHeadToHead(a, b);
+          if (h2hComparison !== 0) return h2hComparison;
+          
+          // Third: Runs allowed (fewer is better)
+          if (a.runsAgainst !== b.runsAgainst) return a.runsAgainst - b.runsAgainst;
+          
+          // Fourth: Run differential
+          return b.runDifferential - a.runDifferential;
+        });
+    }
+
+    function compareHeadToHead(teamA, teamB) {
+      const aVsB = teamA.h2h[teamB.name];
+      const bVsA = teamB.h2h[teamA.name];
+      
+      if (!aVsB || !bVsA) return 0; // No head-to-head games
+      
+      const aH2HWinPct = (aVsB.wins + aVsB.losses) > 0 ? aVsB.wins / (aVsB.wins + aVsB.losses) : 0;
+      const bH2HWinPct = (bVsA.wins + bVsA.losses) > 0 ? bVsA.wins / (bVsA.wins + bVsA.losses) : 0;
+      
+      if (aH2HWinPct !== bH2HWinPct) return bH2HWinPct - aH2HWinPct;
+      
+      return 0; // Head-to-head is tied
     }
 
     function generateStandingsTable(title, standings) {
