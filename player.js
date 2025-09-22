@@ -117,6 +117,7 @@ function populatePlayerBanner(playerData) {
   // Calculate career stats for banner
   const years = [...new Set(playerData.map(p => p.year))].sort((a, b) => a - b);
   const totalSeasons = playerData.filter(p => !isSubstitute(p)).length;
+  const sortedData = sortPlayerData(playerData);
   const currentTeam = playerData.length > 0 ? playerData[0].team : null;
   
   // Call the HTML function to populate player details
