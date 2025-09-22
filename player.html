@@ -678,6 +678,132 @@ function populatePlayerDetails(years, totalSeasons, currentTeam, playerInfo) {
   }
 }
 
+// Override the renderPlayerAwards function to use the existing awards section
+function renderPlayerAwards(playerData) {
+  const awardsSection = document.getElementById('awardsSection');
+  const awardsGrid = document.getElementById('awardsGrid');
+  
+  if (!allAwards || allAwards.length === 0) {
+    awardsSection.style.display = 'none';
+    return;
+  }
+  
+  // Filter awards for this specific player
+  const playerAwards = allAwards.filter(award => 
+    award.Player && award.Player.trim() === playerName && award.Award && award.Award.trim() !== ""
+  );
+  
+  if (playerAwards.length === 0) {
+    awardsSection.style.display = 'none';
+    return;
+  }
+  
+  // Group awards by name and count occurrences
+  const awardGroups = {};
+  playerAwards.forEach(award => {
+    const awardName = award.Award.trim();
+    if (!awardGroups[awardName]) {
+      awardGroups[awardName] = {
+        name: awardName,
+        count: 0,
+        seasons: []
+      };
+    }
+    awardGroups[awardName].count++;
+    awardGroups[awardName].seasons.push(`${award.Year} ${award.Season}`);
+  });
+  
+  // Award icons mapping
+  const awardIcons = {
+    'Team MVP': 'mvp.png',
+    'All Aces': 'all-aces.png',
+    'Gold Glove': 'gold-glove.png',
+    'Team of the Year': 'team-year.png',
+    'Rookie of the Year': 'rookie.png',
+    'Most Improved Ace': 'improved.png',
+    'Comeback Player of the Year': 'comeback.png',
+    'Slugger of the Year': 'slugger.png',
+    'Pitcher of the Year': 'pitcher.png',
+    'Captain of the Year': 'captain.png',
+    'Al Pineda Good Guy Award': 'good-guy.png',
+    'Iron Man Award': 'iron-man.png',
+    'Sub of the Year': 'sub.png'
+  };
+  
+  // Fallback emojis for awards without icons
+  const fallbackEmojis = {
+    'Team MVP': '👑',
+    'All Aces': '⭐',
+    'Gold Glove': '🥇',
+    'Team of the Year': '🏆',
+    'Rookie of the Year': '🌟',
+    'Most Improved Ace': '📈',
+    'Comeback Player of the Year': '💪',
+    'Slugger of the Year': '⚾',
+    'Pitcher of the Year': '🎯',
+    'Captain of the Year': '👨‍✈️',
+    'Al Pineda Good Guy Award': '😇',
+    'Iron Man Award': '🛡️',
+    'Sub of the Year': '🔄',
+    'Andrew Streaman Boner Award': '🤦‍♂️',
+    'Erik Lund Perservenance Award': '🏃‍♂️',
+    'Mr. Streaman Award for Excellence': '🌟'
+  };
+  
+  // Sort awards by importance/rarity
+  const awardOrder = [
+    'Team MVP', 'All Aces', 'Gold Glove', 'Team of the Year',
+    'Rookie of the Year', 'Most Improved Ace', 'Comeback Player of the Year',
+    'Slugger of the Year', 'Pitcher of the Year', 'Captain of the Year',
+    'Al Pineda Good Guy Award', 'Iron Man Award', 'Sub of the Year',
+    'Andrew Streaman Boner Award', 'Erik Lund Perservenance Award',
+    'Mr. Streaman Award for Excellence'
+  ];
+  
+  // Sort award groups by order, then alphabetically
+  const sortedAwards = Object.values(awardGroups).sort((a, b) => {
+    const aIndex = awardOrder.indexOf(a.name);
+    const bIndex = awardOrder.indexOf(b.name);
+    
+    if (aIndex !== -1 && bIndex !== -1) return aIndex - bIndex;
+    if (aIndex !== -1) return -1;
+    if (bIndex !== -1) return 1;
+    return a.name.localeCompare(b.name);
+  });
+  
+  // Generate award items
+  awardsGrid.innerHTML = '';
+  sortedAwards.forEach(award => {
+    const iconFileName = awardIcons[award.name];
+    const fallbackEmoji = fallbackEmojis[award.name] || '🏅';
+    const seasonsText = award.seasons.length <= 3 ? 
+      award.seasons.join(', ') : 
+      `${award.seasons.slice(0, 2).join(', ')}, +${award.seasons.length - 2} more`;
+    
+    const awardHTML = `
+      <div class="award-item">
+        <div class="award-icon-container">
+          ${iconFileName ? 
+            `<img src="awards/${iconFileName}" alt="${award.name}" class="award-icon" style="display: block;" onerror="this.style.display='none'; this.nextElementSibling.style.display='inline';">
+             <span class="award-icon fallback" style="display: none;">${fallbackEmoji}</span>` :
+            `<span class="award-icon fallback">${fallbackEmoji}</span>`
+          }
+        </div>
+        <div class="award-details">
+          <div class="award-name">${award.name}</div>
+          <div class="award-season">${seasonsText}</div>
+        </div>
+        ${award.count > 1 ? `<span class="award-count">${award.count}×</span>` : ''}
+      </div>
+    `;
+    
+    awardsGrid.innerHTML += awardHTML;
+  });
+  
+  // Show the awards section
+  awardsSection.style.display = 'block';
+}
+
 // Call handleMasterChefSection after the page loads
 document.addEventListener('DOMContentLoaded', function() {
   // Give a small delay to ensure playerName is set
