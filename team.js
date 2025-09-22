@@ -425,16 +425,32 @@ function sortByYearSeason(a, b) {
   return orderA - orderB;
 }
 
-// Function to count unique team games instead of player games
+// Function to count actual team games from the games data
 function countTeamGames(data) {
-  const uniqueGames = new Set();
+  if (!teamGames || teamGames.length === 0) {
+    // Fallback: if no games data, use the old method but with better logic
+    const uniqueSeasons = new Set();
+    data.forEach(p => {
+      uniqueSeasons.add(`${p.year}-${p.season}`);
+    });
+    // Rough estimate: assume 12 games per season on average
+    return uniqueSeasons.size * 12;
+  }
   
-  data.forEach(p => {
-    // Create a unique identifier for each game a player participated in
-    uniqueGames.add(`${p.year}-${p.season}-${p.team}`);
-  });
+  // Get current filter values
+  const yearFilter = document.getElementById("yearFilter");
+  const seasonFilter = document.getElementById("seasonFilter");
   
-  return uniqueGames.size;
+  const yearVal = yearFilter ? yearFilter.value : "All";
+  const seasonVal = seasonFilter ? seasonFilter.value : "All";
+  
+  // Filter team games based on current filters
+  let filteredGames = teamGames.filter(game => 
+    (yearVal === "All" || String(game.year) === yearVal) &&
+    (seasonVal === "All" || game.season === seasonVal)
+  );
+  
+  return filteredGames.length;
 }
 
 function populateFilters() {
