@@ -678,130 +678,185 @@ function populatePlayerDetails(years, totalSeasons, currentTeam, playerInfo) {
   }
 }
 
-// Override the renderPlayerAwards function to use the existing awards section
+// Override the renderPlayerAwards function to restore the card-based format with All-Time Top 10
 function renderPlayerAwards(playerData) {
-  const awardsSection = document.getElementById('awardsSection');
-  const awardsGrid = document.getElementById('awardsGrid');
-  
-  if (!allAwards || allAwards.length === 0) {
-    awardsSection.style.display = 'none';
-    return;
-  }
-  
   // Filter awards for this specific player
   const playerAwards = allAwards.filter(award => 
     award.Player && award.Player.trim() === playerName && award.Award && award.Award.trim() !== ""
   );
   
-  if (playerAwards.length === 0) {
-    awardsSection.style.display = 'none';
+  // Calculate player's all-time rankings for the top 10 section
+  const playerRankings = calculatePlayerRankings(playerData);
+  
+  // If no awards and no top 10 rankings, hide section
+  if (playerAwards.length === 0 && Object.keys(playerRankings).length === 0) {
+    const awardsSection = document.getElementById('awardsSection');
+    if (awardsSection) awardsSection.style.display = 'none';
     return;
   }
   
-  // Group awards by name and count occurrences
-  const awardGroups = {};
-  playerAwards.forEach(award => {
-    const awardName = award.Award.trim();
-    if (!awardGroups[awardName]) {
-      awardGroups[awardName] = {
-        name: awardName,
-        count: 0,
-        seasons: []
-      };
-    }
-    awardGroups[awardName].count++;
-    awardGroups[awardName].seasons.push(`${award.Year} ${award.Season}`);
-  });
+  // Create the enhanced awards section HTML
+  let awardsHTML = `
+    <div style="background-color: white; border: 1px solid #e9ecef; border-radius: 8px; padding: 20px; margin-bottom: 30px;">
+      <h2 style="margin: 0 0 20px 0; color: #333; font-size: 1.3em; background-color: #0066cc; color: white; padding: 10px 15px; border-radius: 6px;">
+        🏅 Awards & Recognition
+      </h2>
+  `;
   
-  // Award icons mapping
-  const awardIcons = {
-    'Team MVP': 'mvp.png',
-    'All Aces': 'all-aces.png',
-    'Gold Glove': 'gold-glove.png',
-    'Team of the Year': 'team-year.png',
-    'Rookie of the Year': 'rookie.png',
-    'Most Improved Ace': 'improved.png',
-    'Comeback Player of the Year': 'comeback.png',
-    'Slugger of the Year': 'slugger.png',
-    'Pitcher of the Year': 'pitcher.png',
-    'Captain of the Year': 'captain.png',
-    'Al Pineda Good Guy Award': 'good-guy.png',
-    'Iron Man Award': 'iron-man.png',
-    'Sub of the Year': 'sub.png'
-  };
-  
-  // Fallback emojis for awards without icons
-  const fallbackEmojis = {
-    'Team MVP': '👑',
-    'All Aces': '⭐',
-    'Gold Glove': '🥇',
-    'Team of the Year': '🏆',
-    'Rookie of the Year': '🌟',
-    'Most Improved Ace': '📈',
-    'Comeback Player of the Year': '💪',
-    'Slugger of the Year': '⚾',
-    'Pitcher of the Year': '🎯',
-    'Captain of the Year': '👨‍✈️',
-    'Al Pineda Good Guy Award': '😇',
-    'Iron Man Award': '🛡️',
-    'Sub of the Year': '🔄',
-    'Andrew Streaman Boner Award': '🤦‍♂️',
-    'Erik Lund Perservenance Award': '🏃‍♂️',
-    'Mr. Streaman Award for Excellence': '🌟'
-  };
-  
-  // Sort awards by importance/rarity
-  const awardOrder = [
-    'Team MVP', 'All Aces', 'Gold Glove', 'Team of the Year',
-    'Rookie of the Year', 'Most Improved Ace', 'Comeback Player of the Year',
-    'Slugger of the Year', 'Pitcher of the Year', 'Captain of the Year',
-    'Al Pineda Good Guy Award', 'Iron Man Award', 'Sub of the Year',
-    'Andrew Streaman Boner Award', 'Erik Lund Perservenance Award',
-    'Mr. Streaman Award for Excellence'
-  ];
-  
-  // Sort award groups by order, then alphabetically
-  const sortedAwards = Object.values(awardGroups).sort((a, b) => {
-    const aIndex = awardOrder.indexOf(a.name);
-    const bIndex = awardOrder.indexOf(b.name);
-    
-    if (aIndex !== -1 && bIndex !== -1) return aIndex - bIndex;
-    if (aIndex !== -1) return -1;
-    if (bIndex !== -1) return 1;
-    return a.name.localeCompare(b.name);
-  });
-  
-  // Generate award items
-  awardsGrid.innerHTML = '';
-  sortedAwards.forEach(award => {
-    const iconFileName = awardIcons[award.name];
-    const fallbackEmoji = fallbackEmojis[award.name] || '🏅';
-    const seasonsText = award.seasons.length <= 3 ? 
-      award.seasons.join(', ') : 
-      `${award.seasons.slice(0, 2).join(', ')}, +${award.seasons.length - 2} more`;
-    
-    const awardHTML = `
-      <div class="award-item">
-        <div class="award-icon-container">
-          ${iconFileName ? 
-            `<img src="awards/${iconFileName}" alt="${award.name}" class="award-icon" style="display: block;" onerror="this.style.display='none'; this.nextElementSibling.style.display='inline';">
-             <span class="award-icon fallback" style="display: none;">${fallbackEmoji}</span>` :
-            `<span class="award-icon fallback">${fallbackEmoji}</span>`
-          }
-        </div>
-        <div class="award-details">
-          <div class="award-name">${award.name}</div>
-          <div class="award-season">${seasonsText}</div>
-        </div>
-        ${award.count > 1 ? `<span class="award-count">${award.count}×</span>` : ''}
-      </div>
+  // Add All-Time Top 10 Rankings section if player has rankings
+  if (Object.keys(playerRankings).length > 0) {
+    awardsHTML += `
+      <div style="margin-bottom: 25px;">
+        <h3 style="background-color: #ffa500; color: white; padding: 8px 12px; margin: 0 0 15px 0; border-radius: 4px; font-size: 1.1em;">
+          ⭐ All-Time Top 10 Rankings
+        </h3>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
     `;
     
-    awardsGrid.innerHTML += awardHTML;
-  });
+    // Add ranking cards
+    Object.entries(playerRankings).forEach(([statName, data]) => {
+      const rankIcon = data.rank <= 3 ? '🥇' : data.rank <= 5 ? '🥈' : '🥉';
+      awardsHTML += `
+        <div style="border: 2px solid #ffa500; border-radius: 8px; padding: 15px; text-align: center; background-color: #fff8e1;">
+          <div style="font-size: 2em; margin-bottom: 5px;">${rankIcon}</div>
+          <div style="background-color: #0066cc; color: white; padding: 4px 8px; border-radius: 4px; font-weight: bold; margin-bottom: 8px;">
+            #${data.rank}
+          </div>
+          <div style="font-size: 0.9em; color: #666; margin-bottom: 5px;">${statName}</div>
+          <div style="font-size: 1.2em; font-weight: bold; color: #333;">${data.value}</div>
+        </div>
+      `;
+    });
+    
+    awardsHTML += `
+        </div>
+      </div>
+    `;
+  }
   
-  // Show the awards section
-  awardsSection.style.display = 'block';
+  // Add Career Awards & Honors section if player has awards
+  if (playerAwards.length > 0) {
+    // Group awards by name and count occurrences
+    const awardGroups = {};
+    playerAwards.forEach(award => {
+      const awardName = award.Award.trim();
+      if (!awardGroups[awardName]) {
+        awardGroups[awardName] = {
+          name: awardName,
+          count: 0,
+          seasons: []
+        };
+      }
+      awardGroups[awardName].count++;
+      awardGroups[awardName].seasons.push(`${award.Year} ${award.Season}`);
+    });
+    
+    awardsHTML += `
+      <div>
+        <h3 style="background-color: #dc3545; color: white; padding: 8px 12px; margin: 0 0 15px 0; border-radius: 4px; font-size: 1.1em;">
+          🏆 Career Awards & Honors
+        </h3>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px;">
+    `;
+    
+    // Award icons mapping
+    const awardIcons = {
+      'Team MVP': '👑',
+      'All Aces': '⭐',
+      'Gold Glove': '🥇',
+      'Team of the Year': '🏆',
+      'Rookie of the Year': '🌟',
+      'Most Improved Ace': '📈',
+      'Comeback Player of the Year': '💪',
+      'Slugger of the Year': '⚾',
+      'Pitcher of the Year': '🎯',
+      'Captain of the Year': '👨‍✈️',
+      'Al Pineda Good Guy Award': '😇',
+      'Iron Man Award': '🛡️',
+      'Sub of the Year': '🔄'
+    };
+    
+    // Sort awards by importance
+    const awardOrder = [
+      'Team MVP', 'All Aces', 'Gold Glove', 'Team of the Year',
+      'Rookie of the Year', 'Most Improved Ace', 'Comeback Player of the Year',
+      'Slugger of the Year', 'Pitcher of the Year', 'Captain of the Year',
+      'Al Pineda Good Guy Award', 'Iron Man Award', 'Sub of the Year'
+    ];
+    
+    const sortedAwards = Object.values(awardGroups).sort((a, b) => {
+      const aIndex = awardOrder.indexOf(a.name);
+      const bIndex = awardOrder.indexOf(b.name);
+      
+      if (aIndex !== -1 && bIndex !== -1) return aIndex - bIndex;
+      if (aIndex !== -1) return -1;
+      if (bIndex !== -1) return 1;
+      return a.name.localeCompare(b.name);
+    });
+    
+    // Generate award cards
+    sortedAwards.forEach(award => {
+      const icon = awardIcons[award.name] || '🏅';
+      const seasonsText = award.seasons.length <= 3 ? 
+        award.seasons.join(', ') : 
+        `${award.seasons.slice(0, 2).join(', ')}, +${award.seasons.length - 2} more`;
+      
+      awardsHTML += `
+        <div style="border: 2px solid #0066cc; border-radius: 8px; padding: 15px; background-color: #f8f9fa; display: flex; align-items: center; gap: 15px;">
+          <div style="font-size: 2.5em; background-color: #0066cc; color: white; padding: 10px; border-radius: 50%; width: 50px; height: 50px; display: flex; align-items: center; justify-content: center;">
+            ${icon}
+          </div>
+          <div style="flex: 1;">
+            <div style="font-weight: bold; color: #333; margin-bottom: 5px; font-size: 1.1em;">${award.name}</div>
+            <div style="font-size: 0.9em; color: #666;">${seasonsText}</div>
+          </div>
+          ${award.count > 1 ? `<div style="background-color: #0066cc; color: white; border-radius: 12px; padding: 4px 8px; font-size: 0.8em; font-weight: bold;">${award.count}×</div>` : ''}
+        </div>
+      `;
+    });
+    
+    awardsHTML += `
+        </div>
+      </div>
+    `;
+  }
+  
+  awardsHTML += `</div>`;
+  
+  // Insert awards section before the regular stats table
+  const regularStatsTable = document.getElementById('regularStatsTable');
+  if (regularStatsTable && regularStatsTable.parentNode) {
+    // Remove any existing awards section first
+    const existingAwards = document.querySelector('.enhanced-awards-section');
+    if (existingAwards) {
+      existingAwards.remove();
+    }
+    
+    // Create and insert the new awards section
+    const awardsDiv = document.createElement('div');
+    awardsDiv.className = 'enhanced-awards-section';
+    awardsDiv.innerHTML = awardsHTML;
+    regularStatsTable.parentNode.insertBefore(awardsDiv, regularStatsTable);
+  }
+  
+  // Hide the original awards section since we're using the enhanced one
+  const originalAwardsSection = document.getElementById('awardsSection');
+  if (originalAwardsSection) {
+    originalAwardsSection.style.display = 'none';
+  }
+}
+
+// Function to calculate player rankings for top 10 display
+function calculatePlayerRankings(playerData) {
+  // This would need to be implemented based on your all-time stats data
+  // For now, return empty object - you'll need to integrate with your actual rankings calculation
+  const rankings = {};
+  
+  // Example of how rankings might be calculated:
+  // if (playerStats.careerBA >= topThreshold) rankings['Career Batting Average'] = { rank: X, value: playerStats.careerBA };
+  // if (playerStats.careerHits >= topThreshold) rankings['Career Hits'] = { rank: Y, value: playerStats.careerHits };
+  
+  return rankings;
 }
 
 // Call handleMasterChefSection after the page loads
