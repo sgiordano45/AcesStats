@@ -71,13 +71,7 @@ async function loadPlayerData() {
     }
 
     // Sort data properly: Year descending, then Fall before Summer
-    const sortPlayerData = (data) => {
-      return data.sort((a, b) => {
-        // First sort by year (descending)
-        if (b.year !== a.year) return b.year - a.year;
-        
-        // Then sort by season (Fall before Summer)
-        const seasonOrder = { 'Fall': 0, 'Summer': 1 };
+    
         const aSeasonOrder = seasonOrder[a.season] !== undefined ? seasonOrder[a.season] : 999;
         const bSeasonOrder = seasonOrder[b.season] !== undefined ? seasonOrder[b.season] : 999;
         return aSeasonOrder - bSeasonOrder;
@@ -112,15 +106,28 @@ function isSubstitute(p) {
   return subValue.toString().trim().toLowerCase() === "yes";
 }
 
+
+// 🔑 Make sortPlayerData global so all functions can use it
+function sortPlayerData(data) {
+  return data.sort((a, b) => {
+    // First sort by year (descending)
+    if (b.year !== a.year) return b.year - a.year;
+    
+    // Then sort by season (Fall before Summer)
+    const seasonOrder = { 'Fall': 0, 'Summer': 1 };
+    const aSeasonOrder = seasonOrder[a.season] !== undefined ? seasonOrder[a.season] : 999;
+    const bSeasonOrder = seasonOrder[b.season] !== undefined ? seasonOrder[b.season] : 999;
+    return aSeasonOrder - bSeasonOrder;
+  });
+}
+
+
 // Function to populate player banner with data from player_info.json
 function populatePlayerBanner(playerData) {
   // Calculate career stats for banner
   const years = [...new Set(playerData.map(p => p.year))].sort((a, b) => a - b);
   const totalSeasons = playerData.filter(p => !isSubstitute(p)).length;
-
-  // Use the same sorting as the tables (latest season first)
-  const sortedData = sortPlayerData([...playerData]);
-  const currentTeam = sortedData.length > 0 ? sortedData[0].team : null;
+  const currentTeam = playerData.length > 0 ? playerData[0].team : null;
   
   // Call the HTML function to populate player details
   if (typeof populatePlayerDetails === 'function') {
