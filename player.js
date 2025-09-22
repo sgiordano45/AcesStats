@@ -1,6 +1,7 @@
 let playerName = new URLSearchParams(window.location.search).get('name');
 let allAwards = [];
 let allData = []; // Add this to store all player data for top 10 calculations
+let playerInfo = null; // Store player info from player_info.json
 
 if (!playerName) {
   document.body.innerHTML = '<h1>Error: No player specified</h1><p><a href="index.html">Return to main page</a></p>';
@@ -20,54 +21,28 @@ function getAwardIcon(awardType) {
   return `awards/${filename}.png`;
 }
 
-function updatePlayerNameWithAwards() {
-  if (allAwards.length === 0) return;
-  
-  // Get unique award types for this player
-  const playerAwards = allAwards.filter(award => 
-    award.Player && award.Player.trim() === playerName && award.Award && award.Award.trim() !== ""
-  );
-  
-  if (playerAwards.length === 0) return;
-  
-  // Get unique award types (don't show duplicates)
-  const uniqueAwardTypes = [...new Set(playerAwards.map(award => award.Award))];
-  
-  // Create award icons display
-  const awardIcons = uniqueAwardTypes
-    .sort() // Sort alphabetically for consistency
-    .map(awardType => {
-      const iconSrc = getAwardIcon(awardType);
-      const count = playerAwards.filter(a => a.Award === awardType).length;
-      const countDisplay = count > 1 ? `<sup style="color: #666; font-size: 0.7em;">${count}</sup>` : '';
-      return `<span title="${awardType}${count > 1 ? ` (${count}×)` : ''}" style="margin-right: 8px; cursor: help; display: inline-block;">
-        <img src="${iconSrc}" alt="${awardType}" style="height: 24px; width: auto; vertical-align: middle;" onerror="this.style.display='none';">${countDisplay}
-      </span>`;
-    })
-    .join('');
-  
-  // Update the player name display
-  const playerNameElement = document.getElementById("playerName");
-  playerNameElement.innerHTML = `
-    ${playerName}
-    <div style="margin-top: 10px;">
-      ${awardIcons}
-    </div>
-  `;
-}
+// Remove this function - we don't want award icons in the player name
+// function updatePlayerNameWithAwards() {
+//   This function is removed to eliminate award icons from the player name box
+// }
 
 async function loadPlayerData() {
   try {
-    // Load both statistics and awards data
-    const [statsResponse, awardsResponse] = await Promise.all([
+    // Load statistics, awards, and player info data
+    const [statsResponse, awardsResponse, playerInfoResponse] = await Promise.all([
       fetch('data.json'),
-      fetch('awards.json')
+      fetch('awards.json'),
+      fetch('player_info.json')
     ]);
     
     if (!statsResponse.ok) throw new Error('Failed to load data.json');
-    // Awards are optional - don't fail if missing
+    // Awards and player info are optional - don't fail if missing
     if (awardsResponse.ok) {
       allAwards = await awardsResponse.json();
+    }
+    if (playerInfoResponse.ok) {
+      const allPlayerInfo = await playerInfoResponse.json();
+      playerInfo = allPlayerInfo.find(p => p.name && p.name.trim() === playerName);
     }
     
     const allPlayers = await statsResponse.json();
@@ -95,20 +70,32 @@ async function loadPlayerData() {
       return;
     }
 
-    // Separate Regular and Sub tables
-    const regularSeasons = playerData.filter(p => !isSubstitute(p))
-                                     .sort((a, b) => b.year - a.year || (b.season > a.season ? 1 : -1));
-    const subSeasons = playerData.filter(p => isSubstitute(p))
-                                 .sort((a, b) => b.year - a.year || (b.season > a.season ? 1 : -1));
+    // Sort data properly: Year descending, then Fall before Summer
+    const sortPlayerData = (data) => {
+      return data.sort((a, b) => {
+        // First sort by year (descending)
+        if (b.year !== a.year) return b.year - a.year;
+        
+        // Then sort by season (Fall before Summer)
+        const seasonOrder = { 'Fall': 0, 'Summer': 1 };
+        const aSeasonOrder = seasonOrder[a.season] !== undefined ? seasonOrder[a.season] : 999;
+        const bSeasonOrder = seasonOrder[b.season] !== undefined ? seasonOrder[b.season] : 999;
+        return aSeasonOrder - bSeasonOrder;
+      });
+    };
 
+    // Separate Regular and Sub tables with proper sorting
+    const regularSeasons = sortPlayerData(playerData.filter(p => !isSubstitute(p)));
+    const subSeasons = sortPlayerData(playerData.filter(p => isSubstitute(p)));
+
+    // Populate player details in banner
+    populatePlayerBanner(playerData);
+    
     // Render tables
     renderTable('regularStatsTable', regularSeasons);
     renderTable('subStatsTable', subSeasons);
     renderCareerStats(playerData, regularSeasons, subSeasons);
     renderPlayerAwards(playerData);
-    
-    // Add award icons to player name
-    updatePlayerNameWithAwards();
 
   } catch (err) {
     console.error("Error loading player data:", err);
@@ -123,6 +110,19 @@ async function loadPlayerData() {
 function isSubstitute(p) {
   const subValue = p.Sub || "";
   return subValue.toString().trim().toLowerCase() === "yes";
+}
+
+// Function to populate player banner with data from player_info.json
+function populatePlayerBanner(playerData) {
+  // Calculate career stats for banner
+  const years = [...new Set(playerData.map(p => p.year))].sort((a, b) => a - b);
+  const totalSeasons = playerData.filter(p => !isSubstitute(p)).length;
+  const currentTeam = playerData.length > 0 ? playerData[0].team : null;
+  
+  // Call the HTML function to populate player details
+  if (typeof populatePlayerDetails === 'function') {
+    populatePlayerDetails(years, totalSeasons, currentTeam, playerInfo);
+  }
 }
 
 function renderTable(tableId, data) {
@@ -406,11 +406,19 @@ function renderPlayerAwards(playerData) {
       existingAwards.remove();
     }
     
-    // Create and insert the new awards section
+    // Create and insert the new awards section BEFORE the h2 heading
     const awardsDiv = document.createElement('div');
     awardsDiv.className = 'enhanced-awards-section';
     awardsDiv.innerHTML = awardsHTML;
-    regularStatsTable.parentNode.insertBefore(awardsDiv, regularStatsTable);
+    
+    // Find the h2 that says "Regular Season Stats" and insert before it
+    const regularStatsHeading = regularStatsTable.previousElementSibling;
+    if (regularStatsHeading && regularStatsHeading.tagName === 'H2') {
+      regularStatsHeading.parentNode.insertBefore(awardsDiv, regularStatsHeading);
+    } else {
+      // Fallback: insert before the table itself
+      regularStatsTable.parentNode.insertBefore(awardsDiv, regularStatsTable);
+    }
   }
   
   // Hide the original awards section since we're using the enhanced one
