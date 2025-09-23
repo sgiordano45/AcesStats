@@ -557,17 +557,27 @@
       try {
         const [gamesResponse, playerResponse, pitchingResponse] = await Promise.all([
           fetch('games.json'),
-          fetch('data.json'),
-          fetch('pitching.json')
+          fetch('data.json').catch(() => ({ ok: false })),
+          fetch('pitching.json').catch(() => ({ ok: false }))
         ]);
         
         if (!gamesResponse.ok) throw new Error('Failed to load games data');
-        if (!playerResponse.ok) throw new Error('Failed to load player data');
-        if (!pitchingResponse.ok) throw new Error('Failed to load pitching data');
         
         allGames = await gamesResponse.json();
-        playerData = await playerResponse.json();
-        pitchingData = await pitchingResponse.json();
+        
+        // Try to load player data, but don't fail if it's missing
+        if (playerResponse.ok) {
+          playerData = await playerResponse.json();
+        } else {
+          playerData = [];
+        }
+        
+        // Try to load pitching data, but don't fail if it's missing
+        if (pitchingResponse.ok) {
+          pitchingData = await pitchingResponse.json();
+        } else {
+          pitchingData = [];
+        }
         
         // Filter for current season
         const seasonGames = allGames.filter(g => 
@@ -901,7 +911,7 @@
         return team;
       });
 
-      // Sort with enhanced tiebreaker system
+      // Sort using original tiebreaker system (league rules)
       return standingsWithSOS.sort((a, b) => {
         // Primary: Win percentage
         if (a.winPct !== b.winPct) return b.winPct - a.winPct;
@@ -910,12 +920,7 @@
         const h2hComp = compareHeadToHead(a, b);
         if (h2hComp !== 0) return h2hComp;
         
-        // Tertiary: Schedule strength (higher is better for tiebreaking)
-        if (Math.abs(a.scheduleStrength - b.scheduleStrength) > 0.01) {
-          return b.scheduleStrength - a.scheduleStrength;
-        }
-        
-        // Quaternary: Runs allowed (lower is better)
+        // Tertiary: Runs allowed (lower is better)
         if (a.runsAgainst !== b.runsAgainst) return a.runsAgainst - b.runsAgainst;
         
         // Final: Run differential
@@ -1260,7 +1265,7 @@
           <div class="no-data">
             <p><em>Double elimination format: Teams are eliminated after losing 2 games. 
             Play-in games determine final bracket positioning.</em></p>
-            <p><strong>Schedule Strength (SOS)</strong> is used as a tiebreaker in playoff seeding - teams with tougher schedules get preference when records are identical.</p>
+            <p><strong>Schedule Strength (SOS)</strong> is shown for reference but does not affect playoff seeding, which follows league tiebreaker rules.</p>
           </div>
         </div>
       `;
