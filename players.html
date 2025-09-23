@@ -150,6 +150,39 @@
     line-height: 1.4;
   }
   
+  /* Active/Inactive section headers */
+  .roster-section-header {
+    background: #f8f9fa;
+    padding: 10px 20px;
+    border-top: 2px solid #e9ecef;
+    font-weight: bold;
+    font-size: 0.9em;
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  
+  .roster-section-header.active {
+    background: #e8f5e8;
+    color: #2d5a2d;
+    border-top-color: #28a745;
+  }
+  
+  .roster-section-header.inactive {
+    background: #fff3cd;
+    color: #856404;
+    border-top-color: #ffc107;
+  }
+  
+  /* Inactive player styling */
+  .player-item.inactive .player-name {
+    color: #999;
+  }
+  
+  .player-item.inactive .player-stats {
+    color: #aaa;
+  }
+  
   .summary {
     background: white;
     padding: 2rem;
@@ -334,7 +367,7 @@
 
   <div id="summary" class="summary">
     <p id="totalPlayersText"></p>
-    <p>Browse all players organized by their most recent team assignment (2025 Fall if available, otherwise 2025 Summer). Click on any player to view their detailed statistics.</p>
+    <p>Players are grouped by their most recent team assignment and split into current active roster (2025 Fall/Summer) and inactive players. Click on any player to view their detailed statistics.</p>
   </div>
 
   <div id="players-container" class="players-container">
@@ -368,6 +401,38 @@ fetch("data.json")
     document.getElementById("players-container").innerHTML = 
       '<p>Error loading player data. Please check that data.json is available.</p>';
   });
+
+function isPlayerActive(player) {
+  // Player is active if their most recent season is 2025 Fall or 2025 Summer
+  const year = parseInt(player.year) || 0;
+  return year === 2025;
+}
+
+function sortPlayers(players, isActive) {
+  return players.sort((a, b) => {
+    if (isActive) {
+      // For active players: sort by games with current team (descending), then by name
+      if (b.currentTeamGames !== a.currentTeamGames) {
+        return b.currentTeamGames - a.currentTeamGames;
+      }
+      return a.name.localeCompare(b.name);
+    } else {
+      // For inactive players: sort by most recent year/season, then by name
+      const yearA = parseInt(a.year) || 0;
+      const yearB = parseInt(b.year) || 0;
+      
+      if (yearB !== yearA) return yearB - yearA;
+      
+      // Fall before Summer within same year
+      const seasonPriorityA = a.season === 'Fall' ? 2 : 1;
+      const seasonPriorityB = b.season === 'Fall' ? 2 : 1;
+      
+      if (seasonPriorityB !== seasonPriorityA) return seasonPriorityB - seasonPriorityA;
+      
+      return a.name.localeCompare(b.name);
+    }
+  });
+}
 
 function generatePlayersByTeam() {
   // Find each player's most recent team assignment
@@ -448,10 +513,20 @@ function generatePlayersByTeam() {
   // Combine active teams first, then inactive teams
   const sortedTeams = [...activeTeamsList, ...inactiveTeamsList];
   
+  // Count active and total players
+  let totalPlayers = 0;
+  let activePlayers = 0;
+  
+  Object.values(playerTeams).forEach(player => {
+    totalPlayers++;
+    if (isPlayerActive(player)) {
+      activePlayers++;
+    }
+  });
+  
   // Update summary
-  const totalPlayers = Object.keys(playerTeams).length;
   document.getElementById("totalPlayersText").textContent = 
-    `Total Players: ${totalPlayers} across ${sortedTeams.length} teams (based on most recent season assignments)`;
+    `Total Players: ${totalPlayers} (${activePlayers} active in 2025, ${totalPlayers - activePlayers} inactive) across ${sortedTeams.length} teams`;
   
   const container = document.getElementById("players-container");
   container.innerHTML = '';
@@ -459,19 +534,13 @@ function generatePlayersByTeam() {
   sortedTeams.forEach(teamName => {
     const players = teamGroups[teamName];
     
-    // Sort players by current team games (descending), then by name
-    players.sort((a, b) => {
-      if (b.currentTeamGames !== a.currentTeamGames) {
-        return b.currentTeamGames - a.currentTeamGames;
-      }
-      return a.name.localeCompare(b.name);
-    });
+    // Split players into active and inactive
+    const activePlayers = players.filter(p => isPlayerActive(p));
+    const inactivePlayers = players.filter(p => !isPlayerActive(p));
     
-    // Calculate team batting average for display
-    const teamTotalAtBats = players.reduce((sum, p) => sum + p.totalAtBats, 0);
-    const teamTotalHits = players.reduce((sum, p) => sum + p.totalHits, 0);
-    const teamBA = teamTotalAtBats > 0 ? 
-      (teamTotalHits / teamTotalAtBats).toFixed(3) : '0.000';
+    // Sort each group
+    sortPlayers(activePlayers, true);
+    sortPlayers(inactivePlayers, false);
     
     // Create team section
     const teamSection = document.createElement('div');
@@ -492,7 +561,7 @@ function generatePlayersByTeam() {
     
     const playerCount = document.createElement('div');
     playerCount.className = 'player-count';
-    playerCount.textContent = `${players.length} player${players.length !== 1 ? 's' : ''}`;
+    playerCount.textContent = `${activePlayers.length}/${players.length} active`;
     
     teamHeader.appendChild(logo);
     teamHeader.appendChild(teamTitle);
@@ -501,37 +570,65 @@ function generatePlayersByTeam() {
     const playersList = document.createElement('ul');
     playersList.className = 'players-list';
     
-    players.forEach(player => {
-      const playerItem = document.createElement('li');
-      playerItem.className = 'player-item';
+    // Add active players section if any exist
+    if (activePlayers.length > 0) {
+      const activeHeader = document.createElement('li');
+      activeHeader.className = 'roster-section-header active';
+      activeHeader.textContent = `Current Roster (${activePlayers.length})`;
+      playersList.appendChild(activeHeader);
       
-      const playerLink = document.createElement('a');
-      playerLink.href = `player.html?name=${encodeURIComponent(player.name)}`;
-      playerLink.className = 'player-link';
+      activePlayers.forEach(player => {
+        const playerItem = createPlayerItem(player, teamName);
+        playersList.appendChild(playerItem);
+      });
+    }
+    
+    // Add inactive players section if any exist
+    if (inactivePlayers.length > 0) {
+      const inactiveHeader = document.createElement('li');
+      inactiveHeader.className = 'roster-section-header inactive';
+      inactiveHeader.textContent = `Former Players (${inactivePlayers.length})`;
+      playersList.appendChild(inactiveHeader);
       
-      const playerName = document.createElement('div');
-      playerName.className = 'player-name';
-      playerName.textContent = player.name;
-      
-      const playerStats = document.createElement('div');
-      playerStats.className = 'player-stats';
-      
-      const careerBA = player.totalAtBats > 0 ? 
-        (player.totalHits / player.totalAtBats).toFixed(3) : '0.000';
-      
-      playerStats.textContent = 
-        `${player.totalGames} games • ${player.totalHits}/${player.totalAtBats} (.${careerBA.slice(2)}) • ${player.currentTeamGames} with ${teamName} • Last: ${player.year} ${player.season}`;
-      
-      playerLink.appendChild(playerName);
-      playerLink.appendChild(playerStats);
-      playerItem.appendChild(playerLink);
-      playersList.appendChild(playerItem);
-    });
+      inactivePlayers.forEach(player => {
+        const playerItem = createPlayerItem(player, teamName);
+        playerItem.classList.add('inactive');
+        playersList.appendChild(playerItem);
+      });
+    }
     
     teamSection.appendChild(teamHeader);
     teamSection.appendChild(playersList);
     container.appendChild(teamSection);
   });
+}
+
+function createPlayerItem(player, teamName) {
+  const playerItem = document.createElement('li');
+  playerItem.className = 'player-item';
+  
+  const playerLink = document.createElement('a');
+  playerLink.href = `player.html?name=${encodeURIComponent(player.name)}`;
+  playerLink.className = 'player-link';
+  
+  const playerNameDiv = document.createElement('div');
+  playerNameDiv.className = 'player-name';
+  playerNameDiv.textContent = player.name;
+  
+  const playerStats = document.createElement('div');
+  playerStats.className = 'player-stats';
+  
+  const careerBA = player.totalAtBats > 0 ? 
+    (player.totalHits / player.totalAtBats).toFixed(3) : '0.000';
+  
+  playerStats.textContent = 
+    `${player.totalGames} games • ${player.totalHits}/${player.totalAtBats} (.${careerBA.slice(2)}) • ${player.currentTeamGames} with ${teamName} • Last: ${player.year} ${player.season}`;
+  
+  playerLink.appendChild(playerNameDiv);
+  playerLink.appendChild(playerStats);
+  playerItem.appendChild(playerLink);
+  
+  return playerItem;
 }
 </script>
 
