@@ -545,6 +545,10 @@ function renderSummary() {
   const uniquePlayers = new Set(teamData.map(p => p.name)).size;
   const uniqueSeasons = new Set(teamData.map(p => `${p.year} ${p.season}`)).size;
   
+  // Debug the games filtering
+  console.log('All games loaded:', allGames.length);
+  console.log('Sample game structure:', allGames[0]);
+  
   // Try to calculate team games from games.json, fallback to player games
   let totalTeamGames = 0;
   let gamesDisplay = "";
@@ -556,12 +560,15 @@ function renderSummary() {
       (g["home team"] === teamName || g["away team"] === teamName)
     );
     
+    console.log(`Games for ${teamName}:`, teamGames.length);
+    console.log('Sample team games:', teamGames.slice(0, 3));
+    
     totalTeamGames = teamGames.length;
     const regularSeasonGames = teamGames.filter(g => g.game_type === 'Regular').length;
     const playoffGames = teamGames.filter(g => g.game_type === 'Playoff').length;
     
-    gamesDisplay = totalTeamGames.toString();
     if (totalTeamGames > 0) {
+      gamesDisplay = totalTeamGames.toString();
       if (regularSeasonGames > 0 && playoffGames > 0) {
         gamesDisplay += ` (${regularSeasonGames} Reg, ${playoffGames} PO)`;
       } else if (regularSeasonGames > 0) {
@@ -569,17 +576,24 @@ function renderSummary() {
       } else if (playoffGames > 0) {
         gamesDisplay += ` Playoff`;
       }
+      gamesLabel = "Team Games";
+      
+      console.log(`Using team games for ${teamName}:`, totalTeamGames, 'from games.json');
+    } else {
+      // Still fallback if no team games found
+      totalTeamGames = teamData.reduce((sum, p) => sum + p.games, 0);
+      gamesDisplay = totalTeamGames.toString();
+      gamesLabel = "Player Games";
+      
+      console.log(`No team games found for ${teamName}, using player games:`, totalTeamGames);
     }
-    gamesLabel = "Team Games";
-    
-    console.log(`Team games for ${teamName}:`, totalTeamGames, 'from games.json');
   } else {
     // Fallback to total player game appearances
     totalTeamGames = teamData.reduce((sum, p) => sum + p.games, 0);
     gamesDisplay = totalTeamGames.toString();
     gamesLabel = "Player Games";
     
-    console.log(`Fallback: Using player games for ${teamName}:`, totalTeamGames, '(games.json not available)');
+    console.log(`No games data available, using player games for ${teamName}:`, totalTeamGames);
   }
   
   const totalAtBats = teamData.reduce((sum, p) => sum + p.atBats, 0);
