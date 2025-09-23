@@ -840,6 +840,39 @@
       return opponentCount > 0 ? (totalOpponentWinPct / opponentCount) : 0;
     }
 
+    // Function to calculate schedule strength for remaining games
+    function calculateRemainingScheduleStrength(teamName, games, allStandings) {
+      const remainingGames = games.filter(game => {
+        const gameDate = parseGameDate(game.date);
+        const isFuture = gameDate >= today;
+        const noWinner = !game.winner || game.winner.trim() === "";
+        const isRegularSeason = game.game_type === 'Regular';
+        const teamInvolved = (game["home team"] === teamName || game["away team"] === teamName);
+        
+        return isFuture && noWinner && isRegularSeason && teamInvolved;
+      });
+
+      if (remainingGames.length === 0) return 0;
+
+      let totalOpponentWinPct = 0;
+      let opponentCount = 0;
+
+      remainingGames.forEach(game => {
+        const opponent = game["home team"] === teamName ? game["away team"] : game["home team"];
+        const oppStanding = allStandings.find(team => team.name === opponent);
+        
+        if (oppStanding) {
+          const oppTotalDecided = oppStanding.wins + oppStanding.losses;
+          const oppWinPct = oppTotalDecided > 0 ? (oppStanding.wins / oppTotalDecided) : 0;
+          
+          totalOpponentWinPct += oppWinPct;
+          opponentCount++;
+        }
+      });
+
+      return opponentCount > 0 ? (totalOpponentWinPct / opponentCount) : 0;
+    }
+
     function calculateStandings(games, allSeasonGames = games) {
       const teamStats = {};
 
