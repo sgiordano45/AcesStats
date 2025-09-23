@@ -280,7 +280,7 @@
   }
 
   .sos-tooltip:hover::after {
-    content: "Schedule Strength: Average winning % of opponents faced. Higher = tougher schedule";
+    content: "SOS = Schedule Strength (games played). Rem SOS = Remaining Schedule Strength (games left). Higher = tougher schedule";
     position: absolute;
     bottom: 100%;
     left: 50%;
@@ -794,7 +794,7 @@
         return;
       }
 
-      const standings = calculateStandings(regularGames);
+      const standings = calculateStandings(regularGames, games);
       const html = generateStandingsTable('Regular Season Standings', standings);
       document.getElementById('standingsContent').innerHTML = html;
     }
@@ -840,7 +840,7 @@
       return opponentCount > 0 ? (totalOpponentWinPct / opponentCount) : 0;
     }
 
-    function calculateStandings(games) {
+    function calculateStandings(games, allSeasonGames = games) {
       const teamStats = {};
 
       games.forEach(game => {
@@ -908,6 +908,7 @@
       // Now calculate schedule strength for each team
       const standingsWithSOS = preliminaryStandings.map(team => {
         team.scheduleStrength = calculateScheduleStrength(team.name, games, preliminaryStandings);
+        team.remainingScheduleStrength = calculateRemainingScheduleStrength(team.name, allSeasonGames, preliminaryStandings);
         return team;
       });
 
@@ -959,22 +960,24 @@
         <table class="standings-table">
           <thead>
             <tr>
-              <th style="width: 40px;">Rank</th>
-              <th style="width: 150px; text-align: left;">Team</th>
-              <th style="width: 50px;">W</th>
-              <th style="width: 50px;">L</th>
-              <th style="width: 50px;">T</th>
-              <th style="width: 60px;">Win%</th>
-              <th style="width: 50px;">RF</th>
-              <th style="width: 50px;">RA</th>
-              <th style="width: 60px;">Diff</th>
-              <th style="width: 70px;" class="sos-tooltip">SOS</th>
-              <th style="width: 60px;">Games</th>
+              <th style="width: 35px;">Rank</th>
+              <th style="width: 130px; text-align: left;">Team</th>
+              <th style="width: 40px;">W</th>
+              <th style="width: 40px;">L</th>
+              <th style="width: 40px;">T</th>
+              <th style="width: 55px;">Win%</th>
+              <th style="width: 40px;">RF</th>
+              <th style="width: 40px;">RA</th>
+              <th style="width: 50px;">Diff</th>
+              <th style="width: 60px;" class="sos-tooltip">SOS</th>
+              <th style="width: 60px;" class="sos-tooltip">Rem SOS</th>
+              <th style="width: 50px;">Games</th>
             </tr>
           </thead>
           <tbody>
             ${standings.map((team, index) => {
               const sosFormatted = formatScheduleStrength(team.scheduleStrength);
+              const remSosFormatted = formatScheduleStrength(team.remainingScheduleStrength);
               return `
                 <tr>
                   <td style="text-align: center;">${index + 1}</td>
@@ -989,6 +992,7 @@
                     ${team.runDifferential >= 0 ? '+' : ''}${team.runDifferential}
                   </td>
                   <td class="schedule-strength ${sosFormatted.class}">${sosFormatted.value}</td>
+                  <td class="schedule-strength ${remSosFormatted.class}">${remSosFormatted.value}</td>
                   <td style="text-align: center;">${team.wins + team.losses + team.ties}</td>
                 </tr>
               `;
@@ -997,6 +1001,7 @@
         </table>
         <div style="margin-top: 1rem; font-size: 0.85rem; color: #666;">
           <strong>SOS:</strong> Schedule Strength - Average winning percentage of opponents faced (excluding games vs this team).<br>
+          <strong>Rem SOS:</strong> Remaining Schedule Strength - Average winning percentage of remaining opponents.<br>
           <span style="color: #28a745;">Green</span> = easier schedule (below 45%), 
           <span style="color: #ffc107;">Yellow</span> = average (45-55%), 
           <span style="color: #dc3545;">Red</span> = harder schedule (above 55%)
@@ -1129,11 +1134,12 @@
           <h4>Playoff Seeding (Top 10 Teams)</h4>
           <table class="bracket-table">
             <thead>
-              <tr><th>Seed</th><th>Team</th><th>Record</th><th>Win%</th><th>SOS</th><th>Run Diff</th></tr>
+              <tr><th>Seed</th><th>Team</th><th>Record</th><th>Win%</th><th>SOS</th><th>Rem SOS</th><th>Run Diff</th></tr>
             </thead>
             <tbody>
               ${playoffTeams.map((team, index) => {
                 const sosFormatted = formatScheduleStrength(team.scheduleStrength);
+                const remSosFormatted = formatScheduleStrength(team.remainingScheduleStrength);
                 return `
                   <tr>
                     <td><strong>${index + 1}</strong></td>
@@ -1141,6 +1147,7 @@
                     <td>${team.wins}-${team.losses}${team.ties > 0 ? `-${team.ties}` : ''}</td>
                     <td class="win-pct">${(team.winPct * 100).toFixed(1)}%</td>
                     <td class="schedule-strength ${sosFormatted.class}">${sosFormatted.value}</td>
+                    <td class="schedule-strength ${remSosFormatted.class}">${remSosFormatted.value}</td>
                     <td style="color: ${team.runDifferential >= 0 ? '#28a745' : '#dc3545'}">
                       ${team.runDifferential >= 0 ? '+' : ''}${team.runDifferential}
                     </td>
