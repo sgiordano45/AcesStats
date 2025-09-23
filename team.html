@@ -430,6 +430,7 @@
 <script>
 // Global variables
 let allData = [];
+let allGames = [];
 let teamData = [];
 let teamName = "";
 let currentSort = { column: null, dir: "asc" };
@@ -543,7 +544,17 @@ function populateFilters() {
 function renderSummary() {
   const uniquePlayers = new Set(teamData.map(p => p.name)).size;
   const uniqueSeasons = new Set(teamData.map(p => `${p.year} ${p.season}`)).size;
-  const totalGames = teamData.reduce((sum, p) => sum + p.games, 0);
+  
+  // Calculate total team games from games.json
+  const teamGames = allGames.filter(g => 
+    g["home team"] === teamName || g["away team"] === teamName
+  );
+  const totalTeamGames = teamGames.length;
+  
+  // Calculate breakdown of games
+  const regularSeasonGames = teamGames.filter(g => g.game_type === 'Regular').length;
+  const playoffGames = teamGames.filter(g => g.game_type === 'Playoff').length;
+  
   const totalAtBats = teamData.reduce((sum, p) => sum + p.atBats, 0);
   const totalHits = teamData.reduce((sum, p) => sum + p.hits, 0);
   const totalRuns = teamData.reduce((sum, p) => sum + p.runs, 0);
@@ -551,6 +562,16 @@ function renderSummary() {
   
   const years = [...new Set(teamData.map(p => p.year))].sort();
   const yearsActive = years.length > 1 ? `${years[0]} - ${years[years.length - 1]}` : years[0];
+  
+  // Create games display with breakdown
+  let gamesDisplay = totalTeamGames.toString();
+  if (regularSeasonGames > 0 && playoffGames > 0) {
+    gamesDisplay += ` (${regularSeasonGames} Reg, ${playoffGames} PO)`;
+  } else if (regularSeasonGames > 0) {
+    gamesDisplay += ` Regular`;
+  } else if (playoffGames > 0) {
+    gamesDisplay += ` Playoff`;
+  }
   
   const summaryHTML = `
     <div class="summary-item">
@@ -566,8 +587,8 @@ function renderSummary() {
       <div class="summary-label">Years Active</div>
     </div>
     <div class="summary-item">
-      <div class="summary-number">${totalGames}</div>
-      <div class="summary-label">Total Games</div>
+      <div class="summary-number" style="font-size: ${gamesDisplay.length > 8 ? '1.5rem' : '2rem'};">${gamesDisplay}</div>
+      <div class="summary-label">Team Games</div>
     </div>
     <div class="summary-item">
       <div class="summary-number">${totalHits}</div>
