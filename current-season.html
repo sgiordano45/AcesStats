@@ -267,6 +267,10 @@
     border-left: 4px solid #28a745;
   }
 
+  .leader-category.pitching {
+    border-left-color: #dc3545;
+  }
+
   .leader-category h4 {
     margin: 0 0 0.8rem 0;
     color: #333;
@@ -341,6 +345,15 @@
     font-size: 0.8rem;
     color: #6c757d;
     margin-left: 0.3rem;
+  }
+
+  .leaders-section-title {
+    font-size: 1.2rem;
+    font-weight: bold;
+    color: #333;
+    margin: 1.5rem 0 1rem 0;
+    padding: 0.8rem 0;
+    border-bottom: 2px solid #e9ecef;
   }
 
   @media (max-width: 768px) {
@@ -480,6 +493,7 @@
   <script>
     let allGames = [];
     let playerData = [];
+    let pitchingData = [];
     const currentSeason = "Fall";
     const currentYear = "2025";
     const today = new Date();
@@ -487,16 +501,19 @@
     // Load games data and initialize page
     async function loadData() {
       try {
-        const [gamesResponse, playerResponse] = await Promise.all([
+        const [gamesResponse, playerResponse, pitchingResponse] = await Promise.all([
           fetch('games.json'),
-          fetch('data.json')
+          fetch('data.json'),
+          fetch('pitching.json')
         ]);
         
         if (!gamesResponse.ok) throw new Error('Failed to load games data');
         if (!playerResponse.ok) throw new Error('Failed to load player data');
+        if (!pitchingResponse.ok) throw new Error('Failed to load pitching data');
         
         allGames = await gamesResponse.json();
         playerData = await playerResponse.json();
+        pitchingData = await pitchingResponse.json();
         
         // Filter for current season
         const seasonGames = allGames.filter(g => 
@@ -507,9 +524,13 @@
           p.year === currentYear && p.season === currentSeason && p.sub === "No"
         );
 
+        const seasonPitchingData = pitchingData.filter(p =>
+          p.year === currentYear && p.season === currentSeason
+        );
+
         updateSeasonSummary(seasonGames);
         updateStandings(seasonGames);
-        updateSeasonLeaders(seasonPlayerData);
+        updateSeasonLeaders(seasonPlayerData, seasonPitchingData);
         updateUpcomingSchedule(seasonGames);
         updateRecentResults(seasonGames);
         updatePlayoffBracket(seasonGames);
@@ -543,79 +564,156 @@
       document.getElementById('playoffGames').textContent = playoffGames.length;
     }
 
-    function updateSeasonLeaders(playerData) {
-      if (playerData.length === 0) {
-        document.getElementById('leadersContent').innerHTML = 
-          '<div class="no-data">No player statistics available for this season yet.</div>';
-        return;
-      }
+    function updateSeasonLeaders(playerData, pitchingData) {
+      let leadersHtml = '';
 
-      // Clean and prepare data
-      const cleanData = playerData.map(p => ({
-        name: p.name ? p.name.trim() : "",
-        team: p.team ? p.team.trim() : "",
-        games: Number(p.games) || 0,
-        atBats: Number(p.atBats) || 0,
-        hits: Number(p.hits) || 0,
-        runs: Number(p.runs) || 0,
-        walks: Number(p.walks) || 0
-      })).filter(p => p.name && p.games > 0);
+      // Batting Leaders Section
+      if (playerData.length > 0) {
+        const cleanBattingData = playerData.map(p => ({
+          name: p.name ? p.name.trim() : "",
+          team: p.team ? p.team.trim() : "",
+          games: Number(p.games) || 0,
+          atBats: Number(p.atBats) || 0,
+          hits: Number(p.hits) || 0,
+          runs: Number(p.runs) || 0,
+          walks: Number(p.walks) || 0
+        })).filter(p => p.name && p.games > 0);
 
-      // Generate leaders for each category
-      const categories = [
-        { 
-          title: '🏃 At Bats', 
-          field: 'atBats',
-          formatter: (val) => val.toString()
-        },
-        { 
-          title: '🎯 Hits', 
-          field: 'hits',
-          formatter: (val) => val.toString()
-        },
-        { 
-          title: '⚡ Runs', 
-          field: 'runs',
-          formatter: (val) => val.toString()
-        },
-        { 
-          title: '👀 Walks', 
-          field: 'walks',
-          formatter: (val) => val.toString()
-        }
-      ];
+        const battingCategories = [
+          { 
+            title: '🏃 At Bats', 
+            field: 'atBats',
+            formatter: (val) => val.toString()
+          },
+          { 
+            title: '🎯 Hits', 
+            field: 'hits',
+            formatter: (val) => val.toString()
+          },
+          { 
+            title: '⚡ Runs', 
+            field: 'runs',
+            formatter: (val) => val.toString()
+          },
+          { 
+            title: '👀 Walks', 
+            field: 'walks',
+            formatter: (val) => val.toString()
+          }
+        ];
 
-      let leadersHtml = '<div class="leaders-grid">';
+        leadersHtml += '<div class="leaders-section-title">🥎 Batting Leaders</div>';
+        leadersHtml += '<div class="leaders-grid">';
 
-      categories.forEach(category => {
-        // Sort players by the category field (descending)
-        const leaders = cleanData
-          .filter(p => p[category.field] > 0)
-          .sort((a, b) => b[category.field] - a[category.field])
-          .slice(0, 10);
+        battingCategories.forEach(category => {
+          const leaders = cleanBattingData
+            .filter(p => p[category.field] > 0)
+            .sort((a, b) => b[category.field] - a[category.field])
+            .slice(0, 10);
 
-        leadersHtml += `
-          <div class="leader-category">
-            <h4>${category.title}</h4>
-            <ul class="leader-list">
-        `;
-
-        leaders.forEach((player, index) => {
-          const rankClass = index === 0 ? 'first' : index === 1 ? 'second' : index === 2 ? 'third' : '';
           leadersHtml += `
-            <li>
-              <span class="leader-rank ${rankClass}">${index + 1}</span>
-              <span class="leader-name"><a href="player.html?name=${encodeURIComponent(player.name)}">${player.name}</a></span>
-              <span class="leader-team">(${player.team})</span>
-              <span class="leader-value">${category.formatter(player[category.field])}</span>
-            </li>
+            <div class="leader-category">
+              <h4>${category.title}</h4>
+              <ul class="leader-list">
           `;
+
+          leaders.forEach((player, index) => {
+            const rankClass = index === 0 ? 'first' : index === 1 ? 'second' : index === 2 ? 'third' : '';
+            leadersHtml += `
+              <li>
+                <span class="leader-rank ${rankClass}">${index + 1}</span>
+                <span class="leader-name"><a href="player.html?name=${encodeURIComponent(player.name)}">${player.name}</a></span>
+                <span class="leader-team">(${player.team})</span>
+                <span class="leader-value">${category.formatter(player[category.field])}</span>
+              </li>
+            `;
+          });
+
+          leadersHtml += '</ul></div>';
         });
 
-        leadersHtml += '</ul></div>';
-      });
+        leadersHtml += '</div>';
+      }
 
-      leadersHtml += '</div>';
+      // Pitching Leaders Section
+      if (pitchingData.length > 0) {
+        const cleanPitchingData = pitchingData.map(p => ({
+          name: p.name ? p.name.trim() : "",
+          team: p.team ? p.team.trim() : "",
+          games: Number(p.games) || 0,
+          IP: parseFloat(p.IP) || 0,
+          runsAllowed: Number(p["runs allowed"]) || 0,
+          ERA: p.ERA === "N/A" || !p.ERA || p.ERA === 0 ? "N/A" : Number(p.ERA)
+        })).filter(p => p.name && p.games > 0);
+
+        const pitchingCategories = [
+          { 
+            title: '⚾ Games', 
+            field: 'games',
+            formatter: (val) => val.toString(),
+            minQualifier: 0
+          },
+          { 
+            title: '📏 Innings Pitched', 
+            field: 'IP',
+            formatter: (val) => val.toFixed(1),
+            minQualifier: 0
+          },
+          { 
+            title: '🔥 Best ERA', 
+            field: 'ERA',
+            formatter: (val) => val === "N/A" ? "N/A" : val.toFixed(2),
+            minQualifier: 5,
+            sortOrder: 'asc'
+          }
+        ];
+
+        leadersHtml += '<div class="leaders-section-title">⚾ Pitching Leaders</div>';
+        leadersHtml += '<div class="leaders-grid">';
+
+        pitchingCategories.forEach(category => {
+          let leaders = cleanPitchingData.filter(p => {
+            if (category.field === 'ERA') {
+              return p.IP >= category.minQualifier && p.ERA !== "N/A" && !isNaN(p.ERA);
+            }
+            return p[category.field] > category.minQualifier;
+          });
+
+          if (category.sortOrder === 'asc') {
+            leaders = leaders.sort((a, b) => a[category.field] - b[category.field]);
+          } else {
+            leaders = leaders.sort((a, b) => b[category.field] - a[category.field]);
+          }
+
+          leaders = leaders.slice(0, 10);
+
+          leadersHtml += `
+            <div class="leader-category pitching">
+              <h4>${category.title}</h4>
+              <ul class="leader-list">
+          `;
+
+          leaders.forEach((player, index) => {
+            const rankClass = index === 0 ? 'first' : index === 1 ? 'second' : index === 2 ? 'third' : '';
+            leadersHtml += `
+              <li>
+                <span class="leader-rank ${rankClass}">${index + 1}</span>
+                <span class="leader-name"><a href="pitcher.html?name=${encodeURIComponent(player.name)}">${player.name}</a></span>
+                <span class="leader-team">(${player.team})</span>
+                <span class="leader-value">${category.formatter(player[category.field])}</span>
+              </li>
+            `;
+          });
+
+          leadersHtml += '</ul></div>';
+        });
+
+        leadersHtml += '</div>';
+      }
+
+      if (leadersHtml === '') {
+        leadersHtml = '<div class="no-data">No player statistics available for this season yet.</div>';
+      }
 
       document.getElementById('leadersContent').innerHTML = leadersHtml;
     }
