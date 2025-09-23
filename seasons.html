@@ -346,16 +346,19 @@
 let allBattingData = [];
 let allPitchingData = [];
 let allAwards = [];
+let allGames = [];
 
 // Load all data
 Promise.all([
   fetch("data.json").then(res => res.json()),
   fetch("pitching.json").then(res => res.ok ? res.json() : []),
-  fetch("awards.json").then(res => res.ok ? res.json() : [])
-]).then(([battingData, pitchingData, awards]) => {
+  fetch("awards.json").then(res => res.ok ? res.json() : []),
+  fetch("games.json").then(res => res.ok ? res.json() : [])
+]).then(([battingData, pitchingData, awards, gamesData]) => {
   allBattingData = cleanBattingData(battingData);
   allPitchingData = cleanPitchingData(pitchingData);
   allAwards = awards;
+  allGames = gamesData;
   
   generateSeasonCards();
 }).catch(error => {
@@ -407,9 +410,9 @@ function generateSeasonCards() {
         battingPlayers: new Set(),
         pitchingPlayers: new Set(),
         teams: new Set(),
-        totalGames: 0,
         totalAtBats: 0,
-        totalHits: 0
+        totalHits: 0,
+        actualGames: 0
       });
     }
     
@@ -418,7 +421,6 @@ function generateSeasonCards() {
     if (p.team && p.team.toLowerCase() !== "kings") {
       seasonData.teams.add(p.team);
     }
-    seasonData.totalGames += p.games;
     seasonData.totalAtBats += p.atBats;
     seasonData.totalHits += p.hits;
   });
@@ -434,6 +436,17 @@ function generateSeasonCards() {
       if (p.team && p.team.toLowerCase() !== "kings") {
         seasonData.teams.add(p.team);
       }
+    }
+  });
+  
+  // Count actual games from games.json
+  allGames.forEach(game => {
+    if (!game.year || !game.season) return;
+    
+    const seasonKey = `${game.year}-${game.season}`;
+    if (seasons.has(seasonKey)) {
+      const seasonData = seasons.get(seasonKey);
+      seasonData.actualGames++;
     }
   });
   
@@ -500,7 +513,7 @@ function generateSeasonCards() {
           </div>
         </div>
         <div class="season-summary-stats">
-          ${season.totalGames} games played • .${seasonBA.slice(2)} league BA
+          ${season.actualGames} games played • .${seasonBA.slice(2)} league BA
         </div>
         ${teamOfYearText}
       </div>
