@@ -113,26 +113,42 @@ function isSubstitute(p) {
 }
 
 // Function to populate player banner with data from player_info.json
+// Function to populate player banner with data from player_info.json
 function populatePlayerBanner(playerData) {
   // Calculate career stats for banner
   const years = [...new Set(playerData.map(p => p.year))].sort((a, b) => a - b);
   const totalSeasons = playerData.filter(p => !isSubstitute(p)).length;
   
-  // Find the most recent team from regular (non-substitute) seasons
-  // Data should already be sorted by year desc, then Fall before Summer
+  // Sort player data to find the most recent team from regular (non-substitute) seasons
+  // Sort by Year descending, then Fall before Summer
+  const sortPlayerData = (data) => {
+    return data.sort((a, b) => {
+      // First sort by year (descending)
+      if (b.year !== a.year) return b.year - a.year;
+      
+      // Then sort by season (Fall before Summer)
+      const seasonOrder = { 'Fall': 0, 'Summer': 1 };
+      const aSeasonOrder = seasonOrder[a.season] !== undefined ? seasonOrder[a.season] : 999;
+      const bSeasonOrder = seasonOrder[b.season] !== undefined ? seasonOrder[b.season] : 999;
+      return aSeasonOrder - bSeasonOrder;
+    });
+  };
+
+  // Filter and sort regular (non-substitute) seasons
+  const regularSeasons = sortPlayerData(playerData.filter(p => !isSubstitute(p)));
+  
+  // Find the most recent team from regular seasons
   let currentTeam = null;
   
-  // Look through sorted data to find the first non-substitute entry
-  for (let i = 0; i < playerData.length; i++) {
-    if (!isSubstitute(playerData[i])) {
-      currentTeam = playerData[i].team;
-      break;
+  // Look through sorted data to find the first (most recent) non-substitute entry
+  if (regularSeasons.length > 0) {
+    currentTeam = regularSeasons[0].team;
+  } else {
+    // Fallback: if no regular seasons, use any team from the most recent entry
+    const allSorted = sortPlayerData([...playerData]);
+    if (allSorted.length > 0) {
+      currentTeam = allSorted[0].team;
     }
-  }
-  
-  // Fallback to any team if no regular seasons found
-  if (!currentTeam && playerData.length > 0) {
-    currentTeam = playerData[0].team;
   }
   
   // Call the HTML function to populate player details
