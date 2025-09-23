@@ -56,7 +56,7 @@
   }
 
   .container {
-    max-width: 1200px;
+    max-width: 1400px;
     margin: 0 auto;
     padding: 2rem;
   }
@@ -88,11 +88,12 @@
     width: 100%;
     border-collapse: collapse;
     margin-top: 1rem;
+    font-size: 0.9rem;
   }
 
   .standings-table th, .schedule-table th, .bracket-table th,
   .standings-table td, .schedule-table td, .bracket-table td {
-    padding: 12px;
+    padding: 10px 8px;
     text-align: left;
     border-bottom: 1px solid #eee;
   }
@@ -101,6 +102,8 @@
     background-color: #f8f9fa;
     font-weight: bold;
     color: #333;
+    font-size: 0.8rem;
+    text-align: center;
   }
 
   .standings-table tr:nth-child(even), 
@@ -118,11 +121,30 @@
   .team-name {
     font-weight: bold;
     color: #333;
+    text-align: left !important;
   }
 
   .win-pct {
     font-weight: bold;
     color: #28a745;
+    text-align: center;
+  }
+
+  .schedule-strength {
+    text-align: center;
+    font-weight: 600;
+  }
+
+  .schedule-strength.easy {
+    color: #28a745;
+  }
+
+  .schedule-strength.average {
+    color: #ffc107;
+  }
+
+  .schedule-strength.hard {
+    color: #dc3545;
   }
 
   .game-date {
@@ -252,6 +274,38 @@
     margin-top: 0.2rem;
   }
 
+  .sos-tooltip {
+    position: relative;
+    cursor: help;
+  }
+
+  .sos-tooltip:hover::after {
+    content: "Schedule Strength: Average winning % of opponents faced. Higher = tougher schedule";
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #333;
+    color: white;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 11px;
+    white-space: nowrap;
+    z-index: 1000;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  }
+
+  .sos-tooltip:hover::before {
+    content: "";
+    position: absolute;
+    bottom: 93%;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 5px solid transparent;
+    border-top-color: #333;
+    z-index: 1001;
+  }
+
   /* Season Leaders Styles */
   .leaders-grid {
     display: grid;
@@ -366,12 +420,12 @@
     }
 
     .standings-table, .schedule-table, .bracket-table {
-      font-size: 0.9rem;
+      font-size: 0.8rem;
     }
 
     .standings-table th, .schedule-table th, .bracket-table th,
     .standings-table td, .schedule-table td, .bracket-table td {
-      padding: 8px 6px;
+      padding: 6px 4px;
     }
 
     .bracket-visual {
@@ -735,6 +789,47 @@
       document.getElementById('standingsContent').innerHTML = html;
     }
 
+    // Enhanced function to calculate schedule strength
+    function calculateScheduleStrength(teamName, games, allStandings) {
+      const teamGames = games.filter(game => 
+        (game["home team"] === teamName || game["away team"] === teamName)
+      );
+
+      if (teamGames.length === 0) return 0;
+
+      let totalOpponentWinPct = 0;
+      let opponentCount = 0;
+
+      teamGames.forEach(game => {
+        const opponent = game["home team"] === teamName ? game["away team"] : game["home team"];
+        const oppStanding = allStandings.find(team => team.name === opponent);
+        
+        if (oppStanding) {
+          // Calculate opponent's winning percentage excluding games against this team
+          const oppGamesVsTeam = games.filter(g => 
+            (g["home team"] === opponent && g["away team"] === teamName) ||
+            (g["away team"] === opponent && g["home team"] === teamName)
+          );
+
+          let oppWinsExcludingTeam = oppStanding.wins;
+          let oppLossesExcludingTeam = oppStanding.losses;
+
+          oppGamesVsTeam.forEach(g => {
+            if (g.winner === opponent) oppWinsExcludingTeam--;
+            else if (g.winner !== "Tie") oppLossesExcludingTeam--;
+          });
+
+          const oppTotalDecided = oppWinsExcludingTeam + oppLossesExcludingTeam;
+          const oppWinPct = oppTotalDecided > 0 ? (oppWinsExcludingTeam / oppTotalDecided) : 0;
+          
+          totalOpponentWinPct += oppWinPct;
+          opponentCount++;
+        }
+      });
+
+      return opponentCount > 0 ? (totalOpponentWinPct / opponentCount) : 0;
+    }
+
     function calculateStandings(games) {
       const teamStats = {};
 
@@ -791,23 +886,41 @@
         }
       });
 
-      return Object.values(teamStats)
+      // Calculate basic stats first
+      const preliminaryStandings = Object.values(teamStats)
         .map(team => {
           const totalDecided = team.wins + team.losses;
           team.winPct = totalDecided > 0 ? (team.wins / totalDecided) : 0;
           team.runDifferential = team.runsFor - team.runsAgainst;
           return team;
-        })
-        .sort((a, b) => {
-          if (a.winPct !== b.winPct) return b.winPct - a.winPct;
-          
-          const h2hComp = compareHeadToHead(a, b);
-          if (h2hComp !== 0) return h2hComp;
-          
-          if (a.runsAgainst !== b.runsAgainst) return a.runsAgainst - b.runsAgainst;
-          
-          return b.runDifferential - a.runDifferential;
         });
+
+      // Now calculate schedule strength for each team
+      const standingsWithSOS = preliminaryStandings.map(team => {
+        team.scheduleStrength = calculateScheduleStrength(team.name, games, preliminaryStandings);
+        return team;
+      });
+
+      // Sort with enhanced tiebreaker system
+      return standingsWithSOS.sort((a, b) => {
+        // Primary: Win percentage
+        if (a.winPct !== b.winPct) return b.winPct - a.winPct;
+        
+        // Secondary: Head-to-head record
+        const h2hComp = compareHeadToHead(a, b);
+        if (h2hComp !== 0) return h2hComp;
+        
+        // Tertiary: Schedule strength (higher is better for tiebreaking)
+        if (Math.abs(a.scheduleStrength - b.scheduleStrength) > 0.01) {
+          return b.scheduleStrength - a.scheduleStrength;
+        }
+        
+        // Quaternary: Runs allowed (lower is better)
+        if (a.runsAgainst !== b.runsAgainst) return a.runsAgainst - b.runsAgainst;
+        
+        // Final: Run differential
+        return b.runDifferential - a.runDifferential;
+      });
     }
 
     function compareHeadToHead(teamA, teamB) {
@@ -822,32 +935,67 @@
       return bH2HWinPct - aH2HWinPct;
     }
 
+    function formatScheduleStrength(sos) {
+      const sosValue = (sos * 100).toFixed(1);
+      let sosClass = 'average';
+      
+      if (sos < 0.45) sosClass = 'easy';
+      else if (sos > 0.55) sosClass = 'hard';
+      
+      return {
+        value: sosValue + '%',
+        class: sosClass
+      };
+    }
+
     function generateStandingsTable(title, standings) {
       return `
         <div class="bracket-title">${title}</div>
         <table class="standings-table">
           <thead>
             <tr>
-              <th>Rank</th><th>Team</th><th>Wins</th><th>Losses</th><th>Ties</th>
-              <th>Win%</th><th>RF</th><th>RA</th><th>Diff</th><th>Games</th>
+              <th style="width: 40px;">Rank</th>
+              <th style="width: 150px; text-align: left;">Team</th>
+              <th style="width: 50px;">W</th>
+              <th style="width: 50px;">L</th>
+              <th style="width: 50px;">T</th>
+              <th style="width: 60px;">Win%</th>
+              <th style="width: 50px;">RF</th>
+              <th style="width: 50px;">RA</th>
+              <th style="width: 60px;">Diff</th>
+              <th style="width: 70px;" class="sos-tooltip">SOS</th>
+              <th style="width: 60px;">Games</th>
             </tr>
           </thead>
           <tbody>
-            ${standings.map((team, index) => `
-              <tr>
-                <td>${index + 1}</td>
-                <td class="team-name">${team.name}</td>
-                <td>${team.wins}</td><td>${team.losses}</td><td>${team.ties}</td>
-                <td class="win-pct">${(team.winPct * 100).toFixed(1)}%</td>
-                <td>${team.runsFor}</td><td>${team.runsAgainst}</td>
-                <td style="color: ${team.runDifferential >= 0 ? '#28a745' : '#dc3545'}">
-                  ${team.runDifferential >= 0 ? '+' : ''}${team.runDifferential}
-                </td>
-                <td>${team.wins + team.losses + team.ties}</td>
-              </tr>
-            `).join('')}
+            ${standings.map((team, index) => {
+              const sosFormatted = formatScheduleStrength(team.scheduleStrength);
+              return `
+                <tr>
+                  <td style="text-align: center;">${index + 1}</td>
+                  <td class="team-name">${team.name}</td>
+                  <td style="text-align: center;">${team.wins}</td>
+                  <td style="text-align: center;">${team.losses}</td>
+                  <td style="text-align: center;">${team.ties}</td>
+                  <td class="win-pct">${(team.winPct * 100).toFixed(1)}%</td>
+                  <td style="text-align: center;">${team.runsFor}</td>
+                  <td style="text-align: center;">${team.runsAgainst}</td>
+                  <td style="color: ${team.runDifferential >= 0 ? '#28a745' : '#dc3545'}; text-align: center;">
+                    ${team.runDifferential >= 0 ? '+' : ''}${team.runDifferential}
+                  </td>
+                  <td class="schedule-strength ${sosFormatted.class}">${sosFormatted.value}</td>
+                  <td style="text-align: center;">${team.wins + team.losses + team.ties}</td>
+                </tr>
+              `;
+            }).join('')}
           </tbody>
         </table>
+        <div style="margin-top: 1rem; font-size: 0.85rem; color: #666;">
+          <strong>SOS:</strong> Schedule Strength - Average winning percentage of opponents faced (excluding games vs this team).<br>
+          <span style="color: #28a745;">Green</span> = easier schedule (&lt;45%), 
+          <span style="color: #ffc107;">Yellow</span> = average (45-55%), 
+          <span style="color: #dc3545;">Red</span> = harder schedule (&gt;55%)
+        </div>
       `;
     }
 
@@ -857,7 +1005,7 @@
           const gameDate = parseGameDate(g.date);
           const isFuture = gameDate >= today;
           const noWinner = !g.winner || g.winner.trim() === "";
-          const isRegularSeason = g.game_type === 'Regular'; // Only show regular season games
+          const isRegularSeason = g.game_type === 'Regular';
           return isFuture && noWinner && isRegularSeason;
         })
         .sort((a, b) => parseGameDate(a.date) - parseGameDate(b.date));
@@ -976,20 +1124,24 @@
           <h4>Playoff Seeding (Top 10 Teams)</h4>
           <table class="bracket-table">
             <thead>
-              <tr><th>Seed</th><th>Team</th><th>Record</th><th>Win%</th><th>Run Diff</th></tr>
+              <tr><th>Seed</th><th>Team</th><th>Record</th><th>Win%</th><th>SOS</th><th>Run Diff</th></tr>
             </thead>
             <tbody>
-              ${playoffTeams.map((team, index) => `
-                <tr>
-                  <td><strong>${index + 1}</strong></td>
-                  <td class="team-name">${team.name}</td>
-                  <td>${team.wins}-${team.losses}${team.ties > 0 ? `-${team.ties}` : ''}</td>
-                  <td class="win-pct">${(team.winPct * 100).toFixed(1)}%</td>
-                  <td style="color: ${team.runDifferential >= 0 ? '#28a745' : '#dc3545'}">
-                    ${team.runDifferential >= 0 ? '+' : ''}${team.runDifferential}
-                  </td>
-                </tr>
-              `).join('')}
+              ${playoffTeams.map((team, index) => {
+                const sosFormatted = formatScheduleStrength(team.scheduleStrength);
+                return `
+                  <tr>
+                    <td><strong>${index + 1}</strong></td>
+                    <td class="team-name">${team.name}</td>
+                    <td>${team.wins}-${team.losses}${team.ties > 0 ? `-${team.ties}` : ''}</td>
+                    <td class="win-pct">${(team.winPct * 100).toFixed(1)}%</td>
+                    <td class="schedule-strength ${sosFormatted.class}">${sosFormatted.value}</td>
+                    <td style="color: ${team.runDifferential >= 0 ? '#28a745' : '#dc3545'}">
+                      ${team.runDifferential >= 0 ? '+' : ''}${team.runDifferential}
+                    </td>
+                  </tr>
+                `;
+              }).join('')}
             </tbody>
           </table>
         </div>
@@ -1057,7 +1209,7 @@
                 </div>
                 <div class="team-in-bracket">
                   <span><strong>#5</strong> ${playoffTeams[4].name}</span>
-                  <span>${playoffTeams[4].wins}-${playoffTeams[4].losses}</span>
+                  <span>${playoffTeams[4].wins}-${playoffTeams[4].losses</span>
                 </div>
                 <div style="text-align: center; margin-top: 0.5rem; font-size: 0.9rem; color: #666;">
                   #4 vs #5
@@ -1108,6 +1260,7 @@
           <div class="no-data">
             <p><em>Double elimination format: Teams are eliminated after losing 2 games. 
             Play-in games determine final bracket positioning.</em></p>
+            <p><strong>Schedule Strength (SOS)</strong> is used as a tiebreaker in playoff seeding - teams with tougher schedules get preference when records are identical.</p>
           </div>
         </div>
       `;
