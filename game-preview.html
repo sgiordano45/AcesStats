@@ -253,6 +253,51 @@
     font-weight: bold;
   }
 
+  .key-players-grid {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    gap: 1rem;
+    align-items: flex-start;
+  }
+
+  .player-card {
+    background: #f8f9fa;
+    padding: 1rem;
+    border-radius: 8px;
+    margin-bottom: 0.5rem;
+    border-left: 4px solid #667eea;
+  }
+
+  .player-name {
+    font-weight: bold;
+    font-size: 1.1rem;
+    color: #333;
+    margin-bottom: 0.5rem;
+  }
+
+  .player-stats {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.9rem;
+    color: #666;
+  }
+
+  .player-stat {
+    text-align: center;
+  }
+
+  .player-stat-label {
+    display: block;
+    font-size: 0.8rem;
+    color: #888;
+    margin-bottom: 2px;
+  }
+
+  .player-stat-value {
+    font-weight: bold;
+    color: #333;
+  }
+
   @media (max-width: 768px) {
     .teams-display {
       flex-direction: column;
@@ -331,6 +376,18 @@
       <div class="section-content">
         <div class="h2h-summary" id="h2hSummary">
           Loading head-to-head record...
+        </div>
+      </div>
+    </div>
+
+    <!-- Key Players -->
+    <div class="section">
+      <div class="section-header">
+        Key Players
+      </div>
+      <div class="section-content">
+        <div class="comparison-grid" id="keyPlayersComparison">
+          Loading key players...
         </div>
       </div>
     </div>
@@ -462,6 +519,9 @@
       // Generate head-to-head record
       generateHeadToHeadRecord(homeTeam, awayTeam);
       
+      // Generate key players
+      generateKeyPlayers(homeTeam, awayTeam);
+      
       // Generate team comparisons
       generateBattingComparison(homeTeam, awayTeam);
       generatePitchingComparison(homeTeam, awayTeam);
@@ -491,6 +551,77 @@
       const winPct = totalDecided > 0 ? wins / totalDecided : 0;
 
       return { wins, losses, ties, winPct };
+    }
+
+    function generateKeyPlayers(homeTeam, awayTeam) {
+      const currentSeasonPlayers = playerData.filter(p => 
+        p.year === "2025" && p.season === "Fall" && p.sub === "No"
+      );
+
+      // Get top 3 players for each team by AcesWar
+      const homeTopPlayers = currentSeasonPlayers
+        .filter(p => p.team === homeTeam && p.AcesWar !== "N/A")
+        .sort((a, b) => parseFloat(b.AcesWar) - parseFloat(a.AcesWar))
+        .slice(0, 3);
+
+      const awayTopPlayers = currentSeasonPlayers
+        .filter(p => p.team === awayTeam && p.AcesWar !== "N/A")
+        .sort((a, b) => parseFloat(b.AcesWar) - parseFloat(a.AcesWar))
+        .slice(0, 3);
+
+      function createPlayerCard(player) {
+        const atBats = parseInt(player.atBats) || 0;
+        const hits = parseInt(player.hits) || 0;
+        const walks = parseInt(player.walks) || 0;
+        const runs = parseInt(player.runs) || 0;
+        
+        const avg = atBats > 0 ? (hits / atBats).toFixed(3) : ".000";
+        const obp = (atBats + walks) > 0 ? ((hits + walks) / (atBats + walks)).toFixed(3) : ".000";
+        const acesWar = parseFloat(player.AcesWar).toFixed(1);
+
+        return `
+          <div class="player-card">
+            <div class="player-name">${player.name}</div>
+            <div class="player-stats">
+              <div class="player-stat">
+                <span class="player-stat-label">AVG</span>
+                <span class="player-stat-value">${avg}</span>
+              </div>
+              <div class="player-stat">
+                <span class="player-stat-label">OBP</span>
+                <span class="player-stat-value">${obp}</span>
+              </div>
+              <div class="player-stat">
+                <span class="player-stat-label">Runs</span>
+                <span class="player-stat-value">${runs}</span>
+              </div>
+              <div class="player-stat">
+                <span class="player-stat-label">AcesWar</span>
+                <span class="player-stat-value">${acesWar}</span>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+
+      const awayPlayersHtml = awayTopPlayers.map(createPlayerCard).join('');
+      const homePlayersHtml = homeTopPlayers.map(createPlayerCard).join('');
+
+      const keyPlayersHtml = `
+        <div class="team-stats">
+          <h4>${awayTeam} Top Players</h4>
+          ${awayPlayersHtml}
+        </div>
+
+        <div class="vs-label">VS</div>
+
+        <div class="team-stats">
+          <h4>${homeTeam} Top Players</h4>
+          ${homePlayersHtml}
+        </div>
+      `;
+
+      document.getElementById('keyPlayersComparison').innerHTML = keyPlayersHtml;
     }
 
     function generateHeadToHeadRecord(homeTeam, awayTeam) {
