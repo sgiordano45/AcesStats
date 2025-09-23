@@ -119,38 +119,20 @@ function populatePlayerBanner(playerData) {
   const totalSeasons = playerData.filter(p => !isSubstitute(p)).length;
   
   // Find the most recent team from regular (non-substitute) seasons
+  // Data should already be sorted by year desc, then Fall before Summer
   let currentTeam = null;
   
-  // First, try to find the most recent regular (non-substitute) season
-  const regularSeasons = playerData.filter(p => !isSubstitute(p));
-  if (regularSeasons.length > 0) {
-    // Sort regular seasons to ensure we get the most recent one
-    regularSeasons.sort((a, b) => {
-      // First sort by year (descending - most recent year first)
-      if (b.year !== a.year) return b.year - a.year;
-      
-      // Then sort by season (Fall comes after Summer in the same year, so Fall is more recent)
-      const seasonOrder = { 'Summer': 0, 'Fall': 1 };
-      const aSeasonOrder = seasonOrder[a.season] !== undefined ? seasonOrder[a.season] : 999;
-      const bSeasonOrder = seasonOrder[b.season] !== undefined ? seasonOrder[b.season] : 999;
-      return bSeasonOrder - aSeasonOrder; // Note: reversed to put Fall first
-    });
-    
-    currentTeam = regularSeasons[0].team;
+  // Look through sorted data to find the first non-substitute entry
+  for (let i = 0; i < playerData.length; i++) {
+    if (!isSubstitute(playerData[i])) {
+      currentTeam = playerData[i].team;
+      break;
+    }
   }
   
-  // If no regular seasons found, fallback to any team from most recent year
+  // Fallback to any team if no regular seasons found
   if (!currentTeam && playerData.length > 0) {
-    // Sort all data by year desc, season order
-    const sortedData = [...playerData].sort((a, b) => {
-      if (b.year !== a.year) return b.year - a.year;
-      const seasonOrder = { 'Summer': 0, 'Fall': 1 };
-      const aSeasonOrder = seasonOrder[a.season] !== undefined ? seasonOrder[a.season] : 999;
-      const bSeasonOrder = seasonOrder[b.season] !== undefined ? seasonOrder[b.season] : 999;
-      return bSeasonOrder - aSeasonOrder;
-    });
-    
-    currentTeam = sortedData[0].team;
+    currentTeam = playerData[0].team;
   }
   
   // Call the HTML function to populate player details
@@ -620,3 +602,24 @@ function calculateTop10Rankings(playerCareerStats) {
     // Only include if in top 10
     if (playerRank > 0 && playerRank <= 10) {
       rankings.push({
+        category: category.name,
+        rank: playerRank,
+        value: category.format(playerCareerStats[category.stat]),
+        rawValue: playerCareerStats[category.stat]
+      });
+    }
+  });
+  
+  // Sort rankings by rank (best ranks first)
+  rankings.sort((a, b) => a.rank - b.rank);
+  
+  return rankings;
+}
+
+function goBack() {
+  if (window.history.length > 1) {
+    window.history.back();
+  } else {
+    window.location.href = 'index.html';
+  }
+}
