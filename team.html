@@ -545,20 +545,42 @@ function renderSummary() {
   const uniquePlayers = new Set(teamData.map(p => p.name)).size;
   const uniqueSeasons = new Set(teamData.map(p => `${p.year} ${p.season}`)).size;
   
-  // Calculate total team games from games.json
-  // Make sure to handle string comparison properly
-  const teamGames = allGames.filter(g => 
-    (g["home team"] === teamName || g["away team"] === teamName)
-  );
+  // Try to calculate team games from games.json, fallback to player games
+  let totalTeamGames = 0;
+  let gamesDisplay = "";
+  let gamesLabel = "";
   
-  console.log(`Debugging ${teamName} games:`, teamGames.length, 'total games found');
-  console.log('Sample games:', teamGames.slice(0, 3));
-  
-  const totalTeamGames = teamGames.length;
-  
-  // Calculate breakdown of games
-  const regularSeasonGames = teamGames.filter(g => g.game_type === 'Regular').length;
-  const playoffGames = teamGames.filter(g => g.game_type === 'Playoff').length;
+  if (allGames && allGames.length > 0) {
+    // Use actual team games from games.json
+    const teamGames = allGames.filter(g => 
+      (g["home team"] === teamName || g["away team"] === teamName)
+    );
+    
+    totalTeamGames = teamGames.length;
+    const regularSeasonGames = teamGames.filter(g => g.game_type === 'Regular').length;
+    const playoffGames = teamGames.filter(g => g.game_type === 'Playoff').length;
+    
+    gamesDisplay = totalTeamGames.toString();
+    if (totalTeamGames > 0) {
+      if (regularSeasonGames > 0 && playoffGames > 0) {
+        gamesDisplay += ` (${regularSeasonGames} Reg, ${playoffGames} PO)`;
+      } else if (regularSeasonGames > 0) {
+        gamesDisplay += ` Regular`;
+      } else if (playoffGames > 0) {
+        gamesDisplay += ` Playoff`;
+      }
+    }
+    gamesLabel = "Team Games";
+    
+    console.log(`Team games for ${teamName}:`, totalTeamGames, 'from games.json');
+  } else {
+    // Fallback to total player game appearances
+    totalTeamGames = teamData.reduce((sum, p) => sum + p.games, 0);
+    gamesDisplay = totalTeamGames.toString();
+    gamesLabel = "Player Games";
+    
+    console.log(`Fallback: Using player games for ${teamName}:`, totalTeamGames, '(games.json not available)');
+  }
   
   const totalAtBats = teamData.reduce((sum, p) => sum + p.atBats, 0);
   const totalHits = teamData.reduce((sum, p) => sum + p.hits, 0);
@@ -567,18 +589,6 @@ function renderSummary() {
   
   const years = [...new Set(teamData.map(p => p.year))].sort();
   const yearsActive = years.length > 1 ? `${years[0]} - ${years[years.length - 1]}` : years[0];
-  
-  // Create games display with breakdown
-  let gamesDisplay = totalTeamGames.toString();
-  if (totalTeamGames > 0) {
-    if (regularSeasonGames > 0 && playoffGames > 0) {
-      gamesDisplay += ` (${regularSeasonGames} Reg, ${playoffGames} PO)`;
-    } else if (regularSeasonGames > 0) {
-      gamesDisplay += ` Regular`;
-    } else if (playoffGames > 0) {
-      gamesDisplay += ` Playoff`;
-    }
-  }
   
   const summaryHTML = `
     <div class="summary-item">
@@ -595,7 +605,7 @@ function renderSummary() {
     </div>
     <div class="summary-item">
       <div class="summary-number" style="font-size: ${gamesDisplay.length > 8 ? '1.5rem' : '2rem'};">${gamesDisplay}</div>
-      <div class="summary-label">Team Games</div>
+      <div class="summary-label">${gamesLabel}</div>
     </div>
     <div class="summary-item">
       <div class="summary-number">${totalHits}</div>
