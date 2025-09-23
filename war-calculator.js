@@ -66,7 +66,8 @@ class WARCalculator {
     const teamWinPct = this.getTeamWinPercentage(team, year, season);
     const teamQuality = teamWinPct - 0.500;
     
-    const hittingWAR = ((acesBPI - 35) * 0.04 * games) + (teamQuality * games * 0.08);
+    // Fixed scaling: much smaller multipliers for realistic WAR values
+    const hittingWAR = ((acesBPI - 35) * 0.002 * games) + (teamQuality * games * 0.004);
     return Math.round(hittingWAR * 100) / 100; // Round to 2 decimal places
   }
 
@@ -78,8 +79,8 @@ class WARCalculator {
     const teamWinPct = this.getTeamWinPercentage(team, year, season);
     const teamQuality = teamWinPct - 0.500;
     
-    // ERA component (better ERA = positive WAR)
-    const eraComponent = ((leagueERA - era) / leagueERA) * inningsPitched * 0.12;
+    // ERA component (better ERA = positive WAR) - scaled down
+    const eraComponent = ((leagueERA - era) / leagueERA) * inningsPitched * 0.006;
     
     // Availability factor (bonus for significant innings)
     let availabilityFactor = 1.0;
@@ -87,8 +88,8 @@ class WARCalculator {
     else if (inningsPitched >= 20) availabilityFactor = 1.0;
     else availabilityFactor = 0.8;
     
-    // Team context (smaller impact for pitching)
-    const teamComponent = teamQuality * inningsPitched * 0.04;
+    // Team context (smaller impact for pitching) - scaled down
+    const teamComponent = teamQuality * inningsPitched * 0.002;
     
     const pitchingWAR = (eraComponent * availabilityFactor) + teamComponent;
     return Math.round(pitchingWAR * 100) / 100;
