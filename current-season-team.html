@@ -517,13 +517,46 @@ function initializePage(seasonGames, seasonPlayerData, seasonPitchingData) {
   document.getElementById("team-name").textContent = teamName;
   document.getElementById("allTimeTeamLink").href = `team.html?team=${encodeURIComponent(teamName)}`;
   
-  // Try to load team logo
+  // Try to load team logo with fallback paths
   const logoElement = document.getElementById("team-logo");
-  logoElement.src = `logos/${teamName.toLowerCase().replace(/\s+/g, '_')}.png`;
-  logoElement.alt = `${teamName} logo`;
+  
+  // Try different possible logo paths/naming conventions
+  const possibleLogoPaths = [
+    `logos/${teamName.toLowerCase().replace(/\s+/g, '_')}.png`,
+    `logos/${teamName.toLowerCase().replace(/\s+/g, '-')}.png`,
+    `logos/${teamName.toLowerCase()}.png`,
+    `logos/${teamName}.png`,
+    `images/logos/${teamName.toLowerCase().replace(/\s+/g, '_')}.png`,
+    `assets/logos/${teamName.toLowerCase().replace(/\s+/g, '_')}.png`
+  ];
+  
+  let logoLoaded = false;
+  let currentPathIndex = 0;
+  
+  function tryNextLogoPath() {
+    if (currentPathIndex >= possibleLogoPaths.length) {
+      // No logo found, hide the logo element
+      logoElement.style.display = 'none';
+      return;
+    }
+    
+    logoElement.src = possibleLogoPaths[currentPathIndex];
+    currentPathIndex++;
+  }
+  
   logoElement.onload = function() {
     this.classList.add('loaded');
+    logoLoaded = true;
   };
+  
+  logoElement.onerror = function() {
+    if (!logoLoaded) {
+      tryNextLogoPath();
+    }
+  };
+  
+  // Start with first path
+  tryNextLogoPath();
 
   // Calculate team record and standings position
   updateTeamHeader(seasonGames);
@@ -539,7 +572,8 @@ function updateTeamHeader(seasonGames) {
   // Calculate team record
   const teamGames = seasonGames.filter(g => 
     (g["home team"] === teamName || g["away team"] === teamName) && 
-    g.winner && g.winner.trim() !== ""
+    g.winner && g.winner.trim() !== "" &&
+    parseGameDate(g.date) < today
   );
   
   let wins = 0, losses = 0, ties = 0;
@@ -565,8 +599,125 @@ function updateTeamHeader(seasonGames) {
 
   document.getElementById("games-remaining").textContent = upcomingGames.length;
 
-  // Calculate standings position (simplified - would need full standings calculation for exact position)
-  document.getElementById("team-standing").textContent = "TBD";
+  // Calculate current standings position
+  const standingsPosition = calculateTeamStandingsPosition(seasonGames);
+  document.getElementById("team-standing").textContent = standingsPosition;
+}
+
+function calculateTeamStandingsPosition(seasonGames) {
+  // Get all completed regular season games
+  const completedGames = seasonGames.filter(g => 
+    parseGameDate(g.date) < today && 
+    g.winner && 
+    g.winner.trim() !== "" && 
+    g.game_type === 'Regular'
+  );
+  
+  if (completedGames.length === 0) return "TBD";
+
+  // Calculate standings for all teams
+  const teamStats = {};
+
+  completedGames.forEach(game => {
+    const homeTeam = game["home team"];
+    const awayTeam = game["away team"];
+    const winner = game.winner;
+    const homeScore = parseInt(game["home score"]) || 0;
+    const awayScore = parseInt(game["away score"]) || 0;
+
+    if (!teamStats[homeTeam]) {
+      teamStats[homeTeam] = { 
+        name: homeTeam, wins: 0, losses: 0, ties: 0, 
+        runsFor: 0, runsAgainst: 0, h2h: {}
+      };
+    }
+    if (!teamStats[awayTeam]) {
+      teamStats[awayTeam] = { 
+        name: awayTeam, wins: 0, losses: 0, ties: 0, 
+        runsFor: 0, runsAgainst: 0, h2h: {}
+      };
+    }
+
+    // Add runs
+    teamStats[homeTeam].runsFor += homeScore;
+    teamStats[homeTeam].runsAgainst += awayScore;
+    teamStats[awayTeam].runsFor += awayScore;
+    teamStats[awayTeam].runsAgainst += homeScore;
+
+    // Initialize H2H if needed
+    if (!teamStats[homeTeam].h2h[awayTeam]) {
+      teamStats[homeTeam].h2h[awayTeam] = { wins: 0, losses: 0, ties: 0 };
+    }
+    if (!teamStats[awayTeam].h2h[homeTeam]) {
+      teamStats[awayTeam].h2h[homeTeam] = { wins: 0, losses: 0, ties: 0 };
+    }
+
+    // Record results
+    if (winner === "Tie") {
+      teamStats[homeTeam].ties++;
+      teamStats[awayTeam].ties++;
+      teamStats[homeTeam].h2h[awayTeam].ties++;
+      teamStats[awayTeam].h2h[homeTeam].ties++;
+    } else if (winner === homeTeam) {
+      teamStats[homeTeam].wins++;
+      teamStats[awayTeam].losses++;
+      teamStats[homeTeam].h2h[awayTeam].wins++;
+      teamStats[awayTeam].h2h[homeTeam].losses++;
+    } else if (winner === awayTeam) {
+      teamStats[awayTeam].wins++;
+      teamStats[homeTeam].losses++;
+      teamStats[awayTeam].h2h[homeTeam].wins++;
+      teamStats[homeTeam].h2h[awayTeam].losses++;
+    }
+  });
+
+  // Calculate win percentages and sort standings
+  const standings = Object.values(teamStats)
+    .map(team => {
+      const totalDecided = team.wins + team.losses;
+      team.winPct = totalDecided > 0 ? (team.wins / totalDecided) : 0;
+      team.runDifferential = team.runsFor - team.runsAgainst;
+      return team;
+    })
+    .sort((a, b) => {
+      // Primary: Win percentage
+      if (a.winPct !== b.winPct) return b.winPct - a.winPct;
+      
+      // Secondary: Head-to-head record
+      const h2hComp = compareHeadToHead(a, b);
+      if (h2hComp !== 0) return h2hComp;
+      
+      // Tertiary: Runs allowed (lower is better)
+      if (a.runsAgainst !== b.runsAgainst) return a.runsAgainst - b.runsAgainst;
+      
+      // Final: Run differential
+      return b.runDifferential - a.runDifferential;
+    });
+
+  // Find team's position
+  const teamPosition = standings.findIndex(team => team.name === teamName) + 1;
+  return teamPosition > 0 ? `${teamPosition}${getOrdinalSuffix(teamPosition)}` : "NR";
+}
+
+function compareHeadToHead(teamA, teamB) {
+  const aVsB = teamA.h2h[teamB.name];
+  const bVsA = teamB.h2h[teamA.name];
+  
+  if (!aVsB || !bVsA) return 0;
+  
+  const aH2HWinPct = (aVsB.wins + aVsB.losses) > 0 ? aVsB.wins / (aVsB.wins + aVsB.losses) : 0;
+  const bH2HWinPct = (bVsA.wins + bVsA.losses) > 0 ? bVsA.wins / (bVsA.wins + bVsA.losses) : 0;
+  
+  return bH2HWinPct - aH2HWinPct;
+}
+
+function getOrdinalSuffix(num) {
+  const j = num % 10;
+  const k = num % 100;
+  if (j === 1 && k !== 11) return "st";
+  if (j === 2 && k !== 12) return "nd";
+  if (j === 3 && k !== 13) return "rd";
+  return "th";
 }
 
 function updateSummaryStats(seasonGames, seasonPlayerData) {
