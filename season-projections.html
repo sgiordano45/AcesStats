@@ -1,0 +1,649 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Season Projections - Mountainside Aces</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      color: #333;
+    }
+
+    .header {
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(10px);
+      padding: 2rem 1rem;
+      text-align: center;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    }
+
+    .header h1 {
+      font-size: 2.5rem;
+      margin-bottom: 0.5rem;
+      background: linear-gradient(135deg, #667eea, #764ba2);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .container {
+      max-width: 1400px;
+      margin: 2rem auto;
+      padding: 0 2rem;
+    }
+
+    .controls {
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(10px);
+      border-radius: 12px;
+      padding: 2rem;
+      margin-bottom: 2rem;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+    }
+
+    .control-group {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .control-item {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    label {
+      font-weight: bold;
+      color: #333;
+    }
+
+    input, select, button {
+      padding: 0.8rem;
+      border: 2px solid #e0e0e0;
+      border-radius: 8px;
+      font-size: 1rem;
+      transition: all 0.3s ease;
+    }
+
+    input:focus, select:focus {
+      outline: none;
+      border-color: #667eea;
+      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+
+    button {
+      background: linear-gradient(135deg, #667eea, #764ba2);
+      color: white;
+      border: none;
+      cursor: pointer;
+      font-weight: bold;
+      transition: all 0.3s ease;
+    }
+
+    button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+    }
+
+    .results-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+      gap: 2rem;
+    }
+
+    .result-card {
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(10px);
+      border-radius: 12px;
+      padding: 2rem;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+    }
+
+    .result-card h3 {
+      color: #333;
+      margin-bottom: 1rem;
+      font-size: 1.3rem;
+      border-bottom: 3px solid #667eea;
+      padding-bottom: 0.5rem;
+    }
+
+    .standings-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 1rem;
+    }
+
+    .standings-table th,
+    .standings-table td {
+      padding: 0.8rem;
+      text-align: left;
+      border-bottom: 1px solid #e0e0e0;
+    }
+
+    .standings-table th {
+      background: #f8f9fa;
+      font-weight: bold;
+    }
+
+    .standings-table tr:hover {
+      background: #f0f8ff;
+    }
+
+    .team-name {
+      font-weight: bold;
+    }
+
+    .win-pct {
+      font-weight: bold;
+      color: #28a745;
+    }
+
+    .playoff-seed {
+      background: linear-gradient(135deg, #28a745, #20c997);
+      color: white;
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+      font-size: 0.8rem;
+      font-weight: bold;
+    }
+
+    .simulation-info {
+      background: #e7f3ff;
+      border: 1px solid #b3d9ff;
+      border-radius: 8px;
+      padding: 1rem;
+      margin-bottom: 1rem;
+      font-size: 0.9rem;
+    }
+
+    .method-selector {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+    }
+
+    .method-btn {
+      padding: 0.5rem 1rem;
+      background: #f8f9fa;
+      border: 2px solid #e0e0e0;
+      cursor: pointer;
+      border-radius: 6px;
+      transition: all 0.3s ease;
+    }
+
+    .method-btn.active {
+      background: linear-gradient(135deg, #667eea, #764ba2);
+      color: white;
+      border-color: #667eea;
+    }
+
+    .loading {
+      text-align: center;
+      padding: 2rem;
+      color: #666;
+    }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <h1>🏆 Season Projections</h1>
+    <p>Project final standings and playoff scenarios based on remaining games</p>
+  </header>
+
+  <div class="container">
+    <div class="controls">
+      <h3>Projection Settings</h3>
+      
+      <div class="control-group">
+        <div class="control-item">
+          <label>Projection Method</label>
+          <div class="method-selector">
+            <button class="method-btn active" data-method="winPct">Win %</button>
+            <button class="method-btn" data-method="pythagorean">Pythagorean</button>
+            <button class="method-btn" data-method="strength">Strength</button>
+          </div>
+        </div>
+        
+        <div class="control-item">
+          <label>Simulations</label>
+          <select id="simCount">
+            <option value="1000">1,000 simulations</option>
+            <option value="5000">5,000 simulations</option>
+            <option value="10000" selected>10,000 simulations</option>
+          </select>
+        </div>
+        
+        <div class="control-item">
+          <label>Home Field Advantage</label>
+          <input type="range" id="homeAdvantage" min="0" max="0.2" step="0.02" value="0.06">
+          <span id="homeAdvantageValue">6%</span>
+        </div>
+      </div>
+
+      <button id="runProjections" onclick="runProjections()">Run Projections</button>
+    </div>
+
+    <div id="results" class="results-grid" style="display: none;">
+      <div class="result-card">
+        <h3>📊 Projected Final Standings</h3>
+        <div id="projectedStandings"></div>
+      </div>
+
+      <div class="result-card">
+        <h3>🎯 Playoff Probabilities</h3>
+        <div id="playoffProbabilities"></div>
+      </div>
+
+      <div class="result-card">
+        <h3>🏟️ Projected Playoff Bracket</h3>
+        <div id="projectedBracket"></div>
+      </div>
+
+      <div class="result-card">
+        <h3>📈 Key Scenarios</h3>
+        <div id="keyScenarios"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let allGames = [];
+    let currentProjectionMethod = 'winPct';
+    const currentSeason = "Fall";
+    const currentYear = "2025";
+    const today = new Date();
+
+    // Initialize
+    document.addEventListener('DOMContentLoaded', loadData);
+
+    // Method selector event handlers
+    document.querySelectorAll('.method-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.method-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        currentProjectionMethod = btn.dataset.method;
+      });
+    });
+
+    // Home advantage slider
+    document.getElementById('homeAdvantage').addEventListener('input', (e) => {
+      document.getElementById('homeAdvantageValue').textContent = `${Math.round(e.target.value * 100)}%`;
+    });
+
+    async function loadData() {
+      try {
+        const response = await fetch('games.json');
+        if (!response.ok) throw new Error('Failed to load games data');
+        allGames = await response.json();
+        console.log(`Loaded ${allGames.length} games`);
+      } catch (error) {
+        console.error('Error loading data:', error);
+      }
+    }
+
+    function parseGameDate(dateStr) {
+      return new Date(dateStr);
+    }
+
+    function getSeasonGames() {
+      return allGames.filter(g => 
+        g.year === currentYear && g.season === currentSeason
+      );
+    }
+
+    function getCompletedGames(games) {
+      return games.filter(g => 
+        parseGameDate(g.date) < today && 
+        g.winner && 
+        g.winner.trim() !== "" &&
+        g.game_type === 'Regular'
+      );
+    }
+
+    function getFutureGames(games) {
+      return games.filter(g => 
+        parseGameDate(g.date) >= today || 
+        (!g.winner || g.winner.trim() === "") &&
+        g.game_type === 'Regular'
+      );
+    }
+
+    function calculateCurrentStandings(games) {
+      const teamStats = {};
+      
+      games.forEach(game => {
+        const homeTeam = game["home team"];
+        const awayTeam = game["away team"];
+        const winner = game.winner;
+        const homeScore = parseInt(game["home score"]) || 0;
+        const awayScore = parseInt(game["away score"]) || 0;
+        
+        // Initialize teams
+        if (!teamStats[homeTeam]) {
+          teamStats[homeTeam] = { 
+            name: homeTeam, wins: 0, losses: 0, ties: 0, 
+            runsFor: 0, runsAgainst: 0, games: 0
+          };
+        }
+        if (!teamStats[awayTeam]) {
+          teamStats[awayTeam] = { 
+            name: awayTeam, wins: 0, losses: 0, ties: 0, 
+            runsFor: 0, runsAgainst: 0, games: 0
+          };
+        }
+        
+        teamStats[homeTeam].games++;
+        teamStats[awayTeam].games++;
+        teamStats[homeTeam].runsFor += homeScore;
+        teamStats[homeTeam].runsAgainst += awayScore;
+        teamStats[awayTeam].runsFor += awayScore;
+        teamStats[awayTeam].runsAgainst += homeScore;
+        
+        // Count results
+        if (winner === "Tie") {
+          teamStats[homeTeam].ties++;
+          teamStats[awayTeam].ties++;
+        } else if (winner === homeTeam) {
+          teamStats[homeTeam].wins++;
+          teamStats[awayTeam].losses++;
+        } else if (winner === awayTeam) {
+          teamStats[awayTeam].wins++;
+          teamStats[homeTeam].losses++;
+        }
+      });
+      
+      // Calculate stats and sort
+      const standings = Object.values(teamStats).map(team => {
+        const totalDecidedGames = team.wins + team.losses;
+        team.winPct = totalDecidedGames > 0 ? team.wins / totalDecidedGames : 0;
+        team.runDifferential = team.runsFor - team.runsAgainst;
+        
+        // Pythagorean expectation
+        const pythagoreanExp = 1.83; // Common for softball/baseball
+        if (team.runsFor + team.runsAgainst > 0) {
+          team.pythagoreanWinPct = Math.pow(team.runsFor, pythagoreanExp) / 
+            (Math.pow(team.runsFor, pythagoreanExp) + Math.pow(team.runsAgainst, pythagoreanExp));
+        } else {
+          team.pythagoreanWinPct = 0.5;
+        }
+        
+        return team;
+      });
+      
+      standings.sort((a, b) => {
+        if (a.winPct !== b.winPct) return b.winPct - a.winPct;
+        return b.runDifferential - a.runDifferential;
+      });
+      
+      return standings;
+    }
+
+    function calculateTeamStrength(team, allStandings) {
+      // Simple strength calculation based on wins against quality opponents
+      let strengthScore = team.winPct;
+      
+      // Bonus for better run differential
+      if (team.games > 0) {
+        strengthScore += (team.runDifferential / team.games) * 0.01;
+      }
+      
+      return Math.max(0.1, Math.min(0.9, strengthScore));
+    }
+
+    function simulateGame(homeTeam, awayTeam, standings, method) {
+      const homeAdvantage = parseFloat(document.getElementById('homeAdvantage').value);
+      
+      let homeWinProb = 0.5;
+      
+      switch (method) {
+        case 'winPct':
+          const homeWinPct = homeTeam.winPct || 0.5;
+          const awayWinPct = awayTeam.winPct || 0.5;
+          homeWinProb = homeWinPct / (homeWinPct + awayWinPct) + homeAdvantage;
+          break;
+          
+        case 'pythagorean':
+          const homePyth = homeTeam.pythagoreanWinPct || 0.5;
+          const awayPyth = awayTeam.pythagoreanWinPct || 0.5;
+          homeWinProb = homePyth / (homePyth + awayPyth) + homeAdvantage;
+          break;
+          
+        case 'strength':
+          const homeStrength = calculateTeamStrength(homeTeam, standings);
+          const awayStrength = calculateTeamStrength(awayTeam, standings);
+          homeWinProb = homeStrength / (homeStrength + awayStrength) + homeAdvantage;
+          break;
+      }
+      
+      homeWinProb = Math.max(0.1, Math.min(0.9, homeWinProb));
+      
+      return Math.random() < homeWinProb ? homeTeam.name : awayTeam.name;
+    }
+
+    function simulateRestOfSeason(currentStandings, futureGames, method) {
+      // Create a deep copy of standings for simulation
+      const simStandings = JSON.parse(JSON.stringify(currentStandings));
+      const teamLookup = {};
+      simStandings.forEach(team => teamLookup[team.name] = team);
+      
+      futureGames.forEach(game => {
+        const homeTeam = teamLookup[game["home team"]];
+        const awayTeam = teamLookup[game["away team"]];
+        
+        if (!homeTeam || !awayTeam) return;
+        
+        const winner = simulateGame(homeTeam, awayTeam, simStandings, method);
+        
+        // Update stats
+        homeTeam.games++;
+        awayTeam.games++;
+        
+        if (winner === homeTeam.name) {
+          homeTeam.wins++;
+          awayTeam.losses++;
+        } else {
+          awayTeam.wins++;
+          homeTeam.losses++;
+        }
+        
+        // Recalculate win percentage
+        homeTeam.winPct = homeTeam.wins / (homeTeam.wins + homeTeam.losses);
+        awayTeam.winPct = awayTeam.wins / (awayTeam.wins + awayTeam.losses);
+      });
+      
+      // Sort final standings
+      simStandings.sort((a, b) => {
+        if (a.winPct !== b.winPct) return b.winPct - a.winPct;
+        return b.runDifferential - a.runDifferential;
+      });
+      
+      return simStandings;
+    }
+
+    async function runProjections() {
+      document.getElementById('runProjections').disabled = true;
+      document.getElementById('runProjections').textContent = 'Running Simulations...';
+      document.getElementById('results').style.display = 'none';
+      
+      const seasonGames = getSeasonGames();
+      const completedGames = getCompletedGames(seasonGames);
+      const futureGames = getFutureGames(seasonGames);
+      const currentStandings = calculateCurrentStandings(completedGames);
+      
+      const simulations = parseInt(document.getElementById('simCount').value);
+      const playoffCounts = {};
+      const finalStandings = {};
+      
+      // Initialize tracking
+      currentStandings.forEach(team => {
+        playoffCounts[team.name] = 0;
+        finalStandings[team.name] = { 
+          totalWins: 0, 
+          totalLosses: 0, 
+          positions: new Array(currentStandings.length).fill(0)
+        };
+      });
+      
+      // Run simulations
+      for (let i = 0; i < simulations; i++) {
+        const simResult = simulateRestOfSeason(currentStandings, futureGames, currentProjectionMethod);
+        
+        // Track playoff teams (top 10)
+        simResult.slice(0, 10).forEach(team => {
+          playoffCounts[team.name]++;
+        });
+        
+        // Track final standings
+        simResult.forEach((team, position) => {
+          finalStandings[team.name].totalWins += team.wins;
+          finalStandings[team.name].totalLosses += team.losses;
+          finalStandings[team.name].positions[position]++;
+        });
+      }
+      
+      displayResults(currentStandings, playoffCounts, finalStandings, simulations, futureGames.length);
+      
+      document.getElementById('runProjections').disabled = false;
+      document.getElementById('runProjections').textContent = 'Run Projections';
+      document.getElementById('results').style.display = 'grid';
+    }
+
+    function displayResults(currentStandings, playoffCounts, finalStandings, simulations, futureGamesCount) {
+      // Projected final standings
+      const projectedTeams = currentStandings.map(team => {
+        const avgWins = finalStandings[team.name].totalWins / simulations;
+        const avgLosses = finalStandings[team.name].totalLosses / simulations;
+        const projectedWinPct = avgWins / (avgWins + avgLosses);
+        
+        return {
+          name: team.name,
+          currentWins: team.wins,
+          currentLosses: team.losses,
+          projectedWins: Math.round(avgWins),
+          projectedLosses: Math.round(avgLosses),
+          projectedWinPct: projectedWinPct,
+          playoffProb: (playoffCounts[team.name] / simulations * 100).toFixed(1)
+        };
+      });
+      
+      projectedTeams.sort((a, b) => b.projectedWinPct - a.projectedWinPct);
+      
+      // Display projected standings
+      let standingsHTML = `
+        <div class="simulation-info">
+          Based on ${simulations.toLocaleString()} simulations of ${futureGamesCount} remaining games
+        </div>
+        <table class="standings-table">
+          <thead>
+            <tr>
+              <th>Rank</th><th>Team</th><th>Current</th><th>Projected</th><th>Win%</th><th>Playoff%</th>
+            </tr>
+          </thead>
+          <tbody>
+      `;
+      
+      projectedTeams.forEach((team, index) => {
+        const playoffSeed = index < 10 ? `<span class="playoff-seed">#${index + 1}</span>` : '';
+        standingsHTML += `
+          <tr>
+            <td>${index + 1} ${playoffSeed}</td>
+            <td class="team-name">${team.name}</td>
+            <td>${team.currentWins}-${team.currentLosses}</td>
+            <td>${team.projectedWins}-${team.projectedLosses}</td>
+            <td class="win-pct">${(team.projectedWinPct * 100).toFixed(1)}%</td>
+            <td>${team.playoffProb}%</td>
+          </tr>
+        `;
+      });
+      
+      standingsHTML += '</tbody></table>';
+      document.getElementById('projectedStandings').innerHTML = standingsHTML;
+      
+      // Playoff probabilities chart
+      const playoffHTML = projectedTeams
+        .sort((a, b) => b.playoffProb - a.playoffProb)
+        .slice(0, 12)
+        .map(team => `
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+            <span class="team-name">${team.name}</span>
+            <div style="display: flex; align-items: center; gap: 0.5rem;">
+              <div style="width: 100px; height: 8px; background: #e0e0e0; border-radius: 4px;">
+                <div style="width: ${team.playoffProb}%; height: 100%; background: linear-gradient(135deg, #28a745, #20c997); border-radius: 4px;"></div>
+              </div>
+              <span>${team.playoffProb}%</span>
+            </div>
+          </div>
+        `).join('');
+      
+      document.getElementById('playoffProbabilities').innerHTML = playoffHTML;
+      
+      // Projected bracket
+      const top10 = projectedTeams.slice(0, 10);
+      const bracketHTML = `
+        <div class="simulation-info">
+          Most likely playoff bracket based on projected standings
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; font-size: 0.9rem;">
+          <div>
+            <h4 style="margin-bottom: 0.5rem;">Play-in Games</h4>
+            <div style="background: #f8f9fa; padding: 0.5rem; border-radius: 4px; margin-bottom: 0.5rem;">
+              <strong>#7</strong> ${top10[6]?.name || 'TBD'} vs <strong>#10</strong> ${top10[9]?.name || 'TBD'}
+            </div>
+            <div style="background: #f8f9fa; padding: 0.5rem; border-radius: 4px;">
+              <strong>#8</strong> ${top10[7]?.name || 'TBD'} vs <strong>#9</strong> ${top10[8]?.name || 'TBD'}
+            </div>
+          </div>
+          <div>
+            <h4 style="margin-bottom: 0.5rem;">First Round</h4>
+            <div style="background: #e7f3ff; padding: 0.5rem; border-radius: 4px; margin-bottom: 0.5rem;">
+              <strong>#1</strong> ${top10[0]?.name || 'TBD'} vs Winner 8v9
+            </div>
+            <div style="background: #e7f3ff; padding: 0.5rem; border-radius: 4px;">
+              <strong>#2</strong> ${top10[1]?.name || 'TBD'} vs Winner 7v10
+            </div>
+          </div>
+        </div>
+      `;
+      
+      document.getElementById('projectedBracket').innerHTML = bracketHTML;
+      
+      // Key scenarios
+      const scenarios = [];
+      
+      // Teams on the bubble
+      const bubbleTeams = projectedTeams.filter(t => 
+        parseFloat(t.playoffProb) > 10 && parseFloat(t.playoffProb) < 90
+      ).slice(0, 4);
+      
+      if (bubbleTeams.length > 0) {
+        scenarios.push(`<strong>Bubble Teams:</strong> ${bubbleTeams.map(t => `${t.name} (${t.playoffProb}%)`).join(', ')} are fighting for playoff spots.`);
+      }
+      
+      // Likely playoff locks
+      const locks = projectedTeams.filter(t => parseFloat(t.playoffProb) > 95).length;
+      if (locks > 0) {
+        scenarios.push(`<strong>Playoff Locks:</strong> ${locks} teams have >95% chance of making playoffs.`);
+      }
+      
+      // Championship contenders
+      const contenders = projectedTeams.slice(0, 3);
+      scenarios.push(`<strong>Championship Contenders:</strong> ${contenders.map(t => t.name).join(', ')} are the top projected seeds.`);
+      
+      document.getElementById('keyScenarios').innerHTML = scenarios.map(s => 
+        `<div style="margin-bottom: 1rem; padding: 0.8rem; background: #f8f9fa; border-radius: 6px;">${s}</div>`
+      ).join('');
+    }
+  </script>
+</body>
+</html>
