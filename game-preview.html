@@ -136,8 +136,68 @@
     font-weight: bold;
   }
 
+  .peters-preview-header {
+    background: linear-gradient(135deg, #fd7e14 0%, #e83e8c 100%);
+    color: white;
+    padding: 1.5rem 2rem;
+    font-size: 1.4rem;
+    font-weight: bold;
+  }
+
   .section-content {
     padding: 2rem;
+  }
+
+  .odds-display {
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+    background: #f8f9fa;
+    padding: 1.5rem;
+    border-radius: 8px;
+    margin-bottom: 1.5rem;
+    flex-wrap: wrap;
+    gap: 1rem;
+  }
+
+  .odds-item {
+    text-align: center;
+    flex: 1;
+    min-width: 120px;
+  }
+
+  .odds-team {
+    font-weight: bold;
+    color: #333;
+    margin-bottom: 0.5rem;
+    font-size: 1.1rem;
+  }
+
+  .odds-value {
+    font-size: 1.5rem;
+    font-weight: bold;
+    color: #667eea;
+    background: white;
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    border: 2px solid #667eea;
+    display: inline-block;
+  }
+
+  .favorite {
+    color: #28a745;
+    border-color: #28a745;
+  }
+
+  .preview-text {
+    background: #ffffff;
+    border-left: 4px solid #fd7e14;
+    padding: 1.5rem;
+    border-radius: 0 8px 8px 0;
+    line-height: 1.6;
+    font-size: 1.05rem;
+    color: #333;
+    margin-top: 1rem;
   }
 
   .comparison-grid {
@@ -329,6 +389,15 @@
     .team-name {
       font-size: 1.5rem;
     }
+
+    .odds-display {
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    .odds-item {
+      min-width: 200px;
+    }
   }
 </style>
 </head>
@@ -365,6 +434,18 @@
       
       <div class="game-details" id="gameDetails">
         Loading game details...
+      </div>
+    </div>
+
+    <!-- Peters Preview -->
+    <div class="section">
+      <div class="peters-preview-header">
+        Peters Preview
+      </div>
+      <div class="section-content">
+        <div id="petersPreviewContent">
+          Loading Peters Preview...
+        </div>
       </div>
     </div>
 
@@ -427,6 +508,7 @@
     let allGames = [];
     let playerData = [];
     let pitchingData = [];
+    let previewData = [];
     
     // Get URL parameters
     const urlParams = new URLSearchParams(window.location.search);
@@ -447,10 +529,11 @@
 
     async function loadGamePreviewData() {
       try {
-        const [gamesResponse, playerResponse, pitchingResponse] = await Promise.all([
+        const [gamesResponse, playerResponse, pitchingResponse, previewResponse] = await Promise.all([
           fetch('games.json'),
           fetch('data.json'),
-          fetch('pitching.json')
+          fetch('pitching.json'),
+          fetch('previews.json').catch(() => ({ ok: false })) // Gracefully handle if previews.json doesn't exist yet
         ]);
         
         if (!gamesResponse.ok) throw new Error('Failed to load games data');
@@ -460,6 +543,11 @@
         allGames = await gamesResponse.json();
         playerData = await playerResponse.json();
         pitchingData = await pitchingResponse.json();
+
+        // Load preview data if available
+        if (previewResponse.ok) {
+          previewData = await previewResponse.json();
+        }
 
         generateGamePreview();
 
@@ -516,6 +604,9 @@
         <strong>Date:</strong> ${gameDate} | <strong>Type:</strong> Regular Season
       `;
 
+      // Generate Peters Preview
+      generatePetersPreview(homeTeam, awayTeam, gameDate);
+      
       // Generate head-to-head record
       generateHeadToHeadRecord(homeTeam, awayTeam);
       
@@ -528,6 +619,58 @@
       
       // Generate historical matchups
       generateHistoricalMatchups(homeTeam, awayTeam);
+    }
+
+    function generatePetersPreview(homeTeam, awayTeam, gameDate) {
+      // Find matching preview
+      const preview = previewData.find(p => 
+        p.date === gameDate && 
+        p.home === homeTeam && 
+        p.away === awayTeam
+      );
+
+      // Hide the entire Peters Preview section if no preview or blank preview text
+      const petersSection = document.querySelector('.section:has(.peters-preview-header)');
+      
+      if (!preview || !preview.preview || preview.preview.trim() === '') {
+        if (petersSection) {
+          petersSection.style.display = 'none';
+        }
+        return;
+      }
+
+      // Show the section if it was previously hidden
+      if (petersSection) {
+        petersSection.style.display = 'block';
+      }
+
+      // Parse odds to determine favorite/underdog
+      const homeOdds = parseInt(preview.odds.home);
+      const awayOdds = parseInt(preview.odds.away);
+      
+      const homeIsFavorite = homeOdds < 0 && (awayOdds > 0 || homeOdds > awayOdds);
+      const awayIsFavorite = awayOdds < 0 && (homeOdds > 0 || awayOdds > homeOdds);
+
+      const previewHtml = `
+        <div class="odds-display">
+          <div class="odds-item">
+            <div class="odds-team">${awayTeam} (Away)</div>
+            <div class="odds-value ${awayIsFavorite ? 'favorite' : ''}">${awayOdds > 0 ? '+' : ''}${awayOdds}</div>
+          </div>
+          <div class="odds-item">
+            <div style="font-size: 1.2rem; color: #666;">Money Line</div>
+          </div>
+          <div class="odds-item">
+            <div class="odds-team">${homeTeam} (Home)</div>
+            <div class="odds-value ${homeIsFavorite ? 'favorite' : ''}">${homeOdds > 0 ? '+' : ''}${homeOdds}</div>
+          </div>
+        </div>
+        <div class="preview-text">
+          ${preview.preview}
+        </div>
+      `;
+
+      document.getElementById('petersPreviewContent').innerHTML = previewHtml;
     }
 
     function calculateTeamRecord(teamName, games) {
@@ -596,7 +739,7 @@
                 <span class="player-stat-value">${runs}</span>
               </div>
               <div class="player-stat">
-                <span class="player-stat-label">AcesBPI</span>
+                <span class="player-stat-label">AcesWar</span>
                 <span class="player-stat-value">${acesWar}</span>
               </div>
             </div>
