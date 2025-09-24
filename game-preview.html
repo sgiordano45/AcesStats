@@ -622,12 +622,14 @@
     }
 
     function generatePetersPreview(homeTeam, awayTeam, gameDate) {
-      // Find matching preview
-      const preview = previewData.find(p => 
-        p.date === gameDate && 
-        p.home === homeTeam && 
-        p.away === awayTeam
-      );
+      // Find matching preview - handle both field name formats and flexible date matching
+      const preview = previewData.find(p => {
+        const matchesTeams = (p["home team"] === homeTeam && p["away team"] === awayTeam) ||
+                           (p.home === homeTeam && p.away === awayTeam);
+        const matchesDate = p.date === gameDate || 
+                           formatDateForComparison(p.date) === formatDateForComparison(gameDate);
+        return matchesTeams && matchesDate;
+      });
 
       // Hide the entire Peters Preview section if no preview or blank preview text
       const petersSection = document.querySelector('.section:has(.peters-preview-header)');
@@ -644,33 +646,53 @@
         petersSection.style.display = 'block';
       }
 
-      // Parse odds to determine favorite/underdog
-      const homeOdds = parseInt(preview.odds.home);
-      const awayOdds = parseInt(preview.odds.away);
+      // Parse odds to determine favorite/underdog - handle both string and number formats
+      const homeOdds = parseInt(preview["home odds"] || preview.odds?.home || 0);
+      const awayOdds = parseInt(preview["away odds"] || preview.odds?.away || 0);
       
-      const homeIsFavorite = homeOdds < 0 && (awayOdds > 0 || homeOdds > awayOdds);
-      const awayIsFavorite = awayOdds < 0 && (homeOdds > 0 || awayOdds > homeOdds);
+      // Only show odds if they exist
+      let oddsHtml = '';
+      if (homeOdds !== 0 || awayOdds !== 0) {
+        const homeIsFavorite = homeOdds < 0 && (awayOdds > 0 || homeOdds > awayOdds);
+        const awayIsFavorite = awayOdds < 0 && (homeOdds > 0 || awayOdds > homeOdds);
+
+        oddsHtml = `
+          <div class="odds-display">
+            <div class="odds-item">
+              <div class="odds-team">${awayTeam} (Away)</div>
+              <div class="odds-value ${awayIsFavorite ? 'favorite' : ''}">${awayOdds > 0 ? '+' : ''}${awayOdds}</div>
+            </div>
+            <div class="odds-item">
+              <div style="font-size: 1.2rem; color: #666;">Money Line</div>
+            </div>
+            <div class="odds-item">
+              <div class="odds-team">${homeTeam} (Home)</div>
+              <div class="odds-value ${homeIsFavorite ? 'favorite' : ''}">${homeOdds > 0 ? '+' : ''}${homeOdds}</div>
+            </div>
+          </div>
+        `;
+      }
 
       const previewHtml = `
-        <div class="odds-display">
-          <div class="odds-item">
-            <div class="odds-team">${awayTeam} (Away)</div>
-            <div class="odds-value ${awayIsFavorite ? 'favorite' : ''}">${awayOdds > 0 ? '+' : ''}${awayOdds}</div>
-          </div>
-          <div class="odds-item">
-            <div style="font-size: 1.2rem; color: #666;">Money Line</div>
-          </div>
-          <div class="odds-item">
-            <div class="odds-team">${homeTeam} (Home)</div>
-            <div class="odds-value ${homeIsFavorite ? 'favorite' : ''}">${homeOdds > 0 ? '+' : ''}${homeOdds}</div>
-          </div>
-        </div>
+        ${oddsHtml}
         <div class="preview-text">
           ${preview.preview}
         </div>
       `;
 
       document.getElementById('petersPreviewContent').innerHTML = previewHtml;
+    }
+
+    // Helper function to normalize dates for comparison
+    function formatDateForComparison(dateStr) {
+      if (!dateStr) return '';
+      
+      // Handle different date formats (M/D/YYYY, MM/DD/YYYY, YYYY-MM-DD, etc.)
+      const date = new Date(dateStr);
+      if (isNaN(date.getTime())) return dateStr;
+      
+      // Return in M/D/YYYY format for comparison
+      return `${date.getMonth() + 1}/${date.getDate()}/${date.getFullYear()}`;
     }
 
     function calculateTeamRecord(teamName, games) {
