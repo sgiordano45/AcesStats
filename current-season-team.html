@@ -1,0 +1,790 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Current Season Team - Aces Stats</title>
+<style>
+  body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    margin: 0;
+    padding: 0;
+    background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+    min-height: 100vh;
+    line-height: 1.6;
+  }
+  
+  .page-container {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 2rem;
+  }
+  
+  .team-header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 3rem 2rem;
+    border-radius: 12px;
+    margin-bottom: 2rem;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    display: flex;
+    align-items: center;
+    gap: 2rem;
+    position: relative;
+    overflow: hidden;
+  }
+  
+  .team-header::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: linear-gradient(90deg, #ffd700 0%, #ffed4e 100%);
+  }
+  
+  .team-logo {
+    height: 120px;
+    max-width: 120px;
+    object-fit: contain;
+    border: 4px solid rgba(255,255,255,0.3);
+    border-radius: 12px;
+    background: rgba(255,255,255,0.1);
+    padding: 1rem;
+    display: none;
+  }
+  
+  .team-logo.loaded {
+    display: block;
+  }
+  
+  .team-info {
+    flex: 1;
+  }
+  
+  .team-header h1 {
+    margin: 0;
+    font-size: 2.5rem;
+    font-weight: bold;
+    text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+  }
+  
+  .season-info {
+    font-size: 1.1rem;
+    opacity: 0.9;
+    margin: 1rem 0 0 0;
+  }
+
+  .quick-stats {
+    display: flex;
+    gap: 2rem;
+    margin-top: 1rem;
+  }
+
+  .quick-stat {
+    text-align: center;
+  }
+
+  .quick-stat-value {
+    font-size: 1.8rem;
+    font-weight: bold;
+    display: block;
+  }
+
+  .quick-stat-label {
+    font-size: 0.9rem;
+    opacity: 0.8;
+  }
+  
+  .back-nav {
+    background: white;
+    padding: 1rem;
+    border-radius: 8px;
+    margin-bottom: 2rem;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.07);
+    border: 1px solid #e1e5e9;
+  }
+  
+  .back-nav a {
+    padding: 0.5rem 1rem;
+    border: 2px solid #667eea;
+    background: white;
+    color: #667eea;
+    text-decoration: none;
+    border-radius: 6px;
+    font-weight: 600;
+    margin-right: 1rem;
+    transition: all 0.3s ease;
+    display: inline-block;
+  }
+  
+  .back-nav a:hover {
+    background: #667eea;
+    color: white;
+    transform: translateY(-2px);
+  }
+
+  .section {
+    background: white;
+    border-radius: 12px;
+    margin-bottom: 2rem;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.07);
+    overflow: hidden;
+    border: 1px solid #e1e5e9;
+  }
+
+  .section-header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 1.5rem 2rem;
+    font-size: 1.4rem;
+    font-weight: bold;
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+  }
+
+  .section-content {
+    padding: 2rem;
+  }
+
+  .roster-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 1rem;
+  }
+
+  .player-card {
+    background: #f8f9fa;
+    border-radius: 8px;
+    padding: 1rem;
+    text-align: center;
+    border-left: 4px solid #667eea;
+    transition: all 0.3s ease;
+  }
+
+  .player-card:hover {
+    background: #e9ecef;
+    transform: translateY(-2px);
+  }
+
+  .player-name {
+    font-weight: bold;
+    margin-bottom: 0.5rem;
+  }
+
+  .player-stats {
+    font-size: 0.85rem;
+    color: #666;
+  }
+
+  .stats-table, .schedule-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 1rem;
+  }
+
+  .stats-table th, .schedule-table th,
+  .stats-table td, .schedule-table td {
+    padding: 12px 8px;
+    text-align: left;
+    border-bottom: 1px solid #eee;
+  }
+
+  .stats-table th, .schedule-table th {
+    background-color: #f8f9fa;
+    font-weight: bold;
+    color: #333;
+    text-align: center;
+    font-size: 0.9rem;
+  }
+
+  .stats-table tr:nth-child(even), 
+  .schedule-table tr:nth-child(even) {
+    background-color: #fafafa;
+  }
+
+  .stats-table tr:hover, 
+  .schedule-table tr:hover {
+    background-color: #f0f0f0;
+  }
+
+  .player-link {
+    color: #667eea;
+    text-decoration: none;
+    font-weight: 600;
+  }
+
+  .player-link:hover {
+    text-decoration: underline;
+  }
+
+  .upcoming-game {
+    background-color: #fff3cd !important;
+  }
+
+  .completed-game {
+    opacity: 0.8;
+  }
+
+  .win-result {
+    color: #28a745;
+    font-weight: bold;
+  }
+
+  .loss-result {
+    color: #dc3545;
+    font-weight: bold;
+  }
+
+  .tie-result {
+    color: #6c757d;
+    font-weight: bold;
+  }
+
+  .loading {
+    text-align: center;
+    padding: 3rem;
+    color: #666;
+    font-style: italic;
+  }
+
+  .no-data {
+    text-align: center;
+    padding: 2rem;
+    color: #666;
+  }
+
+  .table-container {
+    max-height: 500px;
+    overflow-y: auto;
+    border: 1px solid #eee;
+    border-radius: 8px;
+  }
+
+  .summary-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 1rem;
+    margin-bottom: 2rem;
+  }
+
+  .stat-card {
+    background: #f8f9fa;
+    border-radius: 8px;
+    padding: 1.5rem 1rem;
+    text-align: center;
+    border-left: 4px solid #667eea;
+  }
+
+  .stat-value {
+    font-size: 1.8rem;
+    font-weight: bold;
+    color: #333;
+    display: block;
+    margin-bottom: 0.5rem;
+  }
+
+  .stat-label {
+    font-size: 0.9rem;
+    color: #666;
+  }
+
+  @media (max-width: 768px) {
+    .page-container {
+      padding: 1rem;
+    }
+    
+    .team-header {
+      flex-direction: column;
+      text-align: center;
+      padding: 2rem 1rem;
+    }
+    
+    .team-header h1 {
+      font-size: 2rem;
+    }
+
+    .quick-stats {
+      justify-content: center;
+    }
+    
+    .roster-grid {
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    }
+
+    .stats-table th,
+    .stats-table td,
+    .schedule-table th,
+    .schedule-table td {
+      padding: 8px 4px;
+      font-size: 0.8rem;
+    }
+  }
+</style>
+</head>
+<body>
+<div class="page-container">
+  <div class="back-nav">
+    <a href="current-season.html">← Current Season</a>
+    <a href="index.html">Home</a>
+    <a href="teams.html">All Teams</a>
+    <a href="team.html" id="allTimeTeamLink">All-Time Stats</a>
+  </div>
+
+  <div class="team-header">
+    <img id="team-logo" class="team-logo" src="" alt="" onerror="this.style.display='none';">
+    
+    <div class="team-info">
+      <h1><span id="team-name">Loading...</span></h1>
+      <p class="season-info">2025 Fall Season Performance</p>
+      <div class="quick-stats">
+        <div class="quick-stat">
+          <span class="quick-stat-value" id="team-record">--</span>
+          <span class="quick-stat-label">Record</span>
+        </div>
+        <div class="quick-stat">
+          <span class="quick-stat-value" id="team-standing">--</span>
+          <span class="quick-stat-label">Standing</span>
+        </div>
+        <div class="quick-stat">
+          <span class="quick-stat-value" id="games-remaining">--</span>
+          <span class="quick-stat-label">Games Left</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Team Summary Stats -->
+  <div class="section">
+    <div class="section-header">
+      📊 Season Summary
+    </div>
+    <div class="section-content">
+      <div class="summary-stats" id="summary-stats">
+        <div class="loading">Loading team statistics...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Current Roster -->
+  <div class="section">
+    <div class="section-header">
+      👥 Current Roster
+    </div>
+    <div class="section-content">
+      <div class="roster-grid" id="roster-grid">
+        <div class="loading">Loading roster...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Player Stats -->
+  <div class="section">
+    <div class="section-header">
+      📈 Player Statistics
+    </div>
+    <div class="section-content">
+      <div class="table-container">
+        <table class="stats-table" id="player-stats-table">
+          <thead>
+            <tr>
+              <th>Player</th>
+              <th>G</th>
+              <th>AB</th>
+              <th>H</th>
+              <th>R</th>
+              <th>BB</th>
+              <th>BA</th>
+              <th>OBP</th>
+              <th>AcesBPI</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td colspan="9" class="loading">Loading player stats...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Team Schedule -->
+  <div class="section">
+    <div class="section-header">
+      📅 Season Schedule & Results
+    </div>
+    <div class="section-content">
+      <div class="table-container">
+        <table class="schedule-table" id="schedule-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Opponent</th>
+              <th>H/A</th>
+              <th>Score</th>
+              <th>Result</th>
+              <th>Type</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td colspan="6" class="loading">Loading schedule...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// Global variables
+let teamName = "";
+let allGames = [];
+let playerData = [];
+let pitchingData = [];
+const currentSeason = "Fall";
+const currentYear = "2025";
+const today = new Date();
+
+// Get team name from URL
+const params = new URLSearchParams(window.location.search);
+teamName = params.get("team");
+
+if (!teamName) {
+  document.body.innerHTML = '<div class="page-container"><h1>Error: Team not specified</h1><p><a href="current-season.html">Return to current season</a></p></div>';
+} else {
+  loadTeamData();
+}
+
+async function loadTeamData() {
+  try {
+    const [gamesResponse, playerResponse, pitchingResponse] = await Promise.all([
+      fetch('games.json'),
+      fetch('data.json').catch(() => ({ ok: false })),
+      fetch('pitching.json').catch(() => ({ ok: false }))
+    ]);
+    
+    if (!gamesResponse.ok) throw new Error('Failed to load games data');
+    
+    allGames = await gamesResponse.json();
+    
+    if (playerResponse.ok) {
+      playerData = await playerResponse.json();
+    } else {
+      playerData = [];
+    }
+    
+    if (pitchingResponse.ok) {
+      pitchingData = await pitchingResponse.json();
+    } else {
+      pitchingData = [];
+    }
+    
+    // Filter for current season
+    const seasonGames = allGames.filter(g => 
+      g.year === currentYear && g.season === currentSeason
+    );
+
+    const seasonPlayerData = playerData.filter(p =>
+      p.year === currentYear && p.season === currentSeason && p.sub === "No" && p.team === teamName
+    );
+
+    const seasonPitchingData = pitchingData.filter(p =>
+      p.year === currentYear && p.season === currentSeason && p.team === teamName
+    );
+
+    initializePage(seasonGames, seasonPlayerData, seasonPitchingData);
+
+  } catch (error) {
+    console.error('Error loading team data:', error);
+    document.body.innerHTML = `
+      <div class="page-container">
+        <h1>Error loading team data</h1>
+        <p>Could not load statistics. Please try again later.</p>
+        <p><a href="current-season.html">Return to current season</a></p>
+      </div>
+    `;
+  }
+}
+
+function parseGameDate(dateStr) {
+  return new Date(dateStr);
+}
+
+function initializePage(seasonGames, seasonPlayerData, seasonPitchingData) {
+  // Update page elements
+  document.title = `${teamName} - 2025 Fall Season`;
+  document.getElementById("team-name").textContent = teamName;
+  document.getElementById("allTimeTeamLink").href = `team.html?team=${encodeURIComponent(teamName)}`;
+  
+  // Try to load team logo
+  const logoElement = document.getElementById("team-logo");
+  logoElement.src = `logos/${teamName.toLowerCase().replace(/\s+/g, '_')}.png`;
+  logoElement.alt = `${teamName} logo`;
+  logoElement.onload = function() {
+    this.classList.add('loaded');
+  };
+
+  // Calculate team record and standings position
+  updateTeamHeader(seasonGames);
+  
+  // Update all sections
+  updateSummaryStats(seasonGames, seasonPlayerData);
+  updateRoster(seasonPlayerData);
+  updatePlayerStats(seasonPlayerData);
+  updateSchedule(seasonGames);
+}
+
+function updateTeamHeader(seasonGames) {
+  // Calculate team record
+  const teamGames = seasonGames.filter(g => 
+    (g["home team"] === teamName || g["away team"] === teamName) && 
+    g.winner && g.winner.trim() !== ""
+  );
+  
+  let wins = 0, losses = 0, ties = 0;
+  teamGames.forEach(game => {
+    if (game.winner === teamName) wins++;
+    else if (game.winner === "Tie") ties++;
+    else losses++;
+  });
+
+  const recordText = `${wins}-${losses}` + (ties > 0 ? `-${ties}` : '');
+  document.getElementById("team-record").textContent = recordText;
+
+  // Calculate remaining games
+  const upcomingGames = seasonGames.filter(g => {
+    const gameDate = parseGameDate(g.date);
+    const isFuture = gameDate >= today;
+    const noWinner = !g.winner || g.winner.trim() === "";
+    const teamInvolved = (g["home team"] === teamName || g["away team"] === teamName);
+    const isRegular = g.game_type === 'Regular';
+    
+    return isFuture && noWinner && teamInvolved && isRegular;
+  });
+
+  document.getElementById("games-remaining").textContent = upcomingGames.length;
+
+  // Calculate standings position (simplified - would need full standings calculation for exact position)
+  document.getElementById("team-standing").textContent = "TBD";
+}
+
+function updateSummaryStats(seasonGames, seasonPlayerData) {
+  // Calculate team batting stats
+  let totalGames = 0, totalAB = 0, totalHits = 0, totalRuns = 0, totalWalks = 0;
+  
+  seasonPlayerData.forEach(p => {
+    totalGames += Number(p.games) || 0;
+    totalAB += Number(p.atBats) || 0;
+    totalHits += Number(p.hits) || 0;
+    totalRuns += Number(p.runs) || 0;
+    totalWalks += Number(p.walks) || 0;
+  });
+
+  const teamBA = totalAB > 0 ? (totalHits / totalAB).toFixed(3) : '.000';
+  const teamOBP = (totalAB + totalWalks) > 0 ? ((totalHits + totalWalks) / (totalAB + totalWalks)).toFixed(3) : '.000';
+
+  // Calculate runs for/against from games
+  const teamGames = seasonGames.filter(g => 
+    (g["home team"] === teamName || g["away team"] === teamName) && 
+    g.winner && g.winner.trim() !== ""
+  );
+
+  let runsFor = 0, runsAgainst = 0;
+  teamGames.forEach(game => {
+    const homeScore = parseInt(game["home score"]) || 0;
+    const awayScore = parseInt(game["away score"]) || 0;
+    
+    if (game["home team"] === teamName) {
+      runsFor += homeScore;
+      runsAgainst += awayScore;
+    } else {
+      runsFor += awayScore;
+      runsAgainst += homeScore;
+    }
+  });
+
+  const runDiff = runsFor - runsAgainst;
+
+  const summaryHTML = `
+    <div class="stat-card">
+      <span class="stat-value">${seasonPlayerData.length}</span>
+      <div class="stat-label">Active Players</div>
+    </div>
+    <div class="stat-card">
+      <span class="stat-value">${teamBA}</span>
+      <div class="stat-label">Team BA</div>
+    </div>
+    <div class="stat-card">
+      <span class="stat-value">${teamOBP}</span>
+      <div class="stat-label">Team OBP</div>
+    </div>
+    <div class="stat-card">
+      <span class="stat-value">${runsFor}</span>
+      <div class="stat-label">Runs For</div>
+    </div>
+    <div class="stat-card">
+      <span class="stat-value">${runsAgainst}</span>
+      <div class="stat-label">Runs Against</div>
+    </div>
+    <div class="stat-card">
+      <span class="stat-value" style="color: ${runDiff >= 0 ? '#28a745' : '#dc3545'}">
+        ${runDiff >= 0 ? '+' : ''}${runDiff}
+      </span>
+      <div class="stat-label">Run Differential</div>
+    </div>
+  `;
+
+  document.getElementById("summary-stats").innerHTML = summaryHTML;
+}
+
+function updateRoster(seasonPlayerData) {
+  if (seasonPlayerData.length === 0) {
+    document.getElementById("roster-grid").innerHTML = '<div class="no-data">No players found for current season</div>';
+    return;
+  }
+
+  const rosterHTML = seasonPlayerData.map(player => {
+    const ba = (Number(player.atBats) || 0) > 0 ? 
+      ((Number(player.hits) || 0) / (Number(player.atBats) || 0)).toFixed(3) : '.000';
+    
+    return `
+      <div class="player-card">
+        <div class="player-name">
+          <a href="player.html?name=${encodeURIComponent(player.name)}" class="player-link">${player.name}</a>
+        </div>
+        <div class="player-stats">
+          ${player.games}G • ${ba} BA • ${player.runs}R
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  document.getElementById("roster-grid").innerHTML = rosterHTML;
+}
+
+function updatePlayerStats(seasonPlayerData) {
+  const tbody = document.querySelector("#player-stats-table tbody");
+  
+  if (seasonPlayerData.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="9" class="no-data">No player statistics available</td></tr>';
+    return;
+  }
+
+  // Sort by games played (desc) then by batting average
+  const sortedPlayers = [...seasonPlayerData].sort((a, b) => {
+    const gamesA = Number(a.games) || 0;
+    const gamesB = Number(b.games) || 0;
+    if (gamesB !== gamesA) return gamesB - gamesA;
+    
+    const baA = (Number(a.atBats) || 0) > 0 ? (Number(a.hits) || 0) / (Number(a.atBats) || 0) : 0;
+    const baB = (Number(b.atBats) || 0) > 0 ? (Number(b.hits) || 0) / (Number(b.atBats) || 0) : 0;
+    return baB - baA;
+  });
+
+  const statsHTML = sortedPlayers.map(player => {
+    const games = Number(player.games) || 0;
+    const atBats = Number(player.atBats) || 0;
+    const hits = Number(player.hits) || 0;
+    const runs = Number(player.runs) || 0;
+    const walks = Number(player.walks) || 0;
+    const acesBPI = player.AcesWar && player.AcesWar !== "N/A" ? Number(player.AcesWar).toFixed(2) : "N/A";
+    
+    const ba = atBats > 0 ? (hits / atBats).toFixed(3) : '.000';
+    const obp = (atBats + walks) > 0 ? ((hits + walks) / (atBats + walks)).toFixed(3) : '.000';
+
+    return `
+      <tr>
+        <td><a href="player.html?name=${encodeURIComponent(player.name)}" class="player-link">${player.name}</a></td>
+        <td style="text-align: center;">${games}</td>
+        <td style="text-align: center;">${atBats}</td>
+        <td style="text-align: center;">${hits}</td>
+        <td style="text-align: center;">${runs}</td>
+        <td style="text-align: center;">${walks}</td>
+        <td style="text-align: center; font-weight: bold;">${ba}</td>
+        <td style="text-align: center; font-weight: bold;">${obp}</td>
+        <td style="text-align: center;">${acesBPI}</td>
+      </tr>
+    `;
+  }).join('');
+
+  tbody.innerHTML = statsHTML;
+}
+
+function updateSchedule(seasonGames) {
+  const tbody = document.querySelector("#schedule-table tbody");
+  
+  // Get all team games for the season
+  const teamGames = seasonGames.filter(g => 
+    g["home team"] === teamName || g["away team"] === teamName
+  );
+
+  if (teamGames.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="6" class="no-data">No games found for current season</td></tr>';
+    return;
+  }
+
+  // Sort by date
+  const sortedGames = [...teamGames].sort((a, b) => {
+    return parseGameDate(a.date) - parseGameDate(b.date);
+  });
+
+  const scheduleHTML = sortedGames.map(game => {
+    const isHome = game["home team"] === teamName;
+    const opponent = isHome ? game["away team"] : game["home team"];
+    const homeAwayText = isHome ? "vs" : "@";
+    
+    const gameDate = parseGameDate(game.date);
+    const isPast = gameDate < today;
+    const hasResult = game.winner && game.winner.trim() !== "";
+    
+    let scoreDisplay = "-";
+    let result = "-";
+    let resultClass = "";
+    let rowClass = "";
+
+    if (hasResult && isPast) {
+      // Completed game
+      rowClass = "completed-game";
+      const homeScore = game["home score"];
+      const awayScore = game["away score"];
+      
+      if (homeScore === "W" || homeScore === "L") {
+        scoreDisplay = isHome ? homeScore : awayScore;
+      } else {
+        const teamScore = isHome ? homeScore : awayScore;
+        const oppScore = isHome ? awayScore : homeScore;
+        scoreDisplay = `${teamScore}-${oppScore}`;
+      }
+
+      if (game.winner === teamName) {
+        result = "W";
+        resultClass = "win-result";
+      } else if (game.winner === "Tie") {
+        result = "T";
+        resultClass = "tie-result";
+      } else {
+        result = "L";
+        resultClass = "loss-result";
+      }
+    } else if (!isPast) {
+      rowClass = "upcoming-game";
+    }
+
+    return `
+      <tr class="${rowClass}">
+        <td>${game.date}</td>
+        <td>${opponent}</td>
+        <td style="text-align: center;">${homeAwayText}</td>
+        <td style="text-align: center;">${scoreDisplay}</td>
+        <td style="text-align: center;" class="${resultClass}">${result}</td>
+        <td style="text-align: center;">${game.game_type}</td>
+      </tr>
+    `;
+  }).join('');
+
+  tbody.innerHTML = scheduleHTML;
+}
+</script>
+</body>
+</html>
