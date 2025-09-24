@@ -161,7 +161,7 @@
     border-radius: 50%;
     border: 3px solid #fd7e14;
     box-shadow: 0 4px 8px rgba(0,0,0,0.2);
-    padding: 4px;
+    padding: 8px;
     background-color: #fd7e14;
     overflow: hidden;
   }
@@ -561,10 +561,10 @@
     async function loadGamePreviewData() {
       try {
         const [gamesResponse, playerResponse, pitchingResponse, previewResponse] = await Promise.all([
-          fetch('games.json'),
-          fetch('data.json'),
-          fetch('pitching.json'),
-          fetch('previews.json').catch(() => ({ ok: false })) // Gracefully handle if previews.json doesn't exist yet
+          fetch('games.json', { headers: { 'Accept': 'application/json; charset=utf-8' } }),
+          fetch('data.json', { headers: { 'Accept': 'application/json; charset=utf-8' } }),
+          fetch('pitching.json', { headers: { 'Accept': 'application/json; charset=utf-8' } }),
+          fetch('previews.json', { headers: { 'Accept': 'application/json; charset=utf-8' } }).catch(() => ({ ok: false })) // Gracefully handle if previews.json doesn't exist yet
         ]);
         
         if (!gamesResponse.ok) throw new Error('Failed to load games data');
@@ -652,6 +652,22 @@
       generateHistoricalMatchups(homeTeam, awayTeam);
     }
 
+    // Helper function to fix character encoding issues
+    function cleanText(text) {
+      if (!text) return text;
+      
+      return text
+        // Fix smart/curly apostrophes and quotes
+        .replace(/['']/g, "'")  // Replace smart apostrophes with regular ones
+        .replace(/[""]/g, '"')  // Replace smart quotes with regular ones
+        // Fix any other common encoding issues
+        .replace(/â€™/g, "'")   // Another common apostrophe encoding issue
+        .replace(/â€œ/g, '"')   // Opening smart quote
+        .replace(/â€/g, '"')    // Closing smart quote
+        .replace(/â€"/g, "—")   // Em dash
+        .replace(/â€"/g, "–");  // En dash
+    }
+
     function generatePetersPreview(homeTeam, awayTeam, gameDate) {
       // Find matching preview - handle both field name formats and flexible date matching
       const preview = previewData.find(p => {
@@ -712,7 +728,7 @@
           <div class="peters-preview-main">
             ${oddsHtml}
             <div class="preview-text">
-              ${preview.preview}
+              ${cleanText(preview.preview)}
             </div>
           </div>
         </div>
