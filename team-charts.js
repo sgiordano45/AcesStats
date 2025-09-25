@@ -11,7 +11,7 @@ class TeamCharts {
         this.options = {
             width: options.width || 800,
             height: options.height || 400,
-            margin: options.margin || { top: 40, right: 40, bottom: 90, left: 60 }, // Increased bottom margin for bigger labels
+            margin: options.margin || { top: 40, right: 40, bottom: 90, left: 60 },
             colors: options.colors || ['#667eea', '#764ba2', '#f093fb', '#f5576c', '#4facfe', '#00f2fe', '#43e97b', '#38f9d7'],
             animation: options.animation !== false,
             responsive: options.responsive !== false
@@ -31,21 +31,15 @@ class TeamCharts {
         }
     }
 
-    /**
-     * Create a bar chart showing team wins
-     * @param {Array} teams - Array of team objects
-     * @param {Object} options - Chart configuration options
-     */
     createWinsChart(teams, options = {}) {
         const config = { ...this.options, ...options };
         const sortedTeams = [...teams].sort((a, b) => (b.wins || 0) - (a.wins || 0));
         
         const { chartWidth, chartHeight, margin } = this.calculateDimensions(config);
-        const maxWins = Math.max(...sortedTeams.map(t => t.wins || 0), 1); // Avoid division by zero
+        const maxWins = Math.max(...sortedTeams.map(t => t.wins || 0), 1);
         const barWidth = chartWidth / sortedTeams.length * 0.8;
         const spacing = chartWidth / sortedTeams.length * 0.2;
         
-        // Create SVG using vanilla JavaScript
         this.container.innerHTML = '';
         const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
         svg.setAttribute('width', config.width);
@@ -53,18 +47,13 @@ class TeamCharts {
         svg.style.background = 'white';
         svg.style.borderRadius = '8px';
         
-        // Create chart group
         const chartGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
         chartGroup.setAttribute('transform', `translate(${margin.left}, ${margin.top})`);
         svg.appendChild(chartGroup);
         
-        // Add axes
         this.addAxes(chartGroup, chartWidth, chartHeight);
-        
-        // Add Y-axis labels
         this.addYAxisLabels(chartGroup, chartHeight, maxWins, 'wins');
         
-        // Create bars
         sortedTeams.forEach((team, index) => {
             const x = index * (barWidth + spacing) + spacing/2;
             const barHeight = ((team.wins || 0) / maxWins) * chartHeight;
@@ -79,7 +68,6 @@ class TeamCharts {
             bar.style.cursor = 'pointer';
             bar.style.transition = 'opacity 0.3s ease';
             
-            // Animation
             if (config.animation) {
                 bar.setAttribute('y', chartHeight);
                 bar.setAttribute('height', 0);
@@ -93,7 +81,6 @@ class TeamCharts {
                 bar.setAttribute('height', barHeight);
             }
             
-            // Add event listeners
             bar.addEventListener('mouseover', (event) => {
                 this.showTooltip(event, team.name, `${team.wins || 0} wins`);
                 bar.style.opacity = '0.8';
@@ -106,31 +93,22 @@ class TeamCharts {
             chartGroup.appendChild(bar);
         });
         
-        // Add team labels
         this.addTeamLabels(chartGroup, sortedTeams, barWidth, spacing, chartHeight);
-        
-        // Add axis labels
         this.addAxisLabels(chartGroup, chartWidth, chartHeight, 'Teams', 'Wins');
         
         this.container.appendChild(svg);
         this.currentChart = 'wins';
     }
 
-    /**
-     * Create a batting average chart
-     * @param {Array} teams - Array of team objects
-     * @param {Object} options - Chart configuration options
-     */
     createBattingChart(teams, options = {}) {
         const config = { ...this.options, ...options };
         const sortedTeams = [...teams].sort((a, b) => (b.batting_avg || 0) - (a.batting_avg || 0));
         
         const { chartWidth, chartHeight, margin } = this.calculateDimensions(config);
-        const maxAvg = Math.max(...sortedTeams.map(t => t.batting_avg || 0), 0.1); // Avoid division by zero
+        const maxAvg = Math.max(...sortedTeams.map(t => t.batting_avg || 0), 0.1);
         const barWidth = chartWidth / sortedTeams.length * 0.8;
         const spacing = chartWidth / sortedTeams.length * 0.2;
         
-        // Create SVG
         this.container.innerHTML = '';
         const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
         svg.setAttribute('width', config.width);
@@ -191,11 +169,6 @@ class TeamCharts {
         this.currentChart = 'batting';
     }
 
-    /**
-     * Create a runs scored chart
-     * @param {Array} teams - Array of team objects
-     * @param {Object} options - Chart configuration options
-     */
     createRunsChart(teams, options = {}) {
         const config = { ...this.options, ...options };
         const sortedTeams = [...teams].sort((a, b) => (b.runs || 0) - (a.runs || 0));
@@ -265,11 +238,6 @@ class TeamCharts {
         this.currentChart = 'runs';
     }
 
-    /**
-     * Create a win percentage chart
-     * @param {Array} teams - Array of team objects
-     * @param {Object} options - Chart configuration options
-     */
     createStandingsChart(teams, options = {}) {
         const config = { ...this.options, ...options };
         const teamsWithPct = teams.map(team => ({
@@ -341,17 +309,9 @@ class TeamCharts {
         this.currentChart = 'standings';
     }
 
-    /**
-     * Create a chart showing player statistics for a specific team
-     * @param {Array} players - Array of player objects
-     * @param {string} statField - Field to chart (battingAvg, obp, runs, acesBPI)
-     * @param {string} chartTitle - Title for the chart
-     * @param {Object} options - Chart configuration options
-     */
     createPlayerChart(players, statField, chartTitle, options = {}) {
         const config = { ...this.options, ...options };
         
-        // Filter out players with no data for this stat and sort by stat value
         const validPlayers = players.filter(p => (p[statField] || 0) > 0);
         const sortedPlayers = [...validPlayers].sort((a, b) => (b[statField] || 0) - (a[statField] || 0));
         
@@ -365,7 +325,6 @@ class TeamCharts {
         const barWidth = chartWidth / sortedPlayers.length * 0.8;
         const spacing = chartWidth / sortedPlayers.length * 0.2;
         
-        // Create SVG
         this.container.innerHTML = '';
         const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
         svg.setAttribute('width', config.width);
@@ -427,7 +386,136 @@ class TeamCharts {
         this.currentChart = 'player-' + statField;
     }
 
-    // Utility Methods
+    createPlayerRadialChart(player, playerName, viewType = 'season', options = {}) {
+        const config = { ...this.options, ...options };
+        
+        const stats = [
+            { key: 'battingAvg', label: 'Batting Avg', max: 1.0, format: (v) => `.${Math.round(v * 1000).toString().padStart(3, '0')}` },
+            { key: 'obp', label: 'OBP', max: 1.0, format: (v) => `.${Math.round(v * 1000).toString().padStart(3, '0')}` },
+            { key: 'runs', label: 'Runs', max: Math.max(player.runs || 0, 50), format: (v) => Math.round(v).toString() },
+            { key: 'acesBPI', label: 'AcesBPI', max: Math.max(player.acesBPI || 0, 100), format: (v) => v.toFixed(1) },
+            { key: 'games', label: 'Games', max: Math.max(player.games || 0, 25), format: (v) => Math.round(v).toString() }
+        ];
+        
+        const center = { x: config.width / 2, y: config.height / 2 };
+        const radius = Math.min(config.width, config.height) / 2 - 80;
+        const angleStep = (2 * Math.PI) / stats.length;
+        
+        this.container.innerHTML = '';
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.setAttribute('width', config.width);
+        svg.setAttribute('height', config.height);
+        svg.style.background = 'white';
+        svg.style.borderRadius = '8px';
+        
+        const chartGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        svg.appendChild(chartGroup);
+        
+        const gridLevels = 5;
+        for (let i = 1; i <= gridLevels; i++) {
+            const gridRadius = (radius * i) / gridLevels;
+            const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            circle.setAttribute('cx', center.x);
+            circle.setAttribute('cy', center.y);
+            circle.setAttribute('r', gridRadius);
+            circle.setAttribute('fill', 'none');
+            circle.setAttribute('stroke', '#e1e5e9');
+            circle.setAttribute('stroke-width', 1);
+            chartGroup.appendChild(circle);
+        }
+        
+        stats.forEach((stat, index) => {
+            const angle = index * angleStep - Math.PI / 2;
+            const x1 = center.x;
+            const y1 = center.y;
+            const x2 = center.x + radius * Math.cos(angle);
+            const y2 = center.y + radius * Math.sin(angle);
+            
+            const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            line.setAttribute('x1', x1);
+            line.setAttribute('y1', y1);
+            line.setAttribute('x2', x2);
+            line.setAttribute('y2', y2);
+            line.setAttribute('stroke', '#e1e5e9');
+            line.setAttribute('stroke-width', 1);
+            chartGroup.appendChild(line);
+            
+            const labelDistance = radius + 20;
+            const labelX = center.x + labelDistance * Math.cos(angle);
+            const labelY = center.y + labelDistance * Math.sin(angle);
+            
+            const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+            label.setAttribute('x', labelX);
+            label.setAttribute('y', labelY);
+            label.setAttribute('text-anchor', 'middle');
+            label.setAttribute('dominant-baseline', 'middle');
+            label.setAttribute('font-size', '12px');
+            label.setAttribute('font-weight', '600');
+            label.setAttribute('fill', '#333');
+            label.textContent = stat.label;
+            chartGroup.appendChild(label);
+        });
+        
+        const dataPoints = stats.map((stat, index) => {
+            const value = player[stat.key] || 0;
+            const normalizedValue = Math.min(value / stat.max, 1);
+            const angle = index * angleStep - Math.PI / 2;
+            const distance = radius * normalizedValue;
+            
+            return {
+                x: center.x + distance * Math.cos(angle),
+                y: center.y + distance * Math.sin(angle),
+                value: value,
+                stat: stat
+            };
+        });
+        
+        const pathData = dataPoints.map((point, index) => {
+            return `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`;
+        }).join(' ') + ' Z';
+        
+        const polygon = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        polygon.setAttribute('d', pathData);
+        polygon.setAttribute('fill', 'rgba(102, 126, 234, 0.3)');
+        polygon.setAttribute('stroke', '#667eea');
+        polygon.setAttribute('stroke-width', 2);
+        chartGroup.appendChild(polygon);
+        
+        dataPoints.forEach((point, index) => {
+            const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            circle.setAttribute('cx', point.x);
+            circle.setAttribute('cy', point.y);
+            circle.setAttribute('r', 4);
+            circle.setAttribute('fill', '#667eea');
+            circle.setAttribute('stroke', 'white');
+            circle.setAttribute('stroke-width', 2);
+            circle.style.cursor = 'pointer';
+            
+            circle.addEventListener('mouseover', (event) => {
+                const formattedValue = point.stat.format(point.value);
+                this.showTooltip(event, point.stat.label, formattedValue);
+            });
+            circle.addEventListener('mouseout', () => {
+                this.hideTooltip();
+            });
+            
+            chartGroup.appendChild(circle);
+        });
+        
+        const title = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        title.setAttribute('x', center.x);
+        title.setAttribute('y', 30);
+        title.setAttribute('text-anchor', 'middle');
+        title.setAttribute('font-size', '16px');
+        title.setAttribute('font-weight', '700');
+        title.setAttribute('fill', '#333');
+        title.textContent = `${playerName} - ${viewType === 'career' ? 'Career' : 'Season'} Stats`;
+        chartGroup.appendChild(title);
+        
+        this.container.appendChild(svg);
+        this.currentChart = 'radial-' + viewType;
+    }
+
     calculateDimensions(config) {
         return {
             chartWidth: config.width - config.margin.left - config.margin.right,
@@ -437,7 +525,6 @@ class TeamCharts {
     }
 
     addAxes(chartGroup, chartWidth, chartHeight) {
-        // Y-axis
         const yAxis = document.createElementNS('http://www.w3.org/2000/svg', 'line');
         yAxis.setAttribute('x1', 0);
         yAxis.setAttribute('y1', 0);
@@ -447,7 +534,6 @@ class TeamCharts {
         yAxis.setAttribute('stroke-width', 2);
         chartGroup.appendChild(yAxis);
         
-        // X-axis
         const xAxis = document.createElementNS('http://www.w3.org/2000/svg', 'line');
         xAxis.setAttribute('x1', 0);
         xAxis.setAttribute('y1', chartHeight);
@@ -513,7 +599,6 @@ class TeamCharts {
         switch(statField) {
             case 'battingAvg':
             case 'obp':
-                // For percentages, show increments of 0.05 (50 points)
                 for (let i = 0; i <= Math.ceil(maxValue / 0.05); i++) {
                     const value = i * 0.05;
                     if (value <= maxValue + 0.05) {
@@ -525,14 +610,12 @@ class TeamCharts {
                 }
                 break;
             case 'runs':
-                // For runs, show increments based on max value
                 const runIncrement = Math.max(Math.ceil(maxValue / 10), 1);
                 for (let i = 0; i <= maxValue; i += runIncrement) {
                     labels.push({ value: i, text: i.toString() });
                 }
                 break;
             case 'acesBPI':
-                // For AcesBPI, show increments of 0.5
                 const bpiIncrement = Math.max(Math.ceil(maxValue / 10), 0.5);
                 for (let i = 0; i <= maxValue; i += bpiIncrement) {
                     labels.push({ value: i, text: i.toFixed(1) });
@@ -568,8 +651,8 @@ class TeamCharts {
             text.setAttribute('x', index * (barWidth + spacing) + spacing/2 + barWidth/2);
             text.setAttribute('y', chartHeight + 25);
             text.setAttribute('text-anchor', 'middle');
-            text.setAttribute('font-size', '14px'); // Increased from 12px
-            text.setAttribute('font-weight', '600'); // Make text bold
+            text.setAttribute('font-size', '14px');
+            text.setAttribute('font-weight', '600');
             text.setAttribute('fill', this.getTeamColor(team.name));
             text.textContent = (team.name || '').replace('Aces ', '');
             chartGroup.appendChild(text);
@@ -584,12 +667,11 @@ class TeamCharts {
             const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
             text.setAttribute('x', x);
             text.setAttribute('y', y);
-            text.setAttribute('text-anchor', 'start'); // Changed from 'middle' to 'start' for angled text
+            text.setAttribute('text-anchor', 'start');
             text.setAttribute('font-size', '12px');
             text.setAttribute('font-weight', '600');
             text.setAttribute('fill', '#666');
-            text.setAttribute('transform', `rotate(45, ${x}, ${y})`); // Rotate 45 degrees around the text position
-            // Use last name only to save space
+            text.setAttribute('transform', `rotate(45, ${x}, ${y})`);
             const lastName = player.name.split(' ').pop();
             text.textContent = lastName;
             chartGroup.appendChild(text);
@@ -597,10 +679,8 @@ class TeamCharts {
     }
 
     getTeamColor(teamName) {
-        // Extract team color from team name (remove 'Aces' prefix if present)
         const cleanName = teamName.replace('Aces ', '').toLowerCase().trim();
         
-        // Team color mapping
         const teamColors = {
             'black': '#1a1a1a',
             'green': '#2d7d32', 
@@ -615,14 +695,13 @@ class TeamCharts {
             'army': '#654321'
         };
         
-        return teamColors[cleanName] || '#666'; // Default to gray if team not found
+        return teamColors[cleanName] || '#666';
     }
 
     addAxisLabels(chartGroup, chartWidth, chartHeight, xLabel, yLabel) {
-        // X-axis label (moved down to accommodate bigger team names)
         const xLabelElement = document.createElementNS('http://www.w3.org/2000/svg', 'text');
         xLabelElement.setAttribute('x', chartWidth/2);
-        xLabelElement.setAttribute('y', chartHeight + 70); // Increased from 60 to 70
+        xLabelElement.setAttribute('y', chartHeight + 70);
         xLabelElement.setAttribute('text-anchor', 'middle');
         xLabelElement.setAttribute('font-size', '14px');
         xLabelElement.setAttribute('font-weight', '600');
@@ -630,7 +709,6 @@ class TeamCharts {
         xLabelElement.textContent = xLabel;
         chartGroup.appendChild(xLabelElement);
         
-        // Y-axis label
         const yLabelElement = document.createElementNS('http://www.w3.org/2000/svg', 'text');
         yLabelElement.setAttribute('x', -30);
         yLabelElement.setAttribute('y', chartHeight/2);
@@ -700,7 +778,6 @@ class TeamCharts {
             clearTimeout(resizeTimer);
             resizeTimer = setTimeout(() => {
                 if (this.currentChart) {
-                    // Re-render current chart
                     const teams = this.data ? this.data.teams || [] : [];
                     if (teams.length > 0) {
                         this.updateChart(teams, this.currentChart);
@@ -740,154 +817,6 @@ class TeamCharts {
         }
     }
 
-    /**
-     * Create a radial/radar chart showing multiple stats for a player
-     * @param {Object} player - Player object with stats
-     * @param {string} playerName - Name of the player
-     * @param {string} viewType - 'season' or 'career'
-     * @param {Object} options - Chart configuration options
-     */
-    createPlayerRadialChart(player, playerName, viewType = 'season', options = {}) {
-        const config = { ...this.options, ...options };
-        
-        // Define the stats to display on the radar chart
-        const stats = [
-            { key: 'battingAvg', label: 'Batting Avg', max: 1.0, format: (v) => `.${Math.round(v * 1000).toString().padStart(3, '0')}` },
-            { key: 'obp', label: 'OBP', max: 1.0, format: (v) => `.${Math.round(v * 1000).toString().padStart(3, '0')}` },
-            { key: 'runs', label: 'Runs', max: Math.max(player.runs || 0, 50), format: (v) => Math.round(v).toString() },
-            { key: 'acesBPI', label: 'AcesBPI', max: Math.max(player.acesBPI || 0, 100), format: (v) => v.toFixed(1) },
-            { key: 'games', label: 'Games', max: Math.max(player.games || 0, 25), format: (v) => Math.round(v).toString() }
-        ];
-        
-        const center = { x: config.width / 2, y: config.height / 2 };
-        const radius = Math.min(config.width, config.height) / 2 - 80;
-        const angleStep = (2 * Math.PI) / stats.length;
-        
-        // Create SVG
-        this.container.innerHTML = '';
-        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-        svg.setAttribute('width', config.width);
-        svg.setAttribute('height', config.height);
-        svg.style.background = 'white';
-        svg.style.borderRadius = '8px';
-        
-        const chartGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-        svg.appendChild(chartGroup);
-        
-        // Draw concentric circles (grid lines)
-        const gridLevels = 5;
-        for (let i = 1; i <= gridLevels; i++) {
-            const gridRadius = (radius * i) / gridLevels;
-            const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-            circle.setAttribute('cx', center.x);
-            circle.setAttribute('cy', center.y);
-            circle.setAttribute('r', gridRadius);
-            circle.setAttribute('fill', 'none');
-            circle.setAttribute('stroke', '#e1e5e9');
-            circle.setAttribute('stroke-width', 1);
-            chartGroup.appendChild(circle);
-        }
-        
-        // Draw axis lines and labels
-        stats.forEach((stat, index) => {
-            const angle = index * angleStep - Math.PI / 2; // Start from top
-            const x1 = center.x;
-            const y1 = center.y;
-            const x2 = center.x + radius * Math.cos(angle);
-            const y2 = center.y + radius * Math.sin(angle);
-            
-            // Axis line
-            const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-            line.setAttribute('x1', x1);
-            line.setAttribute('y1', y1);
-            line.setAttribute('x2', x2);
-            line.setAttribute('y2', y2);
-            line.setAttribute('stroke', '#e1e5e9');
-            line.setAttribute('stroke-width', 1);
-            chartGroup.appendChild(line);
-            
-            // Label
-            const labelDistance = radius + 20;
-            const labelX = center.x + labelDistance * Math.cos(angle);
-            const labelY = center.y + labelDistance * Math.sin(angle);
-            
-            const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-            label.setAttribute('x', labelX);
-            label.setAttribute('y', labelY);
-            label.setAttribute('text-anchor', 'middle');
-            label.setAttribute('dominant-baseline', 'middle');
-            label.setAttribute('font-size', '12px');
-            label.setAttribute('font-weight', '600');
-            label.setAttribute('fill', '#333');
-            label.textContent = stat.label;
-            chartGroup.appendChild(label);
-        });
-        
-        // Calculate player's data points
-        const dataPoints = stats.map((stat, index) => {
-            const value = player[stat.key] || 0;
-            const normalizedValue = Math.min(value / stat.max, 1); // Normalize to 0-1
-            const angle = index * angleStep - Math.PI / 2;
-            const distance = radius * normalizedValue;
-            
-            return {
-                x: center.x + distance * Math.cos(angle),
-                y: center.y + distance * Math.sin(angle),
-                value: value,
-                stat: stat
-            };
-        });
-        
-        // Draw the player's data polygon
-        const pathData = dataPoints.map((point, index) => {
-            return `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`;
-        }).join(' ') + ' Z'; // Close the path
-        
-        const polygon = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-        polygon.setAttribute('d', pathData);
-        polygon.setAttribute('fill', 'rgba(102, 126, 234, 0.3)'); // Semi-transparent fill
-        polygon.setAttribute('stroke', '#667eea');
-        polygon.setAttribute('stroke-width', 2);
-        chartGroup.appendChild(polygon);
-        
-        // Draw data points
-        dataPoints.forEach((point, index) => {
-            const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-            circle.setAttribute('cx', point.x);
-            circle.setAttribute('cy', point.y);
-            circle.setAttribute('r', 4);
-            circle.setAttribute('fill', '#667eea');
-            circle.setAttribute('stroke', 'white');
-            circle.setAttribute('stroke-width', 2);
-            circle.style.cursor = 'pointer';
-            
-            // Add hover tooltip
-            circle.addEventListener('mouseover', (event) => {
-                const formattedValue = point.stat.format(point.value);
-                this.showTooltip(event, point.stat.label, formattedValue);
-            });
-            circle.addEventListener('mouseout', () => {
-                this.hideTooltip();
-            });
-            
-            chartGroup.appendChild(circle);
-        });
-        
-        // Add title
-        const title = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-        title.setAttribute('x', center.x);
-        title.setAttribute('y', 30);
-        title.setAttribute('text-anchor', 'middle');
-        title.setAttribute('font-size', '16px');
-        title.setAttribute('font-weight', '700');
-        title.setAttribute('fill', '#333');
-        title.textContent = `${playerName} - ${viewType === 'career' ? 'Career' : 'Season'} Stats`;
-        chartGroup.appendChild(title);
-        
-        this.container.appendChild(svg);
-        this.currentChart = 'radial-' + viewType;
-    }
-
     destroy() {
         if (this.tooltip && this.tooltip.parentNode) {
             this.tooltip.parentNode.removeChild(this.tooltip);
@@ -898,14 +827,6 @@ class TeamCharts {
     }
 }
 
-// Global exposure for script tag usage
-if (typeof window !== 'undefined') {
-    window.TeamCharts = TeamCharts;
-}
-    }
-}
-
-// Global exposure for script tag usage
 if (typeof window !== 'undefined') {
     window.TeamCharts = TeamCharts;
 }
