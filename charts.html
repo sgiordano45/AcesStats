@@ -323,18 +323,25 @@
             // Clear existing options except "All Teams"
             teamSelect.innerHTML = '<option value="all">All Teams</option>';
             
-            // Add options for each team found (prioritize current Aces teams)
-            const acesTeams = availableTeams.filter(team => team.startsWith('Aces '));
-            const otherTeams = availableTeams.filter(team => !team.startsWith('Aces '));
+            // Define the 11 Aces teams we want to show
+            const acesTeamNames = [
+                'Black', 'Blue', 'Green', 'Red', 'White', 'Orange', 
+                'Silver', 'Purple', 'Gold', 'Carolina', 'Army'
+            ];
             
-            [...acesTeams, ...otherTeams].forEach(teamName => {
+            // Filter to only show the 11 Aces teams that have data
+            const acesTeamsWithData = acesTeamNames.filter(teamName => 
+                availableTeams.includes(teamName)
+            );
+            
+            acesTeamsWithData.forEach(teamName => {
                 const option = document.createElement('option');
-                option.value = teamName;
-                option.textContent = teamName;
+                option.value = teamName; // Use exact team name as it appears in data
+                option.textContent = 'Aces ' + teamName; // Display with "Aces" prefix
                 teamSelect.appendChild(option);
             });
             
-            console.log('Updated team selector with:', availableTeams.length, 'teams');
+            console.log('Updated team selector with Aces teams:', acesTeamsWithData);
         }
 
         function getPlayersForTeam(season, teamName) {
@@ -397,6 +404,14 @@
                 }
                 
                 // Initialize the TeamCharts instance
+                console.log('Checking if TeamCharts class is available...');
+                if (typeof TeamCharts === 'undefined') {
+                    console.error('TeamCharts class is not available - team-charts.js may not have loaded properly');
+                    showError('Chart library not loaded. Please check that team-charts.js is available.');
+                    return;
+                }
+                
+                console.log('TeamCharts class found, initializing...');
                 teamCharts = new TeamCharts('team-charts-container', {
                     width: 800,
                     height: 400,
@@ -405,11 +420,19 @@
                 });
                 
                 // Verify TeamCharts initialized correctly
-                if (!teamCharts || !teamCharts.container) {
-                    console.error('TeamCharts failed to initialize properly');
+                if (!teamCharts) {
+                    console.error('TeamCharts instance is null/undefined');
+                    showError('Failed to create TeamCharts instance');
+                    return;
+                }
+                
+                if (!teamCharts.container) {
+                    console.error('TeamCharts container is null/undefined');
                     showError('Failed to initialize chart container');
                     return;
                 }
+                
+                console.log('TeamCharts initialized successfully:', teamCharts);
                 
                 // Create initial chart
                 const teams = getTeamsForSeason(currentSeason);
@@ -667,7 +690,7 @@
             
             // Update the season selector and team selector
             updateSeasonSelector(sortedSeasons);
-            updateTeamSelector(Array.from(teamsFound).sort());
+                                updateTeamSelector(Array.from(teamsFound).sort());
             
             return result;
         }
@@ -741,17 +764,32 @@
                 }
 
                 try {
+                    console.log('Attempting to create chart with type:', chartType);
+                    console.log('Available methods:', Object.getOwnPropertyNames(Object.getPrototypeOf(teamCharts)));
+                    
                     switch(chartType) {
                         case 'wins':
+                            if (typeof teamCharts.createWinsChart !== 'function') {
+                                throw new Error('createWinsChart method not found');
+                            }
                             teamCharts.createWinsChart(teams);
                             break;
                         case 'batting':
+                            if (typeof teamCharts.createBattingChart !== 'function') {
+                                throw new Error('createBattingChart method not found');
+                            }
                             teamCharts.createBattingChart(teams);
                             break;
                         case 'runs':
+                            if (typeof teamCharts.createRunsChart !== 'function') {
+                                throw new Error('createRunsChart method not found');
+                            }
                             teamCharts.createRunsChart(teams);
                             break;
                         case 'standings':
+                            if (typeof teamCharts.createStandingsChart !== 'function') {
+                                throw new Error('createStandingsChart method not found');
+                            }
                             teamCharts.createStandingsChart(teams);
                             break;
                         default:
@@ -771,7 +809,7 @@
                 const players = getPlayersForTeam(season, team);
                 
                 if (!players || players.length === 0) {
-                    showError(`No player data available for ${team} in ${season}`);
+                    showError(`No player data available for Aces ${team} in ${season}`);
                     return;
                 }
 
@@ -794,8 +832,8 @@
                             return;
                     }
                     
-                    updatePlayerStatsGrid(players, team);
-                    updateChartTitle(chartType, season, team);
+                    updatePlayerStatsGrid(players, 'Aces ' + team);
+                    updateChartTitle(chartType, season, 'Aces ' + team);
                     
                 } catch (error) {
                     console.error('Error updating player chart:', error);
