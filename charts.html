@@ -277,29 +277,43 @@
                 // Show loading state
                 container.innerHTML = '<div class="loading">Loading chart data...</div>';
                 
-                // Test data loading first
-                console.log('Testing data.json loading...');
+                console.log('Loading data files...');
                 
-                // Simple test load of data.json (same as batting.html does)
+                let battingData = [];
+                let gamesData = [];
+                
+                // Load batting data
                 try {
-                    const response = await fetch('data.json');
-                    console.log('data.json response status:', response.status, response.ok);
-                    
-                    if (response.ok) {
-                        const battingData = await response.json();
-                        console.log('Successfully loaded data.json with', battingData.length, 'records');
-                        console.log('First few records:', battingData.slice(0, 3));
-                        
-                        // Process this data into team format
-                        allTeamData = processRealData(battingData);
-                        
+                    const battingResponse = await fetch('data.json');
+                    if (battingResponse.ok) {
+                        battingData = await battingResponse.json();
+                        console.log('Successfully loaded data.json with', battingData.length, 'batting records');
                     } else {
-                        console.warn('data.json not found, using sample data');
-                        allTeamData = getSampleData();
+                        console.warn('data.json not found');
                     }
                 } catch (error) {
-                    console.error('Error loading data.json:', error);
-                    console.log('Using sample data instead');
+                    console.warn('Error loading data.json:', error);
+                }
+                
+                // Load games data
+                try {
+                    const gamesResponse = await fetch('games.json');
+                    if (gamesResponse.ok) {
+                        gamesData = await gamesResponse.json();
+                        console.log('Successfully loaded games.json with', gamesData.length, 'game records');
+                        console.log('Sample game record:', gamesData[0]);
+                    } else {
+                        console.warn('games.json not found');
+                    }
+                } catch (error) {
+                    console.warn('Error loading games.json:', error);
+                }
+                
+                // Process the data into team summaries
+                if (battingData.length > 0 || gamesData.length > 0) {
+                    allTeamData = processRealData(battingData, gamesData);
+                } else {
+                    console.log('No data files found, using sample data');
                     allTeamData = getSampleData();
                 }
                 
@@ -337,64 +351,233 @@
             }
         }
 
-        function processRealData(battingData) {
-            // Process your actual data.json into team stats
-            console.log('Processing real batting data...');
+        function processRealData(battingData, gamesData) {
+            console.log('Processing real data with batting and games...');
             
             const teamStats = {};
+            const seasonsFound = new Set();
+            const today = new Date();
             
-            battingData.forEach(player => {
-                if (!player.team || !player.name) return;
+            // First, process batting data for runs, hits, batting averages
+            if (battingData && battingData.length > 0) {
+                console.log('Processing batting data from', battingData.length, 'records');
                 
-                const teamName = player.team.trim();
-                const year = player.year || '2025';
-                const season = player.season || 'fall';
-                const seasonKey = `${year}-${season.toLowerCase()}`;
+                battingData.forEach(player => {
+                    if (!player.team || !player.name) return;
+                    
+                    const teamName = player.team.trim();
+                    const year = player.year || '2025';
+                    const season = player.season || 'fall';
+                    const seasonKey = `${year}-${season.toLowerCase()}`;
+                    
+                    seasonsFound.add(seasonKey);
+                    
+                    if (!teamStats[seasonKey]) {
+                        teamStats[seasonKey] = {};
+                    }
+                    
+                    if (!teamStats[seasonKey][teamName]) {
+                        teamStats[seasonKey][teamName] = {
+                            name: teamName,
+                            wins: 0,
+                            losses: 0,
+                            ties: 0,
+                            runs: 0,
+                            hits: 0,
+                            atBats: 0,
+                            players: 0,
+                            totalGames: 0
+                        };
+                    }
+                    
+                    const team = teamStats[seasonKey][teamName];
+                    team.runs += parseInt(player.runs) || 0;
+                    team.hits += parseInt(player.hits) || 0;
+                    team.atBats += parseInt(player.atBats) || 0;
+                    team.players++;
+                });
+            }
+            
+            // Process games data for actual win/loss records
+            if (gamesData && gamesData.length > 0) {
+                console.log('Processing games data from', gamesData.length, 'total games');
                 
-                if (!teamStats[seasonKey]) {
-                    teamStats[seasonKey] = {};
-                }
+                let completedGames = 0;
+                let futureGames = 0;
                 
-                if (!teamStats[seasonKey][teamName]) {
-                    teamStats[seasonKey][teamName] = {
-                        name: teamName,
-                        wins: 5, // Default since we don't have game data
-                        losses: 3,
-                        ties: 0,
-                        runs: 0,
-                        hits: 0,
-                        atBats: 0,
-                        players: 0,
-                        totalGames: 8
-                    };
-                }
+                gamesData.forEach(game => {
+                    // Skip games without required data
+                    if (!game["home team"] || !game["away team"]) return;
+                    
+                    // Skip future games - games without a winner (empty string or null)
+                    const hasWinner = game.winner && game.winner.trim() !== '' && game.winner.trim() !== 'null';
+                    
+                    // Also check if it's a future date (your data has dates like "9/28/2025")
+                    let isFutureGame = false;
+                    if (game.date && game.date !== 'n/a') {
+                        const gameDate = new Date(game.date);
+                        if (!isNaN(gameDate.getTime())) {
+                            isFutureGame = gameDate > today;
+                        }
+                    }
+                    
+                    // Only process completed games (have winner and not in future)
+                    if (!hasWinner || isFutureGame) {
+                        futureGames++;
+                        return;
+                    }
+                    
+                    completedGames++;
+                    
+                    const homeTeam = game["home team"].trim();
+                    const awayTeam = game["away team"].trim();
+                    const winner = game.winner.trim();
+                    
+                    // Use actual season from games data
+                    const year = game.year || '2025';
+                    const season = game.season ? game.season.toLowerCase() : 'fall';
+                    const seasonKey = `${year}-${season}`;
+                    
+                    seasonsFound.add(seasonKey);
+                    
+                    if (!teamStats[seasonKey]) {
+                        teamStats[seasonKey] = {};
+                    }
+                    
+                    // Initialize teams if they don't exist
+                    [homeTeam, awayTeam].forEach(teamName => {
+                        if (!teamStats[seasonKey][teamName]) {
+                            teamStats[seasonKey][teamName] = {
+                                name: teamName,
+                                wins: 0,
+                                losses: 0,
+                                ties: 0,
+                                runs: 0,
+                                hits: 0,
+                                atBats: 0,
+                                players: 0,
+                                totalGames: 0
+                            };
+                        }
+                    });
+                    
+                    // Record game results
+                    const homeTeamStats = teamStats[seasonKey][homeTeam];
+                    const awayTeamStats = teamStats[seasonKey][awayTeam];
+                    
+                    if (winner === "Tie") {
+                        homeTeamStats.ties++;
+                        awayTeamStats.ties++;
+                    } else if (winner === homeTeam) {
+                        homeTeamStats.wins++;
+                        awayTeamStats.losses++;
+                    } else if (winner === awayTeam) {
+                        awayTeamStats.wins++;
+                        homeTeamStats.losses++;
+                    }
+                    
+                    homeTeamStats.totalGames++;
+                    awayTeamStats.totalGames++;
+                });
                 
-                const team = teamStats[seasonKey][teamName];
-                team.runs += parseInt(player.runs) || 0;
-                team.hits += parseInt(player.hits) || 0;
-                team.atBats += parseInt(player.atBats) || 0;
-                team.players++;
+                console.log(`Processed ${completedGames} completed games, skipped ${futureGames} future/incomplete games`);
+            }
+            
+            // Sort seasons chronologically (most recent first)
+            const sortedSeasons = Array.from(seasonsFound).sort((a, b) => {
+                const [yearA, seasonA] = a.split('-');
+                const [yearB, seasonB] = b.split('-');
+                
+                // Compare years first
+                if (yearA !== yearB) return yearB - yearA; // Newer year first
+                
+                // Within same year, fall > summer > spring
+                const seasonOrder = { 'fall': 3, 'summer': 2, 'spring': 1 };
+                return (seasonOrder[seasonB] || 0) - (seasonOrder[seasonA] || 0);
             });
             
+            console.log('Seasons found in data (sorted):', sortedSeasons);
+            
             // Convert to final format
-            const result = {
-                '2025-fall': { teams: [] },
-                '2025-summer': { teams: [] },
-                '2024-fall': { teams: [] }
-            };
+            const result = {};
+            
+            // Add all seasons that were found in the data
+            sortedSeasons.forEach(seasonKey => {
+                result[seasonKey] = { teams: [] };
+            });
             
             Object.keys(teamStats).forEach(seasonKey => {
                 if (result[seasonKey]) {
-                    result[seasonKey].teams = Object.values(teamStats[seasonKey]).map(team => ({
-                        ...team,
-                        batting_avg: team.atBats > 0 ? team.hits / team.atBats : 0,
-                        winPct: team.totalGames > 0 ? team.wins / team.totalGames : 0
-                    }));
+                    result[seasonKey].teams = Object.values(teamStats[seasonKey])
+                        .filter(team => team.totalGames > 0 || team.players > 0) // Include teams with games OR batting data
+                        .map(team => ({
+                            ...team,
+                            batting_avg: team.atBats > 0 ? team.hits / team.atBats : 0,
+                            winPct: team.totalGames > 0 ? team.wins / team.totalGames : 0
+                        }));
                 }
             });
             
-            console.log('Processed real data into:', result);
+            // Log some stats for debugging
+            Object.keys(result).forEach(seasonKey => {
+                const teams = result[seasonKey].teams;
+                if (teams.length > 0) {
+                    const teamsWithGames = teams.filter(t => t.totalGames > 0);
+                    if (teamsWithGames.length > 0) {
+                        const minWins = Math.min(...teamsWithGames.map(t => t.wins));
+                        const maxWins = Math.max(...teamsWithGames.map(t => t.wins));
+                        console.log(`${seasonKey}: ${teams.length} teams total, ${teamsWithGames.length} with games played, win range: ${minWins}-${maxWins} wins`);
+                    } else {
+                        console.log(`${seasonKey}: ${teams.length} teams (batting data only)`);
+                    }
+                }
+            });
+            
+            // Update the season selector with actual seasons
+            updateSeasonSelector(sortedSeasons);
+            
             return result;
+        }
+        
+        function updateSeasonSelector(availableSeasons) {
+            const seasonSelect = document.getElementById('seasonSelect');
+            if (!seasonSelect) return;
+            
+            // Clear existing options
+            seasonSelect.innerHTML = '';
+            
+            // Sort seasons (most recent first)
+            availableSeasons.sort((a, b) => {
+                const [yearA, seasonA] = a.split('-');
+                const [yearB, seasonB] = b.split('-');
+                
+                if (yearA !== yearB) return yearB - yearA; // Newer year first
+                
+                // Within same year, fall before summer before spring
+                const seasonOrder = { 'fall': 3, 'summer': 2, 'spring': 1 };
+                return (seasonOrder[seasonB] || 0) - (seasonOrder[seasonA] || 0);
+            });
+            
+            // Add options for each season found
+            availableSeasons.forEach(seasonKey => {
+                const option = document.createElement('option');
+                option.value = seasonKey;
+                
+                // Format display text
+                const [year, season] = seasonKey.split('-');
+                const seasonDisplay = season.charAt(0).toUpperCase() + season.slice(1);
+                option.textContent = `${year} ${seasonDisplay}`;
+                
+                seasonSelect.appendChild(option);
+            });
+            
+            // Set the current season to the first (most recent) option
+            if (availableSeasons.length > 0) {
+                currentSeason = availableSeasons[0];
+                seasonSelect.value = currentSeason;
+            }
+            
+            console.log('Updated season selector with:', availableSeasons);
         }
 
         function getSampleData() {
@@ -739,11 +922,16 @@
         }
 
         function showError(message) {
-            document.getElementById('team-charts-container').innerHTML = `
-                <div class="error">
-                    <strong>Error:</strong> ${message}
-                </div>
-            `;
+            const container = document.getElementById('team-charts-container');
+            if (container) {
+                container.innerHTML = `
+                    <div class="error">
+                        <strong>Error:</strong> ${message}
+                    </div>
+                `;
+            } else {
+                console.error('Cannot show error - container not found:', message);
+            }
         }
 
         // Handle window resize for responsive charts
