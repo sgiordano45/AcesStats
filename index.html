@@ -500,6 +500,7 @@ class GlobalSearch {
     this.bindEvents();
   }
   
+  
   async loadData() {
     try {
       const [battingResponse, pitchingResponse, gamesResponse, awardsResponse] = await Promise.all([
@@ -615,7 +616,7 @@ class GlobalSearch {
       if (teamStats[awayTeam]) {
         teamStats[awayTeam].totalGames++;
         if (winner === awayTeam) {
-          teamStats[awayTeam].wins++;
+          teamStats[awayTeams].wins++;
         } else if (winner !== "Tie") {
           teamStats[awayTeam].losses++;
         }
@@ -715,7 +716,21 @@ class GlobalSearch {
       seasons: this.searchSeasons(query)
     };
     
-    this.displayResults(results, query);
+    // Smart prioritization: if query matches a team name exactly or closely,
+    // prioritize teams over players
+    const shouldPrioritizeTeams = this.shouldPrioritizeTeams(query, results);
+    
+    this.displayResults(results, query, shouldPrioritizeTeams);
+  }
+  
+  shouldPrioritizeTeams(query, results) {
+    const q = query.toLowerCase().trim();
+    
+    // Check if query exactly matches or starts with a team name
+    return results.teams.some(team => {
+      const teamName = team.name.toLowerCase();
+      return teamName === q || teamName.startsWith(q) || q.startsWith(teamName);
+    });
   }
   
   searchPlayers(query) {
@@ -751,14 +766,23 @@ class GlobalSearch {
         season.season.toLowerCase().includes(q) ||
         `${season.year} ${season.season}`.toLowerCase().includes(q)
       )
-      .slice(0, 3)
+      .sort((a, b) => {
+        // Sort by year (descending), then by season priority (Fall > Summer)
+        if (a.year !== b.year) {
+          return b.year.localeCompare(a.year);
+        }
+        // Prioritize Fall over Summer
+        if (a.season === b.season) return 0;
+        return a.season === 'Fall' ? -1 : 1;
+      })
+      .slice(0, 6) // Increased from 3 to 6 seasons
       .map(season => ({
         ...season,
         type: 'season'
       }));
   }
   
-  displayResults(results, query) {
+  displayResults(results, query, prioritizeTeams = false) {
     const totalResults = results.players.length + results.teams.length + results.seasons.length;
     
     if (totalResults === 0) {
@@ -773,69 +797,97 @@ class GlobalSearch {
     
     let html = '';
     
-    if (results.players.length > 0) {
-      html += `
-        <div class="search-category">
-          <div class="category-header">Players</div>
-          ${results.players.map((player, index) => `
-            <div class="search-item" data-type="player" data-name="${player.name}" data-team="${player.team}">
-              <div class="search-item-icon">👤</div>
-              <div class="search-item-content">
-                <div class="search-item-title">${this.highlightMatch(player.name, query)}</div>
-                <div class="search-item-subtitle">${this.highlightMatch(player.team, query)} • ${player.games} games${player.awards > 0 ? ` • ${player.awards} awards` : ''}</div>
-              </div>
-              <div class="search-item-stats">
-                ${player.atBats > 0 ? `.${player.avg.toFixed(3)} AVG<br>${player.hits} hits` : `${player.runs} runs`}
-              </div>
-            </div>
-          `).join('')}
-        </div>
-      `;
+    // Smart ordering: Teams first if prioritizing teams, otherwise players first
+    if (prioritizeTeams) {
+      // Teams section first
+      if (results.teams.length > 0) {
+        html += this.renderTeamsSection(results.teams, query);
+      }
+      
+      // Players section second
+      if (results.players.length > 0) {
+        html += this.renderPlayersSection(results.players, query);
+      }
+    } else {
+      // Players section first (default)
+      if (results.players.length > 0) {
+        html += this.renderPlayersSection(results.players, query);
+      }
+      
+      // Teams section second
+      if (results.teams.length > 0) {
+        html += this.renderTeamsSection(results.teams, query);
+      }
     }
     
-    if (results.teams.length > 0) {
-      html += `
-        <div class="search-category">
-          <div class="category-header">Teams</div>
-          ${results.teams.map((team, index) => `
-            <div class="search-item" data-type="team" data-name="${team.name}">
-              <div class="search-item-icon">🏆</div>
-              <div class="search-item-content">
-                <div class="search-item-title">${this.highlightMatch(team.name, query)}</div>
-                <div class="search-item-subtitle">${team.wins}-${team.losses} record • ${team.playerCount} players</div>
-              </div>
-              <div class="search-item-stats">
-                ${team.wins + team.losses > 0 ? `.${team.pct.toFixed(3)} PCT` : 'New team'}
-              </div>
-            </div>
-          `).join('')}
-        </div>
-      `;
-    }
-    
+    // Seasons section always last
     if (results.seasons.length > 0) {
-      html += `
-        <div class="search-category">
-          <div class="category-header">Seasons</div>
-          ${results.seasons.map((season, index) => `
-            <div class="search-item" data-type="season" data-year="${season.year}" data-season="${season.season}">
-              <div class="search-item-icon">📅</div>
-              <div class="search-item-content">
-                <div class="search-item-title">${this.highlightMatch(`${season.year} ${season.season}`, query)}</div>
-                <div class="search-item-subtitle">${season.teamCount} teams • ${season.playerCount} players</div>
-              </div>
-              <div class="search-item-stats">
-                ${season.games} games
-              </div>
-            </div>
-          `).join('')}
-        </div>
-      `;
+      html += this.renderSeasonsSection(results.seasons, query);
     }
     
     this.searchResults.innerHTML = html;
     this.showResults();
     this.bindResultEvents();
+  }
+  
+  renderPlayersSection(players, query) {
+    return `
+      <div class="search-category">
+        <div class="category-header">Players</div>
+        ${players.map((player, index) => `
+          <div class="search-item" data-type="player" data-name="${player.name}" data-team="${player.team}">
+            <div class="search-item-icon">👤</div>
+            <div class="search-item-content">
+              <div class="search-item-title">${this.highlightMatch(player.name, query)}</div>
+              <div class="search-item-subtitle">${this.highlightMatch(player.team, query)} • ${player.games} games${player.awards > 0 ? ` • ${player.awards} awards` : ''}</div>
+            </div>
+            <div class="search-item-stats">
+              ${player.atBats > 0 ? `.${player.avg.toFixed(3)} AVG<br>${player.hits} hits` : `${player.runs} runs`}
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    `;
+  }
+  
+  renderTeamsSection(teams, query) {
+    return `
+      <div class="search-category">
+        <div class="category-header">Teams</div>
+        ${teams.map((team, index) => `
+          <div class="search-item" data-type="team" data-name="${team.name}">
+            <div class="search-item-icon">🏆</div>
+            <div class="search-item-content">
+              <div class="search-item-title">${this.highlightMatch(team.name, query)}</div>
+              <div class="search-item-subtitle">${team.wins}-${team.losses} record • ${team.playerCount} players</div>
+            </div>
+            <div class="search-item-stats">
+              ${team.wins + team.losses > 0 ? `.${team.pct.toFixed(3)} PCT` : 'New team'}
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    `;
+  }
+  
+  renderSeasonsSection(seasons, query) {
+    return `
+      <div class="search-category">
+        <div class="category-header">Seasons</div>
+        ${seasons.map((season, index) => `
+          <div class="search-item" data-type="season" data-year="${season.year}" data-season="${season.season}">
+            <div class="search-item-icon">📅</div>
+            <div class="search-item-content">
+              <div class="search-item-title">${this.highlightMatch(`${season.year} ${season.season}`, query)}</div>
+              <div class="search-item-subtitle">${season.teamCount} teams • ${season.playerCount} players</div>
+            </div>
+            <div class="search-item-stats">
+              ${season.games} games
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    `;
   }
   
   highlightMatch(text, query) {
