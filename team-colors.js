@@ -1,4 +1,4 @@
-// TEAM COLORS - External File Version
+// TEAM COLORS - Enhanced Version with All Formatting Options
 (function() {
   // Create CSS styles
   const style = document.createElement('style');
@@ -9,6 +9,8 @@
       --team-silver: #757575; --team-purple: #7b1fa2; --team-gold: #f57f17;
       --team-carolina: #4b9cd3; --team-army: #654321;
     }
+    
+    /* Text colors - for inline team names */
     .team-text-black { color: var(--team-black) !important; font-weight: 600 !important; }
     .team-text-green { color: var(--team-green) !important; font-weight: 600 !important; }
     .team-text-red { color: var(--team-red) !important; font-weight: 600 !important; }
@@ -20,6 +22,8 @@
     .team-text-gold { color: var(--team-gold) !important; font-weight: 600 !important; }
     .team-text-carolina { color: var(--team-carolina) !important; font-weight: 600 !important; }
     .team-text-army { color: var(--team-army) !important; font-weight: 600 !important; }
+    
+    /* Badge styles - for tags and labels */
     .team-badge-black { background: var(--team-black) !important; color: white !important; padding: 2px 8px; border-radius: 12px; font-size: 0.85em; }
     .team-badge-green { background: var(--team-green) !important; color: white !important; padding: 2px 8px; border-radius: 12px; font-size: 0.85em; }
     .team-badge-red { background: var(--team-red) !important; color: white !important; padding: 2px 8px; border-radius: 12px; font-size: 0.85em; }
@@ -31,6 +35,32 @@
     .team-badge-gold { background: var(--team-gold) !important; color: white !important; padding: 2px 8px; border-radius: 12px; font-size: 0.85em; }
     .team-badge-carolina { background: var(--team-carolina) !important; color: white !important; padding: 2px 8px; border-radius: 12px; font-size: 0.85em; }
     .team-badge-army { background: var(--team-army) !important; color: white !important; padding: 2px 8px; border-radius: 12px; font-size: 0.85em; }
+    
+    /* Primary colors - for headers, buttons, highlights */
+    .team-primary-black { background: var(--team-black) !important; color: white !important; }
+    .team-primary-green { background: var(--team-green) !important; color: white !important; }
+    .team-primary-red { background: var(--team-red) !important; color: white !important; }
+    .team-primary-blue { background: var(--team-blue) !important; color: white !important; }
+    .team-primary-white { background: white !important; color: var(--team-white) !important; border: 2px solid var(--team-white) !important; box-shadow: 0 2px 4px rgba(0,0,0,0.1) !important; }
+    .team-primary-orange { background: var(--team-orange) !important; color: white !important; }
+    .team-primary-silver { background: var(--team-silver) !important; color: white !important; }
+    .team-primary-purple { background: var(--team-purple) !important; color: white !important; }
+    .team-primary-gold { background: var(--team-gold) !important; color: white !important; }
+    .team-primary-carolina { background: var(--team-carolina) !important; color: white !important; }
+    .team-primary-army { background: var(--team-army) !important; color: white !important; }
+    
+    /* Light backgrounds - for content sections */
+    .team-light-black { background: #f5f5f5 !important; color: var(--team-black) !important; border-left: 4px solid var(--team-black) !important; }
+    .team-light-green { background: #e8f5e8 !important; color: #1b5e20 !important; border-left: 4px solid var(--team-green) !important; }
+    .team-light-red { background: #ffebee !important; color: #b71c1c !important; border-left: 4px solid var(--team-red) !important; }
+    .team-light-blue { background: #e3f2fd !important; color: #0d47a1 !important; border-left: 4px solid var(--team-blue) !important; }
+    .team-light-white { background: #f8f9fa !important; color: #212529 !important; border-left: 4px solid var(--team-white) !important; border: 1px solid #e9ecef !important; }
+    .team-light-orange { background: #fff3e0 !important; color: #e65100 !important; border-left: 4px solid var(--team-orange) !important; }
+    .team-light-silver { background: #f5f5f5 !important; color: #424242 !important; border-left: 4px solid var(--team-silver) !important; }
+    .team-light-purple { background: #f3e5f5 !important; color: #4a148c !important; border-left: 4px solid var(--team-purple) !important; }
+    .team-light-gold { background: #fffde7 !important; color: #ff6f00 !important; border-left: 4px solid var(--team-gold) !important; }
+    .team-light-carolina { background: #e6f3ff !important; color: #1e3a5f !important; border-left: 4px solid var(--team-carolina) !important; }
+    .team-light-army { background: #f0ebda !important; color: #3d2914 !important; border-left: 4px solid var(--team-army) !important; }
   `;
   
   // Add CSS to page
@@ -53,7 +83,7 @@
     
     let styledCount = 0;
     
-    // Search all text elements
+    // Search all text elements for automatic text coloring
     document.querySelectorAll('*').forEach(element => {
       const text = element.textContent || '';
       if (!text || text.length > 100 || element.children.length > 0) return;
@@ -86,16 +116,85 @@
       });
     });
     
+    // Auto-apply primary colors to headers containing team names
+    document.querySelectorAll('h1, h2, h3, h4').forEach(header => {
+      const text = header.textContent.toLowerCase();
+      Object.keys(teams).forEach(team => {
+        if (text.includes(team + ' team') || text.includes('aces ' + team) || text.includes(team + ' aces')) {
+          header.classList.add('team-primary-' + team);
+          styledCount++;
+        }
+      });
+    });
+    
+    // Auto-apply light backgrounds to sections with team-specific content
+    document.querySelectorAll('.section, .card, .team-section').forEach(section => {
+      const text = section.textContent.toLowerCase();
+      Object.keys(teams).forEach(team => {
+        // Only apply if section is clearly about one specific team
+        const teamMentions = (text.match(new RegExp(team, 'g')) || []).length;
+        const totalWords = text.split(' ').length;
+        
+        // If team is mentioned frequently relative to content size, apply light background
+        if (teamMentions > 2 && teamMentions / totalWords > 0.02) {
+          section.classList.add('team-light-' + team);
+          styledCount++;
+        }
+      });
+    });
+    
     if (styledCount > 0) {
-      console.log('Team colors applied to ' + styledCount + ' elements');
+      console.log('Applied team colors to ' + styledCount + ' elements');
     }
   }
+  
+  // Helper functions for manual application
+  window.applyTeamStyle = function(element, teamName, variant = 'text') {
+    if (!element || !teamName) return;
+    
+    const team = teamName.toLowerCase().trim();
+    const validTeams = ['black', 'green', 'red', 'blue', 'white', 'orange', 'silver', 'purple', 'gold', 'carolina', 'army'];
+    
+    if (!validTeams.includes(team)) {
+      console.warn('Unknown team:', team);
+      return;
+    }
+    
+    // Remove any existing team classes
+    element.classList.forEach(cls => {
+      if (cls.startsWith('team-')) {
+        element.classList.remove(cls);
+      }
+    });
+    
+    // Apply new class based on variant
+    let className;
+    switch(variant) {
+      case 'text':
+        className = 'team-text-' + team;
+        break;
+      case 'badge':
+        className = 'team-badge-' + team;
+        break;
+      case 'primary':
+        className = 'team-primary-' + team;
+        break;
+      case 'light':
+        className = 'team-light-' + team;
+        break;
+      default:
+        className = 'team-text-' + team;
+    }
+    
+    element.classList.add(className);
+    console.log('Applied', className, 'to element');
+  };
   
   // Apply colors when page loads
   document.addEventListener('DOMContentLoaded', applyTeamColors);
   setTimeout(applyTeamColors, 1000);
   setTimeout(applyTeamColors, 3000);
   
-  // Make function available globally for testing
+  // Make functions available globally for testing and manual use
   window.applyTeamColors = applyTeamColors;
 })();
