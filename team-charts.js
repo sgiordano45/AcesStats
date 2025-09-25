@@ -740,6 +740,154 @@ class TeamCharts {
         }
     }
 
+    /**
+     * Create a radial/radar chart showing multiple stats for a player
+     * @param {Object} player - Player object with stats
+     * @param {string} playerName - Name of the player
+     * @param {string} viewType - 'season' or 'career'
+     * @param {Object} options - Chart configuration options
+     */
+    createPlayerRadialChart(player, playerName, viewType = 'season', options = {}) {
+        const config = { ...this.options, ...options };
+        
+        // Define the stats to display on the radar chart
+        const stats = [
+            { key: 'battingAvg', label: 'Batting Avg', max: 1.0, format: (v) => `.${Math.round(v * 1000).toString().padStart(3, '0')}` },
+            { key: 'obp', label: 'OBP', max: 1.0, format: (v) => `.${Math.round(v * 1000).toString().padStart(3, '0')}` },
+            { key: 'runs', label: 'Runs', max: Math.max(player.runs || 0, 50), format: (v) => Math.round(v).toString() },
+            { key: 'acesBPI', label: 'AcesBPI', max: Math.max(player.acesBPI || 0, 100), format: (v) => v.toFixed(1) },
+            { key: 'games', label: 'Games', max: Math.max(player.games || 0, 25), format: (v) => Math.round(v).toString() }
+        ];
+        
+        const center = { x: config.width / 2, y: config.height / 2 };
+        const radius = Math.min(config.width, config.height) / 2 - 80;
+        const angleStep = (2 * Math.PI) / stats.length;
+        
+        // Create SVG
+        this.container.innerHTML = '';
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.setAttribute('width', config.width);
+        svg.setAttribute('height', config.height);
+        svg.style.background = 'white';
+        svg.style.borderRadius = '8px';
+        
+        const chartGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        svg.appendChild(chartGroup);
+        
+        // Draw concentric circles (grid lines)
+        const gridLevels = 5;
+        for (let i = 1; i <= gridLevels; i++) {
+            const gridRadius = (radius * i) / gridLevels;
+            const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            circle.setAttribute('cx', center.x);
+            circle.setAttribute('cy', center.y);
+            circle.setAttribute('r', gridRadius);
+            circle.setAttribute('fill', 'none');
+            circle.setAttribute('stroke', '#e1e5e9');
+            circle.setAttribute('stroke-width', 1);
+            chartGroup.appendChild(circle);
+        }
+        
+        // Draw axis lines and labels
+        stats.forEach((stat, index) => {
+            const angle = index * angleStep - Math.PI / 2; // Start from top
+            const x1 = center.x;
+            const y1 = center.y;
+            const x2 = center.x + radius * Math.cos(angle);
+            const y2 = center.y + radius * Math.sin(angle);
+            
+            // Axis line
+            const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            line.setAttribute('x1', x1);
+            line.setAttribute('y1', y1);
+            line.setAttribute('x2', x2);
+            line.setAttribute('y2', y2);
+            line.setAttribute('stroke', '#e1e5e9');
+            line.setAttribute('stroke-width', 1);
+            chartGroup.appendChild(line);
+            
+            // Label
+            const labelDistance = radius + 20;
+            const labelX = center.x + labelDistance * Math.cos(angle);
+            const labelY = center.y + labelDistance * Math.sin(angle);
+            
+            const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+            label.setAttribute('x', labelX);
+            label.setAttribute('y', labelY);
+            label.setAttribute('text-anchor', 'middle');
+            label.setAttribute('dominant-baseline', 'middle');
+            label.setAttribute('font-size', '12px');
+            label.setAttribute('font-weight', '600');
+            label.setAttribute('fill', '#333');
+            label.textContent = stat.label;
+            chartGroup.appendChild(label);
+        });
+        
+        // Calculate player's data points
+        const dataPoints = stats.map((stat, index) => {
+            const value = player[stat.key] || 0;
+            const normalizedValue = Math.min(value / stat.max, 1); // Normalize to 0-1
+            const angle = index * angleStep - Math.PI / 2;
+            const distance = radius * normalizedValue;
+            
+            return {
+                x: center.x + distance * Math.cos(angle),
+                y: center.y + distance * Math.sin(angle),
+                value: value,
+                stat: stat
+            };
+        });
+        
+        // Draw the player's data polygon
+        const pathData = dataPoints.map((point, index) => {
+            return `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`;
+        }).join(' ') + ' Z'; // Close the path
+        
+        const polygon = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        polygon.setAttribute('d', pathData);
+        polygon.setAttribute('fill', 'rgba(102, 126, 234, 0.3)'); // Semi-transparent fill
+        polygon.setAttribute('stroke', '#667eea');
+        polygon.setAttribute('stroke-width', 2);
+        chartGroup.appendChild(polygon);
+        
+        // Draw data points
+        dataPoints.forEach((point, index) => {
+            const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            circle.setAttribute('cx', point.x);
+            circle.setAttribute('cy', point.y);
+            circle.setAttribute('r', 4);
+            circle.setAttribute('fill', '#667eea');
+            circle.setAttribute('stroke', 'white');
+            circle.setAttribute('stroke-width', 2);
+            circle.style.cursor = 'pointer';
+            
+            // Add hover tooltip
+            circle.addEventListener('mouseover', (event) => {
+                const formattedValue = point.stat.format(point.value);
+                this.showTooltip(event, point.stat.label, formattedValue);
+            });
+            circle.addEventListener('mouseout', () => {
+                this.hideTooltip();
+            });
+            
+            chartGroup.appendChild(circle);
+        });
+        
+        // Add title
+        const title = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        title.setAttribute('x', center.x);
+        title.setAttribute('y', 30);
+        title.setAttribute('text-anchor', 'middle');
+        title.setAttribute('font-size', '16px');
+        title.setAttribute('font-weight', '700');
+        title.setAttribute('fill', '#333');
+        title.textContent = `${playerName} - ${viewType === 'career' ? 'Career' : 'Season'} Stats`;
+        chartGroup.appendChild(title);
+        
+        this.container.appendChild(svg);
+        this.currentChart = 'radial-' + viewType;
+    }
+
     destroy() {
         if (this.tooltip && this.tooltip.parentNode) {
             this.tooltip.parentNode.removeChild(this.tooltip);
@@ -747,6 +895,7 @@ class TeamCharts {
         this.container.innerHTML = '';
         this.data = null;
         this.currentChart = null;
+    }
     }
 }
 

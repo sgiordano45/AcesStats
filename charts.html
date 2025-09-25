@@ -14,6 +14,45 @@
             background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
             min-height: 100vh;
         }
+
+        function updateChartTitle(chartType, season, team) {
+            const titles = {
+                wins: 'Team Wins Comparison',
+                batting: 'Team Batting Averages',
+                runs: 'Runs Scored by Team',
+                standings: 'Team Win Percentage',
+                'player-batting': 'Player Batting Averages',
+                'player-obp': 'Player On-Base Percentage',
+                'player-runs': 'Player Runs Scored',
+                'player-acesbpi': 'Player AcesBPI',
+                'player-radial-season': 'Player Season Radar',
+                'player-radial-career': 'Player Career Radar'
+            };
+            
+            const title = titles[chartType] || 'Performance Chart';
+            let displayText;
+            
+            if (team === 'all') {
+                const seasonFormatted = season.replace('-', ' ').toUpperCase();
+                displayText = `${title} - ${seasonFormatted}`;
+            } else if (chartType.includes('radial-career')) {
+                displayText = title; // Career title is handled in the function
+            } else {
+                const seasonFormatted = season.replace('-', ' ').toUpperCase();
+                displayText = `${title} - ${team} (${seasonFormatted})`;
+            }
+            
+            document.getElementById('chartTitle').textContent = displayText;
+        }
+
+        // Handle window resize for responsive charts
+        window.addEventListener('resize', () => {
+            if (teamCharts) {
+                setTimeout(() => {
+                    updateChartFromControls();
+                }, 250);
+            }
+        });
         
         .header {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -312,6 +351,8 @@
                     <option value="player-obp">Player OBP</option>
                     <option value="player-runs">Player Runs Scored</option>
                     <option value="player-acesbpi">Player AcesBPI</option>
+                    <option value="player-radial-season">Player Radial (Season)</option>
+                    <option value="player-radial-career">Player Radial (Career)</option>
                 `;
             }
         }
@@ -827,6 +868,12 @@
                         case 'player-acesbpi':
                             teamCharts.createPlayerChart(players, 'acesBPI', 'Player AcesBPI');
                             break;
+                        case 'player-radial-season':
+                            createPlayerRadialCharts(players, season, team, 'season');
+                            break;
+                        case 'player-radial-career':
+                            createPlayerRadialCharts(players, season, team, 'career');
+                            break;
                         default:
                             console.warn('Unknown player chart type:', chartType);
                             return;
@@ -1001,14 +1048,84 @@
             }
         }
 
-        // Handle window resize for responsive charts
-        window.addEventListener('resize', () => {
-            if (teamCharts) {
-                setTimeout(() => {
-                    updateChartFromControls();
-                }, 250);
+        function createPlayerRadialCharts(players, season, team, viewType) {
+            if (viewType === 'season') {
+                // For season view, show each player's radial chart
+                createSeasonRadialView(players, season, team);
+            } else {
+                // For career view, calculate career totals for each player
+                createCareerRadialView(players, team);
             }
-        });
+        }
+
+        function createSeasonRadialView(players, season, team) {
+            // For now, show the top performer's radial chart
+            // TODO: Could create a grid view showing multiple players
+            if (players.length === 0) return;
+            
+            const topPlayer = players.reduce((prev, curr) => 
+                (curr.battingAvg || 0) > (prev.battingAvg || 0) ? curr : prev, players[0]);
+            
+            teamCharts.createPlayerRadialChart(topPlayer, topPlayer.name, 'season');
+            updateChartTitle('player-radial-season', season, `Aces ${team} - ${topPlayer.name}`);
+        }
+
+        function createCareerRadialView(players, team) {
+            if (players.length === 0) return;
+            
+            // Calculate career stats for the top player
+            const topPlayer = players.reduce((prev, curr) => 
+                (curr.battingAvg || 0) > (prev.battingAvg || 0) ? curr : prev, players[0]);
+            
+            const careerStats = calculateCareerStats(topPlayer.name);
+            teamCharts.createPlayerRadialChart(careerStats, topPlayer.name, 'career');
+            updateChartTitle('player-radial-career', 'Career', `${topPlayer.name} Career Stats`);
+        }
+
+        function calculateCareerStats(playerName) {
+            let totalGames = 0;
+            let totalAtBats = 0;
+            let totalHits = 0;
+            let totalRuns = 0;
+            let totalWalks = 0;
+            let totalAcesBPI = 0;
+            let seasonsPlayed = 0;
+
+            // Aggregate across all seasons and teams
+            Object.keys(allPlayerData).forEach(seasonKey => {
+                Object.keys(allPlayerData[seasonKey]).forEach(teamName => {
+                    const teamPlayers = allPlayerData[seasonKey][teamName];
+                    const player = teamPlayers.find(p => p.name === playerName);
+                    
+                    if (player) {
+                        totalGames += player.games || 0;
+                        totalAtBats += player.atBats || 0;
+                        totalHits += player.hits || 0;
+                        totalRuns += player.runs || 0;
+                        totalWalks += player.walks || 0;
+                        totalAcesBPI += player.acesBPI || 0;
+                        seasonsPlayed++;
+                    }
+                });
+            });
+
+            const battingAvg = totalAtBats > 0 ? totalHits / totalAtBats : 0;
+            const plateAppearances = totalAtBats + totalWalks;
+            const obp = plateAppearances > 0 ? (totalHits + totalWalks) / plateAppearances : 0;
+            const avgAcesBPI = seasonsPlayed > 0 ? totalAcesBPI / seasonsPlayed : 0;
+
+            return {
+                name: playerName,
+                games: totalGames,
+                atBats: totalAtBats,
+                hits: totalHits,
+                runs: totalRuns,
+                walks: totalWalks,
+                battingAvg: battingAvg,
+                obp: obp,
+                acesBPI: avgAcesBPI
+            };
+        }
     </script>
 </body>
 </html>
