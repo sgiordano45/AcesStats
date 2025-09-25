@@ -578,13 +578,17 @@ class TeamCharts {
 
     addPlayerLabels(chartGroup, players, barWidth, spacing, chartHeight) {
         players.forEach((player, index) => {
+            const x = index * (barWidth + spacing) + spacing/2 + barWidth/2;
+            const y = chartHeight + 25;
+            
             const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-            text.setAttribute('x', index * (barWidth + spacing) + spacing/2 + barWidth/2);
-            text.setAttribute('y', chartHeight + 25);
-            text.setAttribute('text-anchor', 'middle');
-            text.setAttribute('font-size', '12px'); // Smaller for player names since there could be more
+            text.setAttribute('x', x);
+            text.setAttribute('y', y);
+            text.setAttribute('text-anchor', 'start'); // Changed from 'middle' to 'start' for angled text
+            text.setAttribute('font-size', '12px');
             text.setAttribute('font-weight', '600');
             text.setAttribute('fill', '#666');
+            text.setAttribute('transform', `rotate(45, ${x}, ${y})`); // Rotate 45 degrees around the text position
             // Use last name only to save space
             const lastName = player.name.split(' ').pop();
             text.textContent = lastName;
