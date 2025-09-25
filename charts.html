@@ -271,6 +271,32 @@
                 // Show loading state
                 document.getElementById('team-charts-container').innerHTML = '<div class="loading">Loading chart data...</div>';
                 
+                // Test data loading first
+                console.log('Testing data.json loading...');
+                
+                // Simple test load of data.json (same as batting.html does)
+                try {
+                    const response = await fetch('data.json');
+                    console.log('data.json response status:', response.status, response.ok);
+                    
+                    if (response.ok) {
+                        const battingData = await response.json();
+                        console.log('Successfully loaded data.json with', battingData.length, 'records');
+                        console.log('First few records:', battingData.slice(0, 3));
+                        
+                        // Process this data into team format
+                        allTeamData = processRealData(battingData);
+                        
+                    } else {
+                        console.warn('data.json not found, using sample data');
+                        allTeamData = getSampleData();
+                    }
+                } catch (error) {
+                    console.error('Error loading data.json:', error);
+                    console.log('Using sample data instead');
+                    allTeamData = getSampleData();
+                }
+                
                 // Initialize the TeamCharts instance
                 teamCharts = new TeamCharts('team-charts-container', {
                     width: 800,
@@ -278,12 +304,6 @@
                     animation: true,
                     responsive: true
                 });
-
-                // Load your data using the same approach as batting.html
-                const rawData = await loadDataFiles();
-                
-                // Process the raw data into team summaries
-                allTeamData = processAllSeasonData(rawData);
                 
                 // Create initial chart
                 const teams = getTeamsForSeason(currentSeason);
@@ -299,6 +319,83 @@
                 console.error('Error during initialization:', error);
                 showError('Failed to initialize charts: ' + error.message);
             }
+        }
+
+        function processRealData(battingData) {
+            // Process your actual data.json into team stats
+            console.log('Processing real batting data...');
+            
+            const teamStats = {};
+            
+            battingData.forEach(player => {
+                if (!player.team || !player.name) return;
+                
+                const teamName = player.team.trim();
+                const year = player.year || '2025';
+                const season = player.season || 'fall';
+                const seasonKey = `${year}-${season.toLowerCase()}`;
+                
+                if (!teamStats[seasonKey]) {
+                    teamStats[seasonKey] = {};
+                }
+                
+                if (!teamStats[seasonKey][teamName]) {
+                    teamStats[seasonKey][teamName] = {
+                        name: teamName,
+                        wins: 5, // Default since we don't have game data
+                        losses: 3,
+                        ties: 0,
+                        runs: 0,
+                        hits: 0,
+                        atBats: 0,
+                        players: 0,
+                        totalGames: 8
+                    };
+                }
+                
+                const team = teamStats[seasonKey][teamName];
+                team.runs += parseInt(player.runs) || 0;
+                team.hits += parseInt(player.hits) || 0;
+                team.atBats += parseInt(player.atBats) || 0;
+                team.players++;
+            });
+            
+            // Convert to final format
+            const result = {
+                '2025-fall': { teams: [] },
+                '2025-summer': { teams: [] },
+                '2024-fall': { teams: [] }
+            };
+            
+            Object.keys(teamStats).forEach(seasonKey => {
+                if (result[seasonKey]) {
+                    result[seasonKey].teams = Object.values(teamStats[seasonKey]).map(team => ({
+                        ...team,
+                        batting_avg: team.atBats > 0 ? team.hits / team.atBats : 0,
+                        winPct: team.totalGames > 0 ? team.wins / team.totalGames : 0
+                    }));
+                }
+            });
+            
+            console.log('Processed real data into:', result);
+            return result;
+        }
+
+        function getSampleData() {
+            return {
+                '2025-fall': {
+                    teams: [
+                        { name: 'Aces Black', wins: 8, losses: 2, ties: 0, batting_avg: 0.425, runs: 89, totalGames: 10 },
+                        { name: 'Aces Green', wins: 7, losses: 3, ties: 0, batting_avg: 0.398, runs: 95, totalGames: 10 },
+                        { name: 'Aces Blue', wins: 6, losses: 4, ties: 0, batting_avg: 0.387, runs: 78, totalGames: 10 },
+                        { name: 'Aces Red', wins: 5, losses: 5, ties: 0, batting_avg: 0.356, runs: 67, totalGames: 10 },
+                        { name: 'Aces White', wins: 4, losses: 6, ties: 0, batting_avg: 0.342, runs: 58, totalGames: 10 },
+                        { name: 'Aces Orange', wins: 3, losses: 7, ties: 0, batting_avg: 0.329, runs: 52, totalGames: 10 }
+                    ]
+                },
+                '2025-summer': { teams: [] },
+                '2024-fall': { teams: [] }
+            };
         }
 
         async function loadDataFiles(dataSources) {
