@@ -359,5 +359,129 @@
 </div>
 
 <script src="script.js"></script>
+<script>
+// Team Color System JavaScript
+class TeamColorSystem {
+  constructor() {
+    this.teams = [
+      'black', 'green', 'red', 'blue', 'white', 
+      'orange', 'silver', 'purple', 'gold', 'carolina', 'army'
+    ];
+  }
+  
+  // Apply team colors to an element
+  applyTeamColors(element, teamName, variant = 'text') {
+    if (!element || !teamName) return;
+    
+    const team = teamName.toLowerCase().trim();
+    
+    // Validate team name
+    if (!this.teams.includes(team)) return;
+    
+    // Remove any existing team classes
+    element.classList.forEach(cls => {
+      if (cls.startsWith('team-')) {
+        element.classList.remove(cls);
+      }
+    });
+    
+    // Build class name
+    let className;
+    switch(variant) {
+      case 'primary':
+        className = `team-${team}`;
+        break;
+      case 'light':
+        className = `team-${team}-light`;
+        break;
+      case 'text':
+        className = `team-text-${team}`;
+        break;
+      case 'badge':
+        className = `team-badge-${team}`;
+        break;
+      default:
+        className = `team-text-${team}`;
+    }
+    
+    // Add new team class
+    element.classList.add(className);
+    return element;
+  }
+  
+  // Automatically detect and style team names in content
+  styleAllTeamNames(variant = 'text') {
+    const teamNames = ['Black', 'Green', 'Red', 'Blue', 'White', 
+                      'Orange', 'Silver', 'Purple', 'Gold', 'Carolina', 'Army'];
+    
+    // Find all text elements that might contain team names
+    const selectors = 'td, th, span, div, p, a, li';
+    document.querySelectorAll(selectors).forEach(element => {
+      // Skip if element already has team styling
+      if (element.classList.toString().includes('team-')) return;
+      
+      const text = element.textContent || '';
+      
+      teamNames.forEach(team => {
+        // Look for team names (with or without "Aces")
+        const patterns = [
+          new RegExp(`\\bAces\\s+${team}\\b`, 'i'),
+          new RegExp(`\\b${team}\\s+Aces\\b`, 'i'),
+          // Only match standalone team name if it's in a table cell or specific context
+          ...(element.tagName === 'TD' || element.tagName === 'TH' ? 
+             [new RegExp(`\\b${team}\\b`, 'i')] : [])
+        ];
+        
+        patterns.forEach(pattern => {
+          if (pattern.test(text) && !element.querySelector('[class*="team-"]')) {
+            this.applyTeamColors(element, team, variant);
+          }
+        });
+      });
+    });
+  }
+  
+  // Style search results specifically
+  styleSearchResults() {
+    // Style team names in search results
+    document.querySelectorAll('.search-item').forEach(item => {
+      const teamName = item.dataset.team;
+      if (teamName) {
+        // Style team badges in search results
+        const subtitles = item.querySelectorAll('.search-item-subtitle');
+        subtitles.forEach(subtitle => {
+          if (subtitle.textContent.includes(teamName)) {
+            // Replace team name with styled badge
+            subtitle.innerHTML = subtitle.innerHTML.replace(
+              new RegExp(`\\b${teamName}\\b`, 'g'),
+              `<span class="team-badge-${teamName.toLowerCase()}">${teamName}</span>`
+            );
+          }
+        });
+      }
+    });
+  }
+}
+
+// Initialize team color system
+const teamColors = new TeamColorSystem();
+
+// Auto-apply team colors when page loads
+document.addEventListener('DOMContentLoaded', () => {
+  // Style all team names in the page
+  teamColors.styleAllTeamNames();
+  
+  // Also style search results if they exist
+  setTimeout(() => {
+    teamColors.styleSearchResults();
+  }, 500);
+  
+  console.log('🎨 Team colors applied!');
+});
+
+// Make available globally for other scripts
+window.teamColors = teamColors;
+</script>
+  
 </body>
 </html>
