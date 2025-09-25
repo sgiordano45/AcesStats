@@ -87,7 +87,7 @@
     });
     
     if (styledCount > 0) {
-      console.log('🎨 Applied team colors to ' + styledCount + ' elements');
+      console.log('Team colors applied to ' + styledCount + ' elements');
     }
   }
   
