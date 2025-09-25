@@ -1,4 +1,183 @@
-/**
+    /**
+     * Create a chart showing player statistics for a specific team
+     * @param {Array} players - Array of player objects
+     * @param {string} statField - Field to chart (battingAvg, obp, runs, acesBPI)
+     * @param {string} chartTitle - Title for the chart
+     * @param {Object} options - Chart configuration options
+     */
+    createPlayerChart(players, statField, chartTitle, options = {}) {
+        const config = { ...this.options, ...options };
+        
+        // Filter out players with no data for this stat and sort by stat value
+        const validPlayers = players.filter(p => (p[statField] || 0) > 0);
+        const sortedPlayers = [...validPlayers].sort((a, b) => (b[statField] || 0) - (a[statField] || 0));
+        
+        if (sortedPlayers.length === 0) {
+            this.showError(`No player data available for ${chartTitle}`);
+            return;
+        }
+        
+        const { chartWidth, chartHeight, margin } = this.calculateDimensions(config);
+        const maxValue = Math.max(...sortedPlayers.map(p => p[statField] || 0));
+        const barWidth = chartWidth / sortedPlayers.length * 0.8;
+        const spacing = chartWidth / sortedPlayers.length * 0.2;
+        
+        // Create SVG
+        this.container.innerHTML = '';
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.setAttribute('width', config.width);
+        svg.setAttribute('height', config.height);
+        svg.style.background = 'white';
+        svg.style.borderRadius = '8px';
+        
+        const chartGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        chartGroup.setAttribute('transform', `translate(${margin.left}, ${margin.top})`);
+        svg.appendChild(chartGroup);
+        
+        this.addAxes(chartGroup, chartWidth, chartHeight);
+        this.addYAxisLabelsForPlayer(chartGroup, chartHeight, maxValue, statField);
+        
+        sortedPlayers.forEach((player, index) => {
+            const x = index * (barWidth + spacing) + spacing/2;
+            const barHeight = ((player[statField] || 0) / maxValue) * chartHeight;
+            const y = chartHeight - barHeight;
+            const color = config.colors[index % config.colors.length];
+            
+            const bar = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+            bar.setAttribute('class', 'bar');
+            bar.setAttribute('x', x);
+            bar.setAttribute('width', barWidth);
+            bar.setAttribute('fill', color);
+            bar.style.cursor = 'pointer';
+            bar.style.transition = 'opacity 0.3s ease';
+            
+            if (config.animation) {
+                bar.setAttribute('y', chartHeight);
+                bar.setAttribute('height', 0);
+                setTimeout(() => {
+                    bar.style.transition = 'all 0.8s ease';
+                    bar.setAttribute('y', y);
+                    bar.setAttribute('height', barHeight);
+                }, index * 100);
+            } else {
+                bar.setAttribute('y', y);
+                bar.setAttribute('height', barHeight);
+            }
+            
+            bar.addEventListener('mouseover', (event) => {
+                const value = this.formatPlayerStatValue(player[statField], statField);
+                this.showTooltip(event, player.name, value);
+                bar.style.opacity = '0.8';
+            });
+            bar.addEventListener('mouseout', () => {
+                this.hideTooltip();
+                bar.style.opacity = '1';
+            });
+            
+            chartGroup.appendChild(bar);
+        });
+        
+        this.addPlayerLabels(chartGroup, sortedPlayers, barWidth, spacing, chartHeight);
+        this.addAxisLabels(chartGroup, chartWidth, chartHeight, 'Players', this.getStatDisplayName(statField));
+        
+        this.container.appendChild(svg);
+        this.currentChart = 'player-' + statField;
+    }
+
+    addYAxisLabelsForPlayer(chartGroup, chartHeight, maxValue, statField) {
+        let labels = [];
+        
+        switch(statField) {
+            case 'battingAvg':
+            case 'obp':
+                // For percentages, show increments of 0.05 (50 points)
+                for (let i = 0; i <= Math.ceil(maxValue / 0.05); i++) {
+                    const value = i * 0.05;
+                    if (value <= maxValue + 0.05) {
+                        labels.push({ 
+                            value: value, 
+                            text: `.${Math.round(value * 1000).toString().padStart(3, '0')}` 
+                        });
+                    }
+                }
+                break;
+            case 'runs':
+                // For runs, show increments based on max value
+                const runIncrement = Math.max(Math.ceil(maxValue / 10), 1);
+                for (let i = 0; i <= maxValue; i += runIncrement) {
+                    labels.push({ value: i, text: i.toString() });
+                }
+                break;
+            case 'acesBPI':
+                // For AcesBPI, show increments of 0.5
+                const bpiIncrement = Math.max(Math.ceil(maxValue / 10), 0.5);
+                for (let i = 0; i <= maxValue; i += bpiIncrement) {
+                    labels.push({ value: i, text: i.toFixed(1) });
+                }
+                break;
+        }
+        
+        labels.forEach(label => {
+            const y = chartHeight - (label.value / maxValue) * chartHeight;
+            
+            const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+            text.setAttribute('x', -10);
+            text.setAttribute('y', y + 5);
+            text.setAttribute('text-anchor', 'end');
+            text.setAttribute('font-size', '12px');
+            text.setAttribute('fill', '#666');
+            text.textContent = label.text;
+            chartGroup.appendChild(text);
+            
+            const tick = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            tick.setAttribute('x1', -5);
+            tick.setAttribute('y1', y);
+            tick.setAttribute('x2', 5);
+            tick.setAttribute('y2', y);
+            tick.setAttribute('stroke', '#e1e5e9');
+            chartGroup.appendChild(tick);
+        });
+    }
+
+    addPlayerLabels(chartGroup, players, barWidth, spacing, chartHeight) {
+        players.forEach((player, index) => {
+            const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+            text.setAttribute('x', index * (barWidth + spacing) + spacing/2 + barWidth/2);
+            text.setAttribute('y', chartHeight + 25);
+            text.setAttribute('text-anchor', 'middle');
+            text.setAttribute('font-size', '12px'); // Smaller for player names since there could be more
+            text.setAttribute('font-weight', '600');
+            text.setAttribute('fill', '#666');
+            // Use last name only to save space
+            const lastName = player.name.split(' ').pop();
+            text.textContent = lastName;
+            chartGroup.appendChild(text);
+        });
+    }
+
+    formatPlayerStatValue(value, statField) {
+        switch(statField) {
+            case 'battingAvg':
+            case 'obp':
+                return `.${Math.round(value * 1000).toString().padStart(3, '0')}`;
+            case 'runs':
+                return `${value} runs`;
+            case 'acesBPI':
+                return `${value.toFixed(2)} BPI`;
+            default:
+                return value.toString();
+        }
+    }
+
+    getStatDisplayName(statField) {
+        const names = {
+            'battingAvg': 'Batting Average',
+            'obp': 'On-Base Percentage', 
+            'runs': 'Runs Scored',
+            'acesBPI': 'AcesBPI'
+        };
+        return names[statField] || statField;
+    }/**
  * Team Charts Module for Men's Softball League Website
  * Vanilla JavaScript version - no external dependencies
  * @version 1.0.0

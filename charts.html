@@ -224,6 +224,13 @@
         </div>
         
         <div class="control-group">
+            <label for="teamSelect">Team</label>
+            <select id="teamSelect">
+                <option value="all">All Teams</option>
+            </select>
+        </div>
+        
+        <div class="control-group">
             <label for="chartType">Chart Type</label>
             <select id="chartType">
                 <option value="wins">Wins Comparison</option>
@@ -240,7 +247,7 @@
         
         <div class="control-group">
             <label>&nbsp;</label>
-            <button onclick="exportChartData()">📷 Export Data</button>
+            <button onclick="exportChartData()">📊 Export Data</button>
         </div>
     </div>
 
@@ -264,16 +271,78 @@
         // Charts page integration code
         let teamCharts;
         let allTeamData = {};
+        let allPlayerData = {};
         let currentSeason = '2025-fall';
 
         document.addEventListener('DOMContentLoaded', async () => {
             try {
                 await initializeCharts();
+                setupTeamSelectHandler();
             } catch (error) {
                 console.error('Failed to initialize charts:', error);
                 showError('Failed to load chart data. Please check that your data files are available.');
             }
         });
+
+        function setupTeamSelectHandler() {
+            const teamSelect = document.getElementById('teamSelect');
+            const chartTypeSelect = document.getElementById('chartType');
+            
+            teamSelect.addEventListener('change', () => {
+                const selectedTeam = teamSelect.value;
+                updateChartTypeOptions(selectedTeam);
+            });
+        }
+
+        function updateChartTypeOptions(selectedTeam) {
+            const chartTypeSelect = document.getElementById('chartType');
+            
+            if (selectedTeam === 'all') {
+                // Team comparison charts
+                chartTypeSelect.innerHTML = `
+                    <option value="wins">Wins Comparison</option>
+                    <option value="batting">Batting Average</option>
+                    <option value="runs">Runs Scored</option>
+                    <option value="standings">Win Percentage</option>
+                `;
+            } else {
+                // Player charts for specific team
+                chartTypeSelect.innerHTML = `
+                    <option value="player-batting">Player Batting Average</option>
+                    <option value="player-obp">Player OBP</option>
+                    <option value="player-runs">Player Runs Scored</option>
+                    <option value="player-acesbpi">Player AcesBPI</option>
+                `;
+            }
+        }
+
+        function updateTeamSelector(availableTeams) {
+            const teamSelect = document.getElementById('teamSelect');
+            if (!teamSelect) return;
+            
+            // Clear existing options except "All Teams"
+            teamSelect.innerHTML = '<option value="all">All Teams</option>';
+            
+            // Add options for each team found (prioritize current Aces teams)
+            const acesTeams = availableTeams.filter(team => team.startsWith('Aces '));
+            const otherTeams = availableTeams.filter(team => !team.startsWith('Aces '));
+            
+            [...acesTeams, ...otherTeams].forEach(teamName => {
+                const option = document.createElement('option');
+                option.value = teamName;
+                option.textContent = teamName;
+                teamSelect.appendChild(option);
+            });
+            
+            console.log('Updated team selector with:', availableTeams.length, 'teams');
+        }
+
+        function getPlayersForTeam(season, teamName) {
+            if (!allPlayerData[season] || !allPlayerData[season][teamName]) {
+                return [];
+            }
+            return allPlayerData[season][teamName];
+        }
 
         async function initializeCharts() {
             try {
@@ -365,7 +434,9 @@
             console.log('Processing real data with batting and games...');
             
             const teamStats = {};
+            const playerData = {};
             const seasonsFound = new Set();
+            const teamsFound = new Set();
             const today = new Date();
             
             // First, process batting data for runs, hits, batting averages
@@ -380,12 +451,48 @@
                     if (playerYear < 2022) return;
                     
                     const teamName = player.team.trim();
+                    const playerName = player.name.trim();
                     const year = player.year || '2025';
                     const season = player.season || 'fall';
                     const seasonKey = `${year}-${season.toLowerCase()}`;
                     
                     seasonsFound.add(seasonKey);
+                    teamsFound.add(teamName);
                     
+                    // Store individual player data
+                    if (!playerData[seasonKey]) {
+                        playerData[seasonKey] = {};
+                    }
+                    if (!playerData[seasonKey][teamName]) {
+                        playerData[seasonKey][teamName] = [];
+                    }
+                    
+                    // Calculate player stats
+                    const atBats = parseInt(player.atBats) || 0;
+                    const hits = parseInt(player.hits) || 0;
+                    const runs = parseInt(player.runs) || 0;
+                    const walks = parseInt(player.walks) || 0;
+                    const games = parseInt(player.games) || 0;
+                    const acesWar = player.AcesWar && player.AcesWar !== "N/A" ? parseFloat(player.AcesWar) : 0;
+                    
+                    const battingAvg = atBats > 0 ? hits / atBats : 0;
+                    const plateAppearances = atBats + walks;
+                    const obp = plateAppearances > 0 ? (hits + walks) / plateAppearances : 0;
+                    
+                    playerData[seasonKey][teamName].push({
+                        name: playerName,
+                        team: teamName,
+                        games: games,
+                        atBats: atBats,
+                        hits: hits,
+                        runs: runs,
+                        walks: walks,
+                        battingAvg: battingAvg,
+                        obp: obp,
+                        acesBPI: acesWar
+                    });
+                    
+                    // Aggregate team stats
                     if (!teamStats[seasonKey]) {
                         teamStats[seasonKey] = {};
                     }
@@ -405,14 +512,14 @@
                     }
                     
                     const team = teamStats[seasonKey][teamName];
-                    team.runs += parseInt(player.runs) || 0;
-                    team.hits += parseInt(player.hits) || 0;
-                    team.atBats += parseInt(player.atBats) || 0;
+                    team.runs += runs;
+                    team.hits += hits;
+                    team.atBats += atBats;
                     team.players++;
                 });
             }
             
-            // Process games data for actual win/loss records
+            // Process games data for actual win/loss records (same as before)
             if (gamesData && gamesData.length > 0) {
                 console.log('Processing games data from', gamesData.length, 'total games');
                 
@@ -450,6 +557,9 @@
                     const homeTeam = game["home team"].trim();
                     const awayTeam = game["away team"].trim();
                     const winner = game.winner.trim();
+                    
+                    teamsFound.add(homeTeam);
+                    teamsFound.add(awayTeam);
                     
                     // Use actual season from games data
                     const year = game.year || '2025';
@@ -515,6 +625,7 @@
             });
             
             console.log('Seasons found in data (sorted):', sortedSeasons);
+            console.log('Teams found in data:', Array.from(teamsFound).sort());
             
             // Convert to final format
             const result = {};
@@ -536,6 +647,9 @@
                 }
             });
             
+            // Store player data globally
+            allPlayerData = playerData;
+            
             // Log some stats for debugging
             Object.keys(result).forEach(seasonKey => {
                 const teams = result[seasonKey].teams;
@@ -551,8 +665,9 @@
                 }
             });
             
-            // Update the season selector with actual seasons
+            // Update the season selector and team selector
             updateSeasonSelector(sortedSeasons);
+            updateTeamSelector(Array.from(teamsFound).sort());
             
             return result;
         }
@@ -611,55 +726,147 @@
 
         function updateChartFromControls() {
             const season = document.getElementById('seasonSelect').value;
+            const team = document.getElementById('teamSelect').value;
             const chartType = document.getElementById('chartType').value;
             
             currentSeason = season;
-            const teams = getTeamsForSeason(season);
             
-            if (!teams || teams.length === 0) {
-                showError(`No data available for ${season}`);
-                return;
-            }
-
-            try {
-                switch(chartType) {
-                    case 'wins':
-                        teamCharts.createWinsChart(teams);
-                        break;
-                    case 'batting':
-                        teamCharts.createBattingChart(teams);
-                        break;
-                    case 'runs':
-                        teamCharts.createRunsChart(teams);
-                        break;
-                    case 'standings':
-                        teamCharts.createStandingsChart(teams);
-                        break;
-                    default:
-                        console.warn('Unknown chart type:', chartType);
-                        return;
+            if (team === 'all') {
+                // Team comparison charts
+                const teams = getTeamsForSeason(season);
+                
+                if (!teams || teams.length === 0) {
+                    showError(`No team data available for ${season}`);
+                    return;
                 }
+
+                try {
+                    switch(chartType) {
+                        case 'wins':
+                            teamCharts.createWinsChart(teams);
+                            break;
+                        case 'batting':
+                            teamCharts.createBattingChart(teams);
+                            break;
+                        case 'runs':
+                            teamCharts.createRunsChart(teams);
+                            break;
+                        case 'standings':
+                            teamCharts.createStandingsChart(teams);
+                            break;
+                        default:
+                            console.warn('Unknown chart type:', chartType);
+                            return;
+                    }
+                    
+                    updateStatsGrid(teams);
+                    updateChartTitle(chartType, season, 'all');
+                    
+                } catch (error) {
+                    console.error('Error updating chart:', error);
+                    showError('Failed to update chart: ' + error.message);
+                }
+            } else {
+                // Player charts for specific team
+                const players = getPlayersForTeam(season, team);
                 
-                updateStatsGrid(teams);
-                updateChartTitle(chartType, season);
-                
-            } catch (error) {
-                console.error('Error updating chart:', error);
-                showError('Failed to update chart: ' + error.message);
+                if (!players || players.length === 0) {
+                    showError(`No player data available for ${team} in ${season}`);
+                    return;
+                }
+
+                try {
+                    switch(chartType) {
+                        case 'player-batting':
+                            teamCharts.createPlayerChart(players, 'battingAvg', 'Player Batting Average');
+                            break;
+                        case 'player-obp':
+                            teamCharts.createPlayerChart(players, 'obp', 'Player On-Base Percentage');
+                            break;
+                        case 'player-runs':
+                            teamCharts.createPlayerChart(players, 'runs', 'Player Runs Scored');
+                            break;
+                        case 'player-acesbpi':
+                            teamCharts.createPlayerChart(players, 'acesBPI', 'Player AcesBPI');
+                            break;
+                        default:
+                            console.warn('Unknown player chart type:', chartType);
+                            return;
+                    }
+                    
+                    updatePlayerStatsGrid(players, team);
+                    updateChartTitle(chartType, season, team);
+                    
+                } catch (error) {
+                    console.error('Error updating player chart:', error);
+                    showError('Failed to update player chart: ' + error.message);
+                }
             }
         }
 
-        function updateChartTitle(chartType, season) {
+        function updateChartTitle(chartType, season, team) {
             const titles = {
                 wins: 'Team Wins Comparison',
                 batting: 'Team Batting Averages',
                 runs: 'Runs Scored by Team',
-                standings: 'Team Win Percentage'
+                standings: 'Team Win Percentage',
+                'player-batting': 'Player Batting Averages',
+                'player-obp': 'Player On-Base Percentage',
+                'player-runs': 'Player Runs Scored',
+                'player-acesbpi': 'Player AcesBPI'
             };
             
-            const title = titles[chartType] || 'Team Performance';
+            const title = titles[chartType] || 'Performance Chart';
             const seasonFormatted = season.replace('-', ' ').toUpperCase();
-            document.getElementById('chartTitle').textContent = `${title} - ${seasonFormatted}`;
+            
+            if (team === 'all') {
+                document.getElementById('chartTitle').textContent = `${title} - ${seasonFormatted}`;
+            } else {
+                document.getElementById('chartTitle').textContent = `${title} - ${team} (${seasonFormatted})`;
+            }
+        }
+
+        function updatePlayerStatsGrid(players, teamName) {
+            if (!players || players.length === 0) {
+                document.getElementById('statsGrid').innerHTML = '<div class="error">No player data available</div>';
+                return;
+            }
+
+            const totalAtBats = players.reduce((sum, player) => sum + (player.atBats || 0), 0);
+            const totalHits = players.reduce((sum, player) => sum + (player.hits || 0), 0);
+            const totalRuns = players.reduce((sum, player) => sum + (player.runs || 0), 0);
+            const avgBattingAvg = players.reduce((sum, player) => sum + (player.battingAvg || 0), 0) / players.length;
+            const avgOBP = players.reduce((sum, player) => sum + (player.obp || 0), 0) / players.length;
+            const topPlayer = players.reduce((prev, curr) => (curr.battingAvg || 0) > (prev.battingAvg || 0) ? curr : prev, players[0]);
+            
+            const statsHtml = `
+                <div class="stat-card">
+                    <div class="stat-value">${players.length}</div>
+                    <div class="stat-label">Players</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">${totalAtBats}</div>
+                    <div class="stat-label">Total At-Bats</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">${totalRuns}</div>
+                    <div class="stat-label">Total Runs</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">.${Math.round(avgBattingAvg * 1000).toString().padStart(3, '0')}</div>
+                    <div class="stat-label">Team Avg. BA</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">.${Math.round(avgOBP * 1000).toString().padStart(3, '0')}</div>
+                    <div class="stat-label">Team Avg. OBP</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">${topPlayer.name.split(' ').pop()}</div>
+                    <div class="stat-label">Top BA (.${Math.round(topPlayer.battingAvg * 1000).toString().padStart(3, '0')})</div>
+                </div>
+            `;
+            
+            document.getElementById('statsGrid').innerHTML = statsHtml;
         }
 
         function updateStatsGrid(teams) {
