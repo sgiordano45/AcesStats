@@ -11,7 +11,7 @@ class TeamCharts {
         this.options = {
             width: options.width || 800,
             height: options.height || 400,
-            margin: options.margin || { top: 40, right: 40, bottom: 80, left: 60 },
+            margin: options.margin || { top: 40, right: 40, bottom: 90, left: 60 }, // Increased bottom margin for bigger labels
             colors: options.colors || ['#667eea', '#764ba2', '#f093fb', '#f5576c', '#4facfe', '#00f2fe', '#43e97b', '#38f9d7'],
             animation: options.animation !== false,
             responsive: options.responsive !== false
@@ -425,20 +425,43 @@ class TeamCharts {
         teams.forEach((team, index) => {
             const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
             text.setAttribute('x', index * (barWidth + spacing) + spacing/2 + barWidth/2);
-            text.setAttribute('y', chartHeight + 20);
+            text.setAttribute('y', chartHeight + 25);
             text.setAttribute('text-anchor', 'middle');
-            text.setAttribute('font-size', '12px');
-            text.setAttribute('fill', '#666');
+            text.setAttribute('font-size', '14px'); // Increased from 12px
+            text.setAttribute('font-weight', '600'); // Make text bold
+            text.setAttribute('fill', this.getTeamColor(team.name));
             text.textContent = (team.name || '').replace('Aces ', '');
             chartGroup.appendChild(text);
         });
     }
 
+    getTeamColor(teamName) {
+        // Extract team color from team name (remove 'Aces' prefix if present)
+        const cleanName = teamName.replace('Aces ', '').toLowerCase().trim();
+        
+        // Team color mapping
+        const teamColors = {
+            'black': '#1a1a1a',
+            'green': '#2d7d32', 
+            'red': '#d32f2f',
+            'blue': '#1976d2',
+            'white': '#343a40',
+            'orange': '#f57c00',
+            'silver': '#757575',
+            'purple': '#7b1fa2',
+            'gold': '#f57f17',
+            'carolina': '#4b9cd3',
+            'army': '#654321'
+        };
+        
+        return teamColors[cleanName] || '#666'; // Default to gray if team not found
+    }
+
     addAxisLabels(chartGroup, chartWidth, chartHeight, xLabel, yLabel) {
-        // X-axis label
+        // X-axis label (moved down to accommodate bigger team names)
         const xLabelElement = document.createElementNS('http://www.w3.org/2000/svg', 'text');
         xLabelElement.setAttribute('x', chartWidth/2);
-        xLabelElement.setAttribute('y', chartHeight + 60);
+        xLabelElement.setAttribute('y', chartHeight + 70); // Increased from 60 to 70
         xLabelElement.setAttribute('text-anchor', 'middle');
         xLabelElement.setAttribute('font-size', '14px');
         xLabelElement.setAttribute('font-weight', '600');

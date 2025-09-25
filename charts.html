@@ -105,13 +105,16 @@
             border-radius: 12px;
             margin-bottom: 2rem;
             box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
         }
         
         .chart-title {
             font-size: 1.5rem;
             font-weight: 700;
             color: #333;
-            margin-bottom: 1rem;
+            margin-bottom: 2rem;
             text-align: center;
         }
         
@@ -119,6 +122,11 @@
             height: 400px;
             position: relative;
             margin-bottom: 2rem;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            width: 100%;
+            max-width: 900px;
         }
         
         .chart-tooltip {
@@ -232,7 +240,7 @@
         
         <div class="control-group">
             <label>&nbsp;</label>
-            <button onclick="exportChartData()">Export Data</button>
+            <button onclick="exportChartData()">📷 Export Data</button>
         </div>
     </div>
 
@@ -247,6 +255,8 @@
         <!-- Stats cards will be populated here -->
     </div>
 
+    <!-- Include team colors for styling -->
+    <script src="team-colors.js"></script>
     <!-- Only include team-charts.js - don't load script.js on charts page -->
     <script src="team-charts.js"></script>
 
@@ -409,6 +419,10 @@
                     // Skip games without required data
                     if (!game["home team"] || !game["away team"]) return;
                     
+                    // Filter to only include 2022 and beyond
+                    const gameYear = parseInt(game.year);
+                    if (gameYear < 2022) return;
+                    
                     // Skip future games - games without a winner (empty string or null)
                     const hasWinner = game.winner && game.winner.trim() !== '' && game.winner.trim() !== 'null';
                     
@@ -546,17 +560,7 @@
             // Clear existing options
             seasonSelect.innerHTML = '';
             
-            // Sort seasons (most recent first)
-            availableSeasons.sort((a, b) => {
-                const [yearA, seasonA] = a.split('-');
-                const [yearB, seasonB] = b.split('-');
-                
-                if (yearA !== yearB) return yearB - yearA; // Newer year first
-                
-                // Within same year, fall before summer before spring
-                const seasonOrder = { 'fall': 3, 'summer': 2, 'spring': 1 };
-                return (seasonOrder[seasonB] || 0) - (seasonOrder[seasonA] || 0);
-            });
+            // Sort seasons (most recent first) - already sorted in processRealData
             
             // Add options for each season found
             availableSeasons.forEach(seasonKey => {
@@ -595,192 +599,6 @@
                 '2025-summer': { teams: [] },
                 '2024-fall': { teams: [] }
             };
-        }
-
-        async function loadDataFiles(dataSources) {
-            const data = {};
-            
-            // Use the same data loading pattern as your existing pages
-            try {
-                // Load batting data (same as batting.html uses)
-                const battingResponse = await fetch('data.json');
-                if (battingResponse.ok) {
-                    data.batting = await battingResponse.json();
-                    console.log('Loaded batting data:', data.batting.length, 'records');
-                } else {
-                    console.warn('Could not load data.json, using sample data');
-                    data.batting = [];
-                }
-            } catch (error) {
-                console.warn('Error loading data.json:', error);
-                data.batting = [];
-            }
-
-            try {
-                // Try to load pitching data
-                const pitchingResponse = await fetch('pitching.json');
-                if (pitchingResponse.ok) {
-                    data.pitching = await pitchingResponse.json();
-                    console.log('Loaded pitching data:', data.pitching.length, 'records');
-                } else {
-                    data.pitching = [];
-                }
-            } catch (error) {
-                console.warn('Pitching data not available:', error);
-                data.pitching = [];
-            }
-
-            try {
-                // Try to load games data
-                const gamesResponse = await fetch('games.json');
-                if (gamesResponse.ok) {
-                    data.games = await gamesResponse.json();
-                    console.log('Loaded games data:', data.games.length, 'records');
-                } else {
-                    data.games = [];
-                }
-            } catch (error) {
-                console.warn('Games data not available:', error);
-                data.games = [];
-            }
-            
-            return data;
-        }
-
-        function processAllSeasonData(rawData) {
-            // This function processes your JSON data into team statistics
-            // Based on your batting.html structure
-            
-            const seasonData = {
-                '2025-fall': { teams: [] },
-                '2025-summer': { teams: [] },
-                '2024-fall': { teams: [] }
-            };
-
-            // Process batting data into team stats (using your actual data structure)
-            const teamStats = {};
-            
-            if (rawData.batting && Array.isArray(rawData.batting)) {
-                rawData.batting.forEach(player => {
-                    if (!player.team || !player.name) return;
-                    
-                    const teamName = player.team.trim();
-                    // Use the actual year and season from your data, with fallback
-                    const year = player.year || '2025';
-                    const season = player.season || 'fall';
-                    const seasonKey = `${year}-${season.toLowerCase()}`;
-                    
-                    if (!teamStats[seasonKey]) {
-                        teamStats[seasonKey] = {};
-                    }
-                    
-                    if (!teamStats[seasonKey][teamName]) {
-                        teamStats[seasonKey][teamName] = {
-                            name: teamName,
-                            wins: 0,
-                            losses: 0,
-                            ties: 0,
-                            runs: 0,
-                            hits: 0,
-                            atBats: 0,
-                            players: 0,
-                            totalGames: 0
-                        };
-                    }
-                    
-                    const team = teamStats[seasonKey][teamName];
-                    // Convert to numbers and handle potential undefined values
-                    team.runs += parseInt(player.runs) || 0;
-                    team.hits += parseInt(player.hits) || 0;
-                    team.atBats += parseInt(player.atBats) || 0;
-                    team.players++;
-                });
-            }
-
-            // Process games data for wins/losses (if available)
-            if (rawData.games && Array.isArray(rawData.games)) {
-                rawData.games.forEach(game => {
-                    if (!game["home team"] || !game["away team"]) return;
-                    
-                    const homeTeam = game["home team"].trim();
-                    const awayTeam = game["away team"].trim();
-                    const winner = game.winner ? game.winner.trim() : null;
-                    // Use actual season from games data
-                    const year = game.year || '2025';
-                    const season = game.season || 'fall';
-                    const seasonKey = `${year}-${season.toLowerCase()}`;
-                    
-                    if (!teamStats[seasonKey]) {
-                        teamStats[seasonKey] = {};
-                    }
-                    
-                    // Initialize teams if they don't exist
-                    [homeTeam, awayTeam].forEach(teamName => {
-                        if (!teamStats[seasonKey][teamName]) {
-                            teamStats[seasonKey][teamName] = {
-                                name: teamName,
-                                wins: 0,
-                                losses: 0,
-                                ties: 0,
-                                runs: 0,
-                                hits: 0,
-                                atBats: 0,
-                                players: 0,
-                                totalGames: 0
-                            };
-                        }
-                    });
-                    
-                    // Record game results
-                    const homeTeamStats = teamStats[seasonKey][homeTeam];
-                    const awayTeamStats = teamStats[seasonKey][awayTeam];
-                    
-                    if (winner && winner !== "Tie") {
-                        if (winner === homeTeam) {
-                            homeTeamStats.wins++;
-                            awayTeamStats.losses++;
-                        } else if (winner === awayTeam) {
-                            awayTeamStats.wins++;
-                            homeTeamStats.losses++;
-                        }
-                    } else {
-                        homeTeamStats.ties++;
-                        awayTeamStats.ties++;
-                    }
-                    
-                    homeTeamStats.totalGames++;
-                    awayTeamStats.totalGames++;
-                });
-            }
-
-            // Calculate derived stats and convert to final format
-            Object.keys(teamStats).forEach(seasonKey => {
-                if (seasonData[seasonKey]) {
-                    seasonData[seasonKey] = {
-                        teams: Object.values(teamStats[seasonKey]).map(team => ({
-                            ...team,
-                            batting_avg: team.atBats > 0 ? team.hits / team.atBats : 0,
-                            winPct: team.totalGames > 0 ? team.wins / team.totalGames : 0
-                        }))
-                    };
-                }
-            });
-
-            // If no real data is available, add sample data so the charts work
-            if (Object.values(seasonData).every(season => season.teams.length === 0)) {
-                console.log('No real data found, using sample data for demonstration');
-                seasonData['2025-fall'].teams = [
-                    { name: 'Aces Black', wins: 8, losses: 2, ties: 0, batting_avg: 0.425, runs: 89, totalGames: 10 },
-                    { name: 'Aces Green', wins: 7, losses: 3, ties: 0, batting_avg: 0.398, runs: 95, totalGames: 10 },
-                    { name: 'Aces Blue', wins: 6, losses: 4, ties: 0, batting_avg: 0.387, runs: 78, totalGames: 10 },
-                    { name: 'Aces Red', wins: 5, losses: 5, ties: 0, batting_avg: 0.356, runs: 67, totalGames: 10 },
-                    { name: 'Aces White', wins: 4, losses: 6, ties: 0, batting_avg: 0.342, runs: 58, totalGames: 10 },
-                    { name: 'Aces Orange', wins: 3, losses: 7, ties: 0, batting_avg: 0.329, runs: 52, totalGames: 10 }
-                ];
-            }
-
-            console.log('Processed team data by season:', seasonData);
-            return seasonData;
         }
 
         function getTeamsForSeason(season) {
