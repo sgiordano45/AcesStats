@@ -896,6 +896,12 @@ class TeamCharts {
         this.data = null;
         this.currentChart = null;
     }
+}
+
+// Global exposure for script tag usage
+if (typeof window !== 'undefined') {
+    window.TeamCharts = TeamCharts;
+}
     }
 }
 
