@@ -473,8 +473,8 @@
       </div>
     </section>
   </div>
-<script>
-// Global Search Functionality
+
+<script>// Global Search Functionality
 class GlobalSearch {
   constructor() {
     this.searchInput = document.getElementById('globalSearch');
@@ -483,6 +483,7 @@ class GlobalSearch {
     
     // Only initialize if elements exist
     if (!this.searchInput || !this.searchResults || !this.clearButton) {
+      console.warn('Global search elements not found');
       return;
     }
     
@@ -499,7 +500,6 @@ class GlobalSearch {
     await this.loadData();
     this.bindEvents();
   }
-  
   
   async loadData() {
     try {
@@ -518,6 +518,12 @@ class GlobalSearch {
       this.allData = this.processPlayerData(battingData, pitchingData, awardsData);
       this.allTeams = this.processTeamData(battingData, gamesData);
       this.allSeasons = this.processSeasonData(battingData, pitchingData, gamesData);
+      
+      console.log('Search data loaded:', {
+        players: this.allData.length,
+        teams: this.allTeams.length,
+        seasons: this.allSeasons.length
+      });
       
     } catch (error) {
       console.error('Error loading search data:', error);
@@ -616,7 +622,7 @@ class GlobalSearch {
       if (teamStats[awayTeam]) {
         teamStats[awayTeam].totalGames++;
         if (winner === awayTeam) {
-          teamStats[awayTeams].wins++;
+          teamStats[awayTeam].wins++;
         } else if (winner !== "Tie") {
           teamStats[awayTeam].losses++;
         }
@@ -716,17 +722,13 @@ class GlobalSearch {
       seasons: this.searchSeasons(query)
     };
     
-    // Smart prioritization: if query matches a team name exactly or closely,
-    // prioritize teams over players
     const shouldPrioritizeTeams = this.shouldPrioritizeTeams(query, results);
-    
     this.displayResults(results, query, shouldPrioritizeTeams);
   }
   
   shouldPrioritizeTeams(query, results) {
     const q = query.toLowerCase().trim();
     
-    // Check if query exactly matches or starts with a team name
     return results.teams.some(team => {
       const teamName = team.name.toLowerCase();
       return teamName === q || teamName.startsWith(q) || q.startsWith(teamName);
@@ -762,20 +764,18 @@ class GlobalSearch {
     const q = query.toLowerCase();
     return this.allSeasons
       .filter(season => 
-        season.year.includes(query) ||
+        season.year.toString().includes(query) ||
         season.season.toLowerCase().includes(q) ||
         `${season.year} ${season.season}`.toLowerCase().includes(q)
       )
       .sort((a, b) => {
-        // Sort by year (descending), then by season priority (Fall > Summer)
         if (a.year !== b.year) {
           return b.year.localeCompare(a.year);
         }
-        // Prioritize Fall over Summer
         if (a.season === b.season) return 0;
         return a.season === 'Fall' ? -1 : 1;
       })
-      .slice(0, 6) // Increased from 3 to 6 seasons
+      .slice(0, 6)
       .map(season => ({
         ...season,
         type: 'season'
@@ -797,30 +797,22 @@ class GlobalSearch {
     
     let html = '';
     
-    // Smart ordering: Teams first if prioritizing teams, otherwise players first
     if (prioritizeTeams) {
-      // Teams section first
       if (results.teams.length > 0) {
         html += this.renderTeamsSection(results.teams, query);
       }
-      
-      // Players section second
       if (results.players.length > 0) {
         html += this.renderPlayersSection(results.players, query);
       }
     } else {
-      // Players section first (default)
       if (results.players.length > 0) {
         html += this.renderPlayersSection(results.players, query);
       }
-      
-      // Teams section second
       if (results.teams.length > 0) {
         html += this.renderTeamsSection(results.teams, query);
       }
     }
     
-    // Seasons section always last
     if (results.seasons.length > 0) {
       html += this.renderSeasonsSection(results.seasons, query);
     }
@@ -834,7 +826,7 @@ class GlobalSearch {
     return `
       <div class="search-category">
         <div class="category-header">Players</div>
-        ${players.map((player, index) => `
+        ${players.map(player => `
           <div class="search-item" data-type="player" data-name="${player.name}" data-team="${player.team}">
             <div class="search-item-icon">👤</div>
             <div class="search-item-content">
@@ -854,7 +846,7 @@ class GlobalSearch {
     return `
       <div class="search-category">
         <div class="category-header">Teams</div>
-        ${teams.map((team, index) => `
+        ${teams.map(team => `
           <div class="search-item" data-type="team" data-name="${team.name}">
             <div class="search-item-icon">🏆</div>
             <div class="search-item-content">
@@ -874,7 +866,7 @@ class GlobalSearch {
     return `
       <div class="search-category">
         <div class="category-header">Seasons</div>
-        ${seasons.map((season, index) => `
+        ${seasons.map(season => `
           <div class="search-item" data-type="season" data-year="${season.year}" data-season="${season.season}">
             <div class="search-item-icon">📅</div>
             <div class="search-item-content">
@@ -891,7 +883,7 @@ class GlobalSearch {
   }
   
   highlightMatch(text, query) {
-    const regex = new RegExp(`(${query.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')})`, 'gi');
+    const regex = new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
     return text.replace(regex, '<span class="highlight">$1</span>');
   }
   
@@ -993,8 +985,6 @@ class GlobalSearch {
 document.addEventListener('DOMContentLoaded', () => {
   new GlobalSearch();
 });
-</script>
-
-  
+</script>  
 </body>
 </html>
