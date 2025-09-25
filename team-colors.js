@@ -1,4 +1,3 @@
-<script>
 // TEAM COLORS - Simplified Site-Wide Version
 (function() {
   // Add CSS directly to page
@@ -89,4 +88,3 @@
   setTimeout(applyTeamColors, 1000);
   setTimeout(applyTeamColors, 3000);
 })();
-</script>
