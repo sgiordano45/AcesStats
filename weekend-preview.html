@@ -524,7 +524,7 @@ const today = new Date();
 
 // Weather configuration
 const WEATHER_ZIP = "07092"; // Mountainside, NJ
-const WEATHER_API_KEY = "c26153644bca587d9db1fc0256a01cf0"; // Replace with your OpenWeatherMap API key
+const WEATHER_API_KEY = "YOUR_API_KEY_HERE"; // Replace with your OpenWeatherMap API key
 
 document.addEventListener('DOMContentLoaded', function() {
   loadWeekendData();
@@ -731,7 +731,16 @@ async function loadWeatherData() {
     return;
   }
 
+  // Check for cached weather data
+  const cachedWeather = getCachedWeather();
+  if (cachedWeather) {
+    console.log('Using cached weather data');
+    displayWeather(cachedWeather.current, cachedWeather.forecast);
+    return;
+  }
+
   try {
+    console.log('Fetching fresh weather data from API');
     // Get current weather and 5-day forecast
     const [currentResponse, forecastResponse] = await Promise.all([
       fetch(`https://api.openweathermap.org/data/2.5/weather?zip=${WEATHER_ZIP},US&appid=${WEATHER_API_KEY}&units=imperial`),
@@ -745,18 +754,117 @@ async function loadWeatherData() {
     const currentWeather = await currentResponse.json();
     const forecastData = await forecastResponse.json();
 
+    // Cache the data before displaying
+    cacheWeatherData(currentWeather, forecastData);
+    
     displayWeather(currentWeather, forecastData);
   } catch (error) {
     console.error('Error loading weather:', error);
-    document.getElementById('weatherModule').innerHTML = `
-      <div class="weather-error">
-        <div class="weather-header">
-          <span class="weather-icon">⚠️</span>
-          <h3>Weather Unavailable</h3>
+    
+    // Check if we have any cached data, even if stale
+    const staleCache = getStaleWeatherCache();
+    if (staleCache) {
+      console.log('Using stale cached weather due to API error');
+      displayWeather(staleCache.current, staleCache.forecast, true);
+      return;
+    }
+    
+    // Check if it's a rate limit error (429) vs other errors
+    const isRateLimited = error.message.includes('429') || error.message.includes('Too Many Requests');
+    
+    if (isRateLimited) {
+      document.getElementById('weatherModule').innerHTML = `
+        <div class="weather-error">
+          <div class="weather-header">
+            <span class="weather-icon">⏰</span>
+            <h3>Weather Temporarily Unavailable</h3>
+          </div>
+          <p>Daily weather data limit reached. Weather will be available again tomorrow.</p>
+          <button onclick="loadWeatherData()" style="margin-top: 0.5rem; padding: 0.5rem 1rem; background: #1976d2; color: white; border: none; border-radius: 4px; cursor: pointer;">
+            Try Again
+          </button>
         </div>
-        <p>Unable to load weather data at this time</p>
-      </div>
-    `;
+      `;
+    } else {
+      document.getElementById('weatherModule').innerHTML = `
+        <div class="weather-error">
+          <div class="weather-header">
+            <span class="weather-icon">⚠️</span>
+            <h3>Weather Unavailable</h3>
+          </div>
+          <p>Unable to load weather data at this time</p>
+          <button onclick="loadWeatherData()" style="margin-top: 0.5rem; padding: 0.5rem 1rem; background: #1976d2; color: white; border: none; border-radius: 4px; cursor: pointer;">
+            Try Again
+          </button>
+        </div>
+      `;
+    }
+  }
+}
+
+function getStaleWeatherCache() {
+  try {
+    const cached = localStorage.getItem('weatherData_07092');
+    if (!cached) return null;
+    
+    const data = JSON.parse(cached);
+    const now = Date.now();
+    const twentyFourHoursInMs = 24 * 60 * 60 * 1000; // 24 hours
+    
+    // Return stale data if it's less than 24 hours old
+    if (now - data.timestamp < twentyFourHoursInMs) {
+      return {
+        current: data.current,
+        forecast: data.forecast
+      };
+    }
+    
+    return null;
+  } catch (error) {
+    return null;
+  }
+}
+
+function getCachedWeather() {
+  try {
+    const cached = localStorage.getItem('weatherData_07092');
+    if (!cached) return null;
+    
+    const data = JSON.parse(cached);
+    const now = Date.now();
+    const fourHoursInMs = 4 * 60 * 60 * 1000; // 4 hours in milliseconds
+    
+    // Check if data is less than 4 hours old
+    if (now - data.timestamp < fourHoursInMs) {
+      return {
+        current: data.current,
+        forecast: data.forecast
+      };
+    } else {
+      // Data is stale, remove it
+      localStorage.removeItem('weatherData_07092');
+      return null;
+    }
+  } catch (error) {
+    console.error('Error reading cached weather:', error);
+    localStorage.removeItem('weatherData_07092');
+    return null;
+  }
+}
+
+function cacheWeatherData(current, forecast) {
+  try {
+    const dataToCache = {
+      timestamp: Date.now(),
+      current: current,
+      forecast: forecast
+    };
+    
+    localStorage.setItem('weatherData_07092', JSON.stringify(dataToCache));
+    console.log('Weather data cached for 4 hours');
+  } catch (error) {
+    console.error('Error caching weather data:', error);
+    // localStorage might be full or disabled, but we can continue without caching
   }
 }
 
