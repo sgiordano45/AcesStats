@@ -569,7 +569,7 @@
 
   <div class="page-header">
     <h1>🥎 Weekend Preview</h1>
-    <p>Upcoming games and matchup preview</p>
+    <p>Upcoming games and matchup analysis</p>
   </div>
 
   <div class="weather-module" id="weatherModule">
@@ -785,6 +785,21 @@ function getTopPlayers(teamName, season = currentSeason, year = currentYear) {
 }
 
 async function loadWeatherData() {
+  // First, try to load forecast override
+  try {
+    const forecastResponse = await fetch('forecast.json');
+    if (forecastResponse.ok) {
+      const forecastData = await forecastResponse.json();
+      if (forecastData && forecastData.length > 0 && forecastData[0].forecast) {
+        forecastOverride = forecastData[0].forecast.toLowerCase();
+        console.log('Loaded forecast override:', forecastOverride);
+      }
+    }
+  } catch (error) {
+    console.log('No forecast override file found, using default logic');
+    forecastOverride = null;
+  }
+
   // Note: To use this, you'll need to:
   // 1. Sign up for a free API key at https://openweathermap.org/api
   // 2. Replace "YOUR_API_KEY_HERE" with your actual API key
@@ -971,15 +986,43 @@ function displayWeather(current, forecast, isStale = false) {
     }
   });
 
-  // Determine which weather image to show based on Sunday's forecast
-  // Default to current weather if no Sunday data found
-  const weatherCondition = sundayWeather || current.weather[0].main.toLowerCase();
-  const isRainyWeather = weatherCondition.includes('rain') || 
-                        weatherCondition.includes('thunderstorm') || 
-                        weatherCondition.includes('storm');
+  // Determine which weather image to show based on forecast override or Sunday's forecast
+  let weatherImageSrc, weatherImageAlt;
   
-  const weatherImageSrc = isRainyWeather ? 'rainyweather.jpg' : 'sunnyweather.png';
-  const weatherImageAlt = isRainyWeather ? 'Rainy weather' : 'Sunny weather';
+  if (forecastOverride) {
+    console.log('Using forecast override:', forecastOverride);
+    if (forecastOverride === 'rain') {
+      weatherImageSrc = 'rainyweather.jpg';
+      weatherImageAlt = 'Rainy weather';
+    } else if (forecastOverride === 'sunny') {
+      weatherImageSrc = 'sunnyweather.png';
+      weatherImageAlt = 'Sunny weather';
+    } else if (forecastOverride === 'default') {
+      // Use default logic - check Sunday's forecast
+      const weatherCondition = sundayWeather || current.weather[0].main.toLowerCase();
+      const isRainyWeather = weatherCondition.includes('rain') || 
+                            weatherCondition.includes('thunderstorm') || 
+                            weatherCondition.includes('storm');
+      weatherImageSrc = isRainyWeather ? 'rainyweather.jpg' : 'sunnyweather.png';
+      weatherImageAlt = isRainyWeather ? 'Rainy weather' : 'Sunny weather';
+    } else {
+      // Invalid forecast value, fall back to default logic
+      const weatherCondition = sundayWeather || current.weather[0].main.toLowerCase();
+      const isRainyWeather = weatherCondition.includes('rain') || 
+                            weatherCondition.includes('thunderstorm') || 
+                            weatherCondition.includes('storm');
+      weatherImageSrc = isRainyWeather ? 'rainyweather.jpg' : 'sunnyweather.png';
+      weatherImageAlt = isRainyWeather ? 'Rainy weather' : 'Sunny weather';
+    }
+  } else {
+    // No forecast override - use original Sunday logic
+    const weatherCondition = sundayWeather || current.weather[0].main.toLowerCase();
+    const isRainyWeather = weatherCondition.includes('rain') || 
+                          weatherCondition.includes('thunderstorm') || 
+                          weatherCondition.includes('storm');
+    weatherImageSrc = isRainyWeather ? 'rainyweather.jpg' : 'sunnyweather.png';
+    weatherImageAlt = isRainyWeather ? 'Rainy weather' : 'Sunny weather';
+  }
 
   const staleWarning = isStale ? `
     <div style="background: rgba(255, 193, 7, 0.2); padding: 0.5rem; border-radius: 6px; margin-bottom: 1rem; font-size: 0.85rem; color: #856404; text-align: center;">
