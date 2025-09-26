@@ -264,6 +264,48 @@
     background: #f8fff9;
   }
 
+  .key-players {
+    background: #f8f9fa;
+    padding: 1rem;
+    border-top: 1px solid #e9ecef;
+  }
+
+  .key-players h4 {
+    font-size: 0.9rem;
+    font-weight: bold;
+    color: #333;
+    margin: 0 0 0.5rem 0;
+    text-align: center;
+  }
+
+  .players-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+  }
+
+  .team-players {
+    text-align: center;
+  }
+
+  .team-players h5 {
+    font-size: 0.8rem;
+    color: #666;
+    margin: 0 0 0.3rem 0;
+    font-weight: 600;
+  }
+
+  .player-list {
+    font-size: 0.8rem;
+    line-height: 1.3;
+  }
+
+  .player-name {
+    display: block;
+    color: #333;
+    font-weight: 500;
+  }
+
   .no-games {
     text-align: center;
     padding: 3rem;
@@ -534,6 +576,26 @@ function getTeamColor(teamName) {
   return teamColors[teamName] || null;
 }
 
+function getTopPlayers(teamName, season = currentSeason, year = currentYear) {
+  if (!playerData || playerData.length === 0) return [];
+  
+  // Filter players for the specific team, season, year and non-subs with valid AcesWar
+  const teamPlayers = playerData.filter(player => 
+    player.team === teamName && 
+    player.season === season && 
+    player.year === year &&
+    player.sub === "No" &&
+    player.AcesWar !== "N/A" &&
+    typeof player.AcesWar === 'number'
+  );
+  
+  // Sort by AcesWar (AcesBPI) in descending order and take top 3
+  return teamPlayers
+    .sort((a, b) => b.AcesWar - a.AcesWar)
+    .slice(0, 3)
+    .map(player => player.name);
+}
+
 function generateWeekendPreview() {
   const weekendGames = getWeekendGames();
   
@@ -659,6 +721,40 @@ function createGameCard(game) {
     }
   }
 
+  // Get top players for both teams
+  const homeTopPlayers = getTopPlayers(homeTeam);
+  const awayTopPlayers = getTopPlayers(awayTeam);
+  
+  // Create Key Players section if we have player data
+  let keyPlayersHtml = '';
+  if (homeTopPlayers.length > 0 || awayTopPlayers.length > 0) {
+    keyPlayersHtml = `
+      <div class="key-players">
+        <h4>Key Players</h4>
+        <div class="players-grid">
+          <div class="team-players">
+            <h5>${awayTeam}</h5>
+            <div class="player-list">
+              ${awayTopPlayers.length > 0 ? 
+                awayTopPlayers.map(player => `<span class="player-name">${player}</span>`).join('') :
+                '<span class="player-name">No data available</span>'
+              }
+            </div>
+          </div>
+          <div class="team-players">
+            <h5>${homeTeam}</h5>
+            <div class="player-list">
+              ${homeTopPlayers.length > 0 ? 
+                homeTopPlayers.map(player => `<span class="player-name">${player}</span>`).join('') :
+                '<span class="player-name">No data available</span>'
+              }
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
   return `
     <a href="game-preview.html?home=${encodeURIComponent(homeTeam)}&away=${encodeURIComponent(awayTeam)}&date=${encodeURIComponent(game.date)}" 
        class="game-card" style="${cardBackgroundStyle}">
@@ -695,6 +791,7 @@ function createGameCard(game) {
       </div>
       
       ${oddsHtml}
+      ${keyPlayersHtml}
     </a>
   `;
 }
