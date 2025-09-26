@@ -389,12 +389,46 @@ class TeamCharts {
     createPlayerRadialChart(player, playerName, viewType = 'season', options = {}) {
         const config = { ...this.options, ...options };
         
+        // Use dynamic maximums if provided, otherwise use defaults
+        const maxStats = options.maxStats || {
+            battingAvg: 1.0,
+            obp: 1.0,
+            runs: Math.max(player.runs || 0, 50),
+            acesBPI: Math.max(player.acesBPI || 0, 100),
+            games: Math.max(player.games || 0, 25)
+        };
+        
         const stats = [
-            { key: 'battingAvg', label: 'Batting Avg', max: 1.0, format: (v) => `.${Math.round(v * 1000).toString().padStart(3, '0')}` },
-            { key: 'obp', label: 'OBP', max: 1.0, format: (v) => `.${Math.round(v * 1000).toString().padStart(3, '0')}` },
-            { key: 'runs', label: 'Runs', max: Math.max(player.runs || 0, 50), format: (v) => Math.round(v).toString() },
-            { key: 'acesBPI', label: 'AcesBPI', max: Math.max(player.acesBPI || 0, 100), format: (v) => v.toFixed(1) },
-            { key: 'games', label: 'Games', max: Math.max(player.games || 0, 25), format: (v) => Math.round(v).toString() }
+            { 
+                key: 'battingAvg', 
+                label: 'Batting Avg', 
+                max: maxStats.battingAvg, 
+                format: (v) => `.${Math.round(v * 1000).toString().padStart(3, '0')}` 
+            },
+            { 
+                key: 'obp', 
+                label: 'OBP', 
+                max: maxStats.obp, 
+                format: (v) => `.${Math.round(v * 1000).toString().padStart(3, '0')}` 
+            },
+            { 
+                key: 'runs', 
+                label: 'Runs', 
+                max: maxStats.runs, 
+                format: (v) => Math.round(v).toString() 
+            },
+            { 
+                key: 'acesBPI', 
+                label: 'AcesBPI', 
+                max: maxStats.acesBPI, 
+                format: (v) => v.toFixed(1) 
+            },
+            { 
+                key: 'games', 
+                label: 'Games', 
+                max: maxStats.games, 
+                format: (v) => Math.round(v).toString() 
+            }
         ];
         
         const center = { x: config.width / 2, y: config.height / 2 };
@@ -454,6 +488,18 @@ class TeamCharts {
             label.setAttribute('fill', '#333');
             label.textContent = stat.label;
             chartGroup.appendChild(label);
+            
+            // Add max value labels for context
+            const maxLabelY = labelY + (labelY > center.y ? 15 : -15);
+            const maxLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+            maxLabel.setAttribute('x', labelX);
+            maxLabel.setAttribute('y', maxLabelY);
+            maxLabel.setAttribute('text-anchor', 'middle');
+            maxLabel.setAttribute('dominant-baseline', 'middle');
+            maxLabel.setAttribute('font-size', '10px');
+            maxLabel.setAttribute('fill', '#999');
+            maxLabel.textContent = `(max: ${stat.format(stat.max)})`;
+            chartGroup.appendChild(maxLabel);
         });
         
         const dataPoints = stats.map((stat, index) => {
@@ -493,7 +539,8 @@ class TeamCharts {
             
             circle.addEventListener('mouseover', (event) => {
                 const formattedValue = point.stat.format(point.value);
-                this.showTooltip(event, point.stat.label, formattedValue);
+                const percentage = ((point.value / point.stat.max) * 100).toFixed(1);
+                this.showTooltip(event, point.stat.label, `${formattedValue} (${percentage}% of max)`);
             });
             circle.addEventListener('mouseout', () => {
                 this.hideTooltip();
@@ -511,6 +558,16 @@ class TeamCharts {
         title.setAttribute('fill', '#333');
         title.textContent = `${playerName} - ${viewType === 'career' ? 'Career' : 'Season'} Stats`;
         chartGroup.appendChild(title);
+        
+        // Add subtitle showing the scaling context
+        const subtitle = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        subtitle.setAttribute('x', center.x);
+        subtitle.setAttribute('y', 50);
+        subtitle.setAttribute('text-anchor', 'middle');
+        subtitle.setAttribute('font-size', '12px');
+        subtitle.setAttribute('fill', '#666');
+        subtitle.textContent = `Scaled relative to ${viewType === 'career' ? 'all-time' : 'season'} maximums`;
+        chartGroup.appendChild(subtitle);
         
         this.container.appendChild(svg);
         this.currentChart = 'radial-' + viewType;

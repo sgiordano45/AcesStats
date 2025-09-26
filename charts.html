@@ -279,6 +279,13 @@
             </select>
         </div>
         
+        <div class="control-group" id="playerSelectGroup" style="display: none;">
+            <label for="playerSelect">Player</label>
+            <select id="playerSelect">
+                <option value="">Select a player...</option>
+            </select>
+        </div>
+        
         <div class="control-group">
             <label>&nbsp;</label>
             <button onclick="updateChartFromControls()">Update Chart</button>
@@ -335,6 +342,7 @@
 
         function updateChartTypeOptions(selectedTeam) {
             const chartTypeSelect = document.getElementById('chartType');
+            const playerSelectGroup = document.getElementById('playerSelectGroup');
             
             if (selectedTeam === 'all') {
                 // Team comparison charts
@@ -344,6 +352,7 @@
                     <option value="runs">Runs Scored</option>
                     <option value="standings">Win Percentage</option>
                 `;
+                playerSelectGroup.style.display = 'none';
             } else {
                 // Player charts for specific team
                 chartTypeSelect.innerHTML = `
@@ -354,7 +363,20 @@
                     <option value="player-radial-season">Player Radial (Season)</option>
                     <option value="player-radial-career">Player Radial (Career)</option>
                 `;
+                playerSelectGroup.style.display = 'flex';
+                updatePlayerDropdown(selectedTeam);
             }
+            
+            // Add event listener for chart type changes to show/hide player selector for radial charts
+            chartTypeSelect.addEventListener('change', () => {
+                const chartType = chartTypeSelect.value;
+                if (chartType === 'player-radial-season' || chartType === 'player-radial-career') {
+                    playerSelectGroup.style.display = 'flex';
+                    updatePlayerDropdown(selectedTeam);
+                } else if (selectedTeam === 'all') {
+                    playerSelectGroup.style.display = 'none';
+                }
+            });
         }
 
         function updateTeamSelector(availableTeams) {
@@ -389,6 +411,111 @@
         function isSubstitutePlayer(player) {
             const subValue = player.Sub || player.sub || "";
             return subValue.toString().trim().toLowerCase() === "yes";
+        }
+
+        function updatePlayerDropdown(selectedTeam) {
+            const playerSelect = document.getElementById('playerSelect');
+            const currentSeason = document.getElementById('seasonSelect').value;
+            const chartType = document.getElementById('chartType').value;
+            
+            // Clear existing options
+            playerSelect.innerHTML = '<option value="">Select a player...</option>';
+            
+            let availablePlayers = [];
+            
+            if (chartType === 'player-radial-career') {
+                // For career view, get all non-sub players from 2022+ across all seasons/teams
+                availablePlayers = getAllNonSubPlayers();
+            } else if (chartType === 'player-radial-season') {
+                // For season view, get non-sub players from the selected team and season
+                availablePlayers = getPlayersForTeam(currentSeason, selectedTeam);
+            }
+            
+            // Sort players alphabetically
+            availablePlayers.sort((a, b) => a.name.localeCompare(b.name));
+            
+            // Add unique players to dropdown
+            const uniquePlayers = [];
+            const seenNames = new Set();
+            
+            availablePlayers.forEach(player => {
+                if (!seenNames.has(player.name)) {
+                    seenNames.add(player.name);
+                    uniquePlayers.push(player);
+                }
+            });
+            
+            uniquePlayers.forEach(player => {
+                const option = document.createElement('option');
+                option.value = player.name;
+                option.textContent = player.name;
+                playerSelect.appendChild(option);
+            });
+            
+            console.log(`Updated player dropdown with ${uniquePlayers.length} players for ${chartType}`);
+        }
+
+        function getAllNonSubPlayers() {
+            const allPlayers = [];
+            
+            // Collect all non-substitute players from all seasons and teams (2022+)
+            Object.keys(allPlayerData).forEach(seasonKey => {
+                const [year] = seasonKey.split('-');
+                if (parseInt(year) >= 2022) {
+                    Object.keys(allPlayerData[seasonKey]).forEach(teamName => {
+                        const teamPlayers = allPlayerData[seasonKey][teamName];
+                        teamPlayers.forEach(player => {
+                            if (!isSubstitutePlayer(player)) {
+                                allPlayers.push(player);
+                            }
+                        });
+                    });
+                }
+            });
+            
+            return allPlayers;
+        }
+
+        function calculateStatMaximums(chartType, season = null) {
+            let relevantPlayers = [];
+            
+            if (chartType === 'player-radial-career') {
+                // For career charts, use all non-sub players to get maximums
+                relevantPlayers = getAllNonSubPlayers();
+            } else {
+                // For season charts, use players from that specific season
+                if (season && allPlayerData[season]) {
+                    Object.keys(allPlayerData[season]).forEach(teamName => {
+                        const teamPlayers = allPlayerData[season][teamName];
+                        teamPlayers.forEach(player => {
+                            if (!isSubstitutePlayer(player)) {
+                                relevantPlayers.push(player);
+                            }
+                        });
+                    });
+                }
+            }
+            
+            if (relevantPlayers.length === 0) {
+                return {
+                    battingAvg: 1.0,
+                    obp: 1.0,
+                    runs: 50,
+                    acesBPI: 100,
+                    games: 25
+                };
+            }
+            
+            const maxStats = {
+                battingAvg: Math.max(...relevantPlayers.map(p => p.battingAvg || 0), 0.1),
+                obp: Math.max(...relevantPlayers.map(p => p.obp || 0), 0.1),
+                runs: Math.max(...relevantPlayers.map(p => p.runs || 0), 1),
+                acesBPI: Math.max(...relevantPlayers.map(p => p.acesBPI || 0), 1),
+                games: Math.max(...relevantPlayers.map(p => p.games || 0), 1)
+            };
+            
+            console.log('Calculated stat maximums:', maxStats);
+            return maxStats;
         }
 
         function getPlayersForTeam(season, teamName) {
@@ -887,10 +1014,20 @@
                             teamCharts.createPlayerChart(players, 'acesBPI', 'Player AcesBPI');
                             break;
                         case 'player-radial-season':
-                            createPlayerRadialCharts(players, season, team, 'season');
+                            const selectedPlayerSeason = document.getElementById('playerSelect').value;
+                            if (!selectedPlayerSeason) {
+                                showError('Please select a player from the dropdown for radial charts.');
+                                return;
+                            }
+                            createPlayerRadialCharts(selectedPlayerSeason, season, team, 'season');
                             break;
                         case 'player-radial-career':
-                            createPlayerRadialCharts(players, season, team, 'career');
+                            const selectedPlayerCareer = document.getElementById('playerSelect').value;
+                            if (!selectedPlayerCareer) {
+                                showError('Please select a player from the dropdown for radial charts.');
+                                return;
+                            }
+                            createPlayerRadialCharts(selectedPlayerCareer, season, team, 'career');
                             break;
                         default:
                             console.warn('Unknown player chart type:', chartType);
@@ -1066,38 +1203,37 @@
             }
         }
 
-        function createPlayerRadialCharts(players, season, team, viewType) {
-            if (viewType === 'season') {
-                // For season view, show each player's radial chart
-                createSeasonRadialView(players, season, team);
-            } else {
-                // For career view, calculate career totals for each player
-                createCareerRadialView(players, team);
+        function createPlayerRadialCharts(selectedPlayerName, season, team, viewType) {
+            if (!selectedPlayerName) {
+                showError('Please select a player for the radial chart.');
+                return;
             }
-        }
-
-        function createSeasonRadialView(players, season, team) {
-            // For now, show the top performer's radial chart
-            // TODO: Could create a grid view showing multiple players
-            if (players.length === 0) return;
             
-            const topPlayer = players.reduce((prev, curr) => 
-                (curr.battingAvg || 0) > (prev.battingAvg || 0) ? curr : prev, players[0]);
+            let playerData;
+            let maxStats;
             
-            teamCharts.createPlayerRadialChart(topPlayer, topPlayer.name, 'season');
-            updateChartTitle('player-radial-season', season, `Aces ${team} - ${topPlayer.name}`);
-        }
-
-        function createCareerRadialView(players, team) {
-            if (players.length === 0) return;
-            
-            // Calculate career stats for the top player
-            const topPlayer = players.reduce((prev, curr) => 
-                (curr.battingAvg || 0) > (prev.battingAvg || 0) ? curr : prev, players[0]);
-            
-            const careerStats = calculateCareerStats(topPlayer.name);
-            teamCharts.createPlayerRadialChart(careerStats, topPlayer.name, 'career');
-            updateChartTitle('player-radial-career', 'Career', `${topPlayer.name} Career Stats`);
+            if (viewType === 'career') {
+                // Calculate career stats for the selected player
+                playerData = calculateCareerStats(selectedPlayerName);
+                maxStats = calculateStatMaximums('player-radial-career');
+                
+                teamCharts.createPlayerRadialChart(playerData, selectedPlayerName, 'career', { maxStats });
+                updateChartTitle('player-radial-career', 'Career', `${selectedPlayerName} Career Stats`);
+            } else {
+                // Find the player's season data
+                const players = getPlayersForTeam(season, team);
+                playerData = players.find(p => p.name === selectedPlayerName);
+                
+                if (!playerData) {
+                    showError(`Player ${selectedPlayerName} not found in ${team} for ${season}.`);
+                    return;
+                }
+                
+                maxStats = calculateStatMaximums('player-radial-season', season);
+                
+                teamCharts.createPlayerRadialChart(playerData, selectedPlayerName, 'season', { maxStats });
+                updateChartTitle('player-radial-season', season, `Aces ${team} - ${selectedPlayerName}`);
+            }
         }
 
         function calculateCareerStats(playerName) {
