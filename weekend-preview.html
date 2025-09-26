@@ -362,7 +362,10 @@
   </div>
 </div>
 
-<script>
+  <!-- Include team colors script -->
+  <script src="team-colors.js"></script>
+
+  <script>
 let allGames = [];
 let playerData = [];
 let previewData = [];
@@ -511,6 +514,30 @@ function formatDateForComparison(dateStr) {
   return `${date.getMonth() + 1}/${date.getDate()}/${date.getFullYear()}`;
 }
 
+function getTeamColor(teamName) {
+  // Map team names to RGB colors for faint backgrounds
+  const teamColors = {
+    'Black': '26, 26, 26',
+    'Green': '45, 125, 50', 
+    'Red': '211, 47, 47',
+    'Blue': '25, 118, 210',
+    'White': '52, 58, 64',
+    'Orange': '245, 124, 0',
+    'Silver': '117, 117, 117',
+    'Purple': '123, 31, 162',
+    'Gold': '245, 127, 23',
+    'Carolina': '75, 156, 211',
+    'Army': '101, 67, 33'
+  };
+  
+  // Extract color name from team name
+  const teamColor = Object.keys(teamColors).find(color => 
+    teamName.toLowerCase().includes(color.toLowerCase())
+  );
+  
+  return teamColor ? teamColors[teamColor] : null;
+}
+
 function generateWeekendPreview() {
   const weekendGames = getWeekendGames();
   
@@ -584,14 +611,32 @@ function createGameCard(game) {
   const homeStandingText = homeStanding ? `#${homeStanding}` : 'NR';
   const awayStandingText = awayStanding ? `#${awayStanding}` : 'NR';
   
-  // Format game date
-  const gameDateTime = gameDate.toLocaleDateString('en-US', { 
-    weekday: 'short',
-    month: 'short', 
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit'
-  });
+  // Format game date and time
+  let gameDateTime;
+  if (preview && preview.time) {
+    // Use time from previews.json if available
+    const dateStr = gameDate.toLocaleDateString('en-US', { 
+      weekday: 'short',
+      month: 'short', 
+      day: 'numeric'
+    });
+    gameDateTime = `${dateStr} ${preview.time}`;
+  } else {
+    // Fallback to original date formatting
+    gameDateTime = gameDate.toLocaleDateString('en-US', { 
+      weekday: 'short',
+      month: 'short', 
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit'
+    });
+  }
+
+  // Get home team color for background
+  const homeTeamColor = getTeamColor(homeTeam);
+  const cardBackgroundStyle = homeTeamColor ? 
+    `background: linear-gradient(135deg, rgba(${homeTeamColor}, 0.05) 0%, rgba(${homeTeamColor}, 0.02) 100%);` : 
+    '';
 
   // Handle odds if available
   let oddsHtml = '';
@@ -620,7 +665,7 @@ function createGameCard(game) {
 
   return `
     <a href="game-preview.html?home=${encodeURIComponent(homeTeam)}&away=${encodeURIComponent(awayTeam)}&date=${encodeURIComponent(game.date)}" 
-       class="game-card">
+       class="game-card" style="${cardBackgroundStyle}">
       <div class="game-header">
         <div class="game-date">${gameDateTime}</div>
         <div class="game-type">${game.game_type} Season</div>
