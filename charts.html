@@ -87,6 +87,20 @@
             transform: translateY(-2px);
         }
         
+        .chart-section-controls {
+            display: flex;
+            gap: 1rem;
+            flex-wrap: wrap;
+            padding: 0.5rem;
+            border: 2px solid #e1e5e9;
+            border-radius: 8px;
+            background: #f8f9fa;
+        }
+        
+        .chart-section-controls .control-group {
+            margin: 0;
+        }
+        
         .controls {
             background: white;
             padding: 1.5rem;
@@ -96,7 +110,7 @@
             display: flex;
             gap: 1rem;
             flex-wrap: wrap;
-            align-items: center;
+            align-items: flex-start;
         }
         
         .control-group {
@@ -263,27 +277,53 @@
         </div>
         
         <div class="control-group">
-            <label for="teamSelect">Team</label>
-            <select id="teamSelect">
-                <option value="all">All Teams</option>
+            <label for="chartSection">Chart Section</label>
+            <select id="chartSection">
+                <option value="team">Team Charts</option>
+                <option value="player">Player Charts</option>
             </select>
         </div>
         
-        <div class="control-group">
-            <label for="chartType">Chart Type</label>
-            <select id="chartType">
-                <option value="wins">Wins Comparison</option>
-                <option value="batting">Batting Average</option>
-                <option value="runs">Runs Scored</option>
-                <option value="standings">Win Percentage</option>
-            </select>
+        <!-- Team Chart Controls -->
+        <div id="teamControls" class="chart-section-controls">
+            <div class="control-group">
+                <label for="teamChartType">Team Chart Type</label>
+                <select id="teamChartType">
+                    <option value="wins">Wins Comparison</option>
+                    <option value="batting">Batting Average</option>
+                    <option value="runs">Runs Scored</option>
+                    <option value="standings">Win Percentage</option>
+                </select>
+            </div>
         </div>
         
-        <div class="control-group" id="playerSelectGroup" style="display: none;">
-            <label for="playerSelect">Player</label>
-            <select id="playerSelect">
-                <option value="">Select a player...</option>
-            </select>
+        <!-- Player Chart Controls -->
+        <div id="playerControls" class="chart-section-controls" style="display: none;">
+            <div class="control-group">
+                <label for="teamSelect">Team</label>
+                <select id="teamSelect">
+                    <option value="">Select a team...</option>
+                </select>
+            </div>
+            
+            <div class="control-group">
+                <label for="playerChartType">Player Chart Type</label>
+                <select id="playerChartType">
+                    <option value="player-batting">Batting Average</option>
+                    <option value="player-obp">On-Base Percentage</option>
+                    <option value="player-runs">Runs Scored</option>
+                    <option value="player-acesbpi">AcesBPI</option>
+                    <option value="player-radial-season">Radial (Season)</option>
+                    <option value="player-radial-career">Radial (Career)</option>
+                </select>
+            </div>
+            
+            <div class="control-group" id="playerSelectGroup" style="display: none;">
+                <label for="playerSelect">Player</label>
+                <select id="playerSelect">
+                    <option value="">Select a player...</option>
+                </select>
+            </div>
         </div>
         
         <div class="control-group">
@@ -331,60 +371,60 @@
         });
 
         function setupTeamSelectHandler() {
+            const chartSection = document.getElementById('chartSection');
+            const teamControls = document.getElementById('teamControls');
+            const playerControls = document.getElementById('playerControls');
             const teamSelect = document.getElementById('teamSelect');
-            const chartTypeSelect = document.getElementById('chartType');
+            const playerChartType = document.getElementById('playerChartType');
+            const playerSelectGroup = document.getElementById('playerSelectGroup');
             
+            // Handle section switching
+            chartSection.addEventListener('change', () => {
+                const section = chartSection.value;
+                if (section === 'team') {
+                    teamControls.style.display = 'flex';
+                    playerControls.style.display = 'none';
+                    playerSelectGroup.style.display = 'none';
+                } else {
+                    teamControls.style.display = 'none';
+                    playerControls.style.display = 'flex';
+                    updatePlayerChartControls();
+                }
+            });
+            
+            // Handle team selection for player charts
             teamSelect.addEventListener('change', () => {
-                const selectedTeam = teamSelect.value;
-                updateChartTypeOptions(selectedTeam);
+                updatePlayerChartControls();
+            });
+            
+            // Handle player chart type changes
+            playerChartType.addEventListener('change', () => {
+                updatePlayerChartControls();
             });
         }
 
-        function updateChartTypeOptions(selectedTeam) {
-            const chartTypeSelect = document.getElementById('chartType');
+        function updatePlayerChartControls() {
+            const teamSelect = document.getElementById('teamSelect');
+            const playerChartType = document.getElementById('playerChartType');
             const playerSelectGroup = document.getElementById('playerSelectGroup');
+            const selectedTeam = teamSelect.value;
+            const chartType = playerChartType.value;
             
-            if (selectedTeam === 'all') {
-                // Team comparison charts
-                chartTypeSelect.innerHTML = `
-                    <option value="wins">Wins Comparison</option>
-                    <option value="batting">Batting Average</option>
-                    <option value="runs">Runs Scored</option>
-                    <option value="standings">Win Percentage</option>
-                `;
-                playerSelectGroup.style.display = 'none';
-            } else {
-                // Player charts for specific team
-                chartTypeSelect.innerHTML = `
-                    <option value="player-batting">Player Batting Average</option>
-                    <option value="player-obp">Player OBP</option>
-                    <option value="player-runs">Player Runs Scored</option>
-                    <option value="player-acesbpi">Player AcesBPI</option>
-                    <option value="player-radial-season">Player Radial (Season)</option>
-                    <option value="player-radial-career">Player Radial (Career)</option>
-                `;
+            // Show/hide player selector for radial charts
+            if ((chartType === 'player-radial-season' || chartType === 'player-radial-career') && selectedTeam) {
                 playerSelectGroup.style.display = 'flex';
-                updatePlayerDropdown(selectedTeam);
+                updatePlayerDropdown(selectedTeam, chartType);
+            } else {
+                playerSelectGroup.style.display = 'none';
             }
-            
-            // Add event listener for chart type changes to show/hide player selector for radial charts
-            chartTypeSelect.addEventListener('change', () => {
-                const chartType = chartTypeSelect.value;
-                if (chartType === 'player-radial-season' || chartType === 'player-radial-career') {
-                    playerSelectGroup.style.display = 'flex';
-                    updatePlayerDropdown(selectedTeam);
-                } else if (selectedTeam === 'all') {
-                    playerSelectGroup.style.display = 'none';
-                }
-            });
         }
 
         function updateTeamSelector(availableTeams) {
             const teamSelect = document.getElementById('teamSelect');
             if (!teamSelect) return;
             
-            // Clear existing options except "All Teams"
-            teamSelect.innerHTML = '<option value="all">All Teams</option>';
+            // Clear existing options
+            teamSelect.innerHTML = '<option value="">Select a team...</option>';
             
             // Define the 11 Aces teams we want to show
             const acesTeamNames = [
@@ -413,10 +453,9 @@
             return subValue.toString().trim().toLowerCase() === "yes";
         }
 
-        function updatePlayerDropdown(selectedTeam) {
+        function updatePlayerDropdown(selectedTeam, chartType) {
             const playerSelect = document.getElementById('playerSelect');
             const currentSeason = document.getElementById('seasonSelect').value;
-            const chartType = document.getElementById('chartType').value;
             
             // Clear existing options
             playerSelect.innerHTML = '<option value="">Select a player...</option>';
@@ -428,6 +467,9 @@
                 availablePlayers = getAllNonSubPlayers();
             } else if (chartType === 'player-radial-season') {
                 // For season view, get non-sub players from the selected team and season
+                availablePlayers = getPlayersForTeam(currentSeason, selectedTeam);
+            } else {
+                // For other player chart types, get players from selected team and season
                 availablePlayers = getPlayersForTeam(currentSeason, selectedTeam);
             }
             
@@ -935,13 +977,13 @@
 
         function updateChartFromControls() {
             const season = document.getElementById('seasonSelect').value;
-            const team = document.getElementById('teamSelect').value;
-            const chartType = document.getElementById('chartType').value;
+            const chartSection = document.getElementById('chartSection').value;
             
             currentSeason = season;
             
-            if (team === 'all') {
+            if (chartSection === 'team') {
                 // Team comparison charts
+                const teamChartType = document.getElementById('teamChartType').value;
                 const teams = getTeamsForSeason(season);
                 
                 if (!teams || teams.length === 0) {
@@ -950,48 +992,43 @@
                 }
 
                 try {
-                    console.log('Attempting to create chart with type:', chartType);
-                    console.log('Available methods:', Object.getOwnPropertyNames(Object.getPrototypeOf(teamCharts)));
+                    console.log('Attempting to create team chart with type:', teamChartType);
                     
-                    switch(chartType) {
+                    switch(teamChartType) {
                         case 'wins':
-                            if (typeof teamCharts.createWinsChart !== 'function') {
-                                throw new Error('createWinsChart method not found');
-                            }
                             teamCharts.createWinsChart(teams);
                             break;
                         case 'batting':
-                            if (typeof teamCharts.createBattingChart !== 'function') {
-                                throw new Error('createBattingChart method not found');
-                            }
                             teamCharts.createBattingChart(teams);
                             break;
                         case 'runs':
-                            if (typeof teamCharts.createRunsChart !== 'function') {
-                                throw new Error('createRunsChart method not found');
-                            }
                             teamCharts.createRunsChart(teams);
                             break;
                         case 'standings':
-                            if (typeof teamCharts.createStandingsChart !== 'function') {
-                                throw new Error('createStandingsChart method not found');
-                            }
                             teamCharts.createStandingsChart(teams);
                             break;
                         default:
-                            console.warn('Unknown chart type:', chartType);
+                            console.warn('Unknown team chart type:', teamChartType);
                             return;
                     }
                     
                     updateStatsGrid(teams);
-                    updateChartTitle(chartType, season, 'all');
+                    updateChartTitle(teamChartType, season, 'all');
                     
                 } catch (error) {
-                    console.error('Error updating chart:', error);
+                    console.error('Error updating team chart:', error);
                     showError('Failed to update chart: ' + error.message);
                 }
             } else {
                 // Player charts for specific team
+                const team = document.getElementById('teamSelect').value;
+                const playerChartType = document.getElementById('playerChartType').value;
+                
+                if (!team) {
+                    showError('Please select a team for player charts.');
+                    return;
+                }
+                
                 const players = getPlayersForTeam(season, team);
                 
                 if (!players || players.length === 0) {
@@ -1000,18 +1037,26 @@
                 }
 
                 try {
-                    switch(chartType) {
+                    switch(playerChartType) {
                         case 'player-batting':
                             teamCharts.createPlayerChart(players, 'battingAvg', 'Player Batting Average');
+                            updatePlayerStatsGrid(players, 'Aces ' + team);
+                            updateChartTitle(playerChartType, season, 'Aces ' + team);
                             break;
                         case 'player-obp':
                             teamCharts.createPlayerChart(players, 'obp', 'Player On-Base Percentage');
+                            updatePlayerStatsGrid(players, 'Aces ' + team);
+                            updateChartTitle(playerChartType, season, 'Aces ' + team);
                             break;
                         case 'player-runs':
                             teamCharts.createPlayerChart(players, 'runs', 'Player Runs Scored');
+                            updatePlayerStatsGrid(players, 'Aces ' + team);
+                            updateChartTitle(playerChartType, season, 'Aces ' + team);
                             break;
                         case 'player-acesbpi':
                             teamCharts.createPlayerChart(players, 'acesBPI', 'Player AcesBPI');
+                            updatePlayerStatsGrid(players, 'Aces ' + team);
+                            updateChartTitle(playerChartType, season, 'Aces ' + team);
                             break;
                         case 'player-radial-season':
                             const selectedPlayerSeason = document.getElementById('playerSelect').value;
@@ -1020,6 +1065,7 @@
                                 return;
                             }
                             createPlayerRadialCharts(selectedPlayerSeason, season, team, 'season');
+                            updatePlayerStatsGrid([players.find(p => p.name === selectedPlayerSeason)].filter(Boolean), 'Aces ' + team);
                             break;
                         case 'player-radial-career':
                             const selectedPlayerCareer = document.getElementById('playerSelect').value;
@@ -1028,14 +1074,13 @@
                                 return;
                             }
                             createPlayerRadialCharts(selectedPlayerCareer, season, team, 'career');
+                            const careerPlayer = { name: selectedPlayerCareer };
+                            updatePlayerStatsGrid([careerPlayer], selectedPlayerCareer + ' Career');
                             break;
                         default:
-                            console.warn('Unknown player chart type:', chartType);
+                            console.warn('Unknown player chart type:', playerChartType);
                             return;
                     }
-                    
-                    updatePlayerStatsGrid(players, 'Aces ' + team);
-                    updateChartTitle(chartType, season, 'Aces ' + team);
                     
                 } catch (error) {
                     console.error('Error updating player chart:', error);
