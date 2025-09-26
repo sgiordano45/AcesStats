@@ -559,10 +559,10 @@ class TeamCharts {
         title.textContent = `${playerName} - ${viewType === 'career' ? 'Career' : 'Season'} Stats`;
         chartGroup.appendChild(title);
         
-        // Add subtitle showing the scaling context with more spacing
+        // Add subtitle showing the scaling context with proper spacing
         const subtitle = document.createElementNS('http://www.w3.org/2000/svg', 'text');
         subtitle.setAttribute('x', center.x);
-        subtitle.setAttribute('y', 70);
+        subtitle.setAttribute('y', 50);
         subtitle.setAttribute('text-anchor', 'middle');
         subtitle.setAttribute('font-size', '12px');
         subtitle.setAttribute('fill', '#666');
