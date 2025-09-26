@@ -121,9 +121,18 @@
 
   .weather-content {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    grid-template-columns: auto 1fr auto;
     gap: 1.5rem;
     align-items: center;
+  }
+
+  .weather-image {
+    width: 120px;
+    height: 120px;
+    object-fit: cover;
+    border-radius: 12px;
+    border: 2px solid rgba(255, 255, 255, 0.8);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
   }
 
   .current-weather {
@@ -448,6 +457,22 @@
       font-size: 2rem;
     }
 
+    .weather-content {
+      grid-template-columns: 1fr;
+      text-align: center;
+    }
+
+    .weather-image {
+      width: 100px;
+      height: 100px;
+      margin: 0 auto;
+    }
+
+    .forecast {
+      grid-template-columns: repeat(3, 1fr);
+      gap: 0.5rem;
+    }
+
     .games-grid {
       grid-template-columns: 1fr;
       gap: 1.5rem;
@@ -494,8 +519,8 @@
   </div>
 
   <div class="page-header">
-    <h1>🥎 Weekend Preview</h1>
-    <p>Upcoming games and matchup breakdown</p>
+    <h1>🏈 Weekend Preview</h1>
+    <p>Upcoming games and matchup analysis</p>
   </div>
 
   <div class="weather-module" id="weatherModule">
@@ -524,7 +549,7 @@ const today = new Date();
 
 // Weather configuration
 const WEATHER_ZIP = "07092"; // Mountainside, NJ
-const WEATHER_API_KEY = "c26153644bca587d9db1fc0256a01cf0"; // Replace with your OpenWeatherMap API key
+const WEATHER_API_KEY = "YOUR_API_KEY_HERE"; // Replace with your OpenWeatherMap API key
 
 document.addEventListener('DOMContentLoaded', function() {
   loadWeekendData();
@@ -868,16 +893,22 @@ function cacheWeatherData(current, forecast) {
   }
 }
 
-function displayWeather(current, forecast) {
+function displayWeather(current, forecast, isStale = false) {
   const weatherIcon = getWeatherIcon(current.weather[0].main);
   
   // Get next 3 days from forecast (skip today, get next 3 unique days)
   const dailyForecasts = [];
   const processedDates = new Set();
+  let sundayWeather = null;
   
   forecast.list.forEach(item => {
     const date = new Date(item.dt * 1000);
     const dateString = date.toDateString();
+    
+    // Check if this is Sunday (day 0 = Sunday)
+    if (date.getDay() === 0 && !sundayWeather) {
+      sundayWeather = item.weather[0].main.toLowerCase();
+    }
     
     // Skip today and only take one forecast per day
     if (dateString !== today.toDateString() && !processedDates.has(dateString) && dailyForecasts.length < 3) {
@@ -891,12 +922,34 @@ function displayWeather(current, forecast) {
     }
   });
 
+  // Determine which weather image to show based on Sunday's forecast
+  // Default to current weather if no Sunday data found
+  const weatherCondition = sundayWeather || current.weather[0].main.toLowerCase();
+  const isRainyWeather = weatherCondition.includes('rain') || 
+                        weatherCondition.includes('thunderstorm') || 
+                        weatherCondition.includes('storm');
+  
+  const weatherImageSrc = isRainyWeather ? 'rainyweather.jpg' : 'sunnyweather.png';
+  const weatherImageAlt = isRainyWeather ? 'Rainy weather' : 'Sunny weather';
+
+  const staleWarning = isStale ? `
+    <div style="background: rgba(255, 193, 7, 0.2); padding: 0.5rem; border-radius: 6px; margin-bottom: 1rem; font-size: 0.85rem; color: #856404; text-align: center;">
+      ⚠️ Showing recent weather data - current conditions may vary
+    </div>
+  ` : '';
+
   const weatherHTML = `
     <div class="weather-header">
       <span class="weather-icon">${weatherIcon}</span>
       <h3>Weather for Mountainside, NJ</h3>
     </div>
+    ${staleWarning}
     <div class="weather-content">
+      <img class="weather-image" 
+           src="${weatherImageSrc}" 
+           alt="${weatherImageAlt}"
+           onerror="this.style.display='none'">
+      
       <div class="current-weather">
         <div class="temperature">${Math.round(current.main.temp)}°F</div>
         <div class="weather-description">${current.weather[0].description}</div>
@@ -906,6 +959,7 @@ function displayWeather(current, forecast) {
           Wind: ${Math.round(current.wind?.speed || 0)} mph
         </div>
       </div>
+      
       <div class="forecast">
         ${dailyForecasts.map(day => `
           <div class="forecast-item">
