@@ -92,6 +92,109 @@
     text-align: center;
   }
 
+  .weather-module {
+    background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin-bottom: 2rem;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.07);
+    border: 1px solid #90caf9;
+  }
+
+  .weather-header {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+  }
+
+  .weather-header h3 {
+    margin: 0;
+    color: #1565c0;
+    font-size: 1.2rem;
+  }
+
+  .weather-icon {
+    font-size: 1.5rem;
+  }
+
+  .weather-content {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 1.5rem;
+    align-items: center;
+  }
+
+  .current-weather {
+    text-align: center;
+  }
+
+  .temperature {
+    font-size: 2.5rem;
+    font-weight: bold;
+    color: #0d47a1;
+    margin-bottom: 0.5rem;
+  }
+
+  .weather-description {
+    font-size: 1.1rem;
+    color: #1565c0;
+    margin-bottom: 0.5rem;
+    text-transform: capitalize;
+  }
+
+  .weather-details {
+    font-size: 0.9rem;
+    color: #1976d2;
+    line-height: 1.4;
+  }
+
+  .forecast {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 1rem;
+  }
+
+  .forecast-item {
+    text-align: center;
+    background: rgba(255, 255, 255, 0.7);
+    padding: 1rem;
+    border-radius: 8px;
+    border: 1px solid rgba(25, 118, 210, 0.2);
+  }
+
+  .forecast-day {
+    font-size: 0.9rem;
+    font-weight: bold;
+    color: #0d47a1;
+    margin-bottom: 0.5rem;
+  }
+
+  .forecast-temp {
+    font-size: 1.1rem;
+    color: #1565c0;
+    margin-bottom: 0.3rem;
+  }
+
+  .forecast-desc {
+    font-size: 0.8rem;
+    color: #1976d2;
+    text-transform: capitalize;
+  }
+
+  .weather-loading {
+    text-align: center;
+    color: #1976d2;
+    font-style: italic;
+  }
+
+  .weather-error {
+    text-align: center;
+    color: #d32f2f;
+    font-size: 0.9rem;
+  }
+
   .weekend-info h3 {
     margin: 0 0 0.5rem 0;
     color: #333;
@@ -395,6 +498,10 @@
     <p>Upcoming games and matchup analysis</p>
   </div>
 
+  <div class="weather-module" id="weatherModule">
+    <div class="weather-loading">Loading weather forecast...</div>
+  </div>
+
   <div class="weekend-info" id="weekendInfo">
     <div class="loading">Loading weekend schedule...</div>
   </div>
@@ -415,7 +522,14 @@ const currentSeason = "Fall";
 const currentYear = "2025";
 const today = new Date();
 
-document.addEventListener('DOMContentLoaded', loadWeekendData);
+// Weather configuration
+const WEATHER_ZIP = "07092"; // Mountainside, NJ
+const WEATHER_API_KEY = "YOUR_API_KEY_HERE"; // Replace with your OpenWeatherMap API key
+
+document.addEventListener('DOMContentLoaded', function() {
+  loadWeekendData();
+  loadWeatherData();
+});
 
 async function loadWeekendData() {
   try {
@@ -594,6 +708,125 @@ function getTopPlayers(teamName, season = currentSeason, year = currentYear) {
     .sort((a, b) => b.AcesWar - a.AcesWar)
     .slice(0, 3)
     .map(player => player.name);
+}
+
+async function loadWeatherData() {
+  // Note: To use this, you'll need to:
+  // 1. Sign up for a free API key at https://openweathermap.org/api
+  // 2. Replace "YOUR_API_KEY_HERE" with your actual API key
+  
+  if (WEATHER_API_KEY === "YOUR_API_KEY_HERE") {
+    document.getElementById('weatherModule').innerHTML = `
+      <div class="weather-error">
+        <div class="weather-header">
+          <span class="weather-icon">🌤️</span>
+          <h3>Weather for Mountainside, NJ</h3>
+        </div>
+        <p>Weather data unavailable - API key required</p>
+        <p style="font-size: 0.8rem; margin-top: 0.5rem;">
+          To enable weather: Get a free API key from <a href="https://openweathermap.org/api" target="_blank">OpenWeatherMap</a>
+        </p>
+      </div>
+    `;
+    return;
+  }
+
+  try {
+    // Get current weather and 5-day forecast
+    const [currentResponse, forecastResponse] = await Promise.all([
+      fetch(`https://api.openweathermap.org/data/2.5/weather?zip=${WEATHER_ZIP},US&appid=${WEATHER_API_KEY}&units=imperial`),
+      fetch(`https://api.openweathermap.org/data/2.5/forecast?zip=${WEATHER_ZIP},US&appid=${WEATHER_API_KEY}&units=imperial`)
+    ]);
+
+    if (!currentResponse.ok || !forecastResponse.ok) {
+      throw new Error('Weather API request failed');
+    }
+
+    const currentWeather = await currentResponse.json();
+    const forecastData = await forecastResponse.json();
+
+    displayWeather(currentWeather, forecastData);
+  } catch (error) {
+    console.error('Error loading weather:', error);
+    document.getElementById('weatherModule').innerHTML = `
+      <div class="weather-error">
+        <div class="weather-header">
+          <span class="weather-icon">⚠️</span>
+          <h3>Weather Unavailable</h3>
+        </div>
+        <p>Unable to load weather data at this time</p>
+      </div>
+    `;
+  }
+}
+
+function displayWeather(current, forecast) {
+  const weatherIcon = getWeatherIcon(current.weather[0].main);
+  
+  // Get next 3 days from forecast (skip today, get next 3 unique days)
+  const dailyForecasts = [];
+  const processedDates = new Set();
+  
+  forecast.list.forEach(item => {
+    const date = new Date(item.dt * 1000);
+    const dateString = date.toDateString();
+    
+    // Skip today and only take one forecast per day
+    if (dateString !== today.toDateString() && !processedDates.has(dateString) && dailyForecasts.length < 3) {
+      processedDates.add(dateString);
+      dailyForecasts.push({
+        day: date.toLocaleDateString('en-US', { weekday: 'short' }),
+        temp: Math.round(item.main.temp),
+        description: item.weather[0].description,
+        icon: getWeatherIcon(item.weather[0].main)
+      });
+    }
+  });
+
+  const weatherHTML = `
+    <div class="weather-header">
+      <span class="weather-icon">${weatherIcon}</span>
+      <h3>Weather for Mountainside, NJ</h3>
+    </div>
+    <div class="weather-content">
+      <div class="current-weather">
+        <div class="temperature">${Math.round(current.main.temp)}°F</div>
+        <div class="weather-description">${current.weather[0].description}</div>
+        <div class="weather-details">
+          Feels like ${Math.round(current.main.feels_like)}°F<br>
+          Humidity: ${current.main.humidity}%<br>
+          Wind: ${Math.round(current.wind?.speed || 0)} mph
+        </div>
+      </div>
+      <div class="forecast">
+        ${dailyForecasts.map(day => `
+          <div class="forecast-item">
+            <div class="forecast-day">${day.day}</div>
+            <div class="weather-icon">${day.icon}</div>
+            <div class="forecast-temp">${day.temp}°F</div>
+            <div class="forecast-desc">${day.description}</div>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `;
+
+  document.getElementById('weatherModule').innerHTML = weatherHTML;
+}
+
+function getWeatherIcon(condition) {
+  const iconMap = {
+    'Clear': '☀️',
+    'Clouds': '☁️',
+    'Rain': '🌧️',
+    'Drizzle': '🌦️',
+    'Thunderstorm': '⛈️',
+    'Snow': '❄️',
+    'Mist': '🌫️',
+    'Fog': '🌫️',
+    'Haze': '🌫️'
+  };
+  return iconMap[condition] || '🌤️';
 }
 
 function generateWeekendPreview() {
