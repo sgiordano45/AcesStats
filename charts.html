@@ -502,10 +502,30 @@
             const selectedTeam = teamSelect.value;
             const chartType = playerChartType.value;
             
-            // Show/hide player selector for radial charts
-            if ((chartType === 'player-radial-season' || chartType === 'player-radial-career') && selectedTeam) {
+            // Update available chart types based on team selection
+            if (selectedTeam === 'all') {
+                // For "All Teams", only show career radial option
+                playerChartType.innerHTML = `
+                    <option value="player-radial-career">Radial (Career)</option>
+                `;
+            } else if (selectedTeam) {
+                // For specific teams, show all player chart options
+                playerChartType.innerHTML = `
+                    <option value="player-batting">Batting Average</option>
+                    <option value="player-obp">On-Base Percentage</option>
+                    <option value="player-runs">Runs Scored</option>
+                    <option value="player-acesbpi">AcesBPI</option>
+                    <option value="player-radial-season">Radial (Season)</option>
+                    <option value="player-radial-career">Radial (Career)</option>
+                `;
+            }
+            
+            const updatedChartType = playerChartType.value;
+            
+            // Show/hide player selector for radial charts or when a team is selected
+            if ((updatedChartType === 'player-radial-season' || updatedChartType === 'player-radial-career') && selectedTeam) {
                 playerSelectGroup.style.display = 'flex';
-                updatePlayerDropdown(selectedTeam, chartType);
+                updatePlayerDropdown(selectedTeam, updatedChartType);
             } else {
                 playerSelectGroup.style.display = 'none';
             }
@@ -517,6 +537,12 @@
             
             // Clear existing options
             teamSelect.innerHTML = '<option value="">Select a team...</option>';
+            
+            // Add "All Teams" option for career radial charts
+            const allTeamsOption = document.createElement('option');
+            allTeamsOption.value = "all";
+            allTeamsOption.textContent = "All Teams";
+            teamSelect.appendChild(allTeamsOption);
             
             // Define the 11 Aces teams we want to show
             const acesTeamNames = [
@@ -554,14 +580,14 @@
             
             let availablePlayers = [];
             
-            if (chartType === 'player-radial-career') {
-                // For career view, get all non-sub players from 2022+ across all seasons/teams
+            if (selectedTeam === 'all') {
+                // For "All Teams", only career radial is available - get all non-sub players from 2022+
                 availablePlayers = getAllNonSubPlayers();
-            } else if (chartType === 'player-radial-season') {
-                // For season view, get non-sub players from the selected team and season
-                availablePlayers = getPlayersForTeam(currentSeason, selectedTeam);
+            } else if (chartType === 'player-radial-career') {
+                // For career view with specific team, get all non-sub players from that team across all seasons
+                availablePlayers = getAllNonSubPlayersForTeam(selectedTeam);
             } else {
-                // For other player chart types, get players from selected team and season
+                // For season-specific charts, get non-sub players from the selected team and season
                 availablePlayers = getPlayersForTeam(currentSeason, selectedTeam);
             }
             
@@ -586,7 +612,28 @@
                 playerSelect.appendChild(option);
             });
             
-            console.log(`Updated player dropdown with ${uniquePlayers.length} players for ${chartType}`);
+            console.log(`Updated player dropdown with ${uniquePlayers.length} players for team: ${selectedTeam}, chart: ${chartType}`);
+        }
+
+        function getAllNonSubPlayersForTeam(teamName) {
+            const teamPlayers = [];
+            
+            // Collect all non-substitute players from the specified team across all seasons (2022+)
+            Object.keys(allPlayerData).forEach(seasonKey => {
+                const [year] = seasonKey.split('-');
+                if (parseInt(year) >= 2022) {
+                    if (allPlayerData[seasonKey][teamName]) {
+                        const seasonPlayers = allPlayerData[seasonKey][teamName];
+                        seasonPlayers.forEach(player => {
+                            if (!isSubstitutePlayer(player)) {
+                                teamPlayers.push(player);
+                            }
+                        });
+                    }
+                }
+            });
+            
+            return teamPlayers;
         }
 
         function getAllNonSubPlayers() {
@@ -1121,6 +1168,31 @@
                     return;
                 }
                 
+                // Handle "All Teams" case - only career radial is available
+                if (team === 'all') {
+                    if (playerChartType !== 'player-radial-career') {
+                        showError('Only Career Radial charts are available when "All Teams" is selected.');
+                        return;
+                    }
+                    
+                    const selectedPlayer = document.getElementById('playerSelect').value;
+                    if (!selectedPlayer) {
+                        showError('Please select a player from the dropdown for career radial charts.');
+                        return;
+                    }
+                    
+                    try {
+                        createPlayerRadialCharts(selectedPlayer, season, 'All Teams', 'career');
+                        const careerPlayer = { name: selectedPlayer };
+                        updatePlayerStatsGrid([careerPlayer], selectedPlayer + ' Career');
+                    } catch (error) {
+                        console.error('Error updating career radial chart:', error);
+                        showError('Failed to update career radial chart: ' + error.message);
+                    }
+                    return;
+                }
+                
+                // Handle specific team selection
                 const players = getPlayersForTeam(season, team);
                 
                 if (!players || players.length === 0) {
@@ -1199,7 +1271,7 @@
             if (team === 'all') {
                 document.getElementById('chartTitle').textContent = `${title} - ${seasonFormatted}`;
             } else {
-                document.getElementById('chartTitle').textContent = `${title} - ${team} (${seasonFormatted}) - Non-Substitute Players`;
+                document.getElementById('chartTitle').textContent = `${title} - ${team} (${seasonFormatted})`;
             }
         }
 
