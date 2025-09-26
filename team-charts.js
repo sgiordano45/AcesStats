@@ -431,8 +431,8 @@ class TeamCharts {
             }
         ];
         
-        const center = { x: config.width / 2, y: config.height / 2 };
-        const radius = Math.min(config.width, config.height) / 2 - 80;
+        const center = { x: config.width / 2, y: config.height / 2 + 40 };
+        const radius = Math.min(config.width, config.height) / 2 - 120;
         const angleStep = (2 * Math.PI) / stats.length;
         
         this.container.innerHTML = '';
