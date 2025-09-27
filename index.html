@@ -298,9 +298,89 @@
       min-width: 140px;
     }
   }
+  /* Scrolling Banner Styles */
+.news-banner {
+  background: linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%);
+  color: white;
+  overflow: hidden;
+  white-space: nowrap;
+  position: relative;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  border-bottom: 3px solid #c23616;
+}
+
+.news-content {
+  display: inline-block;
+  padding: 12px 0;
+  animation: scroll-left 60s linear infinite;
+  font-weight: 600;
+  font-size: 1.1rem;
+}
+
+.news-item {
+  display: inline-block;
+  margin-right: 50px;
+  padding: 0 20px;
+  position: relative;
+}
+
+.news-item::after {
+  content: "•";
+  position: absolute;
+  right: -25px;
+  top: 0;
+  color: rgba(255,255,255,0.7);
+  font-size: 1.2rem;
+}
+
+.news-item:last-child::after {
+  display: none;
+}
+
+.news-announcement {
+  color: #ffd700;
+  font-weight: bold;
+}
+
+.news-score {
+  color: #ffffff;
+}
+
+.news-winner {
+  color: #00ff88;
+  font-weight: bold;
+}
+
+@keyframes scroll-left {
+  0% { transform: translateX(100%); }
+  100% { transform: translateX(-100%); }
+}
+
+/* Pause animation on hover */
+.news-banner:hover .news-content {
+  animation-play-state: paused;
+}
+
+/* Responsive Design for Banner */
+@media (max-width: 768px) {
+  .news-content {
+    font-size: 1rem;
+  }
+  
+  .news-item {
+    margin-right: 30px;
+    padding: 0 15px;
+  }
+}
 </style>
 </head>
 <body>
+  <!-- Scrolling News Banner -->
+<div class="news-banner">
+  <div class="news-content" id="newsContent">
+    <!-- Content will be dynamically loaded -->
+  </div>
+</div>
   <header class="header">
     <h1>⚾️ Mountainside Aces</h1>
     <p>Softball Statistics Hub</p>
@@ -1064,6 +1144,96 @@ class GlobalSearch {
 document.addEventListener('DOMContentLoaded', () => {
   new GlobalSearch();
 });
-</script>  
+</script>
+  <script>
+// Sample announcements and recent scores data
+const announcements = [
+  { type: 'announcement', text: '🏆 2025 Fall Playoffs starts November 16th!', className: 'news-announcement' },
+  { type: 'announcement', text: '📅 Regular season ends November 14th - playoff seeding on the line!', className: 'news-announcement' },
+  { type: 'announcement', text: '⭐ Remember to clean up all trash after your games!', className: 'news-announcement' }
+];
+
+let recentScores = [];
+let allGames = [];
+
+// Load recent scores from games.json
+async function loadRecentScores() {
+  try {
+    const response = await fetch('games.json');
+    if (response.ok) {
+      allGames = await response.json();
+      
+      // Get the 5 most recent games from 2025 Fall season
+      const currentSeasonGames = allGames
+        .filter(game => game.year === "2025" && game.season === "Fall" && game.winner && game.winner.trim() !== "")
+        .sort((a, b) => new Date(b.date) - new Date(a.date))
+        .slice(0, 5);
+
+      recentScores = currentSeasonGames.map(game => ({
+        type: 'score',
+        text: formatGameResult(game),
+        className: 'news-score'
+      }));
+    }
+  } catch (error) {
+    console.log('Could not load games data:', error);
+    // Fallback to sample scores if games.json is not available
+    recentScores = [
+      { type: 'score', text: '🏆 Blue defeats Orange 12-8 in thriller!', className: 'news-score' },
+      { type: 'score', text: '⚾ Gold shuts out Silver 7-0', className: 'news-score' },
+      { type: 'score', text: '🔥 Green comes from behind to beat Red 15-13', className: 'news-score' }
+    ];
+  }
+  
+  updateNewsBanner();
+}
+
+function formatGameResult(game) {
+  const homeTeam = game["home team"];
+  const awayTeam = game["away team"];
+  const homeScore = game["home score"];
+  const awayScore = game["away score"];
+  const winner = game.winner;
+  
+  let scoreText;
+  if (homeScore === "W" && awayScore === "L") {
+    scoreText = `${homeTeam} defeats ${awayTeam}`;
+  } else if (homeScore === "L" && awayScore === "W") {
+    scoreText = `${awayTeam} defeats ${homeTeam}`;
+  } else if (winner === "Tie") {
+    scoreText = `${homeTeam} ties ${awayTeam} ${homeScore}-${awayScore}`;
+  } else {
+    const winnerTeam = winner;
+    const loserTeam = winner === homeTeam ? awayTeam : homeTeam;
+    scoreText = `${winnerTeam} defeats ${loserTeam} ${homeScore}-${awayScore}`;
+  }
+  
+  return `⚾ ${scoreText}`;
+}
+
+function updateNewsBanner() {
+  const newsContent = document.getElementById('newsContent');
+  const allNews = [...announcements, ...recentScores];
+  
+  if (allNews.length === 0) {
+    newsContent.innerHTML = '<span class="news-item news-announcement">🏆 Welcome to Mountainside Aces Statistics Hub!</span>';
+    return;
+  }
+  
+  const newsHTML = allNews.map(item => 
+    `<span class="news-item ${item.className}">${item.text}</span>`
+  ).join('');
+  
+  newsContent.innerHTML = newsHTML;
+}
+
+// Initialize the banner when page loads
+document.addEventListener('DOMContentLoaded', function() {
+  loadRecentScores();
+});
+
+// Update banner every 5 minutes to get fresh scores
+setInterval(loadRecentScores, 5 * 60 * 1000);
+</script>
 </body>
 </html>
