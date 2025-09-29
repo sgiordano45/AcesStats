@@ -433,15 +433,27 @@ async function fetchMediaManifest() {
       console.log(`✅ Loaded ${data.media.length} files from manifest`);
       console.log('📄 Manifest data:', data);
       
-      // Process the manifest to ensure type is set
-      return data.media.map(item => {
-        if (!item.type) {
-          // Auto-detect type from extension if not specified
-          const ext = item.path.toLowerCase().substring(item.path.lastIndexOf('.'));
-          item.type = videoExtensions.includes(ext) ? 'video' : 'image';
+      // Validate that files actually exist
+      console.log('🔍 Validating file existence...');
+      const validatedMedia = [];
+      
+      for (const item of data.media) {
+        if (await checkFileExists(item.path)) {
+          // Process the manifest to ensure type is set
+          if (!item.type) {
+            // Auto-detect type from extension if not specified
+            const ext = item.path.toLowerCase().substring(item.path.lastIndexOf('.'));
+            item.type = videoExtensions.includes(ext) ? 'video' : 'image';
+          }
+          validatedMedia.push(item);
+          console.log(`  ✅ Valid: ${item.path}`);
+        } else {
+          console.warn(`  ⚠️ File not found (skipping): ${item.path}`);
         }
-        return item;
-      });
+      }
+      
+      console.log(`✅ ${validatedMedia.length} of ${data.media.length} files are valid`);
+      return validatedMedia;
     } else {
       console.error(`❌ Failed to load manifest: ${response.status} ${response.statusText}`);
       console.error(`   Check that media-manifest.json exists at: ${window.location.origin}/media-manifest.json`);
