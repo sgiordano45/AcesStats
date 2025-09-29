@@ -399,6 +399,8 @@ const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.hei
 const videoExtensions = ['.mp4', '.webm', '.mov', '.MOV', '.avi'];
 
 async function loadMediaFiles() {
+  console.log('🔍 Starting media file discovery...');
+  
   // Since we can't actually scan the filesystem in a static site,
   // this is a placeholder that should be replaced with:
   // 1. A server-side script that generates a media manifest
@@ -408,12 +410,16 @@ async function loadMediaFiles() {
   // Example structure - replace with actual file discovery
   const mediaManifest = await fetchMediaManifest();
   
+  console.log(`✅ Found ${mediaManifest.length} media files total`);
+  
   allMedia = mediaManifest;
   populateFolderFilter();
   applyFilters();
 }
 
 async function fetchMediaManifest() {
+  console.log('📁 Attempting to discover media files...');
+  
   // This would ideally fetch from a generated JSON file or API
   // For now, returning empty array - needs to be implemented based on your setup
   
@@ -430,43 +436,64 @@ async function fetchMediaManifest() {
   const teams = ['green', 'blue', 'orange', 'purple', 'red', 'yellow'];
   const discovered = [];
   
+  console.log(`🔎 Scanning teams: ${teams.join(', ')}`);
+  
   for (const team of teams) {
+    console.log(`  Checking team: ${team}`);
+    let teamFileCount = 0;
+    
     // Try common filenames - this is a basic approach
     for (let i = 1; i <= 20; i++) {
       for (const ext of imageExtensions) {
         const path = `/media/${team}/photo${i}${ext}`;
         if (await checkFileExists(path)) {
+          console.log(`    ✅ Found: ${path}`);
           discovered.push({
             path: path,
             name: `photo${i}${ext}`,
             folder: team,
             type: 'image'
           });
+          teamFileCount++;
         }
       }
       
       for (const ext of videoExtensions) {
         const path = `/media/${team}/video${i}${ext}`;
         if (await checkFileExists(path)) {
+          console.log(`    ✅ Found: ${path}`);
           discovered.push({
             path: path,
             name: `video${i}${ext}`,
             folder: team,
             type: 'video'
           });
+          teamFileCount++;
         }
       }
     }
+    
+    if (teamFileCount === 0) {
+      console.log(`    ⚠️ No files found for ${team}`);
+    } else {
+      console.log(`    📊 ${team}: ${teamFileCount} files`);
+    }
   }
   
+  console.log(`📊 Total files discovered: ${discovered.length}`);
   return discovered;
 }
 
 async function checkFileExists(url) {
   try {
     const response = await fetch(url, { method: 'HEAD' });
-    return response.ok;
-  } catch {
+    const exists = response.ok;
+    if (!exists) {
+      console.log(`      ❌ Not found: ${url} (${response.status})`);
+    }
+    return exists;
+  } catch (error) {
+    console.log(`      ⚠️ Error checking: ${url} - ${error.message}`);
     return false;
   }
 }
