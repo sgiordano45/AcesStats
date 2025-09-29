@@ -388,14 +388,12 @@ function renderSummary() {
   let gamesDisplay = "";
   let gamesLabel = "";
   
-  if (allGames && allGames.length > 0) {
-    const teamGames = allGames.filter(g => 
-      g["home team"] === currentTeam || g["away team"] === currentTeam
-    );
+  if (teamGames && teamGames.length > 0) {  // Changed from allGames
+    const allTeamGames = teamGames;  // Changed variable name to avoid confusion
     
-    totalTeamGames = teamGames.length;
-    const regularSeasonGames = teamGames.filter(g => g.game_type === 'Regular').length;
-    const playoffGames = teamGames.filter(g => g.game_type === 'Playoff').length;
+    totalTeamGames = allTeamGames.length;
+    const regularSeasonGames = allTeamGames.filter(g => g.game_type === 'Regular').length;
+    const playoffGames = allTeamGames.filter(g => g.game_type === 'Playoff').length;
     
     if (totalTeamGames > 0) {
       gamesDisplay = totalTeamGames.toString();
