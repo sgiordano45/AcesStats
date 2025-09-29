@@ -58,6 +58,7 @@ async function loadTeamData() {
     addGameResultsSection();
     addCareerStatsSection(); // New section for career stats
     addViewSwitcher();
+    renderSummary();
     populateFilters();
     switchToView('batting');
   } catch (error) {
@@ -376,6 +377,83 @@ function calculateTeamRecord(games) {
     regular: { wins: regularWins, losses: regularLosses, ties: regularTies },
     playoff: { wins: playoffWins, losses: playoffLosses, ties: playoffTies }
   };
+}
+
+function renderSummary() {
+  const uniquePlayers = new Set(teamData.map(p => p.name)).size;
+  const uniqueSeasons = new Set(teamData.map(p => `${p.year} ${p.season}`)).size;
+  
+  // Calculate team games from games.json
+  let totalTeamGames = 0;
+  let gamesDisplay = "";
+  let gamesLabel = "";
+  
+  if (allGames && allGames.length > 0) {
+    const teamGames = allGames.filter(g => 
+      g["home team"] === currentTeam || g["away team"] === currentTeam
+    );
+    
+    totalTeamGames = teamGames.length;
+    const regularSeasonGames = teamGames.filter(g => g.game_type === 'Regular').length;
+    const playoffGames = teamGames.filter(g => g.game_type === 'Playoff').length;
+    
+    if (totalTeamGames > 0) {
+      gamesDisplay = totalTeamGames.toString();
+      if (regularSeasonGames > 0 && playoffGames > 0) {
+        gamesDisplay += ` (${regularSeasonGames} Regular, ${playoffGames} Playoff)`;
+      } else if (regularSeasonGames > 0) {
+        gamesDisplay += ` Regular`;
+      } else if (playoffGames > 0) {
+        gamesDisplay += ` Playoff`;
+      }
+      gamesLabel = "Team Games";
+    } else {
+      totalTeamGames = teamData.reduce((sum, p) => sum + p.games, 0);
+      gamesDisplay = totalTeamGames.toString();
+      gamesLabel = "Player Games";
+    }
+  } else {
+    totalTeamGames = teamData.reduce((sum, p) => sum + p.games, 0);
+    gamesDisplay = totalTeamGames.toString();
+    gamesLabel = "Player Games";
+  }
+  
+  const totalAtBats = teamData.reduce((sum, p) => sum + p.atBats, 0);
+  const totalHits = teamData.reduce((sum, p) => sum + p.hits, 0);
+  const totalRuns = teamData.reduce((sum, p) => sum + p.runs, 0);
+  const teamBA = totalAtBats > 0 ? (totalHits / totalAtBats).toFixed(3) : ".000";
+  
+  const years = [...new Set(teamData.map(p => p.year))].sort();
+  const yearsActive = years.length > 1 ? `${years[0]} - ${years[years.length - 1]}` : years[0];
+  
+  const summaryHTML = `
+    <div class="summary-item">
+      <div class="summary-number">${uniquePlayers}</div>
+      <div class="summary-label">Total Players</div>
+    </div>
+    <div class="summary-item">
+      <div class="summary-number">${uniqueSeasons}</div>
+      <div class="summary-label">Seasons Played</div>
+    </div>
+    <div class="summary-item">
+      <div class="summary-number">${yearsActive}</div>
+      <div class="summary-label">Years Active</div>
+    </div>
+    <div class="summary-item">
+      <div class="summary-number" style="font-size: ${gamesDisplay.length > 8 ? '1.5rem' : '2rem'};">${gamesDisplay}</div>
+      <div class="summary-label">${gamesLabel}</div>
+    </div>
+    <div class="summary-item">
+      <div class="summary-number">${totalHits}</div>
+      <div class="summary-label">Team Hits</div>
+    </div>
+    <div class="summary-item">
+      <div class="summary-number">${teamBA}</div>
+      <div class="summary-label">Team Average</div>
+    </div>
+  `;
+  
+  document.getElementById("summary-grid").innerHTML = summaryHTML;
 }
 
 function cleanBattingData(data) {
