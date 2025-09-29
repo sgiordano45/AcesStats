@@ -2,6 +2,7 @@ let teamData = [];
 let teamPitchingData = [];
 let allAwards = [];
 let teamGames = [];
+let allGames = []; 
 let currentSort = { column: null, dir: "asc" };
 let currentTeam = null;
 let currentView = 'batting';
@@ -39,6 +40,7 @@ async function loadTeamData() {
     const pitchingData = pitchingResponse.ok ? await pitchingResponse.json() : [];
     allAwards = awardsResponse.ok ? await awardsResponse.json() : [];
     const gamesData = gamesResponse.ok ? await gamesResponse.json() : [];
+    allGames = gamesData;  // Add this line
     
     teamData = cleanBattingData(battingData).filter(p => p.team === currentTeam);
     teamPitchingData = cleanPitchingData(pitchingData).filter(p => p.team === currentTeam);
