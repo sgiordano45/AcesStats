@@ -418,22 +418,31 @@ async function loadMediaFiles() {
 }
 
 async function fetchMediaManifest() {
-  console.log('📁 Attempting to discover media files...');
+  console.log('📁 Attempting to load media manifest...');
   
-  // This would ideally fetch from a generated JSON file or API
-  // For now, returning empty array - needs to be implemented based on your setup
+  // First, try to load from media-manifest.json
+  try {
+    const response = await fetch('/media-manifest.json');
+    if (response.ok) {
+      const data = await response.json();
+      console.log(`✅ Loaded ${data.media.length} files from manifest`);
+      
+      // Process the manifest to ensure type is set
+      return data.media.map(item => {
+        if (!item.type) {
+          // Auto-detect type from extension if not specified
+          const ext = item.path.toLowerCase().substring(item.path.lastIndexOf('.'));
+          item.type = videoExtensions.includes(ext) ? 'video' : 'image';
+        }
+        return item;
+      });
+    }
+  } catch (error) {
+    console.log('⚠️ No media-manifest.json found, falling back to pattern matching');
+  }
   
-  // Example of what the manifest might look like:
-  /*
-  return [
-    { path: '/media/green/photo1.jpg', name: 'photo1.jpg', folder: 'green', type: 'image' },
-    { path: '/media/blue/action.mp4', name: 'action.mp4', folder: 'blue', type: 'video' },
-    // ... more entries
-  ];
-  */
-  
-  // Try to discover media files by attempting to load known patterns
-  const teams = ['green', 'blue', 'orange', 'purple', 'red', 'yellow'];
+  // Fallback: Try to discover media files by attempting to load known patterns
+  const teams = ['green', 'blue', 'orange', 'purple', 'red', 'yellow', 'black', 'white', 'gold'];
   const discovered = [];
   
   console.log(`🔎 Scanning teams: ${teams.join(', ')}`);
@@ -442,15 +451,28 @@ async function fetchMediaManifest() {
     console.log(`  Checking team: ${team}`);
     let teamFileCount = 0;
     
-    // Try common filenames - this is a basic approach
-    for (let i = 1; i <= 20; i++) {
+    // Try common filenames with various patterns
+    const patterns = [
+      ...Array.from({length: 50}, (_, i) => `photo${i + 1}`),
+      ...Array.from({length: 50}, (_, i) => `img${i + 1}`),
+      ...Array.from({length: 50}, (_, i) => `image${i + 1}`),
+      ...Array.from({length: 50}, (_, i) => `IMG_${String(i + 1).padStart(4, '0')}`),
+      ...Array.from({length: 50}, (_, i) => `DSC_${String(i + 1).padStart(4, '0')}`),
+      ...Array.from({length: 30}, (_, i) => `video${i + 1}`),
+      ...Array.from({length: 30}, (_, i) => `vid${i + 1}`),
+      ...Array.from({length: 30}, (_, i) => `VID_${String(i + 1).padStart(4, '0')}`),
+      'team_photo', 'team_picture', 'roster', 'lineup', 'action', 'game',
+      'celebration', 'victory', 'trophy', 'field', 'dugout', 'bench'
+    ];
+    
+    for (const pattern of patterns) {
       for (const ext of imageExtensions) {
-        const path = `/media/${team}/photo${i}${ext}`;
+        const path = `/media/${team}/${pattern}${ext}`;
         if (await checkFileExists(path)) {
           console.log(`    ✅ Found: ${path}`);
           discovered.push({
             path: path,
-            name: `photo${i}${ext}`,
+            name: `${pattern}${ext}`,
             folder: team,
             type: 'image'
           });
@@ -459,12 +481,12 @@ async function fetchMediaManifest() {
       }
       
       for (const ext of videoExtensions) {
-        const path = `/media/${team}/video${i}${ext}`;
+        const path = `/media/${team}/${pattern}${ext}`;
         if (await checkFileExists(path)) {
           console.log(`    ✅ Found: ${path}`);
           discovered.push({
             path: path,
-            name: `video${i}${ext}`,
+            name: `${pattern}${ext}`,
             folder: team,
             type: 'video'
           });
