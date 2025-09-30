@@ -55,101 +55,103 @@ function injectBannerCSS() {
   const style = document.createElement('style');
   style.id = 'banner-styles';
   style.textContent = `
-    /* Scrolling Banner Styles */
-    .news-banner {
-      background: linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%);
-      color: white;
-      overflow-x: hidden;
-      overflow-y: visible;
-      white-space: nowrap;
-      position: ${BANNER_CONFIG.sticky ? 'sticky' : 'relative'};
-      top: ${BANNER_CONFIG.sticky ? '0' : 'auto'};
-      z-index: ${BANNER_CONFIG.sticky ? '1000' : 'auto'};
-      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-      border-bottom: 3px solid #c23616;
-    }
-    
-    /* Override team-colors.js for banner elements */
-    .news-banner *,
-    .news-banner .news-item,
-    .news-banner .news-announcement,
-    .news-banner .news-score,
-    .news-banner .news-upcoming {
-      color: inherit !important;
-      background: none !important;
-      border: none !important;
-      padding: 0 !important;
-      text-shadow: none !important;
-      font-weight: 600 !important;
-    }
-    
-    .news-banner .news-item {
-      padding: 0 20px !important;
-    }
-    
-    .news-content {
-      display: inline-block;
-      padding: 12px 0;
-      animation: scroll-left 60s linear infinite;
-      font-weight: 600;
-      font-size: 1.1rem;
-    }
-    
-    .news-item {
-      display: inline-block;
-      margin-right: 50px;
-      padding: 0 20px;
-      position: relative;
-    }
-    
-    .news-item::after {
-      content: "•";
-      position: absolute;
-      right: -25px;
-      top: 0;
-      color: rgba(255,255,255,0.7);
-      font-size: 1.2rem;
-    }
-    
-    .news-item:last-child::after {
-      display: none;
-    }
-    
-    .news-announcement {
-      color: #ffd700 !important;
-      font-weight: bold !important;
-    }
-    
-    .news-score {
-      color: #ffffff !important;
-    }
-    
-    .news-upcoming {
-      color: #87ceeb !important;
-      font-weight: 600 !important;
-    }
-    
-    @keyframes scroll-left {
-      0% { transform: translateX(25%); }
-      100% { transform: translateX(-100%); }
-    }
-    
-    /* Pause animation on hover */
-    .news-banner:hover .news-content {
-      animation-play-state: paused;
-    }
-    
-    /* Responsive Design for Banner */
-    @media (max-width: 768px) {
-      .news-content {
-        font-size: 1rem;
-      }
-      
-      .news-item {
-        margin-right: 30px;
-        padding: 0 15px;
-      }
-    }
+   /* Fixed Banner CSS - replace the banner styles in your banner.js */
+
+/* Scrolling Banner Styles */
+.news-banner {
+  background: linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%);
+  color: white;
+  overflow: hidden; /* Changed from overflow-x: hidden; overflow-y: visible; */
+  white-space: nowrap;
+  position: ${BANNER_CONFIG.sticky ? 'sticky' : 'relative'};
+  top: ${BANNER_CONFIG.sticky ? '0' : 'auto'};
+  z-index: ${BANNER_CONFIG.sticky ? '1000' : 'auto'};
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  border-bottom: 3px solid #c23616;
+  width: 100%; /* Ensure full width */
+}
+
+/* Override team-colors.js for banner elements */
+.news-banner *,
+.news-banner .news-item,
+.news-banner .news-announcement,
+.news-banner .news-score,
+.news-banner .news-upcoming {
+  color: inherit !important;
+  background: none !important;
+  border: none !important;
+  padding: 0 !important;
+  text-shadow: none !important;
+  font-weight: 600 !important;
+}
+
+.news-banner .news-item {
+  padding: 0 20px !important;
+}
+
+.news-content {
+  display: inline-block;
+  padding: 12px 0;
+  animation: scroll-left 60s linear infinite;
+  font-weight: 600;
+  font-size: 1.1rem;
+}
+
+.news-item {
+  display: inline-block;
+  margin-right: 50px;
+  padding: 0 20px;
+  position: relative;
+}
+
+.news-item::after {
+  content: "•";
+  position: absolute;
+  right: -25px;
+  top: 0;
+  color: rgba(255,255,255,0.7);
+  font-size: 1.2rem;
+}
+
+.news-item:last-child::after {
+  display: none;
+}
+
+.news-announcement {
+  color: #ffd700 !important;
+  font-weight: bold !important;
+}
+
+.news-score {
+  color: #ffffff !important;
+}
+
+.news-upcoming {
+  color: #87ceeb !important;
+  font-weight: 600 !important;
+}
+
+@keyframes scroll-left {
+  0% { transform: translateX(25%); }
+  100% { transform: translateX(-100%); }
+}
+
+/* Pause animation on hover */
+.news-banner:hover .news-content {
+  animation-play-state: paused;
+}
+
+/* Responsive Design for Banner */
+@media (max-width: 768px) {
+  .news-content {
+    font-size: 1rem;
+  }
+  
+  .news-item {
+    margin-right: 30px;
+    padding: 0 15px;
+  }
+}
   `;
   
   document.head.appendChild(style);
