@@ -59,7 +59,8 @@ function injectBannerCSS() {
     .news-banner {
       background: linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%);
       color: white;
-      overflow: hidden;
+      overflow-x: hidden;
+      overflow-y: visible;
       white-space: nowrap;
       position: ${BANNER_CONFIG.sticky ? 'sticky' : 'relative'};
       top: ${BANNER_CONFIG.sticky ? '0' : 'auto'};
