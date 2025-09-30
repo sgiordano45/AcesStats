@@ -14,9 +14,9 @@ const BANNER_CONFIG = {
   updateInterval: 5 * 60 * 1000 // 5 minutes in milliseconds
 };
 
-let recentScores = [];
-let upcomingSchedule = [];
-let allGames = [];
+let bannerRecentScores = [];
+let bannerUpcomingSchedule = [];
+let bannerAllGames = [];
 
 // Initialize banner when DOM is ready
 function initBanner() {
@@ -142,7 +142,7 @@ async function loadBannerData() {
     ]);
     
     if (gamesResponse.ok) {
-      allGames = await gamesResponse.json();
+      bannerAllGames = await gamesResponse.json();
     }
     
     let previews = [];
@@ -154,7 +154,7 @@ async function loadBannerData() {
     today.setHours(0, 0, 0, 0);
     
     // Get completed games (past games with winners)
-    const completedGames = allGames
+    const completedGames = bannerAllGames
       .filter(game => {
         const gameDate = new Date(game.date);
         return game.year === BANNER_CONFIG.currentYear && 
@@ -166,7 +166,7 @@ async function loadBannerData() {
       .sort((a, b) => new Date(b.date) - new Date(a.date))
       .slice(0, BANNER_CONFIG.recentGamesCount);
 
-    recentScores = completedGames.map(game => ({
+    bannerRecentScores = completedGames.map(game => ({
       type: 'score',
       text: formatGameResult(game),
       className: 'news-score'
@@ -181,7 +181,7 @@ async function loadBannerData() {
       .sort((a, b) => new Date(a.date) - new Date(b.date))
       .slice(0, BANNER_CONFIG.upcomingGamesCount);
 
-    upcomingSchedule = upcomingGames.map(game => ({
+    bannerUpcomingSchedule = upcomingGames.map(game => ({
       type: 'upcoming',
       text: formatUpcomingGame(game),
       className: 'news-upcoming'
@@ -190,10 +190,10 @@ async function loadBannerData() {
   } catch (error) {
     console.log('Could not load banner data:', error);
     // Fallback data
-    recentScores = [
+    bannerRecentScores = [
       { type: 'score', text: '🏆 Blue defeats Orange 12-8 in thriller!', className: 'news-score' }
     ];
-    upcomingSchedule = [
+    bannerUpcomingSchedule = [
       { type: 'upcoming', text: '📅 Gold @ Silver - Oct 15 7:00 PM', className: 'news-upcoming' }
     ];
   }
@@ -263,7 +263,7 @@ function updateNewsBanner() {
   
   if (!newsContent) return;
   
-  const allNews = [...BANNER_CONFIG.announcements, ...recentScores, ...upcomingSchedule];
+  const allNews = [...BANNER_CONFIG.announcements, ...bannerRecentScores, ...bannerUpcomingSchedule];
   
   if (allNews.length === 0) {
     newsContent.innerHTML = '<span class="news-item news-announcement">🏆 Welcome to Mountainside Aces Statistics Hub!</span>';
