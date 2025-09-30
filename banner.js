@@ -7,6 +7,9 @@ const BANNER_CONFIG = {
       { type: 'announcement', text: '🏆 2025 Fall Playoffs starts November 16th!', className: 'news-announcement' },
       { type: 'announcement', text: '⭐ Remember to clean up all trash after your games!', className: 'news-announcement' }
   ],
+  // banner.js - Scrolling Banner for Mountainside Aces
+// Usage: Add <div id="news-banner-container"></div> to your HTML and include this script
+
   currentSeason: "Fall",
   currentYear: "2025",
   recentGamesCount: 5,
@@ -65,6 +68,24 @@ function injectBannerCSS() {
       border-bottom: 3px solid #c23616;
     }
     
+    /* Override team-colors.js for banner elements */
+    .news-banner *,
+    .news-banner .news-item,
+    .news-banner .news-announcement,
+    .news-banner .news-score,
+    .news-banner .news-upcoming {
+      color: inherit !important;
+      background: none !important;
+      border: none !important;
+      padding: 0 !important;
+      text-shadow: none !important;
+      font-weight: 600 !important;
+    }
+    
+    .news-banner .news-item {
+      padding: 0 20px !important;
+    }
+    
     .news-content {
       display: inline-block;
       padding: 12px 0;
@@ -94,17 +115,17 @@ function injectBannerCSS() {
     }
     
     .news-announcement {
-      color: #ffd700;
-      font-weight: bold;
+      color: #ffd700 !important;
+      font-weight: bold !important;
     }
     
     .news-score {
-      color: #ffffff;
+      color: #ffffff !important;
     }
     
     .news-upcoming {
-      color: #87ceeb;
-      font-weight: 600;
+      color: #87ceeb !important;
+      font-weight: 600 !important;
     }
     
     @keyframes scroll-left {
@@ -237,6 +258,52 @@ function formatGameResult(game) {
   return `⚾ ${scoreText}`;
 }
 
+// Format upcoming game schedule
+function formatUpcomingGame(game) {
+  const homeTeam = game["home team"];
+  const awayTeam = game["away team"];
+  const gameDate = game.date;
+  const gameTime = game.time || "";
+  
+  // Format the date nicely
+  const dateObj = new Date(gameDate);
+  const formattedDate = dateObj.toLocaleDateString('en-US', { 
+    month: 'short', 
+    day: 'numeric' 
+  });
+  
+  // Only show time if it exists and isn't empty
+  const timeDisplay = gameTime && gameTime.trim() !== "" ? ` ${gameTime}` : "";
+  
+  return `📅 ${awayTeam} @ ${homeTeam} - ${formattedDate}${timeDisplay}`;
+}
+
+// Update the banner display
+function updateNewsBanner() {
+  const newsContent = document.getElementById('newsContent');
+  
+  if (!newsContent) return;
+  
+  const allNews = [...BANNER_CONFIG.announcements, ...bannerRecentScores, ...bannerUpcomingSchedule];
+  
+  if (allNews.length === 0) {
+    newsContent.innerHTML = '<span class="news-item news-announcement">🏆 Welcome to Mountainside Aces Statistics Hub!</span>';
+    return;
+  }
+  
+  const newsHTML = allNews.map(item => 
+    `<span class="news-item ${item.className}">${item.text}</span>`
+  ).join('');
+  
+  newsContent.innerHTML = newsHTML;
+}
+
+// Auto-initialize when DOM is ready
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initBanner);
+} else {
+  initBanner();
+}
 // Format upcoming game schedule
 function formatUpcomingGame(game) {
   const homeTeam = game["home team"];
