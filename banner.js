@@ -11,7 +11,7 @@ const BANNER_CONFIG = {
   currentYear: "2025",
   recentGamesCount: 5,
   upcomingGamesCount: 5,
-  updateInterval: 5 * 60 * 1000 // 5 minutes in milliseconds
+  updateInterval: 5 * 60 * 1000, // 5 minutes in milliseconds
   sticky: true  // Toggle this value!
 };
 
