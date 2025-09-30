@@ -1175,50 +1175,57 @@ let upcomingSchedule = [];
 // Load recent scores from games.json
 async function loadRecentScores() {
   try {
-    const response = await fetch('games.json');
-    if (response.ok) {
-      allGames = await response.json();
-      
-      const today = new Date();
-      today.setHours(0, 0, 0, 0); // Reset time to start of day
-      
-      // Get completed games (past games with winners)
-      const completedGames = allGames
-        .filter(game => {
-          const gameDate = new Date(game.date);
-          return game.year === "2025" && 
-                 game.season === "Fall" && 
-                 game.winner && 
-                 game.winner.trim() !== "" &&
-                 gameDate < today;
-        })
-        .sort((a, b) => new Date(b.date) - new Date(a.date))
-        .slice(0, 5);
-
-      recentScores = completedGames.map(game => ({
-        type: 'score',
-        text: formatGameResult(game),
-        className: 'news-score'
-      }));
-      
-      // Get upcoming games (future games without winners or today's games)
-      const upcomingGames = allGames
-        .filter(game => {
-          const gameDate = new Date(game.date);
-          return game.year === "2025" && 
-                 game.season === "Fall" && 
-                 (!game.winner || game.winner.trim() === "") &&
-                 gameDate >= today;
-        })
-        .sort((a, b) => new Date(a.date) - new Date(b.date))
-        .slice(0, 5);
-
-      upcomingSchedule = upcomingGames.map(game => ({
-        type: 'upcoming',
-        text: formatUpcomingGame(game),
-        className: 'news-upcoming'
-      }));
+    const [gamesResponse, previewsResponse] = await Promise.all([
+      fetch('games.json'),
+      fetch('previews.json')
+    ]);
+    
+    if (gamesResponse.ok) {
+      allGames = await gamesResponse.json();
     }
+    
+    let previews = [];
+    if (previewsResponse.ok) {
+      previews = await previewsResponse.json();
+    }
+    
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    // Get completed games (past games with winners)
+    const completedGames = allGames
+      .filter(game => {
+        const gameDate = new Date(game.date);
+        return game.year === "2025" && 
+               game.season === "Fall" && 
+               game.winner && 
+               game.winner.trim() !== "" &&
+               gameDate < today;
+      })
+      .sort((a, b) => new Date(b.date) - new Date(a.date))
+      .slice(0, 5);
+
+    recentScores = completedGames.map(game => ({
+      type: 'score',
+      text: formatGameResult(game),
+      className: 'news-score'
+    }));
+    
+    // Get upcoming games from previews.json (future games)
+    const upcomingGames = previews
+      .filter(game => {
+        const gameDate = new Date(game.date);
+        return gameDate >= today;
+      })
+      .sort((a, b) => new Date(a.date) - new Date(b.date))
+      .slice(0, 5);
+
+    upcomingSchedule = upcomingGames.map(game => ({
+      type: 'upcoming',
+      text: formatUpcomingGame(game),
+      className: 'news-upcoming'
+    }));
+    
   } catch (error) {
     console.log('Could not load games data:', error);
     // Fallback data
@@ -1271,6 +1278,7 @@ function formatUpcomingGame(game) {
   const homeTeam = game["home team"];
   const awayTeam = game["away team"];
   const gameDate = game.date;
+  const gameTime = game.time || "TBD";
   
   // Format the date nicely
   const dateObj = new Date(gameDate);
@@ -1279,10 +1287,10 @@ function formatUpcomingGame(game) {
     day: 'numeric' 
   });
   
-  // Check if there's a time in your data (you may need to add this field)
-  const gameTime = game.time || "TBD";
+  // Only show time if it exists and isn't empty
+  const timeDisplay = gameTime && gameTime.trim() !== "" ? ` ${gameTime}` : "";
   
-  return `📅 ${awayTeam} @ ${homeTeam} - ${formattedDate} ${gameTime}`;
+  return `📅 ${awayTeam} @ ${homeTeam} - ${formattedDate}${timeDisplay}`;
 }
 function updateNewsBanner() {
   const newsContent = document.getElementById('newsContent');
