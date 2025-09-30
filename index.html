@@ -351,6 +351,10 @@
   font-weight: bold;
 }
 
+.news-upcoming {
+  color: #87ceeb;
+  font-weight: 600;
+}
 @keyframes scroll-left {
   0% { transform: translateX(25%); }
   100% { transform: translateX(-100%); }
@@ -1161,12 +1165,12 @@ document.addEventListener('DOMContentLoaded', () => {
 // Sample announcements and recent scores data
 const announcements = [
   { type: 'announcement', text: '🏆 2025 Fall Playoffs starts November 16th!', className: 'news-announcement' },
-  { type: 'announcement', text: '📅 Regular season ends November 14th - playoff seeding on the line!', className: 'news-announcement' },
   { type: 'announcement', text: '⭐ Remember to clean up all trash after your games!', className: 'news-announcement' }
 ];
 
 let recentScores = [];
 let allGames = [];
+let upcomingSchedule = [];
 
 // Load recent scores from games.json
 async function loadRecentScores() {
@@ -1175,25 +1179,54 @@ async function loadRecentScores() {
     if (response.ok) {
       allGames = await response.json();
       
-      // Get the 5 most recent games from 2025 Fall season
-      const currentSeasonGames = allGames
-        .filter(game => game.year === "2025" && game.season === "Fall" && game.winner && game.winner.trim() !== "")
+      const today = new Date();
+      today.setHours(0, 0, 0, 0); // Reset time to start of day
+      
+      // Get completed games (past games with winners)
+      const completedGames = allGames
+        .filter(game => {
+          const gameDate = new Date(game.date);
+          return game.year === "2025" && 
+                 game.season === "Fall" && 
+                 game.winner && 
+                 game.winner.trim() !== "" &&
+                 gameDate < today;
+        })
         .sort((a, b) => new Date(b.date) - new Date(a.date))
         .slice(0, 5);
 
-      recentScores = currentSeasonGames.map(game => ({
+      recentScores = completedGames.map(game => ({
         type: 'score',
         text: formatGameResult(game),
         className: 'news-score'
       }));
+      
+      // Get upcoming games (future games without winners or today's games)
+      const upcomingGames = allGames
+        .filter(game => {
+          const gameDate = new Date(game.date);
+          return game.year === "2025" && 
+                 game.season === "Fall" && 
+                 (!game.winner || game.winner.trim() === "") &&
+                 gameDate >= today;
+        })
+        .sort((a, b) => new Date(a.date) - new Date(b.date))
+        .slice(0, 5);
+
+      upcomingSchedule = upcomingGames.map(game => ({
+        type: 'upcoming',
+        text: formatUpcomingGame(game),
+        className: 'news-upcoming'
+      }));
     }
   } catch (error) {
     console.log('Could not load games data:', error);
-    // Fallback to sample scores if games.json is not available
+    // Fallback data
     recentScores = [
-      { type: 'score', text: '🏆 Blue defeats Orange 12-8 in thriller!', className: 'news-score' },
-      { type: 'score', text: '⚾ Gold shuts out Silver 7-0', className: 'news-score' },
-      { type: 'score', text: '🔥 Green comes from behind to beat Red 15-13', className: 'news-score' }
+      { type: 'score', text: '🏆 Blue defeats Orange 12-8 in thriller!', className: 'news-score' }
+    ];
+    upcomingSchedule = [
+      { type: 'upcoming', text: '📅 Gold @ Silver - Oct 15 7:00 PM', className: 'news-upcoming' }
     ];
   }
   
@@ -1234,10 +1267,26 @@ function formatGameResult(game) {
   
   return `⚾ ${scoreText}`;
 }
-
+function formatUpcomingGame(game) {
+  const homeTeam = game["home team"];
+  const awayTeam = game["away team"];
+  const gameDate = game.date;
+  
+  // Format the date nicely
+  const dateObj = new Date(gameDate);
+  const formattedDate = dateObj.toLocaleDateString('en-US', { 
+    month: 'short', 
+    day: 'numeric' 
+  });
+  
+  // Check if there's a time in your data (you may need to add this field)
+  const gameTime = game.time || "TBD";
+  
+  return `📅 ${awayTeam} @ ${homeTeam} - ${formattedDate} ${gameTime}`;
+}
 function updateNewsBanner() {
   const newsContent = document.getElementById('newsContent');
-  const allNews = [...announcements, ...recentScores];
+  const allNews = [...announcements, ...recentScores, ...upcomingSchedule];
   
   if (allNews.length === 0) {
     newsContent.innerHTML = '<span class="news-item news-announcement">🏆 Welcome to Mountainside Aces Statistics Hub!</span>';
