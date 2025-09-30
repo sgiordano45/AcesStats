@@ -45,10 +45,28 @@ function initBanner() {
   
   // Set up auto-refresh
   setInterval(loadBannerData, BANNER_CONFIG.updateInterval);
+  
+  // Add scroll listener for fixed positioning
+  if (BANNER_CONFIG.sticky) {
+    let lastScrollTop = 0;
+    window.addEventListener('scroll', function() {
+      const banner = document.querySelector('.news-banner');
+      if (!banner) return;
+      
+      const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+      
+      if (scrollTop > 0) {
+        banner.classList.add('banner-fixed');
+        document.body.classList.add('banner-is-fixed');
+      } else {
+        banner.classList.remove('banner-fixed');
+        document.body.classList.remove('banner-is-fixed');
+      }
+      
+      lastScrollTop = scrollTop;
+    });
+  }
 }
-
-// Inject CSS styles for the banner
-// Replace your injectBannerCSS function in banner.js with this:
 
 function injectBannerCSS() {
   // Check if styles already injected
@@ -57,11 +75,6 @@ function injectBannerCSS() {
   const style = document.createElement('style');
   style.id = 'banner-styles';
   
-  // Build the CSS with proper conditional values
-  const stickyPosition = BANNER_CONFIG.sticky ? 'sticky' : 'relative';
-  const stickyTop = BANNER_CONFIG.sticky ? '0' : 'auto';
-  const stickyZIndex = BANNER_CONFIG.sticky ? '1000' : 'auto';
-  
   style.textContent = `
     /* Scrolling Banner Styles */
     .news-banner {
@@ -69,30 +82,25 @@ function injectBannerCSS() {
       color: white;
       overflow: hidden;
       white-space: nowrap;
-      position: ${stickyPosition};
-      top: ${stickyTop};
-      z-index: ${stickyZIndex};
+      position: relative;
+      z-index: 1000;
       box-shadow: 0 2px 8px rgba(0,0,0,0.15);
       border-bottom: 3px solid #c23616;
       width: 100%;
+      transition: all 0.3s ease;
     }
     
-    /* Override team-colors.js for banner elements */
-    .news-banner *,
-    .news-banner .news-item,
-    .news-banner .news-announcement,
-    .news-banner .news-score,
-    .news-banner .news-upcoming {
-      color: inherit !important;
-      background: none !important;
-      border: none !important;
-      padding: 0 !important;
-      text-shadow: none !important;
-      font-weight: 600 !important;
+    /* Simple fixed banner approach */
+    .banner-fixed {
+      position: fixed !important;
+      top: 0 !important;
+      left: 0 !important;
+      right: 0 !important;
+      z-index: 9999 !important;
     }
-    
-    .news-banner .news-item {
-      padding: 0 20px !important;
+
+    body.banner-is-fixed {
+      padding-top: 60px; /* Adjust based on banner height */
     }
     
     .news-content {
@@ -124,17 +132,17 @@ function injectBannerCSS() {
     }
     
     .news-announcement {
-      color: #ffd700 !important;
-      font-weight: bold !important;
+      color: #ffd700;
+      font-weight: bold;
     }
     
     .news-score {
-      color: #ffffff !important;
+      color: #ffffff;
     }
     
     .news-upcoming {
-      color: #87ceeb !important;
-      font-weight: 600 !important;
+      color: #87ceeb;
+      font-weight: 600;
     }
     
     @keyframes scroll-left {
@@ -142,12 +150,10 @@ function injectBannerCSS() {
       100% { transform: translateX(-100%); }
     }
     
-    /* Pause animation on hover */
     .news-banner:hover .news-content {
       animation-play-state: paused;
     }
     
-    /* Responsive Design for Banner */
     @media (max-width: 768px) {
       .news-content {
         font-size: 1rem;
@@ -196,11 +202,15 @@ async function loadBannerData() {
       .sort((a, b) => new Date(b.date) - new Date(a.date))
       .slice(0, BANNER_CONFIG.recentGamesCount);
 
-    bannerRecentScores = completedGames.map(game => ({
-      type: 'score',
-      text: formatGameResult(game),
-      className: 'news-score'
-    }));
+    bannerRecentScores = completedGames.map(game => {
+      const gameResult = formatGameResult(game);
+      return {
+        type: 'score',
+        text: gameResult.text,
+        className: 'news-score',
+        teamColor: gameResult.teamColor
+      };
+    });
     
     // Get upcoming games from previews.json
     const upcomingGames = previews
@@ -211,20 +221,24 @@ async function loadBannerData() {
       .sort((a, b) => new Date(a.date) - new Date(b.date))
       .slice(0, BANNER_CONFIG.upcomingGamesCount);
 
-    bannerUpcomingSchedule = upcomingGames.map(game => ({
-      type: 'upcoming',
-      text: formatUpcomingGame(game),
-      className: 'news-upcoming'
-    }));
+    bannerUpcomingSchedule = upcomingGames.map(game => {
+      const gameResult = formatUpcomingGame(game);
+      return {
+        type: 'upcoming',
+        text: gameResult.text,
+        className: 'news-upcoming',
+        teamColor: gameResult.teamColor
+      };
+    });
     
   } catch (error) {
     console.log('Could not load banner data:', error);
     // Fallback data
     bannerRecentScores = [
-      { type: 'score', text: '🏆 Blue defeats Orange 12-8 in thriller!', className: 'news-score' }
+      { type: 'score', text: '🏆 Blue defeats Orange 12-8 in thriller!', className: 'news-score', teamColor: 'Blue' }
     ];
     bannerUpcomingSchedule = [
-      { type: 'upcoming', text: '📅 Gold @ Silver - Oct 15 7:00 PM', className: 'news-upcoming' }
+      { type: 'upcoming', text: '📅 Gold @ Silver - Oct 15 7:00 PM', className: 'news-upcoming', teamColor: 'Silver' }
     ];
   }
   
@@ -264,7 +278,7 @@ function formatGameResult(game) {
     scoreText = `${winnerTeam} defeats ${loserTeam} ${winnerScore}-${loserScore}`;
   }
   
-  return `⚾ ${scoreText}`;
+  return { text: `⚾ ${scoreText}`, teamColor: winner };
 }
 
 // Format upcoming game schedule
@@ -284,7 +298,10 @@ function formatUpcomingGame(game) {
   // Only show time if it exists and isn't empty
   const timeDisplay = gameTime && gameTime.trim() !== "" ? ` ${gameTime}` : "";
   
-  return `📅 ${awayTeam} @ ${homeTeam} - ${formattedDate}${timeDisplay}`;
+  return { 
+    text: `📅 ${awayTeam} @ ${homeTeam} - ${formattedDate}${timeDisplay}`,
+    teamColor: homeTeam 
+  };
 }
 
 // Update the banner display
@@ -300,9 +317,19 @@ function updateNewsBanner() {
     return;
   }
   
-  const newsHTML = allNews.map(item => 
-    `<span class="news-item ${item.className}">${item.text}</span>`
-  ).join('');
+  // Map team names to CSS classes for team colors
+  const getTeamClass = (teamName) => {
+    if (!teamName) return '';
+    return teamName.toLowerCase().replace(/\s+/g, '-');
+  };
+  
+  const newsHTML = allNews.map(item => {
+    let teamClass = '';
+    if (item.teamColor) {
+      teamClass = getTeamClass(item.teamColor);
+    }
+    return `<span class="news-item ${item.className} ${teamClass}">${item.text}</span>`;
+  }).join('');
   
   newsContent.innerHTML = newsHTML;
 }
