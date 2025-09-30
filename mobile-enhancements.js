@@ -16,8 +16,22 @@
    */
   window.toggleMobileMenu = function() {
     const menu = document.getElementById('mobileNavMenu');
+    const hamburger = document.querySelector('.hamburger-menu');
+    
     if (menu) {
-      menu.classList.toggle('open');
+      const isOpen = menu.classList.toggle('open');
+      
+      // Update ARIA attributes for accessibility
+      if (hamburger) {
+        hamburger.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+      }
+      
+      // Prevent body scroll when menu is open
+      if (isOpen) {
+        document.body.style.overflow = 'hidden';
+      } else {
+        document.body.style.overflow = '';
+      }
     }
   };
 
