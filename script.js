@@ -195,11 +195,9 @@ function renderTable(data) {
   data.forEach(p => {
     const row = document.createElement("tr");
     
-    // Calculate batting average and OBP with proper handling of edge cases
-    const BA = p.atBats > 0 ? (p.hits / p.atBats).toFixed(3) : ".000";
-    const OBP = (p.atBats + p.walks) > 0
-      ? ((p.hits + p.walks) / (p.atBats + p.walks)).toFixed(3)
-      : ".000";
+    // Use the new utility functions
+    const BA = calculateBattingAverage(p.hits, p.atBats);
+    const OBP = calculateOBP(p.hits, p.walks, p.atBats);
     
     const AcesWar = p.AcesWar !== "N/A" && !isNaN(p.AcesWar)
       ? Number(p.AcesWar).toFixed(2)
@@ -225,7 +223,10 @@ function renderTable(data) {
 
   attachSorting();
 }
-
+// Clean up the summary text with cleanText() utility:
+document.getElementById("totalsText").textContent = cleanText(
+  `Totals — Games: ${totals.games}, At Bats: ${totals.atBats}, Hits: ${totals.hits}, Runs: ${totals.runs}, Walks: ${totals.walks}`
+);
 // Sorting functionality
 function attachSorting() {
   const headers = document.querySelectorAll("#statsTable th");
