@@ -31,6 +31,44 @@ function cleanData(data) {
   }));
 }
 
+// Alias for compatibility if needed
+const cleanBattingData = cleanData;
+
+// ==================== CALCULATION UTILITIES ====================
+
+function calculateBattingAverage(hits, atBats) {
+  return atBats > 0 ? (hits / atBats).toFixed(3) : ".000";
+}
+
+function calculateOBP(hits, walks, atBats) {
+  const plateAppearances = atBats + walks;
+  const onBaseEvents = hits + walks;
+  return plateAppearances > 0 ? (onBaseEvents / plateAppearances).toFixed(3) : ".000";
+}
+
+// ==================== LINK GENERATION UTILITIES ====================
+
+function createPlayerLink(playerName) {
+  return `<a href="player.html?name=${encodeURIComponent(playerName)}">${playerName}</a>`;
+}
+
+function createTeamLink(teamName) {
+  return `<a href="team.html?team=${encodeURIComponent(teamName)}">${teamName}</a>`;
+}
+
+// ==================== TEXT UTILITIES ====================
+
+function cleanText(text) {
+  if (!text) return text;
+  
+  return text
+    .replace(/['']/g, "'")  // Replace smart apostrophes
+    .replace(/[""]/g, '"')  // Replace smart quotes
+    .replace(/â€™/g, "'")   // Common apostrophe encoding issue
+    .replace(/â€"/g, "—")   // Em dash
+    .replace(/â€"/g, "–");  // En dash
+}
+
 // Dropdown filters
 function populateFilters(data) {
   const years = [...new Set(data.map(p => p.year))].sort((a, b) => b - a); // Sort descending
