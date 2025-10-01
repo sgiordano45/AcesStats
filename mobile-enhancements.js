@@ -376,6 +376,26 @@
   function prefersReducedMotion() {
     return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   }
+  
+  /**
+ * Optimize animations and transitions for mobile
+ */
+function optimizePerformanceForMobile() {
+  if (window.innerWidth <= 768) {
+    // Reduce animation complexity on mobile
+    document.querySelectorAll('.card').forEach(card => {
+      card.style.transition = 'transform 0.2s ease, opacity 0.2s ease, box-shadow 0.2s ease';
+    });
+    
+    // Simplify news banner animation if needed
+    const newsContent = document.querySelector('.news-content');
+    if (newsContent) {
+      newsContent.style.animationDuration = '60s';
+    }
+    
+    console.log('Performance optimizations applied for mobile');
+  }
+}
 
   // ========================================
   // INITIALIZATION
@@ -401,7 +421,8 @@
     
     // Performance
     setupLazyLoading();
-    
+    optimizePerformanceForMobile();
+	  
     // Accessibility
     setupKeyboardNavigation();
     
