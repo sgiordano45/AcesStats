@@ -897,6 +897,18 @@ function getTeamColor(teamName) {
 function getTopPlayers(teamName, season = currentSeason, year = currentYear) {
   if (!playerData || playerData.length === 0) return [];
   
+  // Calculate team games played for qualification
+  const teamGamesPlayed = allGames.filter(g => 
+    g.year === year && 
+    g.season === season && 
+    g.winner && 
+    g.winner.trim() !== "" && 
+    parseGameDate(g.date) < today &&
+    (g["home team"] === teamName || g["away team"] === teamName)
+  ).length;
+  
+  const minAtBats = teamGamesPlayed * 2;
+  
   // Filter players for the specific team, season, year and non-subs with valid AcesWar
   const teamPlayers = playerData.filter(player => 
     player.team === teamName && 
@@ -904,7 +916,8 @@ function getTopPlayers(teamName, season = currentSeason, year = currentYear) {
     player.year === year &&
     player.sub === "No" &&
     player.AcesWar !== "N/A" &&
-    typeof player.AcesWar === 'number'
+    typeof player.AcesWar === 'number' &&
+    (Number(player.atBats) || 0) >= minAtBats  // Add qualification check
   );
   
   // Sort by AcesWar (AcesBPI) in descending order and take top 3
