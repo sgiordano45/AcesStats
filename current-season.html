@@ -851,35 +851,84 @@
           walks: Number(p.walks) || 0
         })).filter(p => p.name && p.games > 0);
 
+        // Calculate team games played for qualification
+        const teamGamesPlayed = {};
+        const seasonGames = allGames.filter(g => 
+          g.year === currentYear && g.season === currentSeason && g.winner && g.winner.trim() !== "" && parseGameDate(g.date) < today
+        );
+        
+        seasonGames.forEach(game => {
+          const homeTeam = game["home team"];
+          const awayTeam = game["away team"];
+          teamGamesPlayed[homeTeam] = (teamGamesPlayed[homeTeam] || 0) + 1;
+          teamGamesPlayed[awayTeam] = (teamGamesPlayed[awayTeam] || 0) + 1;
+        });
+
         const battingCategories = [
-          { title: '🏃 At Bats', field: 'atBats', formatter: (val) => val.toString() },
-          { title: '🎯 Hits', field: 'hits', formatter: (val) => val.toString() },
-          { title: '⚡ Runs', field: 'runs', formatter: (val) => val.toString() },
-          { title: '👀 Walks', field: 'walks', formatter: (val) => val.toString() }
+          { title: '🏃 At Bats', field: 'atBats', formatter: (val) => val.toString(), minQualifier: 0 },
+          { title: '🎯 Hits', field: 'hits', formatter: (val) => val.toString(), minQualifier: 0 },
+          { title: '⚡ Runs', field: 'runs', formatter: (val) => val.toString(), minQualifier: 0 },
+          { title: '👀 Walks', field: 'walks', formatter: (val) => val.toString(), minQualifier: 0 },
+          { title: '🥇 Batting Average', field: 'BA', formatter: (val) => val.toFixed(3), qualified: true },
+          { title: '📊 On-Base Percentage', field: 'OBP', formatter: (val) => val.toFixed(3), qualified: true }
         ];
 
         leadersHtml += '<div class="leaders-section-title">🥎 Batting Leaders</div>';
         leadersHtml += '<div class="leaders-grid">';
 
         battingCategories.forEach(category => {
-          const leaders = cleanBattingData
-            .filter(p => p[category.field] > 0)
+          let leaders;
+          
+          if (category.qualified) {
+            // For BA and OBP, calculate the stats and filter by minimum at-bats
+            leaders = cleanBattingData.map(p => {
+              const teamGames = teamGamesPlayed[p.team] || 0;
+              const minAtBats = teamGames * 2;
+              
+              if (category.field === 'BA') {
+                return {
+                  ...p,
+                  BA: p.atBats > 0 ? p.hits / p.atBats : 0,
+                  qualified: p.atBats >= minAtBats
+                };
+              } else if (category.field === 'OBP') {
+                const plateAppearances = p.atBats + p.walks;
+                return {
+                  ...p,
+                  OBP: plateAppearances > 0 ? (p.hits + p.walks) / plateAppearances : 0,
+                  qualified: p.atBats >= minAtBats
+                };
+              }
+              return p;
+            })
+            .filter(p => p.qualified && p[category.field] > 0)
             .sort((a, b) => b[category.field] - a[category.field])
             .slice(0, 10);
+          } else {
+            // For counting stats, no qualification needed
+            leaders = cleanBattingData
+              .filter(p => p[category.field] > 0)
+              .sort((a, b) => b[category.field] - a[category.field])
+              .slice(0, 10);
+          }
 
           leadersHtml += `<div class="leader-category"><h4>${category.title}</h4><ul class="leader-list">`;
 
-          leaders.forEach((player, index) => {
-            const rankClass = index === 0 ? 'first' : index === 1 ? 'second' : index === 2 ? 'third' : '';
-            leadersHtml += `
-              <li>
-                <span class="leader-rank ${rankClass}">${index + 1}</span>
-                <span class="leader-name"><a href="player.html?name=${encodeURIComponent(player.name)}">${player.name}</a></span>
-                <span class="leader-team">(${player.team})</span>
-                <span class="leader-value">${category.formatter(player[category.field])}</span>
-              </li>
-            `;
-          });
+          if (leaders.length === 0) {
+            leadersHtml += '<li style="text-align: center; padding: 1rem; color: #666;">No qualified players yet</li>';
+          } else {
+            leaders.forEach((player, index) => {
+              const rankClass = index === 0 ? 'first' : index === 1 ? 'second' : index === 2 ? 'third' : '';
+              leadersHtml += `
+                <li>
+                  <span class="leader-rank ${rankClass}">${index + 1}</span>
+                  <span class="leader-name"><a href="player.html?name=${encodeURIComponent(player.name)}">${player.name}</a></span>
+                  <span class="leader-team">(${player.team})</span>
+                  <span class="leader-value">${category.formatter(player[category.field])}</span>
+                </li>
+              `;
+            });
+          }
 
           leadersHtml += '</ul></div>';
         });
