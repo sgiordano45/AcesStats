@@ -6,7 +6,7 @@
     :root {
       --team-black: #1a1a1a; --team-green: #2d7d32; --team-red: #d32f2f;
       --team-blue: #1976d2; --team-white: #343a40; --team-orange: #f57c00;
-      --team-silver: #757575; --team-purple: #7b1fa2; --team-gold: #f57f17;
+      --team-silver: #757575; --team-purple: #7b1fa2; --team-gold: #CFB53B;
       --team-carolina: #4b9cd3; --team-army: #654321;
     }
     
@@ -58,7 +58,7 @@
     .team-light-orange { background: #fff3e0 !important; color: #e65100 !important; border-left: 4px solid var(--team-orange) !important; }
     .team-light-silver { background: #f5f5f5 !important; color: #424242 !important; border-left: 4px solid var(--team-silver) !important; }
     .team-light-purple { background: #f3e5f5 !important; color: #4a148c !important; border-left: 4px solid var(--team-purple) !important; }
-    .team-light-gold { background: #fffde7 !important; color: #ff6f00 !important; border-left: 4px solid var(--team-gold) !important; }
+    .team-light-gold { background: #faf8e8 !important; color: #8b7e2b !important; border-left: 4px solid var(--team-gold) !important; }
     .team-light-carolina { background: #e6f3ff !important; color: #1e3a5f !important; border-left: 4px solid var(--team-carolina) !important; }
     .team-light-army { background: #f0ebda !important; color: #3d2914 !important; border-left: 4px solid var(--team-army) !important; }
   `;
