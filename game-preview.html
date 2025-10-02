@@ -870,77 +870,93 @@
       return { wins, losses, ties, winPct };
     }
 
-    function generateKeyPlayers(homeTeam, awayTeam) {
-      const currentSeasonPlayers = playerData.filter(p => 
-        p.year === "2025" && p.season === "Fall" && p.sub === "No"
-      );
+   function generateKeyPlayers(homeTeam, awayTeam) {
+  const currentSeasonPlayers = playerData.filter(p => 
+    p.year === "2025" && p.season === "Fall" && p.sub === "No"
+  );
 
-      // Get top 3 players for each team by AcesWar
-      const homeTopPlayers = currentSeasonPlayers
-        .filter(p => p.team === homeTeam && p.AcesWar !== "N/A")
-        .sort((a, b) => parseFloat(b.AcesWar) - parseFloat(a.AcesWar))
-        .slice(0, 3);
+  // Calculate team games played for qualification
+  const currentSeasonGames = allGames.filter(g => 
+    g.year === "2025" && g.season === "Fall" && g.winner && g.winner.trim() !== ""
+  );
 
-      const awayTopPlayers = currentSeasonPlayers
-        .filter(p => p.team === awayTeam && p.AcesWar !== "N/A")
-        .sort((a, b) => parseFloat(b.AcesWar) - parseFloat(a.AcesWar))
-        .slice(0, 3);
+  const homeGamesPlayed = currentSeasonGames.filter(g => 
+    g["home team"] === homeTeam || g["away team"] === homeTeam
+  ).length;
 
-      function createPlayerCard(player) {
-        const atBats = parseInt(player.atBats) || 0;
-        const hits = parseInt(player.hits) || 0;
-        const walks = parseInt(player.walks) || 0;
-        const runs = parseInt(player.runs) || 0;
-        
-        const avg = atBats > 0 ? (hits / atBats).toFixed(3) : ".000";
-        const obp = (atBats + walks) > 0 ? ((hits + walks) / (atBats + walks)).toFixed(3) : ".000";
-        const acesWar = parseFloat(player.AcesWar).toFixed(1);
+  const awayGamesPlayed = currentSeasonGames.filter(g => 
+    g["home team"] === awayTeam || g["away team"] === awayTeam
+  ).length;
 
-        return `
-          <div class="player-card">
-            <div class="player-name">${player.name}</div>
-            <div class="player-stats">
-              <div class="player-stat">
-                <span class="player-stat-label">AVG</span>
-                <span class="player-stat-value">${avg}</span>
-              </div>
-              <div class="player-stat">
-                <span class="player-stat-label">OBP</span>
-                <span class="player-stat-value">${obp}</span>
-              </div>
-              <div class="player-stat">
-                <span class="player-stat-label">Runs</span>
-                <span class="player-stat-value">${runs}</span>
-              </div>
-              <div class="player-stat">
-                <span class="player-stat-label">AcesBPI</span>
-                <span class="player-stat-value">${acesWar}</span>
-              </div>
-            </div>
+  // Qualification threshold: 2 AB × Team Games Played
+  const homeQualifyingAB = 2 * homeGamesPlayed;
+  const awayQualifyingAB = 2 * awayGamesPlayed;
+
+  // Get top 3 qualified players for each team by AcesWar
+  const homeTopPlayers = currentSeasonPlayers
+    .filter(p => p.team === homeTeam && p.AcesWar !== "N/A" && parseInt(p.atBats || 0) >= homeQualifyingAB)
+    .sort((a, b) => parseFloat(b.AcesWar) - parseFloat(a.AcesWar))
+    .slice(0, 3);
+
+  const awayTopPlayers = currentSeasonPlayers
+    .filter(p => p.team === awayTeam && p.AcesWar !== "N/A" && parseInt(p.atBats || 0) >= awayQualifyingAB)
+    .sort((a, b) => parseFloat(b.AcesWar) - parseFloat(a.AcesWar))
+    .slice(0, 3);
+
+  function createPlayerCard(player) {
+    const atBats = parseInt(player.atBats) || 0;
+    const hits = parseInt(player.hits) || 0;
+    const walks = parseInt(player.walks) || 0;
+    const runs = parseInt(player.runs) || 0;
+    
+    const avg = atBats > 0 ? (hits / atBats).toFixed(3) : ".000";
+    const obp = (atBats + walks) > 0 ? ((hits + walks) / (atBats + walks)).toFixed(3) : ".000";
+    const acesWar = parseFloat(player.AcesWar).toFixed(1);
+
+    return `
+      <div class="player-card">
+        <div class="player-name">${player.name}</div>
+        <div class="player-stats">
+          <div class="player-stat">
+            <span class="player-stat-label">AVG</span>
+            <span class="player-stat-value">${avg}</span>
           </div>
-        `;
-      }
-
-      const awayPlayersHtml = awayTopPlayers.map(createPlayerCard).join('');
-      const homePlayersHtml = homeTopPlayers.map(createPlayerCard).join('');
-
-      const keyPlayersHtml = `
-        <div class="team-stats">
-          <h4>${awayTeam} Top Players</h4>
-          ${awayPlayersHtml}
+          <div class="player-stat">
+            <span class="player-stat-label">OBP</span>
+            <span class="player-stat-value">${obp}</span>
+          </div>
+          <div class="player-stat">
+            <span class="player-stat-label">Runs</span>
+            <span class="player-stat-value">${runs}</span>
+          </div>
+          <div class="player-stat">
+            <span class="player-stat-label">AcesBPI</span>
+            <span class="player-stat-value">${acesWar}</span>
+          </div>
         </div>
+      </div>
+    `;
+  }
 
-        <div class="vs-label">VS</div>
+  const awayPlayersHtml = awayTopPlayers.map(createPlayerCard).join('');
+  const homePlayersHtml = homeTopPlayers.map(createPlayerCard).join('');
 
-        <div class="team-stats">
-          <h4>${homeTeam} Top Players</h4>
-          ${homePlayersHtml}
-        </div>
-      `;
+  const keyPlayersHtml = `
+    <div class="team-stats">
+      <h4>${awayTeam} Top Players</h4>
+      ${awayPlayersHtml}
+    </div>
 
-      document.getElementById('keyPlayersComparison').innerHTML = keyPlayersHtml;
-    }
+    <div class="vs-label">VS</div>
 
+    <div class="team-stats">
+      <h4>${homeTeam} Top Players</h4>
+      ${homePlayersHtml}
+    </div>
+  `;
+
+  document.getElementById('keyPlayersComparison').innerHTML = keyPlayersHtml;
+}
     function generateHeadToHeadRecord(homeTeam, awayTeam) {
       const h2hGames = allGames.filter(g => 
         (g["home team"] === homeTeam && g["away team"] === awayTeam) ||
