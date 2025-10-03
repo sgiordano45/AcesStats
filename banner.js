@@ -4,6 +4,7 @@
 // Configuration - Edit these to customize the banner
 const BANNER_CONFIG = {
   announcements: [
+	{ type: 'announcement', text: 'Biland's Unofficial Cornhole Tournament! 2pm on October 4th. Elks Lodge. BYOBags', className: 'news-announcement' },
       { type: 'announcement', text: '🏆 2025 Fall Playoffs starts November 16th!', className: 'news-announcement' },
       { type: 'announcement', text: '⭐ Remember to clean up all trash after your games!', className: 'news-announcement' }
   ],
