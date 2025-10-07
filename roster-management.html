@@ -196,7 +196,9 @@ function RosterManagement() {
       });
     });
     setRsvps(initialRsvps);
-    if (games.length > 0 && !selectedGame) setSelectedGame(games[0].id);
+    if (games.length > 0 && !selectedGame) {
+      setSelectedGame(games[0].id);
+    }
   }, [players, games, selectedGame]);
 
   const handleLogin = (playerId) => {
@@ -211,7 +213,7 @@ function RosterManagement() {
   };
 
   const handleRSVPClick = (playerId, gameId) => {
-    if (currentUserId !== playerId) return;
+    if (!isCaptain && currentUserId !== playerId) return;
     const key = `${playerId}-${gameId}`;
     const status = rsvps[key] || 'none';
     const statuses = ['yes', 'no', 'maybe', 'none'];
@@ -248,7 +250,13 @@ function RosterManagement() {
       const newBattingOrder = { ...battingOrder };
       if (!newBattingOrder[selectedGame]) newBattingOrder[selectedGame] = [];
       
-      newBattingOrder[selectedGame] = newBattingOrder[selectedGame].filter(p => p.id !== draggedPlayer.id);
+      // Remove player from current position if already in order
+      const currentIndex = newBattingOrder[selectedGame].findIndex(p => p.id === draggedPlayer.id);
+      if (currentIndex !== -1) {
+        newBattingOrder[selectedGame].splice(currentIndex, 1);
+      }
+      
+      // Insert at the target position
       newBattingOrder[selectedGame].splice(target.position, 0, draggedPlayer);
       setBattingOrder(newBattingOrder);
     } else if (target.type === 'fielding') {
@@ -360,17 +368,15 @@ function RosterManagement() {
   const currentSeason = SEASONS[season];
   const currentGame = games.find(g => g.id === selectedGame);
   
-const yesRsvpCount = selectedGame ? players.filter(player => {
-  const key = `${player.id}-${selectedGame}`;
-  return rsvps[key] === 'yes';
-}).length : 0;
+  const yesRsvpCount = selectedGame ? players.filter(player => {
+    const key = `${player.id}-${selectedGame}`;
+    return rsvps[key] === 'yes';
+  }).length : 0;
 
-// CHANGE TO THIS:
-const availablePlayers = selectedGame ? players.filter(player => {
-  const key = `${player.id}-${selectedGame}`;
-  return rsvps[key] === 'yes';
-}) : [];
-
+  const availablePlayers = selectedGame ? players.filter(player => {
+    const key = `${player.id}-${selectedGame}`;
+    return rsvps[key] === 'yes';
+  }) : [];
 
   const belowMinimum = yesRsvpCount < currentSeason.minPlayers;
   const catcherDisabled = yesRsvpCount < currentSeason.catcherMinPlayers;
@@ -474,12 +480,12 @@ const availablePlayers = selectedGame ? players.filter(player => {
                             const key = `${player.id}-${game.id}`;
                             const status = rsvps[key] || 'none';
                             const statusInfo = RSVP_STATUS[status];
-                            const canEdit = currentUserId === player.id;
+                            const canEdit = isCaptain || currentUserId === player.id;
                             
                             return (
                               <td key={game.id} style={{ borderBottom: '1px solid #ccc', padding: '8px', textAlign: 'center' }}>
                                 <button onClick={() => handleRSVPClick(player.id, game.id)} disabled={!canEdit}
-                                  title={!isLoggedIn ? 'Log in to RSVP' : !canEdit ? "You can only edit your own RSVP" : 'Click to change RSVP'}
+                                  title={!isLoggedIn ? 'Log in to RSVP' : !canEdit ? "You can only edit your own RSVP" : isCaptain ? 'Captain: Click to change RSVP' : 'Click to change RSVP'}
                                   style={{ width: '48px', height: '48px', borderRadius: '8px', border: 'none', fontSize: '18px', fontWeight: 'bold', color: 'white',
                                           cursor: canEdit ? 'pointer' : 'not-allowed', opacity: canEdit ? 1 : 0.5, background: statusInfo.color }}>
                                   {statusInfo.icon}
@@ -685,7 +691,18 @@ const availablePlayers = selectedGame ? players.filter(player => {
                                 return (
                                   <td key={inning} style={{ borderBottom: '1px solid #ccc', padding: '4px', background: '#fefce8' }}>
                                     {benchPlayer ? (
-                                      <PlayerCard player={benchPlayer} draggable={false} size="small" />
+                                      <div style={{ 
+                                        padding: '4px', 
+                                        background: '#fef9c3', 
+                                        borderRadius: '6px', 
+                                        border: '1px dashed #ca8a04',
+                                        fontSize: '11px',
+                                        color: '#854d0e',
+                                        textAlign: 'center',
+                                        fontStyle: 'italic'
+                                      }}>
+                                        {benchPlayer.name.split(' ').pop()}
+                                      </div>
                                     ) : (
                                       <div style={{ height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center',
                                                     color: '#d1d5db', fontSize: '12px' }}>—</div>
