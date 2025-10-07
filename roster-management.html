@@ -11,23 +11,13 @@
   * { box-sizing: border-box; }
   body { margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
   #root { min-height: 100vh; }
-  .table-scroll-container {
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-  }
-  .table-scroll-container::-webkit-scrollbar {
-    height: 8px;
-  }
-  .table-scroll-container::-webkit-scrollbar-track {
-    background: #f1f1f1;
-  }
-  .table-scroll-container::-webkit-scrollbar-thumb {
-    background: #888;
-    border-radius: 4px;
-  }
-  .table-scroll-container::-webkit-scrollbar-thumb:hover {
-    background: #555;
-  }
+  .table-scroll-container { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .table-scroll-container::-webkit-scrollbar { height: 8px; }
+  .table-scroll-container::-webkit-scrollbar-track { background: #f1f1f1; }
+  .table-scroll-container::-webkit-scrollbar-thumb { background: #888; border-radius: 4px; }
+  .table-scroll-container::-webkit-scrollbar-thumb:hover { background: #555; }
+  .player-card-hover:hover .remove-btn { opacity: 1 !important; }
+  .player-card-hover:hover { box-shadow: 0 4px 6px rgba(0,0,0,0.1) !important; }
 </style>
 </head>
 <body>
@@ -94,6 +84,11 @@ function RosterManagement() {
   const [selectedTeam, setSelectedTeam] = useState('');
   const [selectedGame, setSelectedGame] = useState(null);
   const [rsvps, setRsvps] = useState({});
+  const [battingOrder, setBattingOrder] = useState({});
+  const [fieldingPositions, setFieldingPositions] = useState({});
+  const [draggedPlayer, setDraggedPlayer] = useState(null);
+  const [draggedFrom, setDraggedFrom] = useState(null);
+  const [dropTarget, setDropTarget] = useState(null);
   const [loading, setLoading] = useState(true);
   const [players, setPlayers] = useState([]);
   const [games, setGames] = useState([]);
@@ -106,19 +101,14 @@ function RosterManagement() {
   useEffect(() => {
     async function loadData() {
       try {
-        // Load player info for captain designation and jersey numbers
         const playerInfoResponse = await fetch('player_info.json');
         const playerInfoData = await playerInfoResponse.json();
         const playerInfoMap = {};
         playerInfoData.forEach(p => {
-          playerInfoMap[p.name] = {
-            captain: p.captain === 'yes',
-            number: p.number || ''
-          };
+          playerInfoMap[p.name] = { captain: p.captain === 'yes', number: p.number || '' };
         });
         setPlayerInfo(playerInfoMap);
 
-        // Load games
         const gamesResponse = await fetch('games.json');
         const allGames = await gamesResponse.json();
         const seasonGames = allGames.filter(g => g.year === "2025" && g.season === "Fall");
@@ -130,11 +120,9 @@ function RosterManagement() {
         });
         setAllTeams(Array.from(teamsSet).sort());
         
-        // Get today's date at start of day for comparison
         const today = new Date();
         today.setHours(0, 0, 0, 0);
         
-        // Filter for today and future games only
         const upcomingGames = seasonGames.filter(game => {
           const gameDate = new Date(game.date);
           gameDate.setHours(0, 0, 0, 0);
@@ -142,12 +130,8 @@ function RosterManagement() {
         });
         
         const formattedGames = upcomingGames.map((game, index) => ({
-          id: index + 1, 
-          date: game.date, 
-          homeTeam: game["home team"],
-          awayTeam: game["away team"], 
-          opponent: '', 
-          gameType: game.game_type || 'Regular'
+          id: index + 1, date: game.date, homeTeam: game["home team"],
+          awayTeam: game["away team"], opponent: '', gameType: game.game_type || 'Regular'
         }));
         
         setGames(formattedGames);
@@ -179,27 +163,20 @@ function RosterManagement() {
           const hits = Number(player.hits) || 0;
           const battingAvg = atBats > 0 ? (hits / atBats).toFixed(3) : '.000';
           
-          // Get captain status and jersey number from player_info
           const info = playerInfo[player.name] || { captain: false, number: '' };
           
           return {
-            id: index + 1, 
-            name: player.name, 
-            jersey: info.number || (index + 1), // Use real number or fallback to index
-            avatar, 
-            battingAvg, 
-            isCaptain: info.captain
+            id: index + 1, name: player.name, jersey: info.number || (index + 1),
+            avatar, battingAvg, isCaptain: info.captain
           };
         }).sort((a, b) => a.name.localeCompare(b.name));
         
         setPlayers(formattedPlayers);
         
-        // Filter games to only show games involving selected team
         setGames(prev => prev.filter(game => 
           game.homeTeam === selectedTeam || game.awayTeam === selectedTeam
         ).map(game => ({
-          ...game, 
-          opponent: game.homeTeam === selectedTeam ? game.awayTeam : game.homeTeam
+          ...game, opponent: game.homeTeam === selectedTeam ? game.awayTeam : game.homeTeam
         })));
       } catch (error) {
         console.error('Error loading team players:', error);
@@ -243,17 +220,172 @@ function RosterManagement() {
     setRsvps({ ...rsvps, [key]: nextStatus });
   };
 
+  const handleDragStart = (e, player) => {
+    if (!isCaptain) return;
+    setDraggedPlayer(player);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleDragEnter = (e, target) => {
+    e.preventDefault();
+    setDropTarget(target);
+  };
+
+  const handleDragLeave = () => {
+    setDropTarget(null);
+  };
+
+  const handleDrop = (e, target) => {
+    e.preventDefault();
+    if (!isCaptain || !draggedPlayer) return;
+
+    if (target.type === 'batting') {
+      const newBattingOrder = { ...battingOrder };
+      if (!newBattingOrder[selectedGame]) newBattingOrder[selectedGame] = [];
+      
+      newBattingOrder[selectedGame] = newBattingOrder[selectedGame].filter(p => p.id !== draggedPlayer.id);
+      newBattingOrder[selectedGame].splice(target.position, 0, draggedPlayer);
+      setBattingOrder(newBattingOrder);
+    } else if (target.type === 'fielding') {
+      if (target.position === 'C' && catcherDisabled) {
+        setDraggedPlayer(null);
+        setDropTarget(null);
+        return;
+      }
+
+      const newFieldingPositions = { ...fieldingPositions };
+      if (!newFieldingPositions[selectedGame]) newFieldingPositions[selectedGame] = {};
+      if (!newFieldingPositions[selectedGame][target.inning]) {
+        newFieldingPositions[selectedGame][target.inning] = {};
+      }
+      
+      const inningPositions = newFieldingPositions[selectedGame][target.inning];
+      const alreadyAssigned = Object.entries(inningPositions).find(
+        ([pos, player]) => player.id === draggedPlayer.id && pos !== target.position
+      );
+      
+      if (alreadyAssigned) {
+        delete newFieldingPositions[selectedGame][target.inning][alreadyAssigned[0]];
+      }
+      
+      newFieldingPositions[selectedGame][target.inning][target.position] = draggedPlayer;
+      setFieldingPositions(newFieldingPositions);
+    }
+
+    setDraggedPlayer(null);
+    setDropTarget(null);
+  };
+
+  const removeFromBatting = (position) => {
+    if (!isCaptain) return;
+    const newBattingOrder = { ...battingOrder };
+    if (newBattingOrder[selectedGame]) {
+      newBattingOrder[selectedGame].splice(position, 1);
+      setBattingOrder(newBattingOrder);
+    }
+  };
+
+  const removeFromFielding = (inning, position) => {
+    if (!isCaptain) return;
+    const newFieldingPositions = { ...fieldingPositions };
+    if (newFieldingPositions[selectedGame]?.[inning]?.[position]) {
+      delete newFieldingPositions[selectedGame][inning][position];
+      setFieldingPositions(newFieldingPositions);
+    }
+  };
+
+  const PlayerCard = ({ player, draggable = false, showStats = false, onRemove, size = 'normal' }) => {
+    const isSmall = size === 'small';
+    const isCurrentUser = player.id === currentUserId;
+    
+    return (
+      <div
+        draggable={draggable && isCaptain}
+        onDragStart={(e) => handleDragStart(e, player)}
+        style={{
+          padding: isSmall ? '6px' : '8px', background: isCurrentUser ? '#eff6ff' : 'white',
+          borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+          border: isCurrentUser ? '2px solid #667eea' : '1px solid #e1e5e9',
+          display: 'flex', alignItems: 'center', gap: '8px',
+          cursor: draggable && isCaptain ? 'grab' : 'default',
+          transition: 'all 0.3s ease', position: 'relative'
+        }}
+        className="player-card-hover"
+      >
+        <div style={{
+          width: isSmall ? '24px' : '32px', height: isSmall ? '24px' : '32px',
+          borderRadius: '50%', background: '#667eea', color: 'white',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: isSmall ? '10px' : '12px', fontWeight: '600', flexShrink: 0
+        }}>
+          {player.avatar}
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ 
+            fontWeight: '500', fontSize: isSmall ? '11px' : '14px',
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            display: 'flex', alignItems: 'center', gap: '4px'
+          }}>
+            {isSmall ? player.name.split(' ').pop() : player.name}
+            {isCurrentUser && !isSmall && (
+              <span style={{
+                fontSize: '10px', background: '#667eea', color: 'white',
+                padding: '2px 6px', borderRadius: '4px'
+              }}>You</span>
+            )}
+          </div>
+          {!isSmall && <div style={{ fontSize: '11px', color: '#6b7280' }}>#{player.jersey}</div>}
+        </div>
+        {showStats && !isSmall && (
+          <div style={{ fontSize: '11px', color: '#4b5563' }}>{player.battingAvg}</div>
+        )}
+        {onRemove && isCaptain && (
+          <button onClick={onRemove} className="remove-btn"
+            style={{
+              opacity: 0, transition: 'opacity 0.2s', padding: '4px',
+              background: 'none', border: 'none', cursor: 'pointer', borderRadius: '4px'
+            }}>
+            <X style={{ width: '14px', height: '14px', color: '#dc2626' }} />
+          </button>
+        )}
+      </div>
+    );
+  };
+
   const currentSeason = SEASONS[season];
+  const currentGame = games.find(g => g.id === selectedGame);
+  
+  const yesRsvpCount = players.filter(player => {
+    const key = `${player.id}-${selectedGame}`;
+    return rsvps[key] === 'yes';
+  }).length;
+
+  const availablePlayers = players.filter(player => {
+    const key = `${player.id}-${selectedGame}`;
+    return rsvps[key] === 'yes';
+  });
+
+  const belowMinimum = yesRsvpCount < currentSeason.minPlayers;
+  const catcherDisabled = yesRsvpCount < currentSeason.catcherMinPlayers;
+
+  const gameBattingOrder = battingOrder[selectedGame] || [];
+  const gameFieldingPositions = fieldingPositions[selectedGame] || {};
 
   return (
     <div style={{ fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif", background: 'linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)', minHeight: '100vh', padding: '2rem' }}>
       <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
-        <div style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', color: 'white', textAlign: 'center', padding: '3rem 2rem', borderRadius: '12px', marginBottom: '2rem' }}>
-          <h1 style={{ margin: 0, fontSize: '2.5rem', fontWeight: 'bold' }}>Roster Management</h1>
+        <div style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', color: 'white', textAlign: 'center', padding: '3rem 2rem', borderRadius: '12px', marginBottom: '2rem', position: 'relative' }}>
+          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '4px', background: 'linear-gradient(90deg, #ffd700 0%, #ffed4e 100%)' }}></div>
+          <h1 style={{ margin: 0, fontSize: '2.5rem', fontWeight: 'bold', textShadow: '2px 2px 4px rgba(0,0,0,0.3)' }}>Roster Management</h1>
           <p style={{ margin: '1rem 0 0 0', fontSize: '1.1rem', opacity: 0.9 }}>2025 Fall Season</p>
         </div>
 
-        <div style={{ background: 'white', padding: '1.5rem', borderRadius: '12px', marginBottom: '2rem', boxShadow: '0 4px 6px rgba(0,0,0,0.07)' }}>
+        <div style={{ background: 'white', padding: '1.5rem', borderRadius: '12px', marginBottom: '2rem', boxShadow: '0 4px 6px rgba(0,0,0,0.07)', border: '1px solid #e1e5e9' }}>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', alignItems: 'center', justifyContent: 'center' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
               <span style={{ fontWeight: '600' }}>Team:</span>
@@ -280,13 +412,13 @@ function RosterManagement() {
             <div style={{ marginTop: '1rem', padding: '0.75rem 1rem', borderRadius: '8px', background: isCaptain ? '#eff6ff' : '#f0fdf4',
                           color: isCaptain ? '#1e40af' : '#166534', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: '600', justifyContent: 'center' }}>
               {isCaptain ? <Edit3 style={{ width: '18px', height: '18px' }} /> : <Eye style={{ width: '18px', height: '18px' }} />}
-              <span>Logged in as {loggedInPlayer.name}{isCaptain && ' - Captain Access'}</span>
+              <span>Logged in as {loggedInPlayer.name}{isCaptain && ' - Captain Access Enabled'}</span>
             </div>
           ) : (
             <div style={{ marginTop: '1rem', padding: '0.75rem 1rem', borderRadius: '8px', background: '#fef3c7', color: '#92400e',
                           display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: '600', justifyContent: 'center', border: '1px solid #fde68a' }}>
               <AlertCircle style={{ width: '18px', height: '18px' }} />
-              <span>{!selectedTeam ? 'Please select a team to begin' : 'Please log in to RSVP to games'}</span>
+              <span>{!selectedTeam ? 'Please select a team to begin' : 'Please log in to RSVP to games and view lineup information'}</span>
             </div>
           )}
         </div>
@@ -297,90 +429,278 @@ function RosterManagement() {
           <div style={{ background: 'white', padding: '2rem', borderRadius: '12px', textAlign: 'center' }}>
             <h3 style={{ marginTop: 0 }}>Welcome to Roster Management</h3>
             <p style={{ color: '#666' }}>Select a team to get started</p>
-            <p style={{ color: '#666', fontSize: '0.9rem' }}>Teams: {allTeams.join(', ')}</p>
-          </div>
-        )}
-
-        {!loading && selectedTeam && players.length === 0 && (
-          <div style={{ background: 'white', padding: '2rem', borderRadius: '12px', textAlign: 'center', color: '#666' }}>
-            Loading roster for {selectedTeam}...
-          </div>
-        )}
-
-        {!loading && selectedTeam && players.length > 0 && games.length === 0 && (
-          <div style={{ background: 'white', padding: '2rem', borderRadius: '12px', textAlign: 'center', color: '#666' }}>
-            <h3 style={{ marginTop: 0 }}>No Upcoming Games</h3>
-            <p>There are no scheduled games today or in the future for {selectedTeam}.</p>
           </div>
         )}
 
         {!loading && selectedTeam && players.length > 0 && games.length > 0 && (
-          <div style={{ background: 'white', padding: '1.5rem', borderRadius: '12px', boxShadow: '0 4px 6px rgba(0,0,0,0.07)' }}>
-            <h2 style={{ margin: '0 0 1rem 0', fontSize: '1.5rem', fontWeight: 'bold' }}>Game RSVPs</h2>
-            <p style={{ margin: '0 0 1rem 0', color: '#666', fontSize: '0.9rem' }}>
-              Showing {games.length} upcoming game{games.length !== 1 ? 's' : ''} for {selectedTeam} (today and future dates only)
-            </p>
-            <div className="table-scroll-container" style={{ overflowX: 'auto', border: '1px solid #e5e7eb', borderRadius: '8px' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
-                <thead>
-                  <tr>
-                    <th style={{ position: 'sticky', left: 0, background: '#f2f2f2', zIndex: 10, borderBottom: '2px solid #ccc', padding: '8px', textAlign: 'left', minWidth: '200px' }}>Player</th>
-                    {games.map(game => (
-                      <th key={game.id} style={{ borderBottom: '2px solid #ccc', padding: '8px', textAlign: 'center', background: '#f2f2f2', whiteSpace: 'nowrap', minWidth: '80px' }}>
-                        {game.date}<br/><span style={{ fontSize: '12px', fontWeight: 'normal', color: '#666' }}>vs {game.opponent}</span>
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {players.map(player => {
-                    const isCurrentUser = player.id === currentUserId;
-                    return (
-                      <tr key={player.id} style={{ background: isCurrentUser ? '#eff6ff' : 'white', borderLeft: isCurrentUser ? '4px solid #667eea' : 'none' }}>
-                        <td style={{ position: 'sticky', left: 0, background: isCurrentUser ? '#eff6ff' : 'white', zIndex: 10, borderBottom: '1px solid #ccc', padding: '8px' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#667eea', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: '600', flexShrink: 0 }}>
-                              {player.avatar}
-                            </div>
-                            <div>
-                              <div style={{ fontWeight: '500', fontSize: '14px' }}>
-                                {player.name}
-                                {isCurrentUser && <span style={{ fontSize: '10px', background: '#667eea', color: 'white', padding: '2px 6px', borderRadius: '4px', marginLeft: '8px' }}>You</span>}
+          <>
+            {/* RSVP Grid */}
+            <div style={{ background: 'white', padding: '1.5rem', borderRadius: '12px', marginBottom: '2rem', boxShadow: '0 4px 6px rgba(0,0,0,0.07)', border: '1px solid #e1e5e9' }}>
+              <h2 style={{ margin: '0 0 1rem 0', fontSize: '1.5rem', fontWeight: 'bold' }}>Game RSVPs</h2>
+              <div className="table-scroll-container" style={{ border: '1px solid #e5e7eb', borderRadius: '8px' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
+                  <thead>
+                    <tr>
+                      <th style={{ position: 'sticky', left: 0, background: '#f2f2f2', zIndex: 10, borderBottom: '2px solid #ccc', padding: '8px', textAlign: 'left', minWidth: '200px' }}>Player</th>
+                      {games.map(game => (
+                        <th key={game.id} style={{ borderBottom: '2px solid #ccc', padding: '8px', textAlign: 'center', background: '#f2f2f2', whiteSpace: 'nowrap', minWidth: '80px' }}>
+                          {game.date}<br/><span style={{ fontSize: '12px', fontWeight: 'normal', color: '#666' }}>vs {game.opponent}</span>
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {players.map(player => {
+                      const isCurrentUser = player.id === currentUserId;
+                      return (
+                        <tr key={player.id} style={{ background: isCurrentUser ? '#eff6ff' : 'white', borderLeft: isCurrentUser ? '4px solid #667eea' : 'none' }}>
+                          <td style={{ position: 'sticky', left: 0, background: isCurrentUser ? '#eff6ff' : 'white', zIndex: 10, borderBottom: '1px solid #ccc', padding: '8px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#667eea', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: '600', flexShrink: 0 }}>
+                                {player.avatar}
                               </div>
-                              <div style={{ fontSize: '11px', color: '#6b7280' }}>
-                                {player.jersey ? `#${player.jersey}` : 'No #'}
+                              <div>
+                                <div style={{ fontWeight: '500', fontSize: '14px' }}>
+                                  {player.name}
+                                  {isCurrentUser && <span style={{ fontSize: '10px', background: '#667eea', color: 'white', padding: '2px 6px', borderRadius: '4px', marginLeft: '8px' }}>You</span>}
+                                </div>
+                                <div style={{ fontSize: '11px', color: '#6b7280' }}>{player.jersey ? `#${player.jersey}` : 'No #'}</div>
                               </div>
                             </div>
-                          </div>
-                        </td>
-                        {games.map(game => {
-                          const key = `${player.id}-${game.id}`;
-                          const status = rsvps[key] || 'none';
-                          const statusInfo = RSVP_STATUS[status];
-                          const canEdit = currentUserId === player.id;
+                          </td>
+                          {games.map(game => {
+                            const key = `${player.id}-${game.id}`;
+                            const status = rsvps[key] || 'none';
+                            const statusInfo = RSVP_STATUS[status];
+                            const canEdit = currentUserId === player.id;
+                            
+                            return (
+                              <td key={game.id} style={{ borderBottom: '1px solid #ccc', padding: '8px', textAlign: 'center' }}>
+                                <button onClick={() => handleRSVPClick(player.id, game.id)} disabled={!canEdit}
+                                  title={!isLoggedIn ? 'Log in to RSVP' : !canEdit ? "You can only edit your own RSVP" : 'Click to change RSVP'}
+                                  style={{ width: '48px', height: '48px', borderRadius: '8px', border: 'none', fontSize: '18px', fontWeight: 'bold', color: 'white',
+                                          cursor: canEdit ? 'pointer' : 'not-allowed', opacity: canEdit ? 1 : 0.5, background: statusInfo.color }}>
+                                  {statusInfo.icon}
+                                </button>
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Alerts */}
+            {(belowMinimum || catcherDisabled) && (
+              <div style={{ marginBottom: '2rem' }}>
+                {belowMinimum && (
+                  <div style={{ background: '#fee2e2', border: '2px solid #ef4444', borderRadius: '8px', padding: '1rem', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                    <AlertCircle style={{ width: '24px', height: '24px', color: '#dc2626', flexShrink: 0 }} />
+                    <div>
+                      <div style={{ fontWeight: '600', color: '#7f1d1d' }}>
+                        Only {yesRsvpCount} players confirmed - Need {currentSeason.minPlayers} minimum to play
+                      </div>
+                    </div>
+                  </div>
+                )}
+                {catcherDisabled && (
+                  <div style={{ background: '#fee2e2', border: '2px solid #ef4444', borderRadius: '8px', padding: '1rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                    <AlertCircle style={{ width: '24px', height: '24px', color: '#dc2626', flexShrink: 0 }} />
+                    <div>
+                      <div style={{ fontWeight: '600', color: '#7f1d1d' }}>
+                        Catcher position disabled - need {currentSeason.catcherMinPlayers} players (currently {yesRsvpCount})
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Captain Section */}
+            {isLoggedIn && (
+              <div style={{ background: 'white', padding: '1.5rem', borderRadius: '12px', boxShadow: '0 4px 6px rgba(0,0,0,0.07)', border: '1px solid #e1e5e9' }}>
+                <div style={{ marginBottom: '1.5rem', padding: '0.75rem 1rem', borderRadius: '8px', background: isCaptain ? '#eff6ff' : '#f3f4f6',
+                              color: isCaptain ? '#1e40af' : '#374151', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: '600' }}>
+                  {isCaptain ? <Edit3 style={{ width: '18px', height: '18px' }} /> : <Eye style={{ width: '18px', height: '18px' }} />}
+                  <span>{isCaptain ? 'Captain - Editing Enabled' : 'View Only - Captain Access Required to Edit'}</span>
+                </div>
+
+                <div style={{ marginBottom: '1.5rem' }}>
+                  <label style={{ display: 'block', fontSize: '14px', fontWeight: '600', color: '#333', marginBottom: '0.5rem' }}>Select Game:</label>
+                  <select value={selectedGame} onChange={(e) => setSelectedGame(parseInt(e.target.value))}
+                    style={{ padding: '0.5rem 1rem', border: '1px solid #ccc', borderRadius: '8px', fontSize: '14px', width: '100%', maxWidth: '400px' }}>
+                    {games.map(game => {
+                      const gameYesCount = players.filter(player => rsvps[`${player.id}-${game.id}`] === 'yes').length;
+                      return (
+                        <option key={game.id} value={game.id}>
+                          {game.date} vs {game.opponent} ({gameYesCount} Yes)
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+
+                {/* Batting Order */}
+                <div style={{ marginBottom: '2rem' }}>
+                  <h2 style={{ margin: '0 0 1rem 0', fontSize: '1.5rem', fontWeight: 'bold' }}>Batting Order</h2>
+                  <p style={{ fontSize: '14px', color: '#6b7280', marginBottom: '1rem' }}>
+                    {currentSeason.name} allows up to {currentSeason.battingOrderSize} batters.
+                  </p>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
+                    <div>
+                      <h3 style={{ fontSize: '14px', fontWeight: '600', marginBottom: '0.5rem' }}>Lineup</h3>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                        {[...Array(currentSeason.battingOrderSize)].map((_, idx) => {
+                          const player = gameBattingOrder[idx];
+                          const isDropTarget = dropTarget?.type === 'batting' && dropTarget?.position === idx;
                           
                           return (
-                            <td key={game.id} style={{ borderBottom: '1px solid #ccc', padding: '8px', textAlign: 'center' }}>
-                              <button onClick={() => handleRSVPClick(player.id, game.id)} disabled={!canEdit}
-                                style={{ width: '48px', height: '48px', borderRadius: '8px', border: 'none', fontSize: '18px', fontWeight: 'bold', color: 'white',
-                                        cursor: canEdit ? 'pointer' : 'not-allowed', opacity: canEdit ? 1 : 0.5, background: statusInfo.color }}>
-                                {statusInfo.icon}
-                              </button>
-                            </td>
+                            <div key={idx}
+                              onDragOver={isCaptain ? handleDragOver : undefined}
+                              onDragEnter={isCaptain ? (e) => handleDragEnter(e, { type: 'batting', position: idx }) : undefined}
+                              onDragLeave={handleDragLeave}
+                              onDrop={isCaptain ? (e) => handleDrop(e, { type: 'batting', position: idx }) : undefined}
+                              style={{ padding: '12px', borderRadius: '8px', border: isDropTarget ? '2px dashed #667eea' : '1px solid #e1e5e9',
+                                      background: isDropTarget ? '#eff6ff' : (!player ? '#f9fafb' : 'white'), transition: 'all 0.3s ease' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <span style={{ fontWeight: 'bold', color: '#6b7280', width: '24px' }}>{idx + 1}.</span>
+                                {player ? (
+                                  <div style={{ flex: 1 }}>
+                                    <PlayerCard player={player} draggable={true} showStats={true}
+                                      onRemove={isCaptain ? () => removeFromBatting(idx) : undefined} />
+                                  </div>
+                                ) : (
+                                  <span style={{ color: '#9ca3af', fontSize: '14px' }}>
+                                    {isCaptain ? 'Drag player here' : 'Empty'}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
                           );
                         })}
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-            <div style={{ marginTop: '1.5rem', padding: '1rem', background: '#f8f9fa', borderRadius: '8px', textAlign: 'center', color: '#666' }}>
-              <p style={{ margin: 0, fontSize: '0.9rem' }}>
-                ✅ Lineup management features coming soon! Currently showing RSVP grid with {players.length} players and {games.length} game{games.length !== 1 ? 's' : ''}.
-              </p>
-            </div>
-          </div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <h3 style={{ fontSize: '14px', fontWeight: '600', marginBottom: '0.5rem' }}>
+                        Available Players ({availablePlayers.length})
+                      </h3>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: '600px', overflowY: 'auto' }}>
+                        {availablePlayers.map(player => (
+                          <PlayerCard key={player.id} player={player} draggable={isCaptain} showStats={true} />
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Fielding Positions */}
+                <div>
+                  <h2 style={{ margin: '0 0 1rem 0', fontSize: '1.5rem', fontWeight: 'bold' }}>Defensive Positions by Inning</h2>
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
+                      <thead>
+                        <tr>
+                          <th style={{ position: 'sticky', left: 0, background: '#f2f2f2', zIndex: 10, borderBottom: '2px solid #ccc', padding: '8px', textAlign: 'center', width: '64px' }}>Pos</th>
+                          {[1, 2, 3, 4, 5, 6, 7].map(inning => (
+                            <th key={inning} style={{ borderBottom: '2px solid #ccc', padding: '8px', textAlign: 'center', background: '#f2f2f2' }}>{inning}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {currentSeason.positions.map(position => {
+                          const isCatcher = position === 'C';
+                          const disabled = isCatcher && catcherDisabled;
+                          
+                          return (
+                            <tr key={position} style={{ background: disabled ? '#f3f4f6' : 'white' }}>
+                              <td style={{ position: 'sticky', left: 0, background: disabled ? '#f3f4f6' : 'white', zIndex: 10,
+                                          borderBottom: '1px solid #ccc', padding: '8px', fontWeight: '600', textAlign: 'center' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
+                                  {disabled && <Lock style={{ width: '14px', height: '14px', color: '#9ca3af' }} />}
+                                  <span style={{ textDecoration: disabled ? 'line-through' : 'none', color: disabled ? '#9ca3af' : 'inherit' }}>
+                                    {position}
+                                  </span>
+                                </div>
+                              </td>
+                              {[1, 2, 3, 4, 5, 6, 7].map(inning => {
+                                const player = gameFieldingPositions[inning]?.[position];
+                                const isDropTarget = dropTarget?.type === 'fielding' && dropTarget?.position === position && dropTarget?.inning === inning;
+                                
+                                return (
+                                  <td key={inning}
+                                    onDragOver={disabled || !isCaptain ? undefined : handleDragOver}
+                                    onDragEnter={disabled || !isCaptain ? undefined : (e) => handleDragEnter(e, { type: 'fielding', position, inning })}
+                                    onDragLeave={handleDragLeave}
+                                    onDrop={disabled || !isCaptain ? undefined : (e) => handleDrop(e, { type: 'fielding', position, inning })}
+                                    style={{ borderBottom: '1px solid #ccc', padding: '4px', transition: 'all 0.3s ease',
+                                            background: isDropTarget && !disabled ? '#eff6ff' : 'transparent',
+                                            border: isDropTarget && !disabled ? '2px dashed #667eea' : '1px solid #ccc',
+                                            cursor: disabled ? 'not-allowed' : 'default' }}>
+                                    {disabled ? (
+                                      <div style={{ textAlign: 'center', color: '#9ca3af', fontSize: '14px' }}>—</div>
+                                    ) : player ? (
+                                      <PlayerCard player={player} draggable={isCaptain} size="small"
+                                        onRemove={isCaptain ? () => removeFromFielding(inning, position) : undefined} />
+                                    ) : (
+                                      <div style={{ height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                    color: '#d1d5db', fontSize: '12px' }}>
+                                        {isCaptain ? 'Drop' : '—'}
+                                      </div>
+                                    )}
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          );
+                        })}
+                        
+                        <tr style={{ background: '#f9fafb' }}>
+                          <td colSpan={8} style={{ padding: '8px', textAlign: 'center', fontWeight: '600', fontSize: '12px',
+                                                    color: '#6b7280', borderTop: '2px solid #9ca3af', borderBottom: '2px solid #9ca3af' }}>
+                            BENCH
+                          </td>
+                        </tr>
+                        
+                        {(() => {
+                          const maxBenchSpots = currentSeason.battingOrderSize - currentSeason.positions.length;
+                          return [...Array(maxBenchSpots)].map((_, benchIdx) => (
+                            <tr key={`bench-${benchIdx}`} style={{ background: '#fefce8' }}>
+                              <td style={{ position: 'sticky', left: 0, background: '#fefce8', zIndex: 10, borderBottom: '1px solid #ccc',
+                                          padding: '8px', fontWeight: '600', textAlign: 'center', color: '#854d0e' }}>
+                                B{benchIdx + 1}
+                              </td>
+                              {[1, 2, 3, 4, 5, 6, 7].map(inning => {
+                                const fieldingThisInning = gameFieldingPositions[inning] ? 
+                                  Object.values(gameFieldingPositions[inning]).map(p => p.id) : [];
+                                
+                                const benchPlayers = gameBattingOrder.filter(p => !fieldingThisInning.includes(p.id));
+                                const benchPlayer = benchPlayers[benchIdx];
+                                
+                                return (
+                                  <td key={inning} style={{ borderBottom: '1px solid #ccc', padding: '4px', background: '#fefce8' }}>
+                                    {benchPlayer ? (
+                                      <PlayerCard player={benchPlayer} draggable={false} size="small" />
+                                    ) : (
+                                      <div style={{ height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                    color: '#d1d5db', fontSize: '12px' }}>—</div>
+                                    )}
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          ));
+                        })()}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>
