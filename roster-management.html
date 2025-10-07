@@ -86,6 +86,7 @@ function RosterManagement() {
   const [rsvps, setRsvps] = useState({});
   const [battingOrder, setBattingOrder] = useState({});
   const [fieldingPositions, setFieldingPositions] = useState({});
+  const [benchPlayers, setBenchPlayers] = useState({});
   const [draggedPlayer, setDraggedPlayer] = useState(null);
   const [draggedFrom, setDraggedFrom] = useState(null);
   const [dropTarget, setDropTarget] = useState(null);
@@ -250,15 +251,15 @@ function RosterManagement() {
       const newBattingOrder = { ...battingOrder };
       if (!newBattingOrder[selectedGame]) newBattingOrder[selectedGame] = [];
       
-      // Remove player from current position if already in order
       const currentIndex = newBattingOrder[selectedGame].findIndex(p => p.id === draggedPlayer.id);
       if (currentIndex !== -1) {
         newBattingOrder[selectedGame].splice(currentIndex, 1);
       }
       
-      // Insert at the target position
-      newBattingOrder[selectedGame].splice(target.position, 0, draggedPlayer);
-      setBattingOrder(newBattingOrder);
+      if (target.position < currentSeason.battingOrderSize) {
+        newBattingOrder[selectedGame].splice(target.position, 0, draggedPlayer);
+        setBattingOrder(newBattingOrder);
+      }
     } else if (target.type === 'fielding') {
       if (target.position === 'C' && catcherDisabled) {
         setDraggedPlayer(null);
@@ -283,6 +284,19 @@ function RosterManagement() {
       
       newFieldingPositions[selectedGame][target.inning][target.position] = draggedPlayer;
       setFieldingPositions(newFieldingPositions);
+    } else if (target.type === 'bench') {
+      const newBenchPlayers = { ...benchPlayers };
+      if (!newBenchPlayers[selectedGame]) newBenchPlayers[selectedGame] = {};
+      if (!newBenchPlayers[selectedGame][target.inning]) {
+        newBenchPlayers[selectedGame][target.inning] = [];
+      }
+      
+      newBenchPlayers[selectedGame][target.inning] = newBenchPlayers[selectedGame][target.inning].filter(
+        p => p.id !== draggedPlayer.id
+      );
+      
+      newBenchPlayers[selectedGame][target.inning].splice(target.benchIndex, 0, draggedPlayer);
+      setBenchPlayers(newBenchPlayers);
     }
 
     setDraggedPlayer(null);
@@ -304,6 +318,15 @@ function RosterManagement() {
     if (newFieldingPositions[selectedGame]?.[inning]?.[position]) {
       delete newFieldingPositions[selectedGame][inning][position];
       setFieldingPositions(newFieldingPositions);
+    }
+  };
+
+  const removeFromBench = (inning, benchIndex) => {
+    if (!isCaptain) return;
+    const newBenchPlayers = { ...benchPlayers };
+    if (newBenchPlayers[selectedGame]?.[inning]?.[benchIndex] !== undefined) {
+      newBenchPlayers[selectedGame][inning].splice(benchIndex, 1);
+      setBenchPlayers(newBenchPlayers);
     }
   };
 
@@ -383,6 +406,7 @@ function RosterManagement() {
 
   const gameBattingOrder = battingOrder[selectedGame] || [];
   const gameFieldingPositions = fieldingPositions[selectedGame] || {};
+  const gameBenchPlayers = benchPlayers[selectedGame] || {};
 
   return (
     <div style={{ fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif", background: 'linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)', minHeight: '100vh', padding: '2rem' }}>
@@ -442,7 +466,6 @@ function RosterManagement() {
 
         {!loading && selectedTeam && players.length > 0 && games.length > 0 && (
           <>
-            {/* RSVP Grid */}
             <div style={{ background: 'white', padding: '1.5rem', borderRadius: '12px', marginBottom: '2rem', boxShadow: '0 4px 6px rgba(0,0,0,0.07)', border: '1px solid #e1e5e9' }}>
               <h2 style={{ margin: '0 0 1rem 0', fontSize: '1.5rem', fontWeight: 'bold' }}>Game RSVPs</h2>
               <div className="table-scroll-container" style={{ border: '1px solid #e5e7eb', borderRadius: '8px' }}>
@@ -501,7 +524,6 @@ function RosterManagement() {
               </div>
             </div>
 
-            {/* Alerts */}
             {(belowMinimum || catcherDisabled) && (
               <div style={{ marginBottom: '2rem' }}>
                 {belowMinimum && (
@@ -527,7 +549,6 @@ function RosterManagement() {
               </div>
             )}
 
-            {/* Captain Section */}
             {isLoggedIn && (
               <div style={{ background: 'white', padding: '1.5rem', borderRadius: '12px', boxShadow: '0 4px 6px rgba(0,0,0,0.07)', border: '1px solid #e1e5e9' }}>
                 <div style={{ marginBottom: '1.5rem', padding: '0.75rem 1rem', borderRadius: '8px', background: isCaptain ? '#eff6ff' : '#f3f4f6',
@@ -551,7 +572,6 @@ function RosterManagement() {
                   </select>
                 </div>
 
-                {/* Batting Order */}
                 <div style={{ marginBottom: '2rem' }}>
                   <h2 style={{ margin: '0 0 1rem 0', fontSize: '1.5rem', fontWeight: 'bold' }}>Batting Order</h2>
                   <p style={{ fontSize: '14px', color: '#6b7280', marginBottom: '1rem' }}>
@@ -605,7 +625,6 @@ function RosterManagement() {
                   </div>
                 </div>
 
-                {/* Fielding Positions */}
                 <div>
                   <h2 style={{ margin: '0 0 1rem 0', fontSize: '1.5rem', fontWeight: 'bold' }}>Defensive Positions by Inning</h2>
                   <div style={{ overflowX: 'auto' }}>
@@ -682,30 +701,27 @@ function RosterManagement() {
                                 B{benchIdx + 1}
                               </td>
                               {[1, 2, 3, 4, 5, 6, 7].map(inning => {
-                                const fieldingThisInning = gameFieldingPositions[inning] ? 
-                                  Object.values(gameFieldingPositions[inning]).map(p => p.id) : [];
-                                
-                                const benchPlayers = gameBattingOrder.filter(p => !fieldingThisInning.includes(p.id));
-                                const benchPlayer = benchPlayers[benchIdx];
+                                const inningBench = gameBenchPlayers[inning] || [];
+                                const benchPlayer = inningBench[benchIdx];
+                                const isDropTarget = dropTarget?.type === 'bench' && dropTarget?.inning === inning && dropTarget?.benchIndex === benchIdx;
                                 
                                 return (
-                                  <td key={inning} style={{ borderBottom: '1px solid #ccc', padding: '4px', background: '#fefce8' }}>
+                                  <td key={inning}
+                                    onDragOver={isCaptain ? handleDragOver : undefined}
+                                    onDragEnter={isCaptain ? (e) => handleDragEnter(e, { type: 'bench', inning, benchIndex: benchIdx }) : undefined}
+                                    onDragLeave={handleDragLeave}
+                                    onDrop={isCaptain ? (e) => handleDrop(e, { type: 'bench', inning, benchIndex: benchIdx }) : undefined}
+                                    style={{ borderBottom: '1px solid #ccc', padding: '4px', background: isDropTarget ? '#fef3c7' : '#fefce8',
+                                            border: isDropTarget ? '2px dashed #ca8a04' : '1px solid #ccc',
+                                            transition: 'all 0.3s ease' }}>
                                     {benchPlayer ? (
-                                      <div style={{ 
-                                        padding: '4px', 
-                                        background: '#fef9c3', 
-                                        borderRadius: '6px', 
-                                        border: '1px dashed #ca8a04',
-                                        fontSize: '11px',
-                                        color: '#854d0e',
-                                        textAlign: 'center',
-                                        fontStyle: 'italic'
-                                      }}>
-                                        {benchPlayer.name.split(' ').pop()}
-                                      </div>
+                                      <PlayerCard player={benchPlayer} draggable={isCaptain} size="small"
+                                        onRemove={isCaptain ? () => removeFromBench(inning, benchIdx) : undefined} />
                                     ) : (
                                       <div style={{ height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                                    color: '#d1d5db', fontSize: '12px' }}>—</div>
+                                                    color: '#d1d5db', fontSize: '12px' }}>
+                                        {isCaptain ? 'Drop' : '—'}
+                                      </div>
                                     )}
                                   </td>
                                 );
