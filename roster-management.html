@@ -11,6 +11,23 @@
   * { box-sizing: border-box; }
   body { margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
   #root { min-height: 100vh; }
+  .table-scroll-container {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .table-scroll-container::-webkit-scrollbar {
+    height: 8px;
+  }
+  .table-scroll-container::-webkit-scrollbar-track {
+    background: #f1f1f1;
+  }
+  .table-scroll-container::-webkit-scrollbar-thumb {
+    background: #888;
+    border-radius: 4px;
+  }
+  .table-scroll-container::-webkit-scrollbar-thumb:hover {
+    background: #555;
+  }
 </style>
 </head>
 <body>
@@ -81,6 +98,7 @@ function RosterManagement() {
   const [players, setPlayers] = useState([]);
   const [games, setGames] = useState([]);
   const [allTeams, setAllTeams] = useState([]);
+  const [playerInfo, setPlayerInfo] = useState({});
 
   const isCaptain = loggedInPlayer?.isCaptain || false;
   const isLoggedIn = currentUserId !== null;
@@ -88,6 +106,19 @@ function RosterManagement() {
   useEffect(() => {
     async function loadData() {
       try {
+        // Load player info for captain designation and jersey numbers
+        const playerInfoResponse = await fetch('player_info.json');
+        const playerInfoData = await playerInfoResponse.json();
+        const playerInfoMap = {};
+        playerInfoData.forEach(p => {
+          playerInfoMap[p.name] = {
+            captain: p.captain === 'yes',
+            number: p.number || ''
+          };
+        });
+        setPlayerInfo(playerInfoMap);
+
+        // Load games
         const gamesResponse = await fetch('games.json');
         const allGames = await gamesResponse.json();
         const seasonGames = allGames.filter(g => g.year === "2025" && g.season === "Fall");
@@ -99,10 +130,26 @@ function RosterManagement() {
         });
         setAllTeams(Array.from(teamsSet).sort());
         
-        const formattedGames = seasonGames.map((game, index) => ({
-          id: index + 1, date: game.date, homeTeam: game["home team"],
-          awayTeam: game["away team"], opponent: '', gameType: game.game_type || 'Regular'
+        // Get today's date at start of day for comparison
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        
+        // Filter for today and future games only
+        const upcomingGames = seasonGames.filter(game => {
+          const gameDate = new Date(game.date);
+          gameDate.setHours(0, 0, 0, 0);
+          return gameDate >= today;
+        });
+        
+        const formattedGames = upcomingGames.map((game, index) => ({
+          id: index + 1, 
+          date: game.date, 
+          homeTeam: game["home team"],
+          awayTeam: game["away team"], 
+          opponent: '', 
+          gameType: game.game_type || 'Regular'
         }));
+        
         setGames(formattedGames);
         setLoading(false);
       } catch (error) {
@@ -132,22 +179,34 @@ function RosterManagement() {
           const hits = Number(player.hits) || 0;
           const battingAvg = atBats > 0 ? (hits / atBats).toFixed(3) : '.000';
           
+          // Get captain status and jersey number from player_info
+          const info = playerInfo[player.name] || { captain: false, number: '' };
+          
           return {
-            id: index + 1, name: player.name, jersey: index + 1, avatar, battingAvg, isCaptain: false
+            id: index + 1, 
+            name: player.name, 
+            jersey: info.number || (index + 1), // Use real number or fallback to index
+            avatar, 
+            battingAvg, 
+            isCaptain: info.captain
           };
         }).sort((a, b) => a.name.localeCompare(b.name));
         
-        if (formattedPlayers.length > 0) formattedPlayers[0].isCaptain = true;
         setPlayers(formattedPlayers);
-        setGames(prev => prev.map(game => ({
-          ...game, opponent: game.homeTeam === selectedTeam ? game.awayTeam : game.homeTeam
+        
+        // Filter games to only show games involving selected team
+        setGames(prev => prev.filter(game => 
+          game.homeTeam === selectedTeam || game.awayTeam === selectedTeam
+        ).map(game => ({
+          ...game, 
+          opponent: game.homeTeam === selectedTeam ? game.awayTeam : game.homeTeam
         })));
       } catch (error) {
         console.error('Error loading team players:', error);
       }
     }
     loadTeamPlayers();
-  }, [selectedTeam]);
+  }, [selectedTeam, playerInfo]);
 
   useEffect(() => {
     if (players.length === 0 || games.length === 0) return;
@@ -242,16 +301,32 @@ function RosterManagement() {
           </div>
         )}
 
+        {!loading && selectedTeam && players.length === 0 && (
+          <div style={{ background: 'white', padding: '2rem', borderRadius: '12px', textAlign: 'center', color: '#666' }}>
+            Loading roster for {selectedTeam}...
+          </div>
+        )}
+
+        {!loading && selectedTeam && players.length > 0 && games.length === 0 && (
+          <div style={{ background: 'white', padding: '2rem', borderRadius: '12px', textAlign: 'center', color: '#666' }}>
+            <h3 style={{ marginTop: 0 }}>No Upcoming Games</h3>
+            <p>There are no scheduled games today or in the future for {selectedTeam}.</p>
+          </div>
+        )}
+
         {!loading && selectedTeam && players.length > 0 && games.length > 0 && (
           <div style={{ background: 'white', padding: '1.5rem', borderRadius: '12px', boxShadow: '0 4px 6px rgba(0,0,0,0.07)' }}>
             <h2 style={{ margin: '0 0 1rem 0', fontSize: '1.5rem', fontWeight: 'bold' }}>Game RSVPs</h2>
-            <div style={{ overflowX: 'auto' }}>
+            <p style={{ margin: '0 0 1rem 0', color: '#666', fontSize: '0.9rem' }}>
+              Showing {games.length} upcoming game{games.length !== 1 ? 's' : ''} for {selectedTeam} (today and future dates only)
+            </p>
+            <div className="table-scroll-container" style={{ overflowX: 'auto', border: '1px solid #e5e7eb', borderRadius: '8px' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
                 <thead>
                   <tr>
-                    <th style={{ position: 'sticky', left: 0, background: '#f2f2f2', zIndex: 10, borderBottom: '2px solid #ccc', padding: '8px', textAlign: 'left' }}>Player</th>
-                    {games.slice(0, 5).map(game => (
-                      <th key={game.id} style={{ borderBottom: '2px solid #ccc', padding: '8px', textAlign: 'center', background: '#f2f2f2', whiteSpace: 'nowrap' }}>
+                    <th style={{ position: 'sticky', left: 0, background: '#f2f2f2', zIndex: 10, borderBottom: '2px solid #ccc', padding: '8px', textAlign: 'left', minWidth: '200px' }}>Player</th>
+                    {games.map(game => (
+                      <th key={game.id} style={{ borderBottom: '2px solid #ccc', padding: '8px', textAlign: 'center', background: '#f2f2f2', whiteSpace: 'nowrap', minWidth: '80px' }}>
                         {game.date}<br/><span style={{ fontSize: '12px', fontWeight: 'normal', color: '#666' }}>vs {game.opponent}</span>
                       </th>
                     ))}
@@ -264,7 +339,7 @@ function RosterManagement() {
                       <tr key={player.id} style={{ background: isCurrentUser ? '#eff6ff' : 'white', borderLeft: isCurrentUser ? '4px solid #667eea' : 'none' }}>
                         <td style={{ position: 'sticky', left: 0, background: isCurrentUser ? '#eff6ff' : 'white', zIndex: 10, borderBottom: '1px solid #ccc', padding: '8px' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#667eea', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: '600' }}>
+                            <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#667eea', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: '600', flexShrink: 0 }}>
                               {player.avatar}
                             </div>
                             <div>
@@ -272,11 +347,13 @@ function RosterManagement() {
                                 {player.name}
                                 {isCurrentUser && <span style={{ fontSize: '10px', background: '#667eea', color: 'white', padding: '2px 6px', borderRadius: '4px', marginLeft: '8px' }}>You</span>}
                               </div>
-                              <div style={{ fontSize: '11px', color: '#6b7280' }}>#{player.jersey}</div>
+                              <div style={{ fontSize: '11px', color: '#6b7280' }}>
+                                {player.jersey ? `#${player.jersey}` : 'No #'}
+                              </div>
                             </div>
                           </div>
                         </td>
-                        {games.slice(0, 5).map(game => {
+                        {games.map(game => {
                           const key = `${player.id}-${game.id}`;
                           const status = rsvps[key] || 'none';
                           const statusInfo = RSVP_STATUS[status];
@@ -300,7 +377,7 @@ function RosterManagement() {
             </div>
             <div style={{ marginTop: '1.5rem', padding: '1rem', background: '#f8f9fa', borderRadius: '8px', textAlign: 'center', color: '#666' }}>
               <p style={{ margin: 0, fontSize: '0.9rem' }}>
-                ✅ Lineup management features coming soon! Currently showing RSVP grid with {players.length} players and {games.length} games.
+                ✅ Lineup management features coming soon! Currently showing RSVP grid with {players.length} players and {games.length} game{games.length !== 1 ? 's' : ''}.
               </p>
             </div>
           </div>
