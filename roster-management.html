@@ -243,109 +243,112 @@ function RosterManagement() {
   };
 
   const handleDrop = (e, target) => {
-    e.preventDefault();
-    if (!isCaptain || !draggedPlayer) return;
+  e.preventDefault();
+  if (!isCaptain || !draggedPlayer) return;
 
-    console.log('DROP EVENT:', { type: target.type, player: draggedPlayer.name, target });
+  console.log('DROP EVENT:', { type: target.type, player: draggedPlayer.name, target });
 
-    if (target.type === 'batting') {
-      const newBattingOrder = { ...battingOrder };
-      if (!newBattingOrder[selectedGame]) newBattingOrder[selectedGame] = [];
-      
-      const currentIndex = newBattingOrder[selectedGame].findIndex(p => p.id === draggedPlayer.id);
-      
-      if (currentIndex !== -1) {
-        newBattingOrder[selectedGame].splice(currentIndex, 1);
-      }
-      
-	// Calculate final insert position
-    // If we removed the player from before the target position, we need to shift back by 1
-		let finalPosition = target.position;
-			if (currentIndex !== -1 && currentIndex < target.position) {
-				finalPosition = target.position - 1;
-			}
-	  
-    // Ensure position doesn't exceed array length (in case of empty spots)
-    finalPosition = Math.min(finalPosition, newBattingOrder[selectedGame].length);
-      
-      newBattingOrder[selectedGame].splice(finalPosition, 0, draggedPlayer);
-      setBattingOrder(newBattingOrder);
-    } else if (target.type === 'fielding') {
-      if (target.position === 'C' && catcherDisabled) {
-        setDraggedPlayer(null);
-        setDropTarget(null);
-        return;
-      }
-
-      const currentBench = benchPlayers[selectedGame]?.[target.inning] || [];
-      const isOnBench = currentBench.some(p => p.id === draggedPlayer.id);
-      
-      console.log('FIELDING DROP - Checking bench:', { isOnBench, currentBench });
-      
-      if (isOnBench) {
-        alert(`${draggedPlayer.name} is on the bench for inning ${target.inning}. Remove them from the bench first.`);
-        setDraggedPlayer(null);
-        setDropTarget(null);
-        return;
-      }
-
-      const newFieldingPositions = { ...fieldingPositions };
-      if (!newFieldingPositions[selectedGame]) newFieldingPositions[selectedGame] = {};
-      if (!newFieldingPositions[selectedGame][target.inning]) {
-        newFieldingPositions[selectedGame][target.inning] = {};
-      }
-      
-      const inningPositions = newFieldingPositions[selectedGame][target.inning];
-      const alreadyAssigned = Object.entries(inningPositions).find(
-        ([pos, player]) => player.id === draggedPlayer.id && pos !== target.position
-      );
-      
-      if (alreadyAssigned) {
-        delete newFieldingPositions[selectedGame][target.inning][alreadyAssigned[0]];
-      }
-      
-      newFieldingPositions[selectedGame][target.inning][target.position] = draggedPlayer;
-      setFieldingPositions(newFieldingPositions);
-    } else if (target.type === 'bench') {
-      const currentDefense = fieldingPositions[selectedGame]?.[target.inning] || {};
-      
-      console.log('BENCH DROP - Checking defense:', {
-        playerName: draggedPlayer.name,
-        inning: target.inning,
-        currentDefense: currentDefense,
-        defensePositions: Object.keys(currentDefense),
-        allPlayers: Object.values(currentDefense).map(p => p.name)
-      });
-      
-      const defensePosition = Object.entries(currentDefense).find(([pos, player]) => player.id === draggedPlayer.id);
-      
-      if (defensePosition) {
-        console.log('BLOCKED: Player is in defense at position:', defensePosition[0]);
-        alert(`${draggedPlayer.name} is playing ${defensePosition[0]} in inning ${target.inning}. Remove them from defense first.`);
-        setDraggedPlayer(null);
-        setDropTarget(null);
-        return;
-      }
-      
-      console.log('Allowing bench placement');
-
-      const newBenchPlayers = { ...benchPlayers };
-      if (!newBenchPlayers[selectedGame]) newBenchPlayers[selectedGame] = {};
-      if (!newBenchPlayers[selectedGame][target.inning]) {
-        newBenchPlayers[selectedGame][target.inning] = [];
-      }
-      
-      newBenchPlayers[selectedGame][target.inning] = newBenchPlayers[selectedGame][target.inning].filter(
-        p => p.id !== draggedPlayer.id
-      );
-      
-      newBenchPlayers[selectedGame][target.inning].splice(target.benchIndex, 0, draggedPlayer);
-      setBenchPlayers(newBenchPlayers);
+  if (target.type === 'batting') {
+    const newBattingOrder = { ...battingOrder };
+    if (!newBattingOrder[selectedGame]) newBattingOrder[selectedGame] = [];
+    
+    // Ensure array is large enough (fill with null for empty spots)
+    while (newBattingOrder[selectedGame].length < currentSeason.battingOrderSize) {
+      newBattingOrder[selectedGame].push(null);
+    }
+    
+    // Find if player is already in the batting order
+    const currentIndex = newBattingOrder[selectedGame].findIndex(p => p && p.id === draggedPlayer.id);
+    
+    // Remove player from current position if they're already in the order
+    if (currentIndex !== -1) {
+      newBattingOrder[selectedGame][currentIndex] = null;
+    }
+    
+    // Place player at the exact target position
+    newBattingOrder[selectedGame][target.position] = draggedPlayer;
+    
+    setBattingOrder(newBattingOrder);
+    
+  } else if (target.type === 'fielding') {
+    if (target.position === 'C' && catcherDisabled) {
+      setDraggedPlayer(null);
+      setDropTarget(null);
+      return;
     }
 
-    setDraggedPlayer(null);
-    setDropTarget(null);
-  };
+    const currentBench = benchPlayers[selectedGame]?.[target.inning] || [];
+    const isOnBench = currentBench.some(p => p.id === draggedPlayer.id);
+    
+    console.log('FIELDING DROP - Checking bench:', { isOnBench, currentBench });
+    
+    if (isOnBench) {
+      alert(`${draggedPlayer.name} is on the bench for inning ${target.inning}. Remove them from the bench first.`);
+      setDraggedPlayer(null);
+      setDropTarget(null);
+      return;
+    }
+
+    const newFieldingPositions = { ...fieldingPositions };
+    if (!newFieldingPositions[selectedGame]) newFieldingPositions[selectedGame] = {};
+    if (!newFieldingPositions[selectedGame][target.inning]) {
+      newFieldingPositions[selectedGame][target.inning] = {};
+    }
+    
+    const inningPositions = newFieldingPositions[selectedGame][target.inning];
+    const alreadyAssigned = Object.entries(inningPositions).find(
+      ([pos, player]) => player.id === draggedPlayer.id && pos !== target.position
+    );
+    
+    if (alreadyAssigned) {
+      delete newFieldingPositions[selectedGame][target.inning][alreadyAssigned[0]];
+    }
+    
+    newFieldingPositions[selectedGame][target.inning][target.position] = draggedPlayer;
+    setFieldingPositions(newFieldingPositions);
+    
+  } else if (target.type === 'bench') {
+    const currentDefense = fieldingPositions[selectedGame]?.[target.inning] || {};
+    
+    console.log('BENCH DROP - Checking defense:', {
+      playerName: draggedPlayer.name,
+      inning: target.inning,
+      currentDefense: currentDefense,
+      defensePositions: Object.keys(currentDefense),
+      allPlayers: Object.values(currentDefense).map(p => p.name)
+    });
+    
+    const defensePosition = Object.entries(currentDefense).find(([pos, player]) => player.id === draggedPlayer.id);
+    
+    if (defensePosition) {
+      console.log('BLOCKED: Player is in defense at position:', defensePosition[0]);
+      alert(`${draggedPlayer.name} is playing ${defensePosition[0]} in inning ${target.inning}. Remove them from defense first.`);
+      setDraggedPlayer(null);
+      setDropTarget(null);
+      return;
+    }
+    
+    console.log('Allowing bench placement');
+
+    const newBenchPlayers = { ...benchPlayers };
+    if (!newBenchPlayers[selectedGame]) newBenchPlayers[selectedGame] = {};
+    if (!newBenchPlayers[selectedGame][target.inning]) {
+      newBenchPlayers[selectedGame][target.inning] = [];
+    }
+    
+    // Remove player from bench if they're already there
+    newBenchPlayers[selectedGame][target.inning] = newBenchPlayers[selectedGame][target.inning].filter(
+      p => p.id !== draggedPlayer.id
+    );
+    
+    // Insert at target position
+    newBenchPlayers[selectedGame][target.inning].splice(target.benchIndex, 0, draggedPlayer);
+    setBenchPlayers(newBenchPlayers);
+  }
+
+  setDraggedPlayer(null);
+  setDropTarget(null);
+};
 
   const removeFromBatting = (position) => {
     if (!isCaptain) return;
