@@ -26,7 +26,6 @@
 <script type="text/babel">
 const { useState, useEffect } = React;
 
-// SVG Icon Components
 const AlertCircle = ({ style }) => (
   <svg style={style} width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
     <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
@@ -247,28 +246,39 @@ function RosterManagement() {
     e.preventDefault();
     if (!isCaptain || !draggedPlayer) return;
 
+    console.log('DROP EVENT:', { type: target.type, player: draggedPlayer.name, target });
+
     if (target.type === 'batting') {
       const newBattingOrder = { ...battingOrder };
       if (!newBattingOrder[selectedGame]) newBattingOrder[selectedGame] = [];
       
       const currentIndex = newBattingOrder[selectedGame].findIndex(p => p.id === draggedPlayer.id);
       
-      // Remove from current position first
       if (currentIndex !== -1) {
         newBattingOrder[selectedGame].splice(currentIndex, 1);
       }
       
-      // Calculate the actual insert position accounting for removal
       let insertPosition = target.position;
       if (currentIndex !== -1 && currentIndex < target.position) {
         insertPosition = target.position - 1;
       }
       
-      // Insert at the calculated position
       newBattingOrder[selectedGame].splice(insertPosition, 0, draggedPlayer);
       setBattingOrder(newBattingOrder);
     } else if (target.type === 'fielding') {
       if (target.position === 'C' && catcherDisabled) {
+        setDraggedPlayer(null);
+        setDropTarget(null);
+        return;
+      }
+
+      const currentBench = benchPlayers[selectedGame]?.[target.inning] || [];
+      const isOnBench = currentBench.some(p => p.id === draggedPlayer.id);
+      
+      console.log('FIELDING DROP - Checking bench:', { isOnBench, currentBench });
+      
+      if (isOnBench) {
+        alert(`${draggedPlayer.name} is on the bench for inning ${target.inning}. Remove them from the bench first.`);
         setDraggedPlayer(null);
         setDropTarget(null);
         return;
@@ -292,6 +302,28 @@ function RosterManagement() {
       newFieldingPositions[selectedGame][target.inning][target.position] = draggedPlayer;
       setFieldingPositions(newFieldingPositions);
     } else if (target.type === 'bench') {
+      const currentDefense = fieldingPositions[selectedGame]?.[target.inning] || {};
+      
+      console.log('BENCH DROP - Checking defense:', {
+        playerName: draggedPlayer.name,
+        inning: target.inning,
+        currentDefense: currentDefense,
+        defensePositions: Object.keys(currentDefense),
+        allPlayers: Object.values(currentDefense).map(p => p.name)
+      });
+      
+      const defensePosition = Object.entries(currentDefense).find(([pos, player]) => player.id === draggedPlayer.id);
+      
+      if (defensePosition) {
+        console.log('BLOCKED: Player is in defense at position:', defensePosition[0]);
+        alert(`${draggedPlayer.name} is playing ${defensePosition[0]} in inning ${target.inning}. Remove them from defense first.`);
+        setDraggedPlayer(null);
+        setDropTarget(null);
+        return;
+      }
+      
+      console.log('Allowing bench placement');
+
       const newBenchPlayers = { ...benchPlayers };
       if (!newBenchPlayers[selectedGame]) newBenchPlayers[selectedGame] = {};
       if (!newBenchPlayers[selectedGame][target.inning]) {
