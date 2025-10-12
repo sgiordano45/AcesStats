@@ -475,7 +475,7 @@
         <div class="header-content">
             <h1>⚖️ League Rules</h1>
             <p class="header-subtitle">Mountainside Aces Official Regulations</p>
-            <div class="season-badge">2025 Spring/Summer Season</div>
+            <div class="season-badge">2025 Fall & Summer Season</div>
         </div>
     </header>
     
@@ -809,14 +809,14 @@
             <h2 class="section-title">Equipment</h2>
             
             <div class="rule-item">
-                <strong>Eligible Bats:</strong> 
+                <strong>Eligible Bats:</strong>
                 <ul class="rule-list">
                     <li>Only wooden bats are allowed</li>
                 </ul>
             </div>
             
             <div class="rule-item">
-                <strong>Softballs Used:</strong> 
+                <strong>Softballs Used:</strong>
                 <ul class="rule-list">
                     <li>Clinchers supplied by the League</li>
                 </ul>
@@ -837,17 +837,61 @@
             }, 800);
         });
 
+        // Store original HTML content
+        const originalContent = new Map();
+        const allRuleItems = document.querySelectorAll('.rule-item, .section-title, .subsection-title');
+        allRuleItems.forEach(item => {
+            originalContent.set(item, item.innerHTML);
+        });
+
         // Search functionality
         const searchInput = document.getElementById('searchInput');
         const searchResults = document.getElementById('searchResults');
-        const allRuleItems = document.querySelectorAll('.rule-item, .section-title, .subsection-title');
+        
+        function highlightText(element, searchTerm) {
+            const walker = document.createTreeWalker(
+                element,
+                NodeFilter.SHOW_TEXT,
+                null,
+                false
+            );
+            
+            const nodesToReplace = [];
+            let node;
+            
+            while (node = walker.nextNode()) {
+                if (node.textContent.toLowerCase().includes(searchTerm)) {
+                    nodesToReplace.push(node);
+                }
+            }
+            
+            nodesToReplace.forEach(node => {
+                const text = node.textContent;
+                const regex = new RegExp(`(${searchTerm})`, 'gi');
+                const parts = text.split(regex);
+                
+                const fragment = document.createDocumentFragment();
+                parts.forEach(part => {
+                    if (part.toLowerCase() === searchTerm.toLowerCase()) {
+                        const span = document.createElement('span');
+                        span.className = 'highlight';
+                        span.textContent = part;
+                        fragment.appendChild(span);
+                    } else if (part) {
+                        fragment.appendChild(document.createTextNode(part));
+                    }
+                });
+                
+                node.parentNode.replaceChild(fragment, node);
+            });
+        }
         
         searchInput.addEventListener('input', function() {
             const searchTerm = this.value.toLowerCase().trim();
             
             if (searchTerm === '') {
                 allRuleItems.forEach(item => {
-                    item.innerHTML = item.innerHTML.replace(/<span class="highlight">(.*?)<\/span>/gi, '$1');
+                    item.innerHTML = originalContent.get(item);
                     item.style.display = '';
                 });
                 searchResults.textContent = '';
@@ -857,18 +901,13 @@
             let matchCount = 0;
             
             allRuleItems.forEach(item => {
-                const originalText = item.textContent;
-                const lowerText = originalText.toLowerCase();
+                item.innerHTML = originalContent.get(item);
                 
-                item.innerHTML = item.innerHTML.replace(/<span class="highlight">(.*?)<\/span>/gi, '$1');
+                const lowerText = item.textContent.toLowerCase();
                 
                 if (lowerText.includes(searchTerm)) {
                     matchCount++;
-                    
-                    const regex = new RegExp(`(${searchTerm})`, 'gi');
-                    const highlightedHTML = item.innerHTML.replace(regex, '<span class="highlight">$1</span>');
-                    item.innerHTML = highlightedHTML;
-                    
+                    highlightText(item, searchTerm);
                     item.style.display = '';
                 } else {
                     if (item.classList.contains('rule-item')) {
@@ -905,3 +944,4 @@
     <script src="mobile-enhancements.js"></script>
 </body>
 </html>
+
