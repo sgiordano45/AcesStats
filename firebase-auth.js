@@ -290,7 +290,15 @@ function validateDisplayName(name) {
 export async function loginUser(email, password) {
   try {
     const userCredential = await signInWithEmailAndPassword(auth, email, password);
-    console.log('✅ User logged in:', userCredential.user.displayName);
+    const user = userCredential.user;
+	console.log('✅ User logged in:', user.displayName);
+	if (user.emailVerified) {
+      await updateDoc(doc(db, 'users', user.uid), {
+        emailVerified: true,
+        emailVerifiedAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+	}
     return { success: true, user: userCredential.user };
   } catch (error) {
     console.error('❌ Login error:', error.code);
@@ -591,6 +599,40 @@ export function getVerificationInfo() {
     email: user.email
   };
 }
+
+/**
+ * Sync email verification status from Auth to Firestore
+ * Call this after user verifies their email
+ * @param {string} userId - User ID
+ * @returns {Promise<Object>}
+ */
+export async function syncEmailVerificationStatus(userId) {
+  try {
+    const user = auth.currentUser;
+    
+    if (!user || user.uid !== userId) {
+      return { success: false, message: 'User mismatch' };
+    }
+    
+    // Reload to get fresh emailVerified status
+    await user.reload();
+    
+    // Update Firestore
+    await updateDoc(doc(db, 'users', userId), {
+      emailVerified: user.emailVerified,
+      emailVerifiedAt: user.emailVerified ? serverTimestamp() : null,
+      updatedAt: serverTimestamp()
+    });
+    
+    console.log('✅ Email verification status synced to Firestore');
+    return { success: true, emailVerified: user.emailVerified };
+    
+  } catch (error) {
+    console.error('❌ Error syncing email verification:', error);
+    return { success: false, error: error.code };
+  }
+}
+
 
 
 // ========================================
