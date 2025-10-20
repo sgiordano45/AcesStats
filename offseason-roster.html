@@ -1,0 +1,1146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#2d5016">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Mountainside Aces">
+  <title>Roster Management | Mountainside Aces</title>
+  
+  <style>
+    :root {
+      --primary-color: #2d5016;
+      --secondary-color: #1a6b4a;
+      --accent-color: #ffd700;
+      --card-bg: #ffffff;
+      --text-dark: #2d3748;
+      --text-light: #718096;
+      --border-color: #e2e8f0;
+      --shadow-sm: 0 2px 8px rgba(0,0,0,0.08);
+      --shadow-md: 0 4px 16px rgba(0,0,0,0.12);
+      --shadow-lg: 0 12px 32px rgba(0,0,0,0.16);
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: linear-gradient(135deg, #f7fafc 0%, #edf2f7 100%);
+      min-height: 100vh;
+      color: var(--text-dark);
+    }
+
+    /* Loading Overlay */
+    .loading-overlay {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(255,255,255,0.95);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+      gap: 1rem;
+    }
+
+    .loading-overlay.hidden {
+      display: none;
+    }
+
+    .softball-spinner::before {
+      content: '⚾';
+      font-size: 80px;
+      animation: spin 1.5s ease-in-out infinite;
+    }
+
+    @keyframes spin {
+      0%, 100% { transform: rotate(0deg) scale(1); }
+      50% { transform: rotate(180deg) scale(1.1); }
+    }
+
+    /* Header */
+    header {
+      background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+      box-shadow: var(--shadow-lg);
+      border-bottom: 3px solid var(--accent-color);
+    }
+
+    .header-content {
+      max-width: 2000px;
+      margin: 0 auto;
+      padding: 1.5rem 2rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 1.5rem;
+    }
+
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 1.5rem;
+    }
+
+    .back-btn {
+      color: white;
+      text-decoration: none;
+      padding: 0.75rem;
+      border-radius: 12px;
+      transition: all 0.3s ease;
+      background: rgba(255,255,255,0.1);
+    }
+
+    .back-btn:hover {
+      background: rgba(255,255,255,0.2);
+      transform: translateX(-4px);
+    }
+
+    .header-title h1 {
+      font-size: 2rem;
+      font-weight: 700;
+      color: white;
+      margin-bottom: 0.25rem;
+    }
+
+    .header-title p {
+      font-size: 0.9rem;
+      color: rgba(255,255,255,0.9);
+    }
+
+    .header-actions {
+      display: flex;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      padding: 0.75rem 1.5rem;
+      border: none;
+      border-radius: 12px;
+      font-weight: 600;
+      font-size: 0.9rem;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .btn:hover {
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-md);
+    }
+
+    .btn-toggle {
+      background: #9333ea;
+      color: white;
+    }
+
+    .btn-toggle:hover {
+      background: #7e22ce;
+    }
+
+    .btn-save {
+      background: #2563eb;
+      color: white;
+    }
+
+    .btn-save:hover {
+      background: #1d4ed8;
+    }
+
+    /* Main Content */
+    main {
+      max-width: 2000px;
+      margin: 0 auto;
+      padding: 2rem;
+    }
+
+    /* Past Player Add Section */
+    .add-player-section {
+      background: var(--card-bg);
+      border-radius: 16px;
+      box-shadow: var(--shadow-sm);
+      border: 1px solid var(--border-color);
+      padding: 1.5rem;
+      margin-bottom: 2rem;
+    }
+
+    .add-player-section h3 {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: var(--text-dark);
+      margin-bottom: 1rem;
+    }
+
+    .add-player-form {
+      display: flex;
+      gap: 1rem;
+      flex-wrap: wrap;
+      align-items: flex-end;
+    }
+
+    .form-group {
+      flex: 1;
+      min-width: 250px;
+    }
+
+    .form-group label {
+      display: block;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--text-dark);
+      margin-bottom: 0.5rem;
+    }
+
+    .form-group select {
+      width: 100%;
+      padding: 0.75rem;
+      font-size: 0.9rem;
+      border: 2px solid var(--border-color);
+      border-radius: 12px;
+      background: white;
+      color: var(--text-dark);
+      transition: all 0.3s ease;
+    }
+
+    .form-group select:focus {
+      outline: none;
+      border-color: var(--primary-color);
+      box-shadow: 0 0 0 3px rgba(45, 80, 22, 0.1);
+    }
+
+    .btn-add {
+      background: #16a34a;
+      color: white;
+    }
+
+    .btn-add:hover {
+      background: #15803d;
+    }
+
+    .btn-add:disabled {
+      background: #d1d5db;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .player-preview {
+      margin-top: 1rem;
+      padding: 1rem;
+      background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
+      border: 2px solid #60a5fa;
+      border-radius: 12px;
+    }
+
+    .player-preview p {
+      font-size: 0.85rem;
+      color: #1e3a8a;
+    }
+
+    /* Teams Grid */
+    .teams-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 1.5rem;
+      margin-bottom: 2rem;
+    }
+
+    .team-card {
+      background: var(--card-bg);
+      border-radius: 16px;
+      box-shadow: var(--shadow-sm);
+      border: 1px solid var(--border-color);
+      overflow: hidden;
+      transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .team-card:hover {
+      transform: translateY(-4px);
+      box-shadow: var(--shadow-lg);
+    }
+
+    .team-header {
+      background: linear-gradient(135deg, var(--text-dark) 0%, #1a202c 100%);
+      padding: 1rem;
+      color: white;
+    }
+
+    .team-header h2 {
+      font-size: 1rem;
+      font-weight: 700;
+      margin-bottom: 0.25rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .team-header p {
+      font-size: 0.85rem;
+      color: rgba(255,255,255,0.8);
+    }
+
+    .team-players {
+      padding: 1rem;
+      min-height: 500px;
+    }
+
+    .player-card {
+      background: #f9fafb;
+      border: 2px solid var(--border-color);
+      border-radius: 12px;
+      padding: 0.75rem;
+      margin-bottom: 0.75rem;
+      cursor: move;
+      transition: all 0.3s ease;
+    }
+
+    .player-card:hover {
+      border-color: #2563eb;
+      box-shadow: var(--shadow-md);
+      transform: scale(1.02);
+    }
+
+    .player-card.dragging {
+      opacity: 0.5;
+    }
+
+    .player-name {
+      font-weight: 600;
+      font-size: 0.85rem;
+      color: var(--text-dark);
+      margin-bottom: 0.25rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .player-stats {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.7rem;
+      color: var(--text-dark);
+      gap: 0.5rem;
+      font-weight: 500;
+    }
+
+    .add-player-btn {
+      width: 100%;
+      border: 2px dashed var(--border-color);
+      background: transparent;
+      border-radius: 12px;
+      padding: 0.75rem;
+      color: var(--text-light);
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+    }
+
+    .add-player-btn:hover {
+      border-color: #2563eb;
+      color: #2563eb;
+      background: #eff6ff;
+    }
+
+    .empty-slot {
+      border: 2px dashed #d1d5db;
+      border-radius: 12px;
+      padding: 0.75rem;
+      text-align: center;
+      color: #9ca3af;
+      font-size: 0.75rem;
+      margin-bottom: 0.75rem;
+    }
+
+    /* Unavailable Players Zone */
+    .unavailable-zone {
+      background: var(--card-bg);
+      border-radius: 16px;
+      box-shadow: var(--shadow-sm);
+      border: 1px solid var(--border-color);
+      overflow: hidden;
+      margin-bottom: 2rem;
+    }
+
+    .unavailable-header {
+      background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+      padding: 1.5rem;
+      color: white;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    .unavailable-header h2 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      margin-bottom: 0.25rem;
+    }
+
+    .unavailable-header p {
+      font-size: 0.9rem;
+      color: rgba(255,255,255,0.9);
+    }
+
+    .unavailable-content {
+      padding: 2rem;
+    }
+
+    .unavailable-empty {
+      text-align: center;
+      padding: 4rem 2rem;
+      color: var(--text-light);
+    }
+
+    .unavailable-empty-icon {
+      font-size: 4rem;
+      opacity: 0.3;
+      margin-bottom: 1rem;
+    }
+
+    .unavailable-players-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 1rem;
+    }
+
+    .unavailable-player {
+      background: #fef2f2;
+      border: 2px solid #fecaca;
+      border-radius: 12px;
+      padding: 0.75rem;
+      cursor: move;
+      transition: all 0.3s ease;
+    }
+
+    .unavailable-player:hover {
+      border-color: #dc2626;
+      box-shadow: var(--shadow-md);
+    }
+
+    /* Instructions */
+    .instructions {
+      background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
+      border: 2px solid #60a5fa;
+      border-radius: 16px;
+      padding: 1.5rem;
+      margin-top: 2rem;
+    }
+
+    .instructions h3 {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: #1e3a8a;
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .instructions ul {
+      list-style: none;
+      color: #1e40af;
+    }
+
+    .instructions li {
+      margin-bottom: 0.5rem;
+      font-size: 0.9rem;
+      line-height: 1.5;
+    }
+
+    /* Error State */
+    .error-container {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem;
+    }
+
+    .error-card {
+      background: white;
+      border-radius: 16px;
+      box-shadow: var(--shadow-lg);
+      padding: 3rem;
+      max-width: 500px;
+      text-align: center;
+    }
+
+    .error-card h2 {
+      color: #dc2626;
+      font-size: 1.5rem;
+      margin-bottom: 1rem;
+    }
+
+    .error-card p {
+      color: var(--text-light);
+      margin-bottom: 2rem;
+      line-height: 1.6;
+    }
+
+    .btn-retry {
+      width: 100%;
+      background: #2563eb;
+      color: white;
+    }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+      .header-title h1 {
+        font-size: 1.5rem;
+      }
+
+      .header-content {
+        padding: 1rem;
+      }
+
+      .teams-grid {
+        grid-template-columns: 1fr;
+      }
+
+      main {
+        padding: 1rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <!-- Loading Overlay -->
+  <div id="loadingOverlay" class="loading-overlay">
+    <div class="softball-spinner"></div>
+    <p style="color: var(--text-light); font-weight: 600;">Loading teams and rosters...</p>
+  </div>
+
+  <!-- Error Container (hidden by default) -->
+  <div id="errorContainer" class="error-container" style="display: none;">
+    <div class="error-card">
+      <h2>⚠️ Error</h2>
+      <p id="errorMessage">Failed to load teams and rosters. Please refresh the page.</p>
+      <button class="btn btn-retry" onclick="location.reload()">Retry</button>
+    </div>
+  </div>
+
+  <!-- Main App (hidden until loaded) -->
+  <div id="mainApp" style="display: none;">
+    <!-- Header -->
+    <header>
+      <div class="header-content">
+        <div class="header-left">
+          <a href="offseason.html" class="back-btn">
+            <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M19 12H5M12 19l-7-7 7-7"/>
+            </svg>
+          </a>
+          <div class="header-title">
+            <h1>⚾ Roster Management</h1>
+            <p>Drag and drop players to manage offseason roster changes</p>
+          </div>
+        </div>
+        
+        <div class="header-actions">
+          <button id="toggleSeasonBtn" class="btn btn-toggle">
+            <span id="seasonTypeText">Fall → Summer (16 spots)</span>
+          </button>
+          <button id="saveBtn" class="btn btn-save">
+            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+              <polyline points="17 21 17 13 7 13 7 21"/>
+              <polyline points="7 3 7 8 15 8"/>
+            </svg>
+            Save Changes
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Content -->
+    <main>
+      <!-- Add Past Player Section -->
+      <div class="add-player-section">
+        <h3>➕ Add Past Player to Roster</h3>
+        <div class="add-player-form">
+          <div class="form-group">
+            <label>Select Past Player (<span id="pastPlayerCount">0</span> available)</label>
+            <select id="pastPlayerSelect">
+              <option value="">-- Select a player --</option>
+            </select>
+          </div>
+          
+          <div class="form-group">
+            <label>Add to Team</label>
+            <select id="teamSelect">
+              <option value="">-- Select a team --</option>
+            </select>
+          </div>
+          
+          <button id="addPastPlayerBtn" class="btn btn-add" disabled>
+            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+              <circle cx="9" cy="7" r="4"/>
+              <line x1="19" y1="8" x2="19" y2="14"/>
+              <line x1="22" y1="11" x2="16" y2="11"/>
+            </svg>
+            Add to Team
+          </button>
+        </div>
+        
+        <div id="playerPreview" style="display: none;" class="player-preview">
+          <p><strong id="previewName"></strong> • BA: <span id="previewBA"></span> • acesBPI: <span id="previewBPI"></span> • Last played: <span id="previewSeason"></span></p>
+        </div>
+      </div>
+
+      <!-- Teams Grid -->
+      <div id="teamsGrid" class="teams-grid"></div>
+
+      <!-- Unavailable Players Zone -->
+      <div id="unavailableZone" style="display: none;" class="unavailable-zone">
+        <div class="unavailable-header">
+          <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="3 6 5 6 21 6"/>
+            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+          </svg>
+          <div>
+            <h2>Unavailable Players (Fall)</h2>
+            <p>Drag players here who won't play in the fall season</p>
+          </div>
+        </div>
+        
+        <div class="unavailable-content">
+          <div id="unavailableEmpty" class="unavailable-empty">
+            <div class="unavailable-empty-icon">🗑️</div>
+            <p style="font-weight: 600; margin-bottom: 0.5rem;">No unavailable players yet</p>
+            <p style="font-size: 0.85rem;">Drag players here to mark them as unavailable</p>
+          </div>
+          <div id="unavailablePlayersGrid" class="unavailable-players-grid" style="display: none;"></div>
+        </div>
+      </div>
+
+      <!-- Instructions -->
+      <div class="instructions">
+        <h3>💡 Instructions</h3>
+        <ul>
+          <li>• <strong>Drag and drop</strong> player cards between teams to make roster moves</li>
+          <li>• Click <strong>"Add"</strong> to add new or returning players to any team</li>
+          <li>• Toggle between <strong>Fall → Summer</strong> (16 spots) or <strong>Summer → Fall</strong> (14 spots)</li>
+          <li id="unavailableInstruction" style="display: none;">• When transitioning to Fall, drag players who can't play to the <strong>Unavailable Players</strong> zone</li>
+          <li>• Click <strong>"Save Changes"</strong> when done to persist roster moves</li>
+        </ul>
+      </div>
+    </main>
+  </div>
+
+  <script type="module">
+    // Import Firebase modules directly
+    import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+    import { getFirestore, collection, getDocs, doc, getDoc, query, where } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+
+    // Firebase configuration
+    const firebaseConfig = {
+      apiKey: "AIzaSyCAEWkrTcprzJ2KPPJu-vFJPvYOVU4ky20",
+      authDomain: "acessoftballreference-84791.firebaseapp.com",
+      projectId: "acessoftballreference-84791",
+      storageBucket: "acessoftballreference-84791.firebasestorage.app",
+      messagingSenderId: "777699560175",
+      appId: "1:777699560175:web:4092b422e7d7116352e91a"
+    };
+
+    // Initialize Firebase
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+
+    // Helper functions
+    async function getAllTeams() {
+      const teamsSnapshot = await getDocs(collection(db, 'teams'));
+      return teamsSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+    }
+
+    async function getAllPlayerStatsOptimized() {
+      const statsRef = collection(db, 'aggregatedPlayerStats');
+      const snapshot = await getDocs(statsRef);
+      
+      const players = [];
+      snapshot.forEach(doc => {
+        const data = doc.data();
+        
+        // Skip migrated legacy profiles
+        if (data.migrated === true) {
+          return;
+        }
+        
+        players.push({
+          id: doc.id,
+          ...data,
+          playerId: doc.id,
+          playerName: data.name
+        });
+      });
+      
+      return players;
+    }
+
+    let seasonType = 'fall-to-summer';
+    let teams = {};
+    let unavailablePlayers = [];
+    let pastPlayers = [];
+    let draggedPlayer = null;
+
+    // Initialize app
+    async function init() {
+      try {
+        // Load teams and players
+        const teamsData = await getAllTeams();
+        const playersData = await getAllPlayerStatsOptimized();
+        
+        console.log('Loaded teams:', teamsData);
+        console.log('Loaded players:', playersData);
+        
+        // Get current season from Firestore
+        let currentSeasonId = '2025-fall'; // Default fallback
+        try {
+          const seasonsSnapshot = await getDocs(query(collection(db, 'seasons'), where('isActive', '==', true)));
+          if (!seasonsSnapshot.empty) {
+            currentSeasonId = seasonsSnapshot.docs[0].id;
+            console.log('✅ Current season detected:', currentSeasonId);
+          } else {
+            console.log('⚠️ No active season found, using default:', currentSeasonId);
+          }
+        } catch (err) {
+          console.warn('Could not fetch current season, using default:', currentSeasonId, err);
+        }
+        
+        // Organize players by team
+        const teamsWithPlayers = {};
+        const currentRosterPlayerIds = new Set();
+        
+        teamsData.forEach(team => {
+          // Skip the Kings team - they're not active anymore
+          if (team.name === 'Aces Kings' || team.name === 'Kings') {
+            return;
+          }
+          
+          teamsWithPlayers[team.name] = {
+            maxRoster: seasonType === 'fall-to-summer' ? 16 : 14,
+            players: []
+          };
+        });
+        
+        // Add players to their respective teams ONLY if they played in current season
+        playersData.forEach(player => {
+          const teamName = player.currentTeam;
+          
+          // Check if player has stats for current season
+          let playedInCurrentSeason = false;
+          if (player.seasons && typeof player.seasons === 'object') {
+            // Check for exact match or season keys that start with currentSeasonId
+            const seasonKeys = Object.keys(player.seasons);
+            playedInCurrentSeason = seasonKeys.some(key => 
+              key === currentSeasonId || key.startsWith(currentSeasonId + '-')
+            );
+          }
+          
+          if (teamName && teamsWithPlayers[teamName] && playedInCurrentSeason) {
+            currentRosterPlayerIds.add(player.id);
+            teamsWithPlayers[teamName].players.push({
+              id: player.id,
+              name: player.name || player.displayName,
+              ba: player.career?.battingAverage?.toFixed(3) || '.000',
+              acesBPI: player.career?.acesBPI ? player.career.acesBPI.toFixed(1) : '0.0'
+            });
+          }
+        });
+        
+        // Find past players (those not on current season rosters)
+        const pastPlayersList = playersData
+          .filter(player => !currentRosterPlayerIds.has(player.id))
+          .map(player => {
+            // Get most recent season from player's season data
+            let mostRecentSeason = '2022-fall';
+            let mostRecentTeam = 'Unknown';
+            
+            if (player.seasons && Object.keys(player.seasons).length > 0) {
+              const seasonKeys = Object.keys(player.seasons).sort().reverse();
+              mostRecentSeason = seasonKeys[0];
+              
+              // Get team from most recent season
+              const recentSeasonData = player.seasons[mostRecentSeason];
+              if (recentSeasonData && recentSeasonData.team) {
+                mostRecentTeam = recentSeasonData.team;
+              }
+            }
+            
+            return {
+              id: player.id,
+              name: player.name || player.displayName,
+              ba: player.career?.battingAverage?.toFixed(3) || '.000',
+              acesBPI: player.career?.acesBPI ? player.career.acesBPI.toFixed(1) : '0.0',
+              lastSeason: mostRecentSeason,
+              lastTeam: mostRecentTeam || player.currentTeam || 'Unknown'
+            };
+          })
+          // Sort by most recent season (desc) then alphabetically by name
+          .sort((a, b) => {
+            const seasonCompare = b.lastSeason.localeCompare(a.lastSeason);
+            if (seasonCompare !== 0) return seasonCompare;
+            return a.name.localeCompare(b.name);
+          });
+        
+        console.log('✅ Found past players:', pastPlayersList.length);
+        console.log('✅ Current season rosters:', Object.entries(teamsWithPlayers).map(([name, data]) => `${name}: ${data.players.length}`));
+        
+        teams = teamsWithPlayers;
+        pastPlayers = pastPlayersList;
+        
+        renderApp();
+        
+        document.getElementById('loadingOverlay').classList.add('hidden');
+        document.getElementById('mainApp').style.display = 'block';
+        
+      } catch (err) {
+        console.error('Error loading teams and rosters:', err);
+        showError('Failed to load teams and rosters. Please refresh the page.');
+      }
+    }
+
+    function showError(message) {
+      document.getElementById('loadingOverlay').classList.add('hidden');
+      document.getElementById('errorMessage').textContent = message;
+      document.getElementById('errorContainer').style.display = 'flex';
+    }
+
+    function renderApp() {
+      renderPastPlayerSection();
+      renderTeams();
+      updateUnavailableZone();
+      setupEventListeners();
+    }
+
+    function renderPastPlayerSection() {
+      const pastPlayerSelect = document.getElementById('pastPlayerSelect');
+      const teamSelect = document.getElementById('teamSelect');
+      
+      pastPlayerSelect.innerHTML = '<option value="">-- Select a player --</option>';
+      pastPlayers.forEach(player => {
+        const option = document.createElement('option');
+        option.value = player.id;
+        option.textContent = `${player.name} (Last: ${player.lastSeason} - ${player.lastTeam})`;
+        pastPlayerSelect.appendChild(option);
+      });
+      
+      teamSelect.innerHTML = '<option value="">-- Select a team --</option>';
+      Object.entries(teams).forEach(([teamName, teamData]) => {
+        const option = document.createElement('option');
+        option.value = teamName;
+        option.textContent = `${teamName} (${teamData.players.length}/${teamData.maxRoster})`;
+        teamSelect.appendChild(option);
+      });
+      
+      document.getElementById('pastPlayerCount').textContent = pastPlayers.length;
+    }
+
+    function renderTeams() {
+      const grid = document.getElementById('teamsGrid');
+      grid.innerHTML = '';
+      
+      Object.entries(teams).forEach(([teamName, teamData]) => {
+        const teamCard = document.createElement('div');
+        teamCard.className = 'team-card';
+        teamCard.dataset.team = teamName;
+        
+        const emptySlots = Math.max(0, teamData.maxRoster - teamData.players.length);
+        
+        teamCard.innerHTML = `
+          <div class="team-header">
+            <h2>${teamName}</h2>
+            <p>${teamData.players.length}/${teamData.maxRoster}</p>
+          </div>
+          <div class="team-players">
+            ${teamData.players.map(player => `
+              <div class="player-card" draggable="true" data-player-id="${player.id}">
+                <div class="player-name">${player.name}</div>
+                <div class="player-stats">
+                  <span>BA: ${player.ba}</span>
+                  <span>AcesBPI: ${player.acesBPI}</span>
+                </div>
+              </div>
+            `).join('')}}
+            ${teamData.players.length < teamData.maxRoster ? `
+              <button class="add-player-btn" data-team="${teamName}">
+                <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+                  <circle cx="9" cy="7" r="4"/>
+                  <line x1="19" y1="8" x2="19" y2="14"/>
+                  <line x1="22" y1="11" x2="16" y2="11"/>
+                </svg>
+                Add
+              </button>
+            ` : ''}
+            ${Array.from({ length: emptySlots }, (_, i) => `<div class="empty-slot">Empty</div>`).join('')}
+          </div>
+        `;
+        
+        grid.appendChild(teamCard);
+      });
+      
+      setupDragAndDrop();
+    }
+
+    function setupDragAndDrop() {
+      // Player drag events
+      document.querySelectorAll('.player-card').forEach(card => {
+        card.addEventListener('dragstart', (e) => {
+          const playerId = e.target.dataset.playerId;
+          const teamCard = e.target.closest('[data-team]');
+          const fromTeam = teamCard ? teamCard.dataset.team : 'unavailable';
+          
+          const player = fromTeam === 'unavailable' 
+            ? unavailablePlayers.find(p => p.id === playerId)
+            : teams[fromTeam].players.find(p => p.id === playerId);
+          
+          draggedPlayer = { player, fromTeam };
+          e.target.classList.add('dragging');
+        });
+        
+        card.addEventListener('dragend', (e) => {
+          e.target.classList.remove('dragging');
+        });
+      });
+      
+      // Team drop zones
+      document.querySelectorAll('.team-card').forEach(card => {
+        card.addEventListener('dragover', (e) => {
+          e.preventDefault();
+        });
+        
+        card.addEventListener('drop', (e) => {
+          e.preventDefault();
+          const toTeam = e.currentTarget.dataset.team;
+          handleDrop(toTeam);
+        });
+      });
+    }
+
+    function handleDrop(toTeam) {
+      if (!draggedPlayer) return;
+      
+      const { player, fromTeam } = draggedPlayer;
+      
+      // Handle drop to unavailable
+      if (toTeam === 'unavailable') {
+        if (fromTeam !== 'unavailable') {
+          teams[fromTeam].players = teams[fromTeam].players.filter(p => p.id !== player.id);
+          unavailablePlayers.push(player);
+          renderApp();
+        }
+        draggedPlayer = null;
+        return;
+      }
+      
+      // Handle drop from unavailable
+      if (fromTeam === 'unavailable') {
+        if (teams[toTeam].players.length < teams[toTeam].maxRoster) {
+          unavailablePlayers = unavailablePlayers.filter(p => p.id !== player.id);
+          teams[toTeam].players.push(player);
+          renderApp();
+        }
+        draggedPlayer = null;
+        return;
+      }
+      
+      // Handle drop between teams
+      if (fromTeam !== toTeam && teams[toTeam].players.length < teams[toTeam].maxRoster) {
+        teams[fromTeam].players = teams[fromTeam].players.filter(p => p.id !== player.id);
+        teams[toTeam].players.push(player);
+        renderApp();
+      }
+      
+      draggedPlayer = null;
+    }
+
+    function updateUnavailableZone() {
+      const zone = document.getElementById('unavailableZone');
+      const instruction = document.getElementById('unavailableInstruction');
+      
+      if (seasonType === 'summer-to-fall') {
+        zone.style.display = 'block';
+        instruction.style.display = 'list-item';
+        
+        const empty = document.getElementById('unavailableEmpty');
+        const grid = document.getElementById('unavailablePlayersGrid');
+        
+        if (unavailablePlayers.length === 0) {
+          empty.style.display = 'block';
+          grid.style.display = 'none';
+        } else {
+          empty.style.display = 'none';
+          grid.style.display = 'grid';
+          grid.innerHTML = unavailablePlayers.map(player => `
+            <div class="unavailable-player player-card" draggable="true" data-player-id="${player.id}">
+              <div class="player-name">${player.name}</div>
+              <div class="player-stats">
+                <span>BA: ${player.ba}</span>
+                <span>BPI: ${player.acesBPI}</span>
+              </div>
+            </div>
+          `).join('');
+        }
+        
+        setupUnavailableDrag();
+      } else {
+        zone.style.display = 'none';
+        instruction.style.display = 'none';
+      }
+    }
+
+    function setupUnavailableDrag() {
+      const zone = document.getElementById('unavailableZone');
+      
+      zone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+      });
+      
+      zone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        handleDrop('unavailable');
+      });
+      
+      document.querySelectorAll('.unavailable-player').forEach(card => {
+        card.addEventListener('dragstart', (e) => {
+          const playerId = e.target.dataset.playerId;
+          const player = unavailablePlayers.find(p => p.id === playerId);
+          draggedPlayer = { player, fromTeam: 'unavailable' };
+          e.target.classList.add('dragging');
+        });
+        
+        card.addEventListener('dragend', (e) => {
+          e.target.classList.remove('dragging');
+        });
+      });
+    }
+
+    function setupEventListeners() {
+      // Toggle season type
+      document.getElementById('toggleSeasonBtn').addEventListener('click', () => {
+        seasonType = seasonType === 'fall-to-summer' ? 'summer-to-fall' : 'fall-to-summer';
+        
+        Object.keys(teams).forEach(team => {
+          teams[team].maxRoster = seasonType === 'fall-to-summer' ? 16 : 14;
+        });
+        
+        document.getElementById('seasonTypeText').textContent = 
+          seasonType === 'fall-to-summer' ? 'Fall → Summer (16 spots)' : 'Summer → Fall (14 spots)';
+        
+        renderApp();
+      });
+      
+      // Save changes
+      document.getElementById('saveBtn').addEventListener('click', () => {
+        console.log('Saving roster changes:', teams);
+        alert('Roster changes saved! (This would update Firebase in production)');
+      });
+      
+      // Past player selection
+      const pastPlayerSelect = document.getElementById('pastPlayerSelect');
+      const teamSelect = document.getElementById('teamSelect');
+      const addBtn = document.getElementById('addPastPlayerBtn');
+      const preview = document.getElementById('playerPreview');
+      
+      pastPlayerSelect.addEventListener('change', () => {
+        const playerId = pastPlayerSelect.value;
+        addBtn.disabled = !playerId || !teamSelect.value;
+        
+        if (playerId) {
+          const player = pastPlayers.find(p => p.id === playerId);
+          if (player) {
+            document.getElementById('previewName').textContent = player.name;
+            document.getElementById('previewBA').textContent = player.ba;
+            document.getElementById('previewBPI').textContent = player.acesBPI;
+            document.getElementById('previewSeason').textContent = player.lastSeason;
+            preview.style.display = 'block';
+          }
+        } else {
+          preview.style.display = 'none';
+        }
+      });
+      
+      teamSelect.addEventListener('change', () => {
+        addBtn.disabled = !pastPlayerSelect.value || !teamSelect.value;
+      });
+      
+      addBtn.addEventListener('click', () => {
+        const playerId = pastPlayerSelect.value;
+        const teamName = teamSelect.value;
+        
+        if (!playerId || !teamName) {
+          alert('Please select both a player and a team');
+          return;
+        }
+        
+        const pastPlayer = pastPlayers.find(p => p.id === playerId);
+        if (!pastPlayer) return;
+        
+        const team = teams[teamName];
+        if (!team) return;
+        
+        if (team.players.length >= team.maxRoster) {
+          alert(`${teamName} roster is full (${team.maxRoster}/${team.maxRoster})`);
+          return;
+        }
+        
+        team.players.push({
+          id: pastPlayer.id,
+          name: pastPlayer.name,
+          ba: pastPlayer.ba,
+          acesBPI: pastPlayer.acesBPI
+        });
+        
+        pastPlayers = pastPlayers.filter(p => p.id !== playerId);
+        
+        pastPlayerSelect.value = '';
+        teamSelect.value = '';
+        preview.style.display = 'none';
+        
+        renderApp();
+      });
+      
+      // Add new player buttons
+      document.querySelectorAll('.add-player-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const teamName = btn.dataset.team;
+          const newPlayerName = prompt('Enter player name:');
+          
+          if (!newPlayerName || !newPlayerName.trim()) return;
+          
+          if (teams[teamName].players.length < teams[teamName].maxRoster) {
+            teams[teamName].players.push({
+              id: `new_${Date.now()}`,
+              name: newPlayerName.trim(),
+              ba: '.000',
+              acesBPI: '0.0'
+            });
+            
+            renderApp();
+          }
+        });
+      });
+    }
+
+    // Start the app
+    init();
+  </script>
+</body>
+</html>

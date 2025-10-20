@@ -4,12 +4,35 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Roster Management - Mountainside Aces</title>
+<meta name="theme-color" content="#2d5016">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="stylesheet" href="mobile-enhancements.css">
+<link rel="stylesheet" href="nav-styles.css">
 <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 <style>
+  :root {
+    --primary-color: #2d5016;
+    --secondary-color: #1a6b4a;
+    --accent-color: #ffd700;
+    --card-bg: #ffffff;
+    --text-dark: #2d3748;
+    --text-light: #718096;
+    --border-color: #e2e8f0;
+    --shadow-sm: 0 2px 8px rgba(0,0,0,0.08);
+    --shadow-md: 0 4px 16px rgba(0,0,0,0.12);
+    --shadow-lg: 0 12px 32px rgba(0,0,0,0.16);
+  }
+  
   * { box-sizing: border-box; }
-  body { margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+  body { 
+    margin: 0; 
+    padding: 0; 
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; 
+    background: linear-gradient(135deg, #f7fafc 0%, #edf2f7 100%);
+  }
   #root { min-height: 100vh; }
   .table-scroll-container { overflow-x: auto; -webkit-overflow-scrolling: touch; }
   .table-scroll-container::-webkit-scrollbar { height: 8px; }
@@ -18,13 +41,159 @@
   .table-scroll-container::-webkit-scrollbar-thumb:hover { background: #555; }
   .player-card-hover:hover .remove-btn { opacity: 1 !important; }
   .player-card-hover:hover { box-shadow: 0 4px 6px rgba(0,0,0,0.1) !important; }
+  .player-card-draggable { 
+    cursor: grab !important; 
+    user-select: none; 
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    touch-action: none;
+  }
+  .player-card-draggable:active { 
+    cursor: grabbing !important; 
+  }
+  .player-card-draggable:hover { 
+    transform: translateY(-2px); 
+    box-shadow: 0 4px 8px rgba(0,0,0,0.15) !important; 
+  }
+  .player-card-draggable * {
+    pointer-events: none !important;
+    user-select: none !important;
+  }
+  .player-card-draggable .remove-btn {
+    pointer-events: auto !important;
+  }
+  .loading-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(255,255,255,0.95);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+  }
+  .loading-overlay.hidden {
+    display: none;
+  }
+  .softball-spinner::before {
+    content: '⚾';
+    font-size: 80px;
+    animation: spin 1.5s ease-in-out infinite;
+  }
+  @keyframes spin {
+    0%, 100% { transform: rotate(0deg) scale(1); }
+    50% { transform: rotate(180deg) scale(1.1); }
+  }
+  
+.back-home-btn {
+      position: absolute;
+      top: 2rem;
+      right: 2rem;
+      background: rgba(255,255,255,0.2);
+      color: white;
+      padding: 0.75rem 1.5rem;
+      border-radius: 8px;
+      text-decoration: none;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      transition: all 0.3s ease;
+      backdrop-filter: blur(10px);
+      border: 2px solid rgba(255,255,255,0.3);
+      z-index: 2;
+    }
+
+    .back-home-btn:hover {
+      background: rgba(255,255,255,0.3);
+      transform: translateX(-5px);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    }
 </style>
 </head>
 <body>
+<div id="loadingOverlay" class="loading-overlay">
+  <div class="softball-spinner"></div>
+</div>
 <div id="root"></div>
 
+<script type="module">
+import { onAuthChange, getCurrentUser, getUserProfile } from './firebase-auth.js';
+import {
+  getCurrentSeason,
+  getAllTeams,
+  getSeasonPlayerStatsOptimized
+} from './firebase-data.js';
+import {
+  getGameRSVPs,
+  updateRSVP,
+  listenToGameRSVPs,
+  getBattingOrder,
+  saveBattingOrder,
+  getFieldingPositions,
+  saveFieldingPositions,
+  getBenchPlayers,
+  saveBenchPlayers,
+  getUpcomingTeamGames
+} from './firebase-roster.js';
+
+let rsvpListeners = [];
+let appInitialized = false;
+
+async function initializeApp(user) {
+  if (!user) {
+    window.location.href = 'signin.html';
+    return;
+  }
+  
+  if (appInitialized) {
+    console.log('⚠️ App already initialized, skipping');
+    return;
+  }
+  
+  console.log('🚀 Initializing app for user:', user.displayName);
+  
+  document.getElementById('loadingOverlay').classList.add('hidden');
+  
+  const container = document.getElementById('root');
+  const root = ReactDOM.createRoot(container);
+  root.render(React.createElement(RosterManagement, { currentUser: user }));
+  
+  appInitialized = true;
+}
+
+onAuthChange((user) => {
+  console.log('🔐 Auth state changed:', user ? user.displayName : 'No user');
+  if (user) {
+    initializeApp(user);
+  } else {
+    window.location.href = 'signin.html';
+  }
+});
+
+window.FirebaseRoster = {
+  getGameRSVPs,
+  updateRSVP,
+  listenToGameRSVPs,
+  getBattingOrder,
+  saveBattingOrder,
+  getFieldingPositions,
+  saveFieldingPositions,
+  getBenchPlayers,
+  saveBenchPlayers,
+  getUpcomingTeamGames,
+  getCurrentSeason,
+  getAllTeams,
+  getSeasonPlayerStatsOptimized,
+  getUserProfile
+};
+</script>
+
 <script type="text/babel">
-const { useState, useEffect } = React;
+const { useState, useEffect, useCallback } = React;
 
 const AlertCircle = ({ style }) => (
   <svg style={style} width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -35,12 +204,6 @@ const AlertCircle = ({ style }) => (
 const Lock = ({ style }) => (
   <svg style={style} width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
     <rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
-  </svg>
-);
-
-const Eye = ({ style }) => (
-  <svg style={style} width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
   </svg>
 );
 
@@ -56,9 +219,11 @@ const X = ({ style }) => (
   </svg>
 );
 
-const LogIn = ({ style }) => (
+// ADD THIS:
+const Printer = ({ style }) => (
   <svg style={style} width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/>
+    <polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
+    <rect x="6" y="14" width="12" height="8"/>
   </svg>
 );
 
@@ -76,10 +241,10 @@ const RSVP_STATUS = {
   none: { label: 'No Response', color: '#9ca3af', icon: '∅' }
 };
 
-function RosterManagement() {
+function RosterManagement({ currentUser }) {
   const [season, setSeason] = useState('fall');
   const [currentUserId, setCurrentUserId] = useState(null);
-  const [loggedInPlayer, setLoggedInPlayer] = useState(null);
+  const [userProfile, setUserProfile] = useState(null);
   const [selectedTeam, setSelectedTeam] = useState('');
   const [selectedGame, setSelectedGame] = useState(null);
   const [rsvps, setRsvps] = useState({});
@@ -89,140 +254,250 @@ function RosterManagement() {
   const [draggedPlayer, setDraggedPlayer] = useState(null);
   const [dropTarget, setDropTarget] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [savingLineup, setSavingLineup] = useState(false);
   const [players, setPlayers] = useState([]);
   const [games, setGames] = useState([]);
   const [allTeams, setAllTeams] = useState([]);
-  const [playerInfo, setPlayerInfo] = useState({});
+  const [currentSeason, setCurrentSeason] = useState(null);
 
-  const isCaptain = loggedInPlayer?.isCaptain || false;
-  const isLoggedIn = currentUserId !== null;
-  const currentSeason = SEASONS[season];
+  const isCaptain = userProfile?.isCaptain || false;
+  const seasonConfig = SEASONS[season];
 
   useEffect(() => {
-    async function loadData() {
-      try {
-        const playerInfoResponse = await fetch('player_info.json');
-        const playerInfoData = await playerInfoResponse.json();
-        const playerInfoMap = {};
-        playerInfoData.forEach(p => {
-          playerInfoMap[p.name] = { captain: p.captain === 'yes', number: p.number || '' };
-        });
-        setPlayerInfo(playerInfoMap);
-
-        const gamesResponse = await fetch('games.json');
-        const allGames = await gamesResponse.json();
-        const seasonGames = allGames.filter(g => g.year === "2025" && g.season === "Fall");
-        
-        const teamsSet = new Set();
-        seasonGames.forEach(game => {
-          teamsSet.add(game["home team"]);
-          teamsSet.add(game["away team"]);
-        });
-        setAllTeams(Array.from(teamsSet).sort());
-        
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        
-        const upcomingGames = seasonGames.filter(game => {
-          const gameDate = new Date(game.date);
-          gameDate.setHours(0, 0, 0, 0);
-          return gameDate >= today;
-        });
-        
-        const formattedGames = upcomingGames.map((game, index) => ({
-          id: index + 1, date: game.date, homeTeam: game["home team"],
-          awayTeam: game["away team"], opponent: '', gameType: game.game_type || 'Regular'
-        }));
-        
-        setGames(formattedGames);
-        setLoading(false);
-      } catch (error) {
-        console.error('Error loading data:', error);
-        setLoading(false);
-      }
-    }
-    loadData();
+    loadInitialData();
   }, []);
 
   useEffect(() => {
-    async function loadTeamPlayers() {
-      if (!selectedTeam) return setPlayers([]);
-      try {
-        const playerResponse = await fetch('data.json');
-        const allPlayers = await playerResponse.json();
-        const teamPlayers = allPlayers.filter(p =>
-          p.year === "2025" && p.season === "Fall" && p.sub === "No" && p.team === selectedTeam
-        );
-        
-        const formattedPlayers = teamPlayers.map((player, index) => {
-          const nameParts = player.name.trim().split(' ');
-          const avatar = nameParts.length > 1 ? 
-            (nameParts[0][0] + nameParts[nameParts.length - 1][0]).toUpperCase() :
-            player.name.substring(0, 2).toUpperCase();
-          const atBats = Number(player.atBats) || 0;
-          const hits = Number(player.hits) || 0;
-          const battingAvg = atBats > 0 ? (hits / atBats).toFixed(3) : '.000';
-          
-          const info = playerInfo[player.name] || { captain: false, number: '' };
-          
-          return {
-            id: index + 1, name: player.name, jersey: info.number || (index + 1),
-            avatar, battingAvg, isCaptain: info.captain
-          };
-        }).sort((a, b) => a.name.localeCompare(b.name));
-        
-        setPlayers(formattedPlayers);
-        
-        setGames(prev => prev.filter(game => 
-          game.homeTeam === selectedTeam || game.awayTeam === selectedTeam
-        ).map(game => ({
-          ...game, opponent: game.homeTeam === selectedTeam ? game.awayTeam : game.homeTeam
-        })));
-      } catch (error) {
-        console.error('Error loading team players:', error);
-      }
+    if (selectedTeam && currentSeason) {
+      loadTeamData();
     }
-    loadTeamPlayers();
-  }, [selectedTeam, playerInfo]);
+  }, [selectedTeam, currentSeason]);
 
   useEffect(() => {
-    if (players.length === 0 || games.length === 0) return;
-    
-    const initialRsvps = {};
-    players.forEach(player => {
-      games.forEach(game => {
-        const key = `${player.id}-${game.id}`;
-        initialRsvps[key] = 'none';
-      });
-    });
-    setRsvps(initialRsvps);
-  }, [players, games]);
-
-  const handleLogin = (playerId) => {
-    if (!playerId) {
-      setCurrentUserId(null);
-      setLoggedInPlayer(null);
-    } else {
-      const player = players.find(p => p.id === parseInt(playerId));
-      setCurrentUserId(parseInt(playerId));
-      setLoggedInPlayer(player);
+    if (games.length > 0 && selectedTeam && players.length > 0) {
+      const cleanup = loadGameData();
+      return () => {
+        if (cleanup && typeof cleanup.then === 'function') {
+          cleanup.then(unsubscribe => unsubscribe && unsubscribe());
+        }
+      };
     }
-  };
+  }, [games, selectedTeam, players]);
+  
+  async function loadInitialData() {
+    try {
+      if (!currentUser || !currentUser.uid) {
+        console.error('❌ No currentUser available!');
+        return;
+      }
+      
+      const seasonData = await window.FirebaseRoster.getCurrentSeason();
+      setCurrentSeason(seasonData);
+      
+      if (seasonData.season.toLowerCase() === 'summer') {
+        setSeason('summer');
+      } else {
+        setSeason('fall');
+      }
+      
+      const teams = await window.FirebaseRoster.getAllTeams();
+      const teamNames = teams.map(t => t.name || t.id).sort();
+      setAllTeams(teamNames);
+      
+      const profileResult = await window.FirebaseRoster.getUserProfile(currentUser.uid);
+      
+      if (profileResult.success && profileResult.data) {
+        setUserProfile(profileResult.data);
+        setCurrentUserId(currentUser.uid);
+        
+        if (profileResult.data.linkedTeam) {
+          setSelectedTeam(profileResult.data.linkedTeam);
+        }
+      }
+      
+      setLoading(false);
+    } catch (error) {
+      console.error('❌ Error loading initial data:', error);
+      setLoading(false);
+    }
+  }
 
-  const handleRSVPClick = (playerId, gameId) => {
-    if (!isCaptain && currentUserId !== playerId) return;
+  async function loadTeamData() {
+    try {
+      const seasonPlayers = await window.FirebaseRoster.getSeasonPlayerStatsOptimized(currentSeason.id);
+      
+      const filteredPlayers = seasonPlayers.filter(p => {
+        return p.team === selectedTeam && !p.migrated;
+      });
+      
+      const myProfile = userProfile;
+      
+      const formattedPlayersPromises = filteredPlayers.map(async (player, index) => {
+        const name = player.name || player.playerName;
+        const nameParts = name.trim().split(' ');
+        const avatar = nameParts.length > 1 ?
+          (nameParts[0][0] + nameParts[nameParts.length - 1][0]).toUpperCase() :
+          name.substring(0, 2).toUpperCase();
+        
+        const battingAvg = player.battingAverage ? player.battingAverage.toFixed(3) : '.000';
+        const isCurrentUser = myProfile?.linkedPlayer === name;
+        
+        let jerseyNum = (index + 1);
+        let isCaptain = false;
+        
+        try {
+          const playerProfile = await window.FirebaseRoster.getUserProfile(player.playerId);
+          if (playerProfile.success && playerProfile.data) {
+            if (playerProfile.data.number) {
+              jerseyNum = parseInt(playerProfile.data.number) || (index + 1);
+            }
+            isCaptain = playerProfile.data.isCaptain || false;
+          }
+        } catch (error) {
+          console.warn(`Could not load profile for ${name}:`, error);
+        }
+        
+        return {
+          id: player.playerId || player.id,
+          name,
+          jersey: jerseyNum,
+          avatar,
+          battingAvg,
+          isCaptain: isCaptain,
+          isMe: isCurrentUser
+        };
+      });
+      
+      const formattedPlayers = await Promise.all(formattedPlayersPromises);
+      formattedPlayers.sort((a, b) => a.name.localeCompare(b.name));
+      setPlayers(formattedPlayers);
+      
+      const upcomingGames = await window.FirebaseRoster.getUpcomingTeamGames(selectedTeam, currentSeason.id);
+      
+      const capitalizeTeamName = (name) => {
+        if (!name) return '';
+        return name.charAt(0).toUpperCase() + name.slice(1);
+      };
+      
+      const formattedGames = upcomingGames.map(game => {
+        const gameDate = game.date.seconds
+          ? new Date(game.date.seconds * 1000).toLocaleDateString()
+          : game.date;
+        
+        const teamLower = selectedTeam.toLowerCase();
+        const homeTeamLower = (game.homeTeam || game.homeTeamId || '').toLowerCase();
+        const awayTeamLower = (game.awayTeam || game.awayTeamId || '').toLowerCase();
+        
+        const isHome = homeTeamLower === teamLower;
+        const opponentRaw = isHome ? (game.awayTeam || game.awayTeamId) : (game.homeTeam || game.homeTeamId);
+        const opponent = capitalizeTeamName(opponentRaw);
+        
+        return {
+          id: game.id,
+          date: gameDate,
+          homeTeam: capitalizeTeamName(game.homeTeam || game.homeTeamId),
+          awayTeam: capitalizeTeamName(game.awayTeam || game.awayTeamId),
+          opponent: opponent,
+          gameType: game.gameType || 'Regular',
+          isHome: isHome
+        };
+      });
+      
+      setGames(formattedGames);
+      
+      if (formattedGames.length > 0 && !selectedGame) {
+        setSelectedGame(formattedGames[0].id);
+      }
+    } catch (error) {
+      console.error('❌ Error loading team data:', error);
+    }
+  }
+
+  async function loadGameData() {
+    try {
+      const allRsvpsPromises = games.map(game => 
+        window.FirebaseRoster.getGameRSVPs(game.id)
+      );
+      
+      const allRsvpsResults = await Promise.all(allRsvpsPromises);
+      
+      const formattedRsvps = {};
+      games.forEach((game, gameIndex) => {
+        const gameRsvps = allRsvpsResults[gameIndex];
+        players.forEach(player => {
+          const key = `${player.id}-${game.id}`;
+          const userRsvp = gameRsvps[player.id];
+          formattedRsvps[key] = userRsvp?.status || 'none';
+        });
+      });
+      
+      setRsvps(prev => ({ ...prev, ...formattedRsvps }));
+      
+      if (isCaptain) {
+        const [batting, fielding, bench] = await Promise.all([
+          window.FirebaseRoster.getBattingOrder(selectedGame, selectedTeam),
+          window.FirebaseRoster.getFieldingPositions(selectedGame, selectedTeam),
+          window.FirebaseRoster.getBenchPlayers(selectedGame, selectedTeam)
+        ]);
+        
+        const battingWithPlayers = batting.map(playerId => 
+          players.find(p => p.id === playerId) || null
+        );
+        
+        setBattingOrder({ ...battingOrder, [selectedGame]: battingWithPlayers });
+        setFieldingPositions({ ...fieldingPositions, [selectedGame]: fielding });
+        setBenchPlayers({ ...benchPlayers, [selectedGame]: bench });
+      }
+      
+      const unsubscribes = games.map(game => 
+        window.FirebaseRoster.listenToGameRSVPs(game.id, (updatedRsvps) => {
+          const formattedRsvps = {};
+          players.forEach(player => {
+            const key = `${player.id}-${game.id}`;
+            const userRsvp = updatedRsvps[player.id];
+            formattedRsvps[key] = userRsvp?.status || 'none';
+          });
+          setRsvps(prev => ({ ...prev, ...formattedRsvps }));
+        })
+      );
+      
+      return () => {
+        unsubscribes.forEach(unsub => unsub());
+      };
+    } catch (error) {
+      console.error('❌ Error loading game data:', error);
+    }
+  }
+
+  const handleRSVPClick = async (playerId, gameId) => {
+    const canEdit = isCaptain || userProfile?.linkedPlayer === players.find(p => p.id === playerId)?.name;
+    if (!canEdit) return;
+    
     const key = `${playerId}-${gameId}`;
     const status = rsvps[key] || 'none';
     const statuses = ['yes', 'no', 'maybe', 'none'];
     const currentIndex = statuses.indexOf(status);
     const nextStatus = statuses[(currentIndex + 1) % statuses.length];
+    
     setRsvps({ ...rsvps, [key]: nextStatus });
+    
+    const player = players.find(p => p.id === playerId);
+    
+    try {
+      await window.FirebaseRoster.updateRSVP(gameId, playerId, nextStatus, player?.name || 'Unknown', selectedTeam);
+    } catch (error) {
+      console.error('Error updating RSVP:', error);
+      setRsvps({ ...rsvps, [key]: status });
+      alert('Failed to update RSVP. Please try again.');
+    }
   };
 
   const handleDragStart = (e, player) => {
     if (!isCaptain) return;
+    e.stopPropagation();
     setDraggedPlayer(player);
     e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', player.id);
   };
 
   const handleDragOver = (e) => {
@@ -247,18 +522,18 @@ function RosterManagement() {
       const newBattingOrder = { ...battingOrder };
       if (!newBattingOrder[selectedGame]) newBattingOrder[selectedGame] = [];
       
-      while (newBattingOrder[selectedGame].length < currentSeason.battingOrderSize) {
+      while (newBattingOrder[selectedGame].length < seasonConfig.battingOrderSize) {
         newBattingOrder[selectedGame].push(null);
       }
       
       const currentIndex = newBattingOrder[selectedGame].findIndex(p => p && p.id === draggedPlayer.id);
-      
       if (currentIndex !== -1) {
         newBattingOrder[selectedGame][currentIndex] = null;
       }
       
       newBattingOrder[selectedGame][target.position] = draggedPlayer;
       setBattingOrder(newBattingOrder);
+      saveLineupData('batting', newBattingOrder[selectedGame]);
       
     } else if (target.type === 'fielding') {
       if (target.position === 'C' && catcherDisabled) {
@@ -294,6 +569,7 @@ function RosterManagement() {
       
       newFieldingPositions[selectedGame][target.inning][target.position] = draggedPlayer;
       setFieldingPositions(newFieldingPositions);
+      saveLineupData('fielding', newFieldingPositions[selectedGame], target.inning);
       
     } else if (target.type === 'bench') {
       const currentDefense = fieldingPositions[selectedGame]?.[target.inning] || {};
@@ -318,10 +594,33 @@ function RosterManagement() {
       
       newBenchPlayers[selectedGame][target.inning].splice(target.benchIndex, 0, draggedPlayer);
       setBenchPlayers(newBenchPlayers);
+      saveLineupData('bench', newBenchPlayers[selectedGame], target.inning);
     }
 
     setDraggedPlayer(null);
     setDropTarget(null);
+  };
+
+  const saveLineupData = async (type, data, inning = null) => {
+    if (!isCaptain) return;
+    setSavingLineup(true);
+    
+    try {
+      if (type === 'batting') {
+        const playerIds = data.map(p => p?.id || null);
+        await window.FirebaseRoster.saveBattingOrder(selectedGame, selectedTeam, playerIds, currentUser.uid);
+      } else if (type === 'fielding') {
+        await window.FirebaseRoster.saveFieldingPositions(selectedGame, selectedTeam, inning, data[inning], currentUser.uid);
+      } else if (type === 'bench') {
+        const playerIds = data[inning].map(p => p.id);
+        await window.FirebaseRoster.saveBenchPlayers(selectedGame, selectedTeam, inning, playerIds, currentUser.uid);
+      }
+    } catch (error) {
+      console.error('Error saving lineup:', error);
+      alert('Failed to save lineup. Please try again.');
+    } finally {
+      setSavingLineup(false);
+    }
   };
 
   const removeFromBatting = (position) => {
@@ -330,6 +629,7 @@ function RosterManagement() {
     if (newBattingOrder[selectedGame]) {
       newBattingOrder[selectedGame][position] = null;
       setBattingOrder(newBattingOrder);
+      saveLineupData('batting', newBattingOrder[selectedGame]);
     }
   };
 
@@ -339,6 +639,7 @@ function RosterManagement() {
     if (newFieldingPositions[selectedGame]?.[inning]?.[position]) {
       delete newFieldingPositions[selectedGame][inning][position];
       setFieldingPositions(newFieldingPositions);
+      saveLineupData('fielding', newFieldingPositions[selectedGame], inning);
     }
   };
 
@@ -348,59 +649,246 @@ function RosterManagement() {
     if (newBenchPlayers[selectedGame]?.[inning]?.[benchIndex] !== undefined) {
       newBenchPlayers[selectedGame][inning].splice(benchIndex, 1);
       setBenchPlayers(newBenchPlayers);
+      saveLineupData('bench', newBenchPlayers[selectedGame], inning);
     }
   };
 
+  const copyFromPreviousInning = (targetInning) => {
+    if (!isCaptain || targetInning === 1) return;
+    
+    const previousInning = targetInning - 1;
+    
+    const newFieldingPositions = { ...fieldingPositions };
+    if (!newFieldingPositions[selectedGame]) newFieldingPositions[selectedGame] = {};
+    
+    const previousPositions = newFieldingPositions[selectedGame][previousInning] || {};
+    const clonedPositions = {};
+    Object.keys(previousPositions).forEach(pos => {
+      const player = previousPositions[pos];
+      if (player && player.id) {
+        const fullPlayer = players.find(p => p.id === player.id);
+        if (fullPlayer) {
+          clonedPositions[pos] = { ...fullPlayer };
+        }
+      }
+    });
+    newFieldingPositions[selectedGame][targetInning] = clonedPositions;
+    setFieldingPositions(newFieldingPositions);
+    
+    const newBenchPlayers = { ...benchPlayers };
+    if (!newBenchPlayers[selectedGame]) newBenchPlayers[selectedGame] = {};
+    
+    const previousBench = newBenchPlayers[selectedGame][previousInning] || [];
+    const clonedBench = previousBench.map(player => {
+      if (player && player.id) {
+        const fullPlayer = players.find(p => p.id === player.id);
+        return fullPlayer ? { ...fullPlayer } : null;
+      }
+      return null;
+    }).filter(p => p !== null);
+    newBenchPlayers[selectedGame][targetInning] = clonedBench;
+    setBenchPlayers(newBenchPlayers);
+    
+    saveLineupData('fielding', newFieldingPositions[selectedGame], targetInning);
+    saveLineupData('bench', newBenchPlayers[selectedGame], targetInning);
+  };
+
+const printBattingOrder = () => {
+  const selectedGameData = games.find(g => g.id === selectedGame);
+  if (!selectedGameData) return;
+
+  const printWindow = window.open('', '_blank');
+  const battingOrderList = gameBattingOrder
+    .map((p, idx) => p ? `${idx + 1}. ${p.name} (#${p.jersey}) - ${p.battingAvg}` : `${idx + 1}. (Empty)`)
+    .join('\n');
+
+  printWindow.document.write(`
+    <html>
+      <head>
+        <title>Batting Order - ${selectedGameData.date}</title>
+        <style>
+          body { font-family: Arial, sans-serif; padding: 40px; }
+          h1 { color: #2d5016; }
+          .info { margin: 20px 0; color: #666; }
+          .lineup { white-space: pre-line; line-height: 1.8; font-size: 14px; }
+          @media print {
+            body { padding: 20px; }
+          }
+        </style>
+      </head>
+      <body>
+        <h1>⚾ Mountainside Aces - Batting Order</h1>
+        <div class="info">
+          <strong>Game:</strong> ${selectedGameData.date} vs ${selectedGameData.opponent}<br>
+          <strong>Season:</strong> ${currentSeason.year} ${seasonConfig.name}
+        </div>
+        <div class="lineup">${battingOrderList}</div>
+        <script>window.print();<\/script>
+      </body>
+    </html>
+  `);
+  printWindow.document.close();
+};
+
+const printDefensiveRotation = () => {
+  const selectedGameData = games.find(g => g.id === selectedGame);
+  if (!selectedGameData) return;
+
+  const printWindow = window.open('', '_blank');
+  
+  let tableRows = '';
+  seasonConfig.positions.forEach(position => {
+    const isCatcher = position === 'C';
+    const disabled = isCatcher && catcherDisabled;
+    
+    tableRows += `<tr>`;
+    tableRows += `<td style="font-weight: bold; text-align: center; padding: 8px; border: 1px solid #ddd;">${disabled ? position + ' (Disabled)' : position}</td>`;
+    
+    [1, 2, 3, 4, 5, 6, 7].forEach(inning => {
+      const player = gameFieldingPositions[inning]?.[position];
+      const playerText = disabled ? '—' : (player ? player.name : '');
+      tableRows += `<td style="padding: 8px; border: 1px solid #ddd; text-align: center;">${playerText}</td>`;
+    });
+    tableRows += `</tr>`;
+  });
+
+  const maxBenchSpots = seasonConfig.battingOrderSize - seasonConfig.positions.length;
+  for (let benchIdx = 0; benchIdx < maxBenchSpots; benchIdx++) {
+    tableRows += `<tr style="background: #fefce8;">`;
+    tableRows += `<td style="font-weight: bold; text-align: center; padding: 8px; border: 1px solid #ddd;">BENCH ${benchIdx + 1}</td>`;
+    
+    [1, 2, 3, 4, 5, 6, 7].forEach(inning => {
+      const inningBench = gameBenchPlayers[inning] || [];
+      const benchPlayer = inningBench[benchIdx];
+      const playerText = benchPlayer ? benchPlayer.name : '';
+      tableRows += `<td style="padding: 8px; border: 1px solid #ddd; text-align: center; background: #fefce8;">${playerText}</td>`;
+    });
+    tableRows += `</tr>`;
+  }
+
+  printWindow.document.write(`
+    <html>
+      <head>
+        <title>Defensive Rotation - ${selectedGameData.date}</title>
+        <style>
+          body { font-family: Arial, sans-serif; padding: 40px; }
+          h1 { color: #2d5016; }
+          .info { margin: 20px 0; color: #666; }
+          table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+          th { background: #2d5016; color: white; padding: 10px; border: 1px solid #ddd; }
+          td { padding: 8px; border: 1px solid #ddd; }
+          @media print {
+            body { padding: 20px; }
+            @page { size: landscape; }
+          }
+        </style>
+      </head>
+      <body>
+        <h1>⚾ Mountainside Aces - Defensive Rotation</h1>
+        <div class="info">
+          <strong>Game:</strong> ${selectedGameData.date} vs ${selectedGameData.opponent}<br>
+          <strong>Season:</strong> ${currentSeason.year} ${seasonConfig.name}
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Position</th>
+              <th>Inning 1</th>
+              <th>Inning 2</th>
+              <th>Inning 3</th>
+              <th>Inning 4</th>
+              <th>Inning 5</th>
+              <th>Inning 6</th>
+              <th>Inning 7</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${tableRows}
+          </tbody>
+        </table>
+        <script>window.print();<\/script>
+      </body>
+    </html>
+  `);
+  printWindow.document.close();
+};
+
+
+
+
   const PlayerCard = ({ player, draggable = false, showStats = false, onRemove, size = 'normal' }) => {
+    if (!player || !player.name) {
+      console.warn('Invalid player object:', player);
+      return null;
+    }
+    
     const isSmall = size === 'small';
     const isCurrentUser = player.id === currentUserId;
+    const displayName = isSmall ? (player.name.split(' ').pop() || player.name) : player.name;
+    const cardClasses = `player-card-hover ${draggable && isCaptain ? 'player-card-draggable' : ''}`;
     
     return (
       <div
         draggable={draggable && isCaptain}
         onDragStart={(e) => handleDragStart(e, player)}
         style={{
-          padding: isSmall ? '6px' : '8px', background: isCurrentUser ? '#eff6ff' : 'white',
-          borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-          border: isCurrentUser ? '2px solid #667eea' : '1px solid #e1e5e9',
-          display: 'flex', alignItems: 'center', gap: '8px',
+          padding: isSmall ? '8px' : '10px', 
+          background: isCurrentUser ? '#eff6ff' : 'var(--card-bg)',
+          borderRadius: '12px', 
+          boxShadow: 'var(--shadow-sm)',
+          border: isCurrentUser ? '2px solid var(--primary-color)' : '1px solid var(--border-color)',
+          display: 'flex', 
+          alignItems: 'center', 
+          gap: '10px',
           cursor: draggable && isCaptain ? 'grab' : 'default',
-          transition: 'all 0.3s ease', position: 'relative'
+          transition: 'all 0.2s ease', 
+          position: 'relative',
+          minHeight: isSmall ? '40px' : '48px'
         }}
-        className="player-card-hover"
+        className={cardClasses}
       >
         <div style={{
-          width: isSmall ? '24px' : '32px', height: isSmall ? '24px' : '32px',
-          borderRadius: '50%', background: '#667eea', color: 'white',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: isSmall ? '10px' : '12px', fontWeight: '600', flexShrink: 0
+          width: isSmall ? '28px' : '36px', 
+          height: isSmall ? '28px' : '36px',
+          borderRadius: '50%', 
+          background: 'var(--primary-color)', 
+          color: 'white',
+          display: 'flex', 
+          alignItems: 'center', 
+          justifyContent: 'center',
+          fontSize: isSmall ? '11px' : '13px', 
+          fontWeight: '600', 
+          flexShrink: 0,
+          pointerEvents: 'none',
+          userSelect: 'none'
         }}>
-          {player.avatar}
+          {player.avatar || '?'}
         </div>
-        <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ flex: 1, minWidth: 0, pointerEvents: 'none', userSelect: 'none' }}>
           <div style={{ 
             fontWeight: '500', fontSize: isSmall ? '11px' : '14px',
             overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-            display: 'flex', alignItems: 'center', gap: '4px'
+            display: 'flex', alignItems: 'center', gap: '4px',
+            color: 'var(--text-dark)'
           }}>
-            {isSmall ? player.name.split(' ').pop() : player.name}
+            {displayName}
             {isCurrentUser && !isSmall && (
               <span style={{
-                fontSize: '10px', background: '#667eea', color: 'white',
-                padding: '2px 6px', borderRadius: '4px'
+                fontSize: '10px', background: 'var(--primary-color)', color: 'white',
+                padding: '2px 6px', borderRadius: '6px'
               }}>You</span>
             )}
           </div>
-          {!isSmall && <div style={{ fontSize: '11px', color: '#6b7280' }}>#{player.jersey}</div>}
+          {!isSmall && <div style={{ fontSize: '11px', color: 'var(--text-light)' }}>#{player.jersey || 'N/A'}</div>}
         </div>
         {showStats && !isSmall && (
-          <div style={{ fontSize: '11px', color: '#4b5563' }}>{player.battingAvg}</div>
+          <div style={{ fontSize: '11px', color: 'var(--text-dark)', pointerEvents: 'none', userSelect: 'none' }}>{player.battingAvg || '.000'}</div>
         )}
         {onRemove && isCaptain && (
           <button onClick={onRemove} className="remove-btn"
             style={{
               opacity: 0, transition: 'opacity 0.2s', padding: '4px',
-              background: 'none', border: 'none', cursor: 'pointer', borderRadius: '4px'
+              background: 'none', border: 'none', cursor: 'pointer', borderRadius: '6px'
             }}>
             <X style={{ width: '14px', height: '14px', color: '#dc2626' }} />
           </button>
@@ -409,8 +897,10 @@ function RosterManagement() {
     );
   };
 
-  const currentGame = games.find(g => g.id === selectedGame);
-  
+  const gameBattingOrder = battingOrder[selectedGame] || [];
+  const gameFieldingPositions = fieldingPositions[selectedGame] || {};
+  const gameBenchPlayers = benchPlayers[selectedGame] || {};
+
   const yesRsvpCount = selectedGame ? players.filter(player => {
     const key = `${player.id}-${selectedGame}`;
     return rsvps[key] === 'yes';
@@ -421,101 +911,89 @@ function RosterManagement() {
     return rsvps[key] === 'yes';
   }) : [];
 
-  const belowMinimum = yesRsvpCount < currentSeason.minPlayers;
-  const catcherDisabled = yesRsvpCount < currentSeason.catcherMinPlayers;
+  const availableForBatting = availablePlayers.filter(player => {
+    return !gameBattingOrder.some(p => p && p.id === player.id);
+  });
 
-  const gameBattingOrder = battingOrder[selectedGame] || [];
-  const gameFieldingPositions = fieldingPositions[selectedGame] || {};
-  const gameBenchPlayers = benchPlayers[selectedGame] || {};
+  const belowMinimum = yesRsvpCount < seasonConfig.minPlayers;
+  const catcherDisabled = yesRsvpCount < seasonConfig.catcherMinPlayers;
+
+  if (loading) {
+    return null;
+  }
 
   return (
-    <div style={{ fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif", background: 'linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)', minHeight: '100vh', padding: '2rem' }}>
+    <div style={{ fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", background: 'linear-gradient(135deg, #f7fafc 0%, #edf2f7 100%)', minHeight: '100vh', padding: '2rem' }}>	
       <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
-        <div style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', color: 'white', textAlign: 'center', padding: '3rem 2rem', borderRadius: '12px', marginBottom: '2rem', position: 'relative' }}>
-          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '4px', background: 'linear-gradient(90deg, #ffd700 0%, #ffed4e 100%)' }}></div>
-          <h1 style={{ margin: 0, fontSize: '2.5rem', fontWeight: 'bold', textShadow: '2px 2px 4px rgba(0,0,0,0.3)' }}>Roster Management</h1>
-          <p style={{ margin: '1rem 0 0 0', fontSize: '1.1rem', opacity: 0.9 }}>2025 Fall Season</p>
+        
+        <div style={{ background: 'linear-gradient(135deg, #2d5016 0%, #1a6b4a 100%)', color: 'white', textAlign: 'center', padding: '3rem 2rem', borderRadius: '12px', marginBottom: '2rem', position: 'relative', boxShadow: '0 12px 32px rgba(0,0,0,0.16)' }}>
+                    <a href="index.html" class="back-home-btn hide-mobile">
+            <span>←</span> Back to Home
+          </a>
+		  <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '4px', background: 'linear-gradient(90deg, #ffd700 0%, #ffed4e 100%)' }}></div>
+          <h1 style={{ margin: 0, fontSize: '2.5rem', fontWeight: 'bold', textShadow: '2px 2px 4px rgba(0,0,0,0.3)' }}>⚾ Roster Management</h1>
+          <p style={{ margin: '1rem 0 0 0', fontSize: '1.1rem', opacity: 0.9 }}>
+            {currentSeason ? `${currentSeason.year} ${seasonConfig.name} Season` : 'Loading...'}
+          </p>
         </div>
 
-        <div style={{ background: 'white', padding: '1.5rem', borderRadius: '12px', marginBottom: '2rem', boxShadow: '0 4px 6px rgba(0,0,0,0.07)', border: '1px solid #e1e5e9' }}>
+        <div style={{ background: 'var(--card-bg)', padding: '1.5rem', borderRadius: '16px', marginBottom: '2rem', boxShadow: 'var(--shadow-sm)', border: '1px solid var(--border-color)' }}>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', alignItems: 'center', justifyContent: 'center' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <span style={{ fontWeight: '600' }}>Team:</span>
-              <select value={selectedTeam} onChange={(e) => { setSelectedTeam(e.target.value); setCurrentUserId(null); setLoggedInPlayer(null); }}
-                style={{ padding: '0.5rem 1rem', border: '1px solid #ccc', borderRadius: '8px', fontSize: '14px', minWidth: '200px' }}>
-                <option value="">Select a Team</option>
-                {allTeams.map(team => <option key={team} value={team}>{team}</option>)}
-              </select>
+              <span style={{ fontWeight: '600', color: 'var(--text-dark)' }}>Team:</span>
+              <span style={{ color: 'var(--text-dark)', fontWeight: '500' }}>
+                {selectedTeam || 'No team assigned'}
+              </span>
             </div>
             
-            {selectedTeam && players.length > 0 && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <LogIn style={{ width: '20px', height: '20px', color: '#6b7280' }} />
-                <select value={currentUserId || ''} onChange={(e) => handleLogin(e.target.value)}
-                  style={{ padding: '0.5rem 1rem', border: '1px solid #ccc', borderRadius: '8px', fontSize: '14px', minWidth: '200px' }}>
-                  <option value="">Not Logged In</option>
-                  {players.map(p => <option key={p.id} value={p.id}>{p.name} {p.isCaptain ? '(Captain)' : ''}</option>)}
-                </select>
-              </div>
-            )}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <span style={{ fontWeight: '600', color: 'var(--text-dark)' }}>Logged in as:</span>
+              <span style={{ color: 'var(--text-dark)' }}>
+                {userProfile?.linkedPlayer || userProfile?.displayName || currentUser?.displayName || 'Loading...'}
+              </span>
+              {isCaptain && <span style={{ background: 'var(--primary-color)', color: 'white', padding: '4px 8px', borderRadius: '8px', fontSize: '12px' }}>Captain</span>}
+            </div>
           </div>
           
-          {isLoggedIn ? (
-            <div style={{ marginTop: '1rem', padding: '0.75rem 1rem', borderRadius: '8px', background: isCaptain ? '#eff6ff' : '#f0fdf4',
-                          color: isCaptain ? '#1e40af' : '#166534', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: '600', justifyContent: 'center' }}>
-              {isCaptain ? <Edit3 style={{ width: '18px', height: '18px' }} /> : <Eye style={{ width: '18px', height: '18px' }} />}
-              <span>Logged in as {loggedInPlayer.name}{isCaptain && ' - Captain Access Enabled'}</span>
-            </div>
-          ) : (
-            <div style={{ marginTop: '1rem', padding: '0.75rem 1rem', borderRadius: '8px', background: '#fef3c7', color: '#92400e',
-                          display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: '600', justifyContent: 'center', border: '1px solid #fde68a' }}>
-              <AlertCircle style={{ width: '18px', height: '18px' }} />
-              <span>{!selectedTeam ? 'Please select a team to begin' : 'Please log in to RSVP to games and view lineup information'}</span>
+          {savingLineup && (
+            <div style={{ marginTop: '1rem', padding: '0.75rem 1rem', borderRadius: '12px', background: '#e0f2fe', color: '#0369a1', textAlign: 'center' }}>
+              💾 Saving lineup...
             </div>
           )}
         </div>
 
-        {loading && <div style={{ background: 'white', padding: '2rem', borderRadius: '12px', textAlign: 'center', color: '#666' }}>Loading...</div>}
-        
-        {!loading && !selectedTeam && (
-          <div style={{ background: 'white', padding: '2rem', borderRadius: '12px', textAlign: 'center' }}>
-            <h3 style={{ marginTop: 0 }}>Welcome to Roster Management</h3>
-            <p style={{ color: '#666' }}>Select a team to get started</p>
-          </div>
-        )}
-
-        {!loading && selectedTeam && players.length > 0 && games.length > 0 && (
+        {selectedTeam && players.length > 0 && games.length > 0 && (
           <>
-            <div style={{ background: 'white', padding: '1.5rem', borderRadius: '12px', marginBottom: '2rem', boxShadow: '0 4px 6px rgba(0,0,0,0.07)', border: '1px solid #e1e5e9' }}>
-              <h2 style={{ margin: '0 0 1rem 0', fontSize: '1.5rem', fontWeight: 'bold' }}>Game RSVPs</h2>
-              <div className="table-scroll-container" style={{ border: '1px solid #e5e7eb', borderRadius: '8px' }}>
+            <div style={{ background: 'var(--card-bg)', padding: '1.5rem', borderRadius: '16px', marginBottom: '2rem', boxShadow: 'var(--shadow-sm)', border: '1px solid var(--border-color)' }}>
+              <h2 style={{ margin: '0 0 1rem 0', fontSize: '1.5rem', fontWeight: 'bold', color: 'var(--text-dark)' }}>Game RSVPs</h2>
+              <div className="table-scroll-container" style={{ border: '1px solid var(--border-color)', borderRadius: '12px' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
                   <thead>
                     <tr>
-                      <th style={{ position: 'sticky', left: 0, background: '#f2f2f2', zIndex: 10, borderBottom: '2px solid #ccc', padding: '8px', textAlign: 'left', minWidth: '200px' }}>Player</th>
+                      <th style={{ position: 'sticky', left: 0, background: '#f2f2f2', zIndex: 10, borderBottom: '2px solid var(--border-color)', padding: '8px', textAlign: 'left', minWidth: '200px', color: 'var(--text-dark)' }}>Player</th>
                       {games.map(game => (
-                        <th key={game.id} style={{ borderBottom: '2px solid #ccc', padding: '8px', textAlign: 'center', background: '#f2f2f2', whiteSpace: 'nowrap', minWidth: '80px' }}>
-                          {game.date}<br/><span style={{ fontSize: '12px', fontWeight: 'normal', color: '#666' }}>vs {game.opponent}</span>
+                        <th key={game.id} style={{ borderBottom: '2px solid var(--border-color)', padding: '8px', textAlign: 'center', background: '#f2f2f2', whiteSpace: 'nowrap', minWidth: '80px', color: 'var(--text-dark)' }}>
+                          {game.date}<br/><span style={{ fontSize: '12px', fontWeight: 'normal', color: 'var(--text-light)' }}>vs {game.opponent}</span>
                         </th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
                     {players.map(player => {
-                      const isCurrentUser = player.id === currentUserId;
+                      const isCurrentUserRow = userProfile?.linkedPlayer === player.name;
                       return (
-                        <tr key={player.id} style={{ background: isCurrentUser ? '#eff6ff' : 'white', borderLeft: isCurrentUser ? '4px solid #667eea' : 'none' }}>
-                          <td style={{ position: 'sticky', left: 0, background: isCurrentUser ? '#eff6ff' : 'white', zIndex: 10, borderBottom: '1px solid #ccc', padding: '8px' }}>
+                        <tr key={player.id} style={{ background: isCurrentUserRow ? '#eff6ff' : 'white', borderLeft: isCurrentUserRow ? '4px solid var(--primary-color)' : 'none' }}>
+                          <td style={{ position: 'sticky', left: 0, background: isCurrentUserRow ? '#eff6ff' : 'white', zIndex: 10, borderBottom: '1px solid var(--border-color)', padding: '8px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#667eea', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: '600', flexShrink: 0 }}>
+                              <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'var(--primary-color)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: '600', flexShrink: 0 }}>
                                 {player.avatar}
                               </div>
                               <div>
-                                <div style={{ fontWeight: '500', fontSize: '14px' }}>
+                                <div style={{ fontWeight: '500', fontSize: '14px', color: 'var(--text-dark)' }}>
                                   {player.name}
-                                  {isCurrentUser && <span style={{ fontSize: '10px', background: '#667eea', color: 'white', padding: '2px 6px', borderRadius: '4px', marginLeft: '8px' }}>You</span>}
+                                  {isCurrentUserRow && <span style={{ fontSize: '10px', background: 'var(--primary-color)', color: 'white', padding: '2px 6px', borderRadius: '6px', marginLeft: '8px' }}>You</span>}
                                 </div>
-                                <div style={{ fontSize: '11px', color: '#6b7280' }}>{player.jersey ? `#${player.jersey}` : 'No #'}</div>
+                                <div style={{ fontSize: '11px', color: 'var(--text-light)' }}>{player.jersey ? `#${player.jersey}` : 'No #'}</div>
                               </div>
                             </div>
                           </td>
@@ -523,12 +1001,12 @@ function RosterManagement() {
                             const key = `${player.id}-${game.id}`;
                             const status = rsvps[key] || 'none';
                             const statusInfo = RSVP_STATUS[status];
-                            const canEdit = isCaptain || currentUserId === player.id;
+                            const canEdit = isCaptain || userProfile?.linkedPlayer === player.name;
                             
                             return (
-                              <td key={game.id} style={{ borderBottom: '1px solid #ccc', padding: '8px', textAlign: 'center' }}>
+                              <td key={game.id} style={{ borderBottom: '1px solid var(--border-color)', padding: '8px', textAlign: 'center' }}>
                                 <button onClick={() => handleRSVPClick(player.id, game.id)} disabled={!canEdit}
-                                  title={!isLoggedIn ? 'Log in to RSVP' : !canEdit ? "You can only edit your own RSVP" : isCaptain ? 'Captain: Click to change RSVP' : 'Click to change RSVP'}
+                                  title={canEdit ? 'Click to change RSVP' : 'Only captain can edit other RSVPs'}
                                   style={{ width: '48px', height: '48px', borderRadius: '8px', border: 'none', fontSize: '18px', fontWeight: 'bold', color: 'white',
                                           cursor: canEdit ? 'pointer' : 'not-allowed', opacity: canEdit ? 1 : 0.5, background: statusInfo.color }}>
                                   {statusInfo.icon}
@@ -547,21 +1025,21 @@ function RosterManagement() {
             {selectedGame && (belowMinimum || catcherDisabled) && (
               <div style={{ marginBottom: '2rem' }}>
                 {belowMinimum && (
-                  <div style={{ background: '#fee2e2', border: '2px solid #ef4444', borderRadius: '8px', padding: '1rem', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                  <div style={{ background: '#fee2e2', border: '2px solid #ef4444', borderRadius: '12px', padding: '1rem', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                     <AlertCircle style={{ width: '24px', height: '24px', color: '#dc2626', flexShrink: 0 }} />
                     <div>
                       <div style={{ fontWeight: '600', color: '#7f1d1d' }}>
-                        Only {yesRsvpCount} players confirmed - Need {currentSeason.minPlayers} minimum to play
+                        Only {yesRsvpCount} players confirmed - Need {seasonConfig.minPlayers} minimum to play
                       </div>
                     </div>
                   </div>
                 )}
                 {catcherDisabled && (
-                  <div style={{ background: '#fee2e2', border: '2px solid #ef4444', borderRadius: '8px', padding: '1rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                  <div style={{ background: '#fee2e2', border: '2px solid #ef4444', borderRadius: '12px', padding: '1rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                     <AlertCircle style={{ width: '24px', height: '24px', color: '#dc2626', flexShrink: 0 }} />
                     <div>
                       <div style={{ fontWeight: '600', color: '#7f1d1d' }}>
-                        Catcher position disabled - need {currentSeason.catcherMinPlayers} players (currently {yesRsvpCount})
+                        Catcher position disabled - need {seasonConfig.catcherMinPlayers} players (currently {yesRsvpCount})
                       </div>
                     </div>
                   </div>
@@ -569,18 +1047,18 @@ function RosterManagement() {
               </div>
             )}
 
-            {isLoggedIn && (
-              <div style={{ background: 'white', padding: '1.5rem', borderRadius: '12px', boxShadow: '0 4px 6px rgba(0,0,0,0.07)', border: '1px solid #e1e5e9' }}>
-                <div style={{ marginBottom: '1.5rem', padding: '0.75rem 1rem', borderRadius: '8px', background: isCaptain ? '#eff6ff' : '#f3f4f6',
-                              color: isCaptain ? '#1e40af' : '#374151', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: '600' }}>
-                  {isCaptain ? <Edit3 style={{ width: '18px', height: '18px' }} /> : <Eye style={{ width: '18px', height: '18px' }} />}
-                  <span>{isCaptain ? 'Captain - Editing Enabled' : 'View Only - Captain Access Required to Edit'}</span>
+            {isCaptain && (
+              <div style={{ background: 'var(--card-bg)', padding: '1.5rem', borderRadius: '16px', boxShadow: 'var(--shadow-sm)', border: '1px solid var(--border-color)' }}>
+                <div style={{ marginBottom: '1.5rem', padding: '0.75rem 1rem', borderRadius: '12px', background: '#eff6ff',
+                              color: '#1e40af', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: '600' }}>
+                  <Edit3 style={{ width: '18px', height: '18px' }} />
+                  <span>Captain - Editing Enabled</span>
                 </div>
 
                 <div style={{ marginBottom: '1.5rem' }}>
-                  <label style={{ display: 'block', fontSize: '14px', fontWeight: '600', color: '#333', marginBottom: '0.5rem' }}>Select Game:</label>
-                  <select value={selectedGame || ''} onChange={(e) => setSelectedGame(parseInt(e.target.value))}
-                    style={{ padding: '0.5rem 1rem', border: '1px solid #ccc', borderRadius: '8px', fontSize: '14px', width: '100%', maxWidth: '400px' }}>
+                  <label style={{ display: 'block', fontSize: '14px', fontWeight: '600', color: 'var(--text-dark)', marginBottom: '0.5rem' }}>Select Game:</label>
+                  <select value={selectedGame || ''} onChange={(e) => setSelectedGame(e.target.value)}
+                    style={{ padding: '0.5rem 1rem', border: '1px solid var(--border-color)', borderRadius: '12px', fontSize: '14px', width: '100%', maxWidth: '400px' }}>
                     <option value="">Select a game...</option>
                     {games.map(game => {
                       const gameYesCount = players.filter(player => rsvps[`${player.id}-${game.id}`] === 'yes').length;
@@ -596,37 +1074,41 @@ function RosterManagement() {
                 {selectedGame && (
                   <>
                     <div style={{ marginBottom: '2rem' }}>
-                      <h2 style={{ margin: '0 0 1rem 0', fontSize: '1.5rem', fontWeight: 'bold' }}>Batting Order</h2>
-                      <p style={{ fontSize: '14px', color: '#6b7280', marginBottom: '1rem' }}>
-                        {currentSeason.name} allows up to {currentSeason.battingOrderSize} batters.
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+  <h2 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 'bold', color: 'var(--text-dark)' }}>Batting Order</h2>
+  <button onClick={printBattingOrder} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 1rem', background: 'var(--primary-color)', color: 'white', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer', transition: 'all 0.2s ease' }} onMouseEnter={(e) => e.target.style.background = 'var(--secondary-color)'} onMouseLeave={(e) => e.target.style.background = 'var(--primary-color)'}>
+    <Printer style={{ width: '18px', height: '18px' }} />
+    Print Batting Order
+  </button>
+</div>
+                      <p style={{ fontSize: '14px', color: 'var(--text-light)', marginBottom: '1rem' }}>
+                        {seasonConfig.name} allows up to {seasonConfig.battingOrderSize} batters. Drag players from the available list.
                       </p>
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
                         <div>
-                          <h3 style={{ fontSize: '14px', fontWeight: '600', marginBottom: '0.5rem' }}>Lineup</h3>
+                          <h3 style={{ fontSize: '14px', fontWeight: '600', marginBottom: '0.5rem', color: 'var(--text-dark)' }}>Lineup</h3>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                            {[...Array(currentSeason.battingOrderSize)].map((_, idx) => {
+                            {[...Array(seasonConfig.battingOrderSize)].map((_, idx) => {
                               const player = gameBattingOrder[idx];
                               const isDropTarget = dropTarget?.type === 'batting' && dropTarget?.position === idx;
                               
                               return (
                                 <div key={idx}
-                                  onDragOver={isCaptain ? handleDragOver : undefined}
-                                  onDragEnter={isCaptain ? (e) => handleDragEnter(e, { type: 'batting', position: idx }) : undefined}
+                                  onDragOver={handleDragOver}
+                                  onDragEnter={(e) => handleDragEnter(e, { type: 'batting', position: idx })}
                                   onDragLeave={handleDragLeave}
-                                  onDrop={isCaptain ? (e) => handleDrop(e, { type: 'batting', position: idx }) : undefined}
-                                  style={{ padding: '12px', borderRadius: '8px', border: isDropTarget ? '2px dashed #667eea' : '1px solid #e1e5e9',
-                                          background: isDropTarget ? '#eff6ff' : (!player ? '#f9fafb' : 'white'), transition: 'all 0.3s ease' }}>
+                                  onDrop={(e) => handleDrop(e, { type: 'batting', position: idx })}
+                                  style={{ padding: '12px', borderRadius: '12px', border: isDropTarget ? '2px dashed var(--primary-color)' : '1px solid var(--border-color)',
+                                          background: isDropTarget ? '#eff6ff' : (!player ? '#f9fafb' : 'var(--card-bg)'), transition: 'all 0.3s ease' }}>
                                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                    <span style={{ fontWeight: 'bold', color: '#6b7280', width: '24px' }}>{idx + 1}.</span>
+                                    <span style={{ fontWeight: 'bold', color: 'var(--text-light)', width: '24px' }}>{idx + 1}.</span>
                                     {player ? (
                                       <div style={{ flex: 1 }}>
                                         <PlayerCard player={player} draggable={true} showStats={true}
-                                          onRemove={isCaptain ? () => removeFromBatting(idx) : undefined} />
+                                          onRemove={() => removeFromBatting(idx)} />
                                       </div>
                                     ) : (
-                                      <span style={{ color: '#9ca3af', fontSize: '14px' }}>
-                                        {isCaptain ? 'Drag player here' : 'Empty'}
-                                      </span>
+                                      <span style={{ color: 'var(--text-light)', fontSize: '14px' }}>Drag player here</span>
                                     )}
                                   </div>
                                 </div>
@@ -636,12 +1118,12 @@ function RosterManagement() {
                         </div>
 
                         <div>
-                          <h3 style={{ fontSize: '14px', fontWeight: '600', marginBottom: '0.5rem' }}>
-                            Available Players ({availablePlayers.length})
+                          <h3 style={{ fontSize: '14px', fontWeight: '600', marginBottom: '0.5rem', color: 'var(--text-dark)' }}>
+                            Available Players ({availableForBatting.length})
                           </h3>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: '600px', overflowY: 'auto' }}>
-                            {availablePlayers.map(player => (
-                              <PlayerCard key={player.id} player={player} draggable={isCaptain} showStats={true} />
+                            {availableForBatting.map(player => (
+                              <PlayerCard key={player.id} player={player} draggable={true} showStats={true} />
                             ))}
                           </div>
                         </div>
@@ -649,111 +1131,154 @@ function RosterManagement() {
                     </div>
 
                     <div>
-                      <h2 style={{ margin: '0 0 1rem 0', fontSize: '1.5rem', fontWeight: 'bold' }}>Defensive Positions by Inning</h2>
-                      <div style={{ overflowX: 'auto' }}>
-                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
-                          <thead>
-                            <tr>
-                              <th style={{ position: 'sticky', left: 0, background: '#f2f2f2', zIndex: 10, borderBottom: '2px solid #ccc', padding: '8px', textAlign: 'center', width: '64px' }}>Pos</th>
-                              {[1, 2, 3, 4, 5, 6, 7].map(inning => (
-                                <th key={inning} style={{ borderBottom: '2px solid #ccc', padding: '8px', textAlign: 'center', background: '#f2f2f2' }}>{inning}</th>
-                              ))}
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {currentSeason.positions.map(position => {
-                              const isCatcher = position === 'C';
-                              const disabled = isCatcher && catcherDisabled;
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+  <h2 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 'bold', color: 'var(--text-dark)' }}>Defensive Positions by Inning</h2>
+  <button onClick={printDefensiveRotation} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 1rem', background: 'var(--primary-color)', color: 'white', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer', transition: 'all 0.2s ease' }} onMouseEnter={(e) => e.target.style.background = 'var(--secondary-color)'} onMouseLeave={(e) => e.target.style.background = 'var(--primary-color)'}>
+    <Printer style={{ width: '18px', height: '18px' }} />
+    Print Defensive Rotation
+  </button>
+</div>
+                      <div style={{ display: 'flex', gap: '1.5rem' }}>
+                        <div style={{ minWidth: '250px', maxWidth: '250px' }}>
+                          <h3 style={{ fontSize: '14px', fontWeight: '600', marginBottom: '0.5rem', color: 'var(--text-dark)' }}>
+                            Available Players ({availablePlayers.length})
+                          </h3>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: '700px', overflowY: 'auto', 
+                                        padding: '0.5rem', background: '#f9fafb', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
+                            {availablePlayers.map(player => (
+                              <PlayerCard key={player.id} player={player} draggable={true} showStats={false} />
+                            ))}
+                          </div>
+                        </div>
+                        
+                        <div style={{ flex: 1, overflowX: 'auto' }}>
+                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
+                            <thead>
+                              <tr>
+                                <th style={{ position: 'sticky', left: 0, background: '#f2f2f2', zIndex: 10, borderBottom: '2px solid var(--border-color)', padding: '8px', textAlign: 'center', width: '64px', color: 'var(--text-dark)' }}>Pos</th>
+                                {[1, 2, 3, 4, 5, 6, 7].map(inning => (
+                                  <th key={inning} style={{ borderBottom: '2px solid var(--border-color)', padding: '8px', textAlign: 'center', background: '#f2f2f2', color: 'var(--text-dark)', position: 'relative' }}>
+                                    <div style={{ marginBottom: inning > 1 ? '4px' : '0' }}>{inning}</div>
+                                    {inning > 1 && (
+                                      <button
+                                        onClick={() => copyFromPreviousInning(inning)}
+                                        style={{
+                                          fontSize: '10px',
+                                          padding: '2px 6px',
+                                          background: 'var(--primary-color)',
+                                          color: 'white',
+                                          border: 'none',
+                                          borderRadius: '4px',
+                                          cursor: 'pointer',
+                                          whiteSpace: 'nowrap',
+                                          transition: 'all 0.2s ease'
+                                        }}
+                                        onMouseEnter={(e) => e.target.style.background = 'var(--secondary-color)'}
+                                        onMouseLeave={(e) => e.target.style.background = 'var(--primary-color)'}
+                                        title={`Copy all players from inning ${inning - 1}`}
+                                      >
+                                        ← Copy
+                                      </button>
+                                    )}
+                                  </th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {seasonConfig.positions.map(position => {
+                                const isCatcher = position === 'C';
+                                const disabled = isCatcher && catcherDisabled;
+                                
+                                return (
+                                  <tr key={position} style={{ background: disabled ? '#f3f4f6' : 'white' }}>
+                                    <td style={{ position: 'sticky', left: 0, background: disabled ? '#f3f4f6' : 'white', zIndex: 10,
+                                                borderBottom: '1px solid var(--border-color)', padding: '8px', fontWeight: '600', textAlign: 'center' }}>
+                                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
+                                        {disabled && <Lock style={{ width: '14px', height: '14px', color: '#9ca3af' }} />}
+                                        <span style={{ textDecoration: disabled ? 'line-through' : 'none', color: disabled ? '#9ca3af' : 'var(--text-dark)' }}>
+                                          {position}
+                                        </span>
+                                      </div>
+                                    </td>
+                                    {[1, 2, 3, 4, 5, 6, 7].map(inning => {
+                                      const player = gameFieldingPositions[inning]?.[position];
+                                      const isDropTarget = dropTarget?.type === 'fielding' && dropTarget?.position === position && dropTarget?.inning === inning;
+                                      
+                                      return (
+                                        <td key={inning}
+                                          onDragOver={disabled ? undefined : handleDragOver}
+                                          onDragEnter={disabled ? undefined : (e) => handleDragEnter(e, { type: 'fielding', position, inning })}
+                                          onDragLeave={handleDragLeave}
+                                          onDrop={disabled ? undefined : (e) => handleDrop(e, { type: 'fielding', position, inning })}
+                                          style={{ borderBottom: '1px solid var(--border-color)', padding: '4px', transition: 'all 0.3s ease',
+                                                  background: isDropTarget && !disabled ? '#eff6ff' : 'transparent',
+                                                  border: isDropTarget && !disabled ? '2px dashed var(--primary-color)' : '1px solid var(--border-color)',
+                                                  cursor: disabled ? 'not-allowed' : 'default' }}>
+                                          {disabled ? (
+                                            <div style={{ textAlign: 'center', color: '#9ca3af', fontSize: '14px' }}>—</div>
+                                          ) : player ? (
+                                            <PlayerCard player={player} draggable={true} size="small"
+                                              onRemove={() => removeFromFielding(inning, position)} />
+                                          ) : (
+                                            <div style={{ height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                          color: '#d1d5db', fontSize: '12px' }}>
+                                              Drop
+                                            </div>
+                                          )}
+                                        </td>
+                                      );
+                                    })}
+                                  </tr>
+                                );
+                              })}
                               
-                              return (
-                                <tr key={position} style={{ background: disabled ? '#f3f4f6' : 'white' }}>
-                                  <td style={{ position: 'sticky', left: 0, background: disabled ? '#f3f4f6' : 'white', zIndex: 10,
-                                              borderBottom: '1px solid #ccc', padding: '8px', fontWeight: '600', textAlign: 'center' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
-                                      {disabled && <Lock style={{ width: '14px', height: '14px', color: '#9ca3af' }} />}
-                                      <span style={{ textDecoration: disabled ? 'line-through' : 'none', color: disabled ? '#9ca3af' : 'inherit' }}>
-                                        {position}
-                                      </span>
-                                    </div>
-                                  </td>
-                                  {[1, 2, 3, 4, 5, 6, 7].map(inning => {
-                                    const player = gameFieldingPositions[inning]?.[position];
-                                    const isDropTarget = dropTarget?.type === 'fielding' && dropTarget?.position === position && dropTarget?.inning === inning;
-                                    
-                                    return (
-                                      <td key={inning}
-                                        onDragOver={disabled || !isCaptain ? undefined : handleDragOver}
-                                        onDragEnter={disabled || !isCaptain ? undefined : (e) => handleDragEnter(e, { type: 'fielding', position, inning })}
-                                        onDragLeave={handleDragLeave}
-                                        onDrop={disabled || !isCaptain ? undefined : (e) => handleDrop(e, { type: 'fielding', position, inning })}
-                                        style={{ borderBottom: '1px solid #ccc', padding: '4px', transition: 'all 0.3s ease',
-                                                background: isDropTarget && !disabled ? '#eff6ff' : 'transparent',
-                                                border: isDropTarget && !disabled ? '2px dashed #667eea' : '1px solid #ccc',
-                                                cursor: disabled ? 'not-allowed' : 'default' }}>
-                                        {disabled ? (
-                                          <div style={{ textAlign: 'center', color: '#9ca3af', fontSize: '14px' }}>—</div>
-                                        ) : player ? (
-                                          <PlayerCard player={player} draggable={isCaptain} size="small"
-                                            onRemove={isCaptain ? () => removeFromFielding(inning, position) : undefined} />
-                                        ) : (
-                                          <div style={{ height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                                        color: '#d1d5db', fontSize: '12px' }}>
-                                            {isCaptain ? 'Drop' : '—'}
-                                          </div>
-                                        )}
-                                      </td>
-                                    );
-                                  })}
-                                </tr>
-                              );
-                            })}
-                            
-                            <tr style={{ background: '#f9fafb' }}>
-                              <td colSpan={8} style={{ padding: '8px', textAlign: 'center', fontWeight: '600', fontSize: '12px',
-                                                        color: '#6b7280', borderTop: '2px solid #9ca3af', borderBottom: '2px solid #9ca3af' }}>
-                                BENCH
-                              </td>
-                            </tr>
-                            
-                            {(() => {
-                              const maxBenchSpots = currentSeason.battingOrderSize - currentSeason.positions.length;
-                              return [...Array(maxBenchSpots)].map((_, benchIdx) => (
-                                <tr key={`bench-${benchIdx}`} style={{ background: '#fefce8' }}>
-                                  <td style={{ position: 'sticky', left: 0, background: '#fefce8', zIndex: 10, borderBottom: '1px solid #ccc',
-                                              padding: '8px', fontWeight: '600', textAlign: 'center', color: '#854d0e' }}>
-                                    B{benchIdx + 1}
-                                  </td>
-                                  {[1, 2, 3, 4, 5, 6, 7].map(inning => {
-                                    const inningBench = gameBenchPlayers[inning] || [];
-                                    const benchPlayer = inningBench[benchIdx];
-                                    const isDropTarget = dropTarget?.type === 'bench' && dropTarget?.inning === inning && dropTarget?.benchIndex === benchIdx;
-                                    
-                                    return (
-                                      <td key={inning}
-                                        onDragOver={isCaptain ? handleDragOver : undefined}
-                                        onDragEnter={isCaptain ? (e) => handleDragEnter(e, { type: 'bench', inning, benchIndex: benchIdx }) : undefined}
-                                        onDragLeave={handleDragLeave}
-                                        onDrop={isCaptain ? (e) => handleDrop(e, { type: 'bench', inning, benchIndex: benchIdx }) : undefined}
-                                        style={{ borderBottom: '1px solid #ccc', padding: '4px', background: isDropTarget ? '#fef3c7' : '#fefce8',
-                                                border: isDropTarget ? '2px dashed #ca8a04' : '1px solid #ccc',
-                                                transition: 'all 0.3s ease' }}>
-                                        {benchPlayer ? (
-                                          <PlayerCard player={benchPlayer} draggable={isCaptain} size="small"
-                                            onRemove={isCaptain ? () => removeFromBench(inning, benchIdx) : undefined} />
-                                        ) : (
-                                          <div style={{ height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                                        color: '#d1d5db', fontSize: '12px' }}>
-                                            {isCaptain ? 'Drop' : '—'}
-                                          </div>
-                                        )}
-                                      </td>
-                                    );
-                                  })}
-                                </tr>
-                              ));
-                            })()}
-                          </tbody>
-                        </table>
+                              <tr style={{ background: '#f9fafb' }}>
+                                <td colSpan={8} style={{ padding: '8px', textAlign: 'center', fontWeight: '600', fontSize: '12px',
+                                                          color: 'var(--text-light)', borderTop: '2px solid #9ca3af', borderBottom: '2px solid #9ca3af' }}>
+                                  BENCH
+                                </td>
+                              </tr>
+                              
+                              {(() => {
+                                const maxBenchSpots = seasonConfig.battingOrderSize - seasonConfig.positions.length;
+                                return [...Array(maxBenchSpots)].map((_, benchIdx) => (
+                                  <tr key={`bench-${benchIdx}`} style={{ background: '#fefce8' }}>
+                                    <td style={{ position: 'sticky', left: 0, background: '#fefce8', zIndex: 10, borderBottom: '1px solid var(--border-color)',
+                                                padding: '8px', fontWeight: '600', textAlign: 'center', color: '#854d0e' }}>
+                                      B{benchIdx + 1}
+                                    </td>
+                                    {[1, 2, 3, 4, 5, 6, 7].map(inning => {
+                                      const inningBench = gameBenchPlayers[inning] || [];
+                                      const benchPlayer = inningBench[benchIdx];
+                                      const isDropTarget = dropTarget?.type === 'bench' && dropTarget?.inning === inning && dropTarget?.benchIndex === benchIdx;
+                                      
+                                      return (
+                                        <td key={inning}
+                                          onDragOver={handleDragOver}
+                                          onDragEnter={(e) => handleDragEnter(e, { type: 'bench', inning, benchIndex: benchIdx })}
+                                          onDragLeave={handleDragLeave}
+                                          onDrop={(e) => handleDrop(e, { type: 'bench', inning, benchIndex: benchIdx })}
+                                          style={{ borderBottom: '1px solid var(--border-color)', padding: '4px', background: isDropTarget ? '#fef3c7' : '#fefce8',
+                                                  border: isDropTarget ? '2px dashed #ca8a04' : '1px solid var(--border-color)',
+                                                  transition: 'all 0.3s ease' }}>
+                                          {benchPlayer ? (
+                                            <PlayerCard player={benchPlayer} draggable={true} size="small"
+                                              onRemove={() => removeFromBench(inning, benchIdx)} />
+                                          ) : (
+                                            <div style={{ height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                          color: '#d1d5db', fontSize: '12px' }}>
+                                              Drop
+                                            </div>
+                                          )}
+                                        </td>
+                                      );
+                                    })}
+                                  </tr>
+                                ));
+                              })()}
+                            </tbody>
+                          </table>
+                        </div>
                       </div>
                     </div>
                   </>
@@ -762,12 +1287,21 @@ function RosterManagement() {
             )}
           </>
         )}
+
+        {!selectedTeam && (
+          <div style={{ background: 'var(--card-bg)', padding: '2rem', borderRadius: '16px', textAlign: 'center', boxShadow: 'var(--shadow-sm)', border: '1px solid var(--border-color)' }}>
+            <h3 style={{ marginTop: 0, color: 'var(--text-dark)' }}>Welcome to Roster Management</h3>
+            <p style={{ color: 'var(--text-light)' }}>Select your team to get started with RSVPs and lineup management</p>
+          </div>
+        )}
       </div>
     </div>
   );
 }
-
-ReactDOM.render(<RosterManagement />, document.getElementById('root'));
+</script>
+<script type="module">
+  import { NavigationComponent } from './nav-component.js';
+  // Navigation auto-initializes on load!
 </script>
 </body>
 </html>
