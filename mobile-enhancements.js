@@ -1,7 +1,7 @@
 /**
  * Mobile Enhancements JavaScript
  * Shared functionality for mobile-responsive improvements
- * @version 1.0.0
+ * @version 1.1.0 - Updated for new navigation system
  */
 
 (function() {
@@ -9,31 +9,9 @@
 
   // ========================================
   // MOBILE NAVIGATION
+  // NOTE: Main toggle handled by nav-component.js
+  // This file adds enhancements
   // ========================================
-
-  /**
-   * Toggle mobile navigation menu
-   */
-  window.toggleMobileMenu = function() {
-    const menu = document.getElementById('mobileNavMenu');
-    const hamburger = document.querySelector('.hamburger-menu');
-    
-    if (menu) {
-      const isOpen = menu.classList.toggle('open');
-      
-      // Update ARIA attributes for accessibility
-      if (hamburger) {
-        hamburger.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
-      }
-      
-      // Prevent body scroll when menu is open
-      if (isOpen) {
-        document.body.style.overflow = 'hidden';
-      } else {
-        document.body.style.overflow = '';
-      }
-    }
-  };
 
   /**
    * Close mobile menu when clicking outside
@@ -41,13 +19,16 @@
   function setupMobileMenuClickOutside() {
     document.addEventListener('click', function(event) {
       const menu = document.getElementById('mobileNavMenu');
-      const hamburger = document.querySelector('.hamburger-menu');
+      const hamburger = document.getElementById('mobileMenuBtn');
       
       if (!menu || !hamburger) return;
       
       // Check if click is outside menu and hamburger button
-      if (!menu.contains(event.target) && !hamburger.contains(event.target)) {
+      if (menu.classList.contains('open') && 
+          !menu.contains(event.target) && 
+          !hamburger.contains(event.target)) {
         menu.classList.remove('open');
+        document.body.style.overflow = '';
       }
     });
   }
@@ -56,17 +37,18 @@
    * Close mobile menu when navigation link is clicked
    */
   function setupMobileMenuAutoClose() {
-    const mobileNavItems = document.querySelectorAll('.mobile-nav-item');
-    mobileNavItems.forEach(item => {
-      item.addEventListener('click', function() {
+    // Use event delegation since menu items are dynamically added
+    document.addEventListener('click', function(event) {
+      if (event.target.classList.contains('mobile-nav-item')) {
         const menu = document.getElementById('mobileNavMenu');
-        if (menu) {
+        if (menu && menu.classList.contains('open')) {
           // Small delay to allow navigation to start
           setTimeout(() => {
             menu.classList.remove('open');
+            document.body.style.overflow = '';
           }, 200);
         }
-      });
+      }
     });
   }
 
@@ -270,21 +252,11 @@
         const menu = document.getElementById('mobileNavMenu');
         if (menu && menu.classList.contains('open')) {
           menu.classList.remove('open');
-          document.querySelector('.hamburger-menu')?.focus();
+          document.body.style.overflow = '';
+          document.getElementById('mobileMenuBtn')?.focus();
         }
       }
     });
-
-    // Toggle menu with Enter/Space on hamburger button
-    const hamburger = document.querySelector('.hamburger-menu');
-    if (hamburger) {
-      hamburger.addEventListener('keydown', function(e) {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          toggleMobileMenu();
-        }
-      });
-    }
   }
 
   /**
@@ -334,13 +306,15 @@
       // Swipe right to open menu (if closed)
       if (touchEndX > touchStartX + swipeThreshold && !menu.classList.contains('open')) {
         if (touchStartX < 50) { // Only if swipe started from left edge
-          toggleMobileMenu();
+          const btn = document.getElementById('mobileMenuBtn');
+          if (btn) btn.click();
         }
       }
       
       // Swipe left to close menu (if open)
       if (touchStartX > touchEndX + swipeThreshold && menu.classList.contains('open')) {
-        toggleMobileMenu();
+        menu.classList.remove('open');
+        document.body.style.overflow = '';
       }
     }
   }
@@ -378,24 +352,24 @@
   }
   
   /**
- * Optimize animations and transitions for mobile
- */
-function optimizePerformanceForMobile() {
-  if (window.innerWidth <= 768) {
-    // Reduce animation complexity on mobile
-    document.querySelectorAll('.card').forEach(card => {
-      card.style.transition = 'transform 0.2s ease, opacity 0.2s ease, box-shadow 0.2s ease';
-    });
-    
-    // Simplify news banner animation if needed
-    const newsContent = document.querySelector('.news-content');
-    if (newsContent) {
-      newsContent.style.animationDuration = '60s';
+   * Optimize animations and transitions for mobile
+   */
+  function optimizePerformanceForMobile() {
+    if (window.innerWidth <= 768) {
+      // Reduce animation complexity on mobile
+      document.querySelectorAll('.card').forEach(card => {
+        card.style.transition = 'transform 0.2s ease, opacity 0.2s ease, box-shadow 0.2s ease';
+      });
+      
+      // Simplify news banner animation if needed
+      const newsContent = document.querySelector('.news-content');
+      if (newsContent) {
+        newsContent.style.animationDuration = '60s';
+      }
+      
+      console.log('Performance optimizations applied for mobile');
     }
-    
-    console.log('Performance optimizations applied for mobile');
   }
-}
 
   // ========================================
   // INITIALIZATION
@@ -405,7 +379,7 @@ function optimizePerformanceForMobile() {
    * Initialize all mobile enhancements
    */
   function initializeMobileEnhancements() {
-    // Navigation
+    // Navigation enhancements (toggle is handled by nav-component.js)
     setupMobileMenuClickOutside();
     setupMobileMenuAutoClose();
     
@@ -422,7 +396,7 @@ function optimizePerformanceForMobile() {
     // Performance
     setupLazyLoading();
     optimizePerformanceForMobile();
-	  
+    
     // Accessibility
     setupKeyboardNavigation();
     
