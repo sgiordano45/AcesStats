@@ -260,6 +260,66 @@
             font-weight: 700;
         }
 
+        .molski-excellent { color: #28a745 !important; }
+        .molski-good { color: #20c997 !important; }
+        .molski-fair { color: #ffc107 !important; }
+        .molski-poor { color: #fd7e14 !important; }
+        .molski-unfair { color: #dc3545 !important; }
+
+        .molski-rankings-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1rem;
+        }
+
+        .molski-rankings-table th {
+            text-align: left;
+            padding: 0.75rem;
+            background: #f7fafc;
+            font-weight: 600;
+            color: var(--text-dark);
+            border-bottom: 2px solid var(--border-color);
+        }
+
+        .molski-rankings-table td {
+            padding: 0.75rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .molski-rankings-table tr:hover {
+            background: #f7fafc;
+        }
+
+        .molski-rankings-table .rank-cell {
+            font-weight: 700;
+            font-size: 1.1rem;
+            color: var(--text-light);
+            width: 60px;
+        }
+
+        .molski-rankings-table .team-cell {
+            font-weight: 600;
+            color: var(--text-dark);
+        }
+
+        .molski-rankings-table .score-cell {
+            font-weight: 700;
+            font-size: 1.1rem;
+            text-align: center;
+            width: 100px;
+        }
+
+        .molski-rankings-table .rating-cell {
+            text-align: center;
+            font-weight: 600;
+            width: 120px;
+        }
+
+        .molski-rankings-table tr.current-team {
+            background: #e6f7ff;
+            border-left: 4px solid var(--secondary-color);
+        }
+
         .content-card {
             background: var(--card-bg);
             border-radius: 16px;
@@ -578,6 +638,34 @@
                             </div>
                             <div class="stat-value" style="color: #8b5cf6;" id="awayGames">0</div>
                         </div>
+
+                        <div class="stat-card">
+                            <div class="stat-header">
+                                <span class="stat-icon">⚖️</span>
+                                <h3>MOLSKI Score</h3>
+                            </div>
+                            <div class="stat-value" id="molskiScore" style="color: var(--primary-color);">-</div>
+                            <div style="font-size: 0.75rem; color: var(--text-light); margin-top: 0.5rem;" id="molskiLabel">
+                                Calculating...
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="format-example" style="margin-bottom: 2rem;">
+                        <h3>📊 About MOLSKI Score</h3>
+                        <p style="margin-top: 0.5rem; line-height: 1.6;">
+                            <strong>MOLSKI (Measure Of League Schedule Kinship Imbalance)</strong> measures schedule fairness from 0-100:
+                        </p>
+                        <ul style="margin: 0.75rem 0 0 1.5rem; line-height: 1.8;">
+                            <li><strong style="color: #28a745;">0-15: Excellent</strong> - Very fair schedule balance</li>
+                            <li><strong style="color: #20c997;">16-30: Good</strong> - Minor imbalances</li>
+                            <li><strong style="color: #ffc107;">31-45: Fair</strong> - Moderate distribution issues</li>
+                            <li><strong style="color: #fd7e14;">46-60: Poor</strong> - Significant imbalances</li>
+                            <li><strong style="color: #dc3545;">61+: Unfair</strong> - Major scheduling inequity</li>
+                        </ul>
+                        <p style="margin-top: 0.75rem; font-size: 0.85rem; color: #666;">
+                            <em>Factors: Day distribution (40%), Time distribution (40%), Home/Away balance (20%)</em>
+                        </p>
                     </div>
 
                     <div class="content-card">
@@ -604,6 +692,16 @@
                     <div class="content-card">
                         <h3>Opponents</h3>
                         <div class="opponents-grid" id="opponentsList"></div>
+                    </div>
+
+                    <div class="content-card">
+                        <h3>
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M3 3h18v18H3zM9 3v18M15 3v18M3 9h18M3 15h18"/>
+                            </svg>
+                            League-wide MOLSKI Rankings
+                        </h3>
+                        <div id="leagueMolskiRankings"></div>
                     </div>
 
                     <div class="content-card">
@@ -707,6 +805,53 @@
             }
         }
 
+        /**
+         * Calculate MOLSKI - Measure Of League Schedule Kinship Imbalance
+         * Lower score = more fair schedule
+         * Components:
+         * 1. Day distribution variance (0-40 points)
+         * 2. Time distribution variance (0-40 points)
+         * 3. Home/Away imbalance (0-20 points)
+         */
+        function calculateMOLSKI(teamData, allTeamsData) {
+            let score = 0;
+            
+            // Component 1: Day Distribution Variance (0-40 points)
+            const dayDistribution = Object.values(teamData.dayBreakdown);
+            const avgGamesPerDay = dayDistribution.reduce((a, b) => a + b, 0) / dayDistribution.length;
+            const dayVariance = dayDistribution.reduce((sum, count) => {
+                return sum + Math.pow(count - avgGamesPerDay, 2);
+            }, 0) / dayDistribution.length;
+            const dayImbalance = Math.sqrt(dayVariance);
+            score += Math.min(40, dayImbalance * 8); // Scale to max 40
+            
+            // Component 2: Time Distribution Variance (0-40 points)
+            const timeDistribution = Object.values(teamData.timeBreakdown);
+            const avgGamesPerTime = timeDistribution.reduce((a, b) => a + b, 0) / timeDistribution.length;
+            const timeVariance = timeDistribution.reduce((sum, count) => {
+                return sum + Math.pow(count - avgGamesPerTime, 2);
+            }, 0) / timeDistribution.length;
+            const timeImbalance = Math.sqrt(timeVariance);
+            score += Math.min(40, timeImbalance * 8); // Scale to max 40
+            
+            // Component 3: Home/Away Balance (0-20 points)
+            const totalGames = teamData.games.length;
+            const idealSplit = totalGames / 2;
+            const homeAwayImbalance = Math.abs(teamData.homeGames - idealSplit);
+            const homeAwayPenalty = (homeAwayImbalance / totalGames) * 100;
+            score += Math.min(20, homeAwayPenalty); // Scale to max 20
+            
+            return Math.round(score);
+        }
+
+        function getMOLSKIRating(score) {
+            if (score <= 15) return { label: 'Excellent', class: 'molski-excellent' };
+            if (score <= 30) return { label: 'Good', class: 'molski-good' };
+            if (score <= 45) return { label: 'Fair', class: 'molski-fair' };
+            if (score <= 60) return { label: 'Poor', class: 'molski-poor' };
+            return { label: 'Unfair', class: 'molski-unfair' };
+        }
+
         function showAnalysis() {
             document.getElementById('uploadView').classList.add('hidden');
             document.getElementById('analysisView').classList.remove('hidden');
@@ -717,6 +862,7 @@
             
             renderTeamList();
             renderTeamData();
+            renderLeagueMolskiRankings();
         }
 
         function renderTeamList() {
@@ -735,6 +881,55 @@
             selectedTeam = team;
             renderTeamList();
             renderTeamData();
+            renderLeagueMolskiRankings();
+        }
+
+        function renderLeagueMolskiRankings() {
+            const teams = Object.keys(scheduleData);
+            
+            // Calculate MOLSKI for all teams
+            const teamScores = teams.map(team => {
+                const molskiScore = calculateMOLSKI(scheduleData[team], scheduleData);
+                const molskiRating = getMOLSKIRating(molskiScore);
+                return {
+                    team,
+                    score: molskiScore,
+                    rating: molskiRating
+                };
+            });
+            
+            // Sort by score (lower is better)
+            teamScores.sort((a, b) => a.score - b.score);
+            
+            const rankingsHTML = `
+                <table class="molski-rankings-table">
+                    <thead>
+                        <tr>
+                            <th class="rank-cell">Rank</th>
+                            <th class="team-cell">Team</th>
+                            <th class="score-cell">MOLSKI</th>
+                            <th class="rating-cell">Rating</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${teamScores.map((item, index) => `
+                            <tr class="${item.team === selectedTeam ? 'current-team' : ''}">
+                                <td class="rank-cell">#${index + 1}</td>
+                                <td class="team-cell">${item.team}</td>
+                                <td class="score-cell ${item.rating.class}">${item.score}</td>
+                                <td class="rating-cell ${item.rating.class}">${item.rating.label}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+                <div style="margin-top: 1rem; font-size: 0.85rem; color: var(--text-light); text-align: center;">
+                    League Average: ${Math.round(teamScores.reduce((sum, t) => sum + t.score, 0) / teamScores.length)} • 
+                    Best: ${teamScores[0].score} (${teamScores[0].team}) • 
+                    Worst: ${teamScores[teamScores.length - 1].score} (${teamScores[teamScores.length - 1].team})
+                </div>
+            `;
+            
+            document.getElementById('leagueMolskiRankings').innerHTML = rankingsHTML;
         }
 
         function renderTeamData() {
@@ -743,6 +938,14 @@
             document.getElementById('totalGames').textContent = data.games.length;
             document.getElementById('homeGames').textContent = data.homeGames;
             document.getElementById('awayGames').textContent = data.awayGames;
+            
+            // Calculate and display MOLSKI score
+            const molskiScore = calculateMOLSKI(data, scheduleData);
+            const molskiRating = getMOLSKIRating(molskiScore);
+            const molskiElement = document.getElementById('molskiScore');
+            molskiElement.textContent = molskiScore;
+            molskiElement.className = `stat-value ${molskiRating.class}`;
+            document.getElementById('molskiLabel').textContent = molskiRating.label + ' Fairness';
             
             const dayBreakdownHTML = Object.entries(data.dayBreakdown)
                 .sort((a, b) => b[1] - a[1])
