@@ -772,9 +772,44 @@ body {
     justify-content: center;
   }
 }
+/* Connection Status Indicator */
+.connection-status {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  background: #ffc107;
+  color: #856404;
+  padding: 10px 16px;
+  border-radius: 25px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  z-index: 9999;
+  font-size: 0.85rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.3s ease;
+}
+
+.connection-status.hidden {
+  display: none;
+}
+
+.connection-status.online {
+  background: #28a745;
+  color: white;
+}
+
+.connection-status .status-icon {
+  font-size: 1rem;
+}
 </style>
 </head>
 <body>
+<div id="connectionStatus" class="connection-status hidden">
+  <span class="status-icon">📡</span>
+  <span class="status-text">You're offline</span>
+</div>
 <div id="loadingOverlay" class="loading-overlay">
   <div class="softball-spinner"></div>
 </div>
@@ -820,6 +855,7 @@ let playerData = [];
 let previewData = [];
 let currentSeasonData = null;
 const today = new Date();
+today.setHours(0, 0, 0, 0); // Set to start of today
 
 const WEATHER_ZIP = "07092";
 const WEATHER_API_KEY = "c26153644bca587d9db1fc0256a01cf0";
@@ -1574,6 +1610,36 @@ function showError() {
     </div>
   `;
 }
+
+function updateConnectionStatus() {
+  const status = document.getElementById('connectionStatus');
+  if (!status) return;
+  
+  const icon = status.querySelector('.status-icon');
+  const text = status.querySelector('.status-text');
+  
+  if (navigator.onLine) {
+    // Show "Back online" message
+    status.classList.remove('hidden');  // SHOW IT FIRST
+    status.classList.add('online');
+    icon.textContent = '✅';
+    text.textContent = 'Back online';
+    
+    // Hide after 3 seconds
+    setTimeout(() => {
+      status.classList.add('hidden');
+    }, 3000);
+  } else {
+    // Show "You're offline" message
+    status.classList.remove('hidden', 'online');
+    icon.textContent = '📡';
+    text.textContent = "You're offline";
+  }
+}
+
+window.addEventListener('online', updateConnectionStatus);
+window.addEventListener('offline', updateConnectionStatus);
+if (!navigator.onLine) updateConnectionStatus();
 </script>
 <script type="module">
   import { NavigationComponent } from './nav-component.js';
