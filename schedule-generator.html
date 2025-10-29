@@ -1,0 +1,1806 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Schedule Generator - Mountainside Aces</title>
+  <meta name="theme-color" content="#2d5016">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <style>
+    :root {
+      --primary-color: #2d5016;
+      --secondary-color: #1a6b4a;
+      --accent-color: #ffd700;
+      --card-bg: #ffffff;
+      --text-dark: #2d3748;
+      --text-light: #718096;
+      --border-color: #e2e8f0;
+      --shadow-sm: 0 2px 8px rgba(0,0,0,0.08);
+      --shadow-md: 0 4px 16px rgba(0,0,0,0.12);
+      --shadow-lg: 0 12px 32px rgba(0,0,0,0.16);
+      --success-green: #22c55e;
+      --error-red: #ef4444;
+      --warning-yellow: #f59e0b;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: linear-gradient(135deg, #f7fafc 0%, #edf2f7 100%);
+      min-height: 100vh;
+      padding: 0;
+      color: var(--text-dark);
+    }
+
+    /* Loading Overlay */
+    .loading-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(255, 255, 255, 0.95);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+      transition: opacity 0.3s ease;
+    }
+
+    .loading-overlay.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .softball-spinner::before {
+      content: '⚾';
+      font-size: 80px;
+      animation: spin 1.5s ease-in-out infinite;
+    }
+
+    @keyframes spin {
+      0%, 100% {
+        transform: rotate(0deg) scale(1);
+      }
+      50% {
+        transform: rotate(180deg) scale(1.1);
+      }
+    }
+
+    /* Header */
+    .header {
+      background: #2d5016; /* Fallback solid color */
+      background: linear-gradient(135deg, #2d5016 0%, #1a6b4a 100%);
+      padding: 2rem 2rem 3rem;
+      box-shadow: var(--shadow-lg);
+      position: relative;
+      overflow: hidden;
+      color: white;
+    }
+
+    .header::before {
+      content: '';
+      position: absolute;
+      width: 300px;
+      height: 300px;
+      background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+      top: -100px;
+      right: -100px;
+      border-radius: 50%;
+    }
+
+    .header::after {
+      content: '🎯';
+      position: absolute;
+      font-size: 200px;
+      opacity: 0.05;
+      bottom: -50px;
+      left: -30px;
+      pointer-events: none;
+    }
+
+    .header-content {
+      max-width: 1400px;
+      margin: 0 auto;
+      text-align: center;
+      position: relative;
+      z-index: 1;
+      padding: 0 200px; /* Add padding to avoid button overlap */
+    }
+
+    .header h1 {
+      font-size: 3rem;
+      font-weight: 800;
+      margin-bottom: 1rem;
+      text-shadow: 0 2px 4px rgba(0,0,0,0.2);
+      color: white;
+    }
+
+    .header p {
+      font-size: 1.15rem;
+      opacity: 0.95;
+      max-width: 700px;
+      margin: 0 auto;
+      color: white;
+    }
+
+    /* Back Button */
+    .back-button {
+      position: absolute;
+      top: 2rem;
+      left: 2rem;
+      background: rgba(255, 255, 255, 0.15);
+      backdrop-filter: blur(10px);
+      color: white;
+      padding: 0.75rem 1.5rem;
+      border-radius: 8px;
+      text-decoration: none;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      transition: all 0.3s ease;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      z-index: 10;
+    }
+
+    .back-button:hover {
+      background: rgba(255, 255, 255, 0.25);
+      transform: translateX(-5px);
+    }
+
+    .back-button::before {
+      content: "←";
+      font-size: 1.2rem;
+    }
+
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 3rem 2rem;
+    }
+
+    .wizard-container {
+      display: grid;
+      grid-template-columns: 300px 1fr;
+      gap: 2rem;
+    }
+
+    .sidebar {
+      background: white;
+      border-radius: 12px;
+      padding: 1.5rem;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      height: fit-content;
+      position: sticky;
+      top: 2rem;
+    }
+
+    .step {
+      padding: 1rem;
+      margin-bottom: 0.5rem;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      border-left: 4px solid transparent;
+    }
+
+    .step.active {
+      background: linear-gradient(135deg, #e8f4f0 0%, #d4ebe3 100%);
+      border-left-color: var(--secondary-color);
+      font-weight: 600;
+    }
+
+    .step.completed {
+      background: #f0fdf4;
+      border-left-color: var(--success-green);
+    }
+
+    .step-number {
+      display: inline-block;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: var(--border-color);
+      color: var(--text-dark);
+      text-align: center;
+      line-height: 28px;
+      margin-right: 0.75rem;
+      font-weight: 700;
+      font-size: 0.9rem;
+    }
+
+    .step.active .step-number {
+      background: var(--secondary-color);
+      color: white;
+    }
+
+    .step.completed .step-number {
+      background: var(--success-green);
+      color: white;
+    }
+
+    .main-content {
+      background: white;
+      border-radius: 12px;
+      padding: 2rem;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      min-height: 600px;
+    }
+
+    .step-content {
+      display: none;
+    }
+
+    .step-content.active {
+      display: block;
+      animation: fadeIn 0.3s ease;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .step-header {
+      margin-bottom: 2rem;
+      padding-bottom: 1rem;
+      border-bottom: 2px solid var(--border-color);
+    }
+
+    .step-header h2 {
+      font-size: 1.8rem;
+      color: var(--primary-color);
+      margin-bottom: 0.5rem;
+    }
+
+    .step-header p {
+      color: var(--text-light);
+      font-size: 1rem;
+    }
+
+    .form-group {
+      margin-bottom: 1.5rem;
+    }
+
+    .form-group label {
+      display: block;
+      font-weight: 600;
+      color: var(--text-dark);
+      margin-bottom: 0.5rem;
+      font-size: 1rem;
+    }
+
+    .form-group select,
+    .form-group input {
+      width: 100%;
+      padding: 0.75rem;
+      border: 2px solid var(--border-color);
+      border-radius: 8px;
+      font-size: 1rem;
+      transition: border-color 0.3s ease;
+    }
+
+    .form-group select:focus,
+    .form-group input:focus {
+      outline: none;
+      border-color: var(--secondary-color);
+    }
+
+    .time-slots-container {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+      gap: 0.75rem;
+      margin-top: 0.75rem;
+      padding: 1rem;
+      background: #f8f9fa;
+      border-radius: 8px;
+    }
+
+    .time-slot {
+      padding: 0.5rem;
+      border: 2px solid var(--border-color);
+      background: white;
+      border-radius: 6px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      font-weight: 600;
+      font-size: 0.9rem;
+    }
+
+    .time-slot.selected {
+      background: linear-gradient(135deg, #e8f4f0 0%, #d4ebe3 100%);
+      border-color: var(--secondary-color);
+      color: var(--primary-color);
+    }
+
+    .time-slot:hover {
+      border-color: var(--secondary-color);
+      transform: translateY(-2px);
+    }
+
+    .restriction-row {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 0.75rem;
+      flex-wrap: wrap;
+    }
+
+    .restriction-team,
+    .restriction-day {
+      padding: 0.5rem;
+      border: 2px solid var(--border-color);
+      border-radius: 6px;
+      font-size: 0.9rem;
+      min-width: 150px;
+    }
+
+    .btn-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      border: 2px solid var(--error-red);
+      background: white;
+      color: var(--error-red);
+      cursor: pointer;
+      font-weight: bold;
+      transition: all 0.2s ease;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .btn-icon:hover {
+      background: var(--error-red);
+      color: white;
+    }
+
+    .info-card {
+      background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+      border-left: 4px solid #3b82f6;
+      padding: 1rem;
+      border-radius: 8px;
+      margin-bottom: 1.5rem;
+    }
+
+    .info-card.warning {
+      background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+      border-left-color: var(--warning-yellow);
+    }
+
+    .info-card.success {
+      background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
+      border-left-color: var(--success-green);
+    }
+
+    .team-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 1rem;
+      margin-top: 1rem;
+    }
+
+    .team-checkbox {
+      background: white;
+      border: 2px solid var(--border-color);
+      border-radius: 8px;
+      padding: 1rem;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .team-checkbox:hover {
+      border-color: var(--secondary-color);
+      transform: translateY(-2px);
+      box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    }
+
+    .team-checkbox.selected {
+      background: linear-gradient(135deg, #e8f4f0 0%, #d4ebe3 100%);
+      border-color: var(--secondary-color);
+      border-width: 3px;
+    }
+
+    .team-checkbox input[type="checkbox"] {
+      width: 20px;
+      height: 20px;
+      cursor: pointer;
+    }
+
+    .team-checkbox label {
+      font-weight: 600;
+      color: var(--text-dark);
+      cursor: pointer;
+      flex: 1;
+      margin: 0;
+    }
+
+    .button-group {
+      display: flex;
+      gap: 1rem;
+      margin-top: 2rem;
+      padding-top: 2rem;
+      border-top: 2px solid var(--border-color);
+    }
+
+    .btn {
+      padding: 0.875rem 1.75rem;
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, var(--secondary-color) 0%, var(--primary-color) 100%);
+      color: white;
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(45, 80, 22, 0.3);
+    }
+
+    .btn-secondary {
+      background: white;
+      color: var(--text-dark);
+      border: 2px solid var(--border-color);
+    }
+
+    .btn-secondary:hover {
+      border-color: var(--secondary-color);
+      color: var(--secondary-color);
+    }
+
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1rem;
+      margin-top: 1.5rem;
+    }
+
+    .stat-card {
+      background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+      border-radius: 8px;
+      padding: 1.25rem;
+      text-align: center;
+    }
+
+    .stat-value {
+      font-size: 2.5rem;
+      font-weight: 800;
+      color: var(--primary-color);
+      display: block;
+      margin-bottom: 0.25rem;
+    }
+
+    .stat-label {
+      font-size: 0.9rem;
+      color: var(--text-light);
+      font-weight: 600;
+    }
+
+    .schedule-preview {
+      margin-top: 2rem;
+    }
+
+    .schedule-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 1rem;
+      font-size: 0.9rem;
+    }
+
+    .schedule-table th,
+    .schedule-table td {
+      padding: 0.75rem;
+      text-align: left;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .schedule-table th {
+      background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+      font-weight: 700;
+      color: var(--text-dark);
+      position: sticky;
+      top: 0;
+    }
+
+    .schedule-table tr:hover {
+      background: #f8f9fa;
+    }
+
+    .loading {
+      text-align: center;
+      padding: 3rem;
+      color: var(--text-light);
+    }
+
+    .spinner {
+      border: 4px solid var(--border-color);
+      border-top: 4px solid var(--secondary-color);
+      border-radius: 50%;
+      width: 50px;
+      height: 50px;
+      animation: spin-loader 1s linear infinite;
+      margin: 0 auto 1rem;
+    }
+
+    @keyframes spin-loader {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    .quick-select {
+      display: flex;
+      gap: 0.5rem;
+      margin-top: 0.5rem;
+    }
+
+    .quick-select button {
+      padding: 0.5rem 1rem;
+      border: 2px solid var(--border-color);
+      background: white;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.9rem;
+      font-weight: 600;
+      transition: all 0.2s ease;
+    }
+
+    .quick-select button:hover {
+      border-color: var(--secondary-color);
+      color: var(--secondary-color);
+    }
+
+    .parameter-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 1.5rem;
+    }
+
+    .alert {
+      padding: 1rem;
+      border-radius: 8px;
+      margin-bottom: 1.5rem;
+      display: flex;
+      align-items: start;
+      gap: 0.75rem;
+    }
+
+    .alert.error {
+      background: #fee;
+      border-left: 4px solid var(--error-red);
+      color: #991b1b;
+    }
+
+    .alert.success {
+      background: #d1fae5;
+      border-left: 4px solid var(--success-green);
+      color: #065f46;
+    }
+
+    .balance-indicator {
+      display: inline-block;
+      padding: 0.25rem 0.75rem;
+      border-radius: 12px;
+      font-size: 0.85rem;
+      font-weight: 700;
+      margin-left: 0.5rem;
+    }
+
+    .balance-indicator.excellent {
+      background: #d1fae5;
+      color: #065f46;
+    }
+
+    .balance-indicator.good {
+      background: #dbeafe;
+      color: #1e40af;
+    }
+
+    .balance-indicator.fair {
+      background: #fef3c7;
+      color: #92400e;
+    }
+
+    .balance-indicator.poor {
+      background: #fee;
+      color: #991b1b;
+    }
+
+    @media (max-width: 768px) {
+      .back-button {
+        top: 1rem;
+        left: 1rem;
+        padding: 0.6rem 1.2rem;
+        font-size: 0.9rem;
+      }
+
+      .header {
+        padding: 5rem 1rem 3rem;
+      }
+
+      .header-content {
+        padding: 0 1rem; /* Reduce padding on mobile */
+      }
+
+      .header h1 {
+        font-size: 2.2rem;
+      }
+
+      .header p {
+        font-size: 1rem;
+      }
+
+      .wizard-container {
+        grid-template-columns: 1fr;
+      }
+
+      .sidebar {
+        position: static;
+        order: 2;
+      }
+
+      .main-content {
+        order: 1;
+      }
+
+      .parameter-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .container {
+        padding: 2rem 1rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <!-- Loading Overlay -->
+  <div id="loadingOverlay" class="loading-overlay">
+    <div class="softball-spinner"></div>
+  </div>
+
+  <!-- Header -->
+  <div class="header">
+    <a href="offseason.html" class="back-button">Back to Offseason Hub</a>
+    <div class="header-content">
+      <h1>📅 Schedule Generator</h1>
+      <p>Create balanced schedules for summer (20 games) or fall (12 games) seasons with automatic time slot assignment</p>
+    </div>
+  </div>
+
+    <div class="wizard-container">
+      <!-- Sidebar Navigation -->
+      <div class="sidebar">
+        <div class="step active" data-step="1">
+          <span class="step-number">1</span>
+          <span>Season Type</span>
+        </div>
+        <div class="step" data-step="2">
+          <span class="step-number">2</span>
+          <span>Select Teams</span>
+        </div>
+        <div class="step" data-step="3">
+          <span class="step-number">3</span>
+          <span>Parameters</span>
+        </div>
+        <div class="step" data-step="4">
+          <span class="step-number">4</span>
+          <span>Generate & Review</span>
+        </div>
+        <div class="step" data-step="5">
+          <span class="step-number">5</span>
+          <span>Export Schedule</span>
+        </div>
+      </div>
+
+      <!-- Main Content -->
+      <div class="main-content">
+        <!-- Step 1: Season Type -->
+        <div class="step-content active" data-step="1">
+          <div class="step-header">
+            <h2>Step 1: Choose Season Type</h2>
+            <p>Select whether you're creating a summer or fall schedule</p>
+          </div>
+
+          <div class="form-group">
+            <label for="seasonType">Season Type</label>
+            <select id="seasonType">
+              <option value="">-- Select Season Type --</option>
+              <option value="summer">Summer (20 games per team)</option>
+              <option value="fall">Fall (12 games per team)</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="seasonYear">Year</label>
+            <input type="number" id="seasonYear" placeholder="e.g., 2025" min="2025" max="2030" value="2025">
+          </div>
+
+          <div id="seasonInfo" style="display: none;">
+            <div class="info-card">
+              <strong>☀️ Summer League Schedule:</strong>
+              <ul style="margin-left: 1.5rem; margin-top: 0.5rem;">
+                <li>20 games per team</li>
+                <li><strong>Game Days:</strong> Monday, Tuesday, Wednesday</li>
+                <li><strong>Time Slots:</strong> 7:00 PM, 8:00 PM, 9:00 PM (3 games per night)</li>
+                <li><strong>Weekly Limit:</strong> Each team plays max 4 games per Mon-Wed week</li>
+                <li>Double headers allowed but minimized</li>
+                <li>Minimum 8 players to start</li>
+              </ul>
+            </div>
+          </div>
+
+          <div id="fallInfo" style="display: none;">
+            <div class="info-card">
+              <strong>🍂 Fall League Schedule:</strong>
+              <ul style="margin-left: 1.5rem; margin-top: 0.5rem;">
+                <li>12 games per team</li>
+                <li><strong>Primary Day:</strong> Sundays</li>
+                <li><strong>Time Slots:</strong> 8:00 AM, 9:00 AM, 10:00 AM, 11:00 AM, 12:00 PM (5 games per Sunday)</li>
+                <li><strong>Frequency:</strong> Each team plays once per Sunday</li>
+                <li>Optional weeknight games for late season/makeup games</li>
+                <li>Minimum 7 players to start</li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="button-group">
+            <button class="btn btn-primary" onclick="nextStep()" id="step1Next" disabled>
+              Next Step →
+            </button>
+          </div>
+        </div>
+
+        <!-- Step 2: Select Teams -->
+        <div class="step-content" data-step="2">
+          <div class="step-header">
+            <h2>Step 2: Select Teams</h2>
+            <p>Choose which teams to include in the schedule</p>
+          </div>
+
+          <div class="quick-select">
+            <button onclick="selectAllTeams()">✓ Select All</button>
+            <button onclick="deselectAllTeams()">✗ Deselect All</button>
+          </div>
+
+          <div class="team-grid" id="teamGrid">
+            <div class="loading">
+              <div class="spinner"></div>
+              Loading teams...
+            </div>
+          </div>
+
+          <div id="teamWarning" style="display: none;">
+            <div class="alert error">
+              <strong>⚠️</strong>
+              <span>You must select at least 4 teams to generate a balanced schedule.</span>
+            </div>
+          </div>
+
+          <div class="button-group">
+            <button class="btn btn-secondary" onclick="previousStep()">← Previous</button>
+            <button class="btn btn-primary" onclick="nextStep()" id="step2Next" disabled>Next Step →</button>
+          </div>
+        </div>
+
+        <!-- Step 3: Parameters -->
+        <div class="step-content" data-step="3">
+          <div class="step-header">
+            <h2>Step 3: Schedule Parameters</h2>
+            <p>Configure scheduling details and time slots</p>
+          </div>
+
+          <div class="info-card">
+            <strong>📊 Current Configuration:</strong>
+            <div id="configSummary" style="margin-top: 0.5rem;"></div>
+          </div>
+
+          <div class="parameter-grid">
+            <div class="form-group">
+              <label for="startDate">Season Start Date</label>
+              <input type="date" id="startDate">
+            </div>
+
+            <div class="form-group" id="gamesPerWeekGroup" style="display: none;">
+              <label for="gamesPerWeek">Max Games Per Week (Per Team)</label>
+              <input type="number" id="gamesPerWeek" min="1" max="4" value="4">
+              <small style="color: var(--text-light); display: block; margin-top: 0.25rem;">
+                Summer: Limit team to 4 games in a Mon-Wed week
+              </small>
+            </div>
+          </div>
+
+          <!-- Time Slot Selection -->
+          <div class="form-group" id="timeSlotsGroup">
+            <label>Select Time Slots</label>
+            <div class="time-slots-container" id="timeSlotContainer">
+              <!-- Time slots will be dynamically populated -->
+            </div>
+          </div>
+
+          <!-- Team Scheduling Restrictions -->
+          <div class="form-group">
+            <label>Team Scheduling Restrictions (Optional)</label>
+            <p style="font-size: 0.9rem; color: var(--text-light); margin-bottom: 1rem;">
+              Specify if any teams cannot play on certain days of the week
+            </p>
+            <div id="restrictionsContainer">
+              <div class="restriction-row">
+                <select class="restriction-team">
+                  <option value="">-- Select Team --</option>
+                </select>
+                <span style="padding: 0 0.5rem;">cannot play on</span>
+                <select class="restriction-day">
+                  <option value="">-- Select Day --</option>
+                  <option value="sunday">Sunday</option>
+                  <option value="monday">Monday</option>
+                  <option value="tuesday">Tuesday</option>
+                  <option value="wednesday">Wednesday</option>
+                  <option value="thursday">Thursday</option>
+                  <option value="friday">Friday</option>
+                  <option value="saturday">Saturday</option>
+                </select>
+                <button type="button" class="btn-icon" onclick="removeRestriction(this)" style="display: none;">
+                  ✕
+                </button>
+              </div>
+            </div>
+            <button type="button" class="btn btn-secondary" onclick="addRestriction()" style="margin-top: 0.5rem; padding: 0.5rem 1rem;">
+              + Add Restriction
+            </button>
+          </div>
+
+          <div class="form-group">
+            <label for="balanceHomeAway">
+              <input type="checkbox" id="balanceHomeAway" checked style="width: auto; display: inline; margin-right: 0.5rem;">
+              Balance Home/Away Games
+            </label>
+          </div>
+
+          <div class="form-group">
+            <label for="minimizeDoubleHeaders">
+              <input type="checkbox" id="minimizeDoubleHeaders" checked style="width: auto; display: inline; margin-right: 0.5rem;">
+              Minimize Double Headers (Summer Only)
+            </label>
+          </div>
+
+          <div class="button-group">
+            <button class="btn btn-secondary" onclick="previousStep()">← Previous</button>
+            <button class="btn btn-primary" onclick="nextStep()">Next Step →</button>
+          </div>
+        </div>
+
+        <!-- Step 4: Generate & Review -->
+        <div class="step-content" data-step="4">
+          <div class="step-header">
+            <h2>Step 4: Generate & Review Schedule</h2>
+            <p>Generate your schedule and review for balance</p>
+          </div>
+
+          <div class="stats-grid" id="scheduleStats">
+            <div class="stat-card">
+              <span class="stat-value" id="totalGames">--</span>
+              <span class="stat-label">Total Games</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-value" id="weeksNeeded">--</span>
+              <span class="stat-label">Weeks Needed</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-value" id="avgGamesPerTeam">--</span>
+              <span class="stat-label">Avg Games/Team</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-value" id="homeAwayBalance">--</span>
+              <span class="stat-label">Balance Score</span>
+            </div>
+          </div>
+
+          <div id="generationStatus" style="display: none;">
+            <div class="alert success">
+              <strong>✓</strong>
+              <span>Schedule generated successfully! Review the games below.</span>
+            </div>
+          </div>
+
+          <div class="button-group">
+            <button class="btn btn-primary" onclick="generateSchedule()" id="generateBtn">
+              🎲 Generate Schedule
+            </button>
+            <button class="btn btn-secondary" onclick="regenerateSchedule()" id="regenerateBtn" style="display: none;">
+              🔄 Regenerate
+            </button>
+          </div>
+
+          <div class="schedule-preview" id="schedulePreview" style="display: none;">
+            <h3>Schedule Preview</h3>
+            <div style="max-height: 500px; overflow-y: auto;">
+              <table class="schedule-table" id="scheduleTable">
+                <thead>
+                  <tr>
+                    <th>Week</th>
+                    <th>Date & Time</th>
+                    <th>Home Team</th>
+                    <th>Away Team</th>
+                    <th>Balance</th>
+                  </tr>
+                </thead>
+                <tbody id="scheduleBody">
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="button-group" id="step4Buttons" style="display: none;">
+            <button class="btn btn-secondary" onclick="previousStep()">← Previous</button>
+            <button class="btn btn-primary" onclick="nextStep()">Export Schedule →</button>
+          </div>
+        </div>
+
+        <!-- Step 5: Export -->
+        <div class="step-content" data-step="5">
+          <div class="step-header">
+            <h2>Step 5: Export Schedule</h2>
+            <p>Save your schedule to Firebase or download as CSV</p>
+          </div>
+
+          <div class="info-card success">
+            <strong>✓ Schedule Ready</strong>
+            <p style="margin-top: 0.5rem;">Your schedule has been generated and is ready to export.</p>
+          </div>
+
+          <div class="stats-grid">
+            <div class="stat-card">
+              <span class="stat-value" id="exportTotalGames">--</span>
+              <span class="stat-label">Games to Export</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-value" id="exportSeasonId">--</span>
+              <span class="stat-label">Season ID</span>
+            </div>
+          </div>
+
+          <div class="button-group">
+            <button class="btn btn-primary" onclick="exportToFirebase()">
+              ☁️ Export to Firebase
+            </button>
+            <button class="btn btn-secondary" onclick="downloadCSV()">
+              📥 Download CSV
+            </button>
+          </div>
+
+          <div id="exportStatus"></div>
+
+          <div class="button-group" style="border-top: none; padding-top: 0; margin-top: 2rem;">
+            <button class="btn btn-secondary" onclick="previousStep()">← Previous</button>
+            <button class="btn btn-primary" onclick="startOver()">
+              🔄 Create Another Schedule
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { db, collection, getDocs } from './firebase-config.js';
+    import { addDoc } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+
+    // Global state
+    let currentStep = 1;
+    let scheduleConfig = {
+      seasonType: '',
+      seasonYear: 2025,
+      selectedTeams: [],
+      startDate: '',
+      gamesPerWeek: 4,
+      timeSlots: [],
+      teamRestrictions: [], // Array of {teamId, teamName, restrictedDay}
+      balanceHomeAway: true,
+      minimizeDoubleHeaders: true,
+      generatedSchedule: []
+    };
+
+    // Initialize
+    async function init() {
+      try {
+        await loadTeams();
+        setupEventListeners();
+        setDefaultStartDate();
+        
+        // Hide loading overlay after everything is loaded
+        setTimeout(() => {
+          document.getElementById('loadingOverlay').classList.add('hidden');
+        }, 500);
+      } catch (error) {
+        console.error('Initialization error:', error);
+        // Hide loading overlay even on error
+        document.getElementById('loadingOverlay').classList.add('hidden');
+        alert('Error loading schedule generator. Please refresh the page.');
+      }
+    }
+
+    function setupEventListeners() {
+      document.getElementById('seasonType').addEventListener('change', (e) => {
+        const value = e.target.value;
+        scheduleConfig.seasonType = value;
+        
+        document.getElementById('seasonInfo').style.display = value === 'summer' ? 'block' : 'none';
+        document.getElementById('fallInfo').style.display = value === 'fall' ? 'block' : 'none';
+        document.getElementById('step1Next').disabled = !value;
+        
+        // Update time slots for step 3
+        if (value) {
+          populateTimeSlots(value);
+        }
+      });
+
+      document.getElementById('seasonYear').addEventListener('change', (e) => {
+        scheduleConfig.seasonYear = parseInt(e.target.value);
+      });
+    }
+
+    function populateTimeSlots(seasonType) {
+      const container = document.getElementById('timeSlotContainer');
+      const gamesPerWeekGroup = document.getElementById('gamesPerWeekGroup');
+      
+      if (seasonType === 'fall') {
+        gamesPerWeekGroup.style.display = 'none';
+        // Fall: Sunday time slots
+        const fallSlots = ['8:00 AM', '9:00 AM', '10:00 AM', '11:00 AM', '12:00 PM'];
+        container.innerHTML = fallSlots.map(slot => `
+          <div class="time-slot selected" data-time="${slot}" onclick="toggleTimeSlot(this)">
+            ${slot}
+          </div>
+        `).join('');
+        scheduleConfig.timeSlots = [...fallSlots];
+      } else if (seasonType === 'summer') {
+        gamesPerWeekGroup.style.display = 'block';
+        // Summer: Mon-Wed evening slots
+        const summerSlots = ['7:00 PM', '8:00 PM', '9:00 PM'];
+        container.innerHTML = summerSlots.map(slot => `
+          <div class="time-slot selected" data-time="${slot}" onclick="toggleTimeSlot(this)">
+            ${slot}
+          </div>
+        `).join('');
+        scheduleConfig.timeSlots = [...summerSlots];
+      }
+    }
+
+    window.toggleTimeSlot = function(element) {
+      const time = element.dataset.time;
+      element.classList.toggle('selected');
+      
+      if (element.classList.contains('selected')) {
+        if (!scheduleConfig.timeSlots.includes(time)) {
+          scheduleConfig.timeSlots.push(time);
+        }
+      } else {
+        scheduleConfig.timeSlots = scheduleConfig.timeSlots.filter(t => t !== time);
+      }
+    }
+
+    function populateRestrictionTeams() {
+      const selects = document.querySelectorAll('.restriction-team');
+      const teamsHtml = '<option value="">-- Select Team --</option>' + 
+        scheduleConfig.selectedTeams.map(team => 
+          `<option value="${team.id}">${team.name}</option>`
+        ).join('');
+      
+      selects.forEach(select => {
+        const currentValue = select.value;
+        select.innerHTML = teamsHtml;
+        select.value = currentValue;
+      });
+    }
+
+    window.addRestriction = function() {
+      const container = document.getElementById('restrictionsContainer');
+      const newRow = document.createElement('div');
+      newRow.className = 'restriction-row';
+      newRow.innerHTML = `
+        <select class="restriction-team">
+          <option value="">-- Select Team --</option>
+          ${scheduleConfig.selectedTeams.map(team => 
+            `<option value="${team.id}">${team.name}</option>`
+          ).join('')}
+        </select>
+        <span style="padding: 0 0.5rem;">cannot play on</span>
+        <select class="restriction-day">
+          <option value="">-- Select Day --</option>
+          <option value="sunday">Sunday</option>
+          <option value="monday">Monday</option>
+          <option value="tuesday">Tuesday</option>
+          <option value="wednesday">Wednesday</option>
+          <option value="thursday">Thursday</option>
+          <option value="friday">Friday</option>
+          <option value="saturday">Saturday</option>
+        </select>
+        <button type="button" class="btn-icon" onclick="removeRestriction(this)">
+          ✕
+        </button>
+      `;
+      container.appendChild(newRow);
+      
+      // Show remove button on all rows when there's more than one
+      updateRemoveButtons();
+    }
+
+    window.removeRestriction = function(button) {
+      button.closest('.restriction-row').remove();
+      updateRemoveButtons();
+    }
+
+    function updateRemoveButtons() {
+      const rows = document.querySelectorAll('.restriction-row');
+      rows.forEach((row, index) => {
+        const removeBtn = row.querySelector('.btn-icon');
+        if (removeBtn) {
+          removeBtn.style.display = rows.length > 1 ? 'inline-flex' : 'none';
+        }
+      });
+    }
+
+    function captureRestrictions() {
+      scheduleConfig.teamRestrictions = [];
+      const rows = document.querySelectorAll('.restriction-row');
+      
+      rows.forEach(row => {
+        const teamSelect = row.querySelector('.restriction-team');
+        const daySelect = row.querySelector('.restriction-day');
+        
+        if (teamSelect.value && daySelect.value) {
+          const teamId = teamSelect.value;
+          const team = scheduleConfig.selectedTeams.find(t => t.id === teamId);
+          
+          scheduleConfig.teamRestrictions.push({
+            teamId: teamId,
+            teamName: team ? team.name : teamId,
+            restrictedDay: daySelect.value
+          });
+        }
+      });
+      
+      console.log('📋 Team restrictions:', scheduleConfig.teamRestrictions);
+    }
+
+    function setDefaultStartDate() {
+      const today = new Date();
+      const nextMonth = new Date(today.getFullYear(), today.getMonth() + 1, 1);
+      document.getElementById('startDate').value = nextMonth.toISOString().split('T')[0];
+    }
+
+    async function loadTeams() {
+      try {
+        const teamsSnapshot = await getDocs(collection(db, 'teams'));
+        const teams = [];
+        
+        teamsSnapshot.forEach(doc => {
+          const data = doc.data();
+          teams.push({
+            id: doc.id,
+            name: data.name || doc.id.charAt(0).toUpperCase() + doc.id.slice(1)
+          });
+        });
+
+        teams.sort((a, b) => a.name.localeCompare(b.name));
+
+        const teamGrid = document.getElementById('teamGrid');
+        teamGrid.innerHTML = teams.map(team => `
+          <div class="team-checkbox" onclick="toggleTeam('${team.id}', '${team.name}')">
+            <input type="checkbox" id="team-${team.id}" data-team-id="${team.id}" data-team-name="${team.name}">
+            <label for="team-${team.id}">${team.name}</label>
+          </div>
+        `).join('');
+
+      } catch (error) {
+        console.error('Error loading teams:', error);
+        document.getElementById('teamGrid').innerHTML = 
+          '<div class="alert error">Error loading teams. Please refresh the page.</div>';
+      }
+    }
+
+    window.toggleTeam = function(teamId, teamName) {
+      const checkbox = document.getElementById(`team-${teamId}`);
+      checkbox.checked = !checkbox.checked;
+      
+      const teamBox = checkbox.parentElement;
+      if (checkbox.checked) {
+        teamBox.classList.add('selected');
+        if (!scheduleConfig.selectedTeams.find(t => t.id === teamId)) {
+          scheduleConfig.selectedTeams.push({ id: teamId, name: teamName });
+        }
+      } else {
+        teamBox.classList.remove('selected');
+        scheduleConfig.selectedTeams = scheduleConfig.selectedTeams.filter(t => t.id !== teamId);
+      }
+
+      updateTeamWarning();
+    }
+
+    window.selectAllTeams = function() {
+      document.querySelectorAll('.team-checkbox input[type="checkbox"]').forEach(cb => {
+        if (!cb.checked) {
+          const teamId = cb.dataset.teamId;
+          const teamName = cb.dataset.teamName;
+          cb.checked = true;
+          cb.parentElement.classList.add('selected');
+          if (!scheduleConfig.selectedTeams.find(t => t.id === teamId)) {
+            scheduleConfig.selectedTeams.push({ id: teamId, name: teamName });
+          }
+        }
+      });
+      updateTeamWarning();
+    }
+
+    window.deselectAllTeams = function() {
+      document.querySelectorAll('.team-checkbox input[type="checkbox"]').forEach(cb => {
+        cb.checked = false;
+        cb.parentElement.classList.remove('selected');
+      });
+      scheduleConfig.selectedTeams = [];
+      updateTeamWarning();
+    }
+
+    function updateTeamWarning() {
+      const warning = document.getElementById('teamWarning');
+      const nextBtn = document.getElementById('step2Next');
+      
+      if (scheduleConfig.selectedTeams.length < 4) {
+        warning.style.display = 'block';
+        nextBtn.disabled = true;
+      } else {
+        warning.style.display = 'none';
+        nextBtn.disabled = false;
+      }
+    }
+
+    window.nextStep = function() {
+      if (currentStep === 2) {
+        // Populate team dropdowns in restrictions when moving to step 3
+        populateRestrictionTeams();
+      }
+      
+      if (currentStep === 3) {
+        captureParameters();
+        updateConfigSummary();
+      }
+
+      const currentContent = document.querySelector(`.step-content[data-step="${currentStep}"]`);
+      const currentNav = document.querySelector(`.step[data-step="${currentStep}"]`);
+      
+      currentContent.classList.remove('active');
+      currentNav.classList.remove('active');
+      currentNav.classList.add('completed');
+
+      currentStep++;
+
+      const nextContent = document.querySelector(`.step-content[data-step="${currentStep}"]`);
+      const nextNav = document.querySelector(`.step[data-step="${currentStep}"]`);
+      
+      nextContent.classList.add('active');
+      nextNav.classList.add('active');
+
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    window.previousStep = function() {
+      const currentContent = document.querySelector(`.step-content[data-step="${currentStep}"]`);
+      const currentNav = document.querySelector(`.step[data-step="${currentStep}"]`);
+      
+      currentContent.classList.remove('active');
+      currentNav.classList.remove('active');
+
+      currentStep--;
+
+      const prevContent = document.querySelector(`.step-content[data-step="${currentStep}"]`);
+      const prevNav = document.querySelector(`.step[data-step="${currentStep}"]`);
+      
+      prevContent.classList.add('active');
+      prevNav.classList.remove('completed');
+      prevNav.classList.add('active');
+
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function captureParameters() {
+      scheduleConfig.startDate = document.getElementById('startDate').value;
+      scheduleConfig.gamesPerWeek = parseInt(document.getElementById('gamesPerWeek').value) || 4;
+      scheduleConfig.balanceHomeAway = document.getElementById('balanceHomeAway').checked;
+      scheduleConfig.minimizeDoubleHeaders = document.getElementById('minimizeDoubleHeaders').checked;
+      captureRestrictions();
+    }
+
+    function updateConfigSummary() {
+      const gamesPerTeam = scheduleConfig.seasonType === 'summer' ? 20 : 12;
+      const gameDays = scheduleConfig.seasonType === 'fall' ? 'Sundays' : 'Mon/Tue/Wed';
+      
+      let restrictionsText = '';
+      if (scheduleConfig.teamRestrictions.length > 0) {
+        restrictionsText = '<br><strong>Restrictions:</strong> ';
+        restrictionsText += scheduleConfig.teamRestrictions.map(r => 
+          `${r.teamName} (no ${r.restrictedDay.charAt(0).toUpperCase() + r.restrictedDay.slice(1)}s)`
+        ).join(', ');
+      }
+      
+      const summary = `
+        <strong>${scheduleConfig.seasonYear} ${scheduleConfig.seasonType.charAt(0).toUpperCase() + scheduleConfig.seasonType.slice(1)} Season</strong><br>
+        ${scheduleConfig.selectedTeams.length} teams • ${gamesPerTeam} games per team<br>
+        Starting ${new Date(scheduleConfig.startDate).toLocaleDateString()}<br>
+        Game days: ${gameDays} • Time slots: ${scheduleConfig.timeSlots.join(', ')}${restrictionsText}
+      `;
+      document.getElementById('configSummary').innerHTML = summary;
+    }
+
+    window.generateSchedule = function() {
+      const gamesPerTeam = scheduleConfig.seasonType === 'summer' ? 20 : 12;
+      const teams = scheduleConfig.selectedTeams;
+      const numTeams = teams.length;
+
+      // Calculate total games needed
+      const totalGames = (numTeams * gamesPerTeam) / 2;
+
+      // Generate round-robin schedule
+      const schedule = [];
+      const teamArray = [...teams];
+      
+      // If odd number of teams, add a "BYE"
+      if (numTeams % 2 !== 0) {
+        teamArray.push({ id: 'bye', name: 'BYE' });
+      }
+
+      const n = teamArray.length;
+      const rounds = gamesPerTeam; // Each team plays this many games
+
+      // Round-robin algorithm
+      for (let round = 0; round < rounds; round++) {
+        const roundGames = [];
+        
+        for (let i = 0; i < n / 2; i++) {
+          const home = teamArray[i];
+          const away = teamArray[n - 1 - i];
+          
+          if (home.id !== 'bye' && away.id !== 'bye') {
+            // Alternate home/away each round
+            if (round % 2 === 0) {
+              roundGames.push({ home, away });
+            } else {
+              roundGames.push({ home: away, away: home });
+            }
+          }
+        }
+
+        // Rotate teams (keep first team fixed)
+        const last = teamArray.pop();
+        teamArray.splice(1, 0, last);
+
+        schedule.push(...roundGames);
+      }
+
+      // Trim to exact number of games needed
+      const finalSchedule = schedule.slice(0, totalGames);
+
+      // Assign dates and times based on season type
+      if (scheduleConfig.seasonType === 'fall') {
+        assignFallSchedule(finalSchedule);
+      } else {
+        assignSummerSchedule(finalSchedule);
+      }
+
+      scheduleConfig.generatedSchedule = finalSchedule;
+
+      // Display schedule
+      displaySchedule(finalSchedule);
+
+      // Update stats
+      const weeksNeeded = scheduleConfig.seasonType === 'fall' 
+        ? Math.ceil(gamesPerTeam) 
+        : Math.ceil(gamesPerTeam / 4); // Summer: ~4 games per week per team
+        
+      document.getElementById('totalGames').textContent = finalSchedule.length;
+      document.getElementById('weeksNeeded').textContent = weeksNeeded;
+      document.getElementById('avgGamesPerTeam').textContent = gamesPerTeam;
+      
+      // Calculate balance score
+      const balanceScore = calculateBalanceScore(finalSchedule, teams);
+      document.getElementById('homeAwayBalance').innerHTML = 
+        `${balanceScore}% <span class="balance-indicator ${getBalanceClass(balanceScore)}">${getBalanceLabel(balanceScore)}</span>`;
+
+      // Show success message
+      document.getElementById('generationStatus').style.display = 'block';
+      document.getElementById('schedulePreview').style.display = 'block';
+      document.getElementById('regenerateBtn').style.display = 'inline-flex';
+      document.getElementById('step4Buttons').style.display = 'flex';
+    }
+
+    function assignFallSchedule(schedule) {
+      // Fall: Sundays only, 5 time slots, each team plays once per Sunday
+      const startDate = new Date(scheduleConfig.startDate);
+      const timeSlots = scheduleConfig.timeSlots;
+      const slotsPerDay = timeSlots.length;
+      
+      // Find next Sunday
+      let currentDate = new Date(startDate);
+      while (currentDate.getDay() !== 0) { // 0 = Sunday
+        currentDate.setDate(currentDate.getDate() + 1);
+      }
+
+      let weekNumber = 1;
+      let gamesThisWeek = [];
+      let slotIndex = 0;
+
+      schedule.forEach((game, index) => {
+        // Track which teams played this week
+        const homeTeamId = game.home.id;
+        const awayTeamId = game.away.id;
+        
+        // Check if either team already played this week
+        const homePlayedThisWeek = gamesThisWeek.some(g => 
+          g.home.id === homeTeamId || g.away.id === homeTeamId
+        );
+        const awayPlayedThisWeek = gamesThisWeek.some(g => 
+          g.home.id === awayTeamId || g.away.id === awayTeamId
+        );
+
+        // Check if either team has a restriction for this day
+        let dayRestricted = false;
+        const currentDayName = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][currentDate.getDay()];
+        
+        const homeRestriction = scheduleConfig.teamRestrictions.find(r => r.teamId === homeTeamId && r.restrictedDay === currentDayName);
+        const awayRestriction = scheduleConfig.teamRestrictions.find(r => r.teamId === awayTeamId && r.restrictedDay === currentDayName);
+        
+        if (homeRestriction || awayRestriction) {
+          dayRestricted = true;
+          console.log(`⚠️ Team restriction: ${homeRestriction ? game.home.name : game.away.name} cannot play on ${currentDayName}`);
+        }
+
+        // If either team already played, or day is restricted, move to next week
+        if ((homePlayedThisWeek || awayPlayedThisWeek || dayRestricted) && gamesThisWeek.length > 0) {
+          // Move to next Sunday
+          currentDate.setDate(currentDate.getDate() + 7);
+          weekNumber++;
+          gamesThisWeek = [];
+          slotIndex = 0;
+        }
+
+        // Assign date and time
+        game.date = new Date(currentDate);
+        game.time = timeSlots[slotIndex % slotsPerDay];
+        game.week = weekNumber;
+        game.gameNumber = index + 1;
+
+        gamesThisWeek.push(game);
+        slotIndex++;
+
+        // If we've used all slots, move to next Sunday
+        if (slotIndex >= slotsPerDay) {
+          currentDate.setDate(currentDate.getDate() + 7);
+          weekNumber++;
+          gamesThisWeek = [];
+          slotIndex = 0;
+        }
+      });
+    }
+
+    function assignSummerSchedule(schedule) {
+      // Summer: Mon-Tue-Wed, 3 time slots per night, max 4 games per team per week
+      const startDate = new Date(scheduleConfig.startDate);
+      const timeSlots = scheduleConfig.timeSlots;
+      const maxGamesPerTeamPerWeek = scheduleConfig.gamesPerWeek;
+      
+      // Find next Monday
+      let currentDate = new Date(startDate);
+      while (currentDate.getDay() !== 1) { // 1 = Monday
+        currentDate.setDate(currentDate.getDate() + 1);
+      }
+
+      let weekNumber = 1;
+      let weeklyTeamGameCount = {}; // Track games per team this week
+      let dayOfWeek = 0; // 0=Mon, 1=Tue, 2=Wed
+      let slotIndex = 0;
+
+      schedule.forEach((game, index) => {
+        const homeTeamId = game.home.id;
+        const awayTeamId = game.away.id;
+        
+        // Initialize counters
+        if (!weeklyTeamGameCount[homeTeamId]) weeklyTeamGameCount[homeTeamId] = 0;
+        if (!weeklyTeamGameCount[awayTeamId]) weeklyTeamGameCount[awayTeamId] = 0;
+
+        // Check if either team would exceed weekly limit
+        let needsNewWeek = weeklyTeamGameCount[homeTeamId] >= maxGamesPerTeamPerWeek || 
+                           weeklyTeamGameCount[awayTeamId] >= maxGamesPerTeamPerWeek;
+
+        // Check team restrictions for current day
+        const currentDayName = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][currentDate.getDay()];
+        const homeRestriction = scheduleConfig.teamRestrictions.find(r => r.teamId === homeTeamId && r.restrictedDay === currentDayName);
+        const awayRestriction = scheduleConfig.teamRestrictions.find(r => r.teamId === awayTeamId && r.restrictedDay === currentDayName);
+        
+        // If day is restricted for either team, try to move to next day
+        if (homeRestriction || awayRestriction) {
+          console.log(`⚠️ Team restriction: ${homeRestriction ? game.home.name : game.away.name} cannot play on ${currentDayName}`);
+          
+          // Move to next day if we haven't filled slots yet
+          if (slotIndex > 0) {
+            dayOfWeek++;
+            slotIndex = 0;
+            
+            if (dayOfWeek >= 3) { // After Wednesday
+              // Move to next Monday
+              currentDate.setDate(currentDate.getDate() + 5); // Wed + 5 = Mon
+              weekNumber++;
+              weeklyTeamGameCount = {};
+              dayOfWeek = 0;
+            } else {
+              // Move to next day (Tue or Wed)
+              currentDate.setDate(currentDate.getDate() + 1);
+            }
+          }
+          
+          // Re-check restriction on new day
+          const newDayName = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][currentDate.getDay()];
+          const homeRecheck = scheduleConfig.teamRestrictions.find(r => r.teamId === homeTeamId && r.restrictedDay === newDayName);
+          const awayRecheck = scheduleConfig.teamRestrictions.find(r => r.teamId === awayTeamId && r.restrictedDay === newDayName);
+          
+          // If still restricted, move to next week
+          if (homeRecheck || awayRecheck) {
+            currentDate.setDate(currentDate.getDate() + (7 - dayOfWeek)); // Get to next Monday
+            weekNumber++;
+            weeklyTeamGameCount = {};
+            weeklyTeamGameCount[homeTeamId] = 0;
+            weeklyTeamGameCount[awayTeamId] = 0;
+            dayOfWeek = 0;
+            slotIndex = 0;
+          }
+        }
+
+        if (needsNewWeek) {
+          // Move to next week
+          currentDate.setDate(currentDate.getDate() + (7 - dayOfWeek)); // Get to next Monday
+          weekNumber++;
+          weeklyTeamGameCount = {};
+          weeklyTeamGameCount[homeTeamId] = 0;
+          weeklyTeamGameCount[awayTeamId] = 0;
+          dayOfWeek = 0;
+          slotIndex = 0;
+        }
+
+        // Assign date and time
+        game.date = new Date(currentDate);
+        game.time = timeSlots[slotIndex % timeSlots.length];
+        game.week = weekNumber;
+        game.gameNumber = index + 1;
+
+        // Increment counters
+        weeklyTeamGameCount[homeTeamId]++;
+        weeklyTeamGameCount[awayTeamId]++;
+        slotIndex++;
+
+        // Move through days: Mon -> Tue -> Wed
+        if (slotIndex >= timeSlots.length) {
+          dayOfWeek++;
+          slotIndex = 0;
+          
+          if (dayOfWeek >= 3) { // After Wednesday
+            // Move to next Monday
+            currentDate.setDate(currentDate.getDate() + 5); // Wed + 5 = Mon
+            weekNumber++;
+            weeklyTeamGameCount = {};
+            dayOfWeek = 0;
+          } else {
+            // Move to next day (Tue or Wed)
+            currentDate.setDate(currentDate.getDate() + 1);
+          }
+        }
+      });
+    }
+
+    function displaySchedule(schedule) {
+      const tbody = document.getElementById('scheduleBody');
+      tbody.innerHTML = schedule.map(game => {
+        const homeGames = schedule.filter(g => g.home.id === game.home.id).length;
+        const awayGames = schedule.filter(g => g.away.id === game.home.id).length;
+        const balance = Math.abs(homeGames - awayGames);
+        const balanceClass = balance === 0 ? 'excellent' : balance === 1 ? 'good' : balance === 2 ? 'fair' : 'poor';
+        
+        const dayName = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][game.date.getDay()];
+        const dateStr = `${dayName} ${game.date.toLocaleDateString()}`;
+        
+        return `
+          <tr>
+            <td>${game.week}</td>
+            <td>${dateStr}<br><strong>${game.time}</strong></td>
+            <td><strong>${game.home.name}</strong></td>
+            <td>${game.away.name}</td>
+            <td><span class="balance-indicator ${balanceClass}">±${balance}</span></td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function calculateBalanceScore(schedule, teams) {
+      let totalDiff = 0;
+      
+      teams.forEach(team => {
+        const homeGames = schedule.filter(g => g.home.id === team.id).length;
+        const awayGames = schedule.filter(g => g.away.id === team.id).length;
+        totalDiff += Math.abs(homeGames - awayGames);
+      });
+
+      const maxPossibleDiff = teams.length * (schedule.length / teams.length);
+      const score = Math.max(0, 100 - (totalDiff / maxPossibleDiff * 100));
+      return Math.round(score);
+    }
+
+    function getBalanceClass(score) {
+      if (score >= 90) return 'excellent';
+      if (score >= 75) return 'good';
+      if (score >= 60) return 'fair';
+      return 'poor';
+    }
+
+    function getBalanceLabel(score) {
+      if (score >= 90) return 'Excellent';
+      if (score >= 75) return 'Good';
+      if (score >= 60) return 'Fair';
+      return 'Needs Work';
+    }
+
+    window.regenerateSchedule = function() {
+      generateSchedule();
+    }
+
+    window.exportToFirebase = async function() {
+      const exportBtn = event.target;
+      exportBtn.disabled = true;
+      exportBtn.textContent = '⏳ Exporting...';
+
+      try {
+        const seasonId = `${scheduleConfig.seasonYear}-${scheduleConfig.seasonType}`;
+        const gamesCollection = collection(db, 'seasons', seasonId, 'games');
+
+        for (const game of scheduleConfig.generatedSchedule) {
+          const gameDoc = {
+            homeTeamId: game.home.id,
+            homeTeam: game.home.name,
+            awayTeamId: game.away.id,
+            awayTeam: game.away.name,
+            date: game.date,
+            time: game.time,
+            gameType: 'Regular',
+            homeScore: null,
+            awayScore: null,
+            winner: null,
+            createdAt: new Date(),
+            week: game.week
+          };
+
+          await addDoc(gamesCollection, gameDoc);
+        }
+
+        const statusDiv = document.getElementById('exportStatus');
+        statusDiv.innerHTML = `
+          <div class="alert success">
+            <strong>✓ Success!</strong>
+            <p style="margin-top: 0.5rem;">
+              ${scheduleConfig.generatedSchedule.length} games exported to Firebase season ${seasonId}.
+            </p>
+          </div>
+        `;
+
+        exportBtn.textContent = '✓ Exported';
+        
+      } catch (error) {
+        console.error('Export error:', error);
+        const statusDiv = document.getElementById('exportStatus');
+        statusDiv.innerHTML = `
+          <div class="alert error">
+            <strong>✗ Error</strong>
+            <p style="margin-top: 0.5rem;">${error.message}</p>
+          </div>
+        `;
+        exportBtn.disabled = false;
+        exportBtn.textContent = '☁️ Export to Firebase';
+      }
+    }
+
+    window.downloadCSV = function() {
+      const headers = ['Week', 'Date', 'Time', 'Home Team', 'Away Team', 'Game Type'];
+      const rows = scheduleConfig.generatedSchedule.map(game => [
+        game.week,
+        game.date.toLocaleDateString(),
+        game.time,
+        game.home.name,
+        game.away.name,
+        'Regular'
+      ]);
+
+      const csv = [
+        headers.join(','),
+        ...rows.map(row => row.join(','))
+      ].join('\n');
+
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${scheduleConfig.seasonYear}-${scheduleConfig.seasonType}-schedule.csv`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+    }
+
+    window.startOver = function() {
+      scheduleConfig = {
+        seasonType: '',
+        seasonYear: 2025,
+        selectedTeams: [],
+        startDate: '',
+        gamesPerWeek: 4,
+        timeSlots: [],
+        teamRestrictions: [],
+        balanceHomeAway: true,
+        minimizeDoubleHeaders: true,
+        generatedSchedule: []
+      };
+
+      currentStep = 1;
+
+      document.querySelectorAll('.step-content').forEach(content => {
+        content.classList.remove('active');
+      });
+      document.querySelector('.step-content[data-step="1"]').classList.add('active');
+
+      document.querySelectorAll('.step').forEach(step => {
+        step.classList.remove('active', 'completed');
+      });
+      document.querySelector('.step[data-step="1"]').classList.add('active');
+
+      document.getElementById('seasonType').value = '';
+      document.getElementById('step1Next').disabled = true;
+      deselectAllTeams();
+      setDefaultStartDate();
+
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    // Update export stats when reaching step 5
+    document.addEventListener('DOMContentLoaded', () => {
+      init();
+      
+      // Override nextStep to update export stats
+      const originalNextStep = window.nextStep;
+      window.nextStep = function() {
+        originalNextStep();
+        if (currentStep === 5) {
+          document.getElementById('exportTotalGames').textContent = scheduleConfig.generatedSchedule.length;
+          document.getElementById('exportSeasonId').textContent = 
+            `${scheduleConfig.seasonYear}-${scheduleConfig.seasonType}`;
+        }
+      };
+    });
+  </script>
+</body>
+</html>

@@ -591,6 +591,17 @@
                     </div>
 
                     <div class="content-card">
+                        <h3>
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="10"/>
+                                <polyline points="12 6 12 12 16 14"/>
+                            </svg>
+                            Games by Time
+                        </h3>
+                        <div class="day-breakdown" id="timeBreakdown"></div>
+                    </div>
+
+                    <div class="content-card">
                         <h3>Opponents</h3>
                         <div class="opponents-grid" id="opponentsList"></div>
                     </div>
@@ -643,6 +654,7 @@
                             homeGames: 0,
                             awayGames: 0,
                             dayBreakdown: {},
+                            timeBreakdown: {},
                             opponents: {}
                         };
                     }
@@ -652,6 +664,7 @@
                             homeGames: 0,
                             awayGames: 0,
                             dayBreakdown: {},
+                            timeBreakdown: {},
                             opponents: {}
                         };
                     }
@@ -665,6 +678,7 @@
                     });
                     teamStats[homeTeam].homeGames++;
                     teamStats[homeTeam].dayBreakdown[dayOfWeek] = (teamStats[homeTeam].dayBreakdown[dayOfWeek] || 0) + 1;
+                    teamStats[homeTeam].timeBreakdown[time] = (teamStats[homeTeam].timeBreakdown[time] || 0) + 1;
                     teamStats[homeTeam].opponents[awayTeam] = (teamStats[homeTeam].opponents[awayTeam] || 0) + 1;
 
                     teamStats[awayTeam].games.push({
@@ -676,6 +690,7 @@
                     });
                     teamStats[awayTeam].awayGames++;
                     teamStats[awayTeam].dayBreakdown[dayOfWeek] = (teamStats[awayTeam].dayBreakdown[dayOfWeek] || 0) + 1;
+                    teamStats[awayTeam].timeBreakdown[time] = (teamStats[awayTeam].timeBreakdown[time] || 0) + 1;
                     teamStats[awayTeam].opponents[homeTeam] = (teamStats[awayTeam].opponents[homeTeam] || 0) + 1;
                 });
 
@@ -747,6 +762,40 @@
                 }).join('');
             
             document.getElementById('dayBreakdown').innerHTML = dayBreakdownHTML;
+            
+            const timeBreakdownHTML = Object.entries(data.timeBreakdown)
+                .sort((a, b) => {
+                    // Sort times chronologically
+                    const timeA = a[0].toLowerCase();
+                    const timeB = b[0].toLowerCase();
+                    // Extract hour for sorting
+                    const getHour = (time) => {
+                        const match = time.match(/(\d+)(?::(\d+))?\s*(am|pm)/i);
+                        if (!match) return 24; // Unknown times go to end
+                        let hour = parseInt(match[1]);
+                        const period = match[3].toLowerCase();
+                        if (period === 'pm' && hour !== 12) hour += 12;
+                        if (period === 'am' && hour === 12) hour = 0;
+                        return hour;
+                    };
+                    return getHour(timeA) - getHour(timeB);
+                })
+                .map(([time, count]) => {
+                    const percentage = (count / data.games.length) * 100;
+                    return `
+                        <div class="day-item">
+                            <div class="day-label">
+                                <span class="day-name">${time}</span>
+                                <span class="day-count">${count} ${count === 1 ? 'game' : 'games'}</span>
+                            </div>
+                            <div class="progress-bar">
+                                <div class="progress-fill" style="width: ${percentage}%"></div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            
+            document.getElementById('timeBreakdown').innerHTML = timeBreakdownHTML;
             
             const opponentsHTML = Object.entries(data.opponents)
                 .sort((a, b) => b[1] - a[1])
