@@ -803,7 +803,8 @@ body {
         getSeasonPitchingStatsOptimized,
         getSeasonGames,
         getCurrentSeason,
-        getAllSeasons
+        getAllSeasons,
+        getSeasonPreviews
       } from './firebase-data.js';
 
       let allGames = [];
@@ -849,14 +850,12 @@ body {
           
           console.log(`📅 Game season: ${seasonId}`);
           
-          // Load data in parallel - following h2h_grid.html pattern for ALL games
-          const [seasons, batting, pitching, previewsResponse] = await Promise.all([
+          // Load data in parallel - using Firebase for all data including previews
+          const [seasons, batting, pitching, previews] = await Promise.all([
             getAllSeasons(),
             getSeasonPlayerStatsOptimized(seasonId),
             getSeasonPitchingStatsOptimized(seasonId),
-            fetch('previews.json', {
-              headers: { 'Accept': 'application/json; charset=utf-8' }
-            }).catch(() => ({ ok: false }))
+            getSeasonPreviews(seasonId)
           ]);
           
           console.log(`✅ Found ${seasons.length} seasons`);
@@ -926,10 +925,9 @@ body {
             ERA: p.earnedRunAverage || p.era || 0
           }));
           
-          // Load preview data if available (still from JSON)
-          if (previewsResponse.ok) {
-            previewData = await previewsResponse.json();
-          }
+          // Load preview data from Firebase
+          previewData = previews || [];
+          console.log(`✅ Loaded ${previewData.length} game previews from Firebase`);
           
           const loadTime = performance.now() - startTime;
           console.log(`✅ Data loaded in ${loadTime.toFixed(0)}ms`);
