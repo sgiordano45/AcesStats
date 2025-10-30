@@ -12,8 +12,10 @@ import {
   query,
   where,
   orderBy,
-  limit
+  limit,
+  enableIndexedDbPersistence
 } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+import { getStorage } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js';
 
 // Your Firebase configuration
 const firebaseConfig = {
@@ -28,10 +30,31 @@ const firebaseConfig = {
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
+const storage = getStorage(app);
+
+// ✨ ENABLE OFFLINE PERSISTENCE ✨
+// This allows Firestore data to be cached locally and available offline
+enableIndexedDbPersistence(db)
+  .then(() => {
+    console.log('✅ Firebase offline persistence enabled');
+  })
+  .catch((err) => {
+    if (err.code === 'failed-precondition') {
+      // Multiple tabs open, persistence can only be enabled in one tab at a time
+      console.warn('⚠️ Multiple tabs open - persistence enabled in first tab only');
+    } else if (err.code === 'unimplemented') {
+      // Browser doesn't support persistence
+      console.warn('⚠️ Browser doesn\'t support offline persistence');
+    } else {
+      console.error('❌ Failed to enable persistence:', err);
+    }
+  });
 
 // Export everything other files will need
 export { 
-  db, 
+  app,
+  db,
+  storage,
   collection, 
   doc, 
   getDocs, 

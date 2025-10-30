@@ -682,13 +682,15 @@
   </div>
 </div>
 
-<script>
+<script type="module">
+import { getAllPhotos, getPhotosByFolder } from './firebase-storage.js'
 // Hide loading overlay when page loads
 window.addEventListener('load', function() {
   setTimeout(function() {
     document.getElementById('loadingOverlay').classList.add('hidden');
   }, 800);
 });
+
 
 // This script will scan the /media/ folder and its subfolders for images and videos
 let allMedia = [];
@@ -699,22 +701,46 @@ const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.hei
 const videoExtensions = ['.mp4', '.webm', '.mov', '.MOV', '.avi'];
 
 async function loadMediaFiles() {
-  console.log('🔍 Starting media file discovery...');
+  console.log('📸 Loading media files from Firebase Storage...');
   
-  // Since we can't actually scan the filesystem in a static site,
-  // this is a placeholder that should be replaced with:
-  // 1. A server-side script that generates a media manifest
-  // 2. Or manual maintenance of a media list
-  // 3. Or integration with a backend API
-  
-  // Example structure - replace with actual file discovery
-  const mediaManifest = await fetchMediaManifest();
-  
-  console.log(`✅ Found ${mediaManifest.length} media files total`);
-  
-  allMedia = mediaManifest;
-  populateFolderFilter();
-  applyFilters();
+  try {
+    // Fetch all photos from Firebase Storage via Firestore
+    const photos = await getAllPhotos();
+    
+    console.log(`✅ Found ${photos.length} media files in Firebase`);
+    
+    // Transform Firebase photos to match the existing format
+    allMedia = photos.map(photo => ({
+      path: photo.url,          // Firebase download URL
+      name: photo.name,         // Caption/display name
+      folder: photo.folder,     // Team folder (green, blue, league, etc.)
+      type: photo.type,         // 'image' or 'video'
+      id: photo.id,             // Firestore document ID
+      uploadedAt: photo.createdAt,
+      uploadedBy: photo.uploadedByName || 'Unknown',
+      views: photo.views || 0
+    }));
+    
+    populateFolderFilter();
+    applyFilters();
+    
+  } catch (error) {
+    console.error('❌ Error loading photos from Firebase:', error);
+    
+    // Fallback to JSON manifest if Firebase fails
+    console.log('⚠️ Falling back to media-manifest.json...');
+    try {
+      const mediaManifest = await fetchMediaManifest();
+      allMedia = mediaManifest;
+      populateFolderFilter();
+      applyFilters();
+    } catch (fallbackError) {
+      console.error('❌ Fallback also failed:', fallbackError);
+      // Show error message in gallery
+      const gallery = document.getElementById('mediaGallery');
+      gallery.innerHTML = '<div class="no-media">Unable to load photos. Please try again later.</div>';
+    }
+  }
 }
 
 async function fetchMediaManifest() {
