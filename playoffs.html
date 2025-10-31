@@ -576,9 +576,13 @@
             console.log(`📊 Found ${allGames.length} total games for season`);
             
             // Filter to only regular season games with winners
-            const games = allGames.filter(g => 
-                g.game_type === 'Regular' && g.winner && g.winner.trim() !== ''
-            );
+            // Handle both gameType (lowercase 'regular') and game_type (capitalized 'Regular')
+            const games = allGames.filter(g => {
+                const isRegular = g.gameType === 'regular' || g.game_type === 'Regular' || 
+                                 (!g.gameType && !g.game_type); // Default to regular if not specified
+                const hasWinner = g.winner && g.winner.trim() !== '';
+                return isRegular && hasWinner;
+            });
             
             console.log(`📊 Processing ${games.length} completed regular season games`);
             
@@ -595,6 +599,7 @@
                     losses: 0,
                     winPct: 0
                 }));
+                console.log(`📋 Loaded ${allTeams.length} teams without records:`, allTeams.map(t => t.teamName));
                 return allTeams.slice(0, 10);
             }
 
@@ -602,11 +607,14 @@
             const teamStats = {};
 
             games.forEach(game => {
-                const homeTeam = game["home team"];
-                const awayTeam = game["away team"];
+                // Handle both naming conventions
+                const homeTeam = game["home team"] || game.homeTeamName || game.homeTeamId;
+                const awayTeam = game["away team"] || game.awayTeamName || game.awayTeamId;
                 const winner = game.winner;
-                const homeScore = parseInt(game["home score"]) || 0;
-                const awayScore = parseInt(game["away score"]) || 0;
+                const homeScore = parseInt(game["home score"] || game.homeScore) || 0;
+                const awayScore = parseInt(game["away score"] || game.awayScore) || 0;
+
+                if (!homeTeam || !awayTeam) return; // Skip incomplete games
 
                 if (!teamStats[homeTeam]) {
                     teamStats[homeTeam] = {
@@ -667,6 +675,8 @@
                     return b.runDifferential - a.runDifferential;
                 });
 
+            console.log(`📊 Calculated standings for ${standings.length} teams`);
+
             // Get team IDs and assign seeds
             const teamsQuery = query(collection(db, 'teams'), where('seasonId', '==', currentSeason.id));
             const teamsSnapshot = await getDocs(teamsQuery);
@@ -678,6 +688,9 @@
             // Match standings to team data and assign seeds
             const seededTeams = standings.slice(0, 10).map((standing, index) => {
                 const team = allTeams.find(t => t.teamName === standing.name);
+                if (!team) {
+                    console.warn(`⚠️ Could not find team data for "${standing.name}"`);
+                }
                 return {
                     ...team,
                     seed: index + 1,
