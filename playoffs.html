@@ -46,6 +46,23 @@
             margin-top: 10px;
         }
 
+        .bracket-status {
+            font-size: 1em;
+            text-align: center;
+        }
+
+        .bracket-status.projected {
+            background: rgba(255, 193, 7, 0.2);
+            border: 2px solid #ffc107;
+            color: #ffc107;
+        }
+
+        .bracket-status.locked {
+            background: rgba(26, 107, 74, 0.3);
+            border: 2px solid #1a6b4a;
+            color: #a8d5a3;
+        }
+
         .bracket-container {
             display: flex;
             flex-direction: column;
@@ -425,9 +442,13 @@
         <header>
             <h1>🏆 Playoff Bracket</h1>
             <div class="season-info" id="seasonInfo">Loading season information...</div>
+            <div id="bracketStatus" class="bracket-status" style="margin-top: 15px; padding: 10px; border-radius: 8px; font-weight: 600;"></div>
         </header>
 
         <div class="edit-mode-toggle">
+            <button class="btn" id="lockBracketBtn" onclick="lockBracket()" style="display: none;">
+                🔒 Lock Bracket for Playoffs
+            </button>
             <button class="btn" onclick="toggleEditMode()">
                 <span id="editModeText">Enable Edit Mode</span>
             </button>
@@ -475,6 +496,7 @@
         let editMode = false;
         let currentEditMatchup = null;
         let teams = [];
+        let isProjected = true; // True until bracket is locked in
 
         // Load current season and playoff data
         async function loadPlayoffBracket() {
@@ -510,22 +532,17 @@
 
                 if (playoffDoc && playoffDoc.exists()) {
                     playoffData = playoffDoc.data();
-                    console.log('✅ Loaded existing playoff data');
+                    isProjected = playoffData.isProjected !== false; // Default to projected if not set
+                    console.log('✅ Loaded existing playoff data', isProjected ? '(PROJECTED)' : '(LOCKED)');
                 } else {
                     // Initialize new playoff bracket (just in memory, won't save without permission)
                     playoffData = initializePlayoffBracket();
-                    console.log('📋 Initialized new playoff bracket structure');
-                    
-                    // Try to save it, but don't fail if we can't
-                    try {
-                        await setDoc(playoffRef, playoffData);
-                        console.log('✅ Saved playoff bracket to Firebase');
-                    } catch (saveError) {
-                        console.log('⚠️ Could not save playoff bracket (viewing only). Contact admin for edit access.');
-                    }
+                    isProjected = true;
+                    console.log('📋 Initialized projected playoff bracket');
                 }
 
                 renderBracket();
+                updateLockButton();
             } catch (error) {
                 console.error('Error loading playoff bracket:', error);
                 document.getElementById('bracketsContainer').innerHTML = 
@@ -687,6 +704,152 @@
             return bH2HWinPct - aH2HWinPct;
         }
 
+        function updateLockButton() {
+            const lockBtn = document.getElementById('lockBracketBtn');
+            if (isProjected && teams.length >= 10) {
+                lockBtn.style.display = 'inline-block';
+            } else {
+                lockBtn.style.display = 'none';
+            }
+        }
+
+        window.lockBracket = async function() {
+            if (!confirm(`Lock in the current playoff bracket?\n\nThis will:\n• Set the playoff seeds based on current standings\n• Create playoff game IDs\n• Make the bracket official\n\nThis cannot be undone. Continue?`)) {
+                return;
+            }
+
+            try {
+                console.log('🔒 Locking playoff bracket...');
+
+                // Update playoff data to mark as locked
+                playoffData.isProjected = false;
+                playoffData.lockedAt = new Date().toISOString();
+                playoffData.lockedSeeds = teams.map(t => ({
+                    seed: t.seed,
+                    teamName: t.teamName,
+                    teamId: t.id,
+                    record: `${t.wins}-${t.losses}`
+                }));
+
+                // Save to Firebase
+                const playoffRef = doc(db, 'seasons', currentSeason.id, 'playoffs', 'bracket');
+                await setDoc(playoffRef, playoffData);
+
+                // Create playoff game IDs in the games collection
+                await createPlayoffGames();
+
+                isProjected = false;
+                console.log('✅ Bracket locked successfully!');
+                alert('Playoff bracket has been locked! You can now set game dates and enter scores.');
+                
+                updateLockButton();
+                renderBracket();
+            } catch (error) {
+                console.error('Error locking bracket:', error);
+                alert('Error locking bracket: ' + error.message);
+            }
+        };
+
+        async function createPlayoffGames() {
+            console.log('📅 Creating playoff game IDs...');
+            
+            const gamesCollection = collection(db, 'seasons', currentSeason.id, 'games');
+            
+            // Play-in games
+            const playInGames = [
+                {
+                    id: 'playoff_pi1_seed8_vs_seed9',
+                    'home team': teams[7].teamName, // Seed 8
+                    'away team': teams[8].teamName, // Seed 9
+                    game_type: 'Playoff',
+                    round: 'Play-In',
+                    date: '',
+                    time: '',
+                    'home score': '',
+                    'away score': '',
+                    winner: ''
+                },
+                {
+                    id: 'playoff_pi2_seed7_vs_seed10',
+                    'home team': teams[6].teamName, // Seed 7
+                    'away team': teams[9].teamName, // Seed 10
+                    game_type: 'Playoff',
+                    round: 'Play-In',
+                    date: '',
+                    time: '',
+                    'home score': '',
+                    'away score': '',
+                    winner: ''
+                }
+            ];
+
+            // Round 1 games
+            const round1Games = [
+                {
+                    id: 'playoff_r1g1_seed1_vs_winner_pi1',
+                    'home team': teams[0].teamName, // Seed 1
+                    'away team': 'Winner PI1', // Will be updated after play-in
+                    game_type: 'Playoff',
+                    round: 'Round 1',
+                    date: '',
+                    time: '',
+                    'home score': '',
+                    'away score': '',
+                    winner: ''
+                },
+                {
+                    id: 'playoff_r1g2_seed2_vs_winner_pi2',
+                    'home team': teams[1].teamName, // Seed 2
+                    'away team': 'Winner PI2',
+                    game_type: 'Playoff',
+                    round: 'Round 1',
+                    date: '',
+                    time: '',
+                    'home score': '',
+                    'away score': '',
+                    winner: ''
+                },
+                {
+                    id: 'playoff_r1g3_seed3_vs_seed6',
+                    'home team': teams[2].teamName, // Seed 3
+                    'away team': teams[5].teamName, // Seed 6
+                    game_type: 'Playoff',
+                    round: 'Round 1',
+                    date: '',
+                    time: '',
+                    'home score': '',
+                    'away score': '',
+                    winner: ''
+                },
+                {
+                    id: 'playoff_r1g4_seed4_vs_seed5',
+                    'home team': teams[3].teamName, // Seed 4
+                    'away team': teams[4].teamName, // Seed 5
+                    game_type: 'Playoff',
+                    round: 'Round 1',
+                    date: '',
+                    time: '',
+                    'home score': '',
+                    'away score': '',
+                    winner: ''
+                }
+            ];
+
+            // Save all initial games
+            const allGames = [...playInGames, ...round1Games];
+            
+            for (const game of allGames) {
+                try {
+                    await setDoc(doc(gamesCollection, game.id), game);
+                    console.log(`✅ Created game: ${game.id}`);
+                } catch (error) {
+                    console.error(`Error creating game ${game.id}:`, error);
+                }
+            }
+
+            console.log(`✅ Created ${allGames.length} playoff games`);
+        }
+
         function initializePlayoffBracket() {
             return {
                 winnersBracket: {
@@ -733,6 +896,16 @@
         function renderBracket() {
             const container = document.getElementById('bracketsContainer');
             
+            // Update status banner
+            const statusEl = document.getElementById('bracketStatus');
+            if (isProjected) {
+                statusEl.className = 'bracket-status projected';
+                statusEl.innerHTML = '📊 PROJECTED BRACKET - Based on current standings. Click "Lock Bracket" when ready to start playoffs.';
+            } else {
+                statusEl.className = 'bracket-status locked';
+                statusEl.innerHTML = '🔒 OFFICIAL PLAYOFF BRACKET - Locked on ' + (playoffData.lockedAt ? new Date(playoffData.lockedAt).toLocaleDateString() : 'N/A');
+            }
+            
             container.innerHTML = `
                 ${renderWinnersBracket()}
                 ${renderLosersBracket()}
@@ -740,7 +913,7 @@
             `;
 
             // Add click handlers if in edit mode
-            if (editMode) {
+            if (editMode && !isProjected) {
                 document.querySelectorAll('.matchup').forEach(matchup => {
                     matchup.style.cursor = 'pointer';
                     matchup.addEventListener('click', function(e) {
@@ -832,14 +1005,14 @@
                     ` : ''}
                     <div class="team ${team1Class}">
                         <span class="seed">${team1.seed || ''}</span>
-                        <span class="team-name">${team1.name}</span>
+                        <span class="team-name">${team1.name} ${isProjected && team1.record ? `<span style="opacity: 0.7; font-size: 0.85em;">${team1.record}</span>` : ''}</span>
                         <span class="score ${matchup.team1Score === undefined ? 'tbd' : ''}">
                             ${matchup.team1Score !== undefined ? matchup.team1Score : '-'}
                         </span>
                     </div>
                     <div class="team ${team2Class}">
                         <span class="seed">${team2.seed || ''}</span>
-                        <span class="team-name">${team2.name}</span>
+                        <span class="team-name">${team2.name} ${isProjected && team2.record ? `<span style="opacity: 0.7; font-size: 0.85em;">${team2.record}</span>` : ''}</span>
                         <span class="score ${matchup.team2Score === undefined ? 'tbd' : ''}">
                             ${matchup.team2Score !== undefined ? matchup.team2Score : '-'}
                         </span>
@@ -849,25 +1022,27 @@
         }
 
         function getTeamDisplay(teamData) {
-            if (!teamData) return { name: 'TBD', seed: '' };
+            if (!teamData) return { name: 'TBD', seed: '', record: '' };
             
             if (teamData.seed) {
                 const team = teams.find(t => t.seed === teamData.seed);
                 return {
                     seed: teamData.seed,
                     name: team ? team.teamName : `Seed ${teamData.seed}`,
-                    teamId: team?.id
+                    teamId: team?.id,
+                    record: team && (team.wins !== undefined) ? `(${team.wins}-${team.losses})` : ''
                 };
             }
             
             if (teamData.from || teamData.loserFrom) {
                 return {
                     name: 'TBD',
-                    seed: ''
+                    seed: '',
+                    record: ''
                 };
             }
             
-            return { name: 'TBD', seed: '' };
+            return { name: 'TBD', seed: '', record: '' };
         }
 
         function formatDate(dateStr) {
@@ -897,6 +1072,11 @@
         }
 
         window.toggleEditMode = function() {
+            if (isProjected) {
+                alert('Cannot edit projected bracket. Please lock the bracket first to set official playoff matchups.');
+                return;
+            }
+            
             editMode = !editMode;
             document.getElementById('editModeText').textContent = 
                 editMode ? 'Disable Edit Mode' : 'Enable Edit Mode';
