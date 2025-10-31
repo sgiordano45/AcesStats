@@ -20,6 +20,7 @@ export const NAV_STRUCTURE = {
     { id: 'seasons', href: 'seasons.html', label: 'All Seasons', icon: '📅', priority: 2 },
     { id: 'leaders', href: 'leaders.html', label: 'Career Leaders', icon: '👑', priority: 2 },
     { id: 'awards', href: 'awards.html', label: 'Awards', icon: '🏅', priority: 2 },
+	{ id: 'playoffs', href: 'playoffs.html', label: 'Playoff Bracket', icon: '🥇', priority: 2 },
   ],
   
   // Tier 3: TERTIARY - Specialty pages (mobile-only unless contextually relevant)
@@ -40,6 +41,8 @@ export const NAV_STRUCTURE = {
     { id: 'game-tracker', href: 'game-tracker.html', label: 'Game Tracker', icon: '🔶', priority: 4, requiresAuth: true },
     { id: 'roster-management', href: 'roster-management.html', label: 'Roster Management', icon: '✉️', priority: 4, requiresAuth: true },
 	{ id: 'offseason-hub', href: 'offseason.html', label: 'Offseason Hub', icon: '🎣️', priority: 4, requiresAuth: true },
+	{ id: 'photo-upload', href: 'photo-upload.html', label: 'Upload Photos', icon: '📤️', priority: 4, requiresAuth: true },
+	{ id: 'submit-score', href: 'submit-score.html', label: 'Submit Scores', icon: '🔢️', priority: 4, requiresAuth: true },
   ],
   
   // Public auth pages (signin handles both signin and signup - don't show in nav)
@@ -63,7 +66,7 @@ export const PAGE_CONFIGS = {
   },
   
   'current-season.html': {
-    desktop: ['home', 'current-season', 'league-rules', 'weekend-preview', 'projections', 'batting', 'pitching', 'teams', 'players']
+    desktop: ['home', 'current-season', 'league-rules', 'weekend-preview', 'playoffs', 'projections', 'batting', 'pitching', 'teams', 'players']
   },
   
   'league-rules.html': {
@@ -71,11 +74,11 @@ export const PAGE_CONFIGS = {
   },
   
   'weekend-preview.html': {
-    desktop: ['home', 'current-season', 'league-rules', 'weekend-preview', 'projections', 'batting', 'pitching']
+    desktop: ['home', 'current-season', 'league-rules', 'playoffs', 'projections', 'batting', 'pitching']
   },
   
   'projections.html': {
-    desktop: ['home', 'current-season', 'weekend-preview', 'projections', 'batting', 'pitching', 'teams']
+    desktop: ['home', 'current-season', 'weekend-preview', 'playoffs', 'projections', 'batting', 'pitching', 'teams']
   },
   
   'batting.html': {
