@@ -550,7 +550,7 @@
     <script type="module">
         import { db, collection, query, where, getDocs, doc, getDoc } from './firebase-config.js';
         import { getCurrentSeason, getSeasonGames } from './firebase-data.js';
-        import { getCurrentUser, getUserProfile, USER_ROLES } from './firebase-auth.js';
+        import { getCurrentUser, getUserProfile, USER_ROLES, onAuthChange } from './firebase-auth.js';
         import { setDoc, updateDoc } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
 
         let currentSeason = null;
@@ -562,12 +562,13 @@
         let currentUser = null;
         let userProfile = null;
         let userCanManagePlayoffs = false; // True if user is Admin or League-Staff
+        let authReady = false;
 
-        // Load current season and playoff data
-        async function loadPlayoffBracket() {
-            try {
-                // Check user role first
-                currentUser = getCurrentUser();
+        // Wait for auth state to be ready before loading playoff data
+        onAuthChange(async (user) => {
+            if (!authReady) {
+                authReady = true;
+                currentUser = user;
                 
                 if (currentUser) {
                     const profileResult = await getUserProfile(currentUser.uid);
@@ -584,6 +585,14 @@
                     console.log('👤 No user logged in');
                 }
                 
+                // Now load the playoff bracket
+                loadPlayoffBracket();
+            }
+        });
+
+        // Load current season and playoff data
+        async function loadPlayoffBracket() {
+            try {
                 // Get current season using the same method as current-season.html
                 currentSeason = await getCurrentSeason();
                 
@@ -1332,8 +1341,7 @@
             }
         };
 
-        // Initialize
-        loadPlayoffBracket();
+        // Initialize - auth state change handler will call loadPlayoffBracket()
     </script>
 </body>
 </html>
