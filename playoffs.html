@@ -90,18 +90,61 @@
 
         .bracket-grid {
             display: flex;
-            justify-content: space-between;
-            gap: 40px;
+            justify-content: flex-start;
+            gap: 60px;
             overflow-x: auto;
             padding: 20px 0;
+            align-items: center;
         }
 
         .round {
             display: flex;
             flex-direction: column;
-            justify-content: space-around;
+            justify-content: center;
             min-width: 280px;
             position: relative;
+        }
+
+        /* Specific spacing for winners bracket rounds */
+        .winners-bracket .round {
+            gap: 20px;
+        }
+
+        .winners-bracket .round.play-in {
+            justify-content: space-around;
+            height: 600px;
+        }
+
+        .winners-bracket .round.round-1 {
+            justify-content: space-around;
+            height: 600px;
+        }
+
+        .winners-bracket .round.semifinals {
+            justify-content: space-around;
+            height: 400px;
+        }
+
+        .winners-bracket .round.finals {
+            justify-content: center;
+            height: 200px;
+        }
+
+        /* Positioning for specific matchups in Round 1 */
+        .matchup.position-top {
+            margin-bottom: 60px;
+        }
+
+        .matchup.position-middle-top {
+            margin-bottom: 60px;
+        }
+
+        .matchup.position-middle-bottom {
+            margin-top: 60px;
+        }
+
+        .matchup.position-bottom {
+            margin-top: 60px;
         }
 
         .round-title {
@@ -922,14 +965,24 @@
 
         function renderWinnersBracket() {
             const wb = playoffData.winnersBracket;
+            
+            // Reorder Round 1 matchups for proper bracket display
+            // Top to bottom: 1 vs 8/9, 4 vs 5, 3 vs 6, 2 vs 7/10
+            const round1Reordered = [
+                wb.round1[0], // 1 vs 8/9 winner (top)
+                wb.round1[3], // 4 vs 5 (middle-top)
+                wb.round1[2], // 3 vs 6 (middle-bottom)
+                wb.round1[1]  // 2 vs 7/10 winner (bottom)
+            ];
+            
             return `
-                <div class="bracket-section">
+                <div class="bracket-section winners-bracket">
                     <div class="bracket-title">🏆 Winners Bracket</div>
                     <div class="bracket-grid">
-                        ${renderRound(wb.playIn, 'Play-In Games')}
-                        ${renderRound(wb.round1, 'Round 1')}
-                        ${renderRound(wb.semifinals, 'Semifinals')}
-                        ${renderRound(wb.finals, 'Winners Final')}
+                        ${renderRoundWithClass(wb.playIn, 'Play-In Games', 'play-in')}
+                        ${renderRoundCustom(round1Reordered, 'Round 1', 'round-1')}
+                        ${renderRoundWithClass(wb.semifinals, 'Semifinals', 'semifinals')}
+                        ${renderRoundWithClass(wb.finals, 'Winners Final', 'finals')}
                     </div>
                 </div>
             `;
@@ -970,7 +1023,26 @@
             `;
         }
 
-        function renderMatchup(matchup) {
+        function renderRoundWithClass(matchups, title, cssClass) {
+            return `
+                <div class="round ${cssClass}">
+                    <div class="round-title">${title}</div>
+                    ${matchups.map(m => renderMatchup(m)).join('')}
+                </div>
+            `;
+        }
+
+        function renderRoundCustom(matchups, title, cssClass) {
+            const positions = ['position-top', 'position-middle-top', 'position-middle-bottom', 'position-bottom'];
+            return `
+                <div class="round ${cssClass}">
+                    <div class="round-title">${title}</div>
+                    ${matchups.map((m, idx) => renderMatchup(m, positions[idx])).join('')}
+                </div>
+            `;
+        }
+
+        function renderMatchup(matchup, positionClass = '') {
             const isChampionship = matchup.id === 'champ';
             const team1 = getTeamDisplay(matchup.team1);
             const team2 = getTeamDisplay(matchup.team2);
@@ -986,7 +1058,7 @@
                 : null;
 
             return `
-                <div class="matchup ${isChampionship ? 'championship' : ''}" 
+                <div class="matchup ${isChampionship ? 'championship' : ''} ${positionClass}" 
                      data-matchup-id="${matchup.id}">
                     ${matchup.gameDate ? `<div class="matchup-date">${formatDate(matchup.gameDate)}</div>` : ''}
                     ${matchup.gameTime ? `<div class="matchup-time">${matchup.gameTime}</div>` : ''}
