@@ -466,7 +466,7 @@
     </div>
 
     <script type="module">
-        import { db, collection, query, where, getDocs, doc, getDoc } from './firebase-config.js';
+        import { db, collection, query, where, getDocs, doc, getDoc, getCurrentSeason } from './firebase-data.js';
         import { setDoc, updateDoc } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
 
         let currentSeason = null;
@@ -478,24 +478,22 @@
         // Load current season and playoff data
         async function loadPlayoffBracket() {
             try {
-                // Get current season
-                const seasonsQuery = query(collection(db, 'seasons'), where('isCurrent', '==', true));
-                const seasonsSnapshot = await getDocs(seasonsQuery);
+                // Get current season using the same method as current-season.html
+                currentSeason = await getCurrentSeason();
                 
-                if (seasonsSnapshot.empty) {
+                if (!currentSeason) {
                     document.getElementById('bracketsContainer').innerHTML = 
                         '<div class="loading">No active season found</div>';
                     return;
                 }
 
-                currentSeason = seasonsSnapshot.docs[0].data();
-                currentSeason.id = seasonsSnapshot.docs[0].id;
+                console.log('✅ Current season:', currentSeason);
 
                 // Update header
                 document.getElementById('seasonInfo').textContent = 
-                    `${currentSeason.name} - ${currentSeason.type || 'Regular Season'}`;
+                    `${currentSeason.year} ${currentSeason.season.charAt(0).toUpperCase() + currentSeason.season.slice(1)} Season - Playoffs`;
 
-                // Load teams
+                // Load teams with their seeds
                 await loadTeams();
 
                 // Load or initialize playoff data
@@ -514,17 +512,145 @@
             } catch (error) {
                 console.error('Error loading playoff bracket:', error);
                 document.getElementById('bracketsContainer').innerHTML = 
-                    '<div class="loading">Error loading playoff bracket</div>';
+                    '<div class="loading">Error loading playoff bracket: ' + error.message + '</div>';
             }
         }
 
         async function loadTeams() {
+            // Load all teams for this season
             const teamsQuery = query(collection(db, 'teams'), where('seasonId', '==', currentSeason.id));
             const teamsSnapshot = await getDocs(teamsQuery);
-            teams = teamsSnapshot.docs.map(doc => ({
+            const allTeams = teamsSnapshot.docs.map(doc => ({
                 id: doc.id,
                 ...doc.data()
             }));
+
+            // If teams have seeds already, use those
+            if (allTeams.some(t => t.seed)) {
+                teams = allTeams.sort((a, b) => (a.seed || 999) - (b.seed || 999));
+                console.log('✅ Teams loaded with existing seeds:', teams.map(t => `${t.seed}. ${t.teamName}`));
+            } else {
+                // Otherwise calculate standings to determine seeds
+                console.log('📊 Calculating standings to determine playoff seeds...');
+                teams = await calculateStandings();
+            }
+        }
+
+        async function calculateStandings() {
+            // Get all regular season games
+            const gamesQuery = query(
+                collection(db, 'seasons', currentSeason.id, 'games'),
+                where('game_type', '==', 'Regular')
+            );
+            const gamesSnapshot = await getDocs(gamesQuery);
+            const games = gamesSnapshot.docs.map(doc => doc.data());
+
+            // Calculate team records
+            const teamStats = {};
+
+            games.forEach(game => {
+                if (!game.winner || game.winner === '') return; // Skip unplayed games
+
+                const homeTeam = game["home team"];
+                const awayTeam = game["away team"];
+                const winner = game.winner;
+                const homeScore = parseInt(game["home score"]) || 0;
+                const awayScore = parseInt(game["away score"]) || 0;
+
+                if (!teamStats[homeTeam]) {
+                    teamStats[homeTeam] = {
+                        name: homeTeam, wins: 0, losses: 0, ties: 0,
+                        runsFor: 0, runsAgainst: 0, h2h: {}
+                    };
+                }
+                if (!teamStats[awayTeam]) {
+                    teamStats[awayTeam] = {
+                        name: awayTeam, wins: 0, losses: 0, ties: 0,
+                        runsFor: 0, runsAgainst: 0, h2h: {}
+                    };
+                }
+
+                teamStats[homeTeam].runsFor += homeScore;
+                teamStats[homeTeam].runsAgainst += awayScore;
+                teamStats[awayTeam].runsFor += awayScore;
+                teamStats[awayTeam].runsAgainst += homeScore;
+
+                if (!teamStats[homeTeam].h2h[awayTeam]) {
+                    teamStats[homeTeam].h2h[awayTeam] = { wins: 0, losses: 0, ties: 0 };
+                }
+                if (!teamStats[awayTeam].h2h[homeTeam]) {
+                    teamStats[awayTeam].h2h[homeTeam] = { wins: 0, losses: 0, ties: 0 };
+                }
+
+                if (winner === "Tie") {
+                    teamStats[homeTeam].ties++;
+                    teamStats[awayTeam].ties++;
+                    teamStats[homeTeam].h2h[awayTeam].ties++;
+                    teamStats[awayTeam].h2h[homeTeam].ties++;
+                } else if (winner === homeTeam) {
+                    teamStats[homeTeam].wins++;
+                    teamStats[awayTeam].losses++;
+                    teamStats[homeTeam].h2h[awayTeam].wins++;
+                    teamStats[awayTeam].h2h[homeTeam].losses++;
+                } else if (winner === awayTeam) {
+                    teamStats[awayTeam].wins++;
+                    teamStats[homeTeam].losses++;
+                    teamStats[awayTeam].h2h[homeTeam].wins++;
+                    teamStats[homeTeam].h2h[awayTeam].losses++;
+                }
+            });
+
+            // Sort teams by standings
+            const standings = Object.values(teamStats)
+                .map(team => {
+                    const totalDecided = team.wins + team.losses;
+                    team.winPct = totalDecided > 0 ? (team.wins / totalDecided) : 0;
+                    team.runDifferential = team.runsFor - team.runsAgainst;
+                    return team;
+                })
+                .sort((a, b) => {
+                    if (a.winPct !== b.winPct) return b.winPct - a.winPct;
+                    const h2hComp = compareHeadToHead(a, b);
+                    if (h2hComp !== 0) return h2hComp;
+                    if (a.runsAgainst !== b.runsAgainst) return a.runsAgainst - b.runsAgainst;
+                    return b.runDifferential - a.runDifferential;
+                });
+
+            // Get team IDs and assign seeds
+            const teamsQuery = query(collection(db, 'teams'), where('seasonId', '==', currentSeason.id));
+            const teamsSnapshot = await getDocs(teamsQuery);
+            const allTeams = teamsSnapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }));
+
+            // Match standings to team data and assign seeds
+            const seededTeams = standings.slice(0, 10).map((standing, index) => {
+                const team = allTeams.find(t => t.teamName === standing.name);
+                return {
+                    ...team,
+                    seed: index + 1,
+                    wins: standing.wins,
+                    losses: standing.losses,
+                    winPct: standing.winPct
+                };
+            });
+
+            console.log('✅ Calculated playoff seeds:', seededTeams.map(t => `${t.seed}. ${t.teamName} (${t.wins}-${t.losses})`));
+
+            return seededTeams;
+        }
+
+        function compareHeadToHead(teamA, teamB) {
+            const aVsB = teamA.h2h[teamB.name];
+            const bVsA = teamB.h2h[teamA.name];
+            
+            if (!aVsB || !bVsA) return 0;
+            
+            const aH2HWinPct = (aVsB.wins + aVsB.losses) > 0 ? aVsB.wins / (aVsB.wins + aVsB.losses) : 0;
+            const bH2HWinPct = (bVsA.wins + bVsA.losses) > 0 ? bVsA.wins / (bVsA.wins + bVsA.losses) : 0;
+            
+            return bH2HWinPct - aH2HWinPct;
         }
 
         function initializePlayoffBracket() {
