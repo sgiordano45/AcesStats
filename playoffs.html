@@ -493,15 +493,15 @@
 <body>
     <div class="container">
         <nav>
-            <a href="index.html">🏠 Home</a>
-            <a href="current-season.html">🍂 Current Season</a>
-            <a href="projections.html">🎱 Playoff Projections</a>
-            
+            <a href="index.html">Home</a>
+            <a href="current-season.html">Current Season</a>
+            <a href="teams.html">Teams</a>
+            <a href="players.html">Players</a>
         </nav>
 
         <header>
             <img src="photos/2025 Fall Playoff logo.png" alt="2025 Fall Playoffs" class="playoff-logo">
-            <h1>🥇 Playoff Bracket</h1>
+            <h1>🏆 Playoff Bracket</h1>
             <div class="season-info" id="seasonInfo">Loading season information...</div>
             <div id="bracketStatus" class="bracket-status" style="margin-top: 15px; padding: 10px; border-radius: 8px; font-weight: 600;"></div>
         </header>
@@ -510,7 +510,7 @@
             <button class="btn" id="lockBracketBtn" onclick="lockBracket()" style="display: none;">
                 🔒 Lock Bracket for Playoffs
             </button>
-            <button class="btn" onclick="toggleEditMode()">
+            <button class="btn" id="editModeBtn" onclick="toggleEditMode()" style="display: none;">
                 <span id="editModeText">Enable Edit Mode</span>
             </button>
         </div>
@@ -550,6 +550,7 @@
     <script type="module">
         import { db, collection, query, where, getDocs, doc, getDoc } from './firebase-config.js';
         import { getCurrentSeason, getSeasonGames } from './firebase-data.js';
+        import { getCurrentUser, getUserProfile, USER_ROLES } from './firebase-auth.js';
         import { setDoc, updateDoc } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
 
         let currentSeason = null;
@@ -558,10 +559,31 @@
         let currentEditMatchup = null;
         let teams = [];
         let isProjected = true; // True until bracket is locked in
+        let currentUser = null;
+        let userProfile = null;
+        let userCanManagePlayoffs = false; // True if user is Admin or League-Staff
 
         // Load current season and playoff data
         async function loadPlayoffBracket() {
             try {
+                // Check user role first
+                currentUser = getCurrentUser();
+                
+                if (currentUser) {
+                    const profileResult = await getUserProfile(currentUser.uid);
+                    if (profileResult.success) {
+                        userProfile = profileResult.data;
+                        // Check if user is Admin or League-Staff
+                        userCanManagePlayoffs = (
+                            userProfile.userRole === USER_ROLES.ADMIN || 
+                            userProfile.userRole === USER_ROLES.LEAGUE_STAFF
+                        );
+                        console.log('👤 User role:', userProfile.userRole, '| Can manage playoffs:', userCanManagePlayoffs);
+                    }
+                } else {
+                    console.log('👤 No user logged in');
+                }
+                
                 // Get current season using the same method as current-season.html
                 currentSeason = await getCurrentSeason();
                 
@@ -759,10 +781,20 @@
 
         function updateLockButton() {
             const lockBtn = document.getElementById('lockBracketBtn');
-            if (isProjected && teams.length >= 10) {
+            const editBtn = document.getElementById('editModeBtn');
+            
+            // Only show lock button if user has permission, bracket is projected, and we have enough teams
+            if (userCanManagePlayoffs && isProjected && teams.length >= 10) {
                 lockBtn.style.display = 'inline-block';
             } else {
                 lockBtn.style.display = 'none';
+            }
+            
+            // Only show edit mode button if user has permission and bracket is locked
+            if (userCanManagePlayoffs && !isProjected) {
+                editBtn.style.display = 'inline-block';
+            } else {
+                editBtn.style.display = 'none';
             }
         }
 
@@ -953,7 +985,12 @@
             const statusEl = document.getElementById('bracketStatus');
             if (isProjected) {
                 statusEl.className = 'bracket-status projected';
-                statusEl.innerHTML = '📊 PROJECTED BRACKET - Based on current standings. Click "Lock Bracket" when ready to start playoffs.';
+                // Only show "Click Lock Bracket" message to admins/staff
+                if (userCanManagePlayoffs) {
+                    statusEl.innerHTML = '📊 PROJECTED BRACKET - Based on current standings. Click "Lock Bracket" when ready to start playoffs.';
+                } else {
+                    statusEl.innerHTML = '📊 PROJECTED BRACKET - Based on current standings.';
+                }
             } else {
                 statusEl.className = 'bracket-status locked';
                 statusEl.innerHTML = '🔒 OFFICIAL PLAYOFF BRACKET - Locked on ' + (playoffData.lockedAt ? new Date(playoffData.lockedAt).toLocaleDateString() : 'N/A');
@@ -1162,14 +1199,28 @@
             if (!teamData) return 'TBD';
             
             if (teamData.seed) {
-                return `Seed ${teamData.seed}`;
+                return `${teamData.seed}`;
             }
             
             if (teamData.from) {
+                // Recursively get the description for this source
+                const sourceGame = findMatchup(teamData.from);
+                if (sourceGame) {
+                    const t1 = getSourceTeamName(sourceGame.team1);
+                    const t2 = getSourceTeamName(sourceGame.team2);
+                    return `${t1}/${t2} Winner`;
+                }
                 return `Winner ${teamData.from}`;
             }
             
             if (teamData.loserFrom) {
+                // Recursively get the description for losers
+                const sourceGame = findMatchup(teamData.loserFrom);
+                if (sourceGame) {
+                    const t1 = getSourceTeamName(sourceGame.team1);
+                    const t2 = getSourceTeamName(sourceGame.team2);
+                    return `${t1}/${t2} Loser`;
+                }
                 return `Loser ${teamData.loserFrom}`;
             }
             
@@ -1203,6 +1254,11 @@
         }
 
         window.toggleEditMode = function() {
+            if (!userCanManagePlayoffs) {
+                alert('Only League Staff and Admins can edit playoff brackets.');
+                return;
+            }
+            
             if (isProjected) {
                 alert('Cannot edit projected bracket. Please lock the bracket first to set official playoff matchups.');
                 return;
