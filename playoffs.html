@@ -1,0 +1,802 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Playoffs - Mountainside Aces</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1a1a1a 0%, #2d5016 100%);
+            color: #fff;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 40px;
+            padding: 20px;
+            background: rgba(45, 80, 22, 0.3);
+            border-radius: 15px;
+            border: 2px solid #1a6b4a;
+        }
+
+        h1 {
+            font-size: 2.5em;
+            color: #1a6b4a;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+            margin-bottom: 10px;
+        }
+
+        .season-info {
+            font-size: 1.2em;
+            color: #a8d5a3;
+            margin-top: 10px;
+        }
+
+        .bracket-container {
+            display: flex;
+            flex-direction: column;
+            gap: 60px;
+            margin-top: 30px;
+        }
+
+        .bracket-section {
+            background: rgba(26, 107, 74, 0.1);
+            border: 2px solid #1a6b4a;
+            border-radius: 15px;
+            padding: 30px;
+        }
+
+        .bracket-title {
+            font-size: 2em;
+            color: #1a6b4a;
+            text-align: center;
+            margin-bottom: 30px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            border-bottom: 3px solid #2d5016;
+            padding-bottom: 15px;
+        }
+
+        .bracket-grid {
+            display: flex;
+            justify-content: space-between;
+            gap: 40px;
+            overflow-x: auto;
+            padding: 20px 0;
+        }
+
+        .round {
+            display: flex;
+            flex-direction: column;
+            justify-content: space-around;
+            min-width: 280px;
+            position: relative;
+        }
+
+        .round-title {
+            text-align: center;
+            font-size: 1.1em;
+            color: #a8d5a3;
+            margin-bottom: 20px;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .matchup {
+            background: rgba(45, 80, 22, 0.4);
+            border: 2px solid #2d5016;
+            border-radius: 12px;
+            padding: 15px;
+            margin-bottom: 40px;
+            position: relative;
+            transition: all 0.3s ease;
+        }
+
+        .matchup:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 25px rgba(26, 107, 74, 0.4);
+            border-color: #1a6b4a;
+        }
+
+        .game-link {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(26, 107, 74, 0.9);
+            border: 2px solid #1a6b4a;
+            border-radius: 50%;
+            width: 36px;
+            height: 36px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            z-index: 10;
+            text-decoration: none;
+        }
+
+        .game-link:hover {
+            background: #1a6b4a;
+            transform: scale(1.1) rotate(5deg);
+            box-shadow: 0 4px 12px rgba(26, 107, 74, 0.6);
+        }
+
+        .game-link-icon {
+            font-size: 1.2em;
+        }
+
+        .matchup-date {
+            text-align: center;
+            font-size: 0.85em;
+            color: #a8d5a3;
+            margin-bottom: 10px;
+            font-weight: 600;
+        }
+
+        .matchup-time {
+            text-align: center;
+            font-size: 0.8em;
+            color: #8bc68a;
+            margin-bottom: 15px;
+        }
+
+        .team {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 15px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 8px;
+            margin-bottom: 8px;
+            transition: all 0.2s ease;
+        }
+
+        .team:last-child {
+            margin-bottom: 0;
+        }
+
+        .team:hover {
+            background: rgba(26, 107, 74, 0.3);
+        }
+
+        .team.winner {
+            background: rgba(26, 107, 74, 0.5);
+            border: 2px solid #1a6b4a;
+            font-weight: bold;
+        }
+
+        .team.loser {
+            opacity: 0.6;
+        }
+
+        .seed {
+            font-size: 0.85em;
+            color: #a8d5a3;
+            font-weight: bold;
+            min-width: 25px;
+        }
+
+        .team-name {
+            flex: 1;
+            margin: 0 15px;
+            font-size: 1em;
+        }
+
+        .score {
+            font-size: 1.3em;
+            font-weight: bold;
+            color: #1a6b4a;
+            min-width: 35px;
+            text-align: center;
+        }
+
+        .tbd {
+            color: #666;
+            font-style: italic;
+        }
+
+        /* Connector lines */
+        .connector {
+            position: absolute;
+            border: 2px solid #2d5016;
+        }
+
+        /* Championship styling */
+        .championship {
+            background: linear-gradient(135deg, rgba(26, 107, 74, 0.3), rgba(45, 80, 22, 0.3));
+            border: 3px solid #1a6b4a;
+            box-shadow: 0 0 30px rgba(26, 107, 74, 0.5);
+        }
+
+        .championship .team {
+            font-size: 1.1em;
+            padding: 15px;
+        }
+
+        /* Elimination indicator */
+        .elimination-round {
+            position: relative;
+        }
+
+        .elimination-badge {
+            position: absolute;
+            top: -10px;
+            right: -10px;
+            background: #d32f2f;
+            color: white;
+            padding: 5px 10px;
+            border-radius: 20px;
+            font-size: 0.75em;
+            font-weight: bold;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        }
+
+        /* Loading and Edit states */
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #a8d5a3;
+            font-size: 1.2em;
+        }
+
+        .edit-mode-toggle {
+            text-align: center;
+            margin: 20px 0;
+        }
+
+        .btn {
+            background: #2d5016;
+            color: white;
+            border: 2px solid #1a6b4a;
+            padding: 12px 30px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1em;
+            font-weight: bold;
+            transition: all 0.3s ease;
+        }
+
+        .btn:hover {
+            background: #1a6b4a;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(26, 107, 74, 0.4);
+        }
+
+        /* Responsive Design */
+        @media (max-width: 1024px) {
+            .bracket-grid {
+                justify-content: flex-start;
+            }
+
+            .round {
+                min-width: 240px;
+            }
+
+            h1 {
+                font-size: 2em;
+            }
+        }
+
+        @media (max-width: 768px) {
+            body {
+                padding: 10px;
+            }
+
+            .bracket-section {
+                padding: 15px;
+            }
+
+            .round {
+                min-width: 200px;
+            }
+
+            .team-name {
+                font-size: 0.9em;
+            }
+
+            .bracket-title {
+                font-size: 1.5em;
+            }
+        }
+
+        /* Modal for editing */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.8);
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: #1a1a1a;
+            border: 3px solid #1a6b4a;
+            border-radius: 15px;
+            padding: 30px;
+            max-width: 500px;
+            width: 90%;
+        }
+
+        .modal-title {
+            color: #1a6b4a;
+            font-size: 1.5em;
+            margin-bottom: 20px;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        .form-group label {
+            display: block;
+            color: #a8d5a3;
+            margin-bottom: 5px;
+            font-weight: 600;
+        }
+
+        .form-group input,
+        .form-group select {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #2d5016;
+            border-radius: 8px;
+            background: rgba(45, 80, 22, 0.2);
+            color: white;
+            font-size: 1em;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #1a6b4a;
+        }
+
+        .modal-buttons {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+            margin-top: 20px;
+        }
+
+        .btn-cancel {
+            background: #666;
+            border-color: #888;
+        }
+
+        .btn-cancel:hover {
+            background: #555;
+        }
+
+        nav {
+            background: rgba(45, 80, 22, 0.3);
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        nav a {
+            color: #a8d5a3;
+            text-decoration: none;
+            margin: 0 15px;
+            font-weight: 600;
+            transition: color 0.3s ease;
+        }
+
+        nav a:hover {
+            color: #1a6b4a;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <nav>
+            <a href="index.html">Home</a>
+            <a href="current-season.html">Current Season</a>
+            <a href="teams.html">Teams</a>
+            <a href="players.html">Players</a>
+        </nav>
+
+        <header>
+            <h1>🏆 Playoff Bracket</h1>
+            <div class="season-info" id="seasonInfo">Loading season information...</div>
+        </header>
+
+        <div class="edit-mode-toggle">
+            <button class="btn" onclick="toggleEditMode()">
+                <span id="editModeText">Enable Edit Mode</span>
+            </button>
+        </div>
+
+        <div id="bracketsContainer">
+            <div class="loading">Loading playoff bracket...</div>
+        </div>
+    </div>
+
+    <!-- Edit Modal -->
+    <div id="editModal" class="modal">
+        <div class="modal-content">
+            <h2 class="modal-title">Edit Matchup</h2>
+            <div class="form-group">
+                <label for="gameDate">Game Date:</label>
+                <input type="date" id="gameDate">
+            </div>
+            <div class="form-group">
+                <label for="gameTime">Game Time:</label>
+                <input type="time" id="gameTime">
+            </div>
+            <div class="form-group">
+                <label for="team1Score">Team 1 Score:</label>
+                <input type="number" id="team1Score" min="0">
+            </div>
+            <div class="form-group">
+                <label for="team2Score">Team 2 Score:</label>
+                <input type="number" id="team2Score" min="0">
+            </div>
+            <div class="modal-buttons">
+                <button class="btn btn-cancel" onclick="closeModal()">Cancel</button>
+                <button class="btn" onclick="saveMatchup()">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { db } from './firebase-auth.js';
+        import { collection, query, where, getDocs, doc, getDoc, setDoc, updateDoc } from 'https://www.gstatic.com/firebasejs/9.22.1/firebase-firestore.js';
+
+        let currentSeason = null;
+        let playoffData = null;
+        let editMode = false;
+        let currentEditMatchup = null;
+        let teams = [];
+
+        // Load current season and playoff data
+        async function loadPlayoffBracket() {
+            try {
+                // Get current season
+                const seasonsQuery = query(collection(db, 'seasons'), where('isCurrent', '==', true));
+                const seasonsSnapshot = await getDocs(seasonsQuery);
+                
+                if (seasonsSnapshot.empty) {
+                    document.getElementById('bracketsContainer').innerHTML = 
+                        '<div class="loading">No active season found</div>';
+                    return;
+                }
+
+                currentSeason = seasonsSnapshot.docs[0].data();
+                currentSeason.id = seasonsSnapshot.docs[0].id;
+
+                // Update header
+                document.getElementById('seasonInfo').textContent = 
+                    `${currentSeason.name} - ${currentSeason.type || 'Regular Season'}`;
+
+                // Load teams
+                await loadTeams();
+
+                // Load or initialize playoff data
+                const playoffRef = doc(db, 'seasons', currentSeason.id, 'playoffs', 'bracket');
+                const playoffDoc = await getDoc(playoffRef);
+
+                if (playoffDoc.exists()) {
+                    playoffData = playoffDoc.data();
+                } else {
+                    // Initialize new playoff bracket
+                    playoffData = initializePlayoffBracket();
+                    await setDoc(playoffRef, playoffData);
+                }
+
+                renderBracket();
+            } catch (error) {
+                console.error('Error loading playoff bracket:', error);
+                document.getElementById('bracketsContainer').innerHTML = 
+                    '<div class="loading">Error loading playoff bracket</div>';
+            }
+        }
+
+        async function loadTeams() {
+            const teamsQuery = query(collection(db, 'teams'), where('seasonId', '==', currentSeason.id));
+            const teamsSnapshot = await getDocs(teamsQuery);
+            teams = teamsSnapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }));
+        }
+
+        function initializePlayoffBracket() {
+            return {
+                winnersBracket: {
+                    playIn: [
+                        { id: 'pi-1', team1: { seed: 8 }, team2: { seed: 9 }, round: 'Play-In' },
+                        { id: 'pi-2', team1: { seed: 7 }, team2: { seed: 10 }, round: 'Play-In' }
+                    ],
+                    round1: [
+                        { id: 'w1-1', team1: { seed: 1 }, team2: { seed: null, from: 'pi-1' }, round: 'Round 1' },
+                        { id: 'w1-2', team1: { seed: 2 }, team2: { seed: null, from: 'pi-2' }, round: 'Round 1' },
+                        { id: 'w1-3', team1: { seed: 3 }, team2: { seed: 6 }, round: 'Round 1' },
+                        { id: 'w1-4', team1: { seed: 4 }, team2: { seed: 5 }, round: 'Round 1' }
+                    ],
+                    semifinals: [
+                        { id: 'w2-1', team1: { from: 'w1-1' }, team2: { from: 'w1-2' }, round: 'Semifinals' },
+                        { id: 'w2-2', team1: { from: 'w1-3' }, team2: { from: 'w1-4' }, round: 'Semifinals' }
+                    ],
+                    finals: [
+                        { id: 'w3-1', team1: { from: 'w2-1' }, team2: { from: 'w2-2' }, round: 'Winners Final' }
+                    ]
+                },
+                losersBracket: {
+                    round1: [
+                        { id: 'l1-1', team1: { loserFrom: 'w1-1' }, team2: { loserFrom: 'w1-2' }, round: 'Elimination Round 1' },
+                        { id: 'l1-2', team1: { loserFrom: 'w1-3' }, team2: { loserFrom: 'w1-4' }, round: 'Elimination Round 1' }
+                    ],
+                    round2: [
+                        { id: 'l2-1', team1: { from: 'l1-1' }, team2: { loserFrom: 'w2-1' }, round: 'Elimination Round 2' },
+                        { id: 'l2-2', team1: { from: 'l1-2' }, team2: { loserFrom: 'w2-2' }, round: 'Elimination Round 2' }
+                    ],
+                    semifinals: [
+                        { id: 'l3-1', team1: { from: 'l2-1' }, team2: { from: 'l2-2' }, round: 'Elimination Semifinals' }
+                    ],
+                    finals: [
+                        { id: 'l4-1', team1: { from: 'l3-1' }, team2: { loserFrom: 'w3-1' }, round: 'Losers Final' }
+                    ]
+                },
+                championship: [
+                    { id: 'champ', team1: { from: 'w3-1' }, team2: { from: 'l4-1' }, round: 'Championship' }
+                ]
+            };
+        }
+
+        function renderBracket() {
+            const container = document.getElementById('bracketsContainer');
+            
+            container.innerHTML = `
+                ${renderWinnersBracket()}
+                ${renderLosersBracket()}
+                ${renderChampionship()}
+            `;
+
+            // Add click handlers if in edit mode
+            if (editMode) {
+                document.querySelectorAll('.matchup').forEach(matchup => {
+                    matchup.style.cursor = 'pointer';
+                    matchup.addEventListener('click', function(e) {
+                        // Don't open edit modal if clicking the game link
+                        if (e.target.closest('.game-link')) {
+                            return;
+                        }
+                        const matchupId = this.dataset.matchupId;
+                        openEditModal(matchupId);
+                    });
+                });
+            }
+        }
+
+        function renderWinnersBracket() {
+            const wb = playoffData.winnersBracket;
+            return `
+                <div class="bracket-section">
+                    <div class="bracket-title">🏆 Winners Bracket</div>
+                    <div class="bracket-grid">
+                        ${renderRound(wb.playIn, 'Play-In Games')}
+                        ${renderRound(wb.round1, 'Round 1')}
+                        ${renderRound(wb.semifinals, 'Semifinals')}
+                        ${renderRound(wb.finals, 'Winners Final')}
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderLosersBracket() {
+            const lb = playoffData.losersBracket;
+            return `
+                <div class="bracket-section">
+                    <div class="bracket-title">⚠️ Elimination Bracket</div>
+                    <div class="bracket-grid">
+                        ${renderRound(lb.round1, 'Elimination Round 1')}
+                        ${renderRound(lb.round2, 'Elimination Round 2')}
+                        ${renderRound(lb.semifinals, 'Elimination Semifinals')}
+                        ${renderRound(lb.finals, 'Losers Final')}
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderChampionship() {
+            return `
+                <div class="bracket-section">
+                    <div class="bracket-title">🏆 Championship</div>
+                    <div class="bracket-grid" style="justify-content: center;">
+                        ${renderRound(playoffData.championship, 'Championship')}
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderRound(matchups, title) {
+            return `
+                <div class="round">
+                    <div class="round-title">${title}</div>
+                    ${matchups.map(m => renderMatchup(m)).join('')}
+                </div>
+            `;
+        }
+
+        function renderMatchup(matchup) {
+            const isChampionship = matchup.id === 'champ';
+            const team1 = getTeamDisplay(matchup.team1);
+            const team2 = getTeamDisplay(matchup.team2);
+            
+            const winner = matchup.winner;
+            const team1Class = winner === 1 ? 'winner' : (winner === 2 ? 'loser' : '');
+            const team2Class = winner === 2 ? 'winner' : (winner === 1 ? 'loser' : '');
+
+            // Check if we can link to game preview (need both team names and a date)
+            const canLinkToPreview = team1.name !== 'TBD' && team2.name !== 'TBD' && matchup.gameDate;
+            const previewLink = canLinkToPreview 
+                ? `game-preview.html?home=${encodeURIComponent(team1.name)}&away=${encodeURIComponent(team2.name)}&date=${matchup.gameDate}`
+                : null;
+
+            return `
+                <div class="matchup ${isChampionship ? 'championship' : ''}" 
+                     data-matchup-id="${matchup.id}">
+                    ${matchup.gameDate ? `<div class="matchup-date">${formatDate(matchup.gameDate)}</div>` : ''}
+                    ${matchup.gameTime ? `<div class="matchup-time">${matchup.gameTime}</div>` : ''}
+                    ${canLinkToPreview ? `
+                        <a href="${previewLink}" class="game-link" title="View Game Preview">
+                            <div class="game-link-icon">📊</div>
+                        </a>
+                    ` : ''}
+                    <div class="team ${team1Class}">
+                        <span class="seed">${team1.seed || ''}</span>
+                        <span class="team-name">${team1.name}</span>
+                        <span class="score ${matchup.team1Score === undefined ? 'tbd' : ''}">
+                            ${matchup.team1Score !== undefined ? matchup.team1Score : '-'}
+                        </span>
+                    </div>
+                    <div class="team ${team2Class}">
+                        <span class="seed">${team2.seed || ''}</span>
+                        <span class="team-name">${team2.name}</span>
+                        <span class="score ${matchup.team2Score === undefined ? 'tbd' : ''}">
+                            ${matchup.team2Score !== undefined ? matchup.team2Score : '-'}
+                        </span>
+                    </div>
+                </div>
+            `;
+        }
+
+        function getTeamDisplay(teamData) {
+            if (!teamData) return { name: 'TBD', seed: '' };
+            
+            if (teamData.seed) {
+                const team = teams.find(t => t.seed === teamData.seed);
+                return {
+                    seed: teamData.seed,
+                    name: team ? team.teamName : `Seed ${teamData.seed}`,
+                    teamId: team?.id
+                };
+            }
+            
+            if (teamData.from || teamData.loserFrom) {
+                return {
+                    name: 'TBD',
+                    seed: ''
+                };
+            }
+            
+            return { name: 'TBD', seed: '' };
+        }
+
+        function formatDate(dateStr) {
+            const date = new Date(dateStr);
+            return date.toLocaleDateString('en-US', { 
+                weekday: 'short', 
+                month: 'short', 
+                day: 'numeric' 
+            });
+        }
+
+        function findMatchup(matchupId) {
+            // Search all brackets for the matchup
+            const allMatchups = [
+                ...playoffData.winnersBracket.playIn,
+                ...playoffData.winnersBracket.round1,
+                ...playoffData.winnersBracket.semifinals,
+                ...playoffData.winnersBracket.finals,
+                ...playoffData.losersBracket.round1,
+                ...playoffData.losersBracket.round2,
+                ...playoffData.losersBracket.semifinals,
+                ...playoffData.losersBracket.finals,
+                ...playoffData.championship
+            ];
+            
+            return allMatchups.find(m => m.id === matchupId);
+        }
+
+        window.toggleEditMode = function() {
+            editMode = !editMode;
+            document.getElementById('editModeText').textContent = 
+                editMode ? 'Disable Edit Mode' : 'Enable Edit Mode';
+            renderBracket();
+        };
+
+        window.openEditModal = function(matchupId) {
+            if (!editMode) return;
+            
+            currentEditMatchup = findMatchup(matchupId);
+            if (!currentEditMatchup) return;
+
+            document.getElementById('gameDate').value = currentEditMatchup.gameDate || '';
+            document.getElementById('gameTime').value = currentEditMatchup.gameTime || '';
+            document.getElementById('team1Score').value = currentEditMatchup.team1Score !== undefined ? currentEditMatchup.team1Score : '';
+            document.getElementById('team2Score').value = currentEditMatchup.team2Score !== undefined ? currentEditMatchup.team2Score : '';
+
+            document.getElementById('editModal').classList.add('active');
+        };
+
+        window.closeModal = function() {
+            document.getElementById('editModal').classList.remove('active');
+            currentEditMatchup = null;
+        };
+
+        window.saveMatchup = async function() {
+            if (!currentEditMatchup) return;
+
+            const gameDate = document.getElementById('gameDate').value;
+            const gameTime = document.getElementById('gameTime').value;
+            const team1Score = document.getElementById('team1Score').value;
+            const team2Score = document.getElementById('team2Score').value;
+
+            // Update the matchup
+            currentEditMatchup.gameDate = gameDate || null;
+            currentEditMatchup.gameTime = gameTime || null;
+            currentEditMatchup.team1Score = team1Score !== '' ? parseInt(team1Score) : undefined;
+            currentEditMatchup.team2Score = team2Score !== '' ? parseInt(team2Score) : undefined;
+
+            // Determine winner if both scores are entered
+            if (team1Score !== '' && team2Score !== '') {
+                currentEditMatchup.winner = parseInt(team1Score) > parseInt(team2Score) ? 1 : 2;
+            } else {
+                currentEditMatchup.winner = null;
+            }
+
+            // Save to Firebase
+            try {
+                const playoffRef = doc(db, 'seasons', currentSeason.id, 'playoffs', 'bracket');
+                await updateDoc(playoffRef, playoffData);
+                closeModal();
+                renderBracket();
+            } catch (error) {
+                console.error('Error saving matchup:', error);
+                alert('Error saving matchup. Please try again.');
+            }
+        };
+
+        // Initialize
+        loadPlayoffBracket();
+    </script>
+</body>
+</html>
