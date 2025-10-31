@@ -467,7 +467,7 @@
 
     <script type="module">
         import { db, collection, query, where, getDocs, doc, getDoc } from './firebase-config.js';
-        import { getCurrentSeason } from './firebase-data.js';
+        import { getCurrentSeason, getSeasonGames } from './firebase-data.js';
         import { setDoc, updateDoc } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
 
         let currentSeason = null;
@@ -499,14 +499,30 @@
 
                 // Load or initialize playoff data
                 const playoffRef = doc(db, 'seasons', currentSeason.id, 'playoffs', 'bracket');
-                const playoffDoc = await getDoc(playoffRef);
+                let playoffDoc;
+                
+                try {
+                    playoffDoc = await getDoc(playoffRef);
+                } catch (error) {
+                    console.log('⚠️ Could not access playoff bracket document');
+                    playoffDoc = null;
+                }
 
-                if (playoffDoc.exists()) {
+                if (playoffDoc && playoffDoc.exists()) {
                     playoffData = playoffDoc.data();
+                    console.log('✅ Loaded existing playoff data');
                 } else {
-                    // Initialize new playoff bracket
+                    // Initialize new playoff bracket (just in memory, won't save without permission)
                     playoffData = initializePlayoffBracket();
-                    await setDoc(playoffRef, playoffData);
+                    console.log('📋 Initialized new playoff bracket structure');
+                    
+                    // Try to save it, but don't fail if we can't
+                    try {
+                        await setDoc(playoffRef, playoffData);
+                        console.log('✅ Saved playoff bracket to Firebase');
+                    } catch (saveError) {
+                        console.log('⚠️ Could not save playoff bracket (viewing only). Contact admin for edit access.');
+                    }
                 }
 
                 renderBracket();
@@ -538,20 +554,37 @@
         }
 
         async function calculateStandings() {
-            // Get all regular season games
-            const gamesQuery = query(
-                collection(db, 'seasons', currentSeason.id, 'games'),
-                where('game_type', '==', 'Regular')
+            // Get all games for this season
+            const allGames = await getSeasonGames(currentSeason.id);
+            console.log(`📊 Found ${allGames.length} total games for season`);
+            
+            // Filter to only regular season games with winners
+            const games = allGames.filter(g => 
+                g.game_type === 'Regular' && g.winner && g.winner.trim() !== ''
             );
-            const gamesSnapshot = await getDocs(gamesQuery);
-            const games = gamesSnapshot.docs.map(doc => doc.data());
+            
+            console.log(`📊 Processing ${games.length} completed regular season games`);
+            
+            if (games.length === 0) {
+                console.log('⚠️ No completed games yet - cannot calculate standings');
+                // Return teams with no records
+                const teamsQuery = query(collection(db, 'teams'), where('seasonId', '==', currentSeason.id));
+                const teamsSnapshot = await getDocs(teamsQuery);
+                const allTeams = teamsSnapshot.docs.map((doc, index) => ({
+                    id: doc.id,
+                    ...doc.data(),
+                    seed: index + 1,
+                    wins: 0,
+                    losses: 0,
+                    winPct: 0
+                }));
+                return allTeams.slice(0, 10);
+            }
 
             // Calculate team records
             const teamStats = {};
 
             games.forEach(game => {
-                if (!game.winner || game.winner === '') return; // Skip unplayed games
-
                 const homeTeam = game["home team"];
                 const awayTeam = game["away team"];
                 const winner = game.winner;
