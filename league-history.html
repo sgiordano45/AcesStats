@@ -523,8 +523,8 @@ async function loadSeasonHistory() {
         }
       });
       
-      // Sort teams alphabetically
-      const teams = Array.from(teamsSet).sort();
+      // Convert to array
+      const teams = Array.from(teamsSet);
       
       // Create season entry
       const seasonLabel = `${season.year} ${season.season.charAt(0).toUpperCase() + season.season.slice(1)}`;
@@ -541,6 +541,29 @@ async function loadSeasonHistory() {
     }
     
     console.log(`✅ Built history for ${seasonHistory.length} seasons`);
+    
+    // Now sort teams within each season by longevity (most seasons = bottom of stack)
+    seasonHistory.forEach((season, seasonIndex) => {
+      // Count how many seasons each team has been in up to this point
+      const teamSeasonCount = {};
+      season.teams.forEach(team => {
+        let count = 0;
+        // Count appearances in this and all previous seasons
+        for (let i = 0; i <= seasonIndex; i++) {
+          if (seasonHistory[i].teams.includes(team)) {
+            count++;
+          }
+        }
+        teamSeasonCount[team] = count;
+      });
+      
+      // Sort teams: most seasons at bottom (beginning of array), newest at top (end of array)
+      season.teams.sort((a, b) => {
+        const countDiff = teamSeasonCount[b] - teamSeasonCount[a];
+        if (countDiff !== 0) return countDiff; // More seasons = earlier in array = bottom of stack
+        return a.localeCompare(b); // Alphabetical as tiebreaker
+      });
+    });
     
   } catch (error) {
     console.error('❌ Error loading season history:', error);
