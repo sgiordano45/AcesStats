@@ -454,15 +454,20 @@ body {
       </div>
     </div>
 
-    <!-- Game Information -->
+    <!-- Game Selection -->
     <div class="controls-section">
       <div class="control-group">
-        <label for="gameDate">Game Date:</label>
-        <input type="date" id="gameDate" required>
+        <label for="gameSelect">Select Game:</label>
+        <select id="gameSelect" required>
+          <option value="">-- Select a game --</option>
+        </select>
       </div>
-      <div class="control-group">
-        <label for="opponent">Opponent:</label>
-        <input type="text" id="opponent" placeholder="e.g., Rival Team" required>
+      <div id="gameDetails" style="display: none; padding: 1rem; background: #f8fafc; border-radius: 8px; margin-top: 1rem;">
+        <div style="display: grid; grid-template-columns: auto 1fr; gap: 0.5rem 1rem; font-size: 14px;">
+          <strong>Date:</strong> <span id="selectedGameDate"></span>
+          <strong>Opponent:</strong> <span id="selectedGameOpponent"></span>
+          <strong>Location:</strong> <span id="selectedGameLocation"></span>
+        </div>
       </div>
     </div>
 
@@ -553,8 +558,75 @@ let userProfile = null;
 let currentSeason = null;
 let selectedTeam = null;
 let rosterPlayers = [];
+let teamGames = [];
 let isAdmin = false;
 let isLeagueStaff = false;
+
+// Load all games for a team (including past games)
+async function getAllTeamGames(teamId, seasonId) {
+  try {
+    const gamesRef = collection(db, 'seasons', seasonId, 'games');
+    
+    console.log(`🔍 Loading ALL games for team: "${teamId}" in season: ${seasonId}`);
+    
+    // Get ALL games for this season
+    const allGamesSnap = await getDocs(gamesRef);
+    
+    const games = [];
+    const teamIdLower = teamId.toLowerCase();
+    
+    allGamesSnap.forEach(doc => {
+      const data = doc.data();
+      
+      // Check if this team is involved (check both homeTeamId and homeTeam fields)
+      const homeTeamMatch = 
+        data.homeTeamId?.toLowerCase() === teamIdLower ||
+        data.homeTeam?.toLowerCase() === teamIdLower;
+        
+      const awayTeamMatch = 
+        data.awayTeamId?.toLowerCase() === teamIdLower ||
+        data.awayTeam?.toLowerCase() === teamIdLower;
+      
+      if (!homeTeamMatch && !awayTeamMatch) {
+        return; // Not this team's game
+      }
+      
+      // Parse the game date
+      let gameDate;
+      if (data.date?.seconds) {
+        gameDate = new Date(data.date.seconds * 1000);
+      } else if (data.date) {
+        gameDate = new Date(data.date);
+      } else {
+        return; // No valid date
+      }
+      
+      gameDate.setHours(0, 0, 0, 0);
+      
+      // Include ALL games (no date filter)
+      games.push({
+        id: doc.id,
+        ...data,
+        dateObj: gameDate,
+        isHome: homeTeamMatch,
+        opponent: homeTeamMatch ? data.awayTeam : data.homeTeam
+      });
+    });
+    
+    // Sort by date (most recent first)
+    games.sort((a, b) => {
+      const dateA = a.date?.seconds || new Date(a.date).getTime() / 1000 || 0;
+      const dateB = b.date?.seconds || new Date(b.date).getTime() / 1000 || 0;
+      return dateB - dateA; // Reverse order for most recent first
+    });
+    
+    console.log(`✅ Loaded ${games.length} games for ${teamId}`);
+    return games;
+  } catch (error) {
+    console.error('❌ Error loading team games:', error);
+    return [];
+  }
+}
 
 // Show/hide message boxes
 function showMessage(type, text) {
@@ -631,11 +703,59 @@ async function loadTeamRoster(teamId) {
     players.sort((a, b) => a.name.localeCompare(b.name));
 
     console.log(`✅ Loaded ${players.length} players for team ${teamId}`);
+    
+    // Also load games for this team
+    teamGames = await getAllTeamGames(teamId, currentSeason.id);
+    populateGameDropdown();
+    
     return players;
   } catch (error) {
     console.error('❌ Error loading team roster:', error);
     throw error;
   }
+}
+
+// Populate game dropdown
+function populateGameDropdown() {
+  const gameSelect = document.getElementById('gameSelect');
+  
+  // Clear existing options except the first one
+  gameSelect.innerHTML = '<option value="">-- Select a game --</option>';
+  
+  if (teamGames.length === 0) {
+    const option = document.createElement('option');
+    option.value = '';
+    option.textContent = 'No games found for this team';
+    option.disabled = true;
+    gameSelect.appendChild(option);
+    return;
+  }
+  
+  teamGames.forEach(game => {
+    const option = document.createElement('option');
+    option.value = game.id;
+    
+    // Format date
+    let dateStr = 'Unknown Date';
+    if (game.dateObj) {
+      dateStr = game.dateObj.toLocaleDateString('en-US', { 
+        weekday: 'short', 
+        month: 'short', 
+        day: 'numeric' 
+      });
+    }
+    
+    // Format game description
+    const location = game.isHome ? 'vs' : '@';
+    option.textContent = `${dateStr} ${location} ${game.opponent}`;
+    
+    // Store game data in option for later retrieval
+    option.dataset.gameData = JSON.stringify(game);
+    
+    gameSelect.appendChild(option);
+  });
+  
+  console.log(`✅ Populated ${teamGames.length} games in dropdown`);
 }
 
 // Render stats table
@@ -722,14 +842,18 @@ function nameToUserId(name) {
 // Submit stats to Firebase
 async function submitStats() {
   try {
-    // Validate game info
-    const gameDate = document.getElementById('gameDate').value;
-    const opponent = document.getElementById('opponent').value.trim();
+    // Validate game selection
+    const gameSelect = document.getElementById('gameSelect');
+    const selectedGameId = gameSelect.value;
 
-    if (!gameDate || !opponent) {
-      showMessage('error', 'Please enter both game date and opponent.');
+    if (!selectedGameId) {
+      showMessage('error', 'Please select a game.');
       return;
     }
+
+    // Get selected game data
+    const selectedOption = gameSelect.options[gameSelect.selectedIndex];
+    const gameData = JSON.parse(selectedOption.dataset.gameData);
 
     if (!selectedTeam) {
       showMessage('error', 'No team selected.');
@@ -918,8 +1042,8 @@ function clearAllStats() {
   const checkboxes = document.querySelectorAll('input[type="checkbox"][id^="played_"]');
   checkboxes.forEach(checkbox => checkbox.checked = true);
   
-  document.getElementById('gameDate').value = '';
-  document.getElementById('opponent').value = '';
+  document.getElementById('gameSelect').value = '';
+  document.getElementById('gameDetails').style.display = 'none';
   
   showMessage('info', 'All stats cleared.');
 }
@@ -1025,9 +1149,31 @@ async function initializePage(user) {
         clearAllStats();
       }
     });
-
-    // Set default game date to today
-    document.getElementById('gameDate').valueAsDate = new Date();
+    
+    // Add game selection event listener
+    document.getElementById('gameSelect').addEventListener('change', (e) => {
+      const selectedOption = e.target.options[e.target.selectedIndex];
+      if (selectedOption.value) {
+        const gameData = JSON.parse(selectedOption.dataset.gameData);
+        
+        // Show game details
+        const gameDetails = document.getElementById('gameDetails');
+        const dateStr = gameData.dateObj ? new Date(gameData.dateObj).toLocaleDateString('en-US', { 
+          weekday: 'long', 
+          year: 'numeric',
+          month: 'long', 
+          day: 'numeric' 
+        }) : 'Unknown Date';
+        
+        document.getElementById('selectedGameDate').textContent = dateStr;
+        document.getElementById('selectedGameOpponent').textContent = gameData.opponent || 'Unknown';
+        document.getElementById('selectedGameLocation').textContent = gameData.isHome ? 'Home' : 'Away';
+        
+        gameDetails.style.display = 'block';
+      } else {
+        document.getElementById('gameDetails').style.display = 'none';
+      }
+    });
 
     document.getElementById('loadingOverlay').classList.add('hidden');
 
