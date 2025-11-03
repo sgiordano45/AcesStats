@@ -72,7 +72,7 @@ body {
 }
 
 .softball-spinner::before {
-  content: '📜 ';
+  content: '📜';
   font-size: 80px;
   animation: spin 1.5s ease-in-out infinite;
   display: block;
@@ -260,12 +260,14 @@ body {
   align-items: center;
   gap: 0.5rem;
   box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  text-shadow: 0 1px 2px rgba(0,0,0,0.3);
 }
 
 /* Special styling for light-colored teams */
 .team-badge.light-team {
   color: #333 !important;
   border: 2px solid #999;
+  text-shadow: none;
 }
 
 .team-badge.new {
@@ -399,7 +401,7 @@ body {
 <div class="page-container">
   <!-- Page Header -->
   <div class="page-header">
-    <h1>📜 League History</h1>
+    <h1>🏆 League History</h1>
     <p>The Evolution of Mountainside Aces Softball</p>
   </div>
 
@@ -423,7 +425,7 @@ body {
       <div class="stat-card">
         <div class="stat-label">Total Seasons</div>
         <div class="stat-value" id="totalSeasons">—</div>
-        <div class="stat-detail">Since 2019</div>
+        <div class="stat-detail">Since league inception</div>
       </div>
       <div class="stat-card">
         <div class="stat-label">Total Teams</div>
@@ -451,7 +453,7 @@ body {
 </div>
 
 <script type="module">
-import { getAllSeasons } from './firebase-data.js';
+import { getAllSeasons, getSeasonGames } from './firebase-data.js';
 
 // Team color mapping from team-colors.js
 const teamColors = {
@@ -468,22 +470,10 @@ const teamColors = {
   'Carolina': '#4b9cd3'
 };
 
-// Define the complete history including pre-2022 seasons
-const seasonHistory = [
-  { label: '2019 Fall', year: 2019, season: 'Fall', teams: ['Green'] },
-  { label: '2021 Summer', year: 2021, season: 'Summer', teams: ['Green', 'Gold'] },
-  { label: '2021 Fall', year: 2021, season: 'Fall', teams: ['Green', 'Gold'] },
-  { label: '2022 Summer', year: 2022, season: 'Summer', teams: ['Green', 'Gold', 'White'] },
-  { label: '2022 Fall', year: 2022, season: 'Fall', teams: ['Green', 'Gold', 'White', 'Blue'] },
-  { label: '2023 Summer', year: 2023, season: 'Summer', teams: ['Green', 'Gold', 'White', 'Black', 'Red', 'Silver'] },
-  { label: '2023 Fall', year: 2023, season: 'Fall', teams: ['Green', 'Gold', 'White', 'Blue', 'Black', 'Red', 'Silver'] },
-  { label: '2024 Summer', year: 2024, season: 'Summer', teams: ['Green', 'Gold', 'White', 'Blue', 'Black', 'Red', 'Silver', 'Orange'] },
-  { label: '2024 Fall', year: 2024, season: 'Fall', teams: ['Green', 'Gold', 'White', 'Blue', 'Black', 'Red', 'Silver', 'Orange', 'Purple'] },
-  { label: '2025 Summer', year: 2025, season: 'Summer', teams: ['Green', 'Gold', 'Blue', 'Black', 'Red', 'Silver', 'Orange', 'Purple', 'Army', 'Carolina'] },
-  { label: '2025 Fall', year: 2025, season: 'Fall', teams: ['Green', 'Gold', 'White', 'Blue', 'Black', 'Red', 'Silver', 'Orange', 'Purple', 'Carolina'] }
-];
+// Valid Aces color teams only
+const validAcesTeams = ['Green', 'Gold', 'White', 'Blue', 'Black', 'Red', 'Silver', 'Orange', 'Purple', 'Army', 'Carolina'];
 
-let firebaseSeasons = [];
+let seasonHistory = [];
 
 // Hide loading overlay
 window.addEventListener('load', function() {
@@ -492,13 +482,68 @@ window.addEventListener('load', function() {
   }, 800);
 });
 
-// Load Firebase seasons to cross-reference
-async function loadFirebaseSeasons() {
+// Capitalize team name
+function capitalize(str) {
+  if (!str) return '';
+  return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
+}
+
+// Load seasons and build history from Firebase
+async function loadSeasonHistory() {
   try {
-    firebaseSeasons = await getAllSeasons();
-    console.log(`✅ Loaded ${firebaseSeasons.length} seasons from Firebase`);
+    console.log('📊 Loading seasons from Firebase...');
+    
+    const seasons = await getAllSeasons();
+    console.log(`✅ Found ${seasons.length} seasons`);
+    
+    // Sort seasons chronologically
+    seasons.sort((a, b) => {
+      if (a.year !== b.year) return a.year - b.year;
+      // Fall comes after Summer
+      if (a.season === 'Summer' && b.season === 'Fall') return -1;
+      if (a.season === 'Fall' && b.season === 'Summer') return 1;
+      return 0;
+    });
+    
+    // Load teams for each season
+    for (const season of seasons) {
+      const games = await getSeasonGames(season.id);
+      const teamsSet = new Set();
+      
+      // Extract unique teams from games
+      games.forEach(game => {
+        const homeTeam = capitalize(game.homeTeamName || game.homeTeamId || '');
+        const awayTeam = capitalize(game.awayTeamName || game.awayTeamId || '');
+        
+        if (homeTeam && validAcesTeams.includes(homeTeam)) {
+          teamsSet.add(homeTeam);
+        }
+        if (awayTeam && validAcesTeams.includes(awayTeam)) {
+          teamsSet.add(awayTeam);
+        }
+      });
+      
+      // Sort teams alphabetically
+      const teams = Array.from(teamsSet).sort();
+      
+      // Create season entry
+      const seasonLabel = `${season.year} ${season.season}`;
+      
+      seasonHistory.push({
+        label: seasonLabel,
+        year: season.year,
+        season: season.season,
+        teams: teams,
+        seasonId: season.id
+      });
+      
+      console.log(`✅ ${seasonLabel}: ${teams.length} teams - ${teams.join(', ')}`);
+    }
+    
+    console.log(`✅ Built history for ${seasonHistory.length} seasons`);
+    
   } catch (error) {
-    console.warn('⚠️ Could not load Firebase seasons:', error);
+    console.error('❌ Error loading season history:', error);
   }
 }
 
@@ -513,6 +558,10 @@ function generateChart() {
 
   // Clear existing content
   svg.innerHTML = '';
+
+  if (seasonHistory.length === 0) {
+    return;
+  }
 
   // Calculate bar dimensions
   const barWidth = chartWidth / seasonHistory.length - 10;
@@ -585,8 +634,6 @@ function generateChart() {
     label.setAttribute('font-weight', '600');
     label.textContent = season.label;
     g.appendChild(label);
-
-
   });
 
   // Add Y-axis label
@@ -600,8 +647,6 @@ function generateChart() {
   yLabel.setAttribute('font-weight', '600');
   yLabel.textContent = 'Number of Teams';
   svg.appendChild(yLabel);
-
-
 }
 
 // Generate legend
@@ -701,7 +746,7 @@ function generateStats() {
     season.teams.forEach(team => allTeamsSet.add(team));
   });
   const totalTeams = allTeamsSet.size;
-  const currentTeams = seasonHistory[seasonHistory.length - 1].teams.length;
+  const currentTeams = seasonHistory[seasonHistory.length - 1]?.teams.length || 0;
   
   // Find peak season
   let peakCount = 0;
@@ -716,12 +761,12 @@ function generateStats() {
   document.getElementById('totalSeasons').textContent = totalSeasons;
   document.getElementById('totalTeams').textContent = totalTeams;
   document.getElementById('currentTeams').textContent = currentTeams;
-  document.getElementById('peakSeason').textContent = `${peakSeasonLabel} (${peakCount})`;
+  document.getElementById('peakSeason').textContent = peakSeasonLabel ? `${peakSeasonLabel} (${peakCount})` : '—';
 }
 
 // Initialize page
 async function init() {
-  await loadFirebaseSeasons();
+  await loadSeasonHistory();
   generateChart();
   generateLegend();
   generateTimeline();
@@ -737,7 +782,6 @@ init();
   // Navigation auto-initializes on load!
 </script>
 <script src="mobile-enhancements.js"></script>
-<script src="team-colors.js"></script>
 
 </body>
 </html>
