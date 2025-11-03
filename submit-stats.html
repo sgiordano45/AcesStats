@@ -608,21 +608,23 @@ async function loadTeamRoster(teamId) {
   try {
     console.log('🔍 Loading roster for team:', teamId);
 
-    // Query the users collection for players on this team
-    const usersRef = collection(db, 'users');
-    const q = query(usersRef, where('linkedTeam', '==', teamId));
-    const querySnapshot = await getDocs(q);
+    // Use the same approach as roster-management.html
+    // Load from aggregatedPlayerStats to get complete roster
+    const { getSeasonPlayerStatsOptimized } = await import('./firebase-data.js');
+    const seasonPlayers = await getSeasonPlayerStatsOptimized(currentSeason.id);
+    
+    // Filter for the selected team and exclude migrated players
+    const filteredPlayers = seasonPlayers.filter(p => {
+      return p.team === teamId && !p.migrated;
+    });
 
-    const players = [];
-    querySnapshot.forEach((doc) => {
-      const userData = doc.data();
-      if (userData.linkedPlayer) {
-        players.push({
-          id: doc.id,
-          name: userData.linkedPlayer,
-          displayName: userData.displayName || userData.linkedPlayer
-        });
-      }
+    const players = filteredPlayers.map(player => {
+      const name = player.name || player.playerName;
+      return {
+        id: player.playerId,
+        name: name,
+        displayName: name
+      };
     });
 
     // Sort players by name
