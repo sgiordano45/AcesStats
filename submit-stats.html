@@ -578,14 +578,9 @@ async function getAllTeamGames(teamId, seasonId) {
     allGamesSnap.forEach(doc => {
       const data = doc.data();
       
-      // Check if this team is involved (check both homeTeamId and homeTeam fields)
-      const homeTeamMatch = 
-        data.homeTeamId?.toLowerCase() === teamIdLower ||
-        data.homeTeam?.toLowerCase() === teamIdLower;
-        
-      const awayTeamMatch = 
-        data.awayTeamId?.toLowerCase() === teamIdLower ||
-        data.awayTeam?.toLowerCase() === teamIdLower;
+      // Check if this team is involved (check homeTeamId and awayTeamId)
+      const homeTeamMatch = data.homeTeamId?.toLowerCase() === teamIdLower;
+      const awayTeamMatch = data.awayTeamId?.toLowerCase() === teamIdLower;
       
       if (!homeTeamMatch && !awayTeamMatch) {
         return; // Not this team's game
@@ -603,13 +598,23 @@ async function getAllTeamGames(teamId, seasonId) {
       
       gameDate.setHours(0, 0, 0, 0);
       
+      // Determine opponent using the correct field names
+      let opponent = 'Unknown Opponent';
+      if (homeTeamMatch) {
+        // We are home team, opponent is away team
+        opponent = data.awayTeamName || data.awayTeamId || 'Unknown';
+      } else {
+        // We are away team, opponent is home team
+        opponent = data.homeTeamName || data.homeTeamId || 'Unknown';
+      }
+      
       // Include ALL games (no date filter)
       games.push({
         id: doc.id,
         ...data,
         dateObj: gameDate,
         isHome: homeTeamMatch,
-        opponent: homeTeamMatch ? data.awayTeam : data.homeTeam
+        opponent: opponent
       });
     });
     
@@ -621,6 +626,9 @@ async function getAllTeamGames(teamId, seasonId) {
     });
     
     console.log(`✅ Loaded ${games.length} games for ${teamId}`);
+    if (games.length > 0) {
+      console.log('📊 Sample game - Opponent:', games[0].opponent, 'IsHome:', games[0].isHome);
+    }
     return games;
   } catch (error) {
     console.error('❌ Error loading team games:', error);
