@@ -874,7 +874,7 @@ async function submitStats() {
     submitBtn.disabled = true;
     submitBtn.innerHTML = '<div style="width: 18px; height: 18px; border: 2px solid white; border-top-color: transparent; border-radius: 50%; animation: spin 1s linear infinite;"></div> Submitting...';
 
-    showMessage('info', 'Submitting stats to database...');
+    showMessage('info', 'Submitting stats to game-level database...');
 
     // Collect all player stats
     const statsToSubmit = [];
@@ -915,9 +915,10 @@ async function submitStats() {
       return;
     }
 
-    console.log('📊 Submitting stats for', statsToSubmit.length, 'players');
+    console.log('📊 Submitting game-level stats for', statsToSubmit.length, 'players');
+    console.log('🎮 Game ID:', selectedGameId);
 
-    // Submit each player's stats
+    // Submit each player's stats to GAME-LEVEL database only
     let successCount = 0;
     let errorCount = 0;
 
@@ -926,100 +927,117 @@ async function submitStats() {
         const userId = nameToUserId(playerStats.playerName);
         const seasonId = currentSeason.id;
 
-        // Update batting stats if any batting data exists
-        if (playerStats.atBats > 0 || playerStats.hits > 0 || playerStats.runs > 0 || playerStats.walks > 0) {
-          const battingStatsRef = doc(db, 'playerStats', userId, 'seasons', seasonId);
-          
-          // Check if document exists
-          const battingDoc = await getDoc(battingStatsRef);
-          
-          if (battingDoc.exists()) {
-            // Update existing stats with increment
-            await updateDoc(battingStatsRef, {
-              atBats: increment(playerStats.atBats),
-              hits: increment(playerStats.hits),
-              runs: increment(playerStats.runs),
-              walks: increment(playerStats.walks),
-              gamesPlayed: increment(1),
-              lastUpdated: serverTimestamp()
-            });
-          } else {
-            // Create new stats document
-            await setDoc(battingStatsRef, {
-              playerId: userId,
-              playerName: playerStats.playerName,
-              seasonId: seasonId,
-              atBats: playerStats.atBats,
-              hits: playerStats.hits,
-              runs: playerStats.runs,
-              walks: playerStats.walks,
-              gamesPlayed: 1,
-              doubles: 0,
-              triples: 0,
-              homeRuns: 0,
-              rbi: 0,
-              strikeouts: 0,
-              stolenBases: 0,
-              caughtStealing: 0,
-              lastUpdated: serverTimestamp()
-            });
-          }
-
-          console.log(`✅ Updated batting stats for ${playerStats.playerName}`);
+        // Format game date for display
+        let gameDateFormatted = 'Unknown';
+        if (gameData.dateObj) {
+          gameDateFormatted = new Date(gameData.dateObj).toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric'
+          });
         }
 
-        // Update pitching stats if any pitching data exists
-        if (playerStats.inningsPitched > 0 || playerStats.runsAllowed > 0) {
-          const pitchingStatsRef = doc(db, 'pitchingStats', userId, 'seasons', seasonId);
+        // Write BATTING stats to game-level database
+        if (playerStats.atBats > 0 || playerStats.hits > 0 || playerStats.runs > 0 || playerStats.walks > 0) {
+          const gameStatsRef = doc(db, 'playerStats', userId, 'games', selectedGameId);
           
-          // Check if document exists
-          const pitchingDoc = await getDoc(pitchingStatsRef);
-          
-          if (pitchingDoc.exists()) {
-            // Update existing stats with increment
-            await updateDoc(pitchingStatsRef, {
-              inningsPitched: increment(playerStats.inningsPitched),
-              runsAllowed: increment(playerStats.runsAllowed),
-              gamesPlayed: increment(1),
-              lastUpdated: serverTimestamp()
-            });
-          } else {
-            // Create new stats document
-            await setDoc(pitchingStatsRef, {
-              playerId: userId,
-              playerName: playerStats.playerName,
-              seasonId: seasonId,
-              inningsPitched: playerStats.inningsPitched,
-              runsAllowed: playerStats.runsAllowed,
-              gamesPlayed: 1,
-              earnedRuns: 0,
-              strikeouts: 0,
-              walks: 0,
-              hits: 0,
-              wins: 0,
-              losses: 0,
-              saves: 0,
-              lastUpdated: serverTimestamp()
-            });
-          }
+          await setDoc(gameStatsRef, {
+            // Game identification
+            gameId: selectedGameId,
+            playerId: userId,
+            playerName: playerStats.playerName,
+            seasonId: seasonId,
+            teamId: selectedTeam,
+            
+            // Game context
+            gameDate: gameData.date || null,
+            gameDateFormatted: gameDateFormatted,
+            opponent: gameData.opponent || 'Unknown',
+            isHome: gameData.isHome || false,
+            
+            // Batting stats for this game
+            atBats: playerStats.atBats,
+            hits: playerStats.hits,
+            runs: playerStats.runs,
+            walks: playerStats.walks,
+            doubles: 0,  // Not collected yet, placeholder for future
+            triples: 0,
+            homeRuns: 0,
+            rbi: 0,
+            strikeouts: 0,
+            stolenBases: 0,
+            caughtStealing: 0,
+            
+            // Metadata
+            submittedBy: currentUser.uid,
+            submittedByName: currentUser.displayName || currentUser.email,
+            submittedAt: serverTimestamp(),
+            lastModified: serverTimestamp(),
+            dataVersion: 1  // Track schema version for future migrations
+          }, { merge: true }); // Use merge in case we're updating existing game stats
 
-          console.log(`✅ Updated pitching stats for ${playerStats.playerName}`);
+          console.log(`✅ Saved batting stats for ${playerStats.playerName} - Game ${selectedGameId}`);
+        }
+
+        // Write PITCHING stats to game-level database
+        if (playerStats.inningsPitched > 0 || playerStats.runsAllowed > 0) {
+          const gamePitchingRef = doc(db, 'pitchingStats', userId, 'games', selectedGameId);
+          
+          await setDoc(gamePitchingRef, {
+            // Game identification
+            gameId: selectedGameId,
+            playerId: userId,
+            playerName: playerStats.playerName,
+            seasonId: seasonId,
+            teamId: selectedTeam,
+            
+            // Game context
+            gameDate: gameData.date || null,
+            gameDateFormatted: gameDateFormatted,
+            opponent: gameData.opponent || 'Unknown',
+            isHome: gameData.isHome || false,
+            
+            // Pitching stats for this game
+            inningsPitched: playerStats.inningsPitched,
+            runsAllowed: playerStats.runsAllowed,
+            earnedRuns: 0,  // Not collected yet, placeholder for future
+            strikeouts: 0,
+            walks: 0,
+            hits: 0,
+            wins: 0,
+            losses: 0,
+            saves: 0,
+            
+            // Metadata
+            submittedBy: currentUser.uid,
+            submittedByName: currentUser.displayName || currentUser.email,
+            submittedAt: serverTimestamp(),
+            lastModified: serverTimestamp(),
+            dataVersion: 1
+          }, { merge: true });
+
+          console.log(`✅ Saved pitching stats for ${playerStats.playerName} - Game ${selectedGameId}`);
         }
 
         successCount++;
       } catch (error) {
-        console.error(`❌ Error updating stats for ${playerStats.playerName}:`, error);
+        console.error(`❌ Error saving stats for ${playerStats.playerName}:`, error);
         errorCount++;
       }
     }
 
     // Show result
     if (errorCount === 0) {
-      showMessage('success', `Successfully submitted stats for ${successCount} player(s)!`);
-      // Clear the form
+      showMessage('success', `Successfully submitted game-level stats for ${successCount} player(s)! Game ID: ${selectedGameId}`);
+      console.log('✅ All stats saved to game-level database');
+      console.log('📝 Database paths:');
+      console.log('   - /playerStats/{userId}/games/' + selectedGameId);
+      console.log('   - /pitchingStats/{userId}/games/' + selectedGameId);
+      
+      // Clear the form after successful submission
       setTimeout(() => {
         clearAllStats();
-      }, 2000);
+      }, 3000);
     } else {
       showMessage('warning', `Submitted stats for ${successCount} player(s), but ${errorCount} failed.`);
     }
