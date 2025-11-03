@@ -1,0 +1,308 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ========================================
+    // HELPER FUNCTIONS
+    // ========================================
+    
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+    
+    function ownsMergedProfile(profileId) {
+      // Check if the authenticated user has this profileId as their mergedFromProfile
+      return isSignedIn() && 
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.mergedFromProfile == profileId;
+    }
+    
+    // NEW: Check if user is a captain
+    function isCaptain() {
+      return isSignedIn() && 
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isCaptain == true;
+    }
+    
+    // NEW: Check if user is staff or admin
+    function isStaffOrAdmin() {
+      return isSignedIn() && 
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+             (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.userRole in ['staff', 'admin'] ||
+              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['staff', 'admin']);
+    }
+
+    // NEW: Check if user can edit offseason rosters (captain, staff, or admin)
+    function canEditOffseasonRoster() {
+      return isCaptain() || isStaffOrAdmin();
+    }
+    
+    // NEW: Check if user can submit game scores
+    function canSubmitScores() {
+      return isSignedIn() && 
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+             (
+               // Captain
+               get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isCaptain == true ||
+               // Admin
+               get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true ||
+               // User type is team-staff or league-staff
+               get(/databases/$(database)/documents/users/$(request.auth.uid)).data.userType in ['team-staff', 'league-staff'] ||
+               // Legacy role checks
+               get(/databases/$(database)/documents/users/$(request.auth.uid)).data.userRole in ['admin', 'staff']
+             );
+    }
+    
+    
+    // ========================================
+    // USERS COLLECTION (Auth User Profiles)
+    // Document ID = Firebase Auth UID
+    // ========================================
+    
+    match /users/{userId} {
+      // Anyone can read user profiles (needed for roster lookups)
+      allow read: if true;
+      
+      // Users can create their own profile (document ID must match their auth UID)
+      allow create: if isSignedIn() && userId == request.auth.uid;
+      
+      // Users can update their own profile OR a merged profile they own
+      allow update: if isSignedIn() && (userId == request.auth.uid || ownsMergedProfile(userId));
+      
+      // No deletes
+      allow delete: if false;
+    }
+    
+    // ========================================
+    // PENDING PLAYERS (New player registrations)
+    // ========================================
+    
+    match /pendingPlayers/{userId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && userId == request.auth.uid;
+      allow update: if isSignedIn() && userId == request.auth.uid;
+      allow delete: if false;
+    }
+    
+    // ========================================
+    // OFFSEASON ROSTERS (Draft Planning Tool)
+    // Only captains, staff, and admins can access
+    // ========================================
+
+    match /offseasonRosters/{docId} {
+      // Allow read/write for captains, staff, and admins
+      allow read, write: if canEditOffseasonRoster();
+      
+      // Changelog subcollection
+      match /changelog/{changeId} {
+        allow read: if canEditOffseasonRoster();
+        allow create: if canEditOffseasonRoster();
+        // Don't allow updates or deletes of changelog entries
+        allow update, delete: if false;
+      }
+      
+      // Presence tracking subcollection
+      match /presence/{userId} {
+        allow read: if canEditOffseasonRoster();
+        allow write: if canEditOffseasonRoster();
+      }
+    }
+    
+    
+    
+    // ========================================
+    // RSVPS COLLECTION (Game Availability)
+    // Document ID = gameId
+    // ========================================
+    
+    match /rsvps/{gameId} {
+      // Allow reading all RSVPs for a game (needed for roster display)
+      allow read: if isSignedIn();
+      
+      // Responses subcollection
+      match /responses/{userId} {
+        // Anyone signed in can read RSVPs (needed for lineup planning)
+        allow read: if isSignedIn();
+        
+        // Players can create/update their own RSVP, OR captains can edit any RSVP
+        allow create, update: if isSignedIn() && (
+          request.auth.uid == userId || 
+          isCaptain()
+        );
+        
+        // No deletes (use status: 'none' instead)
+        allow delete: if false;
+      }
+    }
+    
+    // ========================================
+    // LINEUPS COLLECTION (Batting Order & Fielding Positions)
+    // Document ID = gameId
+    // Only captains can edit lineups
+    // ========================================
+    
+    match /lineups/{gameId} {
+      // Anyone signed in can read lineups
+      allow read: if isSignedIn();
+      
+      // Batting order by team
+      match /batting/{teamId} {
+        allow read: if isSignedIn();
+        allow write: if isCaptain();
+      }
+      
+      // Fielding positions by team and inning
+      match /fielding/{teamId} {
+        allow read: if isSignedIn();
+        
+        match /innings/{inning} {
+          allow read: if isSignedIn();
+          allow write: if isCaptain();
+        }
+      }
+      
+      // Bench assignments by team and inning
+      match /bench/{teamId} {
+        allow read: if isSignedIn();
+        
+        match /innings/{inning} {
+          allow read: if isSignedIn();
+          allow write: if isCaptain();
+        }
+      }
+    }
+    
+    // ========================================
+    // TEMPORARY AUTH USERS (Deprecated - kept for backwards compatibility)
+    // ========================================
+    
+    match /tempAuthUsers/{authUID} {
+      allow read: if isSignedIn() && isOwner(authUID);
+      allow create: if isSignedIn() && isOwner(authUID);
+      allow update: if isSignedIn() && isOwner(authUID);
+      allow delete: if isSignedIn() && isOwner(authUID);
+    }
+    
+
+    // ========================================
+    // TEAM PHOTOS COLLECTION (Photo Metadata)
+    // ========================================
+
+    match /teamPhotos/{photoId} {
+      // Anyone can read photos
+      allow read: if true;
+      
+      // Captains, team-staff, and admins can create photos
+      allow create: if isSignedIn() && 
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        (
+          // Check userType field (new system)
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.userType in ['captain', 'admin', 'team-staff'] ||
+          // Check userRole field (legacy system)  
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.userRole in ['admin', 'staff'] ||
+          // Check isCaptain flag
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isCaptain == true ||
+          // Check isAdmin flag
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true
+        );
+      
+      // Users can update photos they uploaded, or admins can update any
+      allow update: if isSignedIn() && 
+        (resource.data.uploadedBy == request.auth.uid ||
+         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+          (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.userType == 'admin' ||
+           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.userRole == 'admin' ||
+           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true)));
+      
+      // Users can delete photos they uploaded, or admins can delete any
+      allow delete: if isSignedIn() && 
+        (resource.data.uploadedBy == request.auth.uid ||
+         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+          (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.userType == 'admin' ||
+           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.userRole == 'admin' ||
+           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true)));
+    }
+    
+    
+    // ========================================
+    // READ-ONLY DATA COLLECTIONS
+    // ========================================
+    
+    // Allow read access to players collection
+    match /players/{document=**} {
+      allow read: if true;
+      allow write: if false;
+    }
+    
+    // Allow read access to games collection
+    match /games/{document=**} {
+      allow read: if true;
+      allow write: if false;
+    }
+    
+    // Allow read access to aggregatedPlayerStats
+    match /aggregatedPlayerStats/{document=**} {
+      allow read: if true;
+      allow write: if true; // toggle to true when running update
+    }
+    
+    // Allow read access to stats collection
+    match /stats/{document=**} {
+      allow read: if true;
+      allow write: if false;
+    }
+    
+    // Allow read access to awards collection
+    match /awards/{document=**} {
+      allow read: if true;
+      allow write: if false;
+    }
+    
+    // Allow read access to teams collection
+    match /teams/{document=**} {
+      allow read: if true;
+      allow write: if false;
+    }
+    
+    // ========================================
+    // SEASONS COLLECTION - UPDATED FOR SCORE SUBMISSION
+    // ========================================
+    
+    // Allow read access to seasons collection and subcollections
+    match /seasons/{seasonId} {
+      allow read: if true;
+      allow write: if false; // Don't allow writing to season metadata
+      
+      // ✅ UPDATED: Allow authorized users to update game scores
+      match /games/{gameId} {
+        allow read: if true;
+        // Allow captains, team-staff, league-staff, and admins to update games
+        allow update: if canSubmitScores();
+        // Don't allow creating or deleting games through the app
+        allow create, delete: if false;
+      }
+      
+      // Allow read access to previews subcollection
+      match /previews/{previewId} {
+        allow read: if true;
+        allow write: if false;
+      }
+    }
+    
+    // Allow read access to playerStats collection
+    match /playerStats/{document=**} {
+      allow read: if true;
+      allow write: if false;
+    }
+    
+    // Allow read access to pitchingStats collection
+    match /pitchingStats/{document=**} {
+      allow read: if true;
+      allow write: if false;
+    }
+  }
+}
