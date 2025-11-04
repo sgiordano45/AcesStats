@@ -399,6 +399,15 @@
     <!-- Controls -->
     <div class="controls no-print">
       <h3>Bracket Controls</h3>
+      <div style="background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%); padding: 1rem; border-radius: 8px; margin-bottom: 1rem; border-left: 4px solid #3b82f6;">
+        <strong>📋 How to Use:</strong>
+        <ol style="margin: 0.5rem 0 0 1.5rem; line-height: 1.8;">
+          <li>Start with <strong>Play-in Games</strong> - pick winners of #7 vs #10 and #8 vs #9</li>
+          <li>Move to <strong>First Round</strong> - winners auto-populate in games 1 & 2</li>
+          <li>Continue through each round in order - teams marked <em style="color: #94a3b8;">"TBD"</em> will populate as you fill out earlier games</li>
+          <li>Your picks auto-save - use buttons below to manage your bracket</li>
+        </ol>
+      </div>
       <div class="button-group">
         <button class="btn btn-primary" onclick="saveBracket()">
           💾 Save Predictions
@@ -637,6 +646,9 @@
         return;
       }
 
+      console.log('🏗️ Building bracket with predictions:', window.predictions);
+      console.log('📊 Playoff teams:', teams.map((t, i) => `${i+1}. ${t.name}`));
+
       const html = `
         <!-- Play-in Round -->
         <div class="bracket-section">
@@ -746,31 +758,44 @@
       const team2 = getTeamInfo(seed2);
       
       const prediction = window.predictions[round]?.[gameId];
+      
+      // Debug logging for games that should have teams
+      if (round !== 'playIn' && round !== 'firstRound') {
+        console.log(`🎮 ${title}:`, {
+          team1: team1.name,
+          team1Ready: team1.ready,
+          team2: team2.name, 
+          team2Ready: team2.ready,
+          prediction: prediction || 'none'
+        });
+      }
 
       return `
         <div class="game-card" data-game="${gameKey}">
           <div class="game-title">${title}</div>
           <div class="matchup">
             <div class="team-option ${prediction === 'team1' ? 'selected' : ''} ${!team1.ready ? 'disabled' : ''}"
-                 onclick="selectWinner('${round}', '${gameId}', 'team1')"
-                 data-team="team1">
+                 onclick="${team1.ready ? `selectWinner('${round}', '${gameId}', 'team1')` : 'return false;'}"
+                 data-team="team1"
+                 style="${!team1.ready ? 'opacity: 0.4; cursor: not-allowed;' : ''}">
               <span>
                 ${team1.seed ? `<span class="team-seed">#${team1.seed}</span>` : ''}
-                ${team1.name}
+                ${team1.ready ? team1.name : `<em style="color: #94a3b8;">${team1.name}</em>`}
                 ${prediction === 'team1' ? '<span class="winner-indicator">👑</span>' : ''}
               </span>
-              ${team1.record ? `<span class="team-record">${team1.record}</span>` : ''}
+              ${team1.record && team1.ready ? `<span class="team-record">${team1.record}</span>` : ''}
             </div>
             <div class="vs-divider">VS</div>
             <div class="team-option ${prediction === 'team2' ? 'selected' : ''} ${!team2.ready ? 'disabled' : ''}"
-                 onclick="selectWinner('${round}', '${gameId}', 'team2')"
-                 data-team="team2">
+                 onclick="${team2.ready ? `selectWinner('${round}', '${gameId}', 'team2')` : 'return false;'}"
+                 data-team="team2"
+                 style="${!team2.ready ? 'opacity: 0.4; cursor: not-allowed;' : ''}">
               <span>
                 ${team2.seed ? `<span class="team-seed">#${team2.seed}</span>` : ''}
-                ${team2.name}
+                ${team2.ready ? team2.name : `<em style="color: #94a3b8;">${team2.name}</em>`}
                 ${prediction === 'team2' ? '<span class="winner-indicator">👑</span>' : ''}
               </span>
-              ${team2.record ? `<span class="team-record">${team2.record}</span>` : ''}
+              ${team2.record && team2.ready ? `<span class="team-record">${team2.record}</span>` : ''}
             </div>
           </div>
           <div style="text-align: center; margin-top: 1rem; color: #64748b; font-size: 0.9rem;">
@@ -786,6 +811,9 @@
       // Direct seed number
       if (typeof identifier === 'number') {
         const team = teams[identifier - 1];
+        if (!team) {
+          return { name: 'TBD (Invalid Seed)', ready: false };
+        }
         return {
           name: team.name,
           seed: identifier,
@@ -795,7 +823,15 @@
       }
 
       // Reference to another game's winner/loser
-      const [refRound, refGame, refResult] = identifier.split('-');
+      const parts = identifier.split('-');
+      if (parts.length < 3) {
+        return { name: `TBD (${identifier})`, ready: false };
+      }
+      
+      const refRound = parts[0];
+      const refGame = parts[1];
+      const refResult = parts[2]; // 'winner' or 'loser'
+      
       const prediction = window.predictions[refRound]?.[refGame];
       
       if (!prediction) {
@@ -805,39 +841,67 @@
         };
       }
 
-      // Get the team that was selected
-      const sourceGameKey = `${refRound}-${refGame}`;
-      const sourceTeamIdentifier = getSourceTeamIdentifier(refRound, refGame, prediction);
+      // Get both teams from the source game
+      const sourceTeam1 = getSourceTeamIdentifier(refRound, refGame, 'team1');
+      const sourceTeam2 = getSourceTeamIdentifier(refRound, refGame, 'team2');
       
-      if (refResult === 'winner') {
+      // Make sure both source teams are ready
+      if (!sourceTeam1.ready || !sourceTeam2.ready) {
         return {
-          name: sourceTeamIdentifier.name,
-          seed: sourceTeamIdentifier.seed,
-          record: sourceTeamIdentifier.record,
-          ready: true
-        };
-      } else {
-        // For loser, return the non-selected team
-        const otherTeam = prediction === 'team1' ? 'team2' : 'team1';
-        const otherIdentifier = getSourceTeamIdentifier(refRound, refGame, otherTeam);
-        return {
-          name: otherIdentifier.name,
-          seed: otherIdentifier.seed,
-          record: otherIdentifier.record,
-          ready: true
+          name: `TBD (waiting for ${refRound} ${refGame})`,
+          ready: false
         };
       }
+
+      // Return winner or loser based on prediction
+      if (refResult === 'winner') {
+        return prediction === 'team1' ? sourceTeam1 : sourceTeam2;
+      } else if (refResult === 'loser') {
+        return prediction === 'team1' ? sourceTeam2 : sourceTeam1;
+      }
+      
+      return { name: 'TBD (invalid result)', ready: false };
     }
 
     function getSourceTeamIdentifier(round, gameId, teamSlot) {
-      // This maps back to the original team identifiers for each game
+      // COMPLETE mapping of ALL games in the bracket
       const gameMap = {
+        // Play-in Games
         'playIn-game1': { team1: 7, team2: 10 },
         'playIn-game2': { team1: 8, team2: 9 },
+        
+        // First Round (Winners Bracket)
         'firstRound-game1': { team1: 1, team2: 'playIn-game2-winner' },
         'firstRound-game2': { team1: 2, team2: 'playIn-game1-winner' },
         'firstRound-game3': { team1: 3, team2: 6 },
         'firstRound-game4': { team1: 4, team2: 5 },
+        
+        // Losers Round 1 (Losers from First Round)
+        'losersRound1-game1': { team1: 'firstRound-game1-loser', team2: 'firstRound-game2-loser' },
+        'losersRound1-game2': { team1: 'firstRound-game3-loser', team2: 'firstRound-game4-loser' },
+        
+        // Winners Round 2 (Semi-Finals)
+        'winnersRound2-game1': { team1: 'firstRound-game1-winner', team2: 'firstRound-game2-winner' },
+        'winnersRound2-game2': { team1: 'firstRound-game3-winner', team2: 'firstRound-game4-winner' },
+        
+        // Losers Round 2 (Losers from Winners R2 vs Winners from Losers R1)
+        'losersRound2-game1': { team1: 'winnersRound2-game1-loser', team2: 'losersRound1-game1-winner' },
+        'losersRound2-game2': { team1: 'winnersRound2-game2-loser', team2: 'losersRound1-game2-winner' },
+        
+        // Winners Final
+        'winnersRound3-game1': { team1: 'winnersRound2-game1-winner', team2: 'winnersRound2-game2-winner' },
+        
+        // Losers Final
+        'losersFinal-game1': { team1: 'losersRound2-game1-winner', team2: 'losersRound2-game2-winner' },
+        
+        // Championship Semi-Final
+        'semiFinal-game1': { team1: 'winnersRound3-game1-loser', team2: 'losersFinal-game1-winner' },
+        
+        // Championship
+        'championship-game1': { team1: 'winnersRound3-game1-winner', team2: 'semiFinal-game1-winner' },
+        
+        // Championship Game 2 (If Necessary)
+        'ifNecessary-game1': { team1: 'championship-game1-winner', team2: 'championship-game1-loser' }
       };
 
       const gameKey = `${round}-${gameId}`;
@@ -883,7 +947,11 @@
     }
 
     function updateProgress() {
-      const totalGames = 15; // Total playoff games in bracket
+      // Total games in the bracket:
+      // Play-in: 2, First Round: 4, Losers R1: 2, Winners R2: 2, 
+      // Losers R2: 2, Winners Final: 1, Losers Final: 1, Semi-Final: 1, 
+      // Championship: 1, If Necessary: 1 = 17 total
+      const totalGames = 17;
       let completedGames = 0;
 
       Object.values(window.predictions).forEach(round => {
