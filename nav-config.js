@@ -132,13 +132,13 @@ export const PAGE_CONFIGS = {
   },
   
   'team_compare.html': {
-    desktop: ['home', 'teams', =, 'h2h', 'seasons']
+    desktop: ['home', 'teams', 'h2h', 'seasons']
   },
   
   'h2h_grid.html': {
     desktop: ['home', 'current-season', 'teams', 'team-compare', 'history']
   },
-    'h2h_grid.html': {
+    'league-history.html': {
     desktop: ['home', 'current-season', 'teams', 'team-compare', 'h2h']
   },
   'charts.html': {
