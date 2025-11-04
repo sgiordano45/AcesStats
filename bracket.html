@@ -427,20 +427,9 @@
 
   <!-- Firebase and Data Scripts -->
   <script type="module">
-    import { initializeApp } from 'https://www.gstatic.com/firebasejs/9.22.1/firebase-app.js';
-    import { getFirestore, collection, getDocs, query, where, orderBy } from 'https://www.gstatic.com/firebasejs/9.22.1/firebase-firestore.js';
-
-    const firebaseConfig = {
-      apiKey: "AIzaSyAR2HMtsiege16AvOGd73x0LEihJWQa-3U",
-      authDomain: "softball-c4669.firebaseapp.com",
-      projectId: "softball-c4669",
-      storageBucket: "softball-c4669.appspot.com",
-      messagingSenderId: "515590547548",
-      appId: "1:515590547548:web:c92c1e07c92297e29772f6"
-    };
-
-    const app = initializeApp(firebaseConfig);
-    const db = getFirestore(app);
+    import { db } from './firebase-data.js';
+    import { getCurrentSeason, getSeasonGames } from './firebase-data.js';
+    
     window.db = db;
 
     // Global state
@@ -461,27 +450,21 @@
     // Load data on page load
     async function loadSeasonData() {
       try {
-        // Get current season
-        const seasonsQuery = query(
-          collection(db, 'seasons'),
-          where('isCurrent', '==', true)
-        );
-        const seasonsSnapshot = await getDocs(seasonsQuery);
+        console.log('🔄 Loading current season data...');
         
-        if (seasonsSnapshot.empty) {
+        // Get current season using helper function
+        const currentSeason = await getCurrentSeason();
+        
+        if (!currentSeason) {
           throw new Error('No current season found');
         }
 
-        const currentSeason = seasonsSnapshot.docs[0].data();
-        const seasonId = seasonsSnapshot.docs[0].id;
+        console.log('✅ Current season:', currentSeason);
+        const seasonId = currentSeason.id;
 
-        // Get games for current season
-        const gamesQuery = query(
-          collection(db, 'seasons', seasonId, 'games'),
-          orderBy('date', 'asc')
-        );
-        const gamesSnapshot = await getDocs(gamesQuery);
-        const games = gamesSnapshot.docs.map(doc => doc.data());
+        // Get games for current season using helper function
+        const games = await getSeasonGames(seasonId);
+        console.log(`✅ Loaded ${games.length} games for ${seasonId}`);
 
         // Calculate standings from regular season games
         const regularGames = games.filter(g => 
@@ -493,6 +476,8 @@
         const standings = calculateStandings(regularGames);
         window.playoffTeams = standings.slice(0, 10);
 
+        console.log(`✅ Top 10 playoff teams:`, window.playoffTeams);
+
         // Build bracket
         buildBracket();
 
@@ -501,14 +486,18 @@
         if (saved) {
           window.predictions = JSON.parse(saved);
           updateBracketDisplay();
+          console.log('✅ Loaded saved predictions');
         }
 
       } catch (error) {
-        console.error('Error loading season data:', error);
+        console.error('❌ Error loading season data:', error);
         document.getElementById('bracketContent').innerHTML = `
           <div style="text-align: center; padding: 3rem; color: #ef4444;">
             <h3>Error Loading Data</h3>
             <p>${error.message}</p>
+            <p style="font-size: 0.9rem; color: #64748b; margin-top: 1rem;">
+              Make sure you have a current season marked as active in Firebase.
+            </p>
             <button class="btn btn-primary" onclick="location.reload()" style="margin-top: 1rem;">
               Retry
             </button>
