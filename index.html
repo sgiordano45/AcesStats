@@ -662,7 +662,35 @@
   .twilight-card .card-stats {
     border-top-color: rgba(255,255,255,0.3);
   }
+  /* Frosty Silver Card */
+  .frost-card {
+    background: linear-gradient(135deg, #b8c6db 0%, #f5f7fa 100%);
+    color: #2c3e50;
+    box-shadow: var(--shadow-md);
+  }
 
+  .frost-card::before {
+    background: linear-gradient(90deg, #dfe9f3 0%, #ffffff 100%);
+    opacity: 1;
+  }
+
+  .frost-card::after {
+    content: '❄️';
+    color: #b8c6db;
+  }
+
+  .frost-card .card-title {
+    color: #2c3e50;
+  }
+
+  .frost-card .card-description,
+  .frost-card .card-stats {
+    color: #34495e;
+  }
+
+  .frost-card .card-stats {
+    border-top-color: rgba(44,62,80,0.2);
+  }
   .note {
     background: white;
     padding: 20px;
@@ -1162,6 +1190,14 @@
             <p class="card-description">Submit scores after each game</p>
           </div>
         </a>
+		<!--Stat Submission (Only shown for admin, league staff & captains ) -->
+        <a href="submit-stats.html" class="card-link" id="submitStatsCard" style="display: none;">
+          <div class="card frost-card">
+            <div class="card-icon">🧮</div>
+            <h3 class="card-title">Submit Game Specific Stats</h3>
+            <p class="card-description">Submit stats after each game to help build out the stat database</p>
+          </div>
+        </a>
 		<!-- Offseason Hub -->
         <a href="offseason.html" class="card-link" id="offseasonCard" style="display: none;">
           <div class="card midnight-card">
@@ -1520,15 +1556,25 @@
   }
 
   // Helper functions for updating cards
-  function updateRSVPCard(profile) {
+function updateRSVPCard(profile) {
+    console.log('updateRSVPCard called with profile:', profile);
+    
     const rsvpCardStats = document.querySelector('#personalizationSection .harvest-card .card-stats');
-    if (!rsvpCardStats) return;
+    if (!rsvpCardStats) {
+        console.log('RSVP card stats element not found');
+        return;
+    }
     
     const userRole = profile.userRole;
+    console.log('userRole:', userRole);
+    console.log('USER_ROLES.ADMIN:', USER_ROLES.ADMIN);
+    
     const canManageLineups = userRole === USER_ROLES.ADMIN || 
                              userRole === USER_ROLES.LEAGUE_STAFF || 
                              userRole === USER_ROLES.CAPTAIN ||
                              userRole === USER_ROLES.TEAM_STAFF;
+    
+    console.log('canManageLineups:', canManageLineups);
     
     const hasTeamRole = profile.teamRoles && 
       Object.values(profile.teamRoles).some(
@@ -1537,8 +1583,13 @@
                     teamRole.status === 'active'
       );
     
+    console.log('hasTeamRole:', hasTeamRole);
+    
     const isCaptainLegacy = profile.isCaptain === true;
+    console.log('isCaptainLegacy:', isCaptainLegacy);
+    
     const hasManagementAccess = canManageLineups || hasTeamRole || isCaptainLegacy;
+    console.log('hasManagementAccess:', hasManagementAccess);
     
     let statsHTML = '<div>📅 Update all games at once</div>';
     if (hasManagementAccess) {
@@ -1626,6 +1677,7 @@
     const userRole = profile.userRole;
     const canApprove = userRole === USER_ROLES.ADMIN || 
                        userRole === USER_ROLES.LEAGUE_STAFF || 
+					   userRole === USER_ROLES.TEAM_STAFF || 
                        userRole === USER_ROLES.CAPTAIN;
     
     const isCaptainViaTeamRoles = profile.teamRoles && 
@@ -1639,6 +1691,29 @@
       submitScoresCard.style.display = 'block';
     } else {
       submitScoresCard.style.display = 'none';
+    }
+  }
+        function updateStatSubmissionCard(profile) {
+    const submitStatsCard = document.getElementById('submitStatsCardCard');
+    if (!submitStatsCard) return;
+    
+    const userRole = profile.userRole;
+    const canApprove = userRole === USER_ROLES.ADMIN || 
+                       userRole === USER_ROLES.LEAGUE_STAFF || 
+					   userRole === USER_ROLES.TEAM_STAFF || 
+                       userRole === USER_ROLES.CAPTAIN;
+    
+    const isCaptainViaTeamRoles = profile.teamRoles && 
+      Object.values(profile.teamRoles).some(
+        teamRole => teamRole.role === USER_ROLES.CAPTAIN && teamRole.status === 'active'
+      );
+    
+    const isCaptainLegacy = profile.isCaptain === true;
+    
+    if (canApprove || isCaptainViaTeamRoles || isCaptainLegacy) {
+      submitStatsCard.style.display = 'block';
+    } else {
+      submitStatsCard.style.display = 'none';
     }
   }
       function updateUploadsCard(profile) {

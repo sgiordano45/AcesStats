@@ -29,6 +29,7 @@ export const NAV_STRUCTURE = {
     { id: 'compare', href: 'compare.html', label: 'Player Comparison', icon: '🔀', priority: 3 },
     { id: 'team-compare', href: 'team_compare.html', label: 'Team Comparison', icon: '🆚', priority: 3 },
     { id: 'h2h', href: 'h2h_grid.html', label: 'Head-to-Head Grid', icon: '⚔️', priority: 3 },
+	{ id: 'history', href: 'league-history.html', label: 'League History', icon: '📜', priority: 3 },
     { id: 'charts', href: 'charts.html', label: 'Performance Charts', icon: '📊', priority: 3 },
     { id: 'pictures', href: 'pictures.html', label: 'Gallery', icon: '📷', priority: 3 },
     // game-preview removed - requires specific game ID parameter
@@ -43,6 +44,7 @@ export const NAV_STRUCTURE = {
 	{ id: 'offseason-hub', href: 'offseason.html', label: 'Offseason Hub', icon: '🎣️', priority: 4, requiresAuth: true },
 	{ id: 'photo-upload', href: 'photo-upload.html', label: 'Upload Photos', icon: '📤️', priority: 4, requiresAuth: true },
 	{ id: 'submit-score', href: 'submit-score.html', label: 'Submit Scores', icon: '🔢️', priority: 4, requiresAuth: true },
+	{ id: 'submit-stats', href: 'submit-stats.html', label: 'Submit Stats', icon: '🧮', priority: 4, requiresAuth: true },
   ],
   
   // Public auth pages (signin handles both signin and signup - don't show in nav)
@@ -122,21 +124,23 @@ export const PAGE_CONFIGS = {
   },
   
   'milestones.html': {
-    desktop: ['home', 'batting', 'pitching', 'players', 'leaders', 'milestones']
+    desktop: ['home', 'batting', 'pitching', 'players', 'leaders', ]
   },
   
   'compare.html': {
-    desktop: ['home', 'batting', 'pitching', 'players', 'leaders', 'compare']
+    desktop: ['home', 'batting', 'pitching', 'players', 'leaders', ]
   },
   
   'team_compare.html': {
-    desktop: ['home', 'teams', 'team-compare', 'h2h', 'seasons']
+    desktop: ['home', 'teams', =, 'h2h', 'seasons']
   },
   
   'h2h_grid.html': {
+    desktop: ['home', 'current-season', 'teams', 'team-compare', 'history']
+  },
+    'h2h_grid.html': {
     desktop: ['home', 'current-season', 'teams', 'team-compare', 'h2h']
   },
-  
   'charts.html': {
     desktop: ['home', 'current-season', 'batting', 'pitching', 'teams', 'players', 'seasons', 'leaders', 'compare', 'team-compare', 'charts']
   },
