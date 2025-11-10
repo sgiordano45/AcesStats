@@ -863,6 +863,10 @@
     /**
      * Simulate final standings with team at specified record
      * favorableForTeam: true = assume favorable outcomes for other games, false = unfavorable
+     * 
+     * CRITICAL: We cannot predict game margins (runs allowed changes), so we use CONSERVATIVE sorting:
+     * - If teams would be tied in wins AND the tiebreaker involves Runs Allowed (unknown margins),
+     *   we treat them as potentially able to swap positions
      */
     function simulateFinalStandings(targetTeam, targetWins, targetLosses, currentStandings, favorableForTeam) {
       // Build hypothetical final standings
@@ -875,7 +879,8 @@
             wins: targetWins,
             losses: targetLosses,
             gamesPlayed: totalDecided + team.ties,
-            winPct: totalDecided > 0 ? (targetWins / totalDecided) : 0
+            winPct: totalDecided > 0 ? (targetWins / totalDecided) : 0,
+            gamesRemaining: 0
           };
         } else {
           // For other teams, calculate their potential final record
@@ -898,17 +903,122 @@
             wins: finalWins,
             losses: finalLosses,
             gamesPlayed: totalDecided + team.ties,
-            winPct: totalDecided > 0 ? (finalWins / totalDecided) : 0
+            winPct: totalDecided > 0 ? (finalWins / totalDecided) : 0,
+            gamesRemaining: otherGamesLeft
           };
         }
       });
       
-      // Sort with proper tiebreakers that handle 3+ team ties correctly
-      const sortedStandings = sortWithTiebreakers(hypotheticalStandings);
+      // Sort conservatively - if tiebreaker depends on runs allowed and games remain, 
+      // assume worst case for target team
+      const sortedStandings = sortWithTiebreakersConservative(hypotheticalStandings, targetTeam, favorableForTeam);
       
       // Find the target team's seed
       const seed = sortedStandings.findIndex(t => t.name === targetTeam) + 1;
       return seed;
+    }
+    
+    /**
+     * Conservative sorting that accounts for unknown game margins
+     * When runs allowed tiebreaker would apply AND teams have games remaining,
+     * we assume the worst case for the target team
+     */
+    function sortWithTiebreakersConservative(teams, targetTeam, favorableForTarget) {
+      // First sort by win percentage
+      const sorted = [...teams].sort((a, b) => b.winPct - a.winPct);
+      
+      // Find groups of teams with identical win percentages
+      const winPctGroups = [];
+      let currentGroup = [sorted[0]];
+      
+      for (let i = 1; i < sorted.length; i++) {
+        if (Math.abs(sorted[i].winPct - sorted[i-1].winPct) < 0.0001) {
+          currentGroup.push(sorted[i]);
+        } else {
+          winPctGroups.push(currentGroup);
+          currentGroup = [sorted[i]];
+        }
+      }
+      winPctGroups.push(currentGroup);
+      
+      // Apply appropriate tiebreakers to each group
+      const brokenTies = winPctGroups.map(group => {
+        if (group.length === 1) {
+          return group;
+        } else if (group.length === 2) {
+          // 2-team tie: Check if H2H is decisive
+          return breakTwoWayTieConservative(group, targetTeam, favorableForTarget);
+        } else {
+          // 3+ team tie: Uses Runs Allowed - be conservative
+          return breakMultiWayTieConservative(group, targetTeam, favorableForTarget);
+        }
+      });
+      
+      return brokenTies.flat();
+    }
+    
+    /**
+     * Break 2-way tie conservatively
+     */
+    function breakTwoWayTieConservative(group, targetTeam, favorableForTarget) {
+      const [a, b] = group;
+      const hasTarget = a.name === targetTeam || b.name === targetTeam;
+      
+      // Check H2H
+      const h2hComp = compareHeadToHead(a, b);
+      
+      if (h2hComp !== 0) {
+        // H2H is decisive
+        return h2hComp > 0 ? [b, a] : [a, b];
+      }
+      
+      // H2H is tied or N/A - would use Runs Allowed
+      // If either team has games remaining, margins are unknown
+      const anyGamesRemaining = a.gamesRemaining > 0 || b.gamesRemaining > 0;
+      
+      if (anyGamesRemaining && hasTarget) {
+        // Be conservative: assume worst case for target team
+        if (favorableForTarget) {
+          // This is best-case scenario - target should be higher
+          return a.name === targetTeam ? [a, b] : [b, a];
+        } else {
+          // This is worst-case scenario - target should be lower
+          return a.name === targetTeam ? [b, a] : [a, b];
+        }
+      }
+      
+      // No games remaining or no target in tie - use current runs allowed
+      return breakTieByRunsAllowed(group);
+    }
+    
+    /**
+     * Break multi-way tie conservatively
+     */
+    function breakMultiWayTieConservative(group, targetTeam, favorableForTarget) {
+      const hasTarget = group.some(t => t.name === targetTeam);
+      const anyGamesRemaining = group.some(t => t.gamesRemaining > 0);
+      
+      if (anyGamesRemaining && hasTarget) {
+        // Runs allowed will change - be conservative
+        if (favorableForTarget) {
+          // Best case - put target at top of this group
+          return group.sort((a, b) => {
+            if (a.name === targetTeam) return -1;
+            if (b.name === targetTeam) return 1;
+            return breakTieByRunsAllowed([a, b])[0].name === a.name ? -1 : 1;
+          });
+        } else {
+          // Worst case - put target at bottom of this group
+          return group.sort((a, b) => {
+            if (a.name === targetTeam) return 1;
+            if (b.name === targetTeam) return -1;
+            return breakTieByRunsAllowed([a, b])[0].name === a.name ? -1 : 1;
+          });
+        }
+      }
+      
+      // No games remaining or no target - use current runs allowed
+      return breakTieByRunsAllowed(group);
     }
 
     /**
