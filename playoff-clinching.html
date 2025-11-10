@@ -324,7 +324,24 @@
   .scenario-text {
     font-size: 0.85rem;
     color: var(--text-light);
-    line-height: 1.4;
+    line-height: 1.6;
+    white-space: normal;
+    text-align: left;
+    max-width: 700px;
+    padding: 8px 0;
+  }
+  
+  .scenario-text strong {
+    color: var(--text-dark);
+    font-weight: 600;
+  }
+  
+  .scenario-text div {
+    margin-bottom: 8px;
+  }
+  
+  .scenario-text strong:first-child {
+    margin-top: 0;
   }
 
   .no-data {
@@ -931,7 +948,7 @@
     }
 
     /**
-     * Generate detailed seeding scenario text
+     * Generate comprehensive detailed seeding scenario text with tiebreaker math
      */
     function generateSeedingScenario(team, seed, standings) {
       const range = calculateSeedRange(team, standings, allGames);
@@ -945,136 +962,290 @@
       
       // If this team has no games left but seed can still change based on other results
       if (gamesLeft === 0) {
-        const seedRangeText = `Season complete. Can finish #${range.bestSeed} to #${range.worstSeed}`;
-        let scenarios = [seedRangeText];
-        
-        // Explain what determines final position
-        if (range.worstSeed - range.bestSeed === 1) {
-          scenarios.push(`Final position depends on other results and tiebreakers`);
-        } else {
-          scenarios.push(`Multiple teams can catch up - final position depends on other results`);
-        }
-        
-        return scenarios.join('. ') + '.';
+        return generateDetailedScenariosForCompletedTeam(team, seed, standings, range);
       }
       
-      // Build scenario text with specific details
+      // Generate detailed scenarios for teams with games remaining
+      return generateDetailedScenariosForActiveTeam(team, seed, standings, range);
+    }
+
+    /**
+     * Generate detailed scenarios for teams that are done playing
+     */
+    function generateDetailedScenariosForCompletedTeam(team, seed, standings, range) {
       let scenarios = [];
+      const teamName = team.name;
       
-      // Check if #1 seed is truly clinched (conservative check)
+      scenarios.push(`Season complete. Can finish #${range.bestSeed} to #${range.worstSeed}.`);
+      
+      // Find teams that could tie them
+      const potentialTies = standings.filter(other => {
+        if (other.name === teamName) return false;
+        const otherGamesLeft = calculateRemainingGames(allGames, other.name);
+        if (otherGamesLeft === 0) return false;
+        
+        const otherMaxWins = other.wins + otherGamesLeft;
+        return otherMaxWins >= team.wins;
+      });
+      
+      if (potentialTies.length > 0) {
+        scenarios.push(`Final position depends on:`);
+        potentialTies.forEach(other => {
+          const otherGamesLeft = calculateRemainingGames(allGames, other.name);
+          scenarios.push(`- ${other.name} results (${otherGamesLeft} game${otherGamesLeft > 1 ? 's' : ''} left)`);
+        });
+        scenarios.push(`Tiebreakers would be determined by head-to-head records or runs allowed.`);
+      }
+      
+      return scenarios.join(' ');
+    }
+
+    /**
+     * Generate detailed scenarios for teams with games remaining
+     */
+    function generateDetailedScenariosForActiveTeam(team, seed, standings, range) {
+      let scenarios = [];
+      const teamName = team.name;
+      const gamesLeft = range.gamesLeft;
+      
+      // Check if already clinched
       if (range.bestSeed === 1 && range.worstSeed === 1) {
         return `🏆 Clinched #1 seed!`;
       }
       
-      // Can potentially clinch #1? Be more conservative
-      if (range.bestSeed === 1 && gamesLeft > 0) {
-        const secondPlace = standings[1];
-        const secondGamesLeft = calculateRemainingGames(allGames, secondPlace.name);
-        const clinches = trulyClinches(team, 1, standings, gamesLeft);
-        
-        if (clinches && gamesLeft === 1) {
-          // Check if we play second place team
-          if (teamsPlayEachOther(teamName, secondPlace.name, allGames)) {
-            scenarios.push(`Clinches #1 with win vs ${secondPlace.name}`);
-          } else if (secondGamesLeft > 0) {
-            scenarios.push(`Clinches #1 with 1 win or ${secondPlace.name} loss`);
-          } else {
-            scenarios.push(`Clinches #1 with 1 win`);
-          }
-        } else if (clinches && gamesLeft > 1) {
-          const magicFor1 = calculateMagicNumberForSeed(team, 1, standings);
-          scenarios.push(`Clinches #1 with ${magicFor1} wins`);
-        }
-        // If doesn't truly clinch, don't claim clinch - just show range
-      }
-      
-      // If seed is locked
       if (range.bestSeed === range.worstSeed) {
-        if (scenarios.length === 0) {
-          return `Locked into #${range.bestSeed} seed`;
-        } else {
-          return scenarios.join('. ') + '.';
+        return `Locked into #${range.bestSeed} seed`;
+      }
+      
+      // Generate header
+      scenarios.push(`<div style="font-weight: bold; margin-bottom: 8px;">Can finish #${range.bestSeed} to #${range.worstSeed}</div>`);
+      
+      // Generate scenarios for best seed (usually involves winning out or winning most)
+      const bestSeedDetails = generateComprehensiveSeedPath(team, range.bestSeed, standings, gamesLeft, 'best');
+      if (bestSeedDetails) {
+        scenarios.push(`<div style="margin-bottom: 12px;"><strong>Path to #${range.bestSeed} Seed:</strong><br>${bestSeedDetails}</div>`);
+      }
+      
+      // Generate scenarios for middle seeds if applicable
+      if (range.worstSeed - range.bestSeed > 1) {
+        for (let s = range.bestSeed + 1; s < range.worstSeed; s++) {
+          const midDetails = generateComprehensiveSeedPath(team, s, standings, gamesLeft, 'mid');
+          if (midDetails) {
+            scenarios.push(`<div style="margin-bottom: 12px;"><strong>Path to #${s} Seed:</strong><br>${midDetails}</div>`);
+          }
         }
       }
       
-      // Show seed range with specific scenarios
-      const seedRangeText = `Can finish #${range.bestSeed} to #${range.worstSeed}`;
+      // Generate scenarios for worst seed
+      if (range.worstSeed > range.bestSeed) {
+        const worstSeedDetails = generateComprehensiveSeedPath(team, range.worstSeed, standings, gamesLeft, 'worst');
+        if (worstSeedDetails) {
+          scenarios.push(`<div style="margin-bottom: 12px;"><strong>Falls to #${range.worstSeed} Seed if:</strong><br>${worstSeedDetails}</div>`);
+        }
+      }
       
-      // Best case - what would get them to best seed
-      if (range.bestSeed < seed && gamesLeft > 0) {
-        const teamsToPass = standings.slice(range.bestSeed - 1, seed - 1);
-        if (teamsToPass.length > 0) {
-          const closestTeam = teamsToPass[teamsToPass.length - 1];
-          const closestGamesLeft = calculateRemainingGames(allGames, closestTeam.name);
-          
-          // Check if we play the closest team directly
-          const playClosest = teamsPlayEachOther(teamName, closestTeam.name, allGames);
-          
-          if (gamesLeft === 1) {
-            // Only mention their loss if they have games left
-            if (closestGamesLeft > 0) {
-              if (playClosest) {
-                // Direct matchup - our win = their loss
-                scenarios.push(`${seedRangeText} (rises with win vs ${closestTeam.name})`);
-              } else {
-                // Separate games
-                scenarios.push(`${seedRangeText} (rises with win and ${closestTeam.name} loss)`);
-              }
-            } else {
-              scenarios.push(`${seedRangeText} (rises with win)`);
-            }
-          } else {
-            scenarios.push(`${seedRangeText} (rises with ${gamesLeft} wins and help)`);
-          }
+      return scenarios.join('');
+    }
+
+    /**
+     * Generate comprehensive path to a specific seed with all win/loss combinations
+     */
+    function generateComprehensiveSeedPath(team, targetSeed, standings, gamesLeft, pathType) {
+      const teamName = team.name;
+      const details = [];
+      
+      // Determine which win/loss combinations to explore
+      let combinationsToCheck = [];
+      if (pathType === 'best') {
+        // For best seed, start with winning out
+        combinationsToCheck = [
+          {wins: gamesLeft, losses: 0, label: `Win ${gamesLeft === 1 ? 'remaining game' : 'all ' + gamesLeft + ' games'}`}
+        ];
+        if (gamesLeft >= 2) {
+          combinationsToCheck.push({wins: gamesLeft - 1, losses: 1, label: `Win ${gamesLeft - 1}, lose 1`});
+        }
+      } else if (pathType === 'worst') {
+        // For worst seed, start with losing out
+        combinationsToCheck = [
+          {wins: 0, losses: gamesLeft, label: `Lose ${gamesLeft === 1 ? 'remaining game' : 'all ' + gamesLeft + ' games'}`}
+        ];
+        if (gamesLeft >= 2) {
+          combinationsToCheck.push({wins: 1, losses: gamesLeft - 1, label: `Win 1, lose ${gamesLeft - 1}`});
         }
       } else {
-        scenarios.push(seedRangeText);
+        // For middle seeds, check balanced combinations
+        const midWins = Math.floor(gamesLeft / 2);
+        combinationsToCheck = [
+          {wins: midWins, losses: gamesLeft - midWins, label: `Win ${midWins}, lose ${gamesLeft - midWins}`}
+        ];
       }
       
-      // Worst case - what would drop them
-      if (range.worstSeed > seed) {
-        const teamsBehind = standings.slice(seed, range.worstSeed);
-        const closestThreat = teamsBehind[0];
+      // Analyze each combination
+      for (const combo of combinationsToCheck) {
+        const projectedWins = team.wins + combo.wins;
+        const projectedLosses = team.losses + combo.losses;
+        const projectedRecord = `${projectedWins}-${projectedLosses}`;
         
-        if (closestThreat) {
-          const threatGamesLeft = calculateRemainingGames(allGames, closestThreat.name);
-          
-          // Only show fall scenarios if the threat has games to actually catch us
-          if (threatGamesLeft > 0) {
-            // Check if we play the threat directly
-            const playThreat = teamsPlayEachOther(teamName, closestThreat.name, allGames);
-            
-            if (gamesLeft === 1 && threatGamesLeft > 0) {
-              if (playThreat) {
-                // Direct matchup - win/loss are same game
-                scenarios.push(`Falls to #${range.worstSeed} with loss to ${closestThreat.name}`);
-              } else {
-                // Separate games
-                scenarios.push(`Falls to #${range.worstSeed} with loss and ${closestThreat.name} win`);
-              }
-            } else if (gamesLeft > 1) {
-              if (playThreat) {
-                scenarios.push(`Falls to #${range.worstSeed} with losses including vs ${closestThreat.name}`);
-              } else {
-                scenarios.push(`Falls to #${range.worstSeed} with ${gamesLeft} losses and ${closestThreat.name} wins`);
-              }
-            }
-          }
+        details.push(`• <strong>${combo.label}</strong> (finish ${projectedRecord}):`);
+        
+        // Find teams we'd be tied with at this record
+        const tiedTeams = findPotentialTies(team, projectedWins, standings);
+        
+        if (tiedTeams.length === 0) {
+          // No ties - just need the record
+          details.push(`  Would secure #${targetSeed} seed outright with this record`);
+        } else if (tiedTeams.length === 1) {
+          // 2-way tie - H2H applies
+          const other = tiedTeams[0];
+          const tieDetails = generate2WayTieDetails(team, other, projectedWins, combo.wins, combo.losses);
+          details.push(`  Tied with ${other.name} at ${projectedRecord}:`);
+          details.push(`  ${tieDetails}`);
+        } else {
+          // 3+ way tie - Runs Allowed applies
+          const tieDetails = generate3PlusWayTieDetails(team, tiedTeams, projectedWins, combo.wins, combo.losses);
+          details.push(`  Tied with ${tiedTeams.length} teams at ${projectedRecord}:`);
+          details.push(`  ${tieDetails}`);
+        }
+        
+        // Add spacing between combinations
+        if (combo !== combinationsToCheck[combinationsToCheck.length - 1]) {
+          details.push('');
         }
       }
       
-      // Highlight play-in line (6/7 cutoff)
-      if (seed === 6 && range.worstSeed >= 7) {
-        scenarios.push(`⚠️ At risk of play-in with losses`);
-      } else if (seed === 7 && range.bestSeed <= 6) {
-        scenarios.push(`⚠️ Can avoid play-in with wins`);
+      return details.length > 0 ? details.join('<br>') : null;
+    }
+
+    /**
+     * Find teams that could end up tied at a specific win total
+     */
+    function findPotentialTies(team, projectedWins, standings) {
+      const teamName = team.name;
+      const tiedTeams = [];
+      
+      for (const other of standings) {
+        if (other.name === teamName) continue;
+        
+        const otherGamesLeft = calculateRemainingGames(allGames, other.name);
+        const otherMaxWins = other.wins + otherGamesLeft;
+        const otherMinWins = other.wins;
+        
+        // Could they end up at our projected wins?
+        if (projectedWins >= otherMinWins && projectedWins <= otherMaxWins) {
+          tiedTeams.push(other);
+        }
       }
       
-      if (scenarios.length === 0) {
-        scenarios.push(seedRangeText);
+      return tiedTeams;
+    }
+
+    /**
+     * Generate details for 2-way tie (H2H tiebreaker)
+     */
+    function generate2WayTieDetails(team, other, projectedWins, winsToAdd, lossesToAdd) {
+      const teamName = team.name;
+      const details = [];
+      
+      const h2h = team.h2h[other.name];
+      const playEachOther = teamsPlayEachOther(teamName, other.name, allGames);
+      
+      if (playEachOther) {
+        // They play each other - outcome determines winner
+        if (!h2h || (h2h.wins + h2h.losses === 0)) {
+          details.push(`Winner of remaining H2H matchup gets tiebreaker`);
+        } else if (h2h.wins > h2h.losses) {
+          details.push(`Currently lead H2H ${h2h.wins}-${h2h.losses}, but remaining matchup could split it → would go to Runs Allowed`);
+          const raDiff = other.runsAgainst - team.runsAgainst;
+          details.push(`Currently ${raDiff > 0 ? 'lead' : 'trail'} by ${Math.abs(raDiff)} runs allowed`);
+        } else if (h2h.wins < h2h.losses) {
+          details.push(`Currently trail H2H ${h2h.wins}-${h2h.losses}, but remaining matchup could tie it → would go to Runs Allowed`);
+          const raDiff = other.runsAgainst - team.runsAgainst;
+          details.push(`Currently ${raDiff > 0 ? 'lead' : 'trail'} by ${Math.abs(raDiff)} runs allowed`);
+        } else {
+          details.push(`H2H tied ${h2h.wins}-${h2h.losses}, remaining matchup breaks tie or goes to Runs Allowed if split`);
+          const raDiff = other.runsAgainst - team.runsAgainst;
+          details.push(`Currently ${raDiff > 0 ? 'lead' : 'trail'} by ${Math.abs(raDiff)} runs allowed`);
+        }
+      } else {
+        // H2H is final
+        if (!h2h || (h2h.wins + h2h.losses === 0)) {
+          details.push(`No H2H games → goes to Runs Allowed tiebreaker`);
+          generateRunsAllowedDetails(team, other, winsToAdd, lossesToAdd, details);
+        } else if (h2h.wins > h2h.losses) {
+          details.push(`✓ Win H2H tiebreaker (${h2h.wins}-${h2h.losses}) → get higher seed`);
+        } else if (h2h.wins < h2h.losses) {
+          details.push(`✗ Lose H2H tiebreaker (${h2h.wins}-${h2h.losses}) → get lower seed`);
+        } else {
+          details.push(`H2H tied (${h2h.wins}-${h2h.losses}) → goes to Runs Allowed tiebreaker`);
+          generateRunsAllowedDetails(team, other, winsToAdd, lossesToAdd, details);
+        }
       }
       
-      return scenarios.join('. ') + '.';
+      return details.join('<br>  ');
+    }
+
+    /**
+     * Generate details for 3+ way tie (Runs Allowed tiebreaker)
+     */
+    function generate3PlusWayTieDetails(team, tiedTeams, projectedWins, winsToAdd, lossesToAdd) {
+      const teamName = team.name;
+      const details = [];
+      
+      details.push(`3+ way tie → H2H skipped, uses Runs Allowed tiebreaker`);
+      details.push(`Current Runs Allowed rankings:`);
+      
+      // Sort all tied teams by runs allowed
+      const allInTie = [team, ...tiedTeams].sort((a, b) => a.runsAgainst - b.runsAgainst);
+      allInTie.forEach((t, idx) => {
+        const marker = t.name === teamName ? '→ ' : '   ';
+        details.push(`${marker}${idx + 1}. ${t.name}: ${t.runsAgainst} RA`);
+      });
+      
+      // Calculate what's needed
+      const teamRank = allInTie.findIndex(t => t.name === teamName) + 1;
+      const teamRA = team.runsAgainst;
+      
+      if (teamRank === 1) {
+        const secondPlace = allInTie[1];
+        const cushion = secondPlace.runsAgainst - teamRA;
+        details.push(`Leading by ${cushion} runs → need to allow ${cushion}+ fewer runs than ${secondPlace.name} over remaining games to maintain advantage`);
+      } else {
+        const ahead = allInTie[teamRank - 2];
+        const deficit = teamRA - ahead.runsAgainst;
+        details.push(`Behind by ${deficit} runs → need to allow ${deficit + 1}+ fewer runs than ${ahead.name} over remaining ${winsToAdd + lossesToAdd} games`);
+        
+        // Show specific scenario
+        details.push(`Example: If allowing 3 runs/game, would need ${ahead.name} to allow 4+ runs/game`);
+      }
+      
+      return details.join('<br>  ');
+    }
+
+    /**
+     * Generate specific runs allowed differential details
+     */
+    function generateRunsAllowedDetails(team, other, winsToAdd, lossesToAdd, details) {
+      const teamRA = team.runsAgainst;
+      const otherRA = other.runsAgainst;
+      const diff = teamRA - otherRA;
+      const gamesRemaining = winsToAdd + lossesToAdd;
+      const otherGamesLeft = calculateRemainingGames(allGames, other.name);
+      
+      if (diff > 0) {
+        // We've allowed more runs - need to make up ground
+        details.push(`Currently allowed ${diff} more runs than ${other.name}`);
+        details.push(`Need to allow ${diff + 1}+ fewer runs over ${gamesRemaining} game${gamesRemaining > 1 ? 's' : ''}`);
+        details.push(`Example: Allow 2 runs/game while ${other.name} allows ${Math.ceil((diff + 1) / gamesRemaining) + 2}+ runs/game`);
+      } else if (diff < 0) {
+        // We've allowed fewer - have advantage
+        details.push(`Currently allowed ${Math.abs(diff)} fewer runs than ${other.name}`);
+        details.push(`${other.name} would need to allow ${Math.abs(diff) + 1}+ fewer runs over their ${otherGamesLeft} game${otherGamesLeft > 1 ? 's' : ''}`);
+      } else {
+        // Tied
+        details.push(`Currently tied in runs allowed (${teamRA} each)`);
+        details.push(`Whoever allows fewer runs over remaining games gets tiebreaker`);
+        details.push(`If still tied → goes to Run Differential (${team.runDifferential} vs ${other.runDifferential})`);
+      }
     }
 
     function getSeedStatus(seed, magicNumber) {
