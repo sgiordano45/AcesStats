@@ -1,0 +1,971 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#2d5016">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Mountainside Aces">
+<title>Playoff Seeding Scenarios - Mountainside Aces</title>
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="mobile-enhancements.css">
+<style>
+  :root {
+    --primary-color: #2d5016;
+    --secondary-color: #1a6b4a;
+    --accent-color: #ffd700;
+    --card-bg: #ffffff;
+    --text-dark: #2d3748;
+    --text-light: #718096;
+    --border-color: #e2e8f0;
+    --shadow-sm: 0 2px 8px rgba(0,0,0,0.08);
+    --shadow-md: 0 4px 16px rgba(0,0,0,0.12);
+    --shadow-lg: 0 12px 32px rgba(0,0,0,0.16);
+    --clinched-green: #10b981;
+    --danger-red: #ef4444;
+    --warning-yellow: #f59e0b;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    margin: 0;
+    padding: 0;
+    background: linear-gradient(135deg, #f7fafc 0%, #edf2f7 100%);
+    min-height: 100vh;
+    color: var(--text-dark);
+  }
+
+  /* Loading Spinner */
+  .loading-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(255,255,255,0.95);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    opacity: 1;
+    transition: opacity 0.5s ease;
+  }
+
+  .loading-overlay.hidden {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .softball-spinner {
+    width: 80px;
+    height: 80px;
+    position: relative;
+    animation: spin 1.5s ease-in-out infinite;
+  }
+
+  .softball-spinner::before {
+    content: '⚾';
+    font-size: 80px;
+    position: absolute;
+    top: 0;
+    left: 0;
+  }
+
+  @keyframes spin {
+    0%, 100% { transform: rotate(0deg) scale(1); }
+    50% { transform: rotate(180deg) scale(1.1); }
+  }
+
+  /* Header - Pumpkin theme for playoff scenarios */
+  .header {
+    background: linear-gradient(135deg, #ff6347 0%, #ff8c42 100%);
+    color: white;
+    text-align: center;
+    padding: 4rem 2rem;
+    box-shadow: var(--shadow-lg);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .header::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    right: -10%;
+    width: 400px;
+    height: 400px;
+    background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+    border-radius: 50%;
+  }
+
+  .header::after {
+    content: '🎱';
+    position: absolute;
+    bottom: -30px;
+    left: 10%;
+    font-size: 120px;
+    opacity: 0.15;
+    transform: rotate(-15deg);
+  }
+  
+  .header h1 {
+    margin: 0;
+    font-size: 3.5rem;
+    font-weight: 800;
+    text-shadow: 2px 4px 8px rgba(0,0,0,0.2);
+    letter-spacing: -0.5px;
+    position: relative;
+    z-index: 1;
+  }
+  
+  .header p {
+    margin: 1rem 0 0 0;
+    font-size: 1.3rem;
+    opacity: 0.95;
+    font-weight: 300;
+    position: relative;
+    z-index: 1;
+  }
+
+  .container {
+    max-width: 1400px;
+    margin: 3rem auto;
+    padding: 0 2rem;
+  }
+
+  /* Modern Section Styling */
+  .section {
+    background: var(--card-bg);
+    border-radius: 16px;
+    margin-bottom: 2rem;
+    box-shadow: var(--shadow-sm);
+    border: 1px solid var(--border-color);
+    overflow: hidden;
+    transition: all 0.3s ease;
+  }
+
+  .section:hover {
+    box-shadow: var(--shadow-md);
+  }
+
+  .section-header {
+    background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+    color: white;
+    padding: 1.5rem 2rem;
+    font-size: 1.5rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    position: relative;
+  }
+
+  .section-header::after {
+    content: '⚾';
+    position: absolute;
+    right: 2rem;
+    font-size: 2rem;
+    opacity: 0.2;
+  }
+
+  .section-content {
+    padding: 2rem;
+  }
+
+  /* Summary Cards */
+  .summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+  }
+
+  .summary-card {
+    background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
+    border-radius: 12px;
+    padding: 1.5rem;
+    text-align: center;
+    border-left: 4px solid var(--primary-color);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .summary-card.clinched {
+    border-left-color: var(--clinched-green);
+  }
+
+  .summary-card.danger {
+    border-left-color: var(--danger-red);
+  }
+
+  .summary-card.warning {
+    border-left-color: var(--warning-yellow);
+  }
+
+  .summary-card::before {
+    content: '⚾';
+    position: absolute;
+    bottom: -10px;
+    right: -10px;
+    font-size: 60px;
+    opacity: 0.05;
+  }
+
+  .summary-card:hover {
+    transform: translateY(-4px);
+    box-shadow: var(--shadow-md);
+  }
+
+  .summary-number {
+    font-size: 2rem;
+    font-weight: 800;
+    color: var(--text-dark);
+    margin-bottom: 0.5rem;
+  }
+
+  .summary-label {
+    font-size: 0.9rem;
+    color: var(--text-light);
+    font-weight: 500;
+  }
+
+  /* Clinching Table */
+  .clinching-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 1rem;
+    font-size: 0.9rem;
+  }
+
+  .clinching-table th,
+  .clinching-table td {
+    padding: 12px 10px;
+    text-align: left;
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  .clinching-table th {
+    background: linear-gradient(135deg, #f7fafc 0%, #edf2f7 100%);
+    font-weight: 600;
+    color: var(--text-dark);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+
+  .clinching-table tbody tr {
+    transition: background-color 0.2s ease;
+  }
+
+  .clinching-table tbody tr:hover {
+    background-color: #f8fafc;
+  }
+
+  .team-name {
+    font-weight: 600;
+    color: var(--text-dark);
+  }
+
+  .status-badge {
+    display: inline-block;
+    padding: 0.25rem 0.75rem;
+    border-radius: 12px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .status-clinched {
+    background-color: #d1fae5;
+    color: #065f46;
+  }
+
+  .status-eliminated {
+    background-color: #fee2e2;
+    color: #991b1b;
+  }
+
+  .status-safe {
+    background-color: #dbeafe;
+    color: #1e40af;
+  }
+
+  .status-danger {
+    background-color: #fef3c7;
+    color: #92400e;
+  }
+
+  .status-contention {
+    background-color: #e0e7ff;
+    color: #3730a3;
+  }
+
+  .magic-number {
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: var(--primary-color);
+  }
+
+  .magic-number.low {
+    color: var(--clinched-green);
+  }
+
+  .magic-number.high {
+    color: var(--danger-red);
+  }
+
+  .scenario-text {
+    font-size: 0.85rem;
+    color: var(--text-light);
+    line-height: 1.4;
+  }
+
+  .no-data {
+    text-align: center;
+    padding: 3rem;
+    color: var(--text-light);
+  }
+
+  .no-data h4 {
+    margin: 0 0 0.5rem 0;
+    color: var(--text-dark);
+  }
+
+  /* Legend */
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    padding: 1rem;
+    background: #f8f9fa;
+    border-radius: 8px;
+    margin-top: 1rem;
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.85rem;
+  }
+
+  .legend-color {
+    width: 20px;
+    height: 20px;
+    border-radius: 4px;
+  }
+
+  /* Responsive */
+  @media (max-width: 768px) {
+    .header h1 {
+      font-size: 2.5rem;
+    }
+
+    .header p {
+      font-size: 1.1rem;
+    }
+
+    .summary-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .clinching-table {
+      font-size: 0.8rem;
+    }
+
+    .clinching-table th,
+    .clinching-table td {
+      padding: 8px 6px;
+    }
+  }
+</style>
+</head>
+<body>
+  <!-- Loading Overlay -->
+  <div class="loading-overlay" id="loadingOverlay">
+    <div class="softball-spinner"></div>
+  </div>
+
+  <!-- Header -->
+  <div class="header">
+    <h1>🎱 Playoff Seeding Scenarios</h1>
+    <p>All 10 teams make playoffs - Fight for your seed!</p>
+  </div>
+
+  <!-- Main Content -->
+  <div class="container">
+    <!-- Summary Section -->
+    <div class="section">
+      <div class="section-header">📊 Playoff Seeding Summary</div>
+      <div class="section-content">
+        <div class="summary-grid" id="summaryGrid">
+          <div class="summary-card clinched">
+            <div class="summary-number" id="clinched">-</div>
+            <div class="summary-label">Seeds Locked</div>
+          </div>
+          <div class="summary-card">
+            <div class="summary-number" id="byeSeeds">-</div>
+            <div class="summary-label">Direct to Round 1</div>
+          </div>
+          <div class="summary-card warning">
+            <div class="summary-number" id="playInTeams">-</div>
+            <div class="summary-label">Play-In Games</div>
+          </div>
+          <div class="summary-card">
+            <div class="summary-number" id="gamesRemaining">-</div>
+            <div class="summary-label">Total Games Remaining</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Seeding Scenarios -->
+    <div class="section">
+      <div class="section-header">🏆 Team-by-Team Seeding Scenarios</div>
+      <div class="section-content">
+        <div style="overflow-x: auto;">
+          <table class="clinching-table">
+            <thead>
+              <tr>
+                <th>Seed</th>
+                <th>Team</th>
+                <th>Record</th>
+                <th>Win%</th>
+                <th>Status</th>
+                <th>Magic #</th>
+                <th>Games Left</th>
+                <th>Seeding Scenario</th>
+              </tr>
+            </thead>
+            <tbody id="clinchingTableBody">
+              <tr>
+                <td colspan="8" class="loading">Loading seeding scenarios...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Legend -->
+        <div class="legend">
+          <div class="legend-item">
+            <span class="status-badge status-clinched">Locked</span>
+            <span>Seed is clinched</span>
+          </div>
+          <div class="legend-item">
+            <span class="status-badge status-safe">Safe</span>
+            <span>Seeds 1-2 (vs play-in winners)</span>
+          </div>
+          <div class="legend-item">
+            <span class="status-badge status-contention">Mid Seed</span>
+            <span>Seeds 3-6 (direct to round 1)</span>
+          </div>
+          <div class="legend-item">
+            <span class="status-badge status-danger">Play-In</span>
+            <span>Seeds 7-10 (must win play-in)</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Key Matchups -->
+    <div class="section">
+      <div class="section-header">⚔️ Key Remaining Matchups</div>
+      <div class="section-content">
+        <div id="keyMatchupsContent" class="loading">Loading key matchups...</div>
+      </div>
+    </div>
+
+    <!-- Seeding Battles -->
+    <div class="section">
+      <div class="section-header">⚔️ Key Seeding Battles</div>
+      <div class="section-content">
+        <div id="bubbleContent" class="loading">Loading seeding battles...</div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { getCurrentSeason, getSeasonGames } from './firebase-data.js';
+
+    // Wait for page load
+    window.addEventListener('load', function() {
+      setTimeout(function() {
+        document.getElementById('loadingOverlay').classList.add('hidden');
+      }, 800);
+    });
+
+    const TOTAL_TEAMS = 10; // All 10 teams make playoffs
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    function parseGameDate(dateStr) {
+      const [month, day, year] = dateStr.split('/');
+      return new Date(year, month - 1, day);
+    }
+
+    function calculateStandings(games) {
+      const standings = {};
+      
+      games.forEach(game => {
+        const homeTeam = game['home team'];
+        const awayTeam = game['away team'];
+        const winner = game.winner;
+        const homeScore = parseInt(game['home score']) || 0;
+        const awayScore = parseInt(game['away score']) || 0;
+        
+        if (!standings[homeTeam]) {
+          standings[homeTeam] = { name: homeTeam, wins: 0, losses: 0, ties: 0, gamesPlayed: 0, runsScored: 0, runsAllowed: 0 };
+        }
+        if (!standings[awayTeam]) {
+          standings[awayTeam] = { name: awayTeam, wins: 0, losses: 0, ties: 0, gamesPlayed: 0, runsScored: 0, runsAllowed: 0 };
+        }
+        
+        standings[homeTeam].gamesPlayed++;
+        standings[awayTeam].gamesPlayed++;
+        standings[homeTeam].runsScored += homeScore;
+        standings[homeTeam].runsAllowed += awayScore;
+        standings[awayTeam].runsScored += awayScore;
+        standings[awayTeam].runsAllowed += homeScore;
+        
+        if (winner === homeTeam) {
+          standings[homeTeam].wins++;
+          standings[awayTeam].losses++;
+        } else if (winner === awayTeam) {
+          standings[awayTeam].wins++;
+          standings[homeTeam].losses++;
+        } else if (winner === "Tie") {
+          standings[homeTeam].ties++;
+          standings[awayTeam].ties++;
+        }
+      });
+      
+      return Object.values(standings).map(team => ({
+        ...team,
+        winPct: team.gamesPlayed > 0 ? (team.wins + team.ties * 0.5) / team.gamesPlayed : 0,
+        runDifferential: team.runsScored - team.runsAllowed
+      })).sort((a, b) => {
+        if (b.winPct !== a.winPct) return b.winPct - a.winPct;
+        if (b.wins !== a.wins) return b.wins - a.wins;
+        return b.runDifferential - a.runDifferential;
+      });
+    }
+
+    function calculateRemainingGames(games, teamName) {
+      return games.filter(g => {
+        const isFuture = parseGameDate(g.date) >= today;
+        const noWinner = !g.winner || g.winner.trim() === "";
+        const isRegularSeason = g.game_type === 'Regular';
+        const involvesTeam = g['home team'] === teamName || g['away team'] === teamName;
+        return isFuture && noWinner && isRegularSeason && involvesTeam;
+      }).length;
+    }
+
+    function calculateSeedMagicNumber(currentSeed, teamWins, teamGamesLeft, standings) {
+      // For seed 1: Magic number to clinch #1 seed
+      if (currentSeed === 1) {
+        if (standings.length < 2) return 0;
+        const secondPlace = standings[1];
+        const secondMaxWins = secondPlace.wins + calculateRemainingGames(allGames, secondPlace.name);
+        const magicNumber = Math.max(0, secondMaxWins - teamWins + 1);
+        return magicNumber;
+      }
+      
+      // For seeds 2-6: Magic number to clinch current seed or better
+      if (currentSeed <= 6) {
+        if (currentSeed >= standings.length) return 0;
+        const teamBehind = standings[currentSeed]; // Team directly behind
+        const behindMaxWins = teamBehind.wins + calculateRemainingGames(allGames, teamBehind.name);
+        const magicNumber = Math.max(0, behindMaxWins - teamWins + 1);
+        return magicNumber;
+      }
+      
+      // For seeds 7-10: Magic number to avoid play-in (reach seed 6 or better)
+      if (currentSeed >= 7) {
+        const sixthPlace = standings[5]; // 6th place team (index 5)
+        const sixthMaxWins = sixthPlace.wins + calculateRemainingGames(allGames, sixthPlace.name);
+        const winsNeeded = sixthMaxWins - teamWins + 1;
+        
+        // If impossible to catch 6th place
+        if (winsNeeded > teamGamesLeft) {
+          return -1; // Locked into play-in
+        }
+        
+        return winsNeeded;
+      }
+      
+      return 0;
+    }
+
+    function getSeedStatus(seed, magicNumber) {
+      if (magicNumber === 0) {
+        return { status: 'clinched', badge: 'status-clinched', text: 'LOCKED' };
+      } else if (seed <= 2) {
+        return { status: 'safe', badge: 'status-safe', text: 'TOP SEED' };
+      } else if (seed <= 6) {
+        return { status: 'contention', badge: 'status-contention', text: 'MID SEED' };
+      } else {
+        return { status: 'danger', badge: 'status-danger', text: 'PLAY-IN' };
+      }
+    }
+
+    function getSeedScenarioText(seed, magicNumber, gamesLeft, teamName, standings) {
+      if (magicNumber === 0) {
+        if (seed === 1) {
+          return `${teamName} has clinched the #1 seed! 🏆`;
+        } else {
+          return `${teamName} has locked in the #${seed} seed.`;
+        }
+      }
+      
+      if (seed === 1) {
+        return `${magicNumber} win${magicNumber > 1 ? 's' : ''} to clinch #1 seed and top playoff position.`;
+      } else if (seed === 2) {
+        if (magicNumber <= 2) {
+          return `${magicNumber} win${magicNumber > 1 ? 's' : ''} to lock in #2 seed and face play-in winner.`;
+        } else {
+          return `Can still compete for #1 seed. ${magicNumber} wins locks current position.`;
+        }
+      } else if (seed >= 3 && seed <= 6) {
+        const seedsAhead = seed - 1;
+        return `Direct to Round 1. ${magicNumber} wins locks in top-${seed} position.`;
+      } else if (seed >= 7) {
+        if (magicNumber === -1) {
+          return `Locked into play-in games (seeds 7-10). Focus on improving seed.`;
+        } else {
+          return `${magicNumber} wins needed to avoid play-in games and reach top 6.`;
+        }
+      }
+      
+      return `${magicNumber} wins in ${gamesLeft} games to improve seeding.`;
+    }
+
+    let allGames = [];
+
+    async function loadData() {
+      try {
+        const season = await getCurrentSeason();
+        if (!season) {
+          showError();
+          return;
+        }
+
+        allGames = await getSeasonGames(season.id);
+        
+        const completedGames = allGames.filter(g => 
+          parseGameDate(g.date) < today && 
+          g.winner && 
+          g.winner.trim() !== "" &&
+          g.game_type === 'Regular'
+        );
+
+        const upcomingGames = allGames.filter(g => {
+          const isFuture = parseGameDate(g.date) >= today;
+          const noWinner = !g.winner || g.winner.trim() === "";
+          const isRegularSeason = g.game_type === 'Regular';
+          return isFuture && noWinner && isRegularSeason;
+        });
+
+        const standings = calculateStandings(completedGames);
+        
+        updateSummary(standings, upcomingGames);
+        updateSeedingTable(standings, upcomingGames);
+        updateKeyMatchups(standings, upcomingGames);
+        updateSeedingBattles(standings, upcomingGames);
+
+      } catch (error) {
+        console.error('Error loading data:', error);
+        showError();
+      }
+    }
+
+    function updateSummary(standings, upcomingGames) {
+      let lockedSeeds = 0;
+      let byeSeeds = 0; // Seeds 1-6 (direct to round 1)
+      let playInTeams = 0; // Seeds 7-10
+
+      standings.slice(0, TOTAL_TEAMS).forEach((team, index) => {
+        const seed = index + 1;
+        const gamesLeft = calculateRemainingGames(allGames, team.name);
+        const magicNumber = calculateSeedMagicNumber(seed, team.wins, gamesLeft, standings);
+        
+        if (magicNumber === 0) {
+          lockedSeeds++;
+        }
+        
+        if (seed <= 6) {
+          byeSeeds++;
+        } else {
+          playInTeams++;
+        }
+      });
+
+      document.getElementById('clinched').textContent = lockedSeeds;
+      document.getElementById('byeSeeds').textContent = byeSeeds;
+      document.getElementById('playInTeams').textContent = playInTeams;
+      document.getElementById('gamesRemaining').textContent = upcomingGames.length;
+    }
+
+    function updateSeedingTable(standings, upcomingGames) {
+      const tbody = document.getElementById('clinchingTableBody');
+      tbody.innerHTML = '';
+
+      // Only show top 10 teams (all make playoffs)
+      standings.slice(0, TOTAL_TEAMS).forEach((team, index) => {
+        const seed = index + 1;
+        const gamesLeft = calculateRemainingGames(allGames, team.name);
+        const magicNumber = calculateSeedMagicNumber(seed, team.wins, gamesLeft, standings);
+        const statusInfo = getSeedStatus(seed, magicNumber);
+        const scenario = getSeedScenarioText(seed, magicNumber, gamesLeft, team.name, standings);
+
+        const magicClass = magicNumber === 0 ? 'low' : magicNumber > 5 ? 'high' : '';
+        const magicDisplay = magicNumber === 0 ? '✓' : magicNumber === -1 ? '-' : magicNumber;
+
+        const row = document.createElement('tr');
+        row.innerHTML = `
+          <td><strong>#${seed}</strong></td>
+          <td class="team-name">${team.name}</td>
+          <td>${team.wins}-${team.losses}${team.ties > 0 ? `-${team.ties}` : ''}</td>
+          <td>${(team.winPct * 100).toFixed(1)}%</td>
+          <td><span class="status-badge ${statusInfo.badge}">${statusInfo.text}</span></td>
+          <td><span class="magic-number ${magicClass}">${magicDisplay}</span></td>
+          <td>${gamesLeft}</td>
+          <td class="scenario-text">${scenario}</td>
+        `;
+        tbody.appendChild(row);
+      });
+    }
+
+    function updateKeyMatchups(standings, upcomingGames) {
+      const container = document.getElementById('keyMatchupsContent');
+      container.classList.remove('loading');
+
+      // Find matchups between teams within 3 seeds of each other
+      const keyGames = upcomingGames.filter(g => {
+        const homeRank = standings.findIndex(t => t.name === g['home team']) + 1;
+        const awayRank = standings.findIndex(t => t.name === g['away team']) + 1;
+        return Math.abs(homeRank - awayRank) <= 3 && homeRank <= 10 && awayRank <= 10;
+      }).slice(0, 10);
+
+      if (keyGames.length === 0) {
+        container.innerHTML = '<div class="no-data">No key seeding matchups remaining.</div>';
+        return;
+      }
+
+      const html = `
+        <table class="clinching-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Matchup</th>
+              <th>Seeding Impact</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${keyGames.map(game => {
+              const homeRank = standings.findIndex(t => t.name === game['home team']) + 1;
+              const awayRank = standings.findIndex(t => t.name === game['away team']) + 1;
+              
+              let impact = '';
+              if (homeRank <= 2 && awayRank <= 2) {
+                impact = '🏆 Top Seed Battle';
+              } else if (homeRank === 6 || awayRank === 6 || homeRank === 7 || awayRank === 7) {
+                impact = '⚠️ Play-In Line';
+              } else if (Math.abs(homeRank - awayRank) === 1) {
+                impact = '🔄 Direct Swap Possible';
+              } else {
+                impact = '📊 Seeding Impact';
+              }
+              
+              return `
+                <tr>
+                  <td>${game.date}</td>
+                  <td>
+                    <strong>#${homeRank} ${game['home team']}</strong> vs <strong>#${awayRank} ${game['away team']}</strong>
+                  </td>
+                  <td>${impact}</td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      `;
+
+      container.innerHTML = html;
+    }
+
+    function updateSeedingBattles(standings, upcomingGames) {
+      const container = document.getElementById('bubbleContent');
+      container.classList.remove('loading');
+
+      // Focus on three key battles:
+      // 1. Top seed battle (seeds 1-3)
+      // 2. Play-in avoidance (seeds 5-7)
+      // 3. Play-in seeding (seeds 8-10)
+
+      const topSeeds = standings.slice(0, 3);
+      const playInBattle = standings.slice(4, 7);
+      const playInSeeding = standings.slice(7, 10);
+
+      const html = `
+        <div style="margin-bottom: 2rem;">
+          <h4 style="margin-bottom: 1rem; color: var(--primary-color);">🏆 Top Seed Battle (Seeds 1-3)</h4>
+          <p style="margin-bottom: 1rem; color: var(--text-light); font-size: 0.9rem;">
+            These teams will face play-in winners. Fighting for #1 seed and home field advantage.
+          </p>
+          <table class="clinching-table">
+            <thead>
+              <tr>
+                <th>Seed</th>
+                <th>Team</th>
+                <th>Record</th>
+                <th>Win%</th>
+                <th>Games Left</th>
+                <th>Path Forward</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${topSeeds.map((team, index) => {
+                const seed = index + 1;
+                const gamesLeft = calculateRemainingGames(allGames, team.name);
+                const magicNumber = calculateSeedMagicNumber(seed, team.wins, gamesLeft, standings);
+                
+                let path = '';
+                if (seed === 1) {
+                  path = magicNumber === 0 ? 'Clinched #1 seed!' : `${magicNumber} wins clinches #1`;
+                } else {
+                  const gamesBack = ((standings[0].winPct - team.winPct) * team.gamesPlayed).toFixed(1);
+                  path = `${gamesBack} GB from #1 seed`;
+                }
+
+                return `
+                  <tr>
+                    <td><strong>#${seed}</strong></td>
+                    <td class="team-name">${team.name}</td>
+                    <td>${team.wins}-${team.losses}${team.ties > 0 ? `-${team.ties}` : ''}</td>
+                    <td>${(team.winPct * 100).toFixed(1)}%</td>
+                    <td>${gamesLeft}</td>
+                    <td class="scenario-text">${path}</td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+
+        <div style="margin-bottom: 2rem;">
+          <h4 style="margin-bottom: 1rem; color: var(--warning-yellow);">⚠️ Play-In Avoidance (Seeds 5-7)</h4>
+          <p style="margin-bottom: 1rem; color: var(--text-light); font-size: 0.9rem;">
+            Seeds 1-6 go directly to Round 1. Seeds 7-10 must win play-in games. This is the critical line!
+          </p>
+          <table class="clinching-table">
+            <thead>
+              <tr>
+                <th>Seed</th>
+                <th>Team</th>
+                <th>Record</th>
+                <th>Win%</th>
+                <th>Games Left</th>
+                <th>Battle Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${playInBattle.map((team, index) => {
+                const seed = index + 5;
+                const gamesLeft = calculateRemainingGames(allGames, team.name);
+                
+                let status = '';
+                if (seed === 6) {
+                  status = 'Last direct Round 1 spot';
+                } else if (seed === 7) {
+                  const gamesBack = ((standings[5].winPct - team.winPct) * team.gamesPlayed).toFixed(1);
+                  status = `${gamesBack} GB from avoiding play-in`;
+                } else {
+                  const gamesBack = ((standings[5].winPct - team.winPct) * team.gamesPlayed).toFixed(1);
+                  status = `${gamesBack} GB from top 6`;
+                }
+
+                return `
+                  <tr>
+                    <td><strong>#${seed}</strong></td>
+                    <td class="team-name">${team.name}</td>
+                    <td>${team.wins}-${team.losses}${team.ties > 0 ? `-${team.ties}` : ''}</td>
+                    <td>${(team.winPct * 100).toFixed(1)}%</td>
+                    <td>${gamesLeft}</td>
+                    <td class="scenario-text">${status}</td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+
+        <div>
+          <h4 style="margin-bottom: 1rem; color: var(--danger-red);">🎱 Play-In Seeding (Seeds 8-10)</h4>
+          <p style="margin-bottom: 1rem; color: var(--text-light); font-size: 0.9rem;">
+            These teams will play play-in games. #7 vs #10, #8 vs #9. Winners face #2 and #1 respectively.
+          </p>
+          <table class="clinching-table">
+            <thead>
+              <tr>
+                <th>Seed</th>
+                <th>Team</th>
+                <th>Record</th>
+                <th>Win%</th>
+                <th>Games Left</th>
+                <th>Play-In Matchup</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${playInSeeding.map((team, index) => {
+                const seed = index + 8;
+                const gamesLeft = calculateRemainingGames(allGames, team.name);
+                
+                let matchup = '';
+                if (seed === 8) {
+                  matchup = 'Will face #9 seed';
+                } else if (seed === 9) {
+                  matchup = 'Will face #8 seed';
+                } else if (seed === 10) {
+                  matchup = 'Will face #7 seed';
+                }
+
+                return `
+                  <tr>
+                    <td><strong>#${seed}</strong></td>
+                    <td class="team-name">${team.name}</td>
+                    <td>${team.wins}-${team.losses}${team.ties > 0 ? `-${team.ties}` : ''}</td>
+                    <td>${(team.winPct * 100).toFixed(1)}%</td>
+                    <td>${gamesLeft}</td>
+                    <td class="scenario-text">${matchup}</td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      `;
+
+      container.innerHTML = html;
+    }
+
+    function showError() {
+      const errorHtml = '<div class="no-data">Error loading data. Please try again later.</div>';
+      document.getElementById('summaryGrid').innerHTML = errorHtml;
+      document.getElementById('clinchingTableBody').innerHTML = `<tr><td colspan="8">${errorHtml}</td></tr>`;
+      document.getElementById('keyMatchupsContent').innerHTML = errorHtml;
+      document.getElementById('bubbleContent').innerHTML = errorHtml;
+    }
+
+    document.addEventListener('DOMContentLoaded', loadData);
+  </script>
+  <script src="team-colors.js"></script>
+  <script src="mobile-enhancements.js"></script>
+</body>
+</html>
