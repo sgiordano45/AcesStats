@@ -571,11 +571,11 @@
       const teamStats = {};
       
       games.forEach(game => {
-        const homeTeam = game['home team'];
-        const awayTeam = game['away team'];
+        const homeTeam = game.homeTeamName;
+        const awayTeam = game.awayTeamName;
         const winner = game.winner;
-        const homeScore = parseInt(game['home score']) || 0;
-        const awayScore = parseInt(game['away score']) || 0;
+        const homeScore = parseInt(game.homeScore) || 0;
+        const awayScore = parseInt(game.awayScore) || 0;
         
         if (!teamStats[homeTeam]) {
           teamStats[homeTeam] = { 
@@ -610,10 +610,11 @@
         if (winner === "Tie") {
           teamStats[homeTeam].ties++;
           teamStats[awayTeam].ties++;
-        } else if (winner === homeTeam) {
+        } else if (winner === homeTeam.toLowerCase()) {
+          // Winner is stored as lowercase teamId
           teamStats[homeTeam].wins++;
           teamStats[awayTeam].losses++;
-        } else if (winner === awayTeam) {
+        } else if (winner === awayTeam.toLowerCase()) {
           teamStats[awayTeam].wins++;
           teamStats[homeTeam].losses++;
         }
@@ -636,10 +637,10 @@
     function calculateRemainingGames(games, teamName) {
       return games.filter(g => {
         const isFuture = parseGameDate(g.date) >= today;
-        const noWinner = !g.winner || g.winner.trim() === "";
-        const isRegularSeason = g.game_type === 'Regular';
-        const involvesTeam = g['home team'] === teamName || g['away team'] === teamName;
-        return isFuture && noWinner && isRegularSeason && involvesTeam;
+        const notCompleted = g.status !== 'completed';
+        const isRegularSeason = g.gameType === 'regular';
+        const involvesTeam = g.homeTeamName === teamName || g.awayTeamName === teamName;
+        return isFuture && notCompleted && isRegularSeason && involvesTeam;
       }).length;
     }
 
@@ -744,18 +745,18 @@
         const completedGames = allGames.filter(g => {
           const gameDate = parseGameDate(g.date);
           const isPast = gameDate < today;
-          const hasWinner = g.winner && g.winner.trim() !== "";
-          const isRegular = g.game_type === 'Regular';
-          return isPast && hasWinner && isRegular;
+          const isCompleted = g.status === 'completed';
+          const isRegular = g.gameType === 'regular';
+          return isPast && isCompleted && isRegular;
         });
         console.log(`✅ ${completedGames.length} completed regular season games`);
 
         const upcomingGames = allGames.filter(g => {
           const gameDate = parseGameDate(g.date);
           const isFuture = gameDate >= today;
-          const noWinner = !g.winner || g.winner.trim() === "";
-          const isRegularSeason = g.game_type === 'Regular';
-          return isFuture && noWinner && isRegularSeason;
+          const notCompleted = g.status !== 'completed';
+          const isRegularSeason = g.gameType === 'regular';
+          return isFuture && notCompleted && isRegularSeason;
         });
         console.log(`⏰ ${upcomingGames.length} upcoming regular season games`);
 
@@ -847,8 +848,8 @@
 
       // Find matchups between teams within 3 seeds of each other
       const keyGames = upcomingGames.filter(g => {
-        const homeRank = standings.findIndex(t => t.name === g['home team']) + 1;
-        const awayRank = standings.findIndex(t => t.name === g['away team']) + 1;
+        const homeRank = standings.findIndex(t => t.name === g.homeTeamName) + 1;
+        const awayRank = standings.findIndex(t => t.name === g.awayTeamName) + 1;
         return Math.abs(homeRank - awayRank) <= 3 && homeRank <= 10 && awayRank <= 10;
       }).slice(0, 10);
 
@@ -868,8 +869,12 @@
           </thead>
           <tbody>
             ${keyGames.map(game => {
-              const homeRank = standings.findIndex(t => t.name === game['home team']) + 1;
-              const awayRank = standings.findIndex(t => t.name === game['away team']) + 1;
+              const homeRank = standings.findIndex(t => t.name === game.homeTeamName) + 1;
+              const awayRank = standings.findIndex(t => t.name === game.awayTeamName) + 1;
+              
+              // Format date from Timestamp
+              const gameDate = parseGameDate(game.date);
+              const dateStr = gameDate.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' });
               
               let impact = '';
               if (homeRank <= 2 && awayRank <= 2) {
@@ -884,9 +889,9 @@
               
               return `
                 <tr>
-                  <td>${game.date}</td>
+                  <td>${dateStr}</td>
                   <td>
-                    <strong>#${homeRank} ${game['home team']}</strong> vs <strong>#${awayRank} ${game['away team']}</strong>
+                    <strong>#${homeRank} ${game.homeTeamName}</strong> vs <strong>#${awayRank} ${game.awayTeamName}</strong>
                   </td>
                   <td>${impact}</td>
                 </tr>
