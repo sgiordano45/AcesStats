@@ -579,7 +579,8 @@
             ties: 0, 
             gamesPlayed: 0, 
             runsFor: 0, 
-            runsAgainst: 0 
+            runsAgainst: 0,
+            h2h: {} // Head-to-head records
           };
         }
         if (!teamStats[awayTeam]) {
@@ -590,7 +591,8 @@
             ties: 0, 
             gamesPlayed: 0, 
             runsFor: 0, 
-            runsAgainst: 0 
+            runsAgainst: 0,
+            h2h: {}
           };
         }
         
@@ -601,30 +603,74 @@
         teamStats[awayTeam].runsFor += awayScore;
         teamStats[awayTeam].runsAgainst += homeScore;
         
+        // Initialize h2h records
+        if (!teamStats[homeTeam].h2h[awayTeam]) {
+          teamStats[homeTeam].h2h[awayTeam] = { wins: 0, losses: 0, ties: 0 };
+        }
+        if (!teamStats[awayTeam].h2h[homeTeam]) {
+          teamStats[awayTeam].h2h[homeTeam] = { wins: 0, losses: 0, ties: 0 };
+        }
+        
         if (winner === "Tie") {
           teamStats[homeTeam].ties++;
           teamStats[awayTeam].ties++;
+          teamStats[homeTeam].h2h[awayTeam].ties++;
+          teamStats[awayTeam].h2h[homeTeam].ties++;
         } else if (winner === homeTeam) {
           teamStats[homeTeam].wins++;
           teamStats[awayTeam].losses++;
+          teamStats[homeTeam].h2h[awayTeam].wins++;
+          teamStats[awayTeam].h2h[homeTeam].losses++;
         } else if (winner === awayTeam) {
           teamStats[awayTeam].wins++;
           teamStats[homeTeam].losses++;
+          teamStats[awayTeam].h2h[homeTeam].wins++;
+          teamStats[homeTeam].h2h[awayTeam].losses++;
         }
       });
       
-      return Object.values(teamStats).map(team => {
+      const standings = Object.values(teamStats).map(team => {
         const totalDecided = team.wins + team.losses;
         return {
           ...team,
           winPct: totalDecided > 0 ? (team.wins / totalDecided) : 0,
           runDifferential: team.runsFor - team.runsAgainst
         };
-      }).sort((a, b) => {
-        if (b.winPct !== a.winPct) return b.winPct - a.winPct;
-        if (b.wins !== a.wins) return b.wins - a.wins;
+      });
+      
+      // Sort with proper tiebreakers
+      return standings.sort((a, b) => {
+        // Primary: Win Percentage
+        if (a.winPct !== b.winPct) return b.winPct - a.winPct;
+        
+        // Secondary: Head-to-Head (only for 2-team ties)
+        const h2hComp = compareHeadToHead(a, b);
+        if (h2hComp !== 0) return h2hComp;
+        
+        // Tertiary: Runs Allowed (fewer is better)
+        if (a.runsAgainst !== b.runsAgainst) return a.runsAgainst - b.runsAgainst;
+        
+        // Quaternary: Run Differential (higher is better)
         return b.runDifferential - a.runDifferential;
       });
+    }
+    
+    function compareHeadToHead(teamA, teamB) {
+      const aVsB = teamA.h2h[teamB.name];
+      const bVsA = teamB.h2h[teamA.name];
+      
+      // No head-to-head data or 3+ team tie (can't use h2h)
+      if (!aVsB || !bVsA) return 0;
+      
+      const aH2HWinPct = (aVsB.wins + aVsB.losses) > 0 ? aVsB.wins / (aVsB.wins + aVsB.losses) : 0;
+      const bH2HWinPct = (bVsA.wins + bVsA.losses) > 0 ? bVsA.wins / (bVsA.wins + bVsA.losses) : 0;
+      
+      // Only return if there's a clear winner in h2h
+      if (aH2HWinPct !== bH2HWinPct) {
+        return bH2HWinPct - aH2HWinPct;
+      }
+      
+      return 0; // H2H is tied, move to next tiebreaker
     }
 
     function calculateRemainingGames(games, teamName) {
