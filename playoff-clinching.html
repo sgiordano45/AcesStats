@@ -439,7 +439,7 @@
                 <th>Record</th>
                 <th>Win%</th>
                 <th>Status</th>
-                <th>Magic #</th>
+                <th>Seed Range</th>
                 <th>Games Left</th>
                 <th>Seeding Scenario</th>
               </tr>
@@ -455,10 +455,6 @@
         <!-- Legend -->
         <div class="legend">
           <div class="legend-item">
-            <span class="status-badge status-clinched">Locked</span>
-            <span>Seed is clinched</span>
-          </div>
-          <div class="legend-item">
             <span class="status-badge status-safe">Top Seed</span>
             <span>Seeds 1-2 (vs play-in winners)</span>
           </div>
@@ -472,10 +468,9 @@
           </div>
         </div>
         <div style="margin-top: 1rem; padding: 1rem; background: #f8f9fa; border-radius: 8px; font-size: 0.85rem; color: #666;">
-          <strong>Magic # Key:</strong> 
-          <span style="color: var(--clinched-green); font-weight: 700;">✓</span> = Seed locked | 
-          <span style="font-weight: 700;">1-5</span> = Wins needed to lock seed | 
-          <span style="color: var(--text-light); font-weight: 700;">?</span> = Cannot lock (seed variable based on results)
+          <strong>Seed Range:</strong> Shows possible final seeds based on all remaining games. 
+          <strong>#3</strong> = locked into that seed | 
+          <strong>#2-4</strong> = can finish anywhere in that range
         </div>
       </div>
     </div>
@@ -689,103 +684,188 @@
       }).length;
     }
 
-    function calculateSeedMagicNumber(currentSeed, teamWins, teamGamesLeft, standings) {
-      // For seed 1: Magic number to clinch #1 seed
-      if (currentSeed === 1) {
-        if (standings.length < 2) return 0;
-        const secondPlace = standings[1];
-        const secondMaxWins = secondPlace.wins + calculateRemainingGames(allGames, secondPlace.name);
-        const magicNumber = Math.max(0, secondMaxWins - teamWins + 1);
-        
-        // If impossible to clinch (need more wins than games left), return -1
-        if (magicNumber > teamGamesLeft) return -1;
-        return magicNumber;
-      }
+    /**
+     * Calculate best and worst possible seeds for a team
+     */
+    function calculateSeedRange(team, standings, upcomingGames) {
+      const teamName = team.name;
+      const currentWins = team.wins;
+      const gamesLeft = calculateRemainingGames(allGames, teamName);
       
-      // For seeds 2-6: Magic number to lock in current seed (prevent team behind from catching)
-      if (currentSeed <= 6) {
-        if (currentSeed >= standings.length) return 0; // No one behind to worry about
-        
-        const teamBehind = standings[currentSeed]; // Team directly behind (index = currentSeed because 0-indexed)
-        const behindMaxWins = teamBehind.wins + calculateRemainingGames(allGames, teamBehind.name);
-        
-        // How many wins do I need to guarantee I stay ahead?
-        const magicNumber = Math.max(0, behindMaxWins - teamWins + 1);
-        
-        // If impossible to lock (need more wins than games left), return -1
-        if (magicNumber > teamGamesLeft) return -1;
-        return magicNumber;
-      }
+      // Best case: win all remaining games
+      const bestWins = currentWins + gamesLeft;
+      const bestLosses = team.losses;
       
-      // For seeds 7-10: Magic number to reach seed 6 (avoid play-in)
-      if (currentSeed >= 7) {
-        const sixthPlace = standings[5]; // 6th place team (index 5)
-        const sixthMaxWins = sixthPlace.wins + calculateRemainingGames(allGames, sixthPlace.name);
-        const winsNeeded = sixthMaxWins - teamWins + 1;
+      // Worst case: lose all remaining games  
+      const worstWins = currentWins;
+      const worstLosses = team.losses + gamesLeft;
+      
+      // Calculate best possible seed (assumes we win out and others lose)
+      let bestSeed = 1;
+      standings.forEach(otherTeam => {
+        if (otherTeam.name === teamName) return;
         
-        // If impossible to catch 6th place
-        if (winsNeeded > teamGamesLeft) {
-          return -1; // Locked into play-in
+        const otherGamesLeft = calculateRemainingGames(allGames, otherTeam.name);
+        const otherWorstWins = otherTeam.wins; // They lose all their games
+        
+        // If they still have more wins than our best case, we're below them
+        if (otherWorstWins > bestWins) {
+          bestSeed++;
         }
+      });
+      
+      // Calculate worst possible seed (assumes we lose out and others win)
+      let worstSeed = 1;
+      standings.forEach(otherTeam => {
+        if (otherTeam.name === teamName) return;
         
-        return winsNeeded;
+        const otherGamesLeft = calculateRemainingGames(allGames, otherTeam.name);
+        const otherBestWins = otherTeam.wins + otherGamesLeft; // They win all their games
+        
+        // If they could have more wins than our worst case, they could pass us
+        if (otherBestWins > worstWins || 
+            (otherBestWins === worstWins && otherTeam.runsAgainst < team.runsAgainst)) {
+          worstSeed++;
+        }
+      });
+      
+      return { bestSeed, worstSeed, bestWins, worstWins, gamesLeft };
+    }
+
+    /**
+     * Calculate magic number to clinch a specific seed
+     */
+    function calculateMagicNumberForSeed(team, targetSeed, standings) {
+      const teamName = team.name;
+      const gamesLeft = calculateRemainingGames(allGames, teamName);
+      
+      if (gamesLeft === 0) return 0; // No games left
+      
+      // Find the team that could prevent us from getting targetSeed
+      // That's the team at position targetSeed (if we want #1, it's current #2, etc.)
+      let threateningTeams = standings.filter((t, idx) => {
+        if (t.name === teamName) return false;
+        const seed = idx + 1;
+        return seed >= targetSeed; // Teams at or below our target seed
+      });
+      
+      if (threateningTeams.length === 0) return 0;
+      
+      // Find the highest win total any threatening team could achieve
+      let highestThreat = 0;
+      threateningTeams.forEach(otherTeam => {
+        const otherGamesLeft = calculateRemainingGames(allGames, otherTeam.name);
+        const maxWins = otherTeam.wins + otherGamesLeft;
+        highestThreat = Math.max(highestThreat, maxWins);
+      });
+      
+      // Magic number = wins needed to guarantee we're ahead of highest threat
+      const magicNumber = Math.max(0, highestThreat - team.wins + 1);
+      
+      // If impossible, return -1
+      if (magicNumber > gamesLeft) return -1;
+      
+      return magicNumber;
+    }
+
+    /**
+     * Generate detailed seeding scenario text
+     */
+    function generateSeedingScenario(team, seed, standings) {
+      const range = calculateSeedRange(team, standings, allGames);
+      const teamName = team.name;
+      const gamesLeft = range.gamesLeft;
+      
+      if (gamesLeft === 0) {
+        return `Season complete. Final seed: #${seed}`;
       }
       
-      return 0;
+      // Build scenario text with specific details
+      let scenarios = [];
+      
+      // Check if #1 seed is clinched
+      const magicFor1 = calculateMagicNumberForSeed(team, 1, standings);
+      if (magicFor1 === 0) {
+        return `🏆 Clinched #1 seed!`;
+      }
+      
+      // Can clinch #1?
+      if (magicFor1 > 0 && range.bestSeed === 1) {
+        const secondPlace = standings[1];
+        const secondGamesLeft = calculateRemainingGames(allGames, secondPlace.name);
+        
+        if (magicFor1 === 1 && gamesLeft >= 1) {
+          scenarios.push(`Clinches #1 with 1 win or ${secondPlace.name} loss`);
+        } else if (magicFor1 <= gamesLeft) {
+          scenarios.push(`Clinches #1 with ${magicFor1} wins`);
+        }
+      }
+      
+      // If seed is locked
+      if (range.bestSeed === range.worstSeed) {
+        if (scenarios.length === 0) {
+          return `Locked into #${range.bestSeed} seed`;
+        } else {
+          return scenarios.join('. ') + '.';
+        }
+      }
+      
+      // Show seed range with specific scenarios
+      const seedRangeText = `Can finish #${range.bestSeed} to #${range.worstSeed}`;
+      
+      // Best case - what would get them to best seed
+      if (range.bestSeed < seed && gamesLeft > 0) {
+        const teamsToPass = standings.slice(range.bestSeed - 1, seed - 1);
+        if (teamsToPass.length > 0) {
+          const closestTeam = teamsToPass[teamsToPass.length - 1];
+          if (gamesLeft === 1) {
+            scenarios.push(`${seedRangeText} (rises with win and ${closestTeam.name} loss)`);
+          } else {
+            scenarios.push(`${seedRangeText} (rises with ${gamesLeft} wins and help)`);
+          }
+        }
+      } else {
+        scenarios.push(seedRangeText);
+      }
+      
+      // Worst case - what would drop them
+      if (range.worstSeed > seed) {
+        const teamsBehind = standings.slice(seed, range.worstSeed);
+        const closestThreat = teamsBehind[0];
+        
+        if (closestThreat) {
+          const threatGamesLeft = calculateRemainingGames(allGames, closestThreat.name);
+          if (gamesLeft === 1 && threatGamesLeft > 0) {
+            scenarios.push(`Falls to #${range.worstSeed} with loss and ${closestThreat.name} win`);
+          } else if (gamesLeft > 1) {
+            scenarios.push(`Falls to #${range.worstSeed} with ${gamesLeft} losses and ${closestThreat.name} wins`);
+          }
+        }
+      }
+      
+      // Highlight play-in line (6/7 cutoff)
+      if (seed === 6 && range.worstSeed >= 7) {
+        scenarios.push(`⚠️ At risk of play-in with losses`);
+      } else if (seed === 7 && range.bestSeed <= 6) {
+        scenarios.push(`⚠️ Can avoid play-in with wins`);
+      }
+      
+      if (scenarios.length === 0) {
+        scenarios.push(seedRangeText);
+      }
+      
+      return scenarios.join('. ') + '.';
     }
 
     function getSeedStatus(seed, magicNumber) {
-      if (magicNumber === 0) {
-        return { status: 'clinched', badge: 'status-clinched', text: 'LOCKED' };
-      } else if (seed <= 2) {
+      // Status based on current seed position, not magic number
+      if (seed <= 2) {
         return { status: 'safe', badge: 'status-safe', text: 'TOP SEED' };
       } else if (seed <= 6) {
         return { status: 'contention', badge: 'status-contention', text: 'MID SEED' };
       } else {
         return { status: 'danger', badge: 'status-danger', text: 'PLAY-IN' };
       }
-    }
-
-    function getSeedScenarioText(seed, magicNumber, gamesLeft, teamName, standings, teamWins) {
-      if (magicNumber === 0) {
-        if (seed === 1) {
-          return `${teamName} has clinched the #1 seed! 🏆`;
-        } else {
-          return `${teamName} has locked in the #${seed} seed.`;
-        }
-      }
-      
-      // Calculate best and worst possible records
-      const bestWins = teamWins + gamesLeft;
-      const worstWins = teamWins;
-      const teamLosses = standings.find(t => t.name === teamName).losses;
-      const bestRecord = `${bestWins}-${teamLosses}`;
-      const worstRecord = `${worstWins}-${teamLosses + gamesLeft}`;
-      
-      if (magicNumber === -1) {
-        // Cannot lock in current seed or achieve goal
-        if (seed >= 7) {
-          return `Locked into play-in. Can finish ${worstRecord} to ${bestRecord}.`;
-        } else {
-          return `Cannot lock seed. Can finish ${worstRecord} to ${bestRecord}.`;
-        }
-      }
-      
-      if (seed === 1) {
-        return `${magicNumber} win${magicNumber > 1 ? 's' : ''} to clinch #1 seed and home field advantage.`;
-      } else if (seed === 2) {
-        if (magicNumber <= 2) {
-          return `${magicNumber} win${magicNumber > 1 ? 's' : ''} to lock in #2 seed.`;
-        } else {
-          return `Can still compete for #1 seed. Need ${magicNumber} wins to lock #2.`;
-        }
-      } else if (seed >= 3 && seed <= 6) {
-        return `Direct to Round 1. ${magicNumber} win${magicNumber > 1 ? 's' : ''} locks in top-${seed}.`;
-      } else if (seed >= 7) {
-        return `${magicNumber} win${magicNumber > 1 ? 's' : ''} needed to avoid play-in and reach top 6.`;
-      }
-      
-      return `${magicNumber} wins in ${gamesLeft} games to improve seeding.`;
     }
 
     let allGames = [];
@@ -888,13 +968,14 @@
 
       standings.slice(0, TOTAL_TEAMS).forEach((team, index) => {
         const seed = index + 1;
-        const gamesLeft = calculateRemainingGames(allGames, team.name);
-        const magicNumber = calculateSeedMagicNumber(seed, team.wins, gamesLeft, standings);
+        const range = calculateSeedRange(team, standings, allGames);
         
-        if (magicNumber === 0) {
+        // Count locked seeds
+        if (range.bestSeed === range.worstSeed) {
           lockedSeeds++;
         }
         
+        // Count current positioning
         if (seed <= 6) {
           byeSeeds++;
         } else {
@@ -916,12 +997,17 @@
       standings.slice(0, TOTAL_TEAMS).forEach((team, index) => {
         const seed = index + 1;
         const gamesLeft = calculateRemainingGames(allGames, team.name);
-        const magicNumber = calculateSeedMagicNumber(seed, team.wins, gamesLeft, standings);
-        const statusInfo = getSeedStatus(seed, magicNumber);
-        const scenario = getSeedScenarioText(seed, magicNumber, gamesLeft, team.name, standings, team.wins);
+        const range = calculateSeedRange(team, standings, allGames);
+        const statusInfo = getSeedStatus(seed);
+        const scenario = generateSeedingScenario(team, seed, standings);
 
-        const magicClass = magicNumber === 0 ? 'low' : magicNumber > 5 ? 'high' : '';
-        const magicDisplay = magicNumber === 0 ? '✓' : magicNumber === -1 ? '?' : magicNumber;
+        // Display seed range in magic # column
+        let magicDisplay;
+        if (range.bestSeed === range.worstSeed) {
+          magicDisplay = `#${range.bestSeed}`;
+        } else {
+          magicDisplay = `#${range.bestSeed}-${range.worstSeed}`;
+        }
 
         const row = document.createElement('tr');
         row.innerHTML = `
@@ -930,7 +1016,7 @@
           <td>${team.wins}-${team.losses}${team.ties > 0 ? `-${team.ties}` : ''}</td>
           <td>${(team.winPct * 100).toFixed(1)}%</td>
           <td><span class="status-badge ${statusInfo.badge}">${statusInfo.text}</span></td>
-          <td><span class="magic-number ${magicClass}">${magicDisplay}</span></td>
+          <td><span class="magic-number">${magicDisplay}</span></td>
           <td>${gamesLeft}</td>
           <td class="scenario-text">${scenario}</td>
         `;
