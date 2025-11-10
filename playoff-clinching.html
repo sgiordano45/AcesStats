@@ -1116,14 +1116,25 @@
               ${topSeeds.map((team, index) => {
                 const seed = index + 1;
                 const gamesLeft = calculateRemainingGames(allGames, team.name);
-                const magicNumber = calculateSeedMagicNumber(seed, team.wins, gamesLeft, standings);
+                const range = calculateSeedRange(team, standings, allGames);
+                const magicFor1 = calculateMagicNumberForSeed(team, 1, standings);
                 
                 let path = '';
                 if (seed === 1) {
-                  path = magicNumber === 0 ? 'Clinched #1 seed!' : `${magicNumber} wins clinches #1`;
+                  if (range.bestSeed === range.worstSeed && range.bestSeed === 1) {
+                    path = 'Clinched #1 seed! 🏆';
+                  } else if (magicFor1 > 0 && magicFor1 <= gamesLeft) {
+                    path = `${magicFor1} win${magicFor1 > 1 ? 's' : ''} clinches #1`;
+                  } else {
+                    path = 'Controls destiny for #1';
+                  }
                 } else {
                   const gamesBack = ((standings[0].winPct - team.winPct) * team.gamesPlayed).toFixed(1);
-                  path = `${gamesBack} GB from #1 seed`;
+                  if (range.bestSeed === 1) {
+                    path = `${gamesBack} GB from #1 (can catch with wins)`;
+                  } else {
+                    path = `${gamesBack} GB from #1 seed`;
+                  }
                 }
 
                 return `
@@ -1161,16 +1172,31 @@
               ${playInBattle.map((team, index) => {
                 const seed = index + 5;
                 const gamesLeft = calculateRemainingGames(allGames, team.name);
+                const range = calculateSeedRange(team, standings, allGames);
                 
                 let status = '';
                 if (seed === 6) {
-                  status = 'Last direct Round 1 spot';
+                  if (range.worstSeed === 6) {
+                    status = 'Locked in last direct Round 1 spot';
+                  } else if (range.worstSeed >= 7) {
+                    status = 'Last direct spot - at risk of play-in';
+                  } else {
+                    status = 'Secure in direct Round 1 position';
+                  }
                 } else if (seed === 7) {
-                  const gamesBack = ((standings[5].winPct - team.winPct) * team.gamesPlayed).toFixed(1);
-                  status = `${gamesBack} GB from avoiding play-in`;
+                  if (range.bestSeed <= 6) {
+                    const gamesBack = ((standings[5].winPct - team.winPct) * team.gamesPlayed).toFixed(1);
+                    status = `${gamesBack} GB from avoiding play-in (can reach #6)`;
+                  } else {
+                    status = 'Locked into play-in games';
+                  }
                 } else {
-                  const gamesBack = ((standings[5].winPct - team.winPct) * team.gamesPlayed).toFixed(1);
-                  status = `${gamesBack} GB from top 6`;
+                  if (range.bestSeed <= 6) {
+                    const gamesBack = ((standings[5].winPct - team.winPct) * team.gamesPlayed).toFixed(1);
+                    status = `${gamesBack} GB from top 6 (can avoid play-in)`;
+                  } else {
+                    status = 'Locked into play-in games';
+                  }
                 }
 
                 return `
@@ -1208,14 +1234,27 @@
               ${playInSeeding.map((team, index) => {
                 const seed = index + 8;
                 const gamesLeft = calculateRemainingGames(allGames, team.name);
+                const range = calculateSeedRange(team, standings, allGames);
                 
                 let matchup = '';
                 if (seed === 8) {
-                  matchup = 'Will face #9 seed';
+                  if (range.bestSeed === range.worstSeed && range.bestSeed === 8) {
+                    matchup = 'Locked - will face #9 seed';
+                  } else {
+                    matchup = `Could finish #${range.bestSeed}-${range.worstSeed} (currently vs #9)`;
+                  }
                 } else if (seed === 9) {
-                  matchup = 'Will face #8 seed';
+                  if (range.bestSeed === range.worstSeed && range.bestSeed === 9) {
+                    matchup = 'Locked - will face #8 seed';
+                  } else {
+                    matchup = `Could finish #${range.bestSeed}-${range.worstSeed} (currently vs #8)`;
+                  }
                 } else if (seed === 10) {
-                  matchup = 'Will face #7 seed';
+                  if (range.bestSeed === range.worstSeed && range.bestSeed === 10) {
+                    matchup = 'Locked - will face #7 seed';
+                  } else {
+                    matchup = `Could finish #${range.bestSeed}-${range.worstSeed} (currently vs #7)`;
+                  }
                 }
 
                 return `
