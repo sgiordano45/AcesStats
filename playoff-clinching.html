@@ -459,7 +459,7 @@
             <span>Seed is clinched</span>
           </div>
           <div class="legend-item">
-            <span class="status-badge status-safe">Safe</span>
+            <span class="status-badge status-safe">Top Seed</span>
             <span>Seeds 1-2 (vs play-in winners)</span>
           </div>
           <div class="legend-item">
@@ -470,6 +470,12 @@
             <span class="status-badge status-danger">Play-In</span>
             <span>Seeds 7-10 (must win play-in)</span>
           </div>
+        </div>
+        <div style="margin-top: 1rem; padding: 1rem; background: #f8f9fa; border-radius: 8px; font-size: 0.85rem; color: #666;">
+          <strong>Magic # Key:</strong> 
+          <span style="color: var(--clinched-green); font-weight: 700;">✓</span> = Seed locked | 
+          <span style="font-weight: 700;">1-5</span> = Wins needed to lock seed | 
+          <span style="color: var(--text-light); font-weight: 700;">?</span> = Cannot lock (seed variable based on results)
         </div>
       </div>
     </div>
@@ -690,19 +696,28 @@
         const secondPlace = standings[1];
         const secondMaxWins = secondPlace.wins + calculateRemainingGames(allGames, secondPlace.name);
         const magicNumber = Math.max(0, secondMaxWins - teamWins + 1);
+        
+        // If impossible to clinch (need more wins than games left), return -1
+        if (magicNumber > teamGamesLeft) return -1;
         return magicNumber;
       }
       
-      // For seeds 2-6: Magic number to clinch current seed or better
+      // For seeds 2-6: Magic number to lock in current seed (prevent team behind from catching)
       if (currentSeed <= 6) {
-        if (currentSeed >= standings.length) return 0;
-        const teamBehind = standings[currentSeed]; // Team directly behind
+        if (currentSeed >= standings.length) return 0; // No one behind to worry about
+        
+        const teamBehind = standings[currentSeed]; // Team directly behind (index = currentSeed because 0-indexed)
         const behindMaxWins = teamBehind.wins + calculateRemainingGames(allGames, teamBehind.name);
+        
+        // How many wins do I need to guarantee I stay ahead?
         const magicNumber = Math.max(0, behindMaxWins - teamWins + 1);
+        
+        // If impossible to lock (need more wins than games left), return -1
+        if (magicNumber > teamGamesLeft) return -1;
         return magicNumber;
       }
       
-      // For seeds 7-10: Magic number to avoid play-in (reach seed 6 or better)
+      // For seeds 7-10: Magic number to reach seed 6 (avoid play-in)
       if (currentSeed >= 7) {
         const sixthPlace = standings[5]; // 6th place team (index 5)
         const sixthMaxWins = sixthPlace.wins + calculateRemainingGames(allGames, sixthPlace.name);
@@ -731,7 +746,7 @@
       }
     }
 
-    function getSeedScenarioText(seed, magicNumber, gamesLeft, teamName, standings) {
+    function getSeedScenarioText(seed, magicNumber, gamesLeft, teamName, standings, teamWins) {
       if (magicNumber === 0) {
         if (seed === 1) {
           return `${teamName} has clinched the #1 seed! 🏆`;
@@ -740,23 +755,34 @@
         }
       }
       
+      // Calculate best and worst possible records
+      const bestWins = teamWins + gamesLeft;
+      const worstWins = teamWins;
+      const teamLosses = standings.find(t => t.name === teamName).losses;
+      const bestRecord = `${bestWins}-${teamLosses}`;
+      const worstRecord = `${worstWins}-${teamLosses + gamesLeft}`;
+      
+      if (magicNumber === -1) {
+        // Cannot lock in current seed or achieve goal
+        if (seed >= 7) {
+          return `Locked into play-in. Can finish ${worstRecord} to ${bestRecord}.`;
+        } else {
+          return `Cannot lock seed. Can finish ${worstRecord} to ${bestRecord}.`;
+        }
+      }
+      
       if (seed === 1) {
-        return `${magicNumber} win${magicNumber > 1 ? 's' : ''} to clinch #1 seed and top playoff position.`;
+        return `${magicNumber} win${magicNumber > 1 ? 's' : ''} to clinch #1 seed and home field advantage.`;
       } else if (seed === 2) {
         if (magicNumber <= 2) {
-          return `${magicNumber} win${magicNumber > 1 ? 's' : ''} to lock in #2 seed and face play-in winner.`;
+          return `${magicNumber} win${magicNumber > 1 ? 's' : ''} to lock in #2 seed.`;
         } else {
-          return `Can still compete for #1 seed. ${magicNumber} wins locks current position.`;
+          return `Can still compete for #1 seed. Need ${magicNumber} wins to lock #2.`;
         }
       } else if (seed >= 3 && seed <= 6) {
-        const seedsAhead = seed - 1;
-        return `Direct to Round 1. ${magicNumber} wins locks in top-${seed} position.`;
+        return `Direct to Round 1. ${magicNumber} win${magicNumber > 1 ? 's' : ''} locks in top-${seed}.`;
       } else if (seed >= 7) {
-        if (magicNumber === -1) {
-          return `Locked into play-in games (seeds 7-10). Focus on improving seed.`;
-        } else {
-          return `${magicNumber} wins needed to avoid play-in games and reach top 6.`;
-        }
+        return `${magicNumber} win${magicNumber > 1 ? 's' : ''} needed to avoid play-in and reach top 6.`;
       }
       
       return `${magicNumber} wins in ${gamesLeft} games to improve seeding.`;
@@ -892,10 +918,10 @@
         const gamesLeft = calculateRemainingGames(allGames, team.name);
         const magicNumber = calculateSeedMagicNumber(seed, team.wins, gamesLeft, standings);
         const statusInfo = getSeedStatus(seed, magicNumber);
-        const scenario = getSeedScenarioText(seed, magicNumber, gamesLeft, team.name, standings);
+        const scenario = getSeedScenarioText(seed, magicNumber, gamesLeft, team.name, standings, team.wins);
 
         const magicClass = magicNumber === 0 ? 'low' : magicNumber > 5 ? 'high' : '';
-        const magicDisplay = magicNumber === 0 ? '✓' : magicNumber === -1 ? '-' : magicNumber;
+        const magicDisplay = magicNumber === 0 ? '✓' : magicNumber === -1 ? '?' : magicNumber;
 
         const row = document.createElement('tr');
         row.innerHTML = `
