@@ -1183,11 +1183,18 @@
           combinationsToCheck.push({wins: 1, losses: gamesLeft - 1, label: `Win 1, lose ${gamesLeft - 1}`});
         }
       } else {
-        // For middle seeds, check balanced combinations
-        const midWins = Math.floor(gamesLeft / 2);
-        combinationsToCheck = [
-          {wins: midWins, losses: gamesLeft - midWins, label: `Win ${midWins}, lose ${gamesLeft - midWins}`}
-        ];
+        // For middle seeds, check multiple combinations that could lead to this seed
+        // Start from most wins and work down
+        for (let w = gamesLeft; w >= 0; w--) {
+          const l = gamesLeft - w;
+          combinationsToCheck.push({
+            wins: w, 
+            losses: l, 
+            label: w === gamesLeft ? `Win all ${gamesLeft} games` :
+                   w === 0 ? `Lose all ${gamesLeft} games` :
+                   `Win ${w}, lose ${l}`
+          });
+        }
       }
       
       // Analyze each combination
@@ -1282,21 +1289,77 @@
       const playEachOther = teamsPlayEachOther(teamName, other.name, allGames);
       
       if (playEachOther) {
-        // They play each other - outcome determines winner
-        if (!h2h || (h2h.wins + h2h.losses === 0)) {
-          details.push(`Winner of remaining H2H matchup gets tiebreaker`);
-        } else if (h2h.wins > h2h.losses) {
-          details.push(`Currently lead H2H ${h2h.wins}-${h2h.losses}, but remaining matchup could split it → would go to Runs Allowed`);
-          const raDiff = other.runsAgainst - team.runsAgainst;
-          details.push(`Currently ${raDiff > 0 ? 'lead' : 'trail'} by ${Math.abs(raDiff)} runs allowed`);
-        } else if (h2h.wins < h2h.losses) {
-          details.push(`Currently trail H2H ${h2h.wins}-${h2h.losses}, but remaining matchup could tie it → would go to Runs Allowed`);
-          const raDiff = other.runsAgainst - team.runsAgainst;
-          details.push(`Currently ${raDiff > 0 ? 'lead' : 'trail'} by ${Math.abs(raDiff)} runs allowed`);
+        // They play each other - but we need to determine if the scenario outcome determines the result
+        // Calculate how many games each team has left
+        const teamGamesLeft = calculateRemainingGames(allGames, teamName);
+        const otherGamesLeft = calculateRemainingGames(allGames, other.name);
+        
+        // If the team is adding exactly as many wins as games remaining, they won all remaining games (including vs other)
+        // If the team is adding 0 wins, they lost all remaining games (including vs other)
+        // If somewhere in between, the outcome of the direct matchup is uncertain
+        
+        const teamWinsAll = (winsToAdd === teamGamesLeft);
+        const teamLosesAll = (winsToAdd === 0);
+        
+        // For them to be tied at the same record, calculate what the other team needs
+        const otherProjectedWins = projectedWins;
+        const otherCurrentWins = other.wins;
+        const otherWinsToAdd = otherProjectedWins - otherCurrentWins;
+        const otherWinsAll = (otherWinsToAdd === otherGamesLeft);
+        const otherLosesAll = (otherWinsToAdd === 0);
+        
+        // Determine the outcome of the direct matchup based on scenarios
+        let directMatchupKnown = false;
+        let teamWinsMatchup = false;
+        
+        if (teamWinsAll && otherLosesAll) {
+          // Team wins all, other loses all → team wins the matchup
+          directMatchupKnown = true;
+          teamWinsMatchup = true;
+        } else if (teamLosesAll && otherWinsAll) {
+          // Team loses all, other wins all → other wins the matchup
+          directMatchupKnown = true;
+          teamWinsMatchup = false;
+        } else if (teamGamesLeft === 1 && otherGamesLeft === 1) {
+          // Both teams have only 1 game left, and it's against each other
+          // If team is projected to win that game (winsToAdd = 1), they win matchup
+          // If team is projected to lose that game (winsToAdd = 0), they lose matchup
+          directMatchupKnown = true;
+          teamWinsMatchup = (winsToAdd === 1);
+        }
+        
+        if (directMatchupKnown) {
+          // We know the outcome of the direct matchup from this scenario
+          const currentH2HWins = h2h ? h2h.wins : 0;
+          const currentH2HLosses = h2h ? h2h.losses : 0;
+          const finalH2HWins = currentH2HWins + (teamWinsMatchup ? 1 : 0);
+          const finalH2HLosses = currentH2HLosses + (teamWinsMatchup ? 0 : 1);
+          
+          if (finalH2HWins > finalH2HLosses) {
+            details.push(`✓ Win H2H tiebreaker (${finalH2HWins}-${finalH2HLosses} after remaining matchup) → get higher seed`);
+          } else if (finalH2HWins < finalH2HLosses) {
+            details.push(`✗ Lose H2H tiebreaker (${finalH2HWins}-${finalH2HLosses} after remaining matchup) → get lower seed`);
+          } else {
+            details.push(`H2H tied (${finalH2HWins}-${finalH2HLosses}) → goes to Runs Allowed tiebreaker`);
+            generateRunsAllowedDetails(team, other, winsToAdd, lossesToAdd, details);
+          }
         } else {
-          details.push(`H2H tied ${h2h.wins}-${h2h.losses}, remaining matchup breaks tie or goes to Runs Allowed if split`);
-          const raDiff = other.runsAgainst - team.runsAgainst;
-          details.push(`Currently ${raDiff > 0 ? 'lead' : 'trail'} by ${Math.abs(raDiff)} runs allowed`);
+          // Outcome of direct matchup is uncertain in this scenario
+          if (!h2h || (h2h.wins + h2h.losses === 0)) {
+            details.push(`Winner of remaining H2H matchup gets tiebreaker`);
+          } else if (h2h.wins > h2h.losses) {
+            details.push(`Currently lead H2H ${h2h.wins}-${h2h.losses}, but remaining matchup could split it → would go to Runs Allowed`);
+            const raDiff = other.runsAgainst - team.runsAgainst;
+            details.push(`Currently ${raDiff > 0 ? 'lead' : 'trail'} by ${Math.abs(raDiff)} runs allowed`);
+          } else if (h2h.wins < h2h.losses) {
+            details.push(`Currently trail H2H ${h2h.wins}-${h2h.losses}, but remaining matchup could tie it → would go to Runs Allowed`);
+            const raDiff = other.runsAgainst - team.runsAgainst;
+            details.push(`Currently ${raDiff > 0 ? 'lead' : 'trail'} by ${Math.abs(raDiff)} runs allowed`);
+          } else {
+            details.push(`H2H tied ${h2h.wins}-${h2h.losses}, remaining matchup breaks tie or goes to Runs Allowed if split`);
+            const raDiff = other.runsAgainst - team.runsAgainst;
+            details.push(`Currently ${raDiff > 0 ? 'lead' : 'trail'} by ${Math.abs(raDiff)} runs allowed`);
+          }
         }
       } else {
         // H2H is final
