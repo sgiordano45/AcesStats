@@ -679,30 +679,18 @@
       const currentWins = team.wins;
       const gamesLeft = calculateRemainingGames(allGames, teamName);
       
-      // If no games left, seed is locked
-      if (gamesLeft === 0) {
-        const currentSeed = standings.findIndex(t => t.name === teamName) + 1;
-        return { 
-          bestSeed: currentSeed, 
-          worstSeed: currentSeed, 
-          bestWins: currentWins, 
-          worstWins: currentWins, 
-          gamesLeft: 0 
-        };
-      }
-      
-      // Best case: team wins all remaining games
+      // Best case: team wins all remaining games (or current record if done)
       const bestWins = currentWins + gamesLeft;
       const bestLosses = team.losses;
       
-      // Worst case: team loses all remaining games  
+      // Worst case: team loses all remaining games (or current record if done)
       const worstWins = currentWins;
       const worstLosses = team.losses + gamesLeft;
       
-      // Simulate best case scenario
+      // Simulate best case scenario (other teams lose)
       let bestSeed = simulateFinalStandings(teamName, bestWins, bestLosses, standings, true);
       
-      // Simulate worst case scenario
+      // Simulate worst case scenario (other teams win)
       let worstSeed = simulateFinalStandings(teamName, worstWins, worstLosses, standings, false);
       
       return { bestSeed, worstSeed, bestWins, worstWins, gamesLeft };
@@ -871,8 +859,24 @@
       const teamName = team.name;
       const gamesLeft = range.gamesLeft;
       
+      // If this team has no games left but seed is locked (best = worst)
+      if (gamesLeft === 0 && range.bestSeed === range.worstSeed) {
+        return `Season complete. Locked into #${range.bestSeed} seed`;
+      }
+      
+      // If this team has no games left but seed can still change based on other results
       if (gamesLeft === 0) {
-        return `Season complete. Final seed: #${seed}`;
+        const seedRangeText = `Season complete. Can finish #${range.bestSeed} to #${range.worstSeed}`;
+        let scenarios = [seedRangeText];
+        
+        // Explain what determines final position
+        if (range.worstSeed - range.bestSeed === 1) {
+          scenarios.push(`Final position depends on other results and tiebreakers`);
+        } else {
+          scenarios.push(`Multiple teams can catch up - final position depends on other results`);
+        }
+        
+        return scenarios.join('. ') + '.';
       }
       
       // Build scenario text with specific details
