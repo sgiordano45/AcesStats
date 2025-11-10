@@ -685,51 +685,104 @@
     }
 
     /**
-     * Calculate best and worst possible seeds for a team
+     * Calculate best and worst possible seeds for a team by simulating outcomes
      */
     function calculateSeedRange(team, standings, upcomingGames) {
       const teamName = team.name;
       const currentWins = team.wins;
       const gamesLeft = calculateRemainingGames(allGames, teamName);
       
-      // Best case: win all remaining games
+      // If no games left, seed is locked
+      if (gamesLeft === 0) {
+        const currentSeed = standings.findIndex(t => t.name === teamName) + 1;
+        return { 
+          bestSeed: currentSeed, 
+          worstSeed: currentSeed, 
+          bestWins: currentWins, 
+          worstWins: currentWins, 
+          gamesLeft: 0 
+        };
+      }
+      
+      // Best case: team wins all remaining games
       const bestWins = currentWins + gamesLeft;
       const bestLosses = team.losses;
       
-      // Worst case: lose all remaining games  
+      // Worst case: team loses all remaining games  
       const worstWins = currentWins;
       const worstLosses = team.losses + gamesLeft;
       
-      // Calculate best possible seed (assumes we win out and others lose)
-      let bestSeed = 1;
-      standings.forEach(otherTeam => {
-        if (otherTeam.name === teamName) return;
-        
-        const otherGamesLeft = calculateRemainingGames(allGames, otherTeam.name);
-        const otherWorstWins = otherTeam.wins; // They lose all their games
-        
-        // If they still have more wins than our best case, we're below them
-        if (otherWorstWins > bestWins) {
-          bestSeed++;
-        }
-      });
+      // Simulate best case scenario
+      let bestSeed = simulateFinalStandings(teamName, bestWins, bestLosses, standings, true);
       
-      // Calculate worst possible seed (assumes we lose out and others win)
-      let worstSeed = 1;
-      standings.forEach(otherTeam => {
-        if (otherTeam.name === teamName) return;
-        
-        const otherGamesLeft = calculateRemainingGames(allGames, otherTeam.name);
-        const otherBestWins = otherTeam.wins + otherGamesLeft; // They win all their games
-        
-        // If they could have more wins than our worst case, they could pass us
-        if (otherBestWins > worstWins || 
-            (otherBestWins === worstWins && otherTeam.runsAgainst < team.runsAgainst)) {
-          worstSeed++;
-        }
-      });
+      // Simulate worst case scenario
+      let worstSeed = simulateFinalStandings(teamName, worstWins, worstLosses, standings, false);
       
       return { bestSeed, worstSeed, bestWins, worstWins, gamesLeft };
+    }
+    
+    /**
+     * Simulate final standings with team at specified record
+     * favorableForTeam: true = assume favorable outcomes for other games, false = unfavorable
+     */
+    function simulateFinalStandings(targetTeam, targetWins, targetLosses, currentStandings, favorableForTeam) {
+      // Build hypothetical final standings
+      const hypotheticalStandings = currentStandings.map(team => {
+        if (team.name === targetTeam) {
+          // Use the target team's hypothetical record
+          const totalDecided = targetWins + targetLosses;
+          return {
+            ...team,
+            wins: targetWins,
+            losses: targetLosses,
+            gamesPlayed: totalDecided + team.ties,
+            winPct: totalDecided > 0 ? (targetWins / totalDecided) : 0
+          };
+        } else {
+          // For other teams, calculate their potential final record
+          const otherGamesLeft = calculateRemainingGames(allGames, team.name);
+          
+          let finalWins, finalLosses;
+          if (favorableForTeam) {
+            // Favorable case for target team: others lose their remaining games
+            finalWins = team.wins;
+            finalLosses = team.losses + otherGamesLeft;
+          } else {
+            // Unfavorable case for target team: others win their remaining games
+            finalWins = team.wins + otherGamesLeft;
+            finalLosses = team.losses;
+          }
+          
+          const totalDecided = finalWins + finalLosses;
+          return {
+            ...team,
+            wins: finalWins,
+            losses: finalLosses,
+            gamesPlayed: totalDecided + team.ties,
+            winPct: totalDecided > 0 ? (finalWins / totalDecided) : 0
+          };
+        }
+      });
+      
+      // Sort with proper tiebreakers (same logic as calculateStandings)
+      const sortedStandings = hypotheticalStandings.sort((a, b) => {
+        // Primary: Win Percentage
+        if (a.winPct !== b.winPct) return b.winPct - a.winPct;
+        
+        // Secondary: Head-to-Head (only for 2-team ties)
+        const h2hComp = compareHeadToHead(a, b);
+        if (h2hComp !== 0) return h2hComp;
+        
+        // Tertiary: Runs Allowed (fewer is better)
+        if (a.runsAgainst !== b.runsAgainst) return a.runsAgainst - b.runsAgainst;
+        
+        // Quaternary: Run Differential (higher is better)
+        return b.runDifferential - a.runDifferential;
+      });
+      
+      // Find the target team's seed
+      const seed = sortedStandings.findIndex(t => t.name === targetTeam) + 1;
+      return seed;
     }
 
     /**
@@ -795,7 +848,12 @@
         const secondGamesLeft = calculateRemainingGames(allGames, secondPlace.name);
         
         if (magicFor1 === 1 && gamesLeft >= 1) {
-          scenarios.push(`Clinches #1 with 1 win or ${secondPlace.name} loss`);
+          // Only mention second place loss if they have games left
+          if (secondGamesLeft > 0) {
+            scenarios.push(`Clinches #1 with 1 win or ${secondPlace.name} loss`);
+          } else {
+            scenarios.push(`Clinches #1 with 1 win`);
+          }
         } else if (magicFor1 <= gamesLeft) {
           scenarios.push(`Clinches #1 with ${magicFor1} wins`);
         }
@@ -818,8 +876,15 @@
         const teamsToPass = standings.slice(range.bestSeed - 1, seed - 1);
         if (teamsToPass.length > 0) {
           const closestTeam = teamsToPass[teamsToPass.length - 1];
+          const closestGamesLeft = calculateRemainingGames(allGames, closestTeam.name);
+          
           if (gamesLeft === 1) {
-            scenarios.push(`${seedRangeText} (rises with win and ${closestTeam.name} loss)`);
+            // Only mention their loss if they have games left
+            if (closestGamesLeft > 0) {
+              scenarios.push(`${seedRangeText} (rises with win and ${closestTeam.name} loss)`);
+            } else {
+              scenarios.push(`${seedRangeText} (rises with win)`);
+            }
           } else {
             scenarios.push(`${seedRangeText} (rises with ${gamesLeft} wins and help)`);
           }
@@ -835,10 +900,14 @@
         
         if (closestThreat) {
           const threatGamesLeft = calculateRemainingGames(allGames, closestThreat.name);
-          if (gamesLeft === 1 && threatGamesLeft > 0) {
-            scenarios.push(`Falls to #${range.worstSeed} with loss and ${closestThreat.name} win`);
-          } else if (gamesLeft > 1) {
-            scenarios.push(`Falls to #${range.worstSeed} with ${gamesLeft} losses and ${closestThreat.name} wins`);
+          
+          // Only show fall scenarios if the threat has games to actually catch us
+          if (threatGamesLeft > 0) {
+            if (gamesLeft === 1 && threatGamesLeft > 0) {
+              scenarios.push(`Falls to #${range.worstSeed} with loss and ${closestThreat.name} win`);
+            } else if (gamesLeft > 1) {
+              scenarios.push(`Falls to #${range.worstSeed} with ${gamesLeft} losses and ${closestThreat.name} wins`);
+            }
           }
         }
       }
