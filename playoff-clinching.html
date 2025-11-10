@@ -1196,25 +1196,47 @@
         const projectedLosses = team.losses + combo.losses;
         const projectedRecord = `${projectedWins}-${projectedLosses}`;
         
+        // First, verify if this combination actually leads to the target seed
+        const bestCaseSeed = simulateFinalStandings(teamName, projectedWins, projectedLosses, standings, true);
+        const worstCaseSeed = simulateFinalStandings(teamName, projectedWins, projectedLosses, standings, false);
+        
+        // Skip this combination if it doesn't lead to the target seed in any scenario
+        if (targetSeed < bestCaseSeed || targetSeed > worstCaseSeed) {
+          continue;
+        }
+        
         details.push(`• <strong>${combo.label}</strong> (finish ${projectedRecord}):`);
         
         // Find teams we'd be tied with at this record
         const tiedTeams = findPotentialTies(team, projectedWins, standings);
         
+        // Determine if this guarantees the target seed
+        const guaranteesSeed = (bestCaseSeed === worstCaseSeed && bestCaseSeed === targetSeed);
+        
         if (tiedTeams.length === 0) {
-          // No ties - just need the record
-          details.push(`  Would secure #${targetSeed} seed outright with this record`);
+          // No ties - check if it guarantees this specific seed
+          if (guaranteesSeed) {
+            details.push(`  Would secure #${targetSeed} seed outright with this record`);
+          } else {
+            details.push(`  Could finish #${bestCaseSeed} to #${worstCaseSeed} depending on other results`);
+          }
         } else if (tiedTeams.length === 1) {
           // 2-way tie - H2H applies
           const other = tiedTeams[0];
           const tieDetails = generate2WayTieDetails(team, other, projectedWins, combo.wins, combo.losses);
           details.push(`  Tied with ${other.name} at ${projectedRecord}:`);
           details.push(`  ${tieDetails}`);
+          if (!guaranteesSeed) {
+            details.push(`  Final seed could be #${bestCaseSeed} to #${worstCaseSeed} depending on tiebreaker outcome`);
+          }
         } else {
           // 3+ way tie - Runs Allowed applies
           const tieDetails = generate3PlusWayTieDetails(team, tiedTeams, projectedWins, combo.wins, combo.losses);
           details.push(`  Tied with ${tiedTeams.length} teams at ${projectedRecord}:`);
           details.push(`  ${tieDetails}`);
+          if (!guaranteesSeed) {
+            details.push(`  Final seed could be #${bestCaseSeed} to #${worstCaseSeed} depending on tiebreaker outcome`);
+          }
         }
         
         // Add spacing between combinations
