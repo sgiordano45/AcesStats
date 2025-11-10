@@ -516,19 +516,8 @@
         return new Date(dateValue.seconds * 1000);
       }
       
-      // Handle string format "MM/DD/YYYY"
-      if (typeof dateValue === 'string') {
-        const [month, day, year] = dateValue.split('/');
-        return new Date(year, month - 1, day);
-      }
-      
-      // Handle Date objects (already parsed)
-      if (dateValue instanceof Date) {
-        return dateValue;
-      }
-      
-      console.warn('Unknown date format:', dateValue);
-      return new Date(); // Fallback to current date
+      // Handle Date objects or strings - let JavaScript parse it
+      return new Date(dateValue);
     }
 
     /**
@@ -579,7 +568,7 @@
     }
 
     function calculateStandings(games) {
-      const standings = {};
+      const teamStats = {};
       
       games.forEach(game => {
         const homeTeam = game['home team'];
@@ -588,37 +577,56 @@
         const homeScore = parseInt(game['home score']) || 0;
         const awayScore = parseInt(game['away score']) || 0;
         
-        if (!standings[homeTeam]) {
-          standings[homeTeam] = { name: homeTeam, wins: 0, losses: 0, ties: 0, gamesPlayed: 0, runsScored: 0, runsAllowed: 0 };
+        if (!teamStats[homeTeam]) {
+          teamStats[homeTeam] = { 
+            name: homeTeam, 
+            wins: 0, 
+            losses: 0, 
+            ties: 0, 
+            gamesPlayed: 0, 
+            runsFor: 0, 
+            runsAgainst: 0 
+          };
         }
-        if (!standings[awayTeam]) {
-          standings[awayTeam] = { name: awayTeam, wins: 0, losses: 0, ties: 0, gamesPlayed: 0, runsScored: 0, runsAllowed: 0 };
+        if (!teamStats[awayTeam]) {
+          teamStats[awayTeam] = { 
+            name: awayTeam, 
+            wins: 0, 
+            losses: 0, 
+            ties: 0, 
+            gamesPlayed: 0, 
+            runsFor: 0, 
+            runsAgainst: 0 
+          };
         }
         
-        standings[homeTeam].gamesPlayed++;
-        standings[awayTeam].gamesPlayed++;
-        standings[homeTeam].runsScored += homeScore;
-        standings[homeTeam].runsAllowed += awayScore;
-        standings[awayTeam].runsScored += awayScore;
-        standings[awayTeam].runsAllowed += homeScore;
+        teamStats[homeTeam].gamesPlayed++;
+        teamStats[awayTeam].gamesPlayed++;
+        teamStats[homeTeam].runsFor += homeScore;
+        teamStats[homeTeam].runsAgainst += awayScore;
+        teamStats[awayTeam].runsFor += awayScore;
+        teamStats[awayTeam].runsAgainst += homeScore;
         
-        if (winner === homeTeam) {
-          standings[homeTeam].wins++;
-          standings[awayTeam].losses++;
+        if (winner === "Tie") {
+          teamStats[homeTeam].ties++;
+          teamStats[awayTeam].ties++;
+        } else if (winner === homeTeam) {
+          teamStats[homeTeam].wins++;
+          teamStats[awayTeam].losses++;
         } else if (winner === awayTeam) {
-          standings[awayTeam].wins++;
-          standings[homeTeam].losses++;
-        } else if (winner === "Tie") {
-          standings[homeTeam].ties++;
-          standings[awayTeam].ties++;
+          teamStats[awayTeam].wins++;
+          teamStats[homeTeam].losses++;
         }
       });
       
-      return Object.values(standings).map(team => ({
-        ...team,
-        winPct: team.gamesPlayed > 0 ? (team.wins + team.ties * 0.5) / team.gamesPlayed : 0,
-        runDifferential: team.runsScored - team.runsAllowed
-      })).sort((a, b) => {
+      return Object.values(teamStats).map(team => {
+        const totalDecided = team.wins + team.losses;
+        return {
+          ...team,
+          winPct: totalDecided > 0 ? (team.wins / totalDecided) : 0,
+          runDifferential: team.runsFor - team.runsAgainst
+        };
+      }).sort((a, b) => {
         if (b.winPct !== a.winPct) return b.winPct - a.winPct;
         if (b.wins !== a.wins) return b.wins - a.wins;
         return b.runDifferential - a.runDifferential;
@@ -718,37 +726,60 @@
 
     async function loadData() {
       try {
+        console.log('🔄 Loading playoff seeding data...');
+        
         const season = await getCurrentSeason();
+        console.log('📅 Current season:', season);
+        
         if (!season) {
+          console.error('❌ No active season found');
           showError();
           return;
         }
 
         allGames = await getSeasonGames(season.id);
+        console.log(`📊 Loaded ${allGames.length} total games`);
+        console.log('Sample game:', allGames[0]);
         
-        const completedGames = allGames.filter(g => 
-          parseGameDate(g.date) < today && 
-          g.winner && 
-          g.winner.trim() !== "" &&
-          g.game_type === 'Regular'
-        );
+        const completedGames = allGames.filter(g => {
+          const gameDate = parseGameDate(g.date);
+          const isPast = gameDate < today;
+          const hasWinner = g.winner && g.winner.trim() !== "";
+          const isRegular = g.game_type === 'Regular';
+          return isPast && hasWinner && isRegular;
+        });
+        console.log(`✅ ${completedGames.length} completed regular season games`);
 
         const upcomingGames = allGames.filter(g => {
-          const isFuture = parseGameDate(g.date) >= today;
+          const gameDate = parseGameDate(g.date);
+          const isFuture = gameDate >= today;
           const noWinner = !g.winner || g.winner.trim() === "";
           const isRegularSeason = g.game_type === 'Regular';
           return isFuture && noWinner && isRegularSeason;
         });
+        console.log(`⏰ ${upcomingGames.length} upcoming regular season games`);
 
         const standings = calculateStandings(completedGames);
+        console.log(`🏆 Calculated standings for ${standings.length} teams:`, standings);
+        
+        if (standings.length === 0) {
+          console.warn('⚠️ No standings data - no completed games yet?');
+          document.getElementById('clinchingTableBody').innerHTML = `
+            <tr><td colspan="8" class="no-data">No standings data yet. Games need to be played and completed first.</td></tr>
+          `;
+          return;
+        }
         
         updateSummary(standings, upcomingGames);
         updateSeedingTable(standings, upcomingGames);
         updateKeyMatchups(standings, upcomingGames);
         updateSeedingBattles(standings, upcomingGames);
+        
+        console.log('✅ All data loaded and displayed successfully!');
 
       } catch (error) {
-        console.error('Error loading data:', error);
+        console.error('❌ Error loading data:', error);
+        console.error('Error stack:', error.stack);
         showError();
       }
     }
