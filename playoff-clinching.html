@@ -672,6 +672,85 @@
     }
 
     /**
+     * Check if two teams play each other in remaining games
+     */
+    function teamsPlayEachOther(team1, team2, games) {
+      return games.some(g => {
+        const isFuture = parseGameDate(g.date) >= today;
+        const noWinner = !g.winner || g.winner.trim() === "";
+        const isRegularSeason = g.game_type === 'Regular';
+        const hasTeam1 = g['home team'] === team1 || g['away team'] === team1;
+        const hasTeam2 = g['home team'] === team2 || g['away team'] === team2;
+        return isFuture && noWinner && isRegularSeason && hasTeam1 && hasTeam2;
+      });
+    }
+
+    /**
+     * Check if a team truly clinches a seed (accounting for tiebreaker scenarios)
+     * Returns true only if the seed is guaranteed regardless of game margins/tiebreakers
+     */
+    function trulyClinches(team, targetSeed, standings, gamesLeft) {
+      if (gamesLeft === 0) return false;
+      
+      // Get teams that could threaten this seed
+      const threateningTeams = standings.filter((t, idx) => {
+        if (t.name === team.name) return false;
+        const seed = idx + 1;
+        return seed >= targetSeed;
+      });
+      
+      if (threateningTeams.length === 0) return true;
+      
+      // Check if we can get enough wins to be ahead of ALL threats
+      const maxPossibleWins = team.wins + gamesLeft;
+      
+      // Find if any team could tie us even in our best case
+      let couldTie = false;
+      threateningTeams.forEach(threat => {
+        const threatGamesLeft = calculateRemainingGames(allGames, threat.name);
+        const threatMaxWins = threat.wins + threatGamesLeft;
+        
+        // If they could match our max wins, we could tie
+        if (threatMaxWins >= maxPossibleWins) {
+          couldTie = true;
+        }
+      });
+      
+      // If no one can tie us, we truly clinch
+      if (!couldTie) return true;
+      
+      // If someone could tie us, check if we have H2H advantage
+      // But be conservative - if there's any tiebreaker uncertainty, don't claim clinch
+      for (const threat of threateningTeams) {
+        const threatGamesLeft = calculateRemainingGames(allGames, threat.name);
+        const threatMaxWins = threat.wins + threatGamesLeft;
+        
+        // They could match our wins
+        if (threatMaxWins >= maxPossibleWins) {
+          // Check if we play them (H2H could be split)
+          if (teamsPlayEachOther(team.name, threat.name, allGames)) {
+            return false; // Could split H2H, goes to runs allowed = uncertain
+          }
+          
+          // Check if we already have decisive H2H
+          const h2h = team.h2h[threat.name];
+          if (!h2h) return false; // No H2H data, uncertain
+          
+          const totalH2H = h2h.wins + h2h.losses;
+          if (totalH2H === 0) return false; // No H2H games yet, uncertain
+          
+          // If H2H is tied or they're ahead, uncertain
+          if (h2h.wins <= h2h.losses) return false;
+          
+          // Could be 3+ team tie, which skips H2H
+          if (threateningTeams.length > 1) return false;
+        }
+      }
+      
+      return true;
+    }
+
+    /**
      * Calculate best and worst possible seeds for a team by simulating outcomes
      */
     function calculateSeedRange(team, standings, upcomingGames) {
@@ -882,27 +961,31 @@
       // Build scenario text with specific details
       let scenarios = [];
       
-      // Check if #1 seed is clinched
-      const magicFor1 = calculateMagicNumberForSeed(team, 1, standings);
-      if (magicFor1 === 0) {
+      // Check if #1 seed is truly clinched (conservative check)
+      if (range.bestSeed === 1 && range.worstSeed === 1) {
         return `🏆 Clinched #1 seed!`;
       }
       
-      // Can clinch #1?
-      if (magicFor1 > 0 && range.bestSeed === 1) {
+      // Can potentially clinch #1? Be more conservative
+      if (range.bestSeed === 1 && gamesLeft > 0) {
         const secondPlace = standings[1];
         const secondGamesLeft = calculateRemainingGames(allGames, secondPlace.name);
+        const clinches = trulyClinches(team, 1, standings, gamesLeft);
         
-        if (magicFor1 === 1 && gamesLeft >= 1) {
-          // Only mention second place loss if they have games left
-          if (secondGamesLeft > 0) {
+        if (clinches && gamesLeft === 1) {
+          // Check if we play second place team
+          if (teamsPlayEachOther(teamName, secondPlace.name, allGames)) {
+            scenarios.push(`Clinches #1 with win vs ${secondPlace.name}`);
+          } else if (secondGamesLeft > 0) {
             scenarios.push(`Clinches #1 with 1 win or ${secondPlace.name} loss`);
           } else {
             scenarios.push(`Clinches #1 with 1 win`);
           }
-        } else if (magicFor1 <= gamesLeft) {
+        } else if (clinches && gamesLeft > 1) {
+          const magicFor1 = calculateMagicNumberForSeed(team, 1, standings);
           scenarios.push(`Clinches #1 with ${magicFor1} wins`);
         }
+        // If doesn't truly clinch, don't claim clinch - just show range
       }
       
       // If seed is locked
@@ -924,10 +1007,19 @@
           const closestTeam = teamsToPass[teamsToPass.length - 1];
           const closestGamesLeft = calculateRemainingGames(allGames, closestTeam.name);
           
+          // Check if we play the closest team directly
+          const playClosest = teamsPlayEachOther(teamName, closestTeam.name, allGames);
+          
           if (gamesLeft === 1) {
             // Only mention their loss if they have games left
             if (closestGamesLeft > 0) {
-              scenarios.push(`${seedRangeText} (rises with win and ${closestTeam.name} loss)`);
+              if (playClosest) {
+                // Direct matchup - our win = their loss
+                scenarios.push(`${seedRangeText} (rises with win vs ${closestTeam.name})`);
+              } else {
+                // Separate games
+                scenarios.push(`${seedRangeText} (rises with win and ${closestTeam.name} loss)`);
+              }
             } else {
               scenarios.push(`${seedRangeText} (rises with win)`);
             }
@@ -949,10 +1041,23 @@
           
           // Only show fall scenarios if the threat has games to actually catch us
           if (threatGamesLeft > 0) {
+            // Check if we play the threat directly
+            const playThreat = teamsPlayEachOther(teamName, closestThreat.name, allGames);
+            
             if (gamesLeft === 1 && threatGamesLeft > 0) {
-              scenarios.push(`Falls to #${range.worstSeed} with loss and ${closestThreat.name} win`);
+              if (playThreat) {
+                // Direct matchup - win/loss are same game
+                scenarios.push(`Falls to #${range.worstSeed} with loss to ${closestThreat.name}`);
+              } else {
+                // Separate games
+                scenarios.push(`Falls to #${range.worstSeed} with loss and ${closestThreat.name} win`);
+              }
             } else if (gamesLeft > 1) {
-              scenarios.push(`Falls to #${range.worstSeed} with ${gamesLeft} losses and ${closestThreat.name} wins`);
+              if (playThreat) {
+                scenarios.push(`Falls to #${range.worstSeed} with losses including vs ${closestThreat.name}`);
+              } else {
+                scenarios.push(`Falls to #${range.worstSeed} with ${gamesLeft} losses and ${closestThreat.name} wins`);
+              }
             }
           }
         }
