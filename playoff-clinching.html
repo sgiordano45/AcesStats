@@ -1143,7 +1143,7 @@
       let foundScenario = false;
       let teamsToMention = [];
       
-      // For best seed, check if all relevant teams losing their remaining games gives us this seed
+      // For best seed, check what needs to happen for us to get this seed
       if (pathType === 'best') {
         const testSeed = simulateFinalStandings(teamName, team.wins, team.losses, standings, true);
         if (testSeed === targetSeed) {
@@ -1156,12 +1156,12 @@
             const otherMaxWins = other.wins + otherGamesLeft;
             const otherMinWins = other.wins;
             
-            // Only include teams that could finish within 1 win of us
-            return otherMaxWins >= team.wins - 1 && otherMinWins <= team.wins + 1;
+            // Only include teams that could finish within 2 wins of us (for better seed detection)
+            return otherMaxWins >= team.wins - 2 && otherMinWins <= team.wins + 2;
           });
           
           // Find which teams specifically need to lose for us to get this seed
-          teamsToMention = competitiveTeams.filter(other => {
+          const teamsNeedToLose = competitiveTeams.filter(other => {
             // Test: if this team wins out, do we lose the target seed?
             const otherGamesLeft = calculateRemainingGames(allGames, other.name);
             const hypotheticalStandings = standings.map(t => {
@@ -1184,15 +1184,46 @@
             return ourSeedIfTheyWin > targetSeed;
           });
           
-          if (teamsToMention.length > 0) {
+          // Also find teams that need to WIN to help us get this seed
+          const teamsNeedToWin = standings.filter(other => {
+            if (other.name === teamName) return false;
+            const otherGamesLeft = calculateRemainingGames(allGames, other.name);
+            if (otherGamesLeft === 0) return false;
+            
+            // Test: if this team loses out, do we get a worse seed?
+            const hypotheticalStandings = standings.map(t => {
+              if (t.name === other.name) {
+                const finalWins = other.wins;
+                const finalLosses = other.losses + otherGamesLeft;
+                const totalDecided = finalWins + finalLosses;
+                return {
+                  ...t,
+                  wins: finalWins,
+                  losses: finalLosses,
+                  gamesPlayed: totalDecided + t.ties,
+                  winPct: totalDecided > 0 ? (finalWins / totalDecided) : 0
+                };
+              }
+              return t;
+            });
+            const sorted = sortWithTiebreakers(hypotheticalStandings);
+            const ourSeedIfTheyLose = sorted.findIndex(t => t.name === teamName) + 1;
+            
+            // They need to win if: them losing would make our seed worse
+            return ourSeedIfTheyLose > targetSeed;
+          });
+          
+          teamsToMention = [...teamsNeedToLose, ...teamsNeedToWin];
+          
+          if (teamsNeedToLose.length > 0) {
             details.push(`• These teams lose their remaining games:`);
-            teamsToMention.forEach(other => {
+            teamsNeedToLose.forEach(other => {
               const gamesLeft = calculateRemainingGames(allGames, other.name);
               details.push(`  - ${other.name} (${gamesLeft} game${gamesLeft > 1 ? 's' : ''} left)`);
             });
             
             // Check if there would be ties at this record
-            const tiableTeams = teamsToMention.filter(other => {
+            const tiableTeams = teamsNeedToLose.filter(other => {
               const otherGamesLeft = calculateRemainingGames(allGames, other.name);
               return other.wins === team.wins; // Already at same wins (will lose remaining)
             });
@@ -1216,7 +1247,20 @@
                 details.push(`• <strong>Tiebreaker:</strong> Win Runs Allowed among tied teams (currently ${allInTie.findIndex(t => t.name === teamName) + 1}${getOrdinalSuffix(allInTie.findIndex(t => t.name === teamName) + 1)} of ${allInTie.length})`);
               }
             }
-          } else {
+          }
+          
+          if (teamsNeedToWin.length > 0) {
+            if (teamsNeedToLose.length > 0) {
+              details.push(``); // Add spacing if there were also teams that need to lose
+            }
+            details.push(`• These teams win their remaining games:`);
+            teamsNeedToWin.forEach(other => {
+              const gamesLeft = calculateRemainingGames(allGames, other.name);
+              details.push(`  - ${other.name} (${gamesLeft} game${gamesLeft > 1 ? 's' : ''} left)`);
+            });
+          }
+          
+          if (teamsNeedToLose.length === 0 && teamsNeedToWin.length === 0) {
             details.push(`• Locked into this seed or better`);
           }
         }
