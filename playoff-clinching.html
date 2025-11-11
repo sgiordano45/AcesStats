@@ -1190,11 +1190,11 @@
             const otherGamesLeft = calculateRemainingGames(allGames, other.name);
             if (otherGamesLeft === 0) return false;
             
-            // Test: if this team loses out, do we get a worse seed?
+            // Test: if this team wins out, do we get a BETTER seed (reach target)?
             const hypotheticalStandings = standings.map(t => {
               if (t.name === other.name) {
-                const finalWins = other.wins;
-                const finalLosses = other.losses + otherGamesLeft;
+                const finalWins = other.wins + otherGamesLeft;
+                const finalLosses = other.losses;
                 const totalDecided = finalWins + finalLosses;
                 return {
                   ...t,
@@ -1207,10 +1207,10 @@
               return t;
             });
             const sorted = sortWithTiebreakers(hypotheticalStandings);
-            const ourSeedIfTheyLose = sorted.findIndex(t => t.name === teamName) + 1;
+            const ourSeedIfTheyWin = sorted.findIndex(t => t.name === teamName) + 1;
             
-            // They need to win if: them losing would make our seed worse
-            return ourSeedIfTheyLose > targetSeed;
+            // They need to win if: them winning would get us to the target seed (or better)
+            return ourSeedIfTheyWin <= targetSeed && ourSeedIfTheyWin < seed;
           });
           
           teamsToMention = [...teamsNeedToLose, ...teamsNeedToWin];
@@ -1236,8 +1236,8 @@
                 if (h2h && (h2h.wins > h2h.losses)) {
                   details.push(`• <strong>Tiebreaker:</strong> Win H2H vs ${other.name} (${h2h.wins}-${h2h.losses})`);
                 } else if (h2h && (h2h.wins < h2h.losses)) {
-                  details.push(`• <strong>Tiebreaker:</strong> Lose H2H vs ${other.name} (${h2h.wins}-${h2h.losses}) - not achievable via this path`);
-                  return null; // Can't get this seed if we lose H2H to a team at same record
+                  details.push(`• <strong>Tiebreaker:</strong> Lose H2H vs ${other.name} (${h2h.wins}-${h2h.losses}) → get lower seed unless other results help`);
+                  // Don't return null - show this scenario anyway as it might still be achievable with other results
                 } else {
                   const raDiff = other.runsAgainst - team.runsAgainst;
                   details.push(`• <strong>Tiebreaker:</strong> H2H tied → Runs Allowed (${raDiff > 0 ? 'currently lead' : 'currently trail'} by ${Math.abs(raDiff)})`);
