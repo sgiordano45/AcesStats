@@ -1178,6 +1178,31 @@
               const gamesLeft = calculateRemainingGames(allGames, other.name);
               details.push(`  - ${other.name} (${gamesLeft} game${gamesLeft > 1 ? 's' : ''} left)`);
             });
+            
+            // Check if there would be ties at this record
+            const tiableTeams = teamsToMention.filter(other => {
+              const otherGamesLeft = calculateRemainingGames(allGames, other.name);
+              return other.wins === team.wins; // Already at same wins (will lose remaining)
+            });
+            
+            if (tiableTeams.length > 0) {
+              details.push(``);
+              if (tiableTeams.length === 1) {
+                const other = tiableTeams[0];
+                const h2h = team.h2h[other.name];
+                if (h2h && (h2h.wins > h2h.losses)) {
+                  details.push(`• <strong>Tiebreaker:</strong> Win H2H vs ${other.name} (${h2h.wins}-${h2h.losses})`);
+                } else if (h2h && (h2h.wins < h2h.losses)) {
+                  details.push(`• <strong>Tiebreaker:</strong> Lose H2H vs ${other.name} (${h2h.wins}-${h2h.losses}) → need them to win games`);
+                } else {
+                  const raDiff = other.runsAgainst - team.runsAgainst;
+                  details.push(`• <strong>Tiebreaker:</strong> H2H tied → Runs Allowed (${raDiff > 0 ? 'currently lead' : 'currently trail'} by ${Math.abs(raDiff)})`);
+                }
+              } else {
+                const allInTie = [team, ...tiableTeams].sort((a, b) => a.runsAgainst - b.runsAgainst);
+                details.push(`• <strong>Tiebreaker:</strong> Win Runs Allowed among tied teams (currently ${allInTie.findIndex(t => t.name === teamName) + 1}${getOrdinalSuffix(allInTie.findIndex(t => t.name === teamName) + 1)} of ${allInTie.length})`);
+              }
+            }
           } else {
             details.push(`• Locked into this seed or better`);
           }
@@ -1219,6 +1244,33 @@
               const gamesLeft = calculateRemainingGames(allGames, other.name);
               details.push(`  - ${other.name} (${gamesLeft} game${gamesLeft > 1 ? 's' : ''} left)`);
             });
+            
+            // Check if there would be ties at this record
+            const tiableTeams = teamsToMention.filter(other => {
+              const otherGamesLeft = calculateRemainingGames(allGames, other.name);
+              const otherMaxWins = other.wins + otherGamesLeft;
+              return otherMaxWins === team.wins;
+            });
+            
+            if (tiableTeams.length > 0) {
+              details.push(``);
+              if (tiableTeams.length === 1) {
+                const other = tiableTeams[0];
+                const h2h = team.h2h[other.name];
+                if (h2h && (h2h.wins < h2h.losses)) {
+                  details.push(`• <strong>Tiebreaker:</strong> Lose H2H vs ${other.name} (${h2h.wins}-${h2h.losses})`);
+                } else if (h2h && (h2h.wins > h2h.losses)) {
+                  details.push(`• <strong>Tiebreaker:</strong> Win H2H vs ${other.name} (${h2h.wins}-${h2h.losses}) → need them to lose games`);
+                } else {
+                  const raDiff = other.runsAgainst - team.runsAgainst;
+                  details.push(`• <strong>Tiebreaker:</strong> H2H tied → Runs Allowed (${raDiff > 0 ? 'currently lead' : 'currently trail'} by ${Math.abs(raDiff)})`);
+                }
+              } else {
+                const allInTie = [team, ...tiableTeams].sort((a, b) => a.runsAgainst - b.runsAgainst);
+                const currentRank = allInTie.findIndex(t => t.name === teamName) + 1;
+                details.push(`• <strong>Tiebreaker:</strong> Lose Runs Allowed among tied teams (currently ${currentRank}${getOrdinalSuffix(currentRank)} of ${allInTie.length})`);
+              }
+            }
           } else {
             details.push(`• Locked into this seed or worse`);
           }
@@ -1233,14 +1285,72 @@
           const worstSeed = simulateFinalStandings(teamName, team.wins, team.losses, standings, false);
           if (worstSeed >= targetSeed) {
             foundScenario = true;
-            details.push(`• Specific combination of results from:`);
-            relevantTeams.slice(0, 3).forEach(other => {
-              const gamesLeft = calculateRemainingGames(allGames, other.name);
-              details.push(`  - ${other.name} (${gamesLeft} game${gamesLeft > 1 ? 's' : ''} left)`);
+            
+            // Find teams that could tie with us at our record
+            const tiableTeams = relevantTeams.filter(other => {
+              const otherGamesLeft = calculateRemainingGames(allGames, other.name);
+              const otherMaxWins = other.wins + otherGamesLeft;
+              return otherMaxWins === team.wins;
             });
-            if (relevantTeams.length > 3) {
-              details.push(`  - And ${relevantTeams.length - 3} other team${relevantTeams.length - 3 > 1 ? 's' : ''}`);
+            
+            if (tiableTeams.length > 0) {
+              details.push(`• These teams finish with same record (${team.wins}-${team.losses}):`);
+              tiableTeams.forEach(other => {
+                const gamesLeft = calculateRemainingGames(allGames, other.name);
+                const winsNeeded = team.wins - other.wins;
+                details.push(`  - ${other.name} (win ${winsNeeded} of ${gamesLeft} remaining)`);
+              });
+              
+              // Calculate what RA ranking corresponds to this seed
+              // This team's best possible seed among the tied group
+              const baseSeed = testSeed;
+              const raRankNeeded = targetSeed - baseSeed + 1;
+              
+              // Show RA tiebreaker requirement
+              details.push(``);
+              if (tiableTeams.length === 1) {
+                // 2-way tie
+                const other = tiableTeams[0];
+                const h2h = team.h2h[other.name];
+                if (h2h && (h2h.wins > h2h.losses)) {
+                  details.push(`• <strong>Tiebreaker:</strong> Win H2H tiebreaker vs ${other.name} (currently ${h2h.wins}-${h2h.losses})`);
+                } else if (h2h && (h2h.wins < h2h.losses)) {
+                  details.push(`• <strong>Tiebreaker:</strong> Lose H2H tiebreaker vs ${other.name} (currently ${h2h.wins}-${h2h.losses})`);
+                } else {
+                  const raDiff = other.runsAgainst - team.runsAgainst;
+                  if (raRankNeeded === 1) {
+                    details.push(`• <strong>Tiebreaker:</strong> H2H tied → need better Runs Allowed (currently ${raDiff > 0 ? 'lead' : 'trail'} by ${Math.abs(raDiff)})`);
+                  } else {
+                    details.push(`• <strong>Tiebreaker:</strong> H2H tied → would have worse Runs Allowed`);
+                  }
+                }
+              } else {
+                // 3+ way tie
+                const allInTie = [team, ...tiableTeams].sort((a, b) => a.runsAgainst - b.runsAgainst);
+                details.push(`• <strong>Tiebreaker:</strong> 3+ way tie → need to finish ${raRankNeeded}${getOrdinalSuffix(raRankNeeded)} in Runs Allowed`);
+                details.push(`  Current RA rankings:`);
+                allInTie.forEach((t, idx) => {
+                  const marker = t.name === teamName ? '→ ' : '   ';
+                  details.push(`  ${marker}${idx + 1}. ${t.name}: ${t.runsAgainst} RA`);
+                });
+                
+                const currentRank = allInTie.findIndex(t => t.name === teamName) + 1;
+                if (raRankNeeded === 1) {
+                  const secondBest = allInTie[1];
+                  const cushion = secondBest.runsAgainst - team.runsAgainst;
+                  details.push(`  Need best RA - currently ${currentRank === 1 ? 'have it' : `trail by ${team.runsAgainst - allInTie[0].runsAgainst}`}`);
+                } else if (raRankNeeded === allInTie.length) {
+                  details.push(`  Need worst RA - currently ${currentRank === allInTie.length ? 'have it' : `${allInTie.length - currentRank} teams behind`}`);
+                } else {
+                  const targetTeamInRanking = allInTie[raRankNeeded - 1];
+                  details.push(`  Need ${raRankNeeded}${getOrdinalSuffix(raRankNeeded)} - ${targetTeamInRanking.name} needs to allow ${Math.abs(team.runsAgainst - targetTeamInRanking.runsAgainst)} more/fewer runs`);
+                }
+              }
+            } else {
+              details.push(`• Other teams finish with different records`);
+              details.push(`• Specific combination of results determines final position`);
             }
+            
             teamsToMention = relevantTeams;
           }
         }
@@ -1248,37 +1358,6 @@
       
       if (!foundScenario) {
         return null; // This seed is not achievable
-      }
-      
-      // Add tiebreaker details if we'd be tied with teams
-      const teamsAtSameRecord = teamsToMention.filter(other => {
-        const otherGamesLeft = calculateRemainingGames(allGames, other.name);
-        const otherMaxWins = other.wins + otherGamesLeft;
-        const otherMinWins = other.wins;
-        return team.wins >= otherMinWins && team.wins <= otherMaxWins;
-      });
-      
-      if (teamsAtSameRecord.length > 0) {
-        details.push(`<br>• <strong>Tiebreaker context:</strong>`);
-        
-        // Show current runs allowed rankings among tied teams
-        const allInTie = [team, ...teamsAtSameRecord].sort((a, b) => a.runsAgainst - b.runsAgainst);
-        details.push(`  Current Runs Allowed:`);
-        allInTie.forEach((t, idx) => {
-          const marker = t.name === teamName ? '→ ' : '   ';
-          details.push(`  ${marker}${idx + 1}. ${t.name}: ${t.runsAgainst} RA`);
-        });
-        
-        const teamRank = allInTie.findIndex(t => t.name === teamName) + 1;
-        if (teamRank === 1) {
-          const secondPlace = allInTie[1];
-          const cushion = secondPlace.runsAgainst - team.runsAgainst;
-          details.push(`  Leading by ${cushion} runs - ${secondPlace.name} would need to allow ${cushion + 1}+ fewer runs to pass in tiebreaker`);
-        } else {
-          const ahead = allInTie[teamRank - 2];
-          const deficit = team.runsAgainst - ahead.runsAgainst;
-          details.push(`  Behind ${ahead.name} by ${deficit} runs - ${ahead.name} would need to allow ${deficit + 1}+ more runs to fall behind`);
-        }
       }
       
       return details.length > 0 ? details.join('<br>') : null;
