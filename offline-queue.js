@@ -261,20 +261,37 @@ async syncLineup(data) {
 
 // Sync score update to Firebase
 async syncScore(data) {
-  const { gameId, teamId, score, timestamp } = data;
+  const { gameId, teamId, score, inning, outs, bases, playHistory, battingOrder, timestamp } = data;
   
-  console.log(`Syncing score: ${teamId} → ${score}`);
+  console.log(`Syncing game state for ${teamId} - Score: ${score?.yourTeam || 0}-${score?.opponent || 0}`);
   
-  // Try multiple possible function names for game tracker
-  if (typeof updateGameScore === 'function') {
-    await updateGameScore(gameId, teamId, score);
-  } else if (typeof window.updateGameScore === 'function') {
-    await window.updateGameScore(gameId, teamId, score);
-  } else if (typeof saveGameScore === 'function') {
-    await saveGameScore(gameId, teamId, score);
-  } else {
-    console.warn('Score update function not found - checking for alternative names');
-    throw new Error('updateGameScore function not available');
+  // Import Firebase functions
+  const { doc, setDoc, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js');
+  const { db } = await import('./firebase-data.js');
+  
+  try {
+    const stateRef = doc(db, 'gameStates', `${gameId}_${teamId}`);
+    
+    // Reconstruct the game state object
+    const gameState = {
+      score: score,
+      inning: inning,
+      outs: outs,
+      bases: bases,
+      playHistory: playHistory,
+      gameActive: true
+    };
+    
+    await setDoc(stateRef, {
+      gameState,
+      battingOrder: battingOrder,
+      savedAt: serverTimestamp()
+    });
+    
+    console.log('✅ Synced game state to Firebase');
+  } catch (error) {
+    console.error('Failed to sync game state:', error);
+    throw error;
   }
 }
 
