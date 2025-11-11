@@ -25,10 +25,250 @@
         svg text {
             user-select: none;
         }
+/* Connection Status Indicator */
+.connection-status {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  background: #ffc107;
+  color: #856404;
+  padding: 10px 16px;
+  border-radius: 25px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  z-index: 9999;
+  font-size: 0.85rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.3s ease;
+}
+
+.connection-status.hidden {
+  display: none;
+}
+
+.connection-status.online {
+  background: #28a745;
+  color: white;
+}
+
+.connection-status .status-icon {
+  font-size: 1rem;
+}
     </style>
 </head>
 <body>
+<div id="connectionStatus" class="connection-status hidden">
+  <span class="status-icon">📡</span>
+  <span class="status-text">You're offline</span>
+</div>
     <div id="root"></div>
+
+    <!-- Firebase Integration Module -->
+    <script type="module">
+        import { getCurrentUser, onAuthChange, getUserProfile } from './firebase-auth.js';
+        import { getCurrentSeason, getAllTeams, getSeasonPlayerStatsOptimized } from './firebase-data.js';
+        import { getUpcomingTeamGames, getBattingOrder } from './firebase-roster.js';
+        import { doc, setDoc, getDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+        import { db } from './firebase-data.js';
+
+        // Save game state to Firebase
+        async function saveGameState(gameId, teamId, gameState, battingOrder) {
+            try {
+                const stateRef = doc(db, 'gameStates', `${gameId}_${teamId}`);
+                await setDoc(stateRef, {
+                    gameState,
+                    battingOrder: battingOrder.map(p => p.id),
+                    savedAt: serverTimestamp()
+                });
+                console.log('💾 Game state saved');
+            } catch (error) {
+                console.error('Error saving game state:', error);
+            }
+        }
+
+        // Load game state from Firebase
+        async function loadGameState(gameId, teamId) {
+            try {
+                const stateRef = doc(db, 'gameStates', `${gameId}_${teamId}`);
+                const stateDoc = await getDoc(stateRef);
+                
+                if (stateDoc.exists()) {
+                    console.log('✅ Found saved game state');
+                    return stateDoc.data();
+                }
+                return null;
+            } catch (error) {
+                console.error('Error loading game state:', error);
+                return null;
+            }
+        }
+
+        // Delete game state from Firebase
+        async function clearGameState(gameId, teamId) {
+            try {
+                const stateRef = doc(db, 'gameStates', `${gameId}_${teamId}`);
+                await setDoc(stateRef, {
+                    cleared: true,
+                    clearedAt: serverTimestamp()
+                });
+                console.log('🗑️ Game state cleared');
+            } catch (error) {
+                console.error('Error clearing game state:', error);
+            }
+        }
+
+        // Calculate batting stats from play history
+        function calculateBattingStats(playHistory, battingOrder) {
+            const playerStats = {};
+            
+            // Initialize stats for all players in the batting order
+            battingOrder.forEach(player => {
+                playerStats[player.id] = {
+                    playerId: player.id,
+                    playerName: player.name,
+                    atBats: 0,
+                    hits: 0,
+                    singles: 0,
+                    doubles: 0,
+                    triples: 0,
+                    homeRuns: 0,
+                    walks: 0,
+                    strikeouts: 0,
+                    rbi: 0,
+                    runs: 0,
+                    battingAverage: 0,
+                    onBasePercentage: 0,
+                    sluggingPercentage: 0
+                };
+            });
+            
+            // Process each play
+            playHistory.forEach(play => {
+                const playerId = battingOrder.find(p => p.name === play.batter)?.id;
+                if (!playerId || !playerStats[playerId]) return;
+                
+                const stats = playerStats[playerId];
+                
+                // Count at-bats (everything except walks and sac flies)
+                if (play.playType !== 'walk' && play.playType !== 'sacfly') {
+                    stats.atBats++;
+                }
+                
+                // Count hits
+                if (play.playType === 'single') {
+                    stats.hits++;
+                    stats.singles++;
+                } else if (play.playType === 'double') {
+                    stats.hits++;
+                    stats.doubles++;
+                } else if (play.playType === 'triple') {
+                    stats.hits++;
+                    stats.triples++;
+                } else if (play.playType === 'homerun') {
+                    stats.hits++;
+                    stats.homeRuns++;
+                } else if (play.playType === 'walk') {
+                    stats.walks++;
+                } else if (play.playType === 'strikeout') {
+                    stats.strikeouts++;
+                }
+                
+                // Count RBIs (runs scored on this play)
+                if (play.runsScored > 0) {
+                    stats.rbi += play.runsScored;
+                }
+            });
+            
+            // Calculate derived stats
+            Object.values(playerStats).forEach(stats => {
+                // Batting Average
+                if (stats.atBats > 0) {
+                    stats.battingAverage = stats.hits / stats.atBats;
+                }
+                
+                // On-Base Percentage
+                const plateAppearances = stats.atBats + stats.walks;
+                if (plateAppearances > 0) {
+                    stats.onBasePercentage = (stats.hits + stats.walks) / plateAppearances;
+                }
+                
+                // Slugging Percentage
+                if (stats.atBats > 0) {
+                    const totalBases = stats.singles + (stats.doubles * 2) + (stats.triples * 3) + (stats.homeRuns * 4);
+                    stats.sluggingPercentage = totalBases / stats.atBats;
+                }
+            });
+            
+            return Object.values(playerStats);
+        }
+
+        // Save game results to Firebase
+        async function saveGameResults(gameId, teamId, seasonId, gameState, battingOrder, isHome, opponentName) {
+            try {
+                // Calculate batting stats
+                const battingStats = calculateBattingStats(gameState.playHistory, battingOrder);
+                
+                // Save to gameResults collection
+                const resultsRef = doc(db, 'gameResults', `${gameId}_${teamId}`);
+                await setDoc(resultsRef, {
+                    gameId,
+                    teamId,
+                    seasonId,
+                    opponentName,
+                    isHome,
+                    finalScore: {
+                        yourTeam: gameState.score.yourTeam,
+                        opponent: gameState.score.opponent
+                    },
+                    innings: gameState.inning,
+                    battingStats,
+                    playByPlay: gameState.playHistory,
+                    completedAt: serverTimestamp()
+                });
+                
+                console.log('✅ Game results saved with batting stats');
+                return { success: true, battingStats };
+            } catch (error) {
+                console.error('Error saving game results:', error);
+                return { success: false, error };
+            }
+        }
+
+        // Make functions available globally for React component
+        window.FirebaseGameTracker = {
+            getCurrentUser,
+            onAuthChange,
+            getUserProfile,
+            getCurrentSeason,
+            getAllTeams,
+            getSeasonPlayerStatsOptimized,
+            getUpcomingTeamGames,
+            getBattingOrder,
+            saveGameState,
+            loadGameState,
+            clearGameState,
+            saveGameResults
+        };
+
+        // Wait for auth state to be determined before signaling ready
+        let authResolved = false;
+        let currentAuthUser = null;
+        
+        onAuthChange((user) => {
+            currentAuthUser = user;
+            if (!authResolved) {
+                authResolved = true;
+                console.log('🔐 Auth state resolved:', user ? user.displayName : 'Not signed in');
+                window.firebaseReady = true;
+                window.dispatchEvent(new Event('firebaseready'));
+            }
+        });
+        
+        // Store the current user for immediate access
+        window.getCurrentFirebaseUser = () => currentAuthUser;
+    </script>
 
     <script type="text/babel">
         const { useState, useEffect } = React;
@@ -56,6 +296,14 @@
             </svg>
         );
 
+        const AlertCircle = ({ size = 24 }) => (
+            <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10"/>
+                <line x1="12" y1="8" x2="12" y2="12"/>
+                <line x1="12" y1="16" x2="12.01" y2="16"/>
+            </svg>
+        );
+
         const PLAY_TYPES = [
             { label: '1B', value: 'single', bases: 1, isHit: true },
             { label: '2B', value: 'double', bases: 2, isHit: true },
@@ -74,13 +322,17 @@
         function GameTracker() {
             const [loading, setLoading] = useState(true);
             const [error, setError] = useState(null);
-            const [rosterData, setRosterData] = useState({});
-            const [gamesData, setGamesData] = useState([]);
+            const [currentUser, setCurrentUser] = useState(null);
+            const [currentSeason, setCurrentSeason] = useState(null);
+            const [allTeams, setAllTeams] = useState([]);
+            const [games, setGames] = useState([]);
+            const [players, setPlayers] = useState([]);
             
             const [setupMode, setSetupMode] = useState(true);
             const [selectedTeam, setSelectedTeam] = useState('');
             const [selectedGame, setSelectedGame] = useState(null);
             const [isHome, setIsHome] = useState(false);
+            const [lineupExists, setLineupExists] = useState(false);
             
             const [gameState, setGameState] = useState({
                 inning: 1,
@@ -100,116 +352,271 @@
             const [tempOuts, setTempOuts] = useState(0);
             const [draggedRunner, setDraggedRunner] = useState(null);
 
-            // Load data from JSON files on component mount
+            // Wait for Firebase to be ready, then load data
             useEffect(() => {
-                async function loadData() {
-                    try {
-                        console.log('Loading data from JSON files...');
-                        
-                        // Load player data, games data, and player info
-                        const [playerResponse, gamesResponse, playerInfoResponse] = await Promise.all([
-                            fetch('data.json'),
-                            fetch('games.json'),
-                            fetch('player_info.json')
-                        ]);
-
-                        if (!playerResponse.ok) {
-                            throw new Error('Failed to load data.json');
-                        }
-
-                        const playerData = await playerResponse.json();
-                        const games = gamesResponse.ok ? await gamesResponse.json() : [];
-                        const playerInfo = playerInfoResponse.ok ? await playerInfoResponse.json() : [];
-
-                        console.log('Player data loaded:', playerData.length, 'records');
-                        console.log('Games data loaded:', games.length, 'games');
-                        console.log('Player info loaded:', playerInfo.length, 'players');
-
-                        // Build roster data by team for 2025 Fall season
-                        const rosters = buildRostersByTeam(playerData, playerInfo);
-                        console.log('Rosters built for teams:', Object.keys(rosters));
-                        
-                        setRosterData(rosters);
-                        setGamesData(games);
-                        setLoading(false);
-                    } catch (err) {
-                        console.error('Error loading data:', err);
-                        setError(err.message);
-                        setLoading(false);
+                const initializeApp = async () => {
+                    if (window.firebaseReady) {
+                        await loadInitialData();
+                    } else {
+                        window.addEventListener('firebaseready', loadInitialData);
+                        return () => window.removeEventListener('firebaseready', loadInitialData);
                     }
-                }
-
-                loadData();
+                };
+                initializeApp();
             }, []);
 
-            // Build rosters by team from player data
-            function buildRostersByTeam(playerData, playerInfo) {
-                const rosters = {};
-                
-                // Create a map of player info for quick lookup
-                const playerInfoMap = {};
-                playerInfo.forEach(info => {
-                    if (info.name) {
-                        playerInfoMap[info.name.trim()] = info;
-                    }
-                });
-                
-                // Filter for 2025 Fall season only
-                const currentSeasonPlayers = playerData.filter(p => {
-                    const year = typeof p.year === 'string' ? parseInt(p.year) : p.year;
-                    const season = p.season?.trim();
-                    return year === 2025 && season === 'Fall';
-                });
+            // Load team-specific data when team changes
+            useEffect(() => {
+                if (selectedTeam && currentSeason) {
+                    loadTeamData();
+                }
+            }, [selectedTeam, currentSeason]);
 
-                console.log('Current season players found:', currentSeasonPlayers.length);
-
-                // Group by team
-                currentSeasonPlayers.forEach(player => {
-                    const team = player.team?.trim();
-                    const name = player.name?.trim();
+            // Auto-save game state whenever it changes
+            useEffect(() => {
+                if (!setupMode && selectedGame && selectedTeam && gameState.gameActive) {
+                    const saveTimer = setTimeout(() => {
+                        window.FirebaseGameTracker.saveGameState(
+                            selectedGame.id,
+                            selectedTeam,
+                            gameState,
+                            battingOrder
+                        );
+                    }, 1000);
                     
-                    if (!team || !name || team.toLowerCase() === 'kings') return;
+                    return () => clearTimeout(saveTimer);
+                }
+            }, [gameState, setupMode, selectedGame, selectedTeam, battingOrder]);
+
+            const loadInitialData = async () => {
+                try {
+                    console.log('📄 Loading initial data from Firebase...');
                     
-                    if (!rosters[team]) {
-                        rosters[team] = [];
+                    const user = window.getCurrentFirebaseUser ? window.getCurrentFirebaseUser() : null;
+                    setCurrentUser(user);
+                    
+                    if (user) {
+                        console.log('✅ Signed in as:', user.displayName || user.email);
+                        
+                        try {
+                            const profileResult = await window.FirebaseGameTracker.getUserProfile(user.uid);
+                            if (profileResult.success && profileResult.data?.linkedTeam) {
+                                console.log('✅ Auto-selecting team:', profileResult.data.linkedTeam);
+                                setSelectedTeam(profileResult.data.linkedTeam);
+                            }
+                        } catch (profileError) {
+                            console.warn('Could not load user profile:', profileError);
+                        }
+                    } else {
+                        console.log('ℹ️ Not signed in');
                     }
                     
-                    // Check if player already exists in roster
-                    const existingPlayer = rosters[team].find(p => p.name === name);
-                    if (!existingPlayer) {
-                        const info = playerInfoMap[name];
-                        rosters[team].push({
-                            name: name,
-                            number: info?.number || '0',
-                            position: info?.position || 'IF/OF'
-                        });
-                    }
-                });
+                    const seasonData = await window.FirebaseGameTracker.getCurrentSeason();
+                    setCurrentSeason(seasonData);
+                    console.log('✅ Current season:', seasonData);
+                    
+                    const teams = await window.FirebaseGameTracker.getAllTeams();
+                    const teamNames = teams.map(t => t.name || t.id).sort();
+                    setAllTeams(teamNames);
+                    console.log('✅ Teams loaded:', teamNames.length);
+                    
+                    setLoading(false);
+                } catch (err) {
+                    console.error('❌ Error loading initial data:', err);
+                    setError(err.message);
+                    setLoading(false);
+                }
+            };
 
-                // Log roster counts for debugging
-                Object.keys(rosters).forEach(team => {
-                    console.log(`${team}: ${rosters[team].length} players`);
-                });
-
-                return rosters;
-            }
+            const loadTeamData = async () => {
+                try {
+                    console.log('📄 Loading team data for:', selectedTeam);
+                    
+                    const seasonPlayers = await window.FirebaseGameTracker.getSeasonPlayerStatsOptimized(
+                        currentSeason.id
+                    );
+                    
+                    const teamPlayers = seasonPlayers.filter(p => 
+                        p.team?.toLowerCase() === selectedTeam.toLowerCase() && !p.migrated
+                    );
+                    
+                    console.log('📊 Team players:', teamPlayers.length);
+                    
+                    const formattedPlayersPromises = teamPlayers.map(async (player, index) => {
+                        const name = player.name || player.playerName;
+                        const nameParts = name.trim().split(' ');
+                        const avatar = nameParts.length > 1
+                            ? (nameParts[0][0] + nameParts[nameParts.length - 1][0]).toUpperCase()
+                            : name.substring(0, 2).toUpperCase();
+                        
+                        let jerseyNum = player.number || (index + 1);
+                        
+                        // Try to get the player's profile for accurate jersey number
+                        try {
+                            const playerProfile = await window.FirebaseGameTracker.getUserProfile(player.playerId || player.id);
+                            if (playerProfile.success && playerProfile.data?.number) {
+                                jerseyNum = parseInt(playerProfile.data.number) || jerseyNum;
+                            }
+                        } catch (error) {
+                            console.warn(`Could not load profile for ${name}:`, error);
+                        }
+                        
+                        return {
+                            id: player.playerId || player.id,
+                            name,
+                            number: jerseyNum.toString(),
+                            position: player.position || 'IF/OF',
+                            avatar,
+                            battingAvg: player.battingAverage ? player.battingAverage.toFixed(3) : '.000'
+                        };
+                    });
+                    
+                    const formattedPlayers = await Promise.all(formattedPlayersPromises);
+                    
+                    setPlayers(formattedPlayers);
+                    
+                    const upcomingGames = await window.FirebaseGameTracker.getUpcomingTeamGames(
+                        selectedTeam,
+                        currentSeason.id
+                    );
+                    
+                    const capitalizeTeamName = (name) => {
+                        if (!name) return '';
+                        return name.charAt(0).toUpperCase() + name.slice(1).toLowerCase();
+                    };
+                    
+                    const formattedGames = upcomingGames.map(game => {
+                        const gameDate = game.date?.seconds
+                            ? new Date(game.date.seconds * 1000).toLocaleDateString()
+                            : game.date;
+                        
+                        const teamLower = selectedTeam.toLowerCase();
+                        const homeTeamLower = (game.homeTeam || game.homeTeamId || '').toLowerCase();
+                        const isHome = homeTeamLower === teamLower;
+                        
+                        const homeTeamCapitalized = capitalizeTeamName(game.homeTeam || game.homeTeamId);
+                        const awayTeamCapitalized = capitalizeTeamName(game.awayTeam || game.awayTeamId);
+                        const opponent = isHome ? awayTeamCapitalized : homeTeamCapitalized;
+                        
+                        return {
+                            id: game.id,
+                            date: gameDate,
+                            homeTeam: homeTeamCapitalized,
+                            awayTeam: awayTeamCapitalized,
+                            opponent,
+                            isHome
+                        };
+                    });
+                    
+                    setGames(formattedGames);
+                    console.log('✅ Team data loaded:', formattedPlayers.length, 'players,', formattedGames.length, 'games');
+                    
+                } catch (error) {
+                    console.error('❌ Error loading team data:', error);
+                }
+            };
 
             const handleTeamSelect = (team) => {
                 setSelectedTeam(team);
                 setSelectedGame(null);
+                setLineupExists(false);
             };
 
-            const handleGameSelect = (game) => {
+            const handleGameSelect = async (game) => {
                 setSelectedGame(game);
-                const teamIsHome = game['home team'] === selectedTeam;
+                const teamIsHome = game.homeTeam?.toLowerCase() === selectedTeam.toLowerCase();
                 setIsHome(teamIsHome);
+                
+                try {
+                    const battingOrderIds = await window.FirebaseGameTracker.getBattingOrder(
+                        game.id,
+                        selectedTeam
+                    );
+                    setLineupExists(battingOrderIds && battingOrderIds.length > 0);
+                    
+                    const savedState = await window.FirebaseGameTracker.loadGameState(
+                        game.id,
+                        selectedTeam
+                    );
+                    
+                    if (savedState && !savedState.cleared && savedState.gameState) {
+                        console.log('📂 Found game in progress');
+                    }
+                } catch (error) {
+                    console.error('Error checking lineup:', error);
+                    setLineupExists(false);
+                }
             };
 
-            const startGame = () => {
+            const startGame = async () => {
                 if (!selectedTeam || !selectedGame) return;
                 
-                const roster = rosterData[selectedTeam] || [];
-                setBattingOrder(roster);
+                const savedState = await window.FirebaseGameTracker.loadGameState(
+                    selectedGame.id,
+                    selectedTeam
+                );
+                
+                if (savedState && !savedState.cleared && savedState.gameState) {
+                    const resume = window.confirm(
+                        'A game in progress was found. Do you want to resume where you left off?\n\n' +
+                        `Inning: ${savedState.gameState.inning}\n` +
+                        `Outs: ${savedState.gameState.outs}\n` +
+                        `Score: ${savedState.gameState.score.yourTeam}\n` +
+                        `Plays recorded: ${savedState.gameState.playHistory?.length || 0}\n\n` +
+                        'Click OK to resume, or Cancel to start a new game.'
+                    );
+                    
+                    if (resume) {
+                        const savedBattingOrderIds = savedState.battingOrder || [];
+                        const orderedPlayers = savedBattingOrderIds
+                            .map(playerId => players.find(p => p.id === playerId))
+                            .filter(p => p !== null && p !== undefined);
+                        
+                        if (orderedPlayers.length > 0) {
+                            setBattingOrder(orderedPlayers);
+                        } else {
+                            setBattingOrder(players);
+                        }
+                        
+                        setGameState(savedState.gameState);
+                        setSetupMode(false);
+                        console.log('✅ Resumed game from saved state');
+                        return;
+                    } else {
+                        await window.FirebaseGameTracker.clearGameState(
+                            selectedGame.id,
+                            selectedTeam
+                        );
+                    }
+                }
+                
+                try {
+                    const battingOrderIds = await window.FirebaseGameTracker.getBattingOrder(
+                        selectedGame.id,
+                        selectedTeam
+                    );
+                    
+                    if (battingOrderIds && battingOrderIds.length > 0) {
+                        const orderedPlayers = battingOrderIds
+                            .map(playerId => players.find(p => p.id === playerId))
+                            .filter(p => p !== null && p !== undefined);
+                        
+                        if (orderedPlayers.length > 0) {
+                            console.log('✅ Loaded batting order from roster management:', orderedPlayers.length, 'players');
+                            setBattingOrder(orderedPlayers);
+                        } else {
+                            console.log('⚠️ Could not map player IDs to players, using full roster');
+                            setBattingOrder(players);
+                        }
+                    } else {
+                        console.log('ℹ️ No pre-set lineup found, using full roster');
+                        setBattingOrder(players);
+                    }
+                } catch (error) {
+                    console.error('Error loading batting order:', error);
+                    console.log('Using full roster as fallback');
+                    setBattingOrder(players);
+                }
                 
                 setGameState({
                     inning: 1,
@@ -226,7 +633,7 @@
             };
 
             const currentBatter = battingOrder[gameState.currentBatter];
-            const opponentName = selectedGame ? (isHome ? selectedGame['away team'] : selectedGame['home team']) : 'Opponent';
+            const opponentName = selectedGame ? (isHome ? selectedGame.awayTeam : selectedGame.homeTeam) : 'Opponent';
 
             const initiatePlay = (playType) => {
                 const play = PLAY_TYPES.find(p => p.value === playType);
@@ -448,9 +855,14 @@
                 
                 if (newState.isYourTeamBatting) {
                     newState.isYourTeamBatting = false;
+                    if (isHome) {
+                        newState.inning += 1;
+                    }
                 } else {
-                    newState.inning += 1;
                     newState.isYourTeamBatting = true;
+                    if (!isHome) {
+                        newState.inning += 1;
+                    }
                 }
                 
                 setGameState(newState);
@@ -488,57 +900,128 @@
                 setGameState(newState);
             };
 
-            const endGame = () => {
-                setGameState({ ...gameState, gameActive: false });
+            const clearProgress = async () => {
+                const confirmed = window.confirm(
+                    '⚠️ Clear Game Progress?\n\n' +
+                    'This will:\n' +
+                    '- Delete all saved progress for this game\n' +
+                    '- Reset to game setup screen\n' +
+                    '- NOT save any batting stats\n\n' +
+                    `Current Progress:\n` +
+                    `- Inning: ${gameState.inning}\n` +
+                    `- Score: ${gameState.score.yourTeam}-${gameState.score.opponent}\n` +
+                    `- Plays: ${gameState.playHistory.length}\n\n` +
+                    'Are you sure you want to clear all progress?'
+                );
+                
+                if (confirmed) {
+                    if (selectedGame && selectedTeam) {
+                        await window.FirebaseGameTracker.clearGameState(
+                            selectedGame.id,
+                            selectedTeam
+                        );
+                    }
+                    
+                    setSetupMode(true);
+                    setGameState({
+                        inning: 1,
+                        outs: 0,
+                        bases: { first: null, second: null, third: null },
+                        score: { yourTeam: 0, opponent: 0 },
+                        currentBatter: 0,
+                        playHistory: [],
+                        gameActive: true,
+                        isYourTeamBatting: true
+                    });
+                    setPendingPlay(null);
+                    setTempBases(null);
+                    setTempScore(0);
+                    setTempOuts(0);
+                    
+                    alert('✅ Game progress cleared. You can start fresh or choose a different game.');
+                }
+            };
+
+            const endGame = async () => {
+                const confirmed = window.confirm(
+                    'Are you sure you want to end the game?\n\n' +
+                    `Final Score: ${selectedTeam} ${gameState.score.yourTeam} - ${opponentName} ${gameState.score.opponent}\n` +
+                    `Plays Recorded: ${gameState.playHistory.length}\n\n` +
+                    'This will save batting stats and clear the game tracker.'
+                );
+                
+                if (confirmed) {
+                    if (selectedGame && selectedTeam && currentSeason) {
+                        const result = await window.FirebaseGameTracker.saveGameResults(
+                            selectedGame.id,
+                            selectedTeam,
+                            currentSeason.id,
+                            gameState,
+                            battingOrder,
+                            isHome,
+                            opponentName
+                        );
+                        
+                        if (result.success) {
+                            alert(
+                                '✅ Game Complete!\n\n' +
+                                'Batting stats have been saved:\n' +
+                                `- ${result.battingStats.length} players tracked\n` +
+                                `- ${gameState.playHistory.length} plays recorded\n` +
+                                `- Final Score: ${gameState.score.yourTeam}-${gameState.score.opponent}`
+                            );
+                        }
+                    }
+                    
+                    setGameState({ ...gameState, gameActive: false });
+                    
+                    if (selectedGame && selectedTeam) {
+                        await window.FirebaseGameTracker.clearGameState(
+                            selectedGame.id,
+                            selectedTeam
+                        );
+                    }
+                }
             };
 
             const displayBases = pendingPlay ? tempBases : gameState.bases;
             const displayScore = pendingPlay ? tempScore : 0;
             const inningOver = gameState.outs >= 3;
 
-            // Loading state
             if (loading) {
                 return (
                     <div className="max-w-4xl mx-auto p-8 text-center">
                         <h1 className="text-4xl font-bold text-gray-900 mb-3">Loading Game Tracker...</h1>
-                        <p className="text-lg text-gray-600">Fetching rosters and schedules from JSON files</p>
+                        <p className="text-lg text-gray-600">Connecting to Firebase...</p>
                     </div>
                 );
             }
 
-            // Error state
             if (error) {
                 return (
                     <div className="max-w-4xl mx-auto p-8 text-center">
                         <h1 className="text-4xl font-bold text-red-600 mb-3">Error Loading Data</h1>
                         <p className="text-lg text-gray-600 mb-4">{error}</p>
-                        <p className="text-sm text-gray-500">Please ensure data.json, games.json, and player_info.json are in the same directory as this HTML file.</p>
+                        <p className="text-sm text-gray-500">Please check your Firebase connection.</p>
                     </div>
                 );
             }
 
-            // Setup screen
             if (setupMode) {
-                const today = new Date();
-                today.setHours(0, 0, 0, 0);
-                
-                // Filter games for the selected team and future dates
-                const availableGames = selectedTeam 
-                    ? gamesData.filter(g => {
-                        const gameDate = new Date(g.date);
-                        return (g['home team'] === selectedTeam || g['away team'] === selectedTeam) && gameDate >= today;
-                    })
-                    : [];
-
-                const teamList = Object.keys(rosterData).sort();
-
                 return (
                     <div className="max-w-4xl mx-auto p-8 font-sans">
                         <div className="text-center mb-10">
                             <h1 className="text-4xl font-bold text-gray-900 mb-3">
                                 Game Tracker Setup
                             </h1>
-                            <p className="text-lg text-gray-600">2025 Fall Season</p>
+                            <p className="text-lg text-gray-600">
+                                {currentSeason ? `${currentSeason.year} ${currentSeason.season.charAt(0).toUpperCase() + currentSeason.season.slice(1)} Season` : 'Loading...'}
+                            </p>
+                            {!currentUser && (
+                                <p className="text-sm text-amber-600 mt-2">
+                                    ℹ️ Not signed in - tracking will work but won't save to your account
+                                </p>
+                            )}
                         </div>
 
                         <div className="bg-white border-2 border-gray-200 rounded-xl p-6 mb-6">
@@ -549,74 +1032,142 @@
                                 className="w-full p-4 text-lg border-2 border-gray-300 rounded-lg focus:border-purple-500 focus:outline-none"
                             >
                                 <option value="">Choose a team...</option>
-                                {teamList.map(team => (
+                                {allTeams.map(team => (
                                     <option key={team} value={team}>{team}</option>
                                 ))}
                             </select>
                         </div>
 
-                        {selectedTeam && (
+                        {selectedTeam && games.length > 0 && (
                             <div className="bg-white border-2 border-gray-200 rounded-xl p-6 mb-6">
                                 <h2 className="text-2xl font-bold mb-4 text-gray-800">2. Select Game to Track</h2>
-                                {availableGames.length === 0 ? (
-                                    <p className="text-gray-600 italic">No upcoming games found for {selectedTeam} in Fall 2025</p>
-                                ) : (
-                                    <div className="space-y-3">
-                                        {availableGames.map((game, idx) => (
-                                            <button
-                                                key={idx}
-                                                onClick={() => handleGameSelect(game)}
-                                                className={`w-full p-4 text-left rounded-lg border-2 transition-all ${
-                                                    selectedGame === game 
-                                                        ? 'border-purple-500 bg-purple-50' 
-                                                        : 'border-gray-300 hover:border-purple-300 bg-white'
-                                                }`}
-                                            >
-                                                <div className="flex justify-between items-center">
-                                                    <div>
-                                                        <span className="font-bold text-lg">{game['away team']}</span>
-                                                        <span className="mx-3 text-gray-500">@</span>
-                                                        <span className="font-bold text-lg">{game['home team']}</span>
-                                                    </div>
-                                                    <div className="text-gray-600">
-                                                        {new Date(game.date).toLocaleDateString('en-US', { 
-                                                            month: 'short', 
-                                                            day: 'numeric' 
-                                                        })}
-                                                    </div>
+                                <div className="space-y-3">
+                                    {games.map((game, idx) => (
+                                        <button
+                                            key={idx}
+                                            onClick={() => handleGameSelect(game)}
+                                            className={`w-full p-4 text-left rounded-lg border-2 transition-all ${
+                                                selectedGame === game 
+                                                    ? 'border-purple-500 bg-purple-50' 
+                                                    : 'border-gray-300 hover:border-purple-300 bg-white'
+                                            }`}
+                                        >
+                                            <div className="flex justify-between items-center">
+                                                <div>
+                                                    <span className="font-bold text-lg">{game.awayTeam}</span>
+                                                    <span className="mx-3 text-gray-500">@</span>
+                                                    <span className="font-bold text-lg">{game.homeTeam}</span>
                                                 </div>
-                                                <div className="text-sm text-gray-500 mt-1">
-                                                    {game['home team'] === selectedTeam ? 'Home Game' : 'Away Game'}
-                                                </div>
-                                            </button>
-                                        ))}
-                                    </div>
-                                )}
+                                                <div className="text-gray-600">{game.date}</div>
+                                            </div>
+                                            <div className="text-sm text-gray-500 mt-1">
+                                                {game.isHome ? 'Home Game' : 'Away Game'}
+                                            </div>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {selectedTeam && games.length === 0 && (
+                            <div className="bg-amber-50 border-2 border-amber-400 rounded-xl p-6 mb-6">
+                                <div className="flex items-center gap-3">
+                                    <AlertCircle size={24} />
+                                    <p className="text-amber-900">No upcoming games found for {selectedTeam}</p>
+                                </div>
                             </div>
                         )}
 
                         {selectedTeam && selectedGame && (
-                            <div className="text-center">
-                                <button
-                                    onClick={startGame}
-                                    className="px-12 py-5 text-xl font-bold bg-gradient-to-r from-purple-500 to-purple-700 text-white rounded-xl hover:from-purple-600 hover:to-purple-800 transition-all shadow-lg"
-                                >
-                                    Start Game Tracker
-                                </button>
-                                <p className="mt-4 text-gray-600">
-                                    Tracking: <strong>{selectedTeam}</strong> vs {opponentName}
-                                    <br />
-                                    <span className="text-sm">({isHome ? 'Home' : 'Away'} team)</span>
-                                </p>
-                            </div>
+                            <>
+                                {lineupExists && (
+                                    <div className="bg-green-50 border-2 border-green-400 rounded-xl p-4 mb-6">
+                                        <div className="flex items-center gap-3">
+                                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                                <polyline points="20 6 9 17 4 12"/>
+                                            </svg>
+                                            <p className="text-green-900 font-semibold">
+                                                ✓ Batting order set by captain - will be loaded automatically
+                                            </p>
+                                        </div>
+                                    </div>
+                                )}
+                                <div className="text-center">
+                                    <button
+                                        onClick={startGame}
+                                        className="px-12 py-5 text-xl font-bold bg-gradient-to-r from-purple-500 to-purple-700 text-white rounded-xl hover:from-purple-600 hover:to-purple-800 transition-all shadow-lg"
+                                    >
+                                        Start Game Tracker
+                                    </button>
+                                    <p className="mt-4 text-gray-600">
+                                        Tracking: <strong>{selectedTeam}</strong> vs {opponentName}
+                                        <br />
+                                        <span className="text-sm">({isHome ? 'Home' : 'Away'} team)</span>
+                                    </p>
+                                </div>
+                            </>
                         )}
                     </div>
                 );
             }
 
-            // Game tracking screen
+            // Calculate live batting stats from current game
+            const liveBattingStats = battingOrder.map(player => {
+                const playerPlays = gameState.playHistory.filter(play => play.batter === player.name);
+                
+                let atBats = 0;
+                let hits = 0;
+                let runs = 0;
+                let walks = 0;
+                
+                playerPlays.forEach(play => {
+                    if (play.playType !== 'walk' && play.playType !== 'sacfly') {
+                        atBats++;
+                    }
+                    if (['single', 'double', 'triple', 'homerun'].includes(play.playType)) {
+                        hits++;
+                    }
+                    if (play.playType === 'walk') {
+                        walks++;
+                    }
+                });
+                
+                // Count runs scored by this player
+                gameState.playHistory.forEach(play => {
+                    if (play.basesAfter.first !== play.basesBefore.first && play.basesBefore.first === player.name) {
+                        // Player was on first and moved/scored
+                    }
+                    if (play.basesAfter.second !== play.basesBefore.second && play.basesBefore.second === player.name) {
+                        // Player was on second and moved/scored
+                    }
+                    if (play.basesAfter.third !== play.basesBefore.third && play.basesBefore.third === player.name) {
+                        // Player was on third and moved/scored
+                    }
+                    // Check if player scored (was on base before, not after, and runs were scored)
+                    if (play.runsScored > 0) {
+                        if (play.basesBefore.third === player.name && !play.basesAfter.third) runs++;
+                        if (play.basesBefore.second === player.name && !play.basesAfter.second && !play.basesAfter.third) runs++;
+                        if (play.basesBefore.first === player.name && !play.basesAfter.first && !play.basesAfter.second && !play.basesAfter.third) runs++;
+                    }
+                    // Home runs count as a run for the batter
+                    if (play.batter === player.name && play.playType === 'homerun') {
+                        runs++;
+                    }
+                });
+                
+                return {
+                    name: player.name,
+                    number: player.number,
+                    atBats,
+                    hits,
+                    runs,
+                    walks,
+                    avg: atBats > 0 ? (hits / atBats).toFixed(3) : '.000'
+                };
+            });
+
             return (
-                <div className="max-w-6xl mx-auto p-5 font-sans">
+                <div className="max-w-7xl mx-auto p-5 font-sans">
                     <div className="text-center mb-6">
                         <h1 className="text-3xl font-bold text-gray-900 mb-2">
                             Live Game Tracker
@@ -633,7 +1184,7 @@
                         <div>
                             <div className="text-sm opacity-90">Inning</div>
                             <div className="text-2xl font-bold">
-                                {gameState.isYourTeamBatting ? '▲' : '▼'} {gameState.inning}
+                                {(isHome && !gameState.isYourTeamBatting) || (!isHome && gameState.isYourTeamBatting) ? '▲' : '▼'} {gameState.inning}
                             </div>
                             <div className="text-xs opacity-75 mt-1">
                                 {gameState.isYourTeamBatting ? `${selectedTeam} Batting` : `${opponentName} Batting`}
@@ -662,13 +1213,13 @@
                                         {selectedTeam}'s half inning is complete
                                     </div>
                                     <div className="text-sm mb-5 opacity-90 italic">
-                                        Click below when {selectedTeam} is back at bat
+                                        Opponent batting - click when {selectedTeam} is back at bat
                                     </div>
                                     <button
                                         onClick={advanceToNextHalfInning}
                                         className="px-10 py-4 text-lg font-bold border-none rounded-lg cursor-pointer bg-white text-amber-600 shadow-lg hover:shadow-xl transition-all"
                                     >
-                                        {opponentName} Now Batting ({isHome ? 'Bottom' : 'Top'} {gameState.inning})
+                                        {isHome ? `Top ${gameState.inning + 1} - ${opponentName} Batting` : `Bottom ${gameState.inning} - ${opponentName} Batting`}
                                     </button>
                                 </>
                             ) : (
@@ -683,7 +1234,7 @@
                                         onClick={advanceToNextHalfInning}
                                         className="px-10 py-4 text-lg font-bold border-none rounded-lg cursor-pointer bg-white text-amber-600 shadow-lg hover:shadow-xl transition-all"
                                     >
-                                        {selectedTeam} Now Batting ({isHome ? 'Top' : 'Bottom'} {gameState.inning + 1})
+                                        {isHome ? `Bottom ${gameState.inning} - ${selectedTeam} Batting` : `Top ${gameState.inning + 1} - ${selectedTeam} Batting`}
                                     </button>
                                 </>
                             )}
@@ -720,7 +1271,8 @@
 
                     {gameState.isYourTeamBatting && (
                         <>
-                            <div className={`relative w-full max-w-lg mx-auto mb-8 bg-green-800 rounded-xl p-8 ${pendingPlay ? 'border-4 border-amber-400' : ''} ${inningOver && !pendingPlay ? 'opacity-50' : 'opacity-100'}`}>
+                            <div className="flex flex-col lg:flex-row gap-6 mb-8">
+                                <div className={`relative w-full lg:max-w-lg bg-green-800 rounded-xl p-8 ${pendingPlay ? 'border-4 border-amber-400' : ''} ${inningOver && !pendingPlay ? 'opacity-50' : 'opacity-100'}`}>
                                 <svg viewBox="0 0 400 400" className="w-full h-auto">
                                     <polygon 
                                         points="200,80 320,200 200,320 80,200" 
@@ -744,9 +1296,12 @@
 
                                     {['first', 'second', 'third'].map((base, idx) => {
                                         const positions = {
-                                            first: { cx: 320, cy: 200, labelY: 165, arrowY: 240, arrow1X: 295, arrow2X: 345, removeY: 225 },
-                                            second: { cx: 200, cy: 80, labelY: 45, arrowY: 120, arrow1X: 175, arrow2X: 225, removeY: 105 },
-                                            third: { cx: 80, cy: 200, labelY: 165, arrowY: 240, arrow1X: 55, arrow2X: 105, removeY: 225 }
+                                            first: { cx: 320, cy: 200, labelY: 165, arrowY: 240, arrow1X: 295, arrow2X: 345, removeY: 225, 
+                                                    advanceArrow: '▲', backArrow: '▼' },
+                                            second: { cx: 200, cy: 80, labelY: 45, arrowY: 120, arrow1X: 175, arrow2X: 225, removeY: 105,
+                                                     advanceArrow: '◀', backArrow: '▶' },
+                                            third: { cx: 80, cy: 200, labelY: 165, arrowY: 240, arrow1X: 55, arrow2X: 105, removeY: 225,
+                                                    advanceArrow: '▼', backArrow: '▲' }
                                         };
                                         const pos = positions[base];
                                         const baseLabel = base === 'first' ? '1B' : base === 'second' ? '2B' : '3B';
@@ -793,7 +1348,7 @@
                                                                     style={{ cursor: 'pointer' }}
                                                                     onClick={() => adjustRunner(base, 'back')}
                                                                 >
-                                                                    ◀
+                                                                    {pos.backArrow}
                                                                 </text>
                                                                 <text 
                                                                     x={pos.arrow2X} y={pos.arrowY} 
@@ -804,7 +1359,7 @@
                                                                     style={{ cursor: 'pointer' }}
                                                                     onClick={() => adjustRunner(base, 'advance')}
                                                                 >
-                                                                    ▶
+                                                                    {pos.advanceArrow}
                                                                 </text>
                                                                 <circle
                                                                     cx={pos.cx}
@@ -849,6 +1404,45 @@
                                     </div>
                                 )}
                             </div>
+                            
+                            <div className="bg-white border border-gray-200 rounded-xl p-4 flex-shrink-0" style={{ width: '280px' }}>
+                                <h3 className="text-lg font-bold mb-3 text-gray-800">Live Batting Stats</h3>
+                                <div className="space-y-1 max-h-96 overflow-y-auto">
+                                    {liveBattingStats.map((stat, idx) => {
+                                        const isCurrentBatter = idx === gameState.currentBatter;
+                                        return (
+                                            <div 
+                                                key={stat.name}
+                                                className={`text-xs p-2 rounded ${isCurrentBatter ? 'bg-purple-100 border-2 border-purple-500 font-bold' : 'bg-gray-50'}`}
+                                            >
+                                                <div className="flex items-center gap-1 mb-1">
+                                                    <span className="text-gray-500">#{stat.number}</span>
+                                                    <span className="font-semibold text-gray-900 truncate">{stat.name.split(' ').pop()}</span>
+                                                </div>
+                                                <div className="grid grid-cols-4 gap-1 text-center">
+                                                    <div>
+                                                        <div className="text-gray-500">AB</div>
+                                                        <div className="font-bold">{stat.atBats}</div>
+                                                    </div>
+                                                    <div>
+                                                        <div className="text-gray-500">H</div>
+                                                        <div className="font-bold">{stat.hits}</div>
+                                                    </div>
+                                                    <div>
+                                                        <div className="text-gray-500">R</div>
+                                                        <div className="font-bold">{stat.runs}</div>
+                                                    </div>
+                                                    <div>
+                                                        <div className="text-gray-500">BB</div>
+                                                        <div className="font-bold">{stat.walks}</div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        </div>
 
                             {pendingPlay && (
                                 <div className="flex gap-3 mb-5 justify-center">
@@ -911,12 +1505,21 @@
                             </button>
                             
                             {gameState.gameActive && (
-                                <button
-                                    onClick={endGame}
-                                    className="px-6 py-3 border-none rounded-lg cursor-pointer bg-red-600 text-white hover:bg-red-700 transition-colors inline-flex items-center gap-2"
-                                >
-                                    <Save size={18} /> End Game
-                                </button>
+                                <>
+                                    <button
+                                        onClick={endGame}
+                                        className="px-6 py-3 border-none rounded-lg cursor-pointer bg-red-600 text-white hover:bg-red-700 transition-colors inline-flex items-center gap-2"
+                                    >
+                                        <Save size={18} /> End Game
+                                    </button>
+                                    
+                                    <button
+                                        onClick={clearProgress}
+                                        className="px-6 py-3 border-none rounded-lg cursor-pointer bg-orange-600 text-white hover:bg-orange-700 transition-colors inline-flex items-center gap-2"
+                                    >
+                                        <AlertCircle size={18} /> Clear Progress
+                                    </button>
+                                </>
                             )}
                         </div>
                     )}
@@ -963,9 +1566,40 @@
             );
         }
 
-        // Render the app
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<GameTracker />);
+		
+		
+function updateConnectionStatus() {
+  const status = document.getElementById('connectionStatus');
+  if (!status) return;
+  
+  const icon = status.querySelector('.status-icon');
+  const text = status.querySelector('.status-text');
+  
+  if (navigator.onLine) {
+    // Show "Back online" message
+    status.classList.remove('hidden');  // SHOW IT FIRST
+    status.classList.add('online');
+    icon.textContent = '✅';
+    text.textContent = 'Back online';
+    
+    // Hide after 3 seconds
+    setTimeout(() => {
+      status.classList.add('hidden');
+    }, 3000);
+  } else {
+    // Show "You're offline" message
+    status.classList.remove('hidden', 'online');
+    icon.textContent = '📡';
+    text.textContent = "You're offline";
+  }
+}
+
+window.addEventListener('online', updateConnectionStatus);
+window.addEventListener('offline', updateConnectionStatus);
+if (!navigator.onLine) updateConnectionStatus();
     </script>
+	<script src="offline-queue.js"></script>
 </body>
 </html>
