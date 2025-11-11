@@ -16,11 +16,14 @@ export const NAV_STRUCTURE = {
   // Tier 2: SECONDARY - Important pages (shown contextually on desktop)
   secondary: [
     { id: 'weekend-preview', href: 'weekend-preview.html', label: 'Weekend Preview', icon: '🔮', priority: 2 },
-    { id: 'projections', href: 'projections.html', label: 'Playoff Projections', icon: '🎱', priority: 2 },
-    { id: 'seasons', href: 'seasons.html', label: 'All Seasons', icon: '📅', priority: 2 },
+    	{ id: 'playoffs', href: 'playoffs.html', label: 'Playoff Bracket', icon: '🥇', priority: 2 },
+	{ id: 'projections', href: 'projections.html', label: 'Playoff Projections', icon: '🎱', priority: 2 },
+    	{ id: 'clinching', href: 'playoff-clinching.html', label: 'Playoff Clinching', icon: '🔒', priority: 2 },
+			    { id: 'bracket', href: 'bracket.html', label: 'Create your own Playoff bracket', icon: '🔭', priority: 2 },
+	{ id: 'seasons', href: 'seasons.html', label: 'All Seasons', icon: '📅', priority: 2 },
     { id: 'leaders', href: 'leaders.html', label: 'Career Leaders', icon: '👑', priority: 2 },
     { id: 'awards', href: 'awards.html', label: 'Awards', icon: '🏅', priority: 2 },
-	{ id: 'playoffs', href: 'playoffs.html', label: 'Playoff Bracket', icon: '🥇', priority: 2 },
+
   ],
   
   // Tier 3: TERTIARY - Specialty pages (mobile-only unless contextually relevant)
@@ -68,7 +71,7 @@ export const PAGE_CONFIGS = {
   },
   
   'current-season.html': {
-    desktop: ['home', 'current-season', 'league-rules', 'weekend-preview', 'playoffs', 'projections', 'batting', 'pitching', 'teams', 'players']
+    desktop: ['home', 'current-season', 'league-rules', 'weekend-preview', 'playoffs','clinching','projections', 'batting', 'pitching', 'teams', 'players']
   },
   
   'league-rules.html': {
@@ -76,11 +79,15 @@ export const PAGE_CONFIGS = {
   },
   
   'weekend-preview.html': {
-    desktop: ['home', 'current-season', 'league-rules', 'playoffs', 'projections', 'batting', 'pitching']
+    desktop: ['home', 'current-season', 'league-rules', 'playoffs', 'clinching','projections', 'batting', 'pitching']
   },
   
   'projections.html': {
     desktop: ['home', 'current-season', 'weekend-preview', 'playoffs', 'projections', 'batting', 'pitching', 'teams']
+  },
+    
+  'playoff-clinching.html': {
+    desktop: ['home', 'current-season', 'weekend-preview', 'playoffs', 'projections','bracket']
   },
   
   'batting.html': {
@@ -144,6 +151,8 @@ export const PAGE_CONFIGS = {
   'charts.html': {
     desktop: ['home', 'current-season', 'batting', 'pitching', 'teams', 'players', 'seasons', 'leaders', 'compare', 'team-compare', 'charts']
   },
+  
+  
   
   'pictures.html': {
     desktop: ['home', 'current-season', 'teams', 'players', 'pictures']
