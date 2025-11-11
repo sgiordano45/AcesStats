@@ -202,6 +202,9 @@ class OfflineQueue {
       
       case 'LINEUP_UPDATE':
         return await this.syncLineup(action.data);
+		
+	 case 'SCORE_UPDATE':  // ← ADD THIS NEW CASE
+      return await this.syncScore(action.data);	
       
       case 'PROFILE_UPDATE':
         return await this.syncProfile(action.data);
@@ -219,27 +222,62 @@ class OfflineQueue {
   }
 
   // Sync RSVP to Firebase
-  async syncRSVP(data) {
-    const { gameId, userId, status } = data;
-    
-    // Import the RSVP function from firebase-roster.js
-    if (typeof updateRSVP === 'function') {
-      await updateRSVP(gameId, userId, status);
-    } else {
-      throw new Error('updateRSVP function not available');
-    }
+ async syncRSVP(data) {
+  const { gameId, playerId, status, playerName, teamId } = data;
+  
+  // Try window.FirebaseRoster first (most likely)
+  if (window.FirebaseRoster && typeof window.FirebaseRoster.updateRSVP === 'function') {
+    await window.FirebaseRoster.updateRSVP(gameId, playerId, status, playerName, teamId);
+  } else if (typeof updateRSVP === 'function') {
+    await updateRSVP(gameId, playerId, status, playerName, teamId);
+  } else {
+    console.error('updateRSVP function not available');
+    throw new Error('updateRSVP function not available');
   }
+}
 
   // Sync lineup update to Firebase
-  async syncLineup(data) {
-    const { gameId, teamId, lineup } = data;
-    
-    if (typeof saveLineup === 'function') {
-      await saveLineup(gameId, teamId, lineup);
-    } else {
-      throw new Error('saveLineup function not available');
-    }
+async syncLineup(data) {
+  const { gameId, teamId, userId, type, inning, playerIds, positions } = data;
+  
+  if (!window.FirebaseRoster) {
+    throw new Error('FirebaseRoster not available');
   }
+  
+  try {
+    if (type === 'batting') {
+      await window.FirebaseRoster.saveBattingOrder(gameId, teamId, playerIds, userId);
+    } else if (type === 'fielding') {
+      await window.FirebaseRoster.saveFieldingPositions(gameId, teamId, inning, positions, userId);
+    } else if (type === 'bench') {
+      await window.FirebaseRoster.saveBenchPlayers(gameId, teamId, inning, playerIds, userId);
+    }
+    console.log(`✅ Synced ${type} lineup for game ${gameId}`);
+  } catch (error) {
+    console.error(`Failed to sync ${type} lineup:`, error);
+    throw error;
+  }
+}
+
+// Sync score update to Firebase
+async syncScore(data) {
+  const { gameId, teamId, score, timestamp } = data;
+  
+  console.log(`Syncing score: ${teamId} → ${score}`);
+  
+  // Try multiple possible function names for game tracker
+  if (typeof updateGameScore === 'function') {
+    await updateGameScore(gameId, teamId, score);
+  } else if (typeof window.updateGameScore === 'function') {
+    await window.updateGameScore(gameId, teamId, score);
+  } else if (typeof saveGameScore === 'function') {
+    await saveGameScore(gameId, teamId, score);
+  } else {
+    console.warn('Score update function not found - checking for alternative names');
+    throw new Error('updateGameScore function not available');
+  }
+}
+
 
   // Sync profile update to Firebase
   async syncProfile(data) {
@@ -309,6 +347,7 @@ class OfflineQueue {
     const messages = {
       'RSVP': 'RSVP saved',
       'LINEUP_UPDATE': 'Lineup saved',
+	    'SCORE_UPDATE': 'Score saved',  // ← ADD THIS LINE
       'PROFILE_UPDATE': 'Profile changes saved',
       'FAVORITE_ADD': 'Favorite added',
       'FAVORITE_REMOVE': 'Favorite removed'

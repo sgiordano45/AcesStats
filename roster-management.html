@@ -111,9 +111,44 @@
       transform: translateX(-5px);
       box-shadow: 0 4px 12px rgba(0,0,0,0.2);
     }
+/* Connection Status Indicator */
+.connection-status {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  background: #ffc107;
+  color: #856404;
+  padding: 10px 16px;
+  border-radius: 25px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  z-index: 9999;
+  font-size: 0.85rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.3s ease;
+}
+
+.connection-status.hidden {
+  display: none;
+}
+
+.connection-status.online {
+  background: #28a745;
+  color: white;
+}
+
+.connection-status .status-icon {
+  font-size: 1rem;
+}
 </style>
 </head>
 <body>
+<div id="connectionStatus" class="connection-status hidden">
+  <span class="status-icon">📡</span>
+  <span class="status-text">You're offline</span>
+</div>
 <div id="loadingOverlay" class="loading-overlay">
   <div class="softball-spinner"></div>
 </div>
@@ -478,17 +513,44 @@ function RosterManagement({ currentUser }) {
     const currentIndex = statuses.indexOf(status);
     const nextStatus = statuses[(currentIndex + 1) % statuses.length];
     
-    setRsvps({ ...rsvps, [key]: nextStatus });
+setRsvps({ ...rsvps, [key]: nextStatus });
+
+const player = players.find(p => p.id === playerId);
+
+// OFFLINE CHECK - NEW CODE STARTS HERE
+if (!navigator.onLine) {
+  console.log('📡 Offline - queuing RSVP action');
+  
+  try {
+    await window.offlineQueue.addToQueue('RSVP', {
+      gameId: gameId,
+      playerId: playerId,
+      status: nextStatus,
+      playerName: player?.name || 'Unknown',
+      teamId: selectedTeam
+    });
     
-    const player = players.find(p => p.id === playerId);
+    // Keep the optimistic UI update (already done above)
+    console.log('✅ RSVP queued successfully');
     
-    try {
-      await window.FirebaseRoster.updateRSVP(gameId, playerId, nextStatus, player?.name || 'Unknown', selectedTeam);
-    } catch (error) {
-      console.error('Error updating RSVP:', error);
-      setRsvps({ ...rsvps, [key]: status });
-      alert('Failed to update RSVP. Please try again.');
-    }
+    // Optional: Show a subtle notification (offlineQueue already shows one)
+  } catch (error) {
+    console.error('Failed to queue RSVP:', error);
+    setRsvps({ ...rsvps, [key]: status }); // Revert on error
+    alert('Failed to save RSVP offline. Please try again.');
+  }
+  return; // Exit early - don't try Firebase
+}
+// OFFLINE CHECK - NEW CODE ENDS HERE
+
+// ONLINE - Original Firebase code
+try {
+  await window.FirebaseRoster.updateRSVP(gameId, playerId, nextStatus, player?.name || 'Unknown', selectedTeam);
+} catch (error) {
+  console.error('Error updating RSVP:', error);
+  setRsvps({ ...rsvps, [key]: status });
+  alert('Failed to update RSVP. Please try again.');
+}
   };
 
   const handleDragStart = (e, player) => {
@@ -600,27 +662,66 @@ function RosterManagement({ currentUser }) {
     setDropTarget(null);
   };
 
-  const saveLineupData = async (type, data, inning = null) => {
-    if (!isCaptain) return;
-    setSavingLineup(true);
+const saveLineupData = async (type, data, inning = null) => {
+  if (!isCaptain) return;
+  setSavingLineup(true);
+  
+  // OFFLINE CHECK - NEW CODE STARTS HERE
+  if (!navigator.onLine) {
+    console.log('📡 Offline - queuing lineup update');
     
     try {
+      // Prepare lineup data for queue
+      let lineupData = {
+        gameId: selectedGame,
+        teamId: selectedTeam,
+        userId: currentUser.uid,
+        type: type,
+        inning: inning
+      };
+      
       if (type === 'batting') {
-        const playerIds = data.map(p => p?.id || null);
-        await window.FirebaseRoster.saveBattingOrder(selectedGame, selectedTeam, playerIds, currentUser.uid);
+        lineupData.playerIds = data.map(p => p?.id || null);
       } else if (type === 'fielding') {
-        await window.FirebaseRoster.saveFieldingPositions(selectedGame, selectedTeam, inning, data[inning], currentUser.uid);
+        lineupData.positions = data[inning];
       } else if (type === 'bench') {
-        const playerIds = data[inning].map(p => p.id);
-        await window.FirebaseRoster.saveBenchPlayers(selectedGame, selectedTeam, inning, playerIds, currentUser.uid);
+        lineupData.playerIds = data[inning].map(p => p.id);
       }
+      
+      await window.offlineQueue.addToQueue('LINEUP_UPDATE', lineupData);
+      console.log('✅ Lineup queued successfully');
+      
+      // Keep the optimistic UI update (already done by caller)
+      // Optional: Show success message
+      
     } catch (error) {
-      console.error('Error saving lineup:', error);
-      alert('Failed to save lineup. Please try again.');
+      console.error('Failed to queue lineup:', error);
+      alert('Failed to save lineup offline. Please try again.');
     } finally {
       setSavingLineup(false);
     }
-  };
+    return; // Exit early - don't try Firebase
+  }
+  // OFFLINE CHECK - NEW CODE ENDS HERE
+  
+  // ONLINE - Original Firebase code
+  try {
+    if (type === 'batting') {
+      const playerIds = data.map(p => p?.id || null);
+      await window.FirebaseRoster.saveBattingOrder(selectedGame, selectedTeam, playerIds, currentUser.uid);
+    } else if (type === 'fielding') {
+      await window.FirebaseRoster.saveFieldingPositions(selectedGame, selectedTeam, inning, data[inning], currentUser.uid);
+    } else if (type === 'bench') {
+      const playerIds = data[inning].map(p => p.id);
+      await window.FirebaseRoster.saveBenchPlayers(selectedGame, selectedTeam, inning, playerIds, currentUser.uid);
+    }
+  } catch (error) {
+    console.error('Error saving lineup:', error);
+    alert('Failed to save lineup. Please try again.');
+  } finally {
+    setSavingLineup(false);
+  }
+};
 
   const removeFromBatting = (position) => {
     if (!isCaptain) return;
@@ -1296,10 +1397,41 @@ const printDefensiveRotation = () => {
     </div>
   );
 }
+
+function updateConnectionStatus() {
+  const status = document.getElementById('connectionStatus');
+  if (!status) return;
+  
+  const icon = status.querySelector('.status-icon');
+  const text = status.querySelector('.status-text');
+  
+  if (navigator.onLine) {
+    // Show "Back online" message
+    status.classList.remove('hidden');  // SHOW IT FIRST
+    status.classList.add('online');
+    icon.textContent = '✅';
+    text.textContent = 'Back online';
+    
+    // Hide after 3 seconds
+    setTimeout(() => {
+      status.classList.add('hidden');
+    }, 3000);
+  } else {
+    // Show "You're offline" message
+    status.classList.remove('hidden', 'online');
+    icon.textContent = '📡';
+    text.textContent = "You're offline";
+  }
+}
+
+window.addEventListener('online', updateConnectionStatus);
+window.addEventListener('offline', updateConnectionStatus);
+if (!navigator.onLine) updateConnectionStatus();
 </script>
 <script type="module">
   import { NavigationComponent } from './nav-component.js';
   // Navigation auto-initializes on load!
 </script>
+<script src="offline-queue.js"></script>
 </body>
 </html>
