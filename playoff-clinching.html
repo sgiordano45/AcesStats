@@ -1148,8 +1148,20 @@
         const testSeed = simulateFinalStandings(teamName, team.wins, team.losses, standings, true);
         if (testSeed === targetSeed) {
           foundScenario = true;
+          
+          // Only look at teams that could realistically impact this seed
+          // Filter to teams that could finish at or near our record
+          const competitiveTeams = relevantTeams.filter(other => {
+            const otherGamesLeft = calculateRemainingGames(allGames, other.name);
+            const otherMaxWins = other.wins + otherGamesLeft;
+            const otherMinWins = other.wins;
+            
+            // Only include teams that could finish within 1 win of us
+            return otherMaxWins >= team.wins - 1 && otherMinWins <= team.wins + 1;
+          });
+          
           // Find which teams specifically need to lose for us to get this seed
-          teamsToMention = relevantTeams.filter(other => {
+          teamsToMention = competitiveTeams.filter(other => {
             // Test: if this team wins out, do we lose the target seed?
             const otherGamesLeft = calculateRemainingGames(allGames, other.name);
             const hypotheticalStandings = standings.map(t => {
@@ -1193,7 +1205,8 @@
                 if (h2h && (h2h.wins > h2h.losses)) {
                   details.push(`• <strong>Tiebreaker:</strong> Win H2H vs ${other.name} (${h2h.wins}-${h2h.losses})`);
                 } else if (h2h && (h2h.wins < h2h.losses)) {
-                  details.push(`• <strong>Tiebreaker:</strong> Lose H2H vs ${other.name} (${h2h.wins}-${h2h.losses}) → need them to win games`);
+                  details.push(`• <strong>Tiebreaker:</strong> Lose H2H vs ${other.name} (${h2h.wins}-${h2h.losses}) - not achievable via this path`);
+                  return null; // Can't get this seed if we lose H2H to a team at same record
                 } else {
                   const raDiff = other.runsAgainst - team.runsAgainst;
                   details.push(`• <strong>Tiebreaker:</strong> H2H tied → Runs Allowed (${raDiff > 0 ? 'currently lead' : 'currently trail'} by ${Math.abs(raDiff)})`);
@@ -1214,8 +1227,19 @@
         const testSeed = simulateFinalStandings(teamName, team.wins, team.losses, standings, false);
         if (testSeed === targetSeed) {
           foundScenario = true;
+          
+          // Only look at teams that could realistically impact this seed
+          const competitiveTeams = relevantTeams.filter(other => {
+            const otherGamesLeft = calculateRemainingGames(allGames, other.name);
+            const otherMaxWins = other.wins + otherGamesLeft;
+            const otherMinWins = other.wins;
+            
+            // Only include teams that could finish within 1 win of us
+            return otherMaxWins >= team.wins - 1 && otherMinWins <= team.wins + 1;
+          });
+          
           // Find which teams specifically need to win for us to fall to this seed
-          teamsToMention = relevantTeams.filter(other => {
+          teamsToMention = competitiveTeams.filter(other => {
             // Test: if this team loses out, do we get a better seed?
             const otherGamesLeft = calculateRemainingGames(allGames, other.name);
             const hypotheticalStandings = standings.map(t => {
@@ -1260,7 +1284,8 @@
                 if (h2h && (h2h.wins < h2h.losses)) {
                   details.push(`• <strong>Tiebreaker:</strong> Lose H2H vs ${other.name} (${h2h.wins}-${h2h.losses})`);
                 } else if (h2h && (h2h.wins > h2h.losses)) {
-                  details.push(`• <strong>Tiebreaker:</strong> Win H2H vs ${other.name} (${h2h.wins}-${h2h.losses}) → need them to lose games`);
+                  details.push(`• <strong>Tiebreaker:</strong> Win H2H vs ${other.name} (${h2h.wins}-${h2h.losses}) - not achievable via this path`);
+                  return null; // Can't fall to worst seed if we win H2H
                 } else {
                   const raDiff = other.runsAgainst - team.runsAgainst;
                   details.push(`• <strong>Tiebreaker:</strong> H2H tied → Runs Allowed (${raDiff > 0 ? 'currently lead' : 'currently trail'} by ${Math.abs(raDiff)})`);
@@ -1286,8 +1311,18 @@
           if (worstSeed >= targetSeed) {
             foundScenario = true;
             
+            // Only look at competitive teams
+            const competitiveTeams = relevantTeams.filter(other => {
+              const otherGamesLeft = calculateRemainingGames(allGames, other.name);
+              const otherMaxWins = other.wins + otherGamesLeft;
+              const otherMinWins = other.wins;
+              
+              // Only include teams that could finish within 1 win of us
+              return otherMaxWins >= team.wins - 1 && otherMinWins <= team.wins + 1;
+            });
+            
             // Find teams that could tie with us at our record
-            const tiableTeams = relevantTeams.filter(other => {
+            const tiableTeams = competitiveTeams.filter(other => {
               const otherGamesLeft = calculateRemainingGames(allGames, other.name);
               const otherMaxWins = other.wins + otherGamesLeft;
               return otherMaxWins === team.wins;
@@ -1316,6 +1351,10 @@
                   details.push(`• <strong>Tiebreaker:</strong> Win H2H tiebreaker vs ${other.name} (currently ${h2h.wins}-${h2h.losses})`);
                 } else if (h2h && (h2h.wins < h2h.losses)) {
                   details.push(`• <strong>Tiebreaker:</strong> Lose H2H tiebreaker vs ${other.name} (currently ${h2h.wins}-${h2h.losses})`);
+                  if (raRankNeeded === 1) {
+                    // Can't be #1 in tie if we lose H2H
+                    return null;
+                  }
                 } else {
                   const raDiff = other.runsAgainst - team.runsAgainst;
                   if (raRankNeeded === 1) {
@@ -1351,7 +1390,7 @@
               details.push(`• Specific combination of results determines final position`);
             }
             
-            teamsToMention = relevantTeams;
+            teamsToMention = competitiveTeams;
           }
         }
       }
