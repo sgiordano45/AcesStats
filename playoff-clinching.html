@@ -1432,7 +1432,7 @@
           details.push(`  ${tieDetails}`);
         } else {
           // 3+ way tie - Runs Allowed applies
-          const tieDetails = generate3PlusWayTieDetails(team, tiedTeams, projectedWins, combo.wins, combo.losses);
+          const tieDetails = generate3PlusWayTieDetails(team, tiedTeams, projectedWins, combo.wins, combo.losses, targetSeed, standings);
           details.push(`  Tied with ${tiedTeams.length} teams at ${projectedRecord}:`);
           details.push(`  ${tieDetails}`);
         }
@@ -1573,7 +1573,7 @@
     /**
      * Generate details for 3+ way tie (Runs Allowed tiebreaker)
      */
-    function generate3PlusWayTieDetails(team, tiedTeams, projectedWins, winsToAdd, lossesToAdd) {
+    function generate3PlusWayTieDetails(team, tiedTeams, projectedWins, winsToAdd, lossesToAdd, targetSeed, standings) {
       const teamName = team.name;
       const details = [];
       
@@ -1587,21 +1587,82 @@
         details.push(`${marker}${idx + 1}. ${t.name}: ${t.runsAgainst} RA`);
       });
       
-      // Calculate what's needed
-      const teamRank = allInTie.findIndex(t => t.name === teamName) + 1;
+      // Calculate the best possible seed available to this tied group
+      // This is the seed of the highest-ranked team in the tie
+      const baseSeed = Math.min(...allInTie.map(t => {
+        const idx = standings.findIndex(st => st.name === t.name);
+        return idx + 1;
+      }));
+      
+      // Calculate what RA ranking position corresponds to the target seed
+      // If baseSeed is #4 and targetSeed is #5, need to be 2nd in RA (5 - 4 + 1 = 2)
+      const raRankingNeeded = targetSeed - baseSeed + 1;
+      
+      // Get current RA ranking
+      const currentRank = allInTie.findIndex(t => t.name === teamName) + 1;
       const teamRA = team.runsAgainst;
       
-      if (teamRank === 1) {
-        const secondPlace = allInTie[1];
-        const cushion = secondPlace.runsAgainst - teamRA;
-        details.push(`Leading by ${cushion} runs → need to allow ${cushion}+ fewer runs than ${secondPlace.name} over remaining games to maintain advantage`);
+      // Explain what's needed for THIS specific seed
+      details.push(``);
+      details.push(`<strong>To finish #${targetSeed} seed:</strong>`);
+      
+      if (raRankingNeeded === 1) {
+        details.push(`Need to have the FEWEST runs allowed among all tied teams`);
+        if (currentRank === 1) {
+          const secondPlace = allInTie[1];
+          const cushion = secondPlace.runsAgainst - teamRA;
+          details.push(`Currently 1st - maintain by allowing ${cushion}+ fewer runs than ${secondPlace.name}`);
+        } else {
+          const firstPlace = allInTie[0];
+          const deficit = teamRA - firstPlace.runsAgainst;
+          details.push(`Currently ${currentRank}th - need to allow ${deficit + 1}+ fewer runs than ${firstPlace.name} over remaining ${winsToAdd + lossesToAdd} game${winsToAdd + lossesToAdd > 1 ? 's' : ''}`);
+        }
+      } else if (raRankingNeeded === allInTie.length) {
+        details.push(`Would finish with the MOST runs allowed among all tied teams`);
+        if (currentRank === allInTie.length) {
+          details.push(`Currently last in RA - would stay at this seed even if allowing more runs`);
+        } else {
+          const lastPlace = allInTie[allInTie.length - 1];
+          const gap = lastPlace.runsAgainst - teamRA;
+          details.push(`Currently ${currentRank}th - would drop to this seed if allowing ${gap + 1}+ more runs than ${lastPlace.name}`);
+        }
       } else {
-        const ahead = allInTie[teamRank - 2];
-        const deficit = teamRA - ahead.runsAgainst;
-        details.push(`Behind by ${deficit} runs → need to allow ${deficit + 1}+ fewer runs than ${ahead.name} over remaining ${winsToAdd + lossesToAdd} games`);
+        details.push(`Need to finish ${raRankingNeeded}${getOrdinalSuffix(raRankingNeeded)} in runs allowed among tied teams`);
+        
+        if (currentRank === raRankingNeeded) {
+          // Already at the right position
+          const above = allInTie[raRankingNeeded - 2];
+          const below = allInTie[raRankingNeeded];
+          const cushionAbove = teamRA - above.runsAgainst;
+          const cushionBelow = below.runsAgainst - teamRA;
+          details.push(`Currently ${raRankingNeeded}th - maintain position by:`);
+          details.push(`  - Keeping within ${cushionAbove} runs of ${above.name} (${cushionAbove + 1}+ would drop below them)`);
+          details.push(`  - Staying ${cushionBelow}+ runs better than ${below.name}`);
+        } else if (currentRank < raRankingNeeded) {
+          // Currently too high, need to allow more runs to drop to target
+          const targetTeam = allInTie[raRankingNeeded - 1];
+          details.push(`Currently ${currentRank}th (too high) - would need to allow more runs than ${targetTeam.name} to drop to ${raRankingNeeded}th`);
+        } else {
+          // Currently too low, need to allow fewer runs to climb to target
+          const targetTeam = allInTie[raRankingNeeded - 1];
+          const deficit = teamRA - targetTeam.runsAgainst;
+          details.push(`Currently ${currentRank}th - need to allow ${deficit + 1}+ fewer runs than ${targetTeam.name} over remaining ${winsToAdd + lossesToAdd} game${winsToAdd + lossesToAdd > 1 ? 's' : ''} to reach ${raRankingNeeded}th`);
+        }
       }
       
       return details.join('<br>  ');
+    }
+    
+    /**
+     * Get ordinal suffix for a number (1st, 2nd, 3rd, etc.)
+     */
+    function getOrdinalSuffix(num) {
+      const j = num % 10;
+      const k = num % 100;
+      if (j === 1 && k !== 11) return 'st';
+      if (j === 2 && k !== 12) return 'nd';
+      if (j === 3 && k !== 13) return 'rd';
+      return 'th';
     }
 
     /**
