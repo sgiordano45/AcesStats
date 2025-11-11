@@ -7,7 +7,7 @@ const DYNAMIC_CACHE = `${CACHE_VERSION}-dynamic`;
 const IMAGE_CACHE = `${CACHE_VERSION}-images`;
 
 // Base path for GitHub Pages subdirectory deployment
-const BASE_PATH = '/AcesStatsFirebaseTest';
+const BASE_PATH = '/AcesStats';
 
 // Critical files that should always be cached
 const STATIC_ASSETS = [
