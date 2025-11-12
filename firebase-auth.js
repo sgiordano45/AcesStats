@@ -2131,7 +2131,7 @@ function getErrorMessage(errorCode) {
 async function setupNotificationsForUser(user) {
   try {
     // Register service worker
-    await registerMessagingServiceWorker();
+    // await registerMessagingServiceWorker();
     
     // Check if user has already granted permission
     const userDoc = await getDoc(doc(db, 'users', user.uid));
