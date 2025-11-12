@@ -42,19 +42,47 @@ self.addEventListener('message', (event) => {
 // Handle background messages
 messaging.onBackgroundMessage((payload) => {
   console.log('Background message received:', payload);
+  console.log('Payload structure:', JSON.stringify(payload, null, 2));
   
-  const notificationTitle = payload.notification.title;
-  const notificationOptions = {
-    body: payload.notification.body,
-    icon: '/icon-192.png', // Your app icon
-    badge: '/badge-72.png',
-    tag: payload.data.type || 'default', // Prevent duplicate notifications
-    data: payload.data, // Custom data for click handling
-    requireInteraction: payload.data.priority === 'high', // Stay visible until clicked
-    actions: payload.data.actions ? JSON.parse(payload.data.actions) : []
-  };
-
-  return self.registration.showNotification(notificationTitle, notificationOptions);
+  try {
+    // Safely extract notification data with fallbacks
+    const notificationTitle = payload.notification?.title || payload.data?.title || 'Mountainside Aces';
+    const notificationBody = payload.notification?.body || payload.data?.body || 'New notification';
+    
+    console.log('Creating notification with title:', notificationTitle);
+    console.log('Creating notification with body:', notificationBody);
+    
+    const notificationOptions = {
+      body: notificationBody,
+      icon: '/icon-192.png', // Your app icon (optional, won't fail if missing)
+      badge: '/badge-72.png', // Small icon (optional)
+      tag: payload.data?.type || 'default', // Prevent duplicate notifications
+      data: payload.data || {}, // Custom data for click handling
+      requireInteraction: false, // Don't require user interaction
+      vibrate: [200, 100, 200], // Vibration pattern
+      timestamp: Date.now()
+    };
+    
+    console.log('Showing notification with options:', notificationOptions);
+    
+    return self.registration.showNotification(notificationTitle, notificationOptions)
+      .then(() => {
+        console.log('✅ Notification displayed successfully');
+      })
+      .catch(error => {
+        console.error('❌ Failed to show notification:', error);
+        // Try a minimal notification as fallback
+        return self.registration.showNotification(notificationTitle, {
+          body: notificationBody
+        });
+      });
+  } catch (error) {
+    console.error('❌ Error in onBackgroundMessage:', error);
+    // Last resort: show a basic notification
+    return self.registration.showNotification('Mountainside Aces', {
+      body: 'You have a new notification'
+    });
+  }
 });
 
 // Handle notification clicks
