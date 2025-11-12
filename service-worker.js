@@ -1,7 +1,7 @@
 // service-worker.js - Offline Functionality for Mountainside Aces
 // Version 1.0.2 - Reduced console noise from cache-first fallbacks
 
-const CACHE_VERSION = 'aces-v1.0.0';
+const CACHE_VERSION = 'aces-v1.0.2';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const DYNAMIC_CACHE = `${CACHE_VERSION}-dynamic`;
 const IMAGE_CACHE = `${CACHE_VERSION}-images`;

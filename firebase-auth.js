@@ -28,6 +28,8 @@ import { doc, setDoc, getDoc, updateDoc, serverTimestamp, collection, getDocs, q
 
 import { app, db } from './firebase-data.js';
 
+import { requestNotificationPermission, registerMessagingServiceWorker } from './firebase-messaging.js';
+
 const auth = getAuth(app);
 const googleProvider = new GoogleAuthProvider();
 
@@ -190,6 +192,7 @@ export async function registerUser(email, password, displayName) {
     });
     
     console.log('✅ User registered:', displayName);
+	await setupNotificationsForUser(user);
     return { 
       success: true, 
       user, 
@@ -292,6 +295,7 @@ export async function loginUser(email, password) {
     const userCredential = await signInWithEmailAndPassword(auth, email, password);
     const user = userCredential.user;
 	console.log('✅ User logged in:', user.displayName);
+	await setupNotificationsForUser(userCredential.user);
 	if (user.emailVerified) {
       await updateDoc(doc(db, 'users', user.uid), {
         emailVerified: true,
@@ -323,8 +327,10 @@ export async function loginWithGoogle() {
         emailVerified: user.emailVerified
       });
       console.log('✅ User profile created in Firestore');
+	  await setupNotificationsForUser(user);
     } else {
       console.log('ℹ️ Existing user profile found');
+	  await setupNotificationsForUser(user);
     }
     
     return { success: true, user };
@@ -2115,6 +2121,66 @@ function getErrorMessage(errorCode) {
     'auth/popup-blocked': 'Sign-in popup was blocked by your browser. Please allow popups for this site.'
   };
   return errorMessages[errorCode] || 'An error occurred. Please try again.';
+}
+
+
+// ========================================
+// NOTIFICATION SETUP
+// ========================================
+
+async function setupNotificationsForUser(user) {
+  try {
+    // Register service worker
+    await registerMessagingServiceWorker();
+    
+    // Check if user has already granted permission
+    const userDoc = await getDoc(doc(db, 'users', user.uid));
+    const userData = userDoc.data();
+    
+    // Don't prompt again if they've denied or already set up
+    if (userData?.notificationsEnabled === false || userData?.fcmTokens?.length > 0) {
+      return;
+    }
+    
+    // Show a friendly prompt first (optional but recommended)
+    showNotificationPrompt(user.uid);
+    
+  } catch (error) {
+    console.error('Error setting up notifications:', error);
+  }
+}
+
+function showNotificationPrompt(userId) {
+  const promptHTML = `
+    <div id="notification-prompt" class="modal-overlay">
+      <div class="modal-content">
+        <h3>🔔 Enable Notifications?</h3>
+        <p>Get notified about:</p>
+        <ul>
+          <li>Game reminders (24 hours & 2 hours before)</li>
+          <li>RSVP deadlines</li>
+          <li>Schedule changes</li>
+          <li>Lineup updates</li>
+        </ul>
+        <div class="button-group">
+          <button id="enable-notifications" class="btn-primary">Enable Notifications</button>
+          <button id="skip-notifications" class="btn-secondary">Not Now</button>
+        </div>
+      </div>
+    </div>
+  `;
+  
+  document.body.insertAdjacentHTML('beforeend', promptHTML);
+  
+  // Handle user choice
+  document.getElementById('enable-notifications').addEventListener('click', async () => {
+    document.getElementById('notification-prompt').remove();
+    await requestNotificationPermission(userId);
+  });
+  
+  document.getElementById('skip-notifications').addEventListener('click', () => {
+    document.getElementById('notification-prompt').remove();
+  });
 }
 
 export { auth };
