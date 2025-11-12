@@ -38,27 +38,49 @@ export async function requestNotificationPermission(userId) {
     console.log('Ensuring service worker is registered...');
     const registration = await registerMessagingServiceWorker();
     
-    // Wait for service worker to be active
+    // Wait for service worker to be active with timeout
     if (registration.installing) {
       console.log('Service worker is installing, waiting for activation...');
-      await new Promise(resolve => {
-        registration.installing.addEventListener('statechange', (e) => {
-          if (e.target.state === 'activated') {
-            console.log('Service worker activated');
-            resolve();
-          }
-        });
-      });
+      
+      // Try to skip waiting first
+      registration.installing.postMessage({ type: 'SKIP_WAITING' });
+      
+      // Wait for activation with 10 second timeout
+      await Promise.race([
+        new Promise(resolve => {
+          registration.installing.addEventListener('statechange', (e) => {
+            console.log('Service worker state changed to:', e.target.state);
+            if (e.target.state === 'activated') {
+              console.log('✅ Service worker activated');
+              resolve();
+            }
+            if (e.target.state === 'redundant') {
+              console.warn('Service worker became redundant, will retry');
+              resolve(); // Continue anyway
+            }
+          });
+        }),
+        new Promise(resolve => setTimeout(() => {
+          console.warn('⚠️ Service worker activation timeout - continuing anyway');
+          resolve();
+        }, 10000))
+      ]);
     } else if (registration.waiting) {
       console.log('Service worker is waiting, activating now...');
-      // Service worker is waiting, activate it
       registration.waiting.postMessage({ type: 'SKIP_WAITING' });
       await new Promise(resolve => {
-        navigator.serviceWorker.addEventListener('controllerchange', resolve, { once: true });
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+          console.log('✅ Controller changed, service worker activated');
+          resolve();
+        }, { once: true });
+        // Timeout fallback
+        setTimeout(resolve, 5000);
       });
+    } else if (registration.active) {
+      console.log('✅ Service worker already active');
     }
     
-    console.log('✅ Service worker is active and ready');
+    console.log('✅ Service worker is ready');
 
     // Check if already granted
     if (Notification.permission === 'granted') {
@@ -173,6 +195,43 @@ export async function removeFCMToken(userId, token) {
     console.log('✅ FCM token removed from user profile');
   } catch (error) {
     console.error('❌ Error removing FCM token:', error);
+    throw error;
+  }
+}
+
+/**
+ * Disable all notifications and remove ALL FCM tokens
+ * This is more reliable than calling removeFCMToken in a loop
+ * @param {string} userId - Current user's ID
+ */
+export async function disableAllNotifications(userId) {
+  try {
+    const userRef = doc(db, 'users', userId);
+    
+    console.log('🔕 Disabling all notifications for user:', userId);
+    
+    // Check if document exists first
+    const userDoc = await getDoc(userRef);
+    
+    if (!userDoc.exists()) {
+      console.warn('⚠️ User document does not exist, nothing to disable');
+      return { success: true, message: 'No notifications to disable' };
+    }
+    
+    const currentTokens = userDoc.data()?.fcmTokens || [];
+    console.log(`📝 Removing ${currentTokens.length} token(s)`);
+    
+    // Clear all tokens and disable notifications in ONE operation
+    await setDoc(userRef, {
+      fcmTokens: [],  // Clear all tokens at once
+      notificationsEnabled: false,
+      lastTokenUpdate: new Date().toISOString()
+    }, { merge: true });
+    
+    console.log('✅ All notifications disabled and tokens removed');
+    return { success: true, message: 'Notifications disabled successfully' };
+  } catch (error) {
+    console.error('❌ Error disabling all notifications:', error);
     throw error;
   }
 }

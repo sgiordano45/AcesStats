@@ -16,9 +16,25 @@ firebase.initializeApp({
 
 const messaging = firebase.messaging();
 
+// Install event - claim immediately
+self.addEventListener('install', (event) => {
+  console.log('Service worker installing...');
+  // Skip waiting to activate immediately
+  self.skipWaiting();
+});
+
+// Activate event - take control immediately
+self.addEventListener('activate', (event) => {
+  console.log('Service worker activating...');
+  // Take control of all clients immediately
+  event.waitUntil(self.clients.claim());
+  console.log('Service worker activated and ready!');
+});
+
 // Handle SKIP_WAITING message to activate service worker immediately
 self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'SKIP_WAITING') {
+    console.log('Received SKIP_WAITING message');
     self.skipWaiting();
   }
 });
