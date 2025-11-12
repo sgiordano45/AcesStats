@@ -34,6 +34,32 @@ export async function requestNotificationPermission(userId) {
       return null;
     }
 
+    // CRITICAL: Register and wait for service worker BEFORE getting token
+    console.log('Ensuring service worker is registered...');
+    const registration = await registerMessagingServiceWorker();
+    
+    // Wait for service worker to be active
+    if (registration.installing) {
+      console.log('Service worker is installing, waiting for activation...');
+      await new Promise(resolve => {
+        registration.installing.addEventListener('statechange', (e) => {
+          if (e.target.state === 'activated') {
+            console.log('Service worker activated');
+            resolve();
+          }
+        });
+      });
+    } else if (registration.waiting) {
+      console.log('Service worker is waiting, activating now...');
+      // Service worker is waiting, activate it
+      registration.waiting.postMessage({ type: 'SKIP_WAITING' });
+      await new Promise(resolve => {
+        navigator.serviceWorker.addEventListener('controllerchange', resolve, { once: true });
+      });
+    }
+    
+    console.log('✅ Service worker is active and ready');
+
     // Check if already granted
     if (Notification.permission === 'granted') {
       return await getAndSaveToken(userId);
