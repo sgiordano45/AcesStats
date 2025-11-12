@@ -4,7 +4,7 @@
 import { messaging, VAPID_KEY } from './firebase-config.js';
 import { db } from './firebase-config.js';
 import { getToken, onMessage } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-messaging.js';
-import { doc, updateDoc, arrayUnion, arrayRemove } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+import { doc, updateDoc, setDoc, getDoc, arrayUnion, arrayRemove } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
 /**
  * Register the Firebase Messaging service worker
  */
@@ -76,8 +76,9 @@ export async function requestNotificationPermission(userId) {
       return null;
     }
   } catch (error) {
-    console.error('Error requesting notification permission:', error);
-    return null;
+    console.error('❌ Error requesting notification permission:', error);
+    // Re-throw the error so the UI can display it
+    throw error;
   }
 }
 
@@ -88,22 +89,30 @@ export async function requestNotificationPermission(userId) {
  */
 async function getAndSaveToken(userId) {
   try {
+    console.log('📝 Getting FCM token for user:', userId);
+    
     // Get FCM token
     const currentToken = await getToken(messaging, { vapidKey: VAPID_KEY });
     
     if (currentToken) {
-      console.log('FCM Token:', currentToken);
+      console.log('✅ FCM Token obtained:', currentToken.substring(0, 20) + '...');
       
       // Save token to user profile
       await saveFCMToken(userId, currentToken);
       
+      console.log('✅ Token saved successfully');
       return currentToken;
     } else {
-      console.warn('No FCM token available');
+      console.warn('⚠️ No FCM token available - check service worker and VAPID key');
       return null;
     }
   } catch (error) {
-    console.error('Error getting FCM token:', error);
+    console.error('❌ Error getting FCM token:', error);
+    console.error('Error details:', {
+      code: error.code,
+      message: error.message,
+      stack: error.stack
+    });
     throw error;
   }
 }
@@ -117,15 +126,16 @@ export async function saveFCMToken(userId, token) {
   try {
     const userRef = doc(db, 'users', userId);
     
-    await updateDoc(userRef, {
+    // Use setDoc with merge to create document if it doesn't exist
+    await setDoc(userRef, {
       fcmTokens: arrayUnion(token), // Store as array (users may have multiple devices)
       lastTokenUpdate: new Date().toISOString(),
       notificationsEnabled: true
-    });
+    }, { merge: true }); // CRITICAL: merge creates doc if missing, updates if exists
     
-    console.log('FCM token saved to user profile');
+    console.log('✅ FCM token saved to user profile');
   } catch (error) {
-    console.error('Error saving FCM token:', error);
+    console.error('❌ Error saving FCM token:', error);
     throw error;
   }
 }
@@ -139,14 +149,30 @@ export async function removeFCMToken(userId, token) {
   try {
     const userRef = doc(db, 'users', userId);
     
-    await updateDoc(userRef, {
-      fcmTokens: arrayRemove(token),
-      notificationsEnabled: false
-    });
+    // Check if document exists first
+    const userDoc = await getDoc(userRef);
     
-    console.log('FCM token removed from user profile');
+    if (!userDoc.exists()) {
+      console.warn('User document does not exist, nothing to remove');
+      return;
+    }
+    
+    const userData = userDoc.data();
+    const currentTokens = userData.fcmTokens || [];
+    
+    // Remove the specific token
+    const updatedTokens = currentTokens.filter(t => t !== token);
+    
+    // Update document with new tokens array and disable flag if no tokens left
+    await setDoc(userRef, {
+      fcmTokens: updatedTokens,
+      notificationsEnabled: updatedTokens.length > 0, // Only disable if no tokens left
+      lastTokenUpdate: new Date().toISOString()
+    }, { merge: true });
+    
+    console.log('✅ FCM token removed from user profile');
   } catch (error) {
-    console.error('Error removing FCM token:', error);
+    console.error('❌ Error removing FCM token:', error);
     throw error;
   }
 }
