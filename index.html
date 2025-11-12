@@ -2542,8 +2542,11 @@ function updateRSVPCard(profile) {
 <!-- Add this RIGHT BEFORE the closing </body> tag in index.html -->
 <!-- This is a diagnostic version with better error handling -->
 
+<!-- REPLACE THE SERVICE WORKER REGISTRATION SCRIPT IN INDEX.HTML (around line 2545-2794) -->
+<!-- This version fixes the "Update Now" button and prevents endless installs -->
+
 <script>
-// Enhanced Service Worker Registration with Diagnostics
+// Enhanced Service Worker Registration - Fixed Update Button
 if ('serviceWorker' in navigator) {
   console.log('✅ Service Worker API available');
   
@@ -2551,41 +2554,41 @@ if ('serviceWorker' in navigator) {
     try {
       console.log('🔄 Attempting to register service worker...');
       console.log('📍 Current URL:', window.location.href);
-      console.log('📍 Service Worker URL:', '/service-worker.js');
       
-const registration = await navigator.serviceWorker.register('/service-worker.js', {
-  scope: ''
-});
+      const registration = await navigator.serviceWorker.register('/service-worker.js', {
+        scope: '/'
+      });
       
       console.log('✅ Service Worker registered successfully!');
       console.log('📦 Scope:', registration.scope);
-      console.log('📦 Registration:', registration);
 
-      // Check registration state
+      // Check current state
       if (registration.installing) {
         console.log('⏳ Service Worker installing...');
       } else if (registration.waiting) {
-        console.log('⏳ Service Worker waiting...');
+        console.log('⏳ Service Worker waiting - update available!');
+        showUpdateNotification(registration);
       } else if (registration.active) {
         console.log('✅ Service Worker active!');
       }
 
-      // Handle updates
+      // Listen for updates
       registration.addEventListener('updatefound', () => {
         const newWorker = registration.installing;
         console.log('🔄 Service Worker update found');
 
         newWorker.addEventListener('statechange', () => {
-          console.log('🔄 Service Worker state changed:', newWorker.state);
+          console.log('🔄 New service worker state:', newWorker.state);
           
           if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-            // New service worker available
+            // New service worker is installed but waiting
+            console.log('📢 New version available!');
             showUpdateNotification(registration);
           }
         });
       });
 
-      // Check for updates periodically (every 60 minutes)
+      // Check for updates every hour
       setInterval(() => {
         console.log('🔄 Checking for Service Worker updates...');
         registration.update();
@@ -2593,23 +2596,20 @@ const registration = await navigator.serviceWorker.register('/service-worker.js'
 
     } catch (error) {
       console.error('❌ Service Worker registration FAILED');
-      console.error('Error details:', error);
-      console.error('Error name:', error.name);
-      console.error('Error message:', error.message);
-      
-      // Provide helpful debugging info
-      if (error.message.includes('404')) {
-        console.error('🔍 DEBUG: service-worker.js file not found!');
-        console.error('🔍 Make sure service-worker.js is in the ROOT directory');
-        console.error('🔍 Expected location: /service-worker.js');
-      } else if (error.message.includes('scope')) {
-        console.error('🔍 DEBUG: Scope issue detected');
-      }
+      console.error('Error:', error);
     }
   });
 
   // Show update notification when new SW is available
   function showUpdateNotification(registration) {
+    console.log('📢 Showing update notification');
+    
+    // Remove existing notification if present
+    const existing = document.querySelector('.update-notification');
+    if (existing) {
+      existing.remove();
+    }
+
     const notification = document.createElement('div');
     notification.className = 'update-notification';
     notification.innerHTML = `
@@ -2620,7 +2620,7 @@ const registration = await navigator.serviceWorker.register('/service-worker.js'
       </div>
     `;
 
-    // Add styles
+    // Add styles inline to ensure they load
     const styles = document.createElement('style');
     styles.textContent = `
       .update-notification {
@@ -2632,38 +2632,46 @@ const registration = await navigator.serviceWorker.register('/service-worker.js'
         color: white;
         padding: 20px;
         border-radius: 12px;
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
-        z-index: 10000;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+        z-index: 99999;
         max-width: 400px;
-        animation: slideUp 0.3s ease-out;
+        animation: slideUp 0.4s ease-out;
       }
 
       .update-content strong {
         display: block;
         margin-bottom: 8px;
-        font-size: 16px;
+        font-size: 18px;
       }
 
       .update-content p {
         margin: 0 0 16px 0;
         font-size: 14px;
-        opacity: 0.9;
+        opacity: 0.95;
       }
 
       .update-button {
         background: white;
         color: #003366;
         border: none;
-        padding: 10px 24px;
-        border-radius: 50px;
+        padding: 12px 24px;
+        border-radius: 8px;
         font-weight: 600;
+        font-size: 15px;
         cursor: pointer;
-        transition: transform 0.2s;
+        transition: all 0.2s;
         width: 100%;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
       }
 
       .update-button:hover {
-        transform: scale(1.05);
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+        background: #f0f0f0;
+      }
+
+      .update-button:active {
+        transform: translateY(0);
       }
 
       @keyframes slideUp {
@@ -2676,27 +2684,55 @@ const registration = await navigator.serviceWorker.register('/service-worker.js'
           opacity: 1;
         }
       }
+
+      @media (max-width: 768px) {
+        .update-notification {
+          left: 10px;
+          right: 10px;
+          transform: none;
+          max-width: none;
+          bottom: 10px;
+        }
+        
+        @keyframes slideUp {
+          from {
+            transform: translateY(100px);
+            opacity: 0;
+          }
+          to {
+            transform: translateY(0);
+            opacity: 1;
+          }
+        }
+      }
     `;
     document.head.appendChild(styles);
     document.body.appendChild(notification);
 
-// Handle update button click
-    document.getElementById('updateButton').addEventListener('click', () => {
-      console.log('🔄 Update button clicked');
-      
-      // Set up the listener BEFORE posting the message
-      navigator.serviceWorker.addEventListener('controllerchange', () => {
-        console.log('✅ Controller changed, reloading page...');
-        window.location.reload();
-      });
+    // Handle update button click
+    const updateButton = document.getElementById('updateButton');
+    updateButton.addEventListener('click', () => {
+      console.log('🔄 Update button clicked!');
+      updateButton.textContent = 'Updating...';
+      updateButton.disabled = true;
 
+      // Set up controller change listener BEFORE sending skip waiting
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        console.log('✅ New service worker activated, reloading...');
+        window.location.reload();
+      }, { once: true });
+
+      // Tell the waiting service worker to activate
       if (registration.waiting) {
-        console.log('📤 Sending SKIP_WAITING message to waiting service worker');
+        console.log('📤 Sending SKIP_WAITING message');
         registration.waiting.postMessage({ type: 'SKIP_WAITING' });
       } else {
-        console.warn('⚠️ No waiting service worker found');
+        console.error('⚠️ No waiting service worker found!');
+        updateButton.textContent = 'Error - Refresh Page';
       }
     });
+
+    console.log('✅ Update notification displayed');
   }
 
   // Show online/offline status indicator
@@ -2715,7 +2751,6 @@ const registration = await navigator.serviceWorker.register('/service-worker.js'
         <span class="status-text">Offline Mode</span>
       `;
 
-      // Add styles if not present
       if (!document.getElementById('online-status-styles')) {
         const styles = document.createElement('style');
         styles.id = 'online-status-styles';
@@ -2781,7 +2816,7 @@ const registration = await navigator.serviceWorker.register('/service-worker.js'
   });
   
   window.addEventListener('offline', () => {
-    console.log('📡 Connection lost');
+    console.log('📡 Connection lost - offline mode active');
     updateOnlineStatus();
   });
   

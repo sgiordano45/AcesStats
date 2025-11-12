@@ -1,7 +1,8 @@
-// service-worker.js - Offline Functionality for Mountainside Aces
-// Version 1.0.2 - Reduced console noise from cache-first fallbacks
+// service-worker.js - Unified Service Worker
+// Handles both offline functionality AND Firebase Cloud Messaging
+// Version 1.0.3 - Fixed endless install loop
 
-const CACHE_VERSION = 'aces-v1.0.2';
+const CACHE_VERSION = 'aces-v1.0.3';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const DYNAMIC_CACHE = `${CACHE_VERSION}-dynamic`;
 const IMAGE_CACHE = `${CACHE_VERSION}-images`;
@@ -26,15 +27,15 @@ const STATIC_ASSETS = [
   `${BASE_PATH}/batting.html`,
   `${BASE_PATH}/signin.html`,
   `${BASE_PATH}/signup.html`,
-   `${BASE_PATH}/submit-score.html`,
-	`${BASE_PATH}/submit-stats.html`,
-	`${BASE_PATH}/league-history.html`,
-	`${BASE_PATH}/offseason.html`,
-	`${BASE_PATH}/offseason-roster.html`,
-	`${BASE_PATH}/schedule-generator.html`,
+  `${BASE_PATH}/submit-score.html`,
+  `${BASE_PATH}/submit-stats.html`,
+  `${BASE_PATH}/league-history.html`,
+  `${BASE_PATH}/offseason.html`,
+  `${BASE_PATH}/offseason-roster.html`,
+  `${BASE_PATH}/schedule-generator.html`,
   `${BASE_PATH}/profile.html`,
   `${BASE_PATH}/profile-fan.html`,
-   `${BASE_PATH}/awards.html`,
+  `${BASE_PATH}/awards.html`,
   `${BASE_PATH}/league-rules.html`,
   `${BASE_PATH}/verify-email.html`,
   `${BASE_PATH}/reset-password.html`,
@@ -48,12 +49,55 @@ const STATIC_ASSETS = [
 const EXTERNAL_RESOURCES = [
   'https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js',
   'https://www.gstatic.com/firebasejs/10.7.0/firebase-auth-compat.js',
-  'https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore-compat.js'
+  'https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore-compat.js',
+  'https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js',
+  'https://www.gstatic.com/firebasejs/10.7.1/firebase-messaging-compat.js'
 ];
 
-// Install event - cache static assets with better error handling
+// ==============================================
+// FIREBASE MESSAGING SETUP
+// ==============================================
+importScripts('https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js');
+importScripts('https://www.gstatic.com/firebasejs/10.7.1/firebase-messaging-compat.js');
+
+// Initialize Firebase in service worker
+firebase.initializeApp({
+  apiKey: "AIzaSyCAEWkrTcprzJ2KPPJu-vFJPvYOVU4ky20",
+  authDomain: "acessoftballreference-84791.firebaseapp.com",
+  projectId: "acessoftballreference-84791",
+  storageBucket: "acessoftballreference-84791.firebasestorage.app",
+  messagingSenderId: "777699560175",
+  appId: "1:777699560175:web:4092b422e7d7116352e91a"
+});
+
+const messaging = firebase.messaging();
+
+// Handle background messages (when app is not open)
+messaging.onBackgroundMessage((payload) => {
+  console.log('[SW] Background message received:', payload);
+  
+  const notificationTitle = payload.notification.title;
+  const notificationOptions = {
+    body: payload.notification.body,
+    icon: '/icon-192.png',
+    badge: '/badge-72.png',
+    tag: payload.data?.type || 'default',
+    data: payload.data,
+    requireInteraction: payload.data?.priority === 'high',
+    actions: payload.data?.actions ? JSON.parse(payload.data.actions) : []
+  };
+
+  return self.registration.showNotification(notificationTitle, notificationOptions);
+});
+
+// ==============================================
+// SERVICE WORKER LIFECYCLE EVENTS
+// ==============================================
+
+// Install event - cache static assets
+// CRITICAL: Do NOT call skipWaiting() here - wait for user to click "Update Now"
 self.addEventListener('install', (event) => {
-  console.log('[SW] Installing service worker...');
+  console.log('[SW] Installing service worker v' + CACHE_VERSION + '...');
   
   event.waitUntil(
     caches.open(STATIC_CACHE)
@@ -73,11 +117,11 @@ self.addEventListener('install', (event) => {
         });
         
         await Promise.allSettled(cachePromises);
-        console.log('[SW] Static asset caching complete (with possible failures)');
+        console.log('[SW] Static asset caching complete');
       })
       .then(() => {
-        console.log('[SW] Service worker installation complete');
-        return self.skipWaiting(); // Activate immediately
+        console.log('[SW] Installation complete - waiting for activation');
+        // DO NOT call skipWaiting() here - let the user decide via "Update Now" button
       })
       .catch((error) => {
         console.error('[SW] Critical error during installation:', error);
@@ -87,7 +131,7 @@ self.addEventListener('install', (event) => {
 
 // Activate event - clean up old caches
 self.addEventListener('activate', (event) => {
-  console.log('[SW] Activating service worker...');
+  console.log('[SW] Activating service worker v' + CACHE_VERSION + '...');
   
   event.waitUntil(
     caches.keys()
@@ -106,11 +150,38 @@ self.addEventListener('activate', (event) => {
         );
       })
       .then(() => {
-        console.log('[SW] Service worker activated');
-        return self.clients.claim(); // Take control immediately
+        console.log('[SW] Service worker activated v' + CACHE_VERSION);
+        return self.clients.claim(); // Take control of all pages
       })
   );
 });
+
+// ==============================================
+// MESSAGE HANDLING
+// ==============================================
+
+// Listen for messages from the app
+self.addEventListener('message', (event) => {
+  console.log('[SW] Received message:', event.data);
+  
+  // Handle skip waiting message (from "Update Now" button)
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    console.log('[SW] SKIP_WAITING requested - activating new service worker');
+    self.skipWaiting();
+  }
+
+  // Handle cache URLs message
+  if (event.data && event.data.type === 'CACHE_URLS') {
+    const urlsToCache = event.data.urls;
+    caches.open(DYNAMIC_CACHE).then((cache) => {
+      cache.addAll(urlsToCache);
+    });
+  }
+});
+
+// ==============================================
+// FETCH STRATEGIES
+// ==============================================
 
 // Fetch event - serve from cache or network with strategies
 self.addEventListener('fetch', (event) => {
@@ -162,13 +233,11 @@ self.addEventListener('fetch', (event) => {
 
 // Cache-first strategy: Try cache, fallback to network
 async function cacheFirst(request, cacheName) {
-  // First, check cache
   const cachedResponse = await caches.match(request);
   if (cachedResponse) {
     return cachedResponse;
   }
 
-  // Not in cache, try network
   try {
     const networkResponse = await fetch(request);
     if (networkResponse.ok) {
@@ -177,13 +246,11 @@ async function cacheFirst(request, cacheName) {
     }
     return networkResponse;
   } catch (error) {
-    // Network failed, try cache one more time (in case it was added while we were fetching)
     const fallbackCache = await caches.match(request);
     if (fallbackCache) {
       return fallbackCache;
     }
     
-    // Only log error if BOTH network and cache failed
     console.error('[SW] Cache-first failed (no cache and no network):', request.url);
     throw error;
   }
@@ -225,7 +292,6 @@ async function networkFirstWithOfflinePage(request) {
       return cachedResponse;
     }
 
-    // Return offline fallback page
     const offlinePage = await caches.match(`${BASE_PATH}/offline.html`);
     if (offlinePage) {
       return offlinePage;
@@ -235,43 +301,63 @@ async function networkFirstWithOfflinePage(request) {
   }
 }
 
-// Helper: Check if request is for a static asset
+// ==============================================
+// HELPER FUNCTIONS
+// ==============================================
+
 function isStaticAsset(url) {
   return STATIC_ASSETS.some(asset => url.pathname === asset);
 }
 
-// Helper: Check if request is for an external resource
 function isExternalResource(url) {
   return EXTERNAL_RESOURCES.some(resource => url.href.startsWith(resource));
 }
 
-// Helper: Check if request is for an image
 function isImageRequest(url) {
   return url.pathname.match(/\.(jpg|jpeg|png|gif|svg|webp|ico)$/i);
 }
 
-// Helper: Check if request is for Firebase
 function isFirebaseRequest(url) {
   return url.hostname.includes('firebaseio.com') ||
          url.hostname.includes('googleapis.com') ||
          url.hostname.includes('firestore.googleapis.com');
 }
 
-// Listen for messages from the app
-self.addEventListener('message', (event) => {
-  if (event.data && event.data.type === 'SKIP_WAITING') {
-    self.skipWaiting();
-  }
+// ==============================================
+// NOTIFICATION CLICK HANDLING
+// ==============================================
 
-  if (event.data && event.data.type === 'CACHE_URLS') {
-    const urlsToCache = event.data.urls;
-    caches.open(DYNAMIC_CACHE).then((cache) => {
-      cache.addAll(urlsToCache);
-    });
-  }
+self.addEventListener('notificationclick', (event) => {
+  console.log('[SW] Notification clicked:', event);
+  event.notification.close();
+
+  const clickAction = event.notification.data?.clickAction || '/';
+  
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true })
+      .then((clientList) => {
+        // If app is already open, focus it and navigate
+        for (const client of clientList) {
+          if (client.url.includes(self.registration.scope) && 'focus' in client) {
+            client.postMessage({
+              type: 'NOTIFICATION_CLICK',
+              url: clickAction
+            });
+            return client.focus();
+          }
+        }
+        // Otherwise, open new window
+        if (clients.openWindow) {
+          return clients.openWindow(clickAction);
+        }
+      })
+  );
 });
 
-// Background sync for queued actions
+// ==============================================
+// BACKGROUND SYNC
+// ==============================================
+
 self.addEventListener('sync', (event) => {
   console.log('[SW] Background sync triggered:', event.tag);
   
@@ -280,10 +366,8 @@ self.addEventListener('sync', (event) => {
   }
 });
 
-// Sync queued actions when back online
 async function syncQueuedActions() {
   try {
-    // Get queued actions from IndexedDB
     const db = await openDatabase();
     const queue = await getQueuedActions(db);
 
@@ -299,7 +383,6 @@ async function syncQueuedActions() {
       }
     }
 
-    // Notify app that sync is complete
     const clients = await self.clients.matchAll();
     clients.forEach(client => {
       client.postMessage({
@@ -312,7 +395,10 @@ async function syncQueuedActions() {
   }
 }
 
-// Helper functions for IndexedDB queue
+// ==============================================
+// INDEXEDDB QUEUE HELPERS
+// ==============================================
+
 function openDatabase() {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open('AcesOfflineQueue', 1);
@@ -352,8 +438,6 @@ async function removeFromQueue(db, id) {
 }
 
 async function processQueuedAction(action) {
-  // This would call the appropriate Firebase function
-  // based on the action type (RSVP, lineup update, etc.)
   switch (action.type) {
     case 'RSVP':
       // Call Firebase RSVP function

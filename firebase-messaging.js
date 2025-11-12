@@ -1,22 +1,28 @@
 // firebase-messaging.js
 // Functions for managing push notifications
+// Updated to work with unified service-worker.js
 
 import { messaging, VAPID_KEY } from './firebase-config.js';
 import { db } from './firebase-config.js';
 import { getToken, onMessage } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-messaging.js';
 import { doc, updateDoc, setDoc, getDoc, arrayUnion, arrayRemove } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+
 /**
- * Register the Firebase Messaging service worker
+ * Get the existing service worker registration
+ * NOTE: We no longer register a separate firebase-messaging-sw.js
+ * Instead, we use the unified service-worker.js that handles both offline and messaging
  */
-export async function registerMessagingServiceWorker() {
+async function getServiceWorkerRegistration() {
   try {
     if ('serviceWorker' in navigator) {
-      const registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
-      console.log('Firebase Messaging Service Worker registered:', registration);
+      // Wait for the existing service worker to be ready
+      const registration = await navigator.serviceWorker.ready;
+      console.log('✅ Using existing service worker for FCM');
       return registration;
     }
+    return null;
   } catch (error) {
-    console.error('Service Worker registration failed:', error);
+    console.error('❌ Error getting service worker registration:', error);
     throw error;
   }
 }
@@ -34,53 +40,15 @@ export async function requestNotificationPermission(userId) {
       return null;
     }
 
-    // CRITICAL: Register and wait for service worker BEFORE getting token
-    console.log('Ensuring service worker is registered...');
-    const registration = await registerMessagingServiceWorker();
+    // Wait for service worker to be ready
+    console.log('🔄 Waiting for service worker to be ready...');
+    const registration = await getServiceWorkerRegistration();
     
-    // Wait for service worker to be active with timeout
-    if (registration.installing) {
-      console.log('Service worker is installing, waiting for activation...');
-      
-      // Try to skip waiting first
-      registration.installing.postMessage({ type: 'SKIP_WAITING' });
-      
-      // Wait for activation with 10 second timeout
-      await Promise.race([
-        new Promise(resolve => {
-          registration.installing.addEventListener('statechange', (e) => {
-            console.log('Service worker state changed to:', e.target.state);
-            if (e.target.state === 'activated') {
-              console.log('✅ Service worker activated');
-              resolve();
-            }
-            if (e.target.state === 'redundant') {
-              console.warn('Service worker became redundant, will retry');
-              resolve(); // Continue anyway
-            }
-          });
-        }),
-        new Promise(resolve => setTimeout(() => {
-          console.warn('⚠️ Service worker activation timeout - continuing anyway');
-          resolve();
-        }, 10000))
-      ]);
-    } else if (registration.waiting) {
-      console.log('Service worker is waiting, activating now...');
-      registration.waiting.postMessage({ type: 'SKIP_WAITING' });
-      await new Promise(resolve => {
-        navigator.serviceWorker.addEventListener('controllerchange', () => {
-          console.log('✅ Controller changed, service worker activated');
-          resolve();
-        }, { once: true });
-        // Timeout fallback
-        setTimeout(resolve, 5000);
-      });
-    } else if (registration.active) {
-      console.log('✅ Service worker already active');
+    if (!registration) {
+      throw new Error('Service worker not available');
     }
-    
-    console.log('✅ Service worker is ready');
+
+    console.log('✅ Service worker is ready for FCM');
 
     // Check if already granted
     if (Notification.permission === 'granted') {
@@ -91,15 +59,14 @@ export async function requestNotificationPermission(userId) {
     const permission = await Notification.requestPermission();
     
     if (permission === 'granted') {
-      console.log('Notification permission granted');
+      console.log('✅ Notification permission granted');
       return await getAndSaveToken(userId);
     } else {
-      console.log('Notification permission denied');
+      console.log('❌ Notification permission denied');
       return null;
     }
   } catch (error) {
     console.error('❌ Error requesting notification permission:', error);
-    // Re-throw the error so the UI can display it
     throw error;
   }
 }
@@ -111,7 +78,10 @@ export async function requestNotificationPermission(userId) {
  */
 async function getAndSaveToken(userId) {
   try {
-    console.log('📝 Getting FCM token for user:', userId);
+    console.log('🔑 Getting FCM token for user:', userId);
+    
+    // Wait for service worker to be ready
+    await navigator.serviceWorker.ready;
     
     // Get FCM token
     const currentToken = await getToken(messaging, { vapidKey: VAPID_KEY });
@@ -148,12 +118,11 @@ export async function saveFCMToken(userId, token) {
   try {
     const userRef = doc(db, 'users', userId);
     
-    // Use setDoc with merge to create document if it doesn't exist
     await setDoc(userRef, {
-      fcmTokens: arrayUnion(token), // Store as array (users may have multiple devices)
+      fcmTokens: arrayUnion(token),
       lastTokenUpdate: new Date().toISOString(),
       notificationsEnabled: true
-    }, { merge: true }); // CRITICAL: merge creates doc if missing, updates if exists
+    }, { merge: true });
     
     console.log('✅ FCM token saved to user profile');
   } catch (error) {
@@ -171,7 +140,6 @@ export async function removeFCMToken(userId, token) {
   try {
     const userRef = doc(db, 'users', userId);
     
-    // Check if document exists first
     const userDoc = await getDoc(userRef);
     
     if (!userDoc.exists()) {
@@ -182,13 +150,11 @@ export async function removeFCMToken(userId, token) {
     const userData = userDoc.data();
     const currentTokens = userData.fcmTokens || [];
     
-    // Remove the specific token
     const updatedTokens = currentTokens.filter(t => t !== token);
     
-    // Update document with new tokens array and disable flag if no tokens left
     await setDoc(userRef, {
       fcmTokens: updatedTokens,
-      notificationsEnabled: updatedTokens.length > 0, // Only disable if no tokens left
+      notificationsEnabled: updatedTokens.length > 0,
       lastTokenUpdate: new Date().toISOString()
     }, { merge: true });
     
@@ -201,7 +167,6 @@ export async function removeFCMToken(userId, token) {
 
 /**
  * Disable all notifications and remove ALL FCM tokens
- * This is more reliable than calling removeFCMToken in a loop
  * @param {string} userId - Current user's ID
  */
 export async function disableAllNotifications(userId) {
@@ -210,7 +175,6 @@ export async function disableAllNotifications(userId) {
     
     console.log('🔕 Disabling all notifications for user:', userId);
     
-    // Check if document exists first
     const userDoc = await getDoc(userRef);
     
     if (!userDoc.exists()) {
@@ -219,11 +183,10 @@ export async function disableAllNotifications(userId) {
     }
     
     const currentTokens = userDoc.data()?.fcmTokens || [];
-    console.log(`📝 Removing ${currentTokens.length} token(s)`);
+    console.log(`🗑️ Removing ${currentTokens.length} token(s)`);
     
-    // Clear all tokens and disable notifications in ONE operation
     await setDoc(userRef, {
-      fcmTokens: [],  // Clear all tokens at once
+      fcmTokens: [],
       notificationsEnabled: false,
       lastTokenUpdate: new Date().toISOString()
     }, { merge: true });
@@ -241,14 +204,14 @@ export async function disableAllNotifications(userId) {
  */
 export function onForegroundMessage(callback) {
   return onMessage(messaging, (payload) => {
-    console.log('Foreground message received:', payload);
+    console.log('📨 Foreground message received:', payload);
     
     // Show notification even when app is open
     if (Notification.permission === 'granted') {
       new Notification(payload.notification.title, {
         body: payload.notification.body,
         icon: '/icon-192.png',
-        tag: payload.data.type || 'default',
+        tag: payload.data?.type || 'default',
         data: payload.data
       });
     }
@@ -273,9 +236,9 @@ export async function updateNotificationPreferences(userId, preferences) {
       notificationPreferences: preferences
     });
     
-    console.log('Notification preferences updated');
+    console.log('✅ Notification preferences updated');
   } catch (error) {
-    console.error('Error updating notification preferences:', error);
+    console.error('❌ Error updating notification preferences:', error);
     throw error;
   }
 }
