@@ -41,20 +41,20 @@ const VAPID_KEY = "BK39jgi3AT0p9jdaUBIPHz3vBkBg4YRvY-yMNuGMIJEhGbXTomDyKo77ug0hP
 
 // ✨ ENABLE OFFLINE PERSISTENCE ✨
 // This allows Firestore data to be cached locally and available offline
-enableIndexedDbPersistence(db)
+export const persistenceReady = enableIndexedDbPersistence(db)
   .then(() => {
     console.log('✅ Firebase offline persistence enabled');
+    return true;
   })
   .catch((err) => {
     if (err.code === 'failed-precondition') {
-      // Multiple tabs open, persistence can only be enabled in one tab at a time
       console.warn('⚠️ Multiple tabs open - persistence enabled in first tab only');
     } else if (err.code === 'unimplemented') {
-      // Browser doesn't support persistence
       console.warn('⚠️ Browser doesn\'t support offline persistence');
     } else {
       console.error('❌ Failed to enable persistence:', err);
     }
+    return false;
   });
 
 // Export everything other files will need
