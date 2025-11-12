@@ -17,7 +17,7 @@ import {
 } from './firebase-config.js';
 
 // Re-export app and db for firebase-auth.js and other files
-export { app, db };
+export { app, db,doc, getDoc  };
 
 // ============================================
 // UTILITY FUNCTIONS
