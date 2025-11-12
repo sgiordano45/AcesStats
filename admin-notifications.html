@@ -68,12 +68,37 @@
       color: #721c24;
       display: block;
     }
+    .info-box {
+      background: #e7f3ff;
+      border-left: 4px solid #2196F3;
+      padding: 1rem;
+      margin: 1rem 0;
+      border-radius: 4px;
+    }
+    .season-info {
+      background: #f8f9fa;
+      padding: 0.5rem 1rem;
+      border-radius: 4px;
+      margin: 1rem 0;
+      font-size: 0.9rem;
+    }
   </style>
 </head>
 <body>
   <div class="test-panel">
     <h1>🔔 FCM Notification Testing</h1>
     <p>Send test notifications to specific users or tokens</p>
+
+    <div class="info-box">
+      <strong>ℹ️ Instructions:</strong><br>
+      1. Select a user with FCM tokens<br>
+      2. Choose notification type and fill details<br>
+      3. Click send to test notification<br>
+      <br>
+      <strong>Note:</strong> This requires a backend Cloud Function to actually send. For now, it will show you the payload to send via Firebase Console.
+    </div>
+
+    <div class="season-info" id="seasonInfo">Loading season info...</div>
 
     <!-- User/Token Selection -->
     <div class="form-group">
@@ -176,13 +201,16 @@
   </div>
 
   <script type="module">
-   // Import auth from firebase-auth.js (where it's created and exported)
-import { auth } from './firebase-auth.js';
-
-// Import db, messaging, VAPID_KEY from firebase-config.js
-import { db, messaging, VAPID_KEY } from './firebase-config.js';
+    // Import auth from firebase-auth.js
+    import { auth } from './firebase-auth.js';
+    
+    // Import db and getCurrentSeason from firebase-data.js
+    import { db, getCurrentSeason } from './firebase-data.js';
+    
     import { onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
-    import { collection, getDocs, query, where, orderBy } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+    import { collection, getDocs, query, where } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+
+    let currentSeason = null;
 
     // Check admin access
     onAuthStateChanged(auth, async (user) => {
@@ -191,10 +219,27 @@ import { db, messaging, VAPID_KEY } from './firebase-config.js';
         return;
       }
 
+      console.log('✅ User authenticated:', user.email);
+
+      // Get current season first
+      currentSeason = await getCurrentSeason();
+      if (!currentSeason) {
+        document.getElementById('seasonInfo').innerHTML = '⚠️ No active season found';
+        showResult('gameResult', 'No active season found. Set isActive=true on a season document.', 'error');
+        return;
+      }
+
+      document.getElementById('seasonInfo').innerHTML = `
+        📅 Active Season: <strong>${currentSeason.name || currentSeason.id}</strong> 
+        (Season ID: ${currentSeason.id})
+      `;
+
+      console.log('Current season:', currentSeason);
+
       // Load users with FCM tokens
       await loadUsersWithTokens();
       
-      // Load games for selection
+      // Load games for current season
       await loadGames();
       
       // Load teams for selection
@@ -202,66 +247,130 @@ import { db, messaging, VAPID_KEY } from './firebase-config.js';
     });
 
     async function loadUsersWithTokens() {
-      const usersQuery = query(collection(db, 'users'), where('fcmTokens', '!=', []));
-      const snapshot = await getDocs(usersQuery);
-      
-      const select = document.getElementById('targetUser');
-      snapshot.forEach(doc => {
-        const data = doc.data();
-        const option = document.createElement('option');
-        option.value = doc.id;
-        option.textContent = `${data.displayName || data.email} (${data.fcmTokens?.length || 0} tokens)`;
-        option.dataset.tokens = JSON.stringify(data.fcmTokens || []);
-        select.appendChild(option);
-      });
+      try {
+        console.log('Loading users with FCM tokens...');
+        const usersQuery = query(collection(db, 'users'), where('fcmTokens', '!=', []));
+        const snapshot = await getDocs(usersQuery);
+        
+        const select = document.getElementById('targetUser');
+        let userCount = 0;
+        
+        snapshot.forEach(doc => {
+          const data = doc.data();
+          const option = document.createElement('option');
+          option.value = doc.id;
+          option.textContent = `${data.displayName || data.email} (${data.fcmTokens?.length || 0} tokens)`;
+          option.dataset.tokens = JSON.stringify(data.fcmTokens || []);
+          select.appendChild(option);
+          userCount++;
+        });
+        
+        console.log(`✅ Loaded ${userCount} users with FCM tokens`);
+      } catch (error) {
+        console.error('❌ Error loading users:', error);
+        showResult('gameResult', 'Error loading users: ' + error.message, 'error');
+      }
     }
 
     async function loadGames() {
-      const gamesQuery = query(
-        collection(db, 'games'),
-        where('season', '==', '2025'),
-        orderBy('date', 'desc')
-      );
-      const snapshot = await getDocs(gamesQuery);
-      
-      const gameSelect = document.getElementById('gameSelect');
-      const scoreGameSelect = document.getElementById('scoreGameSelect');
-      
-      snapshot.forEach(doc => {
-        const game = doc.data();
-        const option1 = document.createElement('option');
-        const option2 = document.createElement('option');
-        
-        const gameText = `${game.homeTeam} vs ${game.awayTeam} - ${new Date(game.date).toLocaleDateString()}`;
-        
-        option1.value = doc.id;
-        option1.textContent = gameText;
-        option1.dataset.game = JSON.stringify(game);
-        
-        option2.value = doc.id;
-        option2.textContent = gameText;
-        option2.dataset.game = JSON.stringify(game);
-        
-        gameSelect.appendChild(option1);
-        if (game.status === 'completed') {
-          scoreGameSelect.appendChild(option2);
+      try {
+        if (!currentSeason) {
+          console.error('No current season');
+          return;
         }
-      });
+
+        console.log(`Loading games from seasons/${currentSeason.id}/games...`);
+        
+        // Load games from current season's subcollection
+        const gamesPath = `seasons/${currentSeason.id}/games`;
+        const snapshot = await getDocs(collection(db, gamesPath));
+        
+        console.log(`Found ${snapshot.size} games in ${gamesPath}`);
+        
+        if (snapshot.empty) {
+          showResult('gameResult', `No games found in ${gamesPath}`, 'error');
+          return;
+        }
+
+        // Convert to array and sort
+        const games = [];
+        snapshot.forEach(doc => {
+          games.push({
+            id: doc.id,
+            ...doc.data()
+          });
+        });
+        
+        // Sort by date descending
+        games.sort((a, b) => {
+          const dateA = a.date?.seconds || (new Date(a.date).getTime() / 1000) || 0;
+          const dateB = b.date?.seconds || (new Date(b.date).getTime() / 1000) || 0;
+          return dateB - dateA;
+        });
+        
+        const gameSelect = document.getElementById('gameSelect');
+        const scoreGameSelect = document.getElementById('scoreGameSelect');
+        
+        games.forEach(game => {
+          const option1 = document.createElement('option');
+          const option2 = document.createElement('option');
+          
+          // Format date
+          let dateStr;
+          if (game.date?.seconds) {
+            dateStr = new Date(game.date.seconds * 1000).toLocaleDateString();
+          } else if (game.date) {
+            dateStr = new Date(game.date).toLocaleDateString();
+          } else {
+            dateStr = 'No date';
+          }
+          
+          const gameText = `${game.homeTeam} vs ${game.awayTeam} - ${dateStr}`;
+          
+          option1.value = game.id;
+          option1.textContent = gameText;
+          option1.dataset.game = JSON.stringify(game);
+          
+          option2.value = game.id;
+          option2.textContent = gameText;
+          option2.dataset.game = JSON.stringify(game);
+          
+          gameSelect.appendChild(option1);
+          if (game.status === 'completed') {
+            scoreGameSelect.appendChild(option2);
+          }
+        });
+        
+        console.log(`✅ Loaded ${games.length} games for current season`);
+      } catch (error) {
+        console.error('❌ Error loading games:', error);
+        showResult('gameResult', 'Error loading games: ' + error.message, 'error');
+      }
     }
 
     async function loadTeams() {
-      const teamsQuery = query(collection(db, 'teams'));
-      const snapshot = await getDocs(teamsQuery);
-      
-      const select = document.getElementById('teamSelect');
-      snapshot.forEach(doc => {
-        const team = doc.data();
-        const option = document.createElement('option');
-        option.value = doc.id;
-        option.textContent = team.name;
-        option.dataset.team = JSON.stringify(team);
-        select.appendChild(option);
-      });
+      try {
+        console.log('Loading teams...');
+        const snapshot = await getDocs(collection(db, 'teams'));
+        
+        const select = document.getElementById('teamSelect');
+        let teamCount = 0;
+        
+        snapshot.forEach(doc => {
+          const team = doc.data();
+          const option = document.createElement('option');
+          option.value = doc.id;
+          option.textContent = team.name;
+          option.dataset.team = JSON.stringify(team);
+          select.appendChild(option);
+          teamCount++;
+        });
+        
+        console.log(`✅ Loaded ${teamCount} teams`);
+      } catch (error) {
+        console.error('❌ Error loading teams:', error);
+        showResult('rosterResult', 'Error loading teams: ' + error.message, 'error');
+      }
     }
 
     function getTargetToken() {
@@ -272,13 +381,13 @@ import { db, messaging, VAPID_KEY } from './firebase-config.js';
       const selectedOption = userSelect.options[userSelect.selectedIndex];
       if (selectedOption && selectedOption.dataset.tokens) {
         const tokens = JSON.parse(selectedOption.dataset.tokens);
-        return tokens[0]; // Return first token
+        return tokens[0];
       }
       
       return null;
     }
 
-    // Make functions globally available
+    // Global functions for buttons
     window.sendGameReminder = async function() {
       const token = getTargetToken();
       if (!token) {
@@ -295,17 +404,21 @@ import { db, messaging, VAPID_KEY } from './firebase-config.js';
 
       const game = JSON.parse(selectedOption.dataset.game);
       
-      await sendNotification(token, {
+      const payload = {
         notification: {
           title: '🏟️ Game Starting Soon',
           body: `${game.homeTeam} vs ${game.awayTeam} starts in 1 hour!`
         },
         data: {
           type: 'game_reminder',
+          seasonId: currentSeason.id,
           gameId: selectedOption.value,
-          clickAction: `/game-tracker.html?id=${selectedOption.value}`
-        }
-      }, 'gameResult');
+          clickAction: `/game-tracker.html?season=${currentSeason.id}&id=${selectedOption.value}`
+        },
+        token: token
+      };
+
+      showPayloadInstructions('gameResult', payload);
     };
 
     window.sendScoreUpdate = async function() {
@@ -324,17 +437,21 @@ import { db, messaging, VAPID_KEY } from './firebase-config.js';
 
       const game = JSON.parse(selectedOption.dataset.game);
       
-      await sendNotification(token, {
+      const payload = {
         notification: {
           title: '📊 Final Score',
-          body: `${game.homeTeam} ${game.homeScore} - ${game.awayScore} ${game.awayTeam}`
+          body: `${game.homeTeam} ${game.homeScore || 0} - ${game.awayScore || 0} ${game.awayTeam}`
         },
         data: {
           type: 'score_update',
+          seasonId: currentSeason.id,
           gameId: selectedOption.value,
           clickAction: `/current-season.html`
-        }
-      }, 'scoreResult');
+        },
+        token: token
+      };
+
+      showPayloadInstructions('scoreResult', payload);
     };
 
     window.sendRosterChange = async function() {
@@ -361,7 +478,7 @@ import { db, messaging, VAPID_KEY } from './firebase-config.js';
         player_removed: `Player removed from ${team.name}`
       };
       
-      await sendNotification(token, {
+      const payload = {
         notification: {
           title: '👥 Roster Update',
           body: changeMessages[changeType]
@@ -371,8 +488,11 @@ import { db, messaging, VAPID_KEY } from './firebase-config.js';
           teamId: selectedTeam.value,
           changeType: changeType,
           clickAction: `/team.html?id=${selectedTeam.value}`
-        }
-      }, 'rosterResult');
+        },
+        token: token
+      };
+
+      showPayloadInstructions('rosterResult', payload);
     };
 
     window.sendAnnouncement = async function() {
@@ -391,7 +511,7 @@ import { db, messaging, VAPID_KEY } from './firebase-config.js';
         return;
       }
       
-      await sendNotification(token, {
+      const payload = {
         notification: {
           title: `📢 ${title}`,
           body: body
@@ -399,8 +519,11 @@ import { db, messaging, VAPID_KEY } from './firebase-config.js';
         data: {
           type: 'announcement',
           clickAction: link
-        }
-      }, 'announcementResult');
+        },
+        token: token
+      };
+
+      showPayloadInstructions('announcementResult', payload);
     };
 
     window.sendCustom = async function() {
@@ -430,40 +553,43 @@ import { db, messaging, VAPID_KEY } from './firebase-config.js';
         }
       }
       
-      await sendNotification(token, {
+      const payload = {
         notification: { title, body },
-        data
-      }, 'customResult');
+        data,
+        token: token
+      };
+
+      showPayloadInstructions('customResult', payload);
     };
 
-    async function sendNotification(token, message, resultId) {
-      showResult(resultId, 'Sending notification...', 'success');
-      
-      try {
-        // Call your backend or Cloud Function to send notification
-        const response = await fetch('YOUR_CLOUD_FUNCTION_URL', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            token: token,
-            message: message
-          })
-        });
+    function showPayloadInstructions(resultId, payload) {
+      const instructions = `
+✅ Notification Payload Ready!
 
-        if (response.ok) {
-          showResult(resultId, '✅ Notification sent successfully!', 'success');
-        } else {
-          throw new Error('Failed to send notification');
-        }
-      } catch (error) {
-        showResult(resultId, `❌ Error: ${error.message}`, 'error');
-      }
+To send this notification:
+
+1. Go to Firebase Console → Cloud Messaging
+2. Click "Send your first message"
+3. Use these values:
+   Title: ${payload.notification.title}
+   Body: ${payload.notification.body}
+4. Click "Next" → "Select a specific device"
+5. Paste this token: ${payload.token}
+6. Click "Review" → "Publish"
+
+Full payload:
+${JSON.stringify(payload, null, 2)}
+
+Or implement Cloud Functions to send automatically.
+      `;
+      showResult(resultId, instructions, 'success');
     }
 
     function showResult(id, message, type) {
       const result = document.getElementById(id);
       result.textContent = message;
       result.className = `result ${type}`;
+      result.style.whiteSpace = 'pre-wrap';
     }
   </script>
 </body>
