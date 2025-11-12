@@ -1,6 +1,6 @@
 // service-worker.js - Unified Service Worker
 // Handles both offline functionality AND Firebase Cloud Messaging
-// Version 1.0.3 - Fixed endless install loop
+// Version 1.1.0 - Fixed endless install loop
 
 const CACHE_VERSION = 'aces-v1.0.3';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
@@ -75,19 +75,47 @@ const messaging = firebase.messaging();
 // Handle background messages (when app is not open)
 messaging.onBackgroundMessage((payload) => {
   console.log('[SW] Background message received:', payload);
+  console.log('[SW] Payload structure:', JSON.stringify(payload, null, 2));
   
-  const notificationTitle = payload.notification.title;
-  const notificationOptions = {
-    body: payload.notification.body,
-    icon: '/icon-192.png',
-    badge: '/badge-72.png',
-    tag: payload.data?.type || 'default',
-    data: payload.data,
-    requireInteraction: payload.data?.priority === 'high',
-    actions: payload.data?.actions ? JSON.parse(payload.data.actions) : []
-  };
-
-  return self.registration.showNotification(notificationTitle, notificationOptions);
+  try {
+    // Safely extract notification data with fallbacks
+    const notificationTitle = payload.notification?.title || payload.data?.title || 'Mountainside Aces';
+    const notificationBody = payload.notification?.body || payload.data?.body || 'New notification';
+    
+    console.log('[SW] Creating notification with title:', notificationTitle);
+    console.log('[SW] Creating notification with body:', notificationBody);
+    
+    const notificationOptions = {
+      body: notificationBody,
+      icon: '/icon-192.png', // Your app icon (optional, won't fail if missing)
+      badge: '/badge-72.png', // Small icon (optional)
+      tag: payload.data?.type || 'default', // Prevent duplicate notifications
+      data: payload.data || {}, // Custom data for click handling
+      requireInteraction: false, // Don't require user interaction
+      vibrate: [200, 100, 200], // Vibration pattern
+      timestamp: Date.now()
+    };
+    
+    console.log('[SW] Showing notification with options:', notificationOptions);
+    
+    return self.registration.showNotification(notificationTitle, notificationOptions)
+      .then(() => {
+        console.log('[SW] ✅ Notification displayed successfully');
+      })
+      .catch(error => {
+        console.error('[SW] ❌ Failed to show notification:', error);
+        // Try a minimal notification as fallback
+        return self.registration.showNotification(notificationTitle, {
+          body: notificationBody
+        });
+      });
+  } catch (error) {
+    console.error('[SW] ❌ Error in onBackgroundMessage:', error);
+    // Last resort: show a basic notification
+    return self.registration.showNotification('Mountainside Aces', {
+      body: 'You have a new notification'
+    });
+  }
 });
 
 // ==============================================
