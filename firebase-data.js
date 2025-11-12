@@ -11,6 +11,7 @@ import {
   getDoc,
   query,
   where,
+  enableIndexedDbPersistence,
   orderBy,
   limit
 } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
@@ -28,6 +29,27 @@ const firebaseConfig = {
 // Initialize Firebase - ONE instance for everything
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
+
+// ✨ ENABLE OFFLINE PERSISTENCE ✨
+// This allows Firestore data to be cached locally and available offline
+enableIndexedDbPersistence(db)
+  .then(() => {
+    console.log('✅ Firebase offline persistence enabled');
+  })
+  .catch((err) => {
+    if (err.code === 'failed-precondition') {
+      // Multiple tabs open, persistence can only be enabled in one tab at a time
+      console.warn('⚠️ Multiple tabs open - persistence enabled in first tab only');
+    } else if (err.code === 'unimplemented') {
+      // Browser doesn't support offline persistence
+      console.warn('⚠️ Browser doesn\'t support offline persistence');
+    } else {
+      console.error('❌ Failed to enable persistence:', err);
+    }
+  });
+
+
+
 
 // Export app and db for firebase-auth.js AND all functions below
 export { app, db };
@@ -1086,19 +1108,22 @@ export async function getAllSeasons() {
  * @returns {Object} Active season object
  */
 export async function getCurrentSeason() {
-  const q = query(
-    collection(db, 'seasons'),
-    where('isActive', '==', true)
-  );
-  const seasonsSnapshot = await getDocs(q);
+  // Get ALL seasons (no where clause - works offline!)
+  const seasonsSnapshot = await getDocs(collection(db, 'seasons'));
   
   if (seasonsSnapshot.empty) {
     return null;
   }
   
-  const seasonDoc = seasonsSnapshot.docs[0];
+  // Filter in JavaScript (works offline!)
+  const activeSeason = seasonsSnapshot.docs.find(doc => doc.data().isActive === true);
+  
+  if (!activeSeason) {
+    return null;
+  }
+  
   return {
-    id: seasonDoc.id,
-    ...seasonDoc.data()
+    id: activeSeason.id,
+    ...activeSeason.data()
   };
 }
