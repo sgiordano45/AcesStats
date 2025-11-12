@@ -28,7 +28,7 @@ import { doc, setDoc, getDoc, updateDoc, serverTimestamp, collection, getDocs, q
 
 import { app, db } from './firebase-data.js';
 
-import { requestNotificationPermission, registerMessagingServiceWorker } from './firebase-messaging.js';
+import { requestNotificationPermission } from './firebase-messaging.js';
 
 const auth = getAuth(app);
 const googleProvider = new GoogleAuthProvider();
