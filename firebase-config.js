@@ -62,6 +62,8 @@ export {
   app,
   db,
   storage,
+    messaging,    // ADD THIS
+  VAPID_KEY,    // ADD THIS
   collection, 
   doc, 
   getDocs, 

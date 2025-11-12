@@ -1,12 +1,10 @@
 // firebase-messaging.js
 // Functions for managing push notifications
 
-import { getMessaging, getToken, onMessage } from "firebase/messaging";
-import { doc, updateDoc, arrayUnion } from "firebase/firestore";
-
-const messaging = getMessaging();
-const VAPID_KEY = "BK39jgi3AT0p9jdaUBIPHz3vBkBg4YRvY-yMNuGMIJEhGbXTomDyKo77ug0hPYa10YBjJBM_GRBErlYp09cDSRw";
-
+import { messaging, VAPID_KEY } from './firebase-config.js';
+import { db } from './firebase-config.js';
+import { getToken, onMessage } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-messaging.js';
+import { doc, updateDoc, arrayUnion, arrayRemove } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
 /**
  * Register the Firebase Messaging service worker
  */

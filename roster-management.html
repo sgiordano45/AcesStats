@@ -175,8 +175,115 @@ import {
   getUpcomingTeamGames
 } from './firebase-roster.js';
 
+import { onForegroundMessage } from './firebase-messaging.js';
+
+
 let rsvpListeners = [];
 let appInitialized = false;
+
+// ADD THIS: Listen for foreground notifications
+onForegroundMessage((payload) => {
+  console.log('📬 Notification received:', payload);
+  
+  // Show visual notification in the page
+  showInPageNotification(payload);
+  
+  // Reload data if it's relevant to this page
+  if (payload.data.type === 'lineup_posted') {
+    // Trigger a refresh of the lineup data
+    console.log('🔄 Lineup updated, refreshing data...');
+    if (window.location.reload) {
+      setTimeout(() => {
+        window.location.reload();
+      }, 2000); // Give user time to see the notification
+    }
+  } else if (payload.data.type === 'rsvp_update') {
+    console.log('🔄 RSVP updated');
+    // Could trigger a specific RSVP refresh here
+  }
+});
+
+// Helper function to show in-page notification
+function showInPageNotification(payload) {
+  // Check if notification already exists
+  const existingNotif = document.getElementById('inPageNotification');
+  if (existingNotif) {
+    existingNotif.remove();
+  }
+  
+  const notification = document.createElement('div');
+  notification.id = 'inPageNotification';
+  notification.style.cssText = `
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: white;
+    padding: 16px 20px;
+    border-radius: 12px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+    z-index: 10000;
+    max-width: 350px;
+    animation: slideInRight 0.3s ease-out;
+    border-left: 4px solid #2d5016;
+  `;
+  
+  notification.innerHTML = `
+    <div style="display: flex; align-items: start; gap: 12px;">
+      <div style="font-size: 24px;">🔔</div>
+      <div style="flex: 1;">
+        <div style="font-weight: 600; color: #2d3748; margin-bottom: 4px;">
+          ${payload.notification.title}
+        </div>
+        <div style="color: #718096; font-size: 14px;">
+          ${payload.notification.body}
+        </div>
+      </div>
+      <button onclick="this.parentElement.parentElement.remove()" 
+              style="background: none; border: none; color: #718096; cursor: pointer; font-size: 20px; padding: 0; line-height: 1;">
+        ×
+      </button>
+    </div>
+  `;
+  
+  document.body.appendChild(notification);
+  
+  // Auto-remove after 5 seconds
+  setTimeout(() => {
+    if (notification.parentElement) {
+      notification.style.animation = 'slideOutRight 0.3s ease-out';
+      setTimeout(() => notification.remove(), 300);
+    }
+  }, 5000);
+}
+
+// Add animation styles if not present
+if (!document.getElementById('notification-animations')) {
+  const styles = document.createElement('style');
+  styles.id = 'notification-animations';
+  styles.textContent = `
+    @keyframes slideInRight {
+      from {
+        transform: translateX(400px);
+        opacity: 0;
+      }
+      to {
+        transform: translateX(0);
+        opacity: 1;
+      }
+    }
+    @keyframes slideOutRight {
+      from {
+        transform: translateX(0);
+        opacity: 1;
+      }
+      to {
+        transform: translateX(400px);
+        opacity: 0;
+      }
+    }
+  `;
+  document.head.appendChild(styles);
+}
 
 async function initializeApp(user) {
   if (!user) {
