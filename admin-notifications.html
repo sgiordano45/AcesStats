@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Notification Testing - Aces Admin</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    .test-panel {
+      max-width: 800px;
+      margin: 2rem auto;
+      padding: 2rem;
+      background: white;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    .notification-type {
+      margin: 1.5rem 0;
+      padding: 1.5rem;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+    }
+    .notification-type h3 {
+      margin-top: 0;
+      color: #2c5f2d;
+    }
+    .form-group {
+      margin: 1rem 0;
+    }
+    .form-group label {
+      display: block;
+      margin-bottom: 0.5rem;
+      font-weight: bold;
+    }
+    .form-group input,
+    .form-group textarea,
+    .form-group select {
+      width: 100%;
+      padding: 0.5rem;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+    }
+    .test-btn {
+      background: #2c5f2d;
+      color: white;
+      padding: 0.75rem 1.5rem;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 1rem;
+    }
+    .test-btn:hover {
+      background: #1e4520;
+    }
+    .result {
+      margin-top: 1rem;
+      padding: 1rem;
+      border-radius: 4px;
+      display: none;
+    }
+    .result.success {
+      background: #d4edda;
+      color: #155724;
+      display: block;
+    }
+    .result.error {
+      background: #f8d7da;
+      color: #721c24;
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <div class="test-panel">
+    <h1>🔔 FCM Notification Testing</h1>
+    <p>Send test notifications to specific users or tokens</p>
+
+    <!-- User/Token Selection -->
+    <div class="form-group">
+      <label>Target User/Token:</label>
+      <select id="targetUser">
+        <option value="">-- Select User or Enter Token --</option>
+      </select>
+      <input type="text" id="manualToken" placeholder="Or paste FCM token here..." style="margin-top: 0.5rem;">
+    </div>
+
+    <!-- Game Reminder -->
+    <div class="notification-type">
+      <h3>🏟️ Game Reminder</h3>
+      <div class="form-group">
+        <label>Game:</label>
+        <select id="gameSelect">
+          <option value="">-- Select Game --</option>
+        </select>
+      </div>
+      <button class="test-btn" onclick="sendGameReminder()">Send Game Reminder</button>
+      <div class="result" id="gameResult"></div>
+    </div>
+
+    <!-- Score Update -->
+    <div class="notification-type">
+      <h3>📊 Score Update</h3>
+      <div class="form-group">
+        <label>Game:</label>
+        <select id="scoreGameSelect">
+          <option value="">-- Select Completed Game --</option>
+        </select>
+      </div>
+      <button class="test-btn" onclick="sendScoreUpdate()">Send Score Update</button>
+      <div class="result" id="scoreResult"></div>
+    </div>
+
+    <!-- Roster Change -->
+    <div class="notification-type">
+      <h3>👥 Roster Change</h3>
+      <div class="form-group">
+        <label>Team:</label>
+        <select id="teamSelect">
+          <option value="">-- Select Team --</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Change Type:</label>
+        <select id="changeType">
+          <option value="lineup">Lineup Updated</option>
+          <option value="batting_order">Batting Order Changed</option>
+          <option value="player_added">Player Added</option>
+          <option value="player_removed">Player Removed</option>
+        </select>
+      </div>
+      <button class="test-btn" onclick="sendRosterChange()">Send Roster Change</button>
+      <div class="result" id="rosterResult"></div>
+    </div>
+
+    <!-- League Announcement -->
+    <div class="notification-type">
+      <h3>📢 League Announcement</h3>
+      <div class="form-group">
+        <label>Title:</label>
+        <input type="text" id="announcementTitle" placeholder="e.g., Schedule Change">
+      </div>
+      <div class="form-group">
+        <label>Message:</label>
+        <textarea id="announcementBody" rows="3" placeholder="e.g., Saturday's games have been postponed..."></textarea>
+      </div>
+      <div class="form-group">
+        <label>Link (optional):</label>
+        <input type="text" id="announcementLink" placeholder="/current-season.html">
+      </div>
+      <button class="test-btn" onclick="sendAnnouncement()">Send Announcement</button>
+      <div class="result" id="announcementResult"></div>
+    </div>
+
+    <!-- Custom Notification -->
+    <div class="notification-type">
+      <h3>🔧 Custom Notification</h3>
+      <div class="form-group">
+        <label>Title:</label>
+        <input type="text" id="customTitle" placeholder="Notification title">
+      </div>
+      <div class="form-group">
+        <label>Body:</label>
+        <textarea id="customBody" rows="3" placeholder="Notification message"></textarea>
+      </div>
+      <div class="form-group">
+        <label>Click Action URL:</label>
+        <input type="text" id="customLink" placeholder="/profile.html">
+      </div>
+      <div class="form-group">
+        <label>Data (JSON):</label>
+        <textarea id="customData" rows="3" placeholder='{"type": "custom", "key": "value"}'></textarea>
+      </div>
+      <button class="test-btn" onclick="sendCustom()">Send Custom Notification</button>
+      <div class="result" id="customResult"></div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { auth, db } from './firebase-config.js';
+    import { onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
+    import { collection, getDocs, query, where, orderBy } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+
+    // Check admin access
+    onAuthStateChanged(auth, async (user) => {
+      if (!user) {
+        window.location.href = '/signin.html';
+        return;
+      }
+
+      // Load users with FCM tokens
+      await loadUsersWithTokens();
+      
+      // Load games for selection
+      await loadGames();
+      
+      // Load teams for selection
+      await loadTeams();
+    });
+
+    async function loadUsersWithTokens() {
+      const usersQuery = query(collection(db, 'users'), where('fcmTokens', '!=', []));
+      const snapshot = await getDocs(usersQuery);
+      
+      const select = document.getElementById('targetUser');
+      snapshot.forEach(doc => {
+        const data = doc.data();
+        const option = document.createElement('option');
+        option.value = doc.id;
+        option.textContent = `${data.displayName || data.email} (${data.fcmTokens?.length || 0} tokens)`;
+        option.dataset.tokens = JSON.stringify(data.fcmTokens || []);
+        select.appendChild(option);
+      });
+    }
+
+    async function loadGames() {
+      const gamesQuery = query(
+        collection(db, 'games'),
+        where('season', '==', '2025'),
+        orderBy('date', 'desc')
+      );
+      const snapshot = await getDocs(gamesQuery);
+      
+      const gameSelect = document.getElementById('gameSelect');
+      const scoreGameSelect = document.getElementById('scoreGameSelect');
+      
+      snapshot.forEach(doc => {
+        const game = doc.data();
+        const option1 = document.createElement('option');
+        const option2 = document.createElement('option');
+        
+        const gameText = `${game.homeTeam} vs ${game.awayTeam} - ${new Date(game.date).toLocaleDateString()}`;
+        
+        option1.value = doc.id;
+        option1.textContent = gameText;
+        option1.dataset.game = JSON.stringify(game);
+        
+        option2.value = doc.id;
+        option2.textContent = gameText;
+        option2.dataset.game = JSON.stringify(game);
+        
+        gameSelect.appendChild(option1);
+        if (game.status === 'completed') {
+          scoreGameSelect.appendChild(option2);
+        }
+      });
+    }
+
+    async function loadTeams() {
+      const teamsQuery = query(collection(db, 'teams'));
+      const snapshot = await getDocs(teamsQuery);
+      
+      const select = document.getElementById('teamSelect');
+      snapshot.forEach(doc => {
+        const team = doc.data();
+        const option = document.createElement('option');
+        option.value = doc.id;
+        option.textContent = team.name;
+        option.dataset.team = JSON.stringify(team);
+        select.appendChild(option);
+      });
+    }
+
+    function getTargetToken() {
+      const manualToken = document.getElementById('manualToken').value.trim();
+      if (manualToken) return manualToken;
+      
+      const userSelect = document.getElementById('targetUser');
+      const selectedOption = userSelect.options[userSelect.selectedIndex];
+      if (selectedOption && selectedOption.dataset.tokens) {
+        const tokens = JSON.parse(selectedOption.dataset.tokens);
+        return tokens[0]; // Return first token
+      }
+      
+      return null;
+    }
+
+    // Make functions globally available
+    window.sendGameReminder = async function() {
+      const token = getTargetToken();
+      if (!token) {
+        showResult('gameResult', 'Please select a user or enter a token', 'error');
+        return;
+      }
+
+      const gameSelect = document.getElementById('gameSelect');
+      const selectedOption = gameSelect.options[gameSelect.selectedIndex];
+      if (!selectedOption || !selectedOption.dataset.game) {
+        showResult('gameResult', 'Please select a game', 'error');
+        return;
+      }
+
+      const game = JSON.parse(selectedOption.dataset.game);
+      
+      await sendNotification(token, {
+        notification: {
+          title: '🏟️ Game Starting Soon',
+          body: `${game.homeTeam} vs ${game.awayTeam} starts in 1 hour!`
+        },
+        data: {
+          type: 'game_reminder',
+          gameId: selectedOption.value,
+          clickAction: `/game-tracker.html?id=${selectedOption.value}`
+        }
+      }, 'gameResult');
+    };
+
+    window.sendScoreUpdate = async function() {
+      const token = getTargetToken();
+      if (!token) {
+        showResult('scoreResult', 'Please select a user or enter a token', 'error');
+        return;
+      }
+
+      const gameSelect = document.getElementById('scoreGameSelect');
+      const selectedOption = gameSelect.options[gameSelect.selectedIndex];
+      if (!selectedOption || !selectedOption.dataset.game) {
+        showResult('scoreResult', 'Please select a game', 'error');
+        return;
+      }
+
+      const game = JSON.parse(selectedOption.dataset.game);
+      
+      await sendNotification(token, {
+        notification: {
+          title: '📊 Final Score',
+          body: `${game.homeTeam} ${game.homeScore} - ${game.awayScore} ${game.awayTeam}`
+        },
+        data: {
+          type: 'score_update',
+          gameId: selectedOption.value,
+          clickAction: `/current-season.html`
+        }
+      }, 'scoreResult');
+    };
+
+    window.sendRosterChange = async function() {
+      const token = getTargetToken();
+      if (!token) {
+        showResult('rosterResult', 'Please select a user or enter a token', 'error');
+        return;
+      }
+
+      const teamSelect = document.getElementById('teamSelect');
+      const selectedTeam = teamSelect.options[teamSelect.selectedIndex];
+      if (!selectedTeam || !selectedTeam.dataset.team) {
+        showResult('rosterResult', 'Please select a team', 'error');
+        return;
+      }
+
+      const team = JSON.parse(selectedTeam.dataset.team);
+      const changeType = document.getElementById('changeType').value;
+      
+      const changeMessages = {
+        lineup: `${team.name} lineup has been updated`,
+        batting_order: `${team.name} batting order has changed`,
+        player_added: `New player added to ${team.name}`,
+        player_removed: `Player removed from ${team.name}`
+      };
+      
+      await sendNotification(token, {
+        notification: {
+          title: '👥 Roster Update',
+          body: changeMessages[changeType]
+        },
+        data: {
+          type: 'roster_change',
+          teamId: selectedTeam.value,
+          changeType: changeType,
+          clickAction: `/team.html?id=${selectedTeam.value}`
+        }
+      }, 'rosterResult');
+    };
+
+    window.sendAnnouncement = async function() {
+      const token = getTargetToken();
+      if (!token) {
+        showResult('announcementResult', 'Please select a user or enter a token', 'error');
+        return;
+      }
+
+      const title = document.getElementById('announcementTitle').value;
+      const body = document.getElementById('announcementBody').value;
+      const link = document.getElementById('announcementLink').value || '/';
+      
+      if (!title || !body) {
+        showResult('announcementResult', 'Please enter title and message', 'error');
+        return;
+      }
+      
+      await sendNotification(token, {
+        notification: {
+          title: `📢 ${title}`,
+          body: body
+        },
+        data: {
+          type: 'announcement',
+          clickAction: link
+        }
+      }, 'announcementResult');
+    };
+
+    window.sendCustom = async function() {
+      const token = getTargetToken();
+      if (!token) {
+        showResult('customResult', 'Please select a user or enter a token', 'error');
+        return;
+      }
+
+      const title = document.getElementById('customTitle').value;
+      const body = document.getElementById('customBody').value;
+      const link = document.getElementById('customLink').value || '/';
+      const dataStr = document.getElementById('customData').value;
+      
+      if (!title || !body) {
+        showResult('customResult', 'Please enter title and body', 'error');
+        return;
+      }
+
+      let data = { clickAction: link };
+      if (dataStr) {
+        try {
+          data = { ...data, ...JSON.parse(dataStr) };
+        } catch (e) {
+          showResult('customResult', 'Invalid JSON in data field', 'error');
+          return;
+        }
+      }
+      
+      await sendNotification(token, {
+        notification: { title, body },
+        data
+      }, 'customResult');
+    };
+
+    async function sendNotification(token, message, resultId) {
+      showResult(resultId, 'Sending notification...', 'success');
+      
+      try {
+        // Call your backend or Cloud Function to send notification
+        const response = await fetch('YOUR_CLOUD_FUNCTION_URL', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            token: token,
+            message: message
+          })
+        });
+
+        if (response.ok) {
+          showResult(resultId, '✅ Notification sent successfully!', 'success');
+        } else {
+          throw new Error('Failed to send notification');
+        }
+      } catch (error) {
+        showResult(resultId, `❌ Error: ${error.message}`, 'error');
+      }
+    }
+
+    function showResult(id, message, type) {
+      const result = document.getElementById(id);
+      result.textContent = message;
+      result.className = `result ${type}`;
+    }
+  </script>
+</body>
+</html>
