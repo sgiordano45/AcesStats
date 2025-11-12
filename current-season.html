@@ -9,6 +9,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="stylesheet" href="mobile-enhancements.css">
 <link rel="stylesheet" href="nav-styles.css">
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-messaging.js"></script>
 <style>
   :root {
     --primary-color: #2d5016;
@@ -697,9 +698,45 @@
   .section:nth-child(4) { animation-delay: 0.4s; }
   .section:nth-child(5) { animation-delay: 0.5s; }
   .section:nth-child(6) { animation-delay: 0.6s; }
+  
+/* Connection Status Indicator */
+.connection-status {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  background: #ffc107;
+  color: #856404;
+  padding: 10px 16px;
+  border-radius: 25px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  z-index: 9999;
+  font-size: 0.85rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.3s ease;
+}
+
+.connection-status.hidden {
+  display: none;
+}
+
+.connection-status.online {
+  background: #28a745;
+  color: white;
+}
+
+.connection-status .status-icon {
+  font-size: 1rem;
+}
 </style>
 </head>
 <body>
+<div id="connectionStatus" class="connection-status hidden">
+  <span class="status-icon">📡</span>
+  <span class="status-text">You're offline</span>
+</div>
   <!-- Loading Spinner -->
   <div class="loading-overlay" id="loadingOverlay">
     <div class="softball-spinner"></div>
@@ -1632,6 +1669,37 @@
       }
 
       document.addEventListener('DOMContentLoaded', loadData);
+	  
+	  
+function updateConnectionStatus() {
+  const status = document.getElementById('connectionStatus');
+  if (!status) return;
+  
+  const icon = status.querySelector('.status-icon');
+  const text = status.querySelector('.status-text');
+  
+  if (navigator.onLine) {
+    // Show "Back online" message
+    status.classList.remove('hidden');  // SHOW IT FIRST
+    status.classList.add('online');
+    icon.textContent = '✅';
+    text.textContent = 'Back online';
+    
+    // Hide after 3 seconds
+    setTimeout(() => {
+      status.classList.add('hidden');
+    }, 3000);
+  } else {
+    // Show "You're offline" message
+    status.classList.remove('hidden', 'online');
+    icon.textContent = '📡';
+    text.textContent = "You're offline";
+  }
+}
+
+window.addEventListener('online', updateConnectionStatus);
+window.addEventListener('offline', updateConnectionStatus);
+if (!navigator.onLine) updateConnectionStatus();
     </script>
 	<script type="module">
   import { NavigationComponent } from './nav-component.js';

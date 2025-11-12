@@ -1,5 +1,5 @@
 // service-worker.js - Offline Functionality for Mountainside Aces
-// Version 1.0.1 - Better error handling for debugging
+// Version 1.0.2 - Reduced console noise from cache-first fallbacks
 
 const CACHE_VERSION = 'aces-v1.0.0';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
@@ -26,17 +26,21 @@ const STATIC_ASSETS = [
   `${BASE_PATH}/batting.html`,
   `${BASE_PATH}/signin.html`,
   `${BASE_PATH}/signup.html`,
+   `${BASE_PATH}/submit-scores.html`,
+	`${BASE_PATH}/submit-stats.html`,
+	`${BASE_PATH}/league-history.html`,
+	`${BASE_PATH}/offseason.html`,
+	`${BASE_PATH}/offseason-roster.html`,
+	`${BASE_PATH}/schedule-generator.html`,
   `${BASE_PATH}/profile.html`,
   `${BASE_PATH}/profile-fan.html`,
-  `${BASE_PATH}/schedule.html`,
-  `${BASE_PATH}/awards.html`,
+   `${BASE_PATH}/awards.html`,
   `${BASE_PATH}/league-rules.html`,
   `${BASE_PATH}/verify-email.html`,
   `${BASE_PATH}/reset-password.html`,
   `${BASE_PATH}/link-player.html`,
   `${BASE_PATH}/teams.html`,
   `${BASE_PATH}/players.html`,
-  `${BASE_PATH}/stats.html`,
   `${BASE_PATH}/offline.html`
 ];
 
@@ -158,12 +162,14 @@ self.addEventListener('fetch', (event) => {
 
 // Cache-first strategy: Try cache, fallback to network
 async function cacheFirst(request, cacheName) {
-  try {
-    const cachedResponse = await caches.match(request);
-    if (cachedResponse) {
-      return cachedResponse;
-    }
+  // First, check cache
+  const cachedResponse = await caches.match(request);
+  if (cachedResponse) {
+    return cachedResponse;
+  }
 
+  // Not in cache, try network
+  try {
     const networkResponse = await fetch(request);
     if (networkResponse.ok) {
       const cache = await caches.open(cacheName);
@@ -171,14 +177,14 @@ async function cacheFirst(request, cacheName) {
     }
     return networkResponse;
   } catch (error) {
-    console.error('[SW] Cache-first failed:', error);
-    
-    // Return cached response even if stale
-    const cachedResponse = await caches.match(request);
-    if (cachedResponse) {
-      return cachedResponse;
+    // Network failed, try cache one more time (in case it was added while we were fetching)
+    const fallbackCache = await caches.match(request);
+    if (fallbackCache) {
+      return fallbackCache;
     }
     
+    // Only log error if BOTH network and cache failed
+    console.error('[SW] Cache-first failed (no cache and no network):', request.url);
     throw error;
   }
 }

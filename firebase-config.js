@@ -32,6 +32,13 @@ const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const storage = getStorage(app);
 
+// ADD THIS: Initialize Firebase Cloud Messaging
+import { getMessaging, getToken, onMessage } from "firebase/messaging";
+const messaging = getMessaging(app);
+
+// VAPID key from Firebase Console
+const VAPID_KEY = "BK39jgi3AT0p9jdaUBIPHz3vBkBg4YRvY-yMNuGMIJEhGbXTomDyKo77ug0hPYa10YBjJBM_GRBErlYp09cDSRw";
+
 // ✨ ENABLE OFFLINE PERSISTENCE ✨
 // This allows Firestore data to be cached locally and available offline
 enableIndexedDbPersistence(db)
