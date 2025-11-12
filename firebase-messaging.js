@@ -80,11 +80,17 @@ async function getAndSaveToken(userId) {
   try {
     console.log('🔑 Getting FCM token for user:', userId);
     
-    // Wait for service worker to be ready
-    await navigator.serviceWorker.ready;
+    // CRITICAL: Wait for service worker and pass registration to getToken
+    // This tells Firebase to use our unified service-worker.js instead of
+    // trying to register its own firebase-messaging-sw.js
+    const registration = await navigator.serviceWorker.ready;
+    console.log('📦 Using service worker registration:', registration);
     
-    // Get FCM token
-    const currentToken = await getToken(messaging, { vapidKey: VAPID_KEY });
+    // Get FCM token - pass the serviceWorkerRegistration option
+    const currentToken = await getToken(messaging, { 
+      vapidKey: VAPID_KEY,
+      serviceWorkerRegistration: registration  // ← This is the critical part!
+    });
     
     if (currentToken) {
       console.log('✅ FCM Token obtained:', currentToken.substring(0, 20) + '...');
