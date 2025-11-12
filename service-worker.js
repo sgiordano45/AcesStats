@@ -26,7 +26,7 @@ const STATIC_ASSETS = [
   `${BASE_PATH}/batting.html`,
   `${BASE_PATH}/signin.html`,
   `${BASE_PATH}/signup.html`,
-   `${BASE_PATH}/submit-scores.html`,
+   `${BASE_PATH}/submit-score.html`,
 	`${BASE_PATH}/submit-stats.html`,
 	`${BASE_PATH}/league-history.html`,
 	`${BASE_PATH}/offseason.html`,
