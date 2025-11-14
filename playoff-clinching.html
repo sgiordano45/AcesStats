@@ -902,7 +902,7 @@
             losses: finalLosses,
             gamesPlayed: totalDecided + team.ties,
             winPct: totalDecided > 0 ? (finalWins / totalDecided) : 0,
-            gamesRemaining: otherGamesLeft
+            gamesRemaining: 0  // In simulation, all teams have finished their games
           };
         }
       });
@@ -1120,6 +1120,33 @@
     function generateCompletedTeamSeedPath(team, targetSeed, standings, pathType) {
       const teamName = team.name;
       const details = [];
+      
+      // CRITICAL CHECK: For completed teams, verify if the target seed is even mathematically possible
+      // Count how many teams currently have MORE wins than us
+      const teamsAheadByRecord = standings.filter(other => {
+        if (other.name === teamName) return false;
+        return other.wins > team.wins;
+      }).length;
+      
+      // Count how many teams could potentially get MORE wins than us
+      const teamsThatCouldPassUs = standings.filter(other => {
+        if (other.name === teamName) return false;
+        const otherGamesLeft = calculateRemainingGames(allGames, other.name);
+        const otherMaxWins = other.wins + otherGamesLeft;
+        return otherMaxWins > team.wins;
+      }).length;
+      
+      // If trying for a "best" seed that requires fewer teams ahead than currently exist
+      if (pathType === 'best' && targetSeed <= teamsAheadByRecord) {
+        // This seed is impossible - we're already behind too many teams by record
+        return null;
+      }
+      
+      // If trying for a "worst" seed but not enough teams could pass us
+      if (pathType === 'worst' && targetSeed > (teamsAheadByRecord + teamsThatCouldPassUs + 1)) {
+        // This seed is impossible - not enough teams could finish ahead
+        return null;
+      }
       
       // Find all teams that could affect this team's final position
       const relevantTeams = standings.filter(other => {
