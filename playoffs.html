@@ -513,9 +513,6 @@
             <button class="btn" id="editModeBtn" onclick="toggleEditMode()" style="display: none;">
                 <span id="editModeText">Enable Edit Mode</span>
             </button>
-            <button class="btn" id="createGamesBtn" onclick="createNextPlayoffGames()" style="display: none;">
-                📅 Create Next Playoff Games
-            </button>
         </div>
 
         <div id="bracketsContainer">
@@ -761,8 +758,17 @@
 
             const standings = preliminaryStandings.sort((a, b) => {
                 if (a.winPct !== b.winPct) return b.winPct - a.winPct;
-                const h2hComp = compareHeadToHead(a, b);
-                if (h2hComp !== 0) return h2hComp;
+                
+                // Check if there are 3+ teams tied at this win percentage
+                const teamsAtSameWinPct = preliminaryStandings.filter(t => t.winPct === a.winPct);
+                
+                // Only use H2H tiebreaker if exactly 2 teams are tied
+                if (teamsAtSameWinPct.length === 2) {
+                    const h2hComp = compareHeadToHead(a, b);
+                    if (h2hComp !== 0) return h2hComp;
+                }
+                
+                // For 3+ teams tied, or if H2H didn't resolve, use runs against
                 if (a.runsAgainst !== b.runsAgainst) return a.runsAgainst - b.runsAgainst;
                 return b.runDifferential - a.runDifferential;
             });
@@ -794,7 +800,6 @@
         function updateLockButton() {
             const lockBtn = document.getElementById('lockBracketBtn');
             const editBtn = document.getElementById('editModeBtn');
-            const createGamesBtn = document.getElementById('createGamesBtn');
             
             // Only show lock button if user has permission, bracket is projected, and we have enough teams
             if (userCanManagePlayoffs && isProjected && teams.length >= 10) {
@@ -808,13 +813,6 @@
                 editBtn.style.display = 'inline-block';
             } else {
                 editBtn.style.display = 'none';
-            }
-            
-            // Only show create games button if user is ADMIN (not just staff) and bracket is locked
-            if (userProfile && userProfile.userRole === USER_ROLES.ADMIN && !isProjected) {
-                createGamesBtn.style.display = 'inline-block';
-            } else {
-                createGamesBtn.style.display = 'none';
             }
         }
 
@@ -860,103 +858,83 @@
             
             const gamesCollection = collection(db, 'seasons', currentSeason.id, 'games');
             
-            // Helper function to convert YYYY-MM-DD to MM_D_YYYY
-            const formatDateForId = (dateStr) => {
-                const [year, month, day] = dateStr.split('-');
-                return `${month}_${parseInt(day)}_${year}`;
-            };
-            
-            // Get dates from the playoff data structure
-            const pi1 = playoffData.winnersBracket.playIn[0]; // Game 1: 8 vs 9
-            const pi2 = playoffData.winnersBracket.playIn[1]; // Game 3: 7 vs 10
-            const w1_1 = playoffData.winnersBracket.round1[0]; // Game 2: 1 vs winner pi1
-            const w1_2 = playoffData.winnersBracket.round1[1]; // Game 6: 2 vs winner pi2
-            const w1_3 = playoffData.winnersBracket.round1[2]; // Game 5: 3 vs 6
-            const w1_4 = playoffData.winnersBracket.round1[3]; // Game 4: 4 vs 5
-            
             // Play-in games
             const playInGames = [
                 {
-                    id: `${formatDateForId(pi1.gameDate)}_${teams[7].teamName}_vs_${teams[8].teamName}`,
-                    homeTeamName: teams[7].teamName,
-                    awayTeamName: teams[8].teamName,
-                    gameType: 'playoff',
-                    playoffRound: pi1.round,
-                    playoffGameNumber: pi1.gameNumber,
-                    date: pi1.gameDate,
-                    time: pi1.gameTime,
-                    homeScore: null,
-                    awayScore: null,
-                    winner: null
+                    id: 'playoff_pi1_seed8_vs_seed9',
+                    'home team': teams[7].teamName, // Seed 8
+                    'away team': teams[8].teamName, // Seed 9
+                    game_type: 'Playoff',
+                    round: 'Play-In',
+                    date: '',
+                    time: '',
+                    'home score': '',
+                    'away score': '',
+                    winner: ''
                 },
                 {
-                    id: `${formatDateForId(pi2.gameDate)}_${teams[6].teamName}_vs_${teams[9].teamName}`,
-                    homeTeamName: teams[6].teamName,
-                    awayTeamName: teams[9].teamName,
-                    gameType: 'playoff',
-                    playoffRound: pi2.round,
-                    playoffGameNumber: pi2.gameNumber,
-                    date: pi2.gameDate,
-                    time: pi2.gameTime,
-                    homeScore: null,
-                    awayScore: null,
-                    winner: null
+                    id: 'playoff_pi2_seed7_vs_seed10',
+                    'home team': teams[6].teamName, // Seed 7
+                    'away team': teams[9].teamName, // Seed 10
+                    game_type: 'Playoff',
+                    round: 'Play-In',
+                    date: '',
+                    time: '',
+                    'home score': '',
+                    'away score': '',
+                    winner: ''
                 }
             ];
 
-            // Round 1 games (only ones with known opponents)
+            // Round 1 games
             const round1Games = [
                 {
-                    id: `${formatDateForId(w1_1.gameDate)}_${teams[0].teamName}_vs_TBD`,
-                    homeTeamName: teams[0].teamName,
-                    awayTeamName: 'Winner PI1',
-                    gameType: 'playoff',
-                    playoffRound: w1_1.round,
-                    playoffGameNumber: w1_1.gameNumber,
-                    date: w1_1.gameDate,
-                    time: w1_1.gameTime,
-                    homeScore: null,
-                    awayScore: null,
-                    winner: null
+                    id: 'playoff_r1g1_seed1_vs_winner_pi1',
+                    'home team': teams[0].teamName, // Seed 1
+                    'away team': 'Winner PI1', // Will be updated after play-in
+                    game_type: 'Playoff',
+                    round: 'Round 1',
+                    date: '',
+                    time: '',
+                    'home score': '',
+                    'away score': '',
+                    winner: ''
                 },
                 {
-                    id: `${formatDateForId(w1_2.gameDate)}_${teams[1].teamName}_vs_TBD`,
-                    homeTeamName: teams[1].teamName,
-                    awayTeamName: 'Winner PI2',
-                    gameType: 'playoff',
-                    playoffRound: w1_2.round,
-                    playoffGameNumber: w1_2.gameNumber,
-                    date: w1_2.gameDate,
-                    time: w1_2.gameTime,
-                    homeScore: null,
-                    awayScore: null,
-                    winner: null
+                    id: 'playoff_r1g2_seed2_vs_winner_pi2',
+                    'home team': teams[1].teamName, // Seed 2
+                    'away team': 'Winner PI2',
+                    game_type: 'Playoff',
+                    round: 'Round 1',
+                    date: '',
+                    time: '',
+                    'home score': '',
+                    'away score': '',
+                    winner: ''
                 },
                 {
-                    id: `${formatDateForId(w1_3.gameDate)}_${teams[2].teamName}_vs_${teams[5].teamName}`,
-                    homeTeamName: teams[2].teamName,
-                    awayTeamName: teams[5].teamName,
-                    gameType: 'playoff',
-                    playoffRound: w1_3.round,
-                    playoffGameNumber: w1_3.gameNumber,
-                    date: w1_3.gameDate,
-                    time: w1_3.gameTime,
-                    homeScore: null,
-                    awayScore: null,
-                    winner: null
+                    id: 'playoff_r1g3_seed3_vs_seed6',
+                    'home team': teams[2].teamName, // Seed 3
+                    'away team': teams[5].teamName, // Seed 6
+                    game_type: 'Playoff',
+                    round: 'Round 1',
+                    date: '',
+                    time: '',
+                    'home score': '',
+                    'away score': '',
+                    winner: ''
                 },
                 {
-                    id: `${formatDateForId(w1_4.gameDate)}_${teams[3].teamName}_vs_${teams[4].teamName}`,
-                    homeTeamName: teams[3].teamName,
-                    awayTeamName: teams[4].teamName,
-                    gameType: 'playoff',
-                    playoffRound: w1_4.round,
-                    playoffGameNumber: w1_4.gameNumber,
-                    date: w1_4.gameDate,
-                    time: w1_4.gameTime,
-                    homeScore: null,
-                    awayScore: null,
-                    winner: null
+                    id: 'playoff_r1g4_seed4_vs_seed5',
+                    'home team': teams[3].teamName, // Seed 4
+                    'away team': teams[4].teamName, // Seed 5
+                    game_type: 'Playoff',
+                    round: 'Round 1',
+                    date: '',
+                    time: '',
+                    'home score': '',
+                    'away score': '',
+                    winner: ''
                 }
             ];
 
@@ -975,170 +953,52 @@
             console.log(`✅ Created ${allGames.length} playoff games`);
         }
 
-        window.createNextPlayoffGames = async function() {
-            if (!userProfile || userProfile.userRole !== USER_ROLES.ADMIN) {
-                alert('Only Admins can create playoff games.');
-                return;
-            }
-
-            if (!confirm('Create playoff games for all matchups with known opponents?\n\nThis will scan the bracket and create games in Firestore for any matchups where both teams are determined.')) {
-                return;
-            }
-
-            try {
-                console.log('📅 Scanning bracket for games to create...');
-                
-                const gamesCollection = collection(db, 'seasons', currentSeason.id, 'games');
-                
-                // Helper function to convert YYYY-MM-DD to MM_D_YYYY
-                const formatDateForId = (dateStr) => {
-                    const [year, month, day] = dateStr.split('-');
-                    return `${month}_${parseInt(day)}_${year}`;
-                };
-                
-                // Helper function to check if team name is known (not TBD or conditional)
-                const isKnownTeam = (teamName) => {
-                    if (!teamName) return false;
-                    if (teamName === 'TBD') return false;
-                    if (teamName.startsWith('Winner of')) return false;
-                    if (teamName.startsWith('Loser of')) return false;
-                    if (teamName.includes('Winner')) return false;
-                    if (teamName.includes('Loser')) return false;
-                    return true;
-                };
-                
-                // Collect all matchups from the bracket
-                const allMatchups = [
-                    ...playoffData.winnersBracket.playIn,
-                    ...playoffData.winnersBracket.round1,
-                    ...playoffData.winnersBracket.semifinals,
-                    ...playoffData.winnersBracket.finals,
-                    ...playoffData.losersBracket.round1,
-                    ...playoffData.losersBracket.round2,
-                    ...playoffData.losersBracket.round3,
-                    ...playoffData.losersBracket.semifinals,
-                    ...playoffData.losersBracket.finals,
-                    ...playoffData.championship
-                ];
-                
-                // Get existing games to avoid duplicates
-                const existingGamesQuery = query(
-                    gamesCollection,
-                    where('gameType', '==', 'playoff')
-                );
-                const existingGamesSnapshot = await getDocs(existingGamesQuery);
-                const existingGameIds = new Set(existingGamesSnapshot.docs.map(doc => doc.id));
-                
-                console.log(`📊 Found ${existingGameIds.size} existing playoff games`);
-                
-                let createdCount = 0;
-                const gamesToCreate = [];
-                
-                // Check each matchup
-                for (const matchup of allMatchups) {
-                    if (!matchup.gameDate) continue; // Skip if no date set
-                    
-                    const team1 = getTeamDisplay(matchup.team1, matchup);
-                    const team2 = getTeamDisplay(matchup.team2, matchup);
-                    
-                    // Check if both teams are known
-                    if (isKnownTeam(team1.name) && isKnownTeam(team2.name)) {
-                        const gameId = `${formatDateForId(matchup.gameDate)}_${team1.name}_vs_${team2.name}`;
-                        
-                        // Check if game already exists
-                        if (!existingGameIds.has(gameId)) {
-                            gamesToCreate.push({
-                                id: gameId,
-                                homeTeamName: team1.name,
-                                awayTeamName: team2.name,
-                                gameType: 'playoff',
-                                playoffRound: matchup.round,
-                                playoffGameNumber: matchup.gameNumber || null,
-                                date: matchup.gameDate,
-                                time: matchup.gameTime || null,
-                                homeScore: matchup.team1Score !== undefined ? matchup.team1Score : null,
-                                awayScore: matchup.team2Score !== undefined ? matchup.team2Score : null,
-                                winner: matchup.winner ? (matchup.winner === 1 ? team1.name : team2.name) : null
-                            });
-                            console.log(`✅ Will create: ${gameId}`);
-                        }
-                    }
-                }
-                
-                if (gamesToCreate.length === 0) {
-                    alert('No new playoff games to create. Either all games with known opponents already exist, or opponents are not yet determined.');
-                    return;
-                }
-                
-                console.log(`📝 Creating ${gamesToCreate.length} new playoff games...`);
-                
-                // Create all games
-                for (const game of gamesToCreate) {
-                    try {
-                        await setDoc(doc(gamesCollection, game.id), game);
-                        console.log(`✅ Created game: ${game.id}`);
-                        createdCount++;
-                    } catch (error) {
-                        console.error(`❌ Error creating game ${game.id}:`, error);
-                    }
-                }
-                
-                alert(`Successfully created ${createdCount} playoff game(s)!`);
-                console.log(`✅ Successfully created ${createdCount} playoff games`);
-                
-            } catch (error) {
-                console.error('Error creating playoff games:', error);
-                alert('Error creating playoff games: ' + error.message);
-            }
-        };
-
         function initializePlayoffBracket() {
             return {
                 winnersBracket: {
                     playIn: [
-                        { id: 'pi-1', team1: { seed: 8 }, team2: { seed: 9 }, round: 'Play-In', gameDate: '2025-11-16', gameTime: '8:00 AM', gameNumber: 1 },
-                        { id: 'pi-2', team1: { seed: 7 }, team2: { seed: 10 }, round: 'Play-In', gameDate: '2025-11-16', gameTime: '10:00 AM', gameNumber: 3 }
+                        { id: 'pi-1', team1: { seed: 8 }, team2: { seed: 9 }, round: 'Play-In' },
+                        { id: 'pi-2', team1: { seed: 7 }, team2: { seed: 10 }, round: 'Play-In' }
                     ],
                     round1: [
-                        { id: 'w1-1', team1: { seed: 1 }, team2: { seed: null, from: 'pi-1' }, round: 'Round 1', gameDate: '2025-11-16', gameTime: '9:00 AM', gameNumber: 2 },
-                        { id: 'w1-2', team1: { seed: 2 }, team2: { seed: null, from: 'pi-2' }, round: 'Round 1', gameDate: '2025-11-23', gameTime: '9:00 AM', gameNumber: 6 },
-                        { id: 'w1-3', team1: { seed: 3 }, team2: { seed: 6 }, round: 'Round 1', gameDate: '2025-11-16', gameTime: '12:00 PM', gameNumber: 5 },
-                        { id: 'w1-4', team1: { seed: 4 }, team2: { seed: 5 }, round: 'Round 1', gameDate: '2025-11-16', gameTime: '11:00 AM', gameNumber: 4 }
+                        { id: 'w1-1', team1: { seed: 1 }, team2: { seed: null, from: 'pi-1' }, round: 'Round 1' },
+                        { id: 'w1-2', team1: { seed: 2 }, team2: { seed: null, from: 'pi-2' }, round: 'Round 1' },
+                        { id: 'w1-3', team1: { seed: 3 }, team2: { seed: 6 }, round: 'Round 1' },
+                        { id: 'w1-4', team1: { seed: 4 }, team2: { seed: 5 }, round: 'Round 1' }
                     ],
                     semifinals: [
-                        { id: 'w2-1', team1: { from: 'w1-1' }, team2: { from: 'w1-4' }, round: 'Semifinals', gameDate: '2025-11-30', gameTime: '10:00 AM', gameNumber: 11 },
-                        { id: 'w2-2', team1: { from: 'w1-2' }, team2: { from: 'w1-3' }, round: 'Semifinals', gameDate: '2025-11-30', gameTime: '11:00 AM', gameNumber: 12 }
+                        { id: 'w2-1', team1: { from: 'w1-1' }, team2: { from: 'w1-4' }, round: 'Semifinals' },
+                        { id: 'w2-2', team1: { from: 'w1-2' }, team2: { from: 'w1-3' }, round: 'Semifinals' }
                     ],
                     finals: [
-                        { id: 'w3-1', team1: { from: 'w2-1' }, team2: { from: 'w2-2' }, round: 'Winners Final', gameDate: '2025-12-01', gameTime: '8:00 PM', gameNumber: 15 }
+                        { id: 'w3-1', team1: { from: 'w2-1' }, team2: { from: 'w2-2' }, round: 'Winners Final' }
                     ]
                 },
                 losersBracket: {
                     round1: [
                         // First elimination games - play-in losers play immediately
-                        { id: 'l1-1', team1: { loserFrom: 'w1-2' }, team2: { loserFrom: 'pi-1' }, round: 'Elimination Round 1', gameDate: '2025-11-23', gameTime: '10:00 AM', gameNumber: 7 }, // Game 7: Loser of 2 vs Loser of 8/9
-                        { id: 'l1-2', team1: { loserFrom: 'w1-1' }, team2: { loserFrom: 'pi-2' }, round: 'Elimination Round 1', gameDate: '2025-11-23', gameTime: '11:00 AM', gameNumber: 8 }  // Game 8: Loser of 1 vs Loser of 7/10
+                        { id: 'l1-1', team1: { loserFrom: 'w1-2' }, team2: { loserFrom: 'pi-1' }, round: 'Elimination Round 1' }, // Game 7: Loser of 2 vs Loser of 8/9
+                        { id: 'l1-2', team1: { loserFrom: 'w1-1' }, team2: { loserFrom: 'pi-2' }, round: 'Elimination Round 1' }  // Game 8: Loser of 1 vs Loser of 7/10
                     ],
                     round2: [
                         // Second elimination games - Round 1 winners face first-round losers from winners bracket
-                        { id: 'l2-1', team1: { loserFrom: 'w1-4' }, team2: { from: 'l1-2' }, round: 'Elimination Round 2', gameDate: '2025-11-23', gameTime: '12:00 PM', gameNumber: 9 }, // Game 9: Loser of 4/5 vs Winner of Game 8
-                        { id: 'l2-2', team1: { loserFrom: 'w1-3' }, team2: { from: 'l1-1' }, round: 'Elimination Round 2', gameDate: '2025-11-30', gameTime: '9:00 AM', gameNumber: 10 }  // Game 10: Loser of 3/6 vs Winner of Game 7
+                        { id: 'l2-1', team1: { loserFrom: 'w1-4' }, team2: { from: 'l1-2' }, round: 'Elimination Round 2' }, // Game 9: Loser of 4/5 vs Winner of Game 8
+                        { id: 'l2-2', team1: { loserFrom: 'w1-3' }, team2: { from: 'l1-1' }, round: 'Elimination Round 2' }  // Game 10: Loser of 3/6 vs Winner of Game 7
                     ],
                     round3: [
                         // Third elimination games - semifinal losers enter
-                        { id: 'l3-1', team1: { loserFrom: 'w2-2' }, team2: { from: 'l2-1' }, round: 'Elimination Round 3', gameDate: '2025-11-30', gameTime: '12:00 PM', gameNumber: 13 }, // Game 13: Loser of Game 12 vs Winner of Game 9
-                        { id: 'l3-2', team1: { loserFrom: 'w2-1' }, team2: { from: 'l2-2' }, round: 'Elimination Round 3', gameDate: '2025-12-01', gameTime: '7:00 PM', gameNumber: 14 }  // Game 14: Loser of Game 11 vs Winner of Game 10
+                        { id: 'l3-1', team1: { from: 'l2-1' }, team2: { loserFrom: 'w2-1' }, round: 'Elimination Round 3' }, // Game 13: Winner of Game 9 vs Loser of Game 11
+                        { id: 'l3-2', team1: { from: 'l2-2' }, team2: { loserFrom: 'w2-2' }, round: 'Elimination Round 3' }  // Game 14: Winner of Game 10 vs Loser of Game 12
                     ],
                     semifinals: [
-                        { id: 'l4-1', team1: { from: 'l3-1' }, team2: { from: 'l3-2' }, round: 'Elimination Semifinals', gameDate: '2025-12-02', gameTime: '7:00 PM', gameNumber: 16 } // Game 16: Winner of Game 13 vs Winner of Game 14
+                        { id: 'l4-1', team1: { from: 'l3-1' }, team2: { from: 'l3-2' }, round: 'Elimination Semifinals' } // Game 15: Winner of Game 13 vs Winner of Game 14
                     ],
                     finals: [
-                        { id: 'l5-1', team1: { loserFrom: 'w3-1' }, team2: { from: 'l4-1' }, round: 'Losers Final', gameDate: '2025-12-02', gameTime: '8:00 PM', gameNumber: 17 } // Game 17: Loser of Winners Final vs Winner of Game 16
+                        { id: 'l5-1', team1: { from: 'l4-1' }, team2: { loserFrom: 'w3-1' }, round: 'Losers Final' } // Game 16: Winner of Game 15 vs Loser of Winners Final
                     ]
                 },
                 championship: [
-                    { id: 'champ', team1: { from: 'w3-1' }, team2: { from: 'l5-1' }, round: 'Championship', gameDate: '2025-12-07', gameTime: '10:00 AM', gameNumber: 18 },
-                    { id: 'champ-if-necessary', team1: { from: 'champ' }, team2: { loserFrom: 'champ' }, round: 'Championship (If Necessary)', gameDate: '2025-12-07', gameTime: '11:00 AM', gameNumber: 19 }
+                    { id: 'champ', team1: { from: 'w3-1' }, team2: { from: 'l5-1' }, round: 'Championship' }
                 ]
             };
         }
@@ -1275,7 +1135,7 @@
             // Check if we can link to game preview (need both team names and a date)
             const canLinkToPreview = team1.name !== 'TBD' && team2.name !== 'TBD' && matchup.gameDate;
             const previewLink = canLinkToPreview 
-                ? `game-preview.html?home=${encodeURIComponent(team1.name)}&away=${encodeURIComponent(team2.name)}&date=${matchup.gameDate}&gameType=playoff&round=${encodeURIComponent(matchup.round)}&gameNumber=${matchup.gameNumber}`
+                ? `game-preview.html?home=${encodeURIComponent(team1.name)}&away=${encodeURIComponent(team2.name)}&date=${matchup.gameDate}`
                 : null;
 
             return `
@@ -1285,7 +1145,7 @@
                     ${matchup.gameTime ? `<div class="matchup-time">${matchup.gameTime}</div>` : ''}
                     ${canLinkToPreview ? `
                         <a href="${previewLink}" class="game-link" title="View Game Preview">
-                            <div class="game-link-icon">🔮</div>
+                            <div class="game-link-icon">📊</div>
                         </a>
                     ` : ''}
                     <div class="team ${team1Class}">
@@ -1404,9 +1264,7 @@
         }
 
         function formatDate(dateStr) {
-            // Parse the date string as local time to avoid timezone offset issues
-            const [year, month, day] = dateStr.split('-').map(Number);
-            const date = new Date(year, month - 1, day); // month is 0-indexed
+            const date = new Date(dateStr);
             return date.toLocaleDateString('en-US', { 
                 weekday: 'short', 
                 month: 'short', 
