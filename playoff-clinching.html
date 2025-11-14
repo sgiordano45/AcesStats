@@ -885,14 +885,58 @@
           const otherGamesLeft = calculateRemainingGames(allGames, team.name);
           
           let finalWins, finalLosses;
-          if (favorableForTeam) {
-            // Favorable case for target team: others lose their remaining games
-            finalWins = team.wins;
-            finalLosses = team.losses + otherGamesLeft;
+          
+          // Check if target team has games remaining
+          const targetGamesLeft = calculateRemainingGames(allGames, targetTeam);
+          
+          if (targetGamesLeft > 0) {
+            // Target team still playing - standard logic
+            if (favorableForTeam) {
+              // Favorable: others lose their remaining games (easier for target to pass them)
+              finalWins = team.wins;
+              finalLosses = team.losses + otherGamesLeft;
+            } else {
+              // Unfavorable: others win their remaining games (harder for target to pass them)
+              finalWins = team.wins + otherGamesLeft;
+              finalLosses = team.losses;
+            }
           } else {
-            // Unfavorable case for target team: others win their remaining games
-            finalWins = team.wins + otherGamesLeft;
-            finalLosses = team.losses;
+            // Target team is DONE - inverted logic for tiebreaker scenarios
+            // When a team is done, it's favorable if others DON'T tie with them
+            if (favorableForTeam) {
+              // Favorable: others win to avoid tying with us (or lose to fall further behind)
+              // Check if this team could tie with target
+              const couldTieWithTarget = (team.wins + otherGamesLeft >= targetWins) && (team.wins <= targetWins);
+              if (couldTieWithTarget) {
+                // This team could tie - have them win out to avoid the tie
+                finalWins = team.wins + otherGamesLeft;
+                finalLosses = team.losses;
+              } else if (team.wins > targetWins) {
+                // Already ahead - have them win out to stay ahead
+                finalWins = team.wins + otherGamesLeft;
+                finalLosses = team.losses;
+              } else {
+                // Behind and can't catch up - have them lose out
+                finalWins = team.wins;
+                finalLosses = team.losses + otherGamesLeft;
+              }
+            } else {
+              // Unfavorable: others tie with us or pass us
+              const couldTieWithTarget = (team.wins + otherGamesLeft >= targetWins) && (team.wins <= targetWins);
+              if (couldTieWithTarget) {
+                // This team could tie - have them lose to create the tie
+                finalWins = team.wins;
+                finalLosses = team.losses + otherGamesLeft;
+              } else if (team.wins > targetWins) {
+                // Already ahead - have them win out to stay ahead
+                finalWins = team.wins + otherGamesLeft;
+                finalLosses = team.losses;
+              } else {
+                // Behind - have them win out to try to catch/pass us
+                finalWins = team.wins + otherGamesLeft;
+                finalLosses = team.losses;
+              }
+            }
           }
           
           const totalDecided = finalWins + finalLosses;
