@@ -834,12 +834,12 @@
                     record: `${t.wins}-${t.losses}`
                 }));
 
+                // Clean undefined values from playoffData before saving to Firestore
+                const cleanedData = cleanFirestoreData(playoffData);
+
                 // Save to Firebase
                 const playoffRef = doc(db, 'seasons', currentSeason.id, 'playoffs', 'bracket');
-                await setDoc(playoffRef, playoffData);
-
-                // Create playoff game IDs in the games collection
-                await createPlayoffGames();
+                await setDoc(playoffRef, cleanedData);
 
                 isProjected = false;
                 console.log('✅ Bracket locked successfully!');
@@ -847,6 +847,9 @@
                 
                 updateLockButton();
                 renderBracket();
+
+                // Create playoff game IDs in the games collection AFTER successfully saving bracket
+                await createPlayoffGames();
             } catch (error) {
                 console.error('Error locking bracket:', error);
                 alert('Error locking bracket: ' + error.message);
@@ -957,50 +960,199 @@
             return {
                 winnersBracket: {
                     playIn: [
-                        { id: 'pi-1', team1: { seed: 8 }, team2: { seed: 9 }, round: 'Play-In' },
-                        { id: 'pi-2', team1: { seed: 7 }, team2: { seed: 10 }, round: 'Play-In' }
+                        { 
+                            id: 'pi-1', 
+                            team1: { seed: 8 }, 
+                            team2: { seed: 9 }, 
+                            round: 'Play-In',
+                            gameDate: '2025-11-16',
+                            gameTime: '08:00'
+                        },
+                        { 
+                            id: 'pi-2', 
+                            team1: { seed: 7 }, 
+                            team2: { seed: 10 }, 
+                            round: 'Play-In',
+                            gameDate: '2025-11-16',
+                            gameTime: '10:00'
+                        }
                     ],
                     round1: [
-                        { id: 'w1-1', team1: { seed: 1 }, team2: { seed: null, from: 'pi-1' }, round: 'Round 1' },
-                        { id: 'w1-2', team1: { seed: 2 }, team2: { seed: null, from: 'pi-2' }, round: 'Round 1' },
-                        { id: 'w1-3', team1: { seed: 3 }, team2: { seed: 6 }, round: 'Round 1' },
-                        { id: 'w1-4', team1: { seed: 4 }, team2: { seed: 5 }, round: 'Round 1' }
+                        { 
+                            id: 'w1-1', 
+                            team1: { seed: 1 }, 
+                            team2: { seed: null, from: 'pi-1' }, 
+                            round: 'Round 1',
+                            gameDate: '2025-11-16',
+                            gameTime: '09:00'
+                        },
+                        { 
+                            id: 'w1-2', 
+                            team1: { seed: 2 }, 
+                            team2: { seed: null, from: 'pi-2' }, 
+                            round: 'Round 1',
+                            gameDate: '2025-11-23',
+                            gameTime: '09:00'
+                        },
+                        { 
+                            id: 'w1-3', 
+                            team1: { seed: 3 }, 
+                            team2: { seed: 6 }, 
+                            round: 'Round 1',
+                            gameDate: '2025-11-16',
+                            gameTime: '12:00'
+                        },
+                        { 
+                            id: 'w1-4', 
+                            team1: { seed: 4 }, 
+                            team2: { seed: 5 }, 
+                            round: 'Round 1',
+                            gameDate: '2025-11-16',
+                            gameTime: '11:00'
+                        }
                     ],
                     semifinals: [
-                        { id: 'w2-1', team1: { from: 'w1-1' }, team2: { from: 'w1-4' }, round: 'Semifinals' },
-                        { id: 'w2-2', team1: { from: 'w1-2' }, team2: { from: 'w1-3' }, round: 'Semifinals' }
+                        { 
+                            id: 'w2-1', 
+                            team1: { from: 'w1-1' }, 
+                            team2: { from: 'w1-4' }, 
+                            round: 'Semifinals',
+                            gameDate: '2025-11-30',
+                            gameTime: '10:00'
+                        },
+                        { 
+                            id: 'w2-2', 
+                            team1: { from: 'w1-2' }, 
+                            team2: { from: 'w1-3' }, 
+                            round: 'Semifinals',
+                            gameDate: '2025-11-30',
+                            gameTime: '11:00'
+                        }
                     ],
                     finals: [
-                        { id: 'w3-1', team1: { from: 'w2-1' }, team2: { from: 'w2-2' }, round: 'Winners Final' }
+                        { 
+                            id: 'w3-1', 
+                            team1: { from: 'w2-1' }, 
+                            team2: { from: 'w2-2' }, 
+                            round: 'Winners Final',
+                            gameDate: '2025-12-01',
+                            gameTime: '20:00'
+                        }
                     ]
                 },
                 losersBracket: {
                     round1: [
                         // First elimination games - play-in losers play immediately
-                        { id: 'l1-1', team1: { loserFrom: 'w1-2' }, team2: { loserFrom: 'pi-1' }, round: 'Elimination Round 1' }, // Game 7: Loser of 2 vs Loser of 8/9
-                        { id: 'l1-2', team1: { loserFrom: 'w1-1' }, team2: { loserFrom: 'pi-2' }, round: 'Elimination Round 1' }  // Game 8: Loser of 1 vs Loser of 7/10
+                        { 
+                            id: 'l1-1', 
+                            team1: { loserFrom: 'w1-2' }, 
+                            team2: { loserFrom: 'pi-1' }, 
+                            round: 'Elimination Round 1',
+                            gameDate: '2025-11-23',
+                            gameTime: '10:00'
+                        },
+                        { 
+                            id: 'l1-2', 
+                            team1: { loserFrom: 'w1-1' }, 
+                            team2: { loserFrom: 'pi-2' }, 
+                            round: 'Elimination Round 1',
+                            gameDate: '2025-11-23',
+                            gameTime: '11:00'
+                        }
                     ],
                     round2: [
                         // Second elimination games - Round 1 winners face first-round losers from winners bracket
-                        { id: 'l2-1', team1: { loserFrom: 'w1-4' }, team2: { from: 'l1-2' }, round: 'Elimination Round 2' }, // Game 9: Loser of 4/5 vs Winner of Game 8
-                        { id: 'l2-2', team1: { loserFrom: 'w1-3' }, team2: { from: 'l1-1' }, round: 'Elimination Round 2' }  // Game 10: Loser of 3/6 vs Winner of Game 7
+                        { 
+                            id: 'l2-1', 
+                            team1: { loserFrom: 'w1-4' }, 
+                            team2: { from: 'l1-2' }, 
+                            round: 'Elimination Round 2',
+                            gameDate: '2025-11-23',
+                            gameTime: '12:00'
+                        },
+                        { 
+                            id: 'l2-2', 
+                            team1: { loserFrom: 'w1-3' }, 
+                            team2: { from: 'l1-1' }, 
+                            round: 'Elimination Round 2',
+                            gameDate: '2025-11-30',
+                            gameTime: '09:00'
+                        }
                     ],
                     round3: [
                         // Third elimination games - semifinal losers enter
-                        { id: 'l3-1', team1: { from: 'l2-1' }, team2: { loserFrom: 'w2-1' }, round: 'Elimination Round 3' }, // Game 13: Winner of Game 9 vs Loser of Game 11
-                        { id: 'l3-2', team1: { from: 'l2-2' }, team2: { loserFrom: 'w2-2' }, round: 'Elimination Round 3' }  // Game 14: Winner of Game 10 vs Loser of Game 12
+                        { 
+                            id: 'l3-1', 
+                            team1: { from: 'l2-1' }, 
+                            team2: { loserFrom: 'w2-1' }, 
+                            round: 'Elimination Round 3',
+                            gameDate: '2025-11-30',
+                            gameTime: '12:00'
+                        },
+                        { 
+                            id: 'l3-2', 
+                            team1: { from: 'l2-2' }, 
+                            team2: { loserFrom: 'w2-2' }, 
+                            round: 'Elimination Round 3',
+                            gameDate: '2025-12-01',
+                            gameTime: '19:00'
+                        }
                     ],
                     semifinals: [
-                        { id: 'l4-1', team1: { from: 'l3-1' }, team2: { from: 'l3-2' }, round: 'Elimination Semifinals' } // Game 15: Winner of Game 13 vs Winner of Game 14
+                        { 
+                            id: 'l4-1', 
+                            team1: { from: 'l3-1' }, 
+                            team2: { from: 'l3-2' }, 
+                            round: 'Elimination Semifinals',
+                            gameDate: '2025-12-01',
+                            gameTime: '19:00'
+                        }
                     ],
                     finals: [
-                        { id: 'l5-1', team1: { from: 'l4-1' }, team2: { loserFrom: 'w3-1' }, round: 'Losers Final' } // Game 16: Winner of Game 15 vs Loser of Winners Final
+                        { 
+                            id: 'l5-1', 
+                            team1: { from: 'l4-1' }, 
+                            team2: { loserFrom: 'w3-1' }, 
+                            round: 'Losers Final',
+                            gameDate: '2025-12-02',
+                            gameTime: '20:00'
+                        }
                     ]
                 },
                 championship: [
-                    { id: 'champ', team1: { from: 'w3-1' }, team2: { from: 'l5-1' }, round: 'Championship' }
+                    { 
+                        id: 'champ', 
+                        team1: { from: 'w3-1' }, 
+                        team2: { from: 'l5-1' }, 
+                        round: 'Championship',
+                        gameDate: '2025-12-07',
+                        gameTime: '10:00'
+                    }
                 ]
             };
+        }
+
+        // Helper function to clean Firestore data - removes undefined values
+        function cleanFirestoreData(obj) {
+            if (obj === null) return null;
+            if (obj === undefined) return null;
+            if (typeof obj !== 'object') return obj;
+            
+            if (Array.isArray(obj)) {
+                return obj.map(item => cleanFirestoreData(item));
+            }
+            
+            const cleaned = {};
+            for (const key in obj) {
+                if (obj.hasOwnProperty(key)) {
+                    const value = obj[key];
+                    // Skip undefined values entirely (don't include them in the cleaned object)
+                    if (value !== undefined) {
+                        cleaned[key] = cleanFirestoreData(value);
+                    }
+                }
+            }
+            return cleaned;
         }
 
         function renderBracket() {
@@ -1142,7 +1294,7 @@
                 <div class="matchup ${isChampionship ? 'championship' : ''} ${positionClass}" 
                      data-matchup-id="${matchup.id}">
                     ${matchup.gameDate ? `<div class="matchup-date">${formatDate(matchup.gameDate)}</div>` : ''}
-                    ${matchup.gameTime ? `<div class="matchup-time">${matchup.gameTime}</div>` : ''}
+                    ${matchup.gameTime ? `<div class="matchup-time">${formatTime(matchup.gameTime)}</div>` : ''}
                     ${canLinkToPreview ? `
                         <a href="${previewLink}" class="game-link" title="View Game Preview">
                             <div class="game-link-icon">📊</div>
@@ -1272,6 +1424,15 @@
             });
         }
 
+        function formatTime(timeStr) {
+            if (!timeStr) return '';
+            // timeStr is in HH:MM format (24-hour)
+            const [hours, minutes] = timeStr.split(':').map(Number);
+            const period = hours >= 12 ? 'PM' : 'AM';
+            const displayHours = hours % 12 || 12; // Convert 0 to 12 for midnight
+            return `${displayHours}:${minutes.toString().padStart(2, '0')} ${period}`;
+        }
+
         function findMatchup(matchupId) {
             // Search all brackets for the matchup
             const allMatchups = [
@@ -1334,11 +1495,22 @@
             const team1Score = document.getElementById('team1Score').value;
             const team2Score = document.getElementById('team2Score').value;
 
-            // Update the matchup
+            // Update the matchup - use null for empty optional fields, not undefined
             currentEditMatchup.gameDate = gameDate || null;
             currentEditMatchup.gameTime = gameTime || null;
-            currentEditMatchup.team1Score = team1Score !== '' ? parseInt(team1Score) : undefined;
-            currentEditMatchup.team2Score = team2Score !== '' ? parseInt(team2Score) : undefined;
+            
+            // For scores, only set if there's a value (leave undefined if not set)
+            if (team1Score !== '') {
+                currentEditMatchup.team1Score = parseInt(team1Score);
+            } else {
+                delete currentEditMatchup.team1Score; // Remove the field entirely
+            }
+            
+            if (team2Score !== '') {
+                currentEditMatchup.team2Score = parseInt(team2Score);
+            } else {
+                delete currentEditMatchup.team2Score; // Remove the field entirely
+            }
 
             // Determine winner if both scores are entered
             if (team1Score !== '' && team2Score !== '') {
@@ -1349,8 +1521,19 @@
 
             // Save to Firebase
             try {
+                // Clean undefined values before saving
+                const cleanedData = cleanFirestoreData(playoffData);
+                
+                console.log('💾 Saving matchup:', currentEditMatchup.id, {
+                    gameDate: currentEditMatchup.gameDate,
+                    gameTime: currentEditMatchup.gameTime,
+                    hasScores: currentEditMatchup.team1Score !== undefined && currentEditMatchup.team2Score !== undefined
+                });
+                
                 const playoffRef = doc(db, 'seasons', currentSeason.id, 'playoffs', 'bracket');
-                await updateDoc(playoffRef, playoffData);
+                await updateDoc(playoffRef, cleanedData);
+                
+                console.log('✅ Matchup saved successfully');
                 closeModal();
                 renderBracket();
             } catch (error) {
