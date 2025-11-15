@@ -4,7 +4,7 @@
 // Import Firebase SDK from CDN
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
 import { 
-  getFirestore, 
+  initializeFirestore,
   collection, 
   doc, 
   getDocs, 
@@ -12,8 +12,7 @@ import {
   query,
   where,
   orderBy,
-  limit,
-  enableIndexedDbPersistence
+  limit
 } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
 import { getStorage } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js';
 import { getMessaging } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-messaging.js';
@@ -30,7 +29,20 @@ const firebaseConfig = {
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
+
+// Detect Safari for cache strategy
+const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+
+// Initialize Firestore with appropriate cache based on browser
+// Safari has issues with IndexedDB, so we use memory cache for better compatibility
+const db = initializeFirestore(app, {
+  cache: isSafari ? 
+    { kind: 'MemoryLruCache', sizeBytes: 40 * 1024 * 1024 } : // 40 MB for Safari
+    { kind: 'IndexedDbLruCache', sizeBytes: 100 * 1024 * 1024 } // 100 MB for other browsers
+});
+
+console.log(`✅ Firestore initialized with ${isSafari ? 'Memory' : 'IndexedDB'} cache`);
+
 const storage = getStorage(app);
 
 // Initialize Firebase Cloud Messaging
@@ -38,24 +50,6 @@ const messaging = getMessaging(app);
 
 // VAPID key from Firebase Console
 const VAPID_KEY = "BK39jgi3AT0p9jdaUBIPHz3vBkBg4YRvY-yMNuGMIJEhGbXTomDyKo77ug0hPYa10YBjJBM_GRBErlYp09cDSRw";
-
-// ✨ ENABLE OFFLINE PERSISTENCE ✨
-// This allows Firestore data to be cached locally and available offline
-export const persistenceReady = enableIndexedDbPersistence(db)
-  .then(() => {
-    console.log('✅ Firebase offline persistence enabled');
-    return true;
-  })
-  .catch((err) => {
-    if (err.code === 'failed-precondition') {
-      console.warn('⚠️ Multiple tabs open - persistence enabled in first tab only');
-    } else if (err.code === 'unimplemented') {
-      console.warn('⚠️ Browser doesn\'t support offline persistence');
-    } else {
-      console.error('❌ Failed to enable persistence:', err);
-    }
-    return false;
-  });
 
 // Export everything other files will need
 export { 
