@@ -857,9 +857,24 @@
         };
 
         async function createPlayoffGames() {
-            console.log('📅 Creating playoff game IDs...');
+            console.log('📅 Creating playoff game IDs with dates and times...');
             
             const gamesCollection = collection(db, 'seasons', currentSeason.id, 'games');
+            
+            // Helper function to convert ISO date to Firestore Timestamp
+            const dateToTimestamp = (dateStr) => {
+                if (!dateStr) return null;
+                const date = new Date(dateStr);
+                return date;
+            };
+            
+            // Get dates/times from bracket data
+            const pi1 = playoffData.winnersBracket.playIn[0]; // 8v9
+            const pi2 = playoffData.winnersBracket.playIn[1]; // 7v10
+            const w1_1 = playoffData.winnersBracket.round1[0]; // 1 vs winner 8v9
+            const w1_2 = playoffData.winnersBracket.round1[1]; // 2 vs winner 7v10
+            const w1_3 = playoffData.winnersBracket.round1[2]; // 3v6
+            const w1_4 = playoffData.winnersBracket.round1[3]; // 4v5
             
             // Play-in games
             const playInGames = [
@@ -869,8 +884,8 @@
                     'away team': teams[8].teamName, // Seed 9
                     game_type: 'Playoff',
                     round: 'Play-In',
-                    date: '',
-                    time: '',
+                    date: dateToTimestamp(pi1.gameDate),
+                    time: pi1.gameTime || '',
                     'home score': '',
                     'away score': '',
                     winner: ''
@@ -881,8 +896,8 @@
                     'away team': teams[9].teamName, // Seed 10
                     game_type: 'Playoff',
                     round: 'Play-In',
-                    date: '',
-                    time: '',
+                    date: dateToTimestamp(pi2.gameDate),
+                    time: pi2.gameTime || '',
                     'home score': '',
                     'away score': '',
                     winner: ''
@@ -897,8 +912,8 @@
                     'away team': 'Winner PI1', // Will be updated after play-in
                     game_type: 'Playoff',
                     round: 'Round 1',
-                    date: '',
-                    time: '',
+                    date: dateToTimestamp(w1_1.gameDate),
+                    time: w1_1.gameTime || '',
                     'home score': '',
                     'away score': '',
                     winner: ''
@@ -909,8 +924,8 @@
                     'away team': 'Winner PI2',
                     game_type: 'Playoff',
                     round: 'Round 1',
-                    date: '',
-                    time: '',
+                    date: dateToTimestamp(w1_2.gameDate),
+                    time: w1_2.gameTime || '',
                     'home score': '',
                     'away score': '',
                     winner: ''
@@ -921,8 +936,8 @@
                     'away team': teams[5].teamName, // Seed 6
                     game_type: 'Playoff',
                     round: 'Round 1',
-                    date: '',
-                    time: '',
+                    date: dateToTimestamp(w1_3.gameDate),
+                    time: w1_3.gameTime || '',
                     'home score': '',
                     'away score': '',
                     winner: ''
@@ -933,8 +948,8 @@
                     'away team': teams[4].teamName, // Seed 5
                     game_type: 'Playoff',
                     round: 'Round 1',
-                    date: '',
-                    time: '',
+                    date: dateToTimestamp(w1_4.gameDate),
+                    time: w1_4.gameTime || '',
                     'home score': '',
                     'away score': '',
                     winner: ''
@@ -947,13 +962,13 @@
             for (const game of allGames) {
                 try {
                     await setDoc(doc(gamesCollection, game.id), game);
-                    console.log(`✅ Created game: ${game.id}`);
+                    console.log(`✅ Created game: ${game.id} - ${game.date ? new Date(game.date).toLocaleDateString() : 'No date'} ${game.time}`);
                 } catch (error) {
                     console.error(`Error creating game ${game.id}:`, error);
                 }
             }
 
-            console.log(`✅ Created ${allGames.length} playoff games`);
+            console.log(`✅ Created ${allGames.length} playoff games with dates and times`);
         }
 
         function initializePlayoffBracket() {
