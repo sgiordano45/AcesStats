@@ -303,7 +303,11 @@
       100% { transform: rotate(360deg); }
     }
 
-    /* Print Styles */
+    /* Visual Bracket Styles (for print) */
+    .visual-bracket {
+      display: none;
+    }
+
     @media print {
       body {
         background: white;
@@ -315,32 +319,142 @@
         background: white;
         color: #2d5016;
         padding: 1rem;
+        border-bottom: 3px solid #2d5016;
       }
 
       .nav-container,
       .controls,
-      .no-print {
+      .no-print,
+      .bracket-section {
         display: none !important;
       }
 
-      .bracket-section {
-        box-shadow: none;
-        page-break-inside: avoid;
-        border: 1px solid #e2e8f0;
+      /* Show visual bracket on print */
+      .visual-bracket {
+        display: block !important;
+        padding: 1rem;
+        page-break-after: always;
       }
 
-      .game-card {
-        page-break-inside: avoid;
-      }
-
-      .team-option.selected {
-        background: #e5e7eb;
-        color: black;
-        border: 2px solid #2d5016;
-      }
-
-      .winner-indicator {
+      .visual-bracket h2 {
         color: #2d5016;
+        margin-bottom: 1rem;
+        border-bottom: 2px solid #1a6b4a;
+        padding-bottom: 0.5rem;
+      }
+
+      .bracket-container {
+        display: flex;
+        flex-direction: row;
+        gap: 3rem;
+        justify-content: space-between;
+        margin: 2rem 0;
+      }
+
+      .bracket-column {
+        display: flex;
+        flex-direction: column;
+        justify-content: space-around;
+        min-width: 200px;
+      }
+
+      .bracket-round {
+        margin-bottom: 2rem;
+      }
+
+      .round-label {
+        font-weight: 700;
+        font-size: 0.85rem;
+        color: #2d5016;
+        text-align: center;
+        margin-bottom: 0.5rem;
+        text-transform: uppercase;
+      }
+
+      .bracket-game {
+        position: relative;
+        margin: 1.5rem 0;
+      }
+
+      .bracket-matchup {
+        border: 2px solid #cbd5e0;
+        border-radius: 4px;
+        background: white;
+        overflow: hidden;
+      }
+
+      .bracket-team {
+        padding: 0.5rem 0.75rem;
+        border-bottom: 1px solid #e2e8f0;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 0.9rem;
+      }
+
+      .bracket-team:last-child {
+        border-bottom: none;
+      }
+
+      .bracket-team.winner {
+        background: #f0fdf4;
+        border-left: 4px solid #2d5016;
+        font-weight: 700;
+      }
+
+      .bracket-team.winner::after {
+        content: '✓';
+        color: #2d5016;
+        font-weight: 700;
+        margin-left: 0.5rem;
+      }
+
+      .team-seed {
+        font-weight: 700;
+        color: #64748b;
+        margin-right: 0.5rem;
+      }
+
+      .team-record {
+        font-size: 0.75rem;
+        color: #94a3b8;
+      }
+
+      .game-time {
+        text-align: center;
+        font-size: 0.7rem;
+        color: #64748b;
+        margin-top: 0.25rem;
+      }
+
+      /* Championship section */
+      .championship-section {
+        text-align: center;
+        padding: 2rem;
+        border: 3px solid #2d5016;
+        border-radius: 8px;
+        margin: 2rem auto;
+        max-width: 400px;
+      }
+
+      .championship-section h3 {
+        color: #2d5016;
+        margin-bottom: 1rem;
+      }
+
+      .champion-team {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: #1a6b4a;
+        padding: 1rem;
+        background: #f0fdf4;
+        border-radius: 4px;
+        margin: 1rem 0;
+      }
+
+      /* Losers bracket on separate page */
+      .losers-bracket-page {
+        page-break-before: always;
       }
     }
 
@@ -433,6 +547,9 @@
       <div class="spinner"></div>
       <p>Loading playoff bracket...</p>
     </div>
+
+    <!-- Visual Bracket for Print -->
+    <div id="visualBracket" class="visual-bracket"></div>
   </div>
 
   <!-- Firebase and Data Scripts -->
@@ -790,6 +907,7 @@
 
       document.getElementById('bracketContent').innerHTML = html;
       updateProgress();
+      generateVisualBracket();
     }
 
     function createGameCard(round, gameId, seed1, seed2, title, note) {
@@ -1042,6 +1160,151 @@
         updateBracketDisplay();
         alert('✅ Bracket reset!');
       }
+    };
+
+    function generateVisualBracket() {
+      const container = document.getElementById('visualBracket');
+      
+      // Helper to create a bracket game display
+      const createBracketGame = (round, gameId, seed1, seed2, label, timeInfo) => {
+        const team1 = getTeamInfo(seed1);
+        const team2 = getTeamInfo(seed2);
+        const prediction = window.predictions[round]?.[gameId];
+        
+        const winner1 = prediction === 'team1';
+        const winner2 = prediction === 'team2';
+        
+        return `
+          <div class="bracket-game">
+            <div class="bracket-matchup">
+              <div class="bracket-team ${winner1 ? 'winner' : ''}">
+                <span>
+                  ${team1.seed ? `<span class="team-seed">#${team1.seed}</span>` : ''}
+                  ${team1.ready ? team1.name : '<em>TBD</em>'}
+                </span>
+                ${team1.record && team1.ready ? `<span class="team-record">${team1.record}</span>` : ''}
+              </div>
+              <div class="bracket-team ${winner2 ? 'winner' : ''}">
+                <span>
+                  ${team2.seed ? `<span class="team-seed">#${team2.seed}</span>` : ''}
+                  ${team2.ready ? team2.name : '<em>TBD</em>'}
+                </span>
+                ${team2.record && team2.ready ? `<span class="team-record">${team2.record}</span>` : ''}
+              </div>
+            </div>
+            ${timeInfo ? `<div class="game-time">${timeInfo}</div>` : ''}
+          </div>
+        `;
+      };
+
+      // Winners Bracket
+      const winnersHTML = `
+        <h2>🏆 Winners Bracket</h2>
+        <div class="bracket-container">
+          <!-- Play-in Round -->
+          <div class="bracket-column">
+            <div class="round-label">Play-in</div>
+            ${createBracketGame('playIn', 'game1', 7, 10, 'Game 3', '11/16 10:00 AM')}
+            ${createBracketGame('playIn', 'game2', 8, 9, 'Game 1', '11/16 8:00 AM')}
+          </div>
+
+          <!-- First Round -->
+          <div class="bracket-column">
+            <div class="round-label">First Round</div>
+            ${createBracketGame('firstRound', 'game1', 1, 'playIn-game2-winner', 'Game 2', '11/16 9:00 AM')}
+            ${createBracketGame('firstRound', 'game2', 2, 'playIn-game1-winner', 'Game 6', '11/23 9:00 AM')}
+            ${createBracketGame('firstRound', 'game3', 3, 6, 'Game 5', '11/16 12:00 PM')}
+            ${createBracketGame('firstRound', 'game4', 4, 5, 'Game 4', '11/16 11:00 AM')}
+          </div>
+
+          <!-- Semi-Finals -->
+          <div class="bracket-column">
+            <div class="round-label">Semi-Finals</div>
+            ${createBracketGame('winnersRound2', 'game1', 'firstRound-game1-winner', 'firstRound-game4-winner', 'Game 11', '11/30 10:00 AM')}
+            ${createBracketGame('winnersRound2', 'game2', 'firstRound-game2-winner', 'firstRound-game3-winner', 'Game 12', '11/30 11:00 AM')}
+          </div>
+
+          <!-- Winners Final -->
+          <div class="bracket-column">
+            <div class="round-label">Winners Final</div>
+            ${createBracketGame('winnersRound3', 'game1', 'winnersRound2-game1-winner', 'winnersRound2-game2-winner', 'Game 15', '12/1 8:00 AM')}
+          </div>
+        </div>
+      `;
+
+      // Losers Bracket
+      const losersHTML = `
+        <div class="losers-bracket-page">
+          <h2>Losers Bracket</h2>
+          <div class="bracket-container">
+            <!-- Losers Round 1 -->
+            <div class="bracket-column">
+              <div class="round-label">Losers R1</div>
+              ${createBracketGame('losersRound1', 'game1', 'firstRound-game2-loser', 'playIn-game2-loser', 'Game 7', '11/23 10:00 AM')}
+              ${createBracketGame('losersRound1', 'game2', 'firstRound-game1-loser', 'playIn-game1-loser', 'Game 8', '11/23 11:00 AM')}
+            </div>
+
+            <!-- Losers Round 2 -->
+            <div class="bracket-column">
+              <div class="round-label">Losers R2</div>
+              ${createBracketGame('losersRound2', 'game1', 'firstRound-game4-loser', 'losersRound1-game2-winner', 'Game 9', '11/30 9:00 AM')}
+              ${createBracketGame('losersRound2', 'game2', 'firstRound-game3-loser', 'losersRound1-game1-winner', 'Game 10', '11/30 12:00 PM')}
+            </div>
+
+            <!-- Losers Round 3 -->
+            <div class="bracket-column">
+              <div class="round-label">Losers R3</div>
+              ${createBracketGame('losersRound3', 'game1', 'winnersRound2-game2-loser', 'losersRound2-game1-winner', 'Game 13', '12/1 12:00 PM')}
+              ${createBracketGame('losersRound3', 'game2', 'winnersRound2-game1-loser', 'losersRound2-game2-winner', 'Game 14', '12/2 7:00 AM')}
+            </div>
+
+            <!-- Losers Semis -->
+            <div class="bracket-column">
+              <div class="round-label">Losers Semis</div>
+              ${createBracketGame('losersSemis', 'game1', 'losersRound3-game1-winner', 'losersRound3-game2-winner', 'Game 16', '12/2 8:00 AM')}
+            </div>
+
+            <!-- Losers Final -->
+            <div class="bracket-column">
+              <div class="round-label">Losers Final</div>
+              ${createBracketGame('losersFinal', 'game1', 'losersSemis-game1-winner', 'winnersRound3-game1-loser', 'Game 17', '12/7 10:00 AM')}
+            </div>
+          </div>
+        </div>
+      `;
+
+      // Championship
+      const championshipWinner = window.predictions.championship?.game1;
+      const championTeam = championshipWinner ? 
+        getTeamInfo(championshipWinner === 'team1' ? 'winnersRound3-game1-winner' : 'losersFinal-game1-winner') : 
+        null;
+
+      const championshipHTML = `
+        <div class="championship-section">
+          <h3>🏆 CHAMPIONSHIP</h3>
+          ${createBracketGame('championship', 'game1', 'winnersRound3-game1-winner', 'losersFinal-game1-winner', 'Game 18', '12/7 11:00 AM')}
+          ${window.predictions.ifNecessary?.game1 ? `
+            <div style="margin-top: 1rem;">
+              <div class="round-label">If Necessary</div>
+              ${createBracketGame('ifNecessary', 'game1', 'championship-game1-winner', 'championship-game1-loser', 'Game 19', '12/7 12:00 PM')}
+            </div>
+          ` : ''}
+          ${championTeam?.ready ? `
+            <div class="champion-team">
+              🏆 ${championTeam.name}
+            </div>
+          ` : ''}
+        </div>
+      `;
+
+      container.innerHTML = winnersHTML + losersHTML + championshipHTML;
+    }
+
+    // Update the updateBracketDisplay to also update visual bracket
+    const originalUpdateBracketDisplay = updateBracketDisplay;
+    updateBracketDisplay = function() {
+      originalUpdateBracketDisplay();
+      generateVisualBracket();
     };
 
     // Initialize on load
