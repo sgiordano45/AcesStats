@@ -916,26 +916,42 @@ async function loadWeekendData() {
     
     allGames = (games || []).map(g => {
       let dateString = "";
-      if (g.date && g.date.seconds) {
+      
+      // Handle Firestore Timestamp objects (playoff games)
+      if (g.date && typeof g.date === 'object' && g.date.seconds) {
         const dateObj = new Date(g.date.seconds * 1000);
         dateString = dateObj.toLocaleDateString('en-US');
-      } else if (g.date) {
+      } 
+      // Handle Firestore Timestamp with toDate method
+      else if (g.date && typeof g.date === 'object' && typeof g.date.toDate === 'function') {
+        const dateObj = g.date.toDate();
+        dateString = dateObj.toLocaleDateString('en-US');
+      }
+      // Handle string dates (regular games)
+      else if (g.date && typeof g.date === 'string') {
         dateString = g.date;
+      }
+      // No date set yet
+      else {
+        dateString = "";
       }
       
       return {
-        "home team": g.homeTeamName || capitalize(g.homeTeamId) || "",
-        "away team": g.awayTeamName || capitalize(g.awayTeamId) || "",
-        "home score": g.homeScore !== undefined ? g.homeScore : null,
-        "away score": g.awayScore !== undefined ? g.awayScore : null,
+        "home team": g.homeTeamName || g["home team"] || capitalize(g.homeTeamId) || "",
+        "away team": g.awayTeamName || g["away team"] || capitalize(g.awayTeamId) || "",
+        "home score": g.homeScore !== undefined ? g.homeScore : (g["home score"] || null),
+        "away score": g.awayScore !== undefined ? g.awayScore : (g["away score"] || null),
         winner: capitalize(g.winner || ""),
-        game_type: g.gameType === "regular" ? "Regular" :
+        game_type: g.game_type === "Playoff" ? "Playoff" :
+                   g.gameType === "regular" ? "Regular" :
                    g.gameType === "playoff" ? "Playoff" :
                    capitalize(g.gameType) || "Regular",
         date: dateString,
         year: currentSeasonData.year.toString(),
         season: capitalize(currentSeasonData.season),
-        id: g.id || ""
+        id: g.id || "",
+        time: g.time || "",
+        round: g.round || ""
       };
     });
     
