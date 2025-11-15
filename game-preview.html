@@ -59,7 +59,7 @@ body {
 }
 
 .header::after {
-  content: '⚾';
+  content: 'âš¾';
   position: absolute;
   bottom: -40px;
   left: -40px;
@@ -259,7 +259,7 @@ body {
 }
 
 .section-header::before {
-  content: "⚾";
+  content: "âš¾";
   font-size: 1.5rem;
 }
 
@@ -275,7 +275,7 @@ body {
 }
 
 .peters-preview-header::before {
-  content: "🔮";
+  content: "ðŸ”®";
   font-size: 1.5rem;
 }
 
@@ -803,8 +803,7 @@ body {
         getSeasonPitchingStatsOptimized,
         getSeasonGames,
         getCurrentSeason,
-        getAllSeasons,
-        getSeasonPreviews
+        getAllSeasons
       } from './firebase-data.js';
 
       let allGames = [];
@@ -812,11 +811,12 @@ body {
       let pitchingData = [];
       let previewData = [];
 
-      // Get URL parameters
+      // Get URL parameters - support both formats
       const urlParams = new URLSearchParams(window.location.search);
-      const homeTeam = urlParams.get('home');
-      const awayTeam = urlParams.get('away');
-      const gameDate = urlParams.get('date');
+      const gameId = urlParams.get('gameId');  // For playoff games
+      const homeTeam = urlParams.get('home');  // For regular games
+      const awayTeam = urlParams.get('away');  // For regular games
+      const gameDate = urlParams.get('date');  // For regular games
 
       // Mobile menu toggle
       function toggleMobileMenu() {
@@ -825,10 +825,15 @@ body {
       }
       window.toggleMobileMenu = toggleMobileMenu;
 
-      if (!homeTeam || !awayTeam || !gameDate) {
+      // Validate we have either gameId OR (homeTeam + awayTeam + gameDate)
+      const hasGameId = gameId && gameId.trim() !== '';
+      const hasTeamParams = homeTeam && awayTeam && gameDate;
+      
+      if (!hasGameId && !hasTeamParams) {
         document.body.innerHTML = `
           <div class="container">
             <h1>Error: Missing game information</h1>
+            <p>Please provide either a game ID or home/away teams with a date.</p>
             <p><a href="current-season.html">Return to current season</a></p>
           </div>
         `;
@@ -838,7 +843,7 @@ body {
 
       async function loadGamePreviewData() {
         const startTime = performance.now();
-        console.log('🏟️ Loading game preview data...');
+        console.log('ðŸŸï¸ Loading game preview data...');
         
         try {
           // Helper function for capitalizing
@@ -848,17 +853,53 @@ body {
           const currentSeasonData = await getCurrentSeason();
           const seasonId = currentSeasonData.id;
           
-          console.log(`📅 Game season: ${seasonId}`);
+          console.log(`ðŸ“… Game season: ${seasonId}`);
           
-          // Load data in parallel - using Firebase for all data including previews
-          const [seasons, batting, pitching, previews] = await Promise.all([
+          // Determine if we're loading by gameId or by team names
+          let targetHomeTeam, targetAwayTeam, targetGameDate;
+          
+          if (hasGameId) {
+            console.log('Loading playoff game by ID:', gameId);
+            // We'll fetch the specific game by ID from current season
+            const currentSeasonGames = await getSeasonGames(seasonId);
+            const playoffGame = currentSeasonGames.find(g => g.id === gameId);
+            
+            if (!playoffGame) {
+              throw new Error(`Game with ID ${gameId} not found in current season`);
+            }
+            
+            // Extract team names from the playoff game
+            targetHomeTeam = playoffGame.homeTeamName || playoffGame["home team"] || capitalize(playoffGame.homeTeamId);
+            targetAwayTeam = playoffGame.awayTeamName || playoffGame["away team"] || capitalize(playoffGame.awayTeamId);
+            
+            // Convert date if it's a Timestamp
+            if (playoffGame.date && typeof playoffGame.date === 'object' && playoffGame.date.toDate) {
+              targetGameDate = playoffGame.date.toDate().toLocaleDateString('en-US');
+            } else if (playoffGame.date && typeof playoffGame.date === 'object' && playoffGame.date.seconds) {
+              targetGameDate = new Date(playoffGame.date.seconds * 1000).toLocaleDateString('en-US');
+            } else {
+              targetGameDate = playoffGame.date || 'TBD';
+            }
+            
+            console.log('Found playoff game:', targetHomeTeam, 'vs', targetAwayTeam, 'on', targetGameDate);
+          } else {
+            // Use the URL parameters directly
+            targetHomeTeam = homeTeam;
+            targetAwayTeam = awayTeam;
+            targetGameDate = gameDate;
+          }
+          
+          // Load data in parallel - following h2h_grid.html pattern for ALL games
+          const [seasons, batting, pitching, previewsResponse] = await Promise.all([
             getAllSeasons(),
             getSeasonPlayerStatsOptimized(seasonId),
             getSeasonPitchingStatsOptimized(seasonId),
-            getSeasonPreviews(seasonId)
+            fetch('previews.json', {
+              headers: { 'Accept': 'application/json; charset=utf-8' }
+            }).catch(() => ({ ok: false }))
           ]);
           
-          console.log(`✅ Found ${seasons.length} seasons`);
+          console.log(`âœ… Found ${seasons.length} seasons`);
           
           // Load games from ALL seasons (following h2h_grid.html pattern)
           const gamePromises = seasons.map(async (season) => {
@@ -883,7 +924,7 @@ body {
                   winner: capitalize(g.winner || ""),
                   game_type: g.gameType || "Regular",
                   date: dateString,
-                  year: season.year.toString(),  // ← ADD .toString() HERE
+                  year: season.year.toString(),  // â† ADD .toString() HERE
                   season: capitalize(season.season || ""),
                   forfeit: g.forfeit ? "Yes" : "No"
                 };
@@ -897,7 +938,7 @@ body {
           const allSeasonGames = await Promise.all(gamePromises);
           allGames = allSeasonGames.flat();
           
-          console.log(`✅ Fetched: ${allGames.length} total games, ${batting?.length || 0} batting records, ${pitching?.length || 0} pitching records`);
+          console.log(`âœ… Fetched: ${allGames.length} total games, ${batting?.length || 0} batting records, ${pitching?.length || 0} pitching records`);
           
           // Games are already mapped above - no need to map again
           // allGames already has all historical games in correct format
@@ -925,30 +966,31 @@ body {
             ERA: p.earnedRunAverage || p.era || 0
           }));
           
-          // Load preview data from Firebase
-          previewData = previews || [];
-          console.log(`✅ Loaded ${previewData.length} game previews from Firebase`);
+          // Load preview data if available (still from JSON)
+          if (previewsResponse.ok) {
+            previewData = await previewsResponse.json();
+          }
           
           const loadTime = performance.now() - startTime;
-          console.log(`✅ Data loaded in ${loadTime.toFixed(0)}ms`);
-          console.log(`📊 Games: ${allGames.length}, Players: ${playerData.length}, Pitchers: ${pitchingData.length}`);
+          console.log(`âœ… Data loaded in ${loadTime.toFixed(0)}ms`);
+          console.log(`ðŸ“Š Games: ${allGames.length}, Players: ${playerData.length}, Pitchers: ${pitchingData.length}`);
           
           // Sample data for debugging
           if (playerData.length > 0) {
-            console.log('🔍 Sample batting data:', playerData[0]);
-            console.log('🔍 Check acesBPI field:', playerData[0].acesBPI);
+            console.log('ðŸ” Sample batting data:', playerData[0]);
+            console.log('ðŸ” Check acesBPI field:', playerData[0].acesBPI);
           }
           if (pitchingData.length > 0) {
-            console.log('🔍 Sample pitching data:', pitchingData[0]);
+            console.log('ðŸ” Sample pitching data:', pitchingData[0]);
           }
           if (allGames.length > 0) {
-            console.log('🔍 Sample game data:', allGames[0]);
+            console.log('ðŸ” Sample game data:', allGames[0]);
           }
           
           generateGamePreview();
           
         } catch (error) {
-          console.error('❌ Error loading data:', error);
+          console.error('âŒ Error loading data:', error);
           console.error('Error stack:', error.stack);
           document.body.innerHTML = `
             <div class="container">
@@ -961,21 +1003,21 @@ body {
       }
 
       function generateGamePreview() {
-        console.log('🎨 Generating game preview...');
+        console.log('ðŸŽ¨ Generating game preview...');
         
         // Update header
-        document.getElementById('gameInfo').textContent = `${awayTeam} @ ${homeTeam} - ${gameDate}`;
+        document.getElementById('gameInfo').textContent = `${targetAwayTeam} @ ${targetHomeTeam} - ${targetGameDate}`;
         
         // Update team names and logos
-        document.getElementById('awayTeamName').textContent = awayTeam;
-        document.getElementById('homeTeamName').textContent = homeTeam;
+        document.getElementById('targetAwayTeamName').textContent = awayTeam;
+        document.getElementById('targetHomeTeamName').textContent = homeTeam;
         
         // Set team logos
         const awayLogo = document.getElementById('awayTeamLogo');
         const homeLogo = document.getElementById('homeTeamLogo');
         
-        const awayLogoPath = `logos/${awayTeam.toLowerCase()}.png`;
-        const homeLogoPath = `logos/${homeTeam.toLowerCase()}.png`;
+        const awayLogoPath = `logos/${targetAwayTeam.toLowerCase()}.png`;
+        const homeLogoPath = `logos/${targetHomeTeam.toLowerCase()}.png`;
         
         awayLogo.src = awayLogoPath;
         awayLogo.alt = `${awayTeam} logo`;
@@ -997,30 +1039,20 @@ body {
         document.getElementById('awayTeamRecord').textContent =
           `${awayRecord.wins}-${awayRecord.losses}${awayRecord.ties > 0 ? `-${awayRecord.ties}` : ''} (${(awayRecord.winPct * 100).toFixed(1)}%)`;
 
-        // Find the current game to get its game type
-        const currentGame = allGames.find(g => 
-          g["home team"] === homeTeam && 
-          g["away team"] === awayTeam && 
-          g.date === gameDate
-        );
-        
-        // Get game type from Firebase, with fallback to "Regular Season"
-        const gameType = currentGame?.game_type || "Regular Season";
-
         // Update game details
         document.getElementById('gameDetails').innerHTML = `
-          <strong>Date:</strong> ${gameDate} | <strong>Type:</strong> ${gameType}
+          <strong>Date:</strong> ${gameDate} | <strong>Type:</strong> Regular Season
         `;
 
         // Generate all sections
         generatePetersPreview(homeTeam, awayTeam, gameDate);
-        generateHeadToHeadRecord(homeTeam, awayTeam);
-        generateKeyPlayers(homeTeam, awayTeam);
-        generateBattingComparison(homeTeam, awayTeam);
-        generatePitchingComparison(homeTeam, awayTeam);
+        generateHeadToHeadRecord(targetHomeTeam, targetAwayTeam);
+        generateKeyPlayers(targetHomeTeam, targetAwayTeam);
+        generateBattingComparison(targetHomeTeam, targetAwayTeam);
+        generatePitchingComparison(targetHomeTeam, targetAwayTeam);
         generateHistoricalMatchups(homeTeam, awayTeam);
         
-        console.log('✅ Game preview generated successfully!');
+        console.log('âœ… Game preview generated successfully!');
       }
 
       // Helper function to fix character encoding issues
@@ -1030,11 +1062,11 @@ body {
         return text
           .replace(/['']/g, "'")
           .replace(/[""]/g, '"')
-          .replace(/ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢/g, "'")
-          .replace(/ÃƒÂ¢Ã¢â€šÂ¬Ã…"/g, '"')
-          .replace(/ÃƒÂ¢Ã¢â€šÂ¬/g, '"')
-          .replace(/ÃƒÂ¢Ã¢â€šÂ¬"/g, "—")
-          .replace(/ÃƒÂ¢Ã¢â€šÂ¬"/g, "—");
+          .replace(/ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢/g, "'")
+          .replace(/ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦"/g, '"')
+          .replace(/ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬/g, '"')
+          .replace(/ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬"/g, "â€”")
+          .replace(/ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬"/g, "â€”");
       }
 
       function generatePetersPreview(homeTeam, awayTeam, gameDate) {
@@ -1134,8 +1166,8 @@ body {
       }
 
       function generateKeyPlayers(homeTeam, awayTeam) {
-        console.log(`🌟 Generating key players for ${awayTeam} @ ${homeTeam}`);
-        console.log(`📊 Total players in playerData: ${playerData.length}`);
+        console.log(`ðŸŒŸ Generating key players for ${awayTeam} @ ${homeTeam}`);
+        console.log(`ðŸ“Š Total players in playerData: ${playerData.length}`);
         
         // Calculate team games played for qualification - ONLY CURRENT SEASON
         // Get the current season from the game date
@@ -1143,19 +1175,19 @@ body {
         const gameMonth = new Date(gameDate).getMonth() + 1;
         const currentSeasonName = gameMonth >= 8 ? 'Fall' : 'Spring';
         
-        console.log(`🔍 Looking for games in ${gameYear} ${currentSeasonName}`);
-        console.log(`🔍 Total games loaded: ${allGames.length}`);
-        console.log(`🔍 Sample game from allGames:`, allGames[0]);
+        console.log(`ðŸ” Looking for games in ${gameYear} ${currentSeasonName}`);
+        console.log(`ðŸ” Total games loaded: ${allGames.length}`);
+        console.log(`ðŸ” Sample game from allGames:`, allGames[0]);
         
         // Check what years we have
         const uniqueYears = [...new Set(allGames.map(g => g.year))];
-        console.log(`🔍 Years in games:`, uniqueYears.sort());
+        console.log(`ðŸ” Years in games:`, uniqueYears.sort());
         
         // Check 2025 games specifically
         const games2025 = allGames.filter(g => g.year === "2025");
-        console.log(`🔍 Total 2025 games: ${games2025.length}`);
+        console.log(`ðŸ” Total 2025 games: ${games2025.length}`);
         if (games2025.length > 0) {
-          console.log(`🔍 Sample 2025 game:`, games2025[0]);
+          console.log(`ðŸ” Sample 2025 game:`, games2025[0]);
         }
         
         // Filter ALL games to current season only
@@ -1168,7 +1200,7 @@ body {
           return matches;
         });
         
-        console.log(`📊 Current season (${gameYear} ${currentSeasonName}): ${currentSeasonGames.length} total games`);
+        console.log(`ðŸ“Š Current season (${gameYear} ${currentSeasonName}): ${currentSeasonGames.length} total games`);
         
         // Count games for each team
         const teamGamesPlayed = {};
@@ -1186,8 +1218,8 @@ body {
         const homeMinAB = homeTeamGames * 2;
         const awayMinAB = awayTeamGames * 2;
         
-        console.log(`📊 ${homeTeam}: ${homeTeamGames} games (current season), min ${homeMinAB} AB`);
-        console.log(`📊 ${awayTeam}: ${awayTeamGames} games (current season), min ${awayMinAB} AB`);
+        console.log(`ðŸ“Š ${homeTeam}: ${homeTeamGames} games (current season), min ${homeMinAB} AB`);
+        console.log(`ðŸ“Š ${awayTeam}: ${awayTeamGames} games (current season), min ${awayMinAB} AB`);
         
         // Filter players for each team
         const homeTopPlayers = playerData
@@ -1201,10 +1233,10 @@ body {
             const hasBPI = bpi !== "N/A" && bpi != null && bpi !== 0;
             
             if (teamMatch && !abQualified) {
-              console.log(`❌ ${p.name}: Only ${atBats} AB (need ${homeMinAB})`);
+              console.log(`âŒ ${p.name}: Only ${atBats} AB (need ${homeMinAB})`);
             }
             if (teamMatch && abQualified && !hasBPI) {
-              console.log(`❌ ${p.name}: Qualified AB but acesBPI is ${bpi}`);
+              console.log(`âŒ ${p.name}: Qualified AB but acesBPI is ${bpi}`);
             }
             
             return teamMatch && abQualified && hasBPI;
@@ -1227,10 +1259,10 @@ body {
             const hasBPI = bpi !== "N/A" && bpi != null && bpi !== 0;
             
             if (teamMatch && !abQualified) {
-              console.log(`❌ ${p.name}: Only ${atBats} AB (need ${awayMinAB})`);
+              console.log(`âŒ ${p.name}: Only ${atBats} AB (need ${awayMinAB})`);
             }
             if (teamMatch && abQualified && !hasBPI) {
-              console.log(`❌ ${p.name}: Qualified AB but acesBPI is ${bpi}`);
+              console.log(`âŒ ${p.name}: Qualified AB but acesBPI is ${bpi}`);
             }
             
             return teamMatch && abQualified && hasBPI;
@@ -1242,14 +1274,14 @@ body {
           })
           .slice(0, 3);
 
-        console.log(`📊 ${awayTeam} qualified players:`, awayTopPlayers.length);
-        console.log(`📊 ${homeTeam} qualified players:`, homeTopPlayers.length);
+        console.log(`ðŸ“Š ${awayTeam} qualified players:`, awayTopPlayers.length);
+        console.log(`ðŸ“Š ${homeTeam} qualified players:`, homeTopPlayers.length);
         
         if (awayTopPlayers.length > 0) {
-          console.log(`🔍 Sample ${awayTeam} player:`, awayTopPlayers[0]);
+          console.log(`ðŸ” Sample ${awayTeam} player:`, awayTopPlayers[0]);
         }
         if (homeTopPlayers.length > 0) {
-          console.log(`🔍 Sample ${homeTeam} player:`, homeTopPlayers[0]);
+          console.log(`ðŸ” Sample ${homeTeam} player:`, homeTopPlayers[0]);
         }
 
         function createPlayerCard(player) {
