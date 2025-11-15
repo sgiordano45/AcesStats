@@ -1372,17 +1372,8 @@
 
         return standingsWithSOS.sort((a, b) => {
           if (a.winPct !== b.winPct) return b.winPct - a.winPct;
-          
-          // Check if there are 3+ teams tied at this win percentage
-          const teamsAtSameWinPct = standingsWithSOS.filter(t => t.winPct === a.winPct);
-          
-          // Only use H2H tiebreaker if exactly 2 teams are tied
-          if (teamsAtSameWinPct.length === 2) {
-            const h2hComp = compareHeadToHead(a, b);
-            if (h2hComp !== 0) return h2hComp;
-          }
-          
-          // For 3+ teams tied, or if H2H didn't resolve, use runs against
+          const h2hComp = compareHeadToHead(a, b);
+          if (h2hComp !== 0) return h2hComp;
           if (a.runsAgainst !== b.runsAgainst) return a.runsAgainst - b.runsAgainst;
           return b.runDifferential - a.runDifferential;
         });
@@ -1474,16 +1465,16 @@
             const gameDate = parseGameDate(g.date);
             const isTodayOrFuture = gameDate >= todayStart;
             const noWinner = !g.winner || g.winner.trim() === "";
-            const isRegularSeason = g.game_type === 'Regular';
-            return isTodayOrFuture && noWinner && isRegularSeason;
+            // Include both Regular and Playoff games
+            return isTodayOrFuture && noWinner;
           })
           .sort((a, b) => parseGameDate(a.date) - parseGameDate(b.date));
 
         if (upcomingGames.length === 0) {
           scheduleElement.innerHTML = `
             <div class="no-data">
-              <h4>No Upcoming Regular Season Games</h4>
-              <p>No upcoming regular season games scheduled at this time.</p>
+              <h4>No Upcoming Games</h4>
+              <p>No upcoming games scheduled at this time.</p>
             </div>
           `;
           return;
@@ -1496,16 +1487,24 @@
                 <tr><th>Date</th><th>Home Team</th><th>vs</th><th>Away Team</th><th>Type</th><th>Preview</th></tr>
               </thead>
               <tbody>
-                ${upcomingGames.map(game => `
-                  <tr class="upcoming">
-                    <td class="game-date">${game.date}</td>
-                    <td class="team-name">${game["home team"]}</td>
-                    <td class="game-score">vs</td>
-                    <td class="team-name">${game["away team"]}</td>
-                    <td>${game.game_type}</td>
-                    <td><a href="game-preview.html?home=${encodeURIComponent(game["home team"])}&away=${encodeURIComponent(game["away team"])}&date=${encodeURIComponent(game.date)}" style="color: var(--primary-color); text-decoration: none; font-weight: 600;">📊 Preview</a></td>
-                  </tr>
-                `).join('')}
+                ${upcomingGames.map(game => {
+                  // For playoff games with IDs, use game ID; otherwise use team names and date
+                  const isPlayoffGame = game.id && game.id.startsWith('playoff_');
+                  const previewLink = isPlayoffGame ? 
+                    `game-preview.html?gameId=${encodeURIComponent(game.id)}` :
+                    `game-preview.html?home=${encodeURIComponent(game["home team"])}&away=${encodeURIComponent(game["away team"])}&date=${encodeURIComponent(game.date)}`;
+                  
+                  return `
+                    <tr class="${game.game_type === 'Playoff' ? 'playoff-game' : 'upcoming'}">
+                      <td class="game-date">${game.date}</td>
+                      <td class="team-name">${game["home team"]}</td>
+                      <td class="game-score">vs</td>
+                      <td class="team-name">${game["away team"]}</td>
+                      <td>${game.game_type}</td>
+                      <td><a href="${previewLink}" style="color: var(--primary-color); text-decoration: none; font-weight: 600;">📊 Preview</a></td>
+                    </tr>
+                  `;
+                }).join('')}
               </tbody>
             </table>
           </div>
