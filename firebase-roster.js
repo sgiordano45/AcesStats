@@ -310,14 +310,15 @@ export async function getUpcomingTeamGames(teamId, seasonId) {
     allGamesSnap.forEach(doc => {
       const data = doc.data();
       
-      // Check if this team is involved (check both homeTeamId and homeTeam fields)
-      const homeTeamMatch = 
-        data.homeTeamId?.toLowerCase() === teamIdLower ||
-        data.homeTeam?.toLowerCase() === teamIdLower;
-        
-      const awayTeamMatch = 
-        data.awayTeamId?.toLowerCase() === teamIdLower ||
-        data.awayTeam?.toLowerCase() === teamIdLower;
+      // Handle both regular season and playoff field names
+      // Regular: homeTeamId, awayTeamId, homeTeam, awayTeam
+      // Playoff: "home team", "away team"
+      const homeTeamValue = data.homeTeamId || data.homeTeam || data['home team'] || '';
+      const awayTeamValue = data.awayTeamId || data.awayTeam || data['away team'] || '';
+      
+      // Check if this team is involved
+      const homeTeamMatch = homeTeamValue.toLowerCase() === teamIdLower;
+      const awayTeamMatch = awayTeamValue.toLowerCase() === teamIdLower;
       
       if (!homeTeamMatch && !awayTeamMatch) {
         return; // Not this team's game
@@ -337,11 +338,21 @@ export async function getUpcomingTeamGames(teamId, seasonId) {
       
       // Only include future games
       if (gameDate >= now) {
+        // Determine opponent based on which team we are
+        const opponent = homeTeamMatch ? awayTeamValue : homeTeamValue;
+        
+        // Normalize game type (handle "game_type" and "gameType")
+        const gameType = data.game_type || data.gameType || 'Regular';
+        
         games.push({
           id: doc.id,
           ...data,
+          // Normalize field names for consistent access
+          homeTeam: homeTeamValue,
+          awayTeam: awayTeamValue,
+          gameType: gameType,
           isHome: homeTeamMatch,
-          opponent: homeTeamMatch ? data.awayTeam : data.homeTeam
+          opponent: opponent
         });
       }
     });
@@ -356,10 +367,12 @@ export async function getUpcomingTeamGames(teamId, seasonId) {
     console.log(`✅ Loaded ${games.length} upcoming games for ${teamId}`);
     if (games.length > 0) {
       console.log('First game:', {
+        id: games[0].id,
         date: games[0].date,
         home: games[0].homeTeam,
         away: games[0].awayTeam,
-        opponent: games[0].opponent
+        opponent: games[0].opponent,
+        gameType: games[0].gameType
       });
     }
     

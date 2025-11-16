@@ -525,22 +525,16 @@ function RosterManagement({ currentUser }) {
           ? new Date(game.date.seconds * 1000).toLocaleDateString()
           : game.date;
         
-        const teamLower = selectedTeam.toLowerCase();
-        const homeTeamLower = (game.homeTeam || game.homeTeamId || '').toLowerCase();
-        const awayTeamLower = (game.awayTeam || game.awayTeamId || '').toLowerCase();
-        
-        const isHome = homeTeamLower === teamLower;
-        const opponentRaw = isHome ? (game.awayTeam || game.awayTeamId) : (game.homeTeam || game.homeTeamId);
-        const opponent = capitalizeTeamName(opponentRaw);
-        
+        // Data is already normalized by getUpcomingTeamGames
         return {
           id: game.id,
           date: gameDate,
-          homeTeam: capitalizeTeamName(game.homeTeam || game.homeTeamId),
-          awayTeam: capitalizeTeamName(game.awayTeam || game.awayTeamId),
-          opponent: opponent,
-          gameType: game.gameType || 'Regular',
-          isHome: isHome
+          homeTeam: capitalizeTeamName(game.homeTeam),
+          awayTeam: capitalizeTeamName(game.awayTeam),
+          opponent: capitalizeTeamName(game.opponent),
+          gameType: game.gameType, // Already normalized (handles both game_type and gameType)
+          round: game.round || '', // Playoff games have round info
+          isHome: game.isHome // Already calculated
         };
       });
       
@@ -909,6 +903,10 @@ const printBattingOrder = () => {
     .map((p, idx) => p ? `${idx + 1}. ${p.name} (#${p.jersey}) - ${p.battingAvg}` : `${idx + 1}. (Empty)`)
     .join('\n');
 
+  const isPlayoff = selectedGameData.gameType && selectedGameData.gameType.toLowerCase() === 'playoff';
+  const roundInfo = selectedGameData.round ? ` - ${selectedGameData.round}` : '';
+  const gameTypeLabel = isPlayoff ? `🏆 PLAYOFF GAME${roundInfo}` : 'Regular Season';
+
   printWindow.document.write(`
     <html>
       <head>
@@ -917,6 +915,7 @@ const printBattingOrder = () => {
           body { font-family: Arial, sans-serif; padding: 40px; }
           h1 { color: #2d5016; }
           .info { margin: 20px 0; color: #666; }
+          .playoff-badge { background: #ffd700; color: #2d5016; padding: 4px 12px; border-radius: 6px; font-weight: bold; display: inline-block; margin-bottom: 10px; }
           .lineup { white-space: pre-line; line-height: 1.8; font-size: 14px; }
           @media print {
             body { padding: 20px; }
@@ -925,9 +924,11 @@ const printBattingOrder = () => {
       </head>
       <body>
         <h1>⚾ Mountainside Aces - Batting Order</h1>
+        ${isPlayoff ? `<div class="playoff-badge">🏆 PLAYOFF GAME${roundInfo}</div>` : ''}
         <div class="info">
           <strong>Game:</strong> ${selectedGameData.date} vs ${selectedGameData.opponent}<br>
-          <strong>Season:</strong> ${currentSeason.year} ${seasonConfig.name}
+          <strong>Season:</strong> ${currentSeason.year} ${seasonConfig.name}<br>
+          <strong>Type:</strong> ${gameTypeLabel}
         </div>
         <div class="lineup">${battingOrderList}</div>
         <script>window.print();<\/script>
@@ -973,6 +974,10 @@ const printDefensiveRotation = () => {
     tableRows += `</tr>`;
   }
 
+  const isPlayoff = selectedGameData.gameType && selectedGameData.gameType.toLowerCase() === 'playoff';
+  const roundInfo = selectedGameData.round ? ` - ${selectedGameData.round}` : '';
+  const gameTypeLabel = isPlayoff ? `🏆 PLAYOFF GAME${roundInfo}` : 'Regular Season';
+
   printWindow.document.write(`
     <html>
       <head>
@@ -981,6 +986,7 @@ const printDefensiveRotation = () => {
           body { font-family: Arial, sans-serif; padding: 40px; }
           h1 { color: #2d5016; }
           .info { margin: 20px 0; color: #666; }
+          .playoff-badge { background: #ffd700; color: #2d5016; padding: 4px 12px; border-radius: 6px; font-weight: bold; display: inline-block; margin-bottom: 10px; }
           table { width: 100%; border-collapse: collapse; margin-top: 20px; }
           th { background: #2d5016; color: white; padding: 10px; border: 1px solid #ddd; }
           td { padding: 8px; border: 1px solid #ddd; }
@@ -992,9 +998,11 @@ const printDefensiveRotation = () => {
       </head>
       <body>
         <h1>⚾ Mountainside Aces - Defensive Rotation</h1>
+        ${isPlayoff ? `<div class="playoff-badge">🏆 PLAYOFF GAME${roundInfo}</div>` : ''}
         <div class="info">
           <strong>Game:</strong> ${selectedGameData.date} vs ${selectedGameData.opponent}<br>
-          <strong>Season:</strong> ${currentSeason.year} ${seasonConfig.name}
+          <strong>Season:</strong> ${currentSeason.year} ${seasonConfig.name}<br>
+          <strong>Type:</strong> ${gameTypeLabel}
         </div>
         <table>
           <thead>
@@ -1268,9 +1276,12 @@ const printDefensiveRotation = () => {
                     <option value="">Select a game...</option>
                     {games.map(game => {
                       const gameYesCount = players.filter(player => rsvps[`${player.id}-${game.id}`] === 'yes').length;
+                      const isPlayoff = game.gameType && game.gameType.toLowerCase() === 'playoff';
+                      const roundInfo = game.round ? ` - ${game.round}` : '';
+                      const playoffLabel = isPlayoff ? `🏆 PLAYOFF${roundInfo}: ` : '';
                       return (
                         <option key={game.id} value={game.id}>
-                          {game.date} vs {game.opponent} ({gameYesCount} Yes)
+                          {playoffLabel}{game.date} vs {game.opponent} ({gameYesCount} Yes)
                         </option>
                       );
                     })}
