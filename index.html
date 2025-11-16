@@ -316,6 +316,109 @@
     background: linear-gradient(90deg, var(--border-color) 0%, transparent 100%);
     margin-left: 1rem;
   }
+
+  /* Milestone Watch Styles */
+  .milestone-watch-container {
+    background: white;
+    border-radius: 12px;
+    padding: 2rem;
+    box-shadow: var(--shadow-sm);
+    border: 1px solid var(--border-color);
+  }
+
+  .milestone-loading {
+    text-align: center;
+    color: var(--text-light);
+    padding: 2rem;
+    font-size: 1rem;
+  }
+
+  .milestone-section {
+    margin-bottom: 2rem;
+  }
+
+  .milestone-section:last-child {
+    margin-bottom: 0;
+  }
+
+  .milestone-section-header {
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: var(--text-dark);
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 2px solid var(--border-color);
+  }
+
+  .milestone-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+
+  .milestone-item {
+    padding: 0.875rem 0;
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    transition: background 0.2s ease;
+  }
+
+  .milestone-item:last-child {
+    border-bottom: none;
+  }
+
+  .milestone-item:hover {
+    background: #f7fafc;
+    padding-left: 0.5rem;
+    margin-left: -0.5rem;
+    padding-right: 0.5rem;
+    margin-right: -0.5rem;
+    border-radius: 6px;
+  }
+
+  .milestone-player-name {
+    color: var(--primary-color);
+    font-weight: 600;
+    text-decoration: none;
+    transition: color 0.2s ease;
+  }
+
+  .milestone-player-name:hover {
+    color: var(--secondary-color);
+    text-decoration: underline;
+  }
+
+  .milestone-team {
+    color: var(--text-light);
+    font-size: 0.9rem;
+    margin-left: 0.5rem;
+  }
+
+  .milestone-stat {
+    color: var(--text-dark);
+    margin-left: 0.5rem;
+  }
+
+  .milestone-gap {
+    color: #d97706;
+    font-weight: 700;
+  }
+
+  .milestone-target {
+    color: var(--text-light);
+  }
+
+  .milestone-empty {
+    text-align: center;
+    color: var(--text-light);
+    padding: 2rem;
+    font-size: 1rem;
+    font-style: italic;
+  }
   
   /* Modern card grid with better spacing */
   .cards-grid {
@@ -1154,6 +1257,16 @@
           </div>
         </a> 
 		
+      </div>
+    </section>
+
+    <!-- Milestone Watch Section -->
+    <section class="section" id="milestoneWatchSection">
+      <h2 class="section-title">🎯 Milestone Watch</h2>
+      <div class="milestone-watch-container">
+        <div id="milestoneWatchContent">
+          <div class="milestone-loading">Loading milestone data...</div>
+        </div>
       </div>
     </section>
 
@@ -2531,9 +2644,149 @@ function updateRSVPCard(profile) {
 
   document.addEventListener('DOMContentLoaded', function() {
     loadRecentScores();
+    loadMilestoneWatch();
   });
 
   setInterval(loadRecentScores, 5 * 60 * 1000);
+
+  // Milestone Watch functionality
+  async function loadMilestoneWatch() {
+    try {
+      console.log('🎯 Loading milestone watch data...');
+      
+      const { getCurrentSeason, getCurrentSeasonStats } = await import('./firebase-data.js');
+      
+      const currentSeason = await getCurrentSeason();
+      const stats = await getCurrentSeasonStats(currentSeason.id);
+      
+      console.log(`✅ Loaded ${stats.length} player stats for milestone watch`);
+      
+      const milestones = {
+        hits: [100, 200, 300, 400],
+        runs: [50, 100, 150, 200]
+      };
+      
+      const hitsApproaching = [];
+      const runsApproaching = [];
+      
+      stats.forEach(player => {
+        const playerName = player.playerName || player.name;
+        const team = player.currentTeam || player.team || '';
+        const hits = Number(player.hits || 0);
+        const runs = Number(player.runs || 0);
+        
+        // Check hits milestones
+        for (const milestone of milestones.hits) {
+          const threshold = Math.ceil(milestone * 0.95); // 5% threshold
+          if (hits >= threshold && hits < milestone) {
+            const gap = milestone - hits;
+            hitsApproaching.push({
+              name: playerName,
+              team: team,
+              current: hits,
+              milestone: milestone,
+              gap: gap
+            });
+            break; // Only track next milestone
+          }
+        }
+        
+        // Check runs milestones
+        for (const milestone of milestones.runs) {
+          const threshold = Math.ceil(milestone * 0.95); // 5% threshold
+          if (runs >= threshold && runs < milestone) {
+            const gap = milestone - runs;
+            runsApproaching.push({
+              name: playerName,
+              team: team,
+              current: runs,
+              milestone: milestone,
+              gap: gap
+            });
+            break; // Only track next milestone
+          }
+        }
+      });
+      
+      // Sort by gap (closest first)
+      hitsApproaching.sort((a, b) => a.gap - b.gap);
+      runsApproaching.sort((a, b) => a.gap - b.gap);
+      
+      // Limit to 10 each
+      const displayHits = hitsApproaching.slice(0, 10);
+      const displayRuns = runsApproaching.slice(0, 10);
+      
+      renderMilestoneWatch(displayHits, displayRuns);
+      
+    } catch (error) {
+      console.error('❌ Error loading milestone watch:', error);
+      document.getElementById('milestoneWatchContent').innerHTML = 
+        '<div class="milestone-empty">Unable to load milestone data</div>';
+    }
+  }
+  
+  function renderMilestoneWatch(hitsData, runsData) {
+    const container = document.getElementById('milestoneWatchContent');
+    
+    if (hitsData.length === 0 && runsData.length === 0) {
+      container.innerHTML = '<div class="milestone-empty">No players currently close to milestones</div>';
+      return;
+    }
+    
+    let html = '';
+    
+    // Hits section
+    if (hitsData.length > 0) {
+      html += `
+        <div class="milestone-section">
+          <div class="milestone-section-header">
+            <span>🥎 Hits</span>
+          </div>
+          <ul class="milestone-list">
+            ${hitsData.map(player => `
+              <li class="milestone-item">
+                <a href="player.html?name=${encodeURIComponent(player.name)}" class="milestone-player-name">
+                  ${player.name}
+                </a>
+                <span class="milestone-team">(${player.team})</span>
+                <span class="milestone-stat"> - 
+                  <span class="milestone-gap">${player.gap}</span> 
+                  <span class="milestone-target">from ${player.milestone}</span>
+                </span>
+              </li>
+            `).join('')}
+          </ul>
+        </div>
+      `;
+    }
+    
+    // Runs section
+    if (runsData.length > 0) {
+      html += `
+        <div class="milestone-section">
+          <div class="milestone-section-header">
+            <span>🏃 Runs</span>
+          </div>
+          <ul class="milestone-list">
+            ${runsData.map(player => `
+              <li class="milestone-item">
+                <a href="player.html?name=${encodeURIComponent(player.name)}" class="milestone-player-name">
+                  ${player.name}
+                </a>
+                <span class="milestone-team">(${player.team})</span>
+                <span class="milestone-stat"> - 
+                  <span class="milestone-gap">${player.gap}</span> 
+                  <span class="milestone-target">from ${player.milestone}</span>
+                </span>
+              </li>
+            `).join('')}
+          </ul>
+        </div>
+      `;
+    }
+    
+    container.innerHTML = html;
+  }
   </script>
 <script type="module">
   import { NavigationComponent } from './nav-component.js';
