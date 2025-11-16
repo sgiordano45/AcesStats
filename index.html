@@ -2654,16 +2654,18 @@ function updateRSVPCard(profile) {
     try {
       console.log('🎯 Loading milestone watch data...');
       
-      const { getCurrentSeason, getSeasonPlayerStatsOptimized } = await import('./firebase-data.js');
+      const { getAllPlayerStatsOptimized } = await import('./firebase-data.js');
       
-      const currentSeason = await getCurrentSeason();
-      const stats = await getSeasonPlayerStatsOptimized(currentSeason.id);
+      const players = await getAllPlayerStatsOptimized();
       
-      console.log(`✅ Loaded ${stats.length} player stats for milestone watch`);
+      console.log(`✅ Loaded ${players.length} players for milestone watch`);
       
       // Debug: Log first player to see structure
-      if (stats.length > 0) {
-        console.log('Sample player data:', stats[0]);
+      if (players.length > 0) {
+        console.log('Sample player data:', players[0]);
+        if (players[0].career) {
+          console.log('Career stats structure:', players[0].career);
+        }
       }
       
       const milestones = {
@@ -2674,17 +2676,18 @@ function updateRSVPCard(profile) {
       const hitsApproaching = [];
       const runsApproaching = [];
       
-      stats.forEach(player => {
-        const playerName = player.playerName || player.name;
+      players.forEach(player => {
+        const playerName = player.playerName || player.name || player.displayName;
         const team = player.currentTeam || player.team || '';
         
-        // Try multiple possible field names for hits and runs
-        const hits = Number(player.hits || player.Hits || player.H || 0);
-        const runs = Number(player.runs || player.Runs || player.R || 0);
+        // Access career stats from nested career object
+        const careerStats = player.career || {};
+        const hits = Number(careerStats.hits || 0);
+        const runs = Number(careerStats.runs || 0);
         
         // Debug: Log players close to milestones
         if (hits >= 90 || runs >= 45) {
-          console.log(`Player close to milestone: ${playerName} - ${hits} hits, ${runs} runs`);
+          console.log(`Player close to milestone: ${playerName} - ${hits} hits, ${runs} runs (Team: ${team})`);
         }
         
         // Check hits milestones
@@ -2720,8 +2723,8 @@ function updateRSVPCard(profile) {
         }
       });
       
-      console.log(`Found ${hitsApproaching.length} players approaching hit milestones`);
-      console.log(`Found ${runsApproaching.length} players approaching run milestones`);
+      console.log(`Found ${hitsApproaching.length} players approaching hit milestones:`, hitsApproaching);
+      console.log(`Found ${runsApproaching.length} players approaching run milestones:`, runsApproaching);
       
       // Sort by gap (closest first)
       hitsApproaching.sort((a, b) => a.gap - b.gap);
