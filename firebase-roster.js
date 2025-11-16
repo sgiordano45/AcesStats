@@ -300,25 +300,42 @@ export async function getUpcomingTeamGames(teamId, seasonId) {
     now.setHours(0, 0, 0, 0); // Start of today
     
     console.log(`🔍 Looking for games for team: "${teamId}" in season: ${seasonId}`);
+    console.log(`📅 Today (for comparison): ${now.toISOString()}`);
     
     // Get ALL games for this season (we'll filter by date client-side)
     const allGamesSnap = await getDocs(gamesRef);
     
+    console.log(`📊 Total games in season: ${allGamesSnap.size}`);
+    
     const games = [];
     const teamIdLower = teamId.toLowerCase();
+    
+    let matchedTeamCount = 0;
+    let futureGameCount = 0;
     
     allGamesSnap.forEach(doc => {
       const data = doc.data();
       
       // Handle both regular season and playoff field names
-      // Regular: homeTeamId, awayTeamId, homeTeam, awayTeam
+      // Regular: homeTeamId, awayTeamId, homeTeam, awayTeam, homeTeamName, awayTeamName
       // Playoff: "home team", "away team"
-      const homeTeamValue = data.homeTeamId || data.homeTeam || data['home team'] || '';
-      const awayTeamValue = data.awayTeamId || data.awayTeam || data['away team'] || '';
+      const homeTeamValue = data.homeTeamId || data.homeTeamName || data.homeTeam || data['home team'] || '';
+      const awayTeamValue = data.awayTeamId || data.awayTeamName || data.awayTeam || data['away team'] || '';
       
       // Check if this team is involved
       const homeTeamMatch = homeTeamValue.toLowerCase() === teamIdLower;
       const awayTeamMatch = awayTeamValue.toLowerCase() === teamIdLower;
+      
+      if (homeTeamMatch || awayTeamMatch) {
+        matchedTeamCount++;
+        console.log(`✓ Found team match in game ${doc.id}:`, {
+          homeTeam: homeTeamValue,
+          awayTeam: awayTeamValue,
+          isHome: homeTeamMatch,
+          gameType: data.game_type || data.gameType,
+          rawDate: data.date
+        });
+      }
       
       if (!homeTeamMatch && !awayTeamMatch) {
         return; // Not this team's game
@@ -331,13 +348,21 @@ export async function getUpcomingTeamGames(teamId, seasonId) {
       } else if (data.date) {
         gameDate = new Date(data.date);
       } else {
+        console.log(`⚠️ Game ${doc.id} has no valid date`);
         return; // No valid date
       }
       
       gameDate.setHours(0, 0, 0, 0);
       
+      console.log(`📅 Game ${doc.id} date comparison:`, {
+        gameDate: gameDate.toISOString(),
+        now: now.toISOString(),
+        isFuture: gameDate >= now
+      });
+      
       // Only include future games
       if (gameDate >= now) {
+        futureGameCount++;
         // Determine opponent based on which team we are
         const opponent = homeTeamMatch ? awayTeamValue : homeTeamValue;
         
@@ -356,6 +381,8 @@ export async function getUpcomingTeamGames(teamId, seasonId) {
         });
       }
     });
+    
+    console.log(`📊 Stats: ${matchedTeamCount} team matches, ${futureGameCount} future games`);
     
     // Sort by date
     games.sort((a, b) => {
