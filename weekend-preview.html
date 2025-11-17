@@ -1008,22 +1008,34 @@ function getWeekendGames() {
 }
 
 function parseTimeString(timeStr) {
-  // Parse time strings like "9:00 AM", "12:30 PM"
-  const match = timeStr.match(/(\d+):(\d+)\s*(AM|PM)/i);
-  if (!match) return 0;
+  if (!timeStr) return 0;
   
-  let hours = parseInt(match[1]);
-  const minutes = parseInt(match[2]);
-  const period = match[3].toUpperCase();
-  
-  // Convert to 24-hour format
-  if (period === 'PM' && hours !== 12) {
-    hours += 12;
-  } else if (period === 'AM' && hours === 12) {
-    hours = 0;
+  // Try to parse 12-hour format with AM/PM first (e.g., "9:00 AM", "12:30 PM")
+  const ampmMatch = timeStr.match(/(\d+):(\d+)\s*(AM|PM)/i);
+  if (ampmMatch) {
+    let hours = parseInt(ampmMatch[1]);
+    const minutes = parseInt(ampmMatch[2]);
+    const period = ampmMatch[3].toUpperCase();
+    
+    // Convert to 24-hour format
+    if (period === 'PM' && hours !== 12) {
+      hours += 12;
+    } else if (period === 'AM' && hours === 12) {
+      hours = 0;
+    }
+    
+    return hours * 60 + minutes; // Return total minutes for easy comparison
   }
   
-  return hours * 60 + minutes; // Return total minutes for easy comparison
+  // Try to parse 24-hour format (e.g., "10:00", "14:30")
+  const twentyFourMatch = timeStr.match(/^(\d+):(\d+)$/);
+  if (twentyFourMatch) {
+    const hours = parseInt(twentyFourMatch[1]);
+    const minutes = parseInt(twentyFourMatch[2]);
+    return hours * 60 + minutes;
+  }
+  
+  return 0;
 }
 
 function calculateTeamRecord(teamName) {
@@ -1424,15 +1436,15 @@ function generateWeekendPreview() {
       return dateA - dateB;
     }
     
-    // If same date, sort by time from preview data
-    const previewA = getGamePreview(a["home team"], a["away team"], a.date);
-    const previewB = getGamePreview(b["home team"], b["away team"], b.date);
+    // If same date, sort by time from game object or preview data
+    const timeA = a.time || (previewA && previewA.time);
+    const timeB = b.time || (previewB && previewB.time);
     
-    if (previewA && previewA.time && previewB && previewB.time) {
-      // Parse time strings (e.g., "9:00 AM", "12:30 PM")
-      const timeA = parseTimeString(previewA.time);
-      const timeB = parseTimeString(previewB.time);
-      return timeA - timeB;
+    if (timeA && timeB) {
+      // Parse time strings (e.g., "9:00 AM", "12:30 PM", or "10:00" in 24-hour)
+      const parsedTimeA = parseTimeString(timeA);
+      const parsedTimeB = parseTimeString(timeB);
+      return parsedTimeA - parsedTimeB;
     }
     
     return 0;
@@ -1511,13 +1523,24 @@ function createGameCard(game) {
   const awayStandingText = awayStanding ? `#${awayStanding}` : 'NR';
   
   let gameDateTime;
-  if (preview && preview.time) {
+  // Check for time in game object first (playoff games), then preview data (regular season)
+  const gameTime = game.time || (preview && preview.time);
+  
+  if (gameTime) {
     const dateStr = gameDate.toLocaleDateString('en-US', {
       weekday: 'short',
       month: 'short',
       day: 'numeric'
     });
-    gameDateTime = `${dateStr} ${preview.time}`;
+    // If time is in 24-hour format (e.g., "10:00"), convert to 12-hour with AM/PM
+    let displayTime = gameTime;
+    if (gameTime.match(/^\d{1,2}:\d{2}$/)) {
+      const [hours, minutes] = gameTime.split(':').map(Number);
+      const period = hours >= 12 ? 'PM' : 'AM';
+      const displayHours = hours === 0 ? 12 : hours > 12 ? hours - 12 : hours;
+      displayTime = `${displayHours}:${minutes.toString().padStart(2, '0')} ${period}`;
+    }
+    gameDateTime = `${dateStr} ${displayTime}`;
   } else {
     gameDateTime = gameDate.toLocaleDateString('en-US', {
       weekday: 'short',
