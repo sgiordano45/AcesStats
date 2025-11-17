@@ -717,7 +717,9 @@
         gameSelect.innerHTML = '<option value="">Loading games...</option>';
         gameSelect.disabled = true;
 
+        // Fetch all games from the games collection (includes both regular and playoff games)
         const gamesSnapshot = await getDocs(collection(db, 'seasons', seasonId, 'games'));
+        
         allGames = [];
         
         const today = new Date();
@@ -734,8 +736,14 @@
             gameDate = new Date(data.date);
           }
 
-          // Only show games that are today or in the past, and don't have scores yet
-          if (gameDate <= today) {
+          // Determine if this is a playoff game based on game_type or gameType field
+          const isPlayoffGame = 
+            data.game_type === 'Playoff' || 
+            data.gameType === 'playoff' || 
+            data.gameType === 'Playoff';
+
+          // Show games that are today or in the past, or playoff games without dates (TBD matchups)
+          if (!gameDate || gameDate <= today) {
             const hasScore = 
               (data.homeScore !== undefined && data.homeScore !== null) || 
               (data.awayScore !== undefined && data.awayScore !== null) ||
@@ -744,15 +752,26 @@
             allGames.push({
               id: doc.id,
               ...data,
-              gameDate: gameDate,
+              gameDate: gameDate || new Date(0), // Use epoch for games with no date so they sort last
               hasScore: hasScore,
-              seasonId: seasonId
+              seasonId: seasonId,
+              isPlayoff: isPlayoffGame,
+              game_type: data.game_type || data.gameType || 'Regular'
             });
           }
         });
 
-        // Sort by date (most recent first)
-        allGames.sort((a, b) => b.gameDate - a.gameDate);
+        // Sort by date (most recent first), but undated games go last
+        allGames.sort((a, b) => {
+          // If both have no real date, maintain order
+          if (a.gameDate.getTime() === 0 && b.gameDate.getTime() === 0) return 0;
+          // If only a has no date, b comes first
+          if (a.gameDate.getTime() === 0) return 1;
+          // If only b has no date, a comes first
+          if (b.gameDate.getTime() === 0) return -1;
+          // Otherwise sort by date descending
+          return b.gameDate - a.gameDate;
+        });
 
         gameSelect.innerHTML = '<option value="">Select a game</option>';
         
@@ -765,17 +784,22 @@
           const option = document.createElement('option');
           option.value = index;
           
-          const dateStr = game.gameDate.toLocaleDateString('en-US', { 
-            month: 'short', 
-            day: 'numeric' 
-          });
+          let dateStr = 'TBD';
+          if (game.gameDate.getTime() !== 0) {
+            dateStr = game.gameDate.toLocaleDateString('en-US', { 
+              month: 'short', 
+              day: 'numeric' 
+            });
+          }
           
           const homeTeam = game.homeTeamName || game.homeTeam || 'Home';
           const awayTeam = game.awayTeamName || game.awayTeam || 'Away';
           
+          const gameTypeLabel = game.isPlayoff ? ' 🏆 ' : ' ';
           const statusBadge = game.hasScore ? ' ✓' : ' [No Score]';
+          const roundLabel = game.round ? ` (${game.round})` : '';
           
-          option.textContent = `${dateStr}: ${homeTeam} vs ${awayTeam}${statusBadge}`;
+          option.textContent = `${dateStr}:${gameTypeLabel}${homeTeam} vs ${awayTeam}${roundLabel}${statusBadge}`;
           gameSelect.appendChild(option);
         });
 
@@ -935,10 +959,12 @@
       submitButton.innerHTML = '<span class="loading-spinner"></span>Submitting...';
 
       try {
+        // All games (regular and playoff) are stored in the games collection
         const gameRef = doc(db, 'seasons', selectedGame.seasonId, 'games', selectedGame.id);
         await updateDoc(gameRef, updateData);
 
-        showSuccess(`✅ Score submitted successfully! ${homeTeam} ${homeScore} - ${awayTeam} ${awayScore}`);
+        const gameTypeLabel = selectedGame.isPlayoff ? '🏆 ' : '';
+        showSuccess(`✅ ${gameTypeLabel}Score submitted successfully! ${homeTeam} ${homeScore} - ${awayTeam} ${awayScore}`);
         
         // Reset form
         document.getElementById('submitScoreForm').reset();
