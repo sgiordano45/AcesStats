@@ -729,11 +729,17 @@
           const data = doc.data();
           
           // Parse game date
-          let gameDate;
+          let gameDate = null;
           if (data.date?.seconds) {
+            // Firestore Timestamp
             gameDate = new Date(data.date.seconds * 1000);
-          } else if (data.date) {
+          } else if (data.date && data.date.trim() !== '') {
+            // String date (but not empty string)
             gameDate = new Date(data.date);
+            // Check if date is valid
+            if (isNaN(gameDate.getTime())) {
+              gameDate = null;
+            }
           }
 
           // Determine if this is a playoff game based on game_type or gameType field
@@ -742,11 +748,13 @@
             data.gameType === 'playoff' || 
             data.gameType === 'Playoff';
 
-          // Show games that are today or in the past, or playoff games without dates (TBD matchups)
+          // Show games that are today or in the past, or games without dates (TBD matchups)
           if (!gameDate || gameDate <= today) {
             const hasScore = 
-              (data.homeScore !== undefined && data.homeScore !== null) || 
-              (data.awayScore !== undefined && data.awayScore !== null) ||
+              (data.homeScore !== undefined && data.homeScore !== null && data.homeScore !== '') || 
+              (data.awayScore !== undefined && data.awayScore !== null && data.awayScore !== '') ||
+              (data['home score'] && data['home score'].trim() !== '') ||
+              (data['away score'] && data['away score'].trim() !== '') ||
               (data.winner && data.winner.trim() !== '');
 
             allGames.push({
@@ -792,8 +800,9 @@
             });
           }
           
-          const homeTeam = game.homeTeamName || game.homeTeam || 'Home';
-          const awayTeam = game.awayTeamName || game.awayTeam || 'Away';
+          // Handle both camelCase and space-separated field names
+          const homeTeam = game.homeTeamName || game['home team'] || game.homeTeam || 'TBD';
+          const awayTeam = game.awayTeamName || game['away team'] || game.awayTeam || 'TBD';
           
           const gameTypeLabel = game.isPlayoff ? ' 🏆 ' : ' ';
           const statusBadge = game.hasScore ? ' ✓' : ' [No Score]';
@@ -823,21 +832,25 @@
     function loadGameDetails(gameIndex) {
       selectedGame = allGames[gameIndex];
       
-      const homeTeam = selectedGame.homeTeamName || selectedGame.homeTeam || 'Home';
-      const awayTeam = selectedGame.awayTeamName || selectedGame.awayTeam || 'Away';
+      // Handle both camelCase and space-separated field names
+      const homeTeam = selectedGame.homeTeamName || selectedGame['home team'] || selectedGame.homeTeam || 'TBD';
+      const awayTeam = selectedGame.awayTeamName || selectedGame['away team'] || selectedGame.awayTeam || 'TBD';
       
       document.getElementById('homeTeamLabel').textContent = homeTeam;
       document.getElementById('awayTeamLabel').textContent = awayTeam;
       
-      // Pre-fill existing scores if any
-      if (selectedGame.homeScore !== undefined && selectedGame.homeScore !== null) {
-        document.getElementById('homeScore').value = selectedGame.homeScore;
+      // Pre-fill existing scores if any - handle both naming conventions
+      const homeScore = selectedGame.homeScore || selectedGame['home score'];
+      const awayScore = selectedGame.awayScore || selectedGame['away score'];
+      
+      if (homeScore !== undefined && homeScore !== null && homeScore !== '') {
+        document.getElementById('homeScore').value = homeScore;
       } else {
         document.getElementById('homeScore').value = '';
       }
       
-      if (selectedGame.awayScore !== undefined && selectedGame.awayScore !== null) {
-        document.getElementById('awayScore').value = selectedGame.awayScore;
+      if (awayScore !== undefined && awayScore !== null && awayScore !== '') {
+        document.getElementById('awayScore').value = awayScore;
       } else {
         document.getElementById('awayScore').value = '';
       }
@@ -866,8 +879,8 @@
       const awayScore = parseInt(document.getElementById('awayScore').value) || 0;
       const isForfeit = document.getElementById('forfeitCheckbox').checked;
 
-      const homeTeam = selectedGame.homeTeamName || selectedGame.homeTeam || 'Home';
-      const awayTeam = selectedGame.awayTeamName || selectedGame.awayTeam || 'Away';
+      const homeTeam = selectedGame.homeTeamName || selectedGame['home team'] || selectedGame.homeTeam || 'TBD';
+      const awayTeam = selectedGame.awayTeamName || selectedGame['away team'] || selectedGame.awayTeam || 'TBD';
 
       let winner = '';
       if (homeScore > awayScore) {
@@ -915,9 +928,12 @@
         return;
       }
 
-      // Determine winner
-      const homeTeamId = selectedGame.homeTeamId || selectedGame.homeTeam?.toLowerCase().replace(/\s+/g, '_') || null;
-      const awayTeamId = selectedGame.awayTeamId || selectedGame.awayTeam?.toLowerCase().replace(/\s+/g, '_') || null;
+      // Determine winner - handle both field name conventions
+      const homeTeam = selectedGame.homeTeamName || selectedGame['home team'] || selectedGame.homeTeam || 'TBD';
+      const awayTeam = selectedGame.awayTeamName || selectedGame['away team'] || selectedGame.awayTeam || 'TBD';
+      
+      const homeTeamId = selectedGame.homeTeamId || homeTeam?.toLowerCase().replace(/\s+/g, '_') || null;
+      const awayTeamId = selectedGame.awayTeamId || awayTeam?.toLowerCase().replace(/\s+/g, '_') || null;
       
       let winner = null;
       if (homeScore > awayScore) {
@@ -945,8 +961,6 @@
       }
 
       // Confirm before submitting
-      const homeTeam = selectedGame.homeTeamName || selectedGame.homeTeam || 'Home';
-      const awayTeam = selectedGame.awayTeamName || selectedGame.awayTeam || 'Away';
       const confirmMessage = `Submit this score?\n\n${homeTeam}: ${homeScore}\n${awayTeam}: ${awayScore}\n${isForfeit ? '\n⚠️ FORFEIT' : ''}`;
       
       if (!confirm(confirmMessage)) {
