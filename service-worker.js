@@ -1,8 +1,8 @@
 // service-worker.js - Unified Service Worker
 // Handles both offline functionality AND Firebase Cloud Messaging
-// Version 1.1.0 - Fixed endless install loop
+// Version 1.0.4 - HTML pages use network-first (fixes stale cache issue)
 
-const CACHE_VERSION = 'aces-v1.0.3';
+const CACHE_VERSION = 'aces-v1.0.4';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const DYNAMIC_CACHE = `${CACHE_VERSION}-dynamic`;
 const IMAGE_CACHE = `${CACHE_VERSION}-images`;
@@ -10,29 +10,43 @@ const IMAGE_CACHE = `${CACHE_VERSION}-images`;
 // Base path for GitHub Pages subdirectory deployment
 const BASE_PATH = '';
 
-// Critical files that should always be cached
+// Critical files that should always be cached (CSS/JS only - HTML uses network-first)
 const STATIC_ASSETS = [
-  `${BASE_PATH}/`,
-  `${BASE_PATH}/index.html`,
   `${BASE_PATH}/style.css`,
   `${BASE_PATH}/mobile-enhancements.css`,
   `${BASE_PATH}/firebase-auth.js`,
   `${BASE_PATH}/firebase-data.js`,
   `${BASE_PATH}/firebase-roster.js`,
+  `${BASE_PATH}/firebase-config.js`,
+  `${BASE_PATH}/firebase-offline-wrapper.js`,
+  `${BASE_PATH}/firebase-messaging.js`,
+  `${BASE_PATH}/firebase_game_tracker.js`,
+  `${BASE_PATH}/offline-queue.js`,
   `${BASE_PATH}/nav-component.js`,
   `${BASE_PATH}/nav-config.js`,
   `${BASE_PATH}/nav-styles.css`,
+  `${BASE_PATH}/mobile-enhancements.js`,
+  `${BASE_PATH}/script.js`,
+  `${BASE_PATH}/player.js`,
+  `${BASE_PATH}/games.js`,
+  `${BASE_PATH}/team-colors.js`,
+  `${BASE_PATH}/link-helpers.js`,
+  `${BASE_PATH}/update-firebase.js`
+];
+
+// HTML pages to pre-cache for offline (but served network-first when online)
+const HTML_PAGES = [
+  `${BASE_PATH}/`,
+  `${BASE_PATH}/index.html`,
   `${BASE_PATH}/current-season.html`,
   `${BASE_PATH}/weekend-preview.html`,
   `${BASE_PATH}/batting.html`,
+  `${BASE_PATH}/pitching.html`,
   `${BASE_PATH}/signin.html`,
   `${BASE_PATH}/signup.html`,
   `${BASE_PATH}/submit-score.html`,
   `${BASE_PATH}/submit-stats.html`,
   `${BASE_PATH}/league-history.html`,
-  `${BASE_PATH}/offseason.html`,
-  `${BASE_PATH}/offseason-roster.html`,
-  `${BASE_PATH}/schedule-generator.html`,
   `${BASE_PATH}/profile.html`,
   `${BASE_PATH}/profile-fan.html`,
   `${BASE_PATH}/awards.html`,
@@ -42,7 +56,33 @@ const STATIC_ASSETS = [
   `${BASE_PATH}/link-player.html`,
   `${BASE_PATH}/teams.html`,
   `${BASE_PATH}/players.html`,
-  `${BASE_PATH}/offline.html`
+  `${BASE_PATH}/offline.html`,
+  `${BASE_PATH}/offseason.html`,
+  `${BASE_PATH}/offseason-roster.html`,
+  `${BASE_PATH}/schedule-generator.html`,
+  `${BASE_PATH}/game-tracker.html`,
+  `${BASE_PATH}/roster-management.html`,
+  `${BASE_PATH}/favorites.html`,
+  `${BASE_PATH}/game-preview.html`,
+  `${BASE_PATH}/player.html`,
+  `${BASE_PATH}/season.html`,
+  `${BASE_PATH}/seasons.html`,
+  `${BASE_PATH}/playoffs.html`,
+  `${BASE_PATH}/leaders.html`,
+  `${BASE_PATH}/milestones.html`,
+  `${BASE_PATH}/pictures.html`,
+  `${BASE_PATH}/photo-upload.html`,
+  `${BASE_PATH}/compare.html`,
+  `${BASE_PATH}/team_compare.html`,
+  `${BASE_PATH}/h2h_grid.html`,
+  `${BASE_PATH}/charts.html`,
+  `${BASE_PATH}/aggregate-stats.html`,
+  `${BASE_PATH}/manage-team.html`,
+  `${BASE_PATH}/approve-links.html`,
+  `${BASE_PATH}/current-season-team.html`,
+  `${BASE_PATH}/offseason-schedule.html`,
+  `${BASE_PATH}/bracket.html`,
+  `${BASE_PATH}/pitcher.html`
 ];
 
 // Firebase and external resources
@@ -130,9 +170,9 @@ self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(STATIC_CACHE)
       .then(async (cache) => {
-        console.log('[SW] Caching static assets...');
+        console.log('[SW] Caching static assets (CSS/JS)...');
         
-        // Try to cache each asset individually to identify failures
+        // Cache CSS, JS, and external resources
         const allAssets = [...STATIC_ASSETS, ...EXTERNAL_RESOURCES];
         const cachePromises = allAssets.map(async (asset) => {
           try {
@@ -140,12 +180,25 @@ self.addEventListener('install', (event) => {
             console.log(`[SW] ✅ Cached: ${asset}`);
           } catch (error) {
             console.error(`[SW] ❌ Failed to cache: ${asset}`, error);
-            // Don't fail the entire installation if one asset fails
           }
         });
         
         await Promise.allSettled(cachePromises);
-        console.log('[SW] Static asset caching complete');
+        console.log('[SW] Static assets cached');
+        
+        // Pre-cache HTML pages for offline use (they'll use network-first when online)
+        console.log('[SW] Pre-caching HTML pages for offline...');
+        const htmlPromises = HTML_PAGES.map(async (page) => {
+          try {
+            await cache.add(page);
+            console.log(`[SW] ✅ Cached HTML: ${page}`);
+          } catch (error) {
+            console.error(`[SW] ❌ Failed to cache HTML: ${page}`, error);
+          }
+        });
+        
+        await Promise.allSettled(htmlPromises);
+        console.log('[SW] HTML pages pre-cached for offline');
       })
       .then(() => {
         console.log('[SW] Installation complete - waiting for activation');
