@@ -501,14 +501,14 @@
 
         <header>
             <img src="photos/2025 Fall Playoff logo.png" alt="2025 Fall Playoffs" class="playoff-logo">
-            <h1>🏆 Playoff Bracket</h1>
+            <h1>🏆Playoff Bracket</h1>
             <div class="season-info" id="seasonInfo">Loading season information...</div>
             <div id="bracketStatus" class="bracket-status" style="margin-top: 15px; padding: 10px; border-radius: 8px; font-weight: 600;"></div>
         </header>
 
         <div class="edit-mode-toggle">
             <button class="btn" id="lockBracketBtn" onclick="lockBracket()" style="display: none;">
-                🔒 Lock Bracket for Playoffs
+                ðŸ”’🔒 Lock Bracket for Playoffs
             </button>
             <button class="btn" id="editModeBtn" onclick="toggleEditMode()" style="display: none;">
                 <span id="editModeText">Enable Edit Mode</span>
@@ -602,7 +602,7 @@
                     return;
                 }
 
-                console.log('✅ Current season:', currentSeason);
+                console.log('âœ… Current season:', currentSeason);
 
                 // Update header
                 document.getElementById('seasonInfo').textContent = 
@@ -758,17 +758,8 @@
 
             const standings = preliminaryStandings.sort((a, b) => {
                 if (a.winPct !== b.winPct) return b.winPct - a.winPct;
-                
-                // Check if there are 3+ teams tied at this win percentage
-                const teamsAtSameWinPct = preliminaryStandings.filter(t => t.winPct === a.winPct);
-                
-                // Only use H2H tiebreaker if exactly 2 teams are tied
-                if (teamsAtSameWinPct.length === 2) {
-                    const h2hComp = compareHeadToHead(a, b);
-                    if (h2hComp !== 0) return h2hComp;
-                }
-                
-                // For 3+ teams tied, or if H2H didn't resolve, use runs against
+                const h2hComp = compareHeadToHead(a, b);
+                if (h2hComp !== 0) return h2hComp;
                 if (a.runsAgainst !== b.runsAgainst) return a.runsAgainst - b.runsAgainst;
                 return b.runDifferential - a.runDifferential;
             });
@@ -817,7 +808,7 @@
         }
 
         window.lockBracket = async function() {
-            if (!confirm(`Lock in the current playoff bracket?\n\nThis will:\n• Set the playoff seeds based on current standings\n• Create playoff game IDs\n• Make the bracket official\n\nThis cannot be undone. Continue?`)) {
+            if (!confirm(`Lock in the current playoff bracket?\n\nThis will:\nâ€¢ Set the playoff seeds based on current standings\nâ€¢ Create playoff game IDs\nâ€¢ Make the bracket official\n\nThis cannot be undone. Continue?`)) {
                 return;
             }
 
@@ -834,22 +825,19 @@
                     record: `${t.wins}-${t.losses}`
                 }));
 
-                // Clean undefined values from playoffData before saving to Firestore
-                const cleanedData = cleanFirestoreData(playoffData);
-
                 // Save to Firebase
                 const playoffRef = doc(db, 'seasons', currentSeason.id, 'playoffs', 'bracket');
-                await setDoc(playoffRef, cleanedData);
+                await setDoc(playoffRef, playoffData);
+
+                // Create playoff game IDs in the games collection
+                await createPlayoffGames();
 
                 isProjected = false;
-                console.log('✅ Bracket locked successfully!');
+                console.log('âœ… Bracket locked successfully!');
                 alert('Playoff bracket has been locked! You can now set game dates and enter scores.');
                 
                 updateLockButton();
                 renderBracket();
-
-                // Create playoff game IDs in the games collection AFTER successfully saving bracket
-                await createPlayoffGames();
             } catch (error) {
                 console.error('Error locking bracket:', error);
                 alert('Error locking bracket: ' + error.message);
@@ -857,33 +845,9 @@
         };
 
         async function createPlayoffGames() {
-            console.log('📅 Creating playoff game IDs with dates and times...');
+            console.log('📅 Creating playoff game IDs...');
             
             const gamesCollection = collection(db, 'seasons', currentSeason.id, 'games');
-            
-            // Helper function to convert date and time to Firestore Timestamp
-            const dateTimeToTimestamp = (dateStr, timeStr) => {
-                if (!dateStr) return null;
-                
-                // If we have a time, combine it with the date
-                let dateTimeStr = dateStr;
-                if (timeStr) {
-                    // dateStr is like "2025-11-16", timeStr is like "10:00"
-                    dateTimeStr = `${dateStr}T${timeStr}:00`;
-                }
-                
-                const date = new Date(dateTimeStr);
-                console.log(`🕐 Creating timestamp: ${dateStr} ${timeStr || '(no time)'} → ${date.toISOString()}`);
-                return date;
-            };
-            
-            // Get dates/times from bracket data
-            const pi1 = playoffData.winnersBracket.playIn[0]; // 8v9
-            const pi2 = playoffData.winnersBracket.playIn[1]; // 7v10
-            const w1_1 = playoffData.winnersBracket.round1[0]; // 1 vs winner 8v9
-            const w1_2 = playoffData.winnersBracket.round1[1]; // 2 vs winner 7v10
-            const w1_3 = playoffData.winnersBracket.round1[2]; // 3v6
-            const w1_4 = playoffData.winnersBracket.round1[3]; // 4v5
             
             // Play-in games
             const playInGames = [
@@ -893,8 +857,8 @@
                     'away team': teams[8].teamName, // Seed 9
                     game_type: 'Playoff',
                     round: 'Play-In',
-                    date: dateTimeToTimestamp(pi1.gameDate, pi1.gameTime),
-                    time: pi1.gameTime || '',
+                    date: '',
+                    time: '',
                     'home score': '',
                     'away score': '',
                     winner: ''
@@ -905,8 +869,8 @@
                     'away team': teams[9].teamName, // Seed 10
                     game_type: 'Playoff',
                     round: 'Play-In',
-                    date: dateTimeToTimestamp(pi2.gameDate, pi2.gameTime),
-                    time: pi2.gameTime || '',
+                    date: '',
+                    time: '',
                     'home score': '',
                     'away score': '',
                     winner: ''
@@ -921,8 +885,8 @@
                     'away team': 'Winner PI1', // Will be updated after play-in
                     game_type: 'Playoff',
                     round: 'Round 1',
-                    date: dateTimeToTimestamp(w1_1.gameDate, w1_1.gameTime),
-                    time: w1_1.gameTime || '',
+                    date: '',
+                    time: '',
                     'home score': '',
                     'away score': '',
                     winner: ''
@@ -933,8 +897,8 @@
                     'away team': 'Winner PI2',
                     game_type: 'Playoff',
                     round: 'Round 1',
-                    date: dateTimeToTimestamp(w1_2.gameDate, w1_2.gameTime),
-                    time: w1_2.gameTime || '',
+                    date: '',
+                    time: '',
                     'home score': '',
                     'away score': '',
                     winner: ''
@@ -945,8 +909,8 @@
                     'away team': teams[5].teamName, // Seed 6
                     game_type: 'Playoff',
                     round: 'Round 1',
-                    date: dateTimeToTimestamp(w1_3.gameDate, w1_3.gameTime),
-                    time: w1_3.gameTime || '',
+                    date: '',
+                    time: '',
                     'home score': '',
                     'away score': '',
                     winner: ''
@@ -957,8 +921,8 @@
                     'away team': teams[4].teamName, // Seed 5
                     game_type: 'Playoff',
                     round: 'Round 1',
-                    date: dateTimeToTimestamp(w1_4.gameDate, w1_4.gameTime),
-                    time: w1_4.gameTime || '',
+                    date: '',
+                    time: '',
                     'home score': '',
                     'away score': '',
                     winner: ''
@@ -971,212 +935,63 @@
             for (const game of allGames) {
                 try {
                     await setDoc(doc(gamesCollection, game.id), game);
-                    console.log(`✅ Created game: ${game.id} - ${game.date ? new Date(game.date).toLocaleDateString() : 'No date'} ${game.time}`);
+                    console.log(`âœ… Created game: ${game.id}`);
                 } catch (error) {
                     console.error(`Error creating game ${game.id}:`, error);
                 }
             }
 
-            console.log(`✅ Created ${allGames.length} playoff games with dates and times`);
+            console.log(`✅ Created ${allGames.length} playoff games`);
         }
 
         function initializePlayoffBracket() {
             return {
                 winnersBracket: {
                     playIn: [
-                        { 
-                            id: 'pi-1', 
-                            team1: { seed: 8 }, 
-                            team2: { seed: 9 }, 
-                            round: 'Play-In',
-                            gameDate: '2025-11-16',
-                            gameTime: '08:00'
-                        },
-                        { 
-                            id: 'pi-2', 
-                            team1: { seed: 7 }, 
-                            team2: { seed: 10 }, 
-                            round: 'Play-In',
-                            gameDate: '2025-11-16',
-                            gameTime: '10:00'
-                        }
+                        { id: 'pi-1', team1: { seed: 8 }, team2: { seed: 9 }, round: 'Play-In' },
+                        { id: 'pi-2', team1: { seed: 7 }, team2: { seed: 10 }, round: 'Play-In' }
                     ],
                     round1: [
-                        { 
-                            id: 'w1-1', 
-                            team1: { seed: 1 }, 
-                            team2: { seed: null, from: 'pi-1' }, 
-                            round: 'Round 1',
-                            gameDate: '2025-11-16',
-                            gameTime: '09:00'
-                        },
-                        { 
-                            id: 'w1-2', 
-                            team1: { seed: 2 }, 
-                            team2: { seed: null, from: 'pi-2' }, 
-                            round: 'Round 1',
-                            gameDate: '2025-11-23',
-                            gameTime: '09:00'
-                        },
-                        { 
-                            id: 'w1-3', 
-                            team1: { seed: 3 }, 
-                            team2: { seed: 6 }, 
-                            round: 'Round 1',
-                            gameDate: '2025-11-16',
-                            gameTime: '12:00'
-                        },
-                        { 
-                            id: 'w1-4', 
-                            team1: { seed: 4 }, 
-                            team2: { seed: 5 }, 
-                            round: 'Round 1',
-                            gameDate: '2025-11-16',
-                            gameTime: '11:00'
-                        }
+                        { id: 'w1-1', team1: { seed: 1 }, team2: { seed: null, from: 'pi-1' }, round: 'Round 1' },
+                        { id: 'w1-2', team1: { seed: 2 }, team2: { seed: null, from: 'pi-2' }, round: 'Round 1' },
+                        { id: 'w1-3', team1: { seed: 3 }, team2: { seed: 6 }, round: 'Round 1' },
+                        { id: 'w1-4', team1: { seed: 4 }, team2: { seed: 5 }, round: 'Round 1' }
                     ],
                     semifinals: [
-                        { 
-                            id: 'w2-1', 
-                            team1: { from: 'w1-1' }, 
-                            team2: { from: 'w1-4' }, 
-                            round: 'Semifinals',
-                            gameDate: '2025-11-30',
-                            gameTime: '10:00'
-                        },
-                        { 
-                            id: 'w2-2', 
-                            team1: { from: 'w1-2' }, 
-                            team2: { from: 'w1-3' }, 
-                            round: 'Semifinals',
-                            gameDate: '2025-11-30',
-                            gameTime: '11:00'
-                        }
+                        { id: 'w2-1', team1: { from: 'w1-1' }, team2: { from: 'w1-4' }, round: 'Semifinals' },
+                        { id: 'w2-2', team1: { from: 'w1-2' }, team2: { from: 'w1-3' }, round: 'Semifinals' }
                     ],
                     finals: [
-                        { 
-                            id: 'w3-1', 
-                            team1: { from: 'w2-1' }, 
-                            team2: { from: 'w2-2' }, 
-                            round: 'Winners Final',
-                            gameDate: '2025-12-01',
-                            gameTime: '20:00'
-                        }
+                        { id: 'w3-1', team1: { from: 'w2-1' }, team2: { from: 'w2-2' }, round: 'Winners Final' }
                     ]
                 },
                 losersBracket: {
                     round1: [
                         // First elimination games - play-in losers play immediately
-                        { 
-                            id: 'l1-1', 
-                            team1: { loserFrom: 'w1-2' }, 
-                            team2: { loserFrom: 'pi-1' }, 
-                            round: 'Elimination Round 1',
-                            gameDate: '2025-11-23',
-                            gameTime: '10:00'
-                        },
-                        { 
-                            id: 'l1-2', 
-                            team1: { loserFrom: 'w1-1' }, 
-                            team2: { loserFrom: 'pi-2' }, 
-                            round: 'Elimination Round 1',
-                            gameDate: '2025-11-23',
-                            gameTime: '11:00'
-                        }
+                        { id: 'l1-1', team1: { loserFrom: 'w1-2' }, team2: { loserFrom: 'pi-1' }, round: 'Elimination Round 1' }, // Game 7: Loser of 2 vs Loser of 8/9
+                        { id: 'l1-2', team1: { loserFrom: 'w1-1' }, team2: { loserFrom: 'pi-2' }, round: 'Elimination Round 1' }  // Game 8: Loser of 1 vs Loser of 7/10
                     ],
                     round2: [
                         // Second elimination games - Round 1 winners face first-round losers from winners bracket
-                        { 
-                            id: 'l2-1', 
-                            team1: { loserFrom: 'w1-4' }, 
-                            team2: { from: 'l1-2' }, 
-                            round: 'Elimination Round 2',
-                            gameDate: '2025-11-23',
-                            gameTime: '12:00'
-                        },
-                        { 
-                            id: 'l2-2', 
-                            team1: { loserFrom: 'w1-3' }, 
-                            team2: { from: 'l1-1' }, 
-                            round: 'Elimination Round 2',
-                            gameDate: '2025-11-30',
-                            gameTime: '09:00'
-                        }
+                        { id: 'l2-1', team1: { loserFrom: 'w1-4' }, team2: { from: 'l1-2' }, round: 'Elimination Round 2' }, // Game 9: Loser of 4/5 vs Winner of Game 8
+                        { id: 'l2-2', team1: { loserFrom: 'w1-3' }, team2: { from: 'l1-1' }, round: 'Elimination Round 2' }  // Game 10: Loser of 3/6 vs Winner of Game 7
                     ],
                     round3: [
                         // Third elimination games - semifinal losers enter
-                        { 
-                            id: 'l3-1', 
-                            team1: { from: 'l2-1' }, 
-                            team2: { loserFrom: 'w2-1' }, 
-                            round: 'Elimination Round 3',
-                            gameDate: '2025-11-30',
-                            gameTime: '12:00'
-                        },
-                        { 
-                            id: 'l3-2', 
-                            team1: { from: 'l2-2' }, 
-                            team2: { loserFrom: 'w2-2' }, 
-                            round: 'Elimination Round 3',
-                            gameDate: '2025-12-01',
-                            gameTime: '19:00'
-                        }
+                        { id: 'l3-1', team1: { from: 'l2-1' }, team2: { loserFrom: 'w2-1' }, round: 'Elimination Round 3' }, // Game 13: Winner of Game 9 vs Loser of Game 11
+                        { id: 'l3-2', team1: { from: 'l2-2' }, team2: { loserFrom: 'w2-2' }, round: 'Elimination Round 3' }  // Game 14: Winner of Game 10 vs Loser of Game 12
                     ],
                     semifinals: [
-                        { 
-                            id: 'l4-1', 
-                            team1: { from: 'l3-1' }, 
-                            team2: { from: 'l3-2' }, 
-                            round: 'Elimination Semifinals',
-                            gameDate: '2025-12-01',
-                            gameTime: '19:00'
-                        }
+                        { id: 'l4-1', team1: { from: 'l3-1' }, team2: { from: 'l3-2' }, round: 'Elimination Semifinals' } // Game 15: Winner of Game 13 vs Winner of Game 14
                     ],
                     finals: [
-                        { 
-                            id: 'l5-1', 
-                            team1: { from: 'l4-1' }, 
-                            team2: { loserFrom: 'w3-1' }, 
-                            round: 'Losers Final',
-                            gameDate: '2025-12-02',
-                            gameTime: '20:00'
-                        }
+                        { id: 'l5-1', team1: { from: 'l4-1' }, team2: { loserFrom: 'w3-1' }, round: 'Losers Final' } // Game 16: Winner of Game 15 vs Loser of Winners Final
                     ]
                 },
                 championship: [
-                    { 
-                        id: 'champ', 
-                        team1: { from: 'w3-1' }, 
-                        team2: { from: 'l5-1' }, 
-                        round: 'Championship',
-                        gameDate: '2025-12-07',
-                        gameTime: '10:00'
-                    }
+                    { id: 'champ', team1: { from: 'w3-1' }, team2: { from: 'l5-1' }, round: 'Championship' }
                 ]
             };
-        }
-
-        // Helper function to clean Firestore data - removes undefined values
-        function cleanFirestoreData(obj) {
-            if (obj === null) return null;
-            if (obj === undefined) return null;
-            if (typeof obj !== 'object') return obj;
-            
-            if (Array.isArray(obj)) {
-                return obj.map(item => cleanFirestoreData(item));
-            }
-            
-            const cleaned = {};
-            for (const key in obj) {
-                if (obj.hasOwnProperty(key)) {
-                    const value = obj[key];
-                    // Skip undefined values entirely (don't include them in the cleaned object)
-                    if (value !== undefined) {
-                        cleaned[key] = cleanFirestoreData(value);
-                    }
-                }
-            }
-            return cleaned;
         }
 
         function renderBracket() {
@@ -1188,13 +1003,13 @@
                 statusEl.className = 'bracket-status projected';
                 // Only show "Click Lock Bracket" message to admins/staff
                 if (userCanManagePlayoffs) {
-                    statusEl.innerHTML = '📊 PROJECTED BRACKET - Based on current standings. Click "Lock Bracket" when ready to start playoffs.';
+                    statusEl.innerHTML = 'ðŸ“Š PROJECTED BRACKET - Based on current standings. Click "Lock Bracket" when ready to start playoffs.';
                 } else {
-                    statusEl.innerHTML = '📊 PROJECTED BRACKET - Based on current standings.';
+                    statusEl.innerHTML = 'ðŸ“Š PROJECTED BRACKET - Based on current standings.';
                 }
             } else {
                 statusEl.className = 'bracket-status locked';
-                statusEl.innerHTML = '🔒 OFFICIAL PLAYOFF BRACKET - Locked on ' + (playoffData.lockedAt ? new Date(playoffData.lockedAt).toLocaleDateString() : 'N/A');
+                statusEl.innerHTML = 'ðŸ”’ OFFICIAL PLAYOFF BRACKET - Locked on ' + (playoffData.lockedAt ? new Date(playoffData.lockedAt).toLocaleDateString() : 'N/A');
             }
             
             container.innerHTML = `
@@ -1233,7 +1048,7 @@
             
             return `
                 <div class="bracket-section winners-bracket">
-                    <div class="bracket-title">🏆 Winners Bracket</div>
+                    <div class="bracket-title">ðŸ† Winners Bracket</div>
                     <div class="bracket-grid">
                         ${renderRoundWithClass(wb.playIn, 'Play-In Games', 'play-in')}
                         ${renderRoundCustom(round1Reordered, 'Round 1', 'round-1')}
@@ -1248,7 +1063,7 @@
             const lb = playoffData.losersBracket;
             return `
                 <div class="bracket-section">
-                    <div class="bracket-title">⚠️ Elimination Bracket</div>
+                    <div class="bracket-title">âš ï¸ Elimination Bracket</div>
                     <div class="bracket-grid">
                         ${renderRound(lb.round1, 'Elimination Round 1')}
                         ${renderRound(lb.round2, 'Elimination Round 2')}
@@ -1263,7 +1078,7 @@
         function renderChampionship() {
             return `
                 <div class="bracket-section">
-                    <div class="bracket-title">🏆 Championship</div>
+                    <div class="bracket-title">ðŸ† Championship</div>
                     <div class="bracket-grid" style="justify-content: center;">
                         ${renderRound(playoffData.championship, 'Championship')}
                     </div>
@@ -1318,10 +1133,10 @@
                 <div class="matchup ${isChampionship ? 'championship' : ''} ${positionClass}" 
                      data-matchup-id="${matchup.id}">
                     ${matchup.gameDate ? `<div class="matchup-date">${formatDate(matchup.gameDate)}</div>` : ''}
-                    ${matchup.gameTime ? `<div class="matchup-time">${formatTime(matchup.gameTime)}</div>` : ''}
+                    ${matchup.gameTime ? `<div class="matchup-time">${matchup.gameTime}</div>` : ''}
                     ${canLinkToPreview ? `
                         <a href="${previewLink}" class="game-link" title="View Game Preview">
-                            <div class="game-link-icon">📊</div>
+                            <div class="game-link-icon">ðŸ“Š</div>
                         </a>
                     ` : ''}
                     <div class="team ${team1Class}">
@@ -1368,6 +1183,11 @@
             if (teamData.from) {
                 // This team comes from winning a previous game
                 const sourceGame = findMatchup(teamData.from);
+                if (sourceGame && sourceGame.winner) {
+                    // Game has been decided - show the actual winner
+                    const winningTeam = sourceGame.winner === 1 ? sourceGame.team1 : sourceGame.team2;
+                    return getTeamDisplay(winningTeam); // Recursively resolve the team
+                }
                 if (sourceGame) {
                     const team1Display = getSourceTeamName(sourceGame.team1);
                     const team2Display = getSourceTeamName(sourceGame.team2);
@@ -1387,6 +1207,11 @@
             if (teamData.loserFrom) {
                 // This team comes from losing a previous game
                 const sourceGame = findMatchup(teamData.loserFrom);
+                if (sourceGame && sourceGame.winner) {
+                    // Game has been decided - show the actual loser
+                    const losingTeam = sourceGame.winner === 1 ? sourceGame.team2 : sourceGame.team1;
+                    return getTeamDisplay(losingTeam); // Recursively resolve the team
+                }
                 if (sourceGame) {
                     const team1Display = getSourceTeamName(sourceGame.team1);
                     const team2Display = getSourceTeamName(sourceGame.team2);
@@ -1440,23 +1265,12 @@
         }
 
         function formatDate(dateStr) {
-            // Parse as local date to avoid UTC timezone shift
-            const [year, month, day] = dateStr.split('-').map(Number);
-            const date = new Date(year, month - 1, day);
+            const date = new Date(dateStr);
             return date.toLocaleDateString('en-US', { 
                 weekday: 'short', 
                 month: 'short', 
                 day: 'numeric' 
             });
-        }
-
-        function formatTime(timeStr) {
-            if (!timeStr) return '';
-            // timeStr is in HH:MM format (24-hour)
-            const [hours, minutes] = timeStr.split(':').map(Number);
-            const period = hours >= 12 ? 'PM' : 'AM';
-            const displayHours = hours % 12 || 12; // Convert 0 to 12 for midnight
-            return `${displayHours}:${minutes.toString().padStart(2, '0')} ${period}`;
         }
 
         function findMatchup(matchupId) {
@@ -1521,22 +1335,11 @@
             const team1Score = document.getElementById('team1Score').value;
             const team2Score = document.getElementById('team2Score').value;
 
-            // Update the matchup - use null for empty optional fields, not undefined
+            // Update the matchup
             currentEditMatchup.gameDate = gameDate || null;
             currentEditMatchup.gameTime = gameTime || null;
-            
-            // For scores, only set if there's a value (leave undefined if not set)
-            if (team1Score !== '') {
-                currentEditMatchup.team1Score = parseInt(team1Score);
-            } else {
-                delete currentEditMatchup.team1Score; // Remove the field entirely
-            }
-            
-            if (team2Score !== '') {
-                currentEditMatchup.team2Score = parseInt(team2Score);
-            } else {
-                delete currentEditMatchup.team2Score; // Remove the field entirely
-            }
+            currentEditMatchup.team1Score = team1Score !== '' ? parseInt(team1Score) : undefined;
+            currentEditMatchup.team2Score = team2Score !== '' ? parseInt(team2Score) : undefined;
 
             // Determine winner if both scores are entered
             if (team1Score !== '' && team2Score !== '') {
@@ -1547,19 +1350,8 @@
 
             // Save to Firebase
             try {
-                // Clean undefined values before saving
-                const cleanedData = cleanFirestoreData(playoffData);
-                
-                console.log('💾 Saving matchup:', currentEditMatchup.id, {
-                    gameDate: currentEditMatchup.gameDate,
-                    gameTime: currentEditMatchup.gameTime,
-                    hasScores: currentEditMatchup.team1Score !== undefined && currentEditMatchup.team2Score !== undefined
-                });
-                
                 const playoffRef = doc(db, 'seasons', currentSeason.id, 'playoffs', 'bracket');
-                await updateDoc(playoffRef, cleanedData);
-                
-                console.log('✅ Matchup saved successfully');
+                await updateDoc(playoffRef, playoffData);
                 closeModal();
                 renderBracket();
             } catch (error) {
