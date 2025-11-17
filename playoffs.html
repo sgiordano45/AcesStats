@@ -1368,6 +1368,12 @@
             try {
                 const playoffRef = doc(db, 'seasons', currentSeason.id, 'playoffs', 'bracket');
                 await updateDoc(playoffRef, playoffData);
+                
+                // If a winner was determined, create dependent games
+                if (currentEditMatchup.winner) {
+                    await createDependentGames(currentEditMatchup.id);
+                }
+                
                 closeModal();
                 renderBracket();
             } catch (error) {
@@ -1375,6 +1381,247 @@
                 alert('Error saving matchup. Please try again.');
             }
         };
+
+        async function createDependentGames(completedMatchupId) {
+            console.log(`🎮 Checking for dependent games after ${completedMatchupId} completion...`);
+            
+            const gamesCollection = collection(db, 'seasons', currentSeason.id, 'games');
+            
+            // Map matchup IDs to the games they unlock
+            const dependencyMap = {
+                // Play-in games unlock Round 1 games (already created but need team updates)
+                'pi-1': ['playoff_r1g1_seed1_vs_winner_pi1'],
+                'pi-2': ['playoff_r1g2_seed2_vs_winner_pi2'],
+                
+                // Round 1 games unlock Winners Semifinals and Losers Round 1
+                'w1-1': ['playoff_w2g1_semifinal', 'playoff_l1g2_elimination'],
+                'w1-2': ['playoff_w2g2_semifinal', 'playoff_l1g1_elimination'],
+                'w1-3': ['playoff_w2g2_semifinal', 'playoff_l2g2_elimination'],
+                'w1-4': ['playoff_w2g1_semifinal', 'playoff_l2g1_elimination'],
+                
+                // Losers Round 1 games unlock Losers Round 2
+                'l1-1': ['playoff_l2g2_elimination'],
+                'l1-2': ['playoff_l2g1_elimination'],
+                
+                // Winners Semifinals unlock Winners Finals and Losers Round 3
+                'w2-1': ['playoff_w3g1_winners_final', 'playoff_l3g2_elimination'],
+                'w2-2': ['playoff_w3g1_winners_final', 'playoff_l3g1_elimination'],
+                
+                // Losers Round 2 unlocks Losers Round 3
+                'l2-1': ['playoff_l3g1_elimination'],
+                'l2-2': ['playoff_l3g2_elimination'],
+                
+                // Losers Round 3 unlocks Losers Semifinals
+                'l3-1': ['playoff_l4g1_losers_semi'],
+                'l3-2': ['playoff_l4g1_losers_semi'],
+                
+                // Losers Semifinals unlocks Losers Finals
+                'l4-1': ['playoff_l5g1_losers_final'],
+                
+                // Winners Finals unlocks Championship and Losers Finals
+                'w3-1': ['playoff_championship', 'playoff_l5g1_losers_final'],
+                
+                // Losers Finals unlocks Championship
+                'l5-1': ['playoff_championship'],
+                
+                // Championship might unlock If Necessary game
+                'champ': ['playoff_if_necessary']
+            };
+
+            const gamesToCreate = dependencyMap[completedMatchupId] || [];
+            
+            for (const gameId of gamesToCreate) {
+                try {
+                    // Check if game already exists
+                    const gameRef = doc(gamesCollection, gameId);
+                    const gameDoc = await getDoc(gameRef);
+                    
+                    if (gameDoc.exists()) {
+                        console.log(`✅ Game ${gameId} already exists, updating teams if needed`);
+                        await updateGameTeams(gameId, completedMatchupId);
+                    } else {
+                        console.log(`📝 Creating new game: ${gameId}`);
+                        await createNewGame(gameId, completedMatchupId);
+                    }
+                } catch (error) {
+                    console.error(`Error processing game ${gameId}:`, error);
+                }
+            }
+        }
+
+        async function updateGameTeams(gameId, sourceMatchupId) {
+            // Update existing game with actual team names after play-in or other games complete
+            const gamesCollection = collection(db, 'seasons', currentSeason.id, 'games');
+            const gameRef = doc(gamesCollection, gameId);
+            const sourceMatchup = findMatchup(sourceMatchupId);
+            
+            if (!sourceMatchup || !sourceMatchup.winner) return;
+            
+            const winningTeam = sourceMatchup.winner === 1 ? sourceMatchup.team1 : sourceMatchup.team2;
+            const losingTeam = sourceMatchup.winner === 1 ? sourceMatchup.team2 : sourceMatchup.team1;
+            
+            const winnerDisplay = getTeamDisplay(winningTeam);
+            const loserDisplay = getTeamDisplay(losingTeam);
+            
+            // Update the appropriate team field based on game structure
+            const updates = {};
+            
+            // For play-in winners updating Round 1 games
+            if (gameId.includes('winner_pi1') && winnerDisplay.name) {
+                updates['away team'] = winnerDisplay.name;
+            } else if (gameId.includes('winner_pi2') && winnerDisplay.name) {
+                updates['away team'] = winnerDisplay.name;
+            }
+            
+            if (Object.keys(updates).length > 0) {
+                await updateDoc(gameRef, updates);
+                console.log(`✅ Updated teams in ${gameId}`);
+            }
+        }
+
+        async function createNewGame(gameId, sourceMatchupId) {
+            const gamesCollection = collection(db, 'seasons', currentSeason.id, 'games');
+            
+            // Determine game details based on gameId
+            const gameData = buildGameData(gameId);
+            
+            if (gameData) {
+                await setDoc(doc(gamesCollection, gameId), gameData);
+                console.log(`✅ Created game: ${gameId}`);
+            }
+        }
+
+        function buildGameData(gameId) {
+            // Build game data structure based on game ID
+            const gameMap = {
+                'playoff_w2g1_semifinal': {
+                    round: 'Winners Semifinals',
+                    description: 'Game 11: Winner R1G1 vs Winner R1G4',
+                    team1Source: 'w1-1',
+                    team2Source: 'w1-4'
+                },
+                'playoff_w2g2_semifinal': {
+                    round: 'Winners Semifinals',
+                    description: 'Game 12: Winner R1G2 vs Winner R1G3',
+                    team1Source: 'w1-2',
+                    team2Source: 'w1-3'
+                },
+                'playoff_l1g1_elimination': {
+                    round: 'Losers Round 1',
+                    description: 'Game 7: Loser R1G2 vs Loser PI1',
+                    team1Source: 'w1-2',
+                    team2Source: 'pi-1',
+                    useLoser: true
+                },
+                'playoff_l1g2_elimination': {
+                    round: 'Losers Round 1',
+                    description: 'Game 8: Loser R1G1 vs Loser PI2',
+                    team1Source: 'w1-1',
+                    team2Source: 'pi-2',
+                    useLoser: true
+                },
+                'playoff_l2g1_elimination': {
+                    round: 'Losers Round 2',
+                    description: 'Game 9: Loser R1G4 vs Winner L1G2',
+                    team1Source: 'w1-4',
+                    team2Source: 'l1-2',
+                    team1Loser: true
+                },
+                'playoff_l2g2_elimination': {
+                    round: 'Losers Round 2',
+                    description: 'Game 10: Loser R1G3 vs Winner L1G1',
+                    team1Source: 'w1-3',
+                    team2Source: 'l1-1',
+                    team1Loser: true
+                },
+                'playoff_w3g1_winners_final': {
+                    round: 'Winners Finals',
+                    description: 'Game 15: Winner W2G1 vs Winner W2G2',
+                    team1Source: 'w2-1',
+                    team2Source: 'w2-2'
+                },
+                'playoff_l3g1_elimination': {
+                    round: 'Losers Round 3',
+                    description: 'Game 13: Winner L2G1 vs Loser W2G2',
+                    team1Source: 'l2-1',
+                    team2Source: 'w2-2',
+                    team2Loser: true
+                },
+                'playoff_l3g2_elimination': {
+                    round: 'Losers Round 3',
+                    description: 'Game 14: Winner L2G2 vs Loser W2G1',
+                    team1Source: 'l2-2',
+                    team2Source: 'w2-1',
+                    team2Loser: true
+                },
+                'playoff_l4g1_losers_semi': {
+                    round: 'Losers Semifinals',
+                    description: 'Game 16: Winner L3G1 vs Winner L3G2',
+                    team1Source: 'l3-1',
+                    team2Source: 'l3-2'
+                },
+                'playoff_l5g1_losers_final': {
+                    round: 'Losers Finals',
+                    description: 'Game 17: Winner L4G1 vs Loser W3G1',
+                    team1Source: 'l4-1',
+                    team2Source: 'w3-1',
+                    team2Loser: true
+                },
+                'playoff_championship': {
+                    round: 'Championship',
+                    description: 'Game 18: Winner W3G1 vs Winner L5G1',
+                    team1Source: 'w3-1',
+                    team2Source: 'l5-1'
+                },
+                'playoff_if_necessary': {
+                    round: 'Championship (If Necessary)',
+                    description: 'Game 19: Rematch if needed',
+                    team1Source: 'champ',
+                    team2Source: 'champ',
+                    isRematch: true
+                }
+            };
+
+            const gameConfig = gameMap[gameId];
+            if (!gameConfig) return null;
+
+            // Get team names from source matchups
+            const team1Matchup = findMatchup(gameConfig.team1Source);
+            const team2Matchup = findMatchup(gameConfig.team2Source);
+
+            let team1Name = 'TBD';
+            let team2Name = 'TBD';
+
+            if (team1Matchup && team1Matchup.winner) {
+                const team = (gameConfig.team1Loser || gameConfig.useLoser) ? 
+                    (team1Matchup.winner === 1 ? team1Matchup.team2 : team1Matchup.team1) :
+                    (team1Matchup.winner === 1 ? team1Matchup.team1 : team1Matchup.team2);
+                const teamDisplay = getTeamDisplay(team);
+                team1Name = teamDisplay.name;
+            }
+
+            if (team2Matchup && team2Matchup.winner) {
+                const team = (gameConfig.team2Loser || gameConfig.useLoser) ? 
+                    (team2Matchup.winner === 1 ? team2Matchup.team2 : team2Matchup.team1) :
+                    (team2Matchup.winner === 1 ? team2Matchup.team1 : team2Matchup.team2);
+                const teamDisplay = getTeamDisplay(team);
+                team2Name = teamDisplay.name;
+            }
+
+            return {
+                id: gameId,
+                'home team': team1Name,
+                'away team': team2Name,
+                game_type: 'Playoff',
+                round: gameConfig.round,
+                description: gameConfig.description,
+                date: '',
+                time: '',
+                'home score': '',
+                'away score': '',
+                winner: ''
+            };
+        }
 
         // Initialize - auth state change handler will call loadPlayoffBracket()
     </script>
