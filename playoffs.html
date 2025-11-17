@@ -757,10 +757,22 @@
                 });
 
             const standings = preliminaryStandings.sort((a, b) => {
+                // First tiebreaker: Win percentage
                 if (a.winPct !== b.winPct) return b.winPct - a.winPct;
-                const h2hComp = compareHeadToHead(a, b);
-                if (h2hComp !== 0) return h2hComp;
+                
+                // Check if there are 3+ teams tied at this win percentage
+                const teamsAtSameWinPct = preliminaryStandings.filter(t => t.winPct === a.winPct);
+                
+                // Second tiebreaker: Only use H2H if EXACTLY 2 teams are tied
+                if (teamsAtSameWinPct.length === 2) {
+                    const h2hComp = compareHeadToHead(a, b);
+                    if (h2hComp !== 0) return h2hComp;
+                }
+                
+                // Third tiebreaker: Runs Against (for 3+ teams tied, or if H2H didn't resolve)
                 if (a.runsAgainst !== b.runsAgainst) return a.runsAgainst - b.runsAgainst;
+                
+                // Fourth tiebreaker: Run Differential
                 return b.runDifferential - a.runDifferential;
             });
 
@@ -785,7 +797,11 @@
             const aH2HWinPct = (aVsB.wins + aVsB.losses) > 0 ? aVsB.wins / (aVsB.wins + aVsB.losses) : 0;
             const bH2HWinPct = (bVsA.wins + bVsA.losses) > 0 ? bVsA.wins / (bVsA.wins + bVsA.losses) : 0;
             
-            return bH2HWinPct - aH2HWinPct;
+            if (aH2HWinPct !== bH2HWinPct) {
+                return bH2HWinPct - aH2HWinPct;
+            }
+            
+            return 0;
         }
 
         function updateLockButton() {
