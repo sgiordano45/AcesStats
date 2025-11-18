@@ -1,289 +1,324 @@
-/**
- * Firebase Game Sync Module
- * Handles real-time synchronization for dual-team game tracking
- */
+// firebase-game-sync.js
+// Real-time game tracking synchronization for dual-team tracking
+// Uses /seasons/{seasonId}/games/{gameId}/ structure exclusively
 
-import { 
-  doc, 
-  setDoc, 
-  getDoc, 
-  onSnapshot, 
-  serverTimestamp, 
-  updateDoc,
-  collection 
-} from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
 import { db } from './firebase-config.js';
-
-// ============================================
-// REAL-TIME SUBSCRIPTION FUNCTIONS
-// ============================================
+import { 
+    doc, 
+    collection, 
+    setDoc, 
+    getDoc, 
+    onSnapshot, 
+    serverTimestamp, 
+    deleteDoc,
+    query,
+    where,
+    getDocs
+} from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
 
 /**
- * Subscribe to a team's game state with real-time updates
- * @param {string} gameId - The game ID
- * @param {string} teamId - The team ID
- * @param {Function} callback - Callback function to handle updates
- * @returns {Function} Unsubscribe function
+ * Subscribe to game metadata (inning, outs, scores)
+ * @param {string} seasonId - Season ID
+ * @param {string} gameId - Game ID
+ * @param {function} callback - Called with metadata updates
+ * @returns {function} Unsubscribe function
  */
-export function subscribeToGameState(gameId, teamId, callback) {
-  const stateRef = doc(db, 'gameStates', `${gameId}_${teamId}`);
-  
-  return onSnapshot(stateRef, 
-    (snapshot) => {
-      if (snapshot.exists()) {
-        callback(snapshot.data());
-      }
-    }, 
-    (error) => {
-      console.error('Error subscribing to game state:', error);
+export function subscribeToGameMetadata(seasonId, gameId, callback) {
+    try {
+        const metadataRef = doc(db, 'seasons', seasonId, 'games', gameId, 'metadata', 'current');
+        
+        return onSnapshot(metadataRef, 
+            (snapshot) => {
+                if (snapshot.exists()) {
+                    console.log('📊 Game metadata updated:', snapshot.data());
+                    callback(snapshot.data());
+                } else {
+                    // Initialize with default values
+                    callback({
+                        inning: 1,
+                        outs: 0,
+                        homeScore: 0,
+                        awayScore: 0,
+                        lastUpdated: null
+                    });
+                }
+            },
+            (error) => {
+                console.error('Error subscribing to game metadata:', error);
+                callback(null);
+            }
+        );
+    } catch (error) {
+        console.error('Error setting up metadata subscription:', error);
+        return () => {};
     }
-  );
 }
 
 /**
- * Subscribe to game-level metadata with real-time updates
- * @param {string} gameId - The game ID
- * @param {Function} callback - Callback function to handle updates
- * @returns {Function} Unsubscribe function
+ * Subscribe to presence tracking (who's actively tracking)
+ * @param {string} seasonId - Season ID
+ * @param {string} gameId - Game ID
+ * @param {function} callback - Called with presence updates (array of trackers)
+ * @returns {function} Unsubscribe function
  */
-export function subscribeToGameMetadata(gameId, callback) {
-  const metadataRef = doc(db, 'gameMetadata', gameId);
-  
-  return onSnapshot(metadataRef, 
-    (snapshot) => {
-      if (snapshot.exists()) {
-        callback(snapshot.data());
-      }
-    }, 
-    (error) => {
-      console.error('Error subscribing to game metadata:', error);
+export function subscribeToPresence(seasonId, gameId, callback) {
+    try {
+        const presenceRef = collection(db, 'seasons', seasonId, 'games', gameId, 'presence');
+        
+        return onSnapshot(presenceRef,
+            (snapshot) => {
+                const trackers = [];
+                snapshot.forEach(doc => {
+                    trackers.push({
+                        userId: doc.id,
+                        ...doc.data()
+                    });
+                });
+                console.log('👥 Active trackers:', trackers.length);
+                callback(trackers);
+            },
+            (error) => {
+                console.error('Error subscribing to presence:', error);
+                callback([]);
+            }
+        );
+    } catch (error) {
+        console.error('Error setting up presence subscription:', error);
+        return () => {};
     }
-  );
 }
 
 /**
- * Subscribe to game presence (who's viewing/tracking)
- * @param {string} gameId - The game ID
- * @param {Function} callback - Callback function to handle updates
- * @returns {Function} Unsubscribe function
+ * Subscribe to game state for a specific team
+ * @param {string} seasonId - Season ID
+ * @param {string} gameId - Game ID
+ * @param {string} teamId - Team ID
+ * @param {function} callback - Called with game state updates
+ * @returns {function} Unsubscribe function
  */
-export function subscribeToPresence(gameId, callback) {
-  const presenceRef = collection(db, 'gamePresence', gameId, 'users');
-  
-  return onSnapshot(presenceRef, 
-    (snapshot) => {
-      const users = [];
-      snapshot.forEach(doc => users.push(doc.data()));
-      callback(users);
-    },
-    (error) => {
-      console.error('Error subscribing to presence:', error);
+export function subscribeToGameState(seasonId, gameId, teamId, callback) {
+    try {
+        const gameStateRef = doc(db, 'seasons', seasonId, 'games', gameId, 'gameState', teamId);
+        
+        return onSnapshot(gameStateRef,
+            (snapshot) => {
+                if (snapshot.exists()) {
+                    const data = snapshot.data();
+                    console.log(`🏟️ Game state updated for team ${teamId}:`, {
+                        inning: data.inning,
+                        atBats: data.atBats?.length || 0,
+                        plays: data.plays?.length || 0
+                    });
+                    callback(data);
+                } else {
+                    // Initialize with empty state
+                    callback({
+                        teamId,
+                        atBats: [],
+                        plays: [],
+                        lastUpdated: null
+                    });
+                }
+            },
+            (error) => {
+                console.error(`Error subscribing to game state for team ${teamId}:`, error);
+                callback(null);
+            }
+        );
+    } catch (error) {
+        console.error('Error setting up game state subscription:', error);
+        return () => {};
     }
-  );
-}
-
-// ============================================
-// GAME METADATA FUNCTIONS
-// ============================================
-
-/**
- * Get game metadata (one-time read)
- * @param {string} gameId - The game ID
- * @returns {Promise<Object|null>} Game metadata
- */
-export async function getGameMetadata(gameId) {
-  try {
-    const metadataRef = doc(db, 'gameMetadata', gameId);
-    const metadataDoc = await getDoc(metadataRef);
-    
-    if (metadataDoc.exists()) {
-      return metadataDoc.data();
-    }
-    return null;
-  } catch (error) {
-    console.error('Error getting game metadata:', error);
-    return null;
-  }
 }
 
 /**
- * Initialize or update game metadata
- * @param {string} gameId - The game ID
- * @param {string} teamId - The team ID making the update
- * @param {string} teamName - The team name
- * @param {number} newScore - The team's current score
- * @param {string} currentInning - Current inning (e.g., "▲ 3rd")
- * @param {string} status - Game status ('scheduled', 'in_progress', 'final')
- * @param {string} trackerName - Name of the person tracking
- * @returns {Promise<void>}
+ * Update game metadata
+ * @param {string} seasonId - Season ID
+ * @param {string} gameId - Game ID
+ * @param {object} metadata - Metadata to update (inning, outs, scores)
  */
-export async function updateGameMetadata(gameId, teamId, teamName, newScore, currentInning, status = 'in_progress', trackerName = '') {
-  try {
-    const metadataRef = doc(db, 'gameMetadata', gameId);
-    const metadataDoc = await getDoc(metadataRef);
-    
-    if (!metadataDoc.exists()) {
-      // Initialize metadata on first update
-      console.log('📝 Initializing game metadata for', gameId);
-      
-      await setDoc(metadataRef, {
-        gameId,
-        homeTeam: { 
-          id: teamId, 
-          name: teamName, 
-          score: newScore, 
-          hasTracker: true,
-          trackerName: trackerName
-        },
-        awayTeam: { 
-          id: null, 
-          name: '', 
-          score: 0, 
-          hasTracker: false,
-          trackerName: ''
-        },
-        currentInning,
-        status: 'in_progress',
-        gameStartedAt: serverTimestamp(),
-        lastScoreChange: serverTimestamp(),
-        updatedAt: serverTimestamp()
-      });
-    } else {
-      // Update existing metadata
-      const data = metadataDoc.data();
-      const isHomeTeam = data.homeTeam.id === teamId;
-      
-      // Determine if this is setting up the away team for the first time
-      if (!data.awayTeam.id && !isHomeTeam) {
-        await updateDoc(metadataRef, {
-          'awayTeam.id': teamId,
-          'awayTeam.name': teamName,
-          'awayTeam.score': newScore,
-          'awayTeam.hasTracker': true,
-          'awayTeam.trackerName': trackerName,
-          currentInning,
-          status,
-          updatedAt: serverTimestamp()
+export async function updateGameMetadata(seasonId, gameId, metadata) {
+    try {
+        const metadataRef = doc(db, 'seasons', seasonId, 'games', gameId, 'metadata', 'current');
+        
+        await setDoc(metadataRef, {
+            ...metadata,
+            lastUpdated: serverTimestamp()
+        }, { merge: true });
+        
+        console.log('✅ Game metadata updated:', metadata);
+    } catch (error) {
+        console.error('Error updating game metadata:', error);
+        throw error;
+    }
+}
+
+/**
+ * Update game state for a team
+ * @param {string} seasonId - Season ID
+ * @param {string} gameId - Game ID
+ * @param {string} teamId - Team ID
+ * @param {object} gameState - Complete game state
+ */
+export async function updateGameState(seasonId, gameId, teamId, gameState) {
+    try {
+        const gameStateRef = doc(db, 'seasons', seasonId, 'games', gameId, 'gameState', teamId);
+        
+        await setDoc(gameStateRef, {
+            ...gameState,
+            teamId,
+            lastUpdated: serverTimestamp()
         });
-        console.log('📝 Away team initialized:', teamName);
-        return;
-      }
-      
-      const updateData = {
-        [`${isHomeTeam ? 'homeTeam' : 'awayTeam'}.score`]: newScore,
-        [`${isHomeTeam ? 'homeTeam' : 'awayTeam'}.hasTracker`]: true,
-        [`${isHomeTeam ? 'homeTeam' : 'awayTeam'}.trackerName`]: trackerName,
-        currentInning,
-        status,
-        updatedAt: serverTimestamp()
-      };
-      
-      // Track score changes for notifications
-      const oldScore = isHomeTeam ? data.homeTeam.score : data.awayTeam.score;
-      if (oldScore !== newScore) {
-        updateData.lastScoreChange = serverTimestamp();
-      }
-      
-      await updateDoc(metadataRef, updateData);
+        
+        console.log(`✅ Game state saved for team ${teamId}`);
+    } catch (error) {
+        console.error(`Error updating game state for team ${teamId}:`, error);
+        throw error;
     }
-  } catch (error) {
-    console.error('Error updating game metadata:', error);
-  }
 }
 
-// ============================================
-// PRESENCE FUNCTIONS
-// ============================================
-
 /**
- * Update user presence in a game
- * @param {string} gameId - The game ID
- * @param {string} userId - The user ID
- * @param {string} userName - The user's display name
- * @param {string} teamId - The team ID they're tracking/viewing
- * @param {boolean} canTrack - Whether they have tracking permissions
- * @returns {Promise<void>}
+ * Update user presence (mark user as actively tracking)
+ * @param {string} seasonId - Season ID
+ * @param {string} gameId - Game ID
+ * @param {string} userId - User ID
+ * @param {string} teamId - Team being tracked
+ * @param {string} userName - User's display name
  */
-export async function updatePresence(gameId, userId, userName, teamId, canTrack) {
-  try {
-    const presenceRef = doc(db, 'gamePresence', gameId, 'users', userId);
-    await setDoc(presenceRef, {
-      userId,
-      userName,
-      teamId,
-      role: canTrack ? 'tracker' : 'viewer',
-      canTrack,
-      lastActive: serverTimestamp()
-    });
-  } catch (error) {
-    console.error('Error updating presence:', error);
-  }
+export async function updatePresence(seasonId, gameId, userId, teamId, userName) {
+    try {
+        const presenceRef = doc(db, 'seasons', seasonId, 'games', gameId, 'presence', userId);
+        
+        await setDoc(presenceRef, {
+            userId,
+            teamId,
+            userName,
+            lastSeen: serverTimestamp()
+        });
+        
+        console.log(`✅ Presence updated for ${userName} tracking ${teamId}`);
+    } catch (error) {
+        console.error('Error updating presence:', error);
+        throw error;
+    }
 }
 
 /**
- * Remove user presence from a game (call on unmount/leave)
- * @param {string} gameId - The game ID
- * @param {string} userId - The user ID
- * @returns {Promise<void>}
+ * Remove user presence (user stopped tracking)
+ * @param {string} seasonId - Season ID
+ * @param {string} gameId - Game ID
+ * @param {string} userId - User ID
  */
-export async function removePresence(gameId, userId) {
-  try {
-    const presenceRef = doc(db, 'gamePresence', gameId, 'users', userId);
-    await updateDoc(presenceRef, {
-      lastActive: serverTimestamp(),
-      status: 'left'
-    });
-  } catch (error) {
-    console.error('Error removing presence:', error);
-  }
+export async function removePresence(seasonId, gameId, userId) {
+    try {
+        const presenceRef = doc(db, 'seasons', seasonId, 'games', gameId, 'presence', userId);
+        await deleteDoc(presenceRef);
+        
+        console.log(`✅ Presence removed for user ${userId}`);
+    } catch (error) {
+        console.error('Error removing presence:', error);
+        throw error;
+    }
 }
 
-// ============================================
-// PERMISSION CHECKING
-// ============================================
-
 /**
- * Check if user can track a specific team's game
- * @param {Object} userProfile - User profile from firebase-auth
+ * Check if user has permission to track a specific team
+ * @param {object} userProfile - User's profile from /users/{uid}
  * @param {string} teamId - Team ID to check
- * @returns {boolean}
+ * @returns {boolean} True if user can track this team
  */
 export function canUserTrackTeam(userProfile, teamId) {
-  if (!userProfile) return false;
-  
-  // Admin/league-staff can track any team
-  if (userProfile.userRole === 'admin' || userProfile.userRole === 'league-staff') {
-    return true;
-  }
-  
-  // Check team-specific role
-  const teamRole = userProfile.teamRoles?.[teamId];
-  if (!teamRole || teamRole.status !== 'active') {
+    if (!userProfile) return false;
+    
+    // Admins and league staff can track any team
+    if (userProfile.isAdmin || 
+        userProfile.userType === 'league-staff' ||
+        userProfile.userRole === 'admin' ||
+        userProfile.userRole === 'staff') {
+        return true;
+    }
+    
+    // Captains can track their own team
+    if (userProfile.isCaptain && userProfile.teamId === teamId) {
+        return true;
+    }
+    
+    // Team staff can track their team
+    if (userProfile.userType === 'team-staff' && userProfile.teamId === teamId) {
+        return true;
+    }
+    
+    // Check teamRoles array
+    if (userProfile.teamRoles && Array.isArray(userProfile.teamRoles)) {
+        const hasRole = userProfile.teamRoles.some(role => 
+            role.teamId === teamId && 
+            (role.role === 'captain' || role.role === 'staff')
+        );
+        if (hasRole) return true;
+    }
+    
     return false;
-  }
-  
-  // Captain or team-staff can track
-  return teamRole.role === 'captain' || teamRole.role === 'team-staff';
 }
 
 /**
  * Get user's tracking permissions for a game
- * @param {Object} userProfile - User profile from firebase-auth
- * @param {Object} game - Game object with homeTeamId and awayTeamId
- * @returns {Object} Permissions object
+ * @param {object} userProfile - User's profile from /users/{uid}
+ * @param {object} game - Game object with homeTeam and awayTeam
+ * @returns {object} { canTrackHome: boolean, canTrackAway: boolean, canTrackBoth: boolean }
  */
 export function getGameTrackingPermissions(userProfile, game) {
-  if (!userProfile || !game) {
+    const canTrackHome = canUserTrackTeam(userProfile, game.homeTeam);
+    const canTrackAway = canUserTrackTeam(userProfile, game.awayTeam);
+    
     return {
-      canTrackHome: false,
-      canTrackAway: false,
-      canView: false
+        canTrackHome,
+        canTrackAway,
+        canTrackBoth: canTrackHome && canTrackAway
     };
-  }
-  
-  return {
-    canTrackHome: canUserTrackTeam(userProfile, game.homeTeamId),
-    canTrackAway: canUserTrackTeam(userProfile, game.awayTeamId),
-    canView: true // Any logged-in user can view
-  };
+}
+
+/**
+ * Load saved game state from Firebase
+ * @param {string} seasonId - Season ID
+ * @param {string} gameId - Game ID
+ * @param {string} teamId - Team ID
+ * @returns {object|null} Saved game state or null
+ */
+export async function loadGameState(seasonId, gameId, teamId) {
+    try {
+        const gameStateRef = doc(db, 'seasons', seasonId, 'games', gameId, 'gameState', teamId);
+        const snapshot = await getDoc(gameStateRef);
+        
+        if (snapshot.exists()) {
+            console.log(`✅ Loaded saved game state for team ${teamId}`);
+            return snapshot.data();
+        }
+        
+        return null;
+    } catch (error) {
+        console.error(`Error loading game state for team ${teamId}:`, error);
+        return null;
+    }
+}
+
+/**
+ * Clear game state for a team (mark as completed)
+ * @param {string} seasonId - Season ID
+ * @param {string} gameId - Game ID
+ * @param {string} teamId - Team ID
+ */
+export async function clearGameState(seasonId, gameId, teamId) {
+    try {
+        const gameStateRef = doc(db, 'seasons', seasonId, 'games', gameId, 'gameState', teamId);
+        
+        await setDoc(gameStateRef, {
+            cleared: true,
+            clearedAt: serverTimestamp()
+        }, { merge: true });
+        
+        console.log(`🗑️ Game state cleared for team ${teamId}`);
+    } catch (error) {
+        console.error(`Error clearing game state for team ${teamId}:`, error);
+        throw error;
+    }
 }
