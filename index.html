@@ -2518,9 +2518,13 @@ function updateRSVPCard(profile) {
           dateString = g.date;
         }
         
+        // Handle team names - playoff games use "home team" and "away team" fields
+        const homeTeam = g.homeTeamName || g["home team"] || capitalize(g.homeTeamId) || "";
+        const awayTeam = g.awayTeamName || g["away team"] || capitalize(g.awayTeamId) || "";
+        
         return {
-          "home team": g.homeTeamName || capitalize(g.homeTeamId) || "",
-          "away team": g.awayTeamName || capitalize(g.awayTeamId) || "",
+          "home team": homeTeam,
+          "away team": awayTeam,
           "home score": g.homeScore !== undefined ? g.homeScore : null,
           "away score": g.awayScore !== undefined ? g.awayScore : null,
           winner: capitalize(g.winner || ""),
@@ -2584,13 +2588,13 @@ function updateRSVPCard(profile) {
     const winner = game.winner;
     
     let scoreText;
-    if (homeScore === "W" && awayScore === "L") {
-      scoreText = `${homeTeam} defeats ${awayTeam}`;
-    } else if (homeScore === "L" && awayScore === "W") {
-      scoreText = `${awayTeam} defeats ${homeTeam}`;
-    } else if (winner === "Tie") {
+    
+    // Handle tie games
+    if (winner === "Tie" && homeScore !== null && awayScore !== null) {
       scoreText = `${homeTeam} ties ${awayTeam} ${homeScore}-${awayScore}`;
-    } else {
+    } 
+    // Handle games with scores and winner
+    else if (winner && homeScore !== null && awayScore !== null) {
       const winnerTeam = winner;
       const loserTeam = winner === homeTeam ? awayTeam : homeTeam;
       
@@ -2604,6 +2608,15 @@ function updateRSVPCard(profile) {
       }
       
       scoreText = `${winnerTeam} defeats ${loserTeam} ${winnerScore}-${loserScore}`;
+    }
+    // Fallback - just show winner if scores aren't available
+    else if (winner) {
+      const loserTeam = winner === homeTeam ? awayTeam : homeTeam;
+      scoreText = `${winner} defeats ${loserTeam}`;
+    }
+    // Last resort fallback
+    else {
+      scoreText = `${homeTeam} vs ${awayTeam}`;
     }
     
     return `⚾ ${scoreText}`;
