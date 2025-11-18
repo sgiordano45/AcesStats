@@ -97,7 +97,8 @@
     updatePresence,
     removePresence,
     canUserTrackTeam,
-    getGameTrackingPermissions
+    getGameTrackingPermissions,
+    subscribeToPresence
 } from './firebase-game-sync.js';
 
 
@@ -344,11 +345,20 @@ function getOrdinalSuffix(num) {
             getSeasonPlayerStatsOptimized,
             getUpcomingTeamGames,
             getBattingOrder,
-    saveGameState: (gameId, teamId, teamName, gameState, battingOrder, userInfo) => 
-        saveGameState(gameId, teamId, teamName, gameState, battingOrder, userInfo),
+            saveGameState: (gameId, teamId, teamName, gameState, battingOrder, userInfo) => 
+                saveGameState(gameId, teamId, teamName, gameState, battingOrder, userInfo),
             loadGameState,
             clearGameState,
-            saveGameResults
+            saveGameResults,
+            // Add firebase-game-sync functions
+            subscribeToGameState,
+            subscribeToGameMetadata,
+            updateGameMetadata,
+            updatePresence,
+            removePresence,
+            canUserTrackTeam,
+            getGameTrackingPermissions,
+            subscribeToPresence
         };
 
         // Wait for auth state to be determined before signaling ready
@@ -521,7 +531,7 @@ useEffect(() => {
             const userProfile = profileResult.success ? profileResult.data : null;
             
             // Check if user can track this team
-            const canTrack = canUserTrackTeam(userProfile, selectedTeam);
+            const canTrack = window.FirebaseGameTracker.canUserTrackTeam(userProfile, selectedTeam);
             setUserCanTrack(canTrack);
             console.log('🔐 User can track:', canTrack);
             
@@ -536,7 +546,7 @@ useEffect(() => {
             console.log('🏟️ My team:', myTeamId, 'vs Opponent:', opponentId);
             
             // Update presence
-            await updatePresence(
+            await window.FirebaseGameTracker.updatePresence(
                 selectedGame.id,
                 currentUser.uid,
                 currentUser.displayName || 'Unknown',
@@ -545,7 +555,7 @@ useEffect(() => {
             );
             
             // Subscribe to YOUR team's game state
-            unsubscribeYourTeam = subscribeToGameState(
+            unsubscribeYourTeam = window.FirebaseGameTracker.subscribeToGameState(
                 selectedGame.id,
                 myTeamId,
                 (data) => {
@@ -578,7 +588,7 @@ useEffect(() => {
             
             // Subscribe to OPPONENT's game state
             if (opponentId) {
-                unsubscribeOpponent = subscribeToGameState(
+                unsubscribeOpponent = window.FirebaseGameTracker.subscribeToGameState(
                     selectedGame.id,
                     opponentId,
                     (data) => {
@@ -600,12 +610,12 @@ useEffect(() => {
             }
             
             // Subscribe to game metadata
-            unsubscribeMetadata = subscribeToGameMetadata(selectedGame.id, (data) => {
+            unsubscribeMetadata = window.FirebaseGameTracker.subscribeToGameMetadata(selectedGame.id, (data) => {
                 setGameMetadata(data);
             });
             
             // Subscribe to presence
-            unsubscribePresence = subscribeToPresence(selectedGame.id, (users) => {
+            unsubscribePresence = window.FirebaseGameTracker.subscribeToPresence(selectedGame.id, (users) => {
                 setPresenceUsers(users);
             });
             
@@ -627,7 +637,7 @@ useEffect(() => {
         
         // Remove presence on unmount
         if (selectedGame && currentUser) {
-            removePresence(selectedGame.id, currentUser.uid);
+            window.FirebaseGameTracker.removePresence(selectedGame.id, currentUser.uid);
         }
     };
 }, [selectedGame, setupMode, selectedTeam, currentUser, isHome]);
