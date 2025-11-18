@@ -87,6 +87,17 @@
     50% { transform: rotate(180deg) scale(1.1); }
   }
   
+  @keyframes slideUp {
+    from {
+      transform: translateY(20px);
+      opacity: 0;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+  
 .back-home-btn {
       position: absolute;
       top: 2rem;
@@ -435,6 +446,15 @@ function RosterManagement({ currentUser }) {
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const [activeTab, setActiveTab] = useState('rsvp');
   const [currentInning, setCurrentInning] = useState(1); // For mobile fielding view
+  
+  // Player selection modal state
+  const [showPlayerModal, setShowPlayerModal] = useState(false);
+  const [modalConfig, setModalConfig] = useState({
+    title: '',
+    availablePlayers: [],
+    onSelect: null,
+    playerNumber: ''
+  });
 
   const isCaptain = userProfile?.isCaptain || false;
   const seasonConfig = SEASONS[season];
@@ -917,6 +937,17 @@ const saveLineupData = async (type, data, inning = null) => {
     saveLineupData('batting', newOrder[selectedGame]);
   };
 
+  // Helper function to open player selection modal
+  const openPlayerModal = (title, availablePlayers, onSelect) => {
+    setModalConfig({
+      title,
+      availablePlayers,
+      onSelect,
+      playerNumber: ''
+    });
+    setShowPlayerModal(true);
+  };
+
   // Helper functions for mobile fielding
   const handleFieldingDrop = (player, inning, position) => {
     if (!isCaptain) return;
@@ -1176,6 +1207,253 @@ const printDefensiveRotation = () => {
   printWindow.document.close();
 };
 
+  // Player Selection Modal Component
+  const PlayerSelectionModal = () => {
+    if (!showPlayerModal) return null;
+
+    const handleNumberChange = (e) => {
+      const value = e.target.value;
+      // Only allow numbers
+      if (value === '' || /^\d+$/.test(value)) {
+        setModalConfig(prev => ({ ...prev, playerNumber: value }));
+      }
+    };
+
+    const handleSubmit = () => {
+      const num = parseInt(modalConfig.playerNumber);
+      if (!isNaN(num) && num >= 1 && num <= modalConfig.availablePlayers.length) {
+        const selectedPlayer = modalConfig.availablePlayers[num - 1];
+        modalConfig.onSelect(selectedPlayer);
+        setShowPlayerModal(false);
+        setModalConfig({ title: '', availablePlayers: [], onSelect: null, playerNumber: '' });
+      }
+    };
+
+    const handleCancel = () => {
+      setShowPlayerModal(false);
+      setModalConfig({ title: '', availablePlayers: [], onSelect: null, playerNumber: '' });
+    };
+
+    const handleKeyPress = (e) => {
+      if (e.key === 'Enter') {
+        handleSubmit();
+      } else if (e.key === 'Escape') {
+        handleCancel();
+      }
+    };
+
+    return (
+      <div 
+        style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0, 0, 0, 0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+          padding: '20px',
+          backdropFilter: 'blur(4px)'
+        }}
+        onClick={handleCancel}
+      >
+        <div
+          style={{
+            background: 'white',
+            borderRadius: '16px',
+            padding: '24px',
+            maxWidth: '400px',
+            width: '100%',
+            maxHeight: '80vh',
+            overflowY: 'auto',
+            boxShadow: '0 20px 60px rgba(0, 0, 0, 0.3)',
+            animation: 'slideUp 0.3s ease-out'
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <h3 style={{ 
+            margin: '0 0 8px 0', 
+            fontSize: '20px', 
+            fontWeight: 'bold', 
+            color: 'var(--text-dark)',
+            textAlign: 'center'
+          }}>
+            {modalConfig.title}
+          </h3>
+          
+          <p style={{ 
+            margin: '0 0 20px 0', 
+            fontSize: '14px', 
+            color: 'var(--text-light)',
+            textAlign: 'center'
+          }}>
+            Enter the number of the player you want to add
+          </p>
+
+          <div style={{ 
+            marginBottom: '20px',
+            padding: '16px',
+            background: '#f9fafb',
+            borderRadius: '12px',
+            border: '2px solid var(--border-color)'
+          }}>
+            <input
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              value={modalConfig.playerNumber}
+              onChange={handleNumberChange}
+              onKeyPress={handleKeyPress}
+              placeholder="Type number..."
+              autoFocus
+              style={{
+                width: '100%',
+                padding: '16px',
+                fontSize: '24px',
+                fontWeight: 'bold',
+                textAlign: 'center',
+                border: '3px solid var(--primary-color)',
+                borderRadius: '12px',
+                outline: 'none',
+                boxShadow: '0 0 0 3px rgba(45, 80, 22, 0.1)',
+                transition: 'all 0.2s ease'
+              }}
+            />
+          </div>
+
+          <div style={{
+            marginBottom: '20px',
+            maxHeight: '200px',
+            overflowY: 'auto',
+            padding: '8px',
+            background: '#f9fafb',
+            borderRadius: '12px',
+            border: '1px solid var(--border-color)'
+          }}>
+            {modalConfig.availablePlayers.map((player, idx) => (
+              <div 
+                key={player.id}
+                onClick={() => {
+                  setModalConfig(prev => ({ ...prev, playerNumber: String(idx + 1) }));
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px',
+                  padding: '12px',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  background: modalConfig.playerNumber === String(idx + 1) ? '#eff6ff' : 'white',
+                  border: modalConfig.playerNumber === String(idx + 1) ? '2px solid var(--primary-color)' : '2px solid transparent',
+                  marginBottom: '8px',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                <div style={{
+                  width: '32px',
+                  minWidth: '32px',
+                  height: '32px',
+                  borderRadius: '50%',
+                  background: modalConfig.playerNumber === String(idx + 1) ? 'var(--primary-color)' : '#e5e7eb',
+                  color: modalConfig.playerNumber === String(idx + 1) ? 'white' : '#6b7280',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '14px',
+                  fontWeight: 'bold'
+                }}>
+                  {idx + 1}
+                </div>
+                <div style={{
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '50%',
+                  background: 'var(--primary-color)',
+                  color: 'white',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  flexShrink: 0
+                }}>
+                  {player.avatar || player.name?.charAt(0)?.toUpperCase() || '?'}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ 
+                    fontWeight: '600', 
+                    fontSize: '14px', 
+                    color: 'var(--text-dark)',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap'
+                  }}>
+                    {player.name}
+                  </div>
+                  {player.acesBPI || player.battingAvg ? (
+                    <div style={{ fontSize: '12px', color: 'var(--text-light)' }}>
+                      BA: {player.acesBPI || player.battingAvg}
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ display: 'flex', gap: '12px' }}>
+            <button
+              onClick={handleCancel}
+              style={{
+                flex: 1,
+                padding: '14px',
+                fontSize: '16px',
+                fontWeight: '600',
+                border: '2px solid var(--border-color)',
+                borderRadius: '12px',
+                background: 'white',
+                color: 'var(--text-dark)',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease'
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSubmit}
+              disabled={!modalConfig.playerNumber || 
+                       parseInt(modalConfig.playerNumber) < 1 || 
+                       parseInt(modalConfig.playerNumber) > modalConfig.availablePlayers.length}
+              style={{
+                flex: 1,
+                padding: '14px',
+                fontSize: '16px',
+                fontWeight: '600',
+                border: 'none',
+                borderRadius: '12px',
+                background: (!modalConfig.playerNumber || 
+                            parseInt(modalConfig.playerNumber) < 1 || 
+                            parseInt(modalConfig.playerNumber) > modalConfig.availablePlayers.length)
+                  ? '#d1d5db' 
+                  : 'var(--primary-color)',
+                color: 'white',
+                cursor: (!modalConfig.playerNumber || 
+                        parseInt(modalConfig.playerNumber) < 1 || 
+                        parseInt(modalConfig.playerNumber) > modalConfig.availablePlayers.length)
+                  ? 'not-allowed' 
+                  : 'pointer',
+                transition: 'all 0.2s ease'
+              }}
+            >
+              Add Player
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
 
 
@@ -1285,7 +1563,9 @@ const printDefensiveRotation = () => {
   }
 
   return (
-    <div style={{ fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", background: 'linear-gradient(135deg, #f7fafc 0%, #edf2f7 100%)', minHeight: '100vh', padding: '2rem' }}>	
+    <>
+      <PlayerSelectionModal />
+      <div style={{ fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", background: 'linear-gradient(135deg, #f7fafc 0%, #edf2f7 100%)', minHeight: '100vh', padding: '2rem' }}>	
       <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
         
         <div style={{ background: 'linear-gradient(135deg, #2d5016 0%, #1a6b4a 100%)', color: 'white', textAlign: 'center', padding: '3rem 2rem', borderRadius: '12px', marginBottom: '2rem', position: 'relative', boxShadow: '0 12px 32px rgba(0,0,0,0.16)' }}>
@@ -1580,15 +1860,11 @@ const printDefensiveRotation = () => {
                                         <button
                                           onClick={() => {
                                             if (availableForBatting.length > 0) {
-                                              // Create styled modal prompt
-                                              const playerList = availableForBatting.map((p, i) => `${i+1}. ${p.name}`).join('\n');
-                                              const result = window.prompt(
-                                                `SELECT PLAYER FOR SPOT #${idx + 1}\n\nEnter the number of the player you want to add:\n\n${playerList}\n\nType a number and press OK:`
+                                              openPlayerModal(
+                                                `Add to Batting Spot #${idx + 1}`,
+                                                availableForBatting,
+                                                (player) => addToBattingOrder(idx, player)
                                               );
-                                              const playerIdx = parseInt(result) - 1;
-                                              if (!isNaN(playerIdx) && playerIdx >= 0 && playerIdx < availableForBatting.length) {
-                                                addToBattingOrder(idx, availableForBatting[playerIdx]);
-                                              }
                                             }
                                           }}
                                           disabled={availableForBatting.length === 0}
@@ -1811,14 +2087,11 @@ const printDefensiveRotation = () => {
                                           <button
                                             onClick={() => {
                                               if (availablePlayers.length > 0) {
-                                                const playerList = availablePlayers.map((p, i) => `${i+1}. ${p.name}`).join('\n');
-                                                const result = window.prompt(
-                                                  `ASSIGN TO ${position} (INNING ${currentInning})\n\nEnter the number of the player:\n\n${playerList}\n\nType a number and press OK:`
+                                                openPlayerModal(
+                                                  `Assign to ${position} - Inning ${currentInning}`,
+                                                  availablePlayers,
+                                                  (player) => handleFieldingDrop(player, currentInning, position)
                                                 );
-                                                const playerIdx = parseInt(result) - 1;
-                                                if (!isNaN(playerIdx) && playerIdx >= 0 && playerIdx < availablePlayers.length) {
-                                                  handleFieldingDrop(availablePlayers[playerIdx], currentInning, position);
-                                                }
                                               }
                                             }}
                                             disabled={availablePlayers.length === 0}
@@ -1899,14 +2172,11 @@ const printDefensiveRotation = () => {
                                             <button
                                               onClick={() => {
                                                 if (availablePlayers.length > 0) {
-                                                  const playerList = availablePlayers.map((p, i) => `${i+1}. ${p.name}`).join('\n');
-                                                  const result = window.prompt(
-                                                    `ASSIGN TO BENCH SPOT ${benchIdx + 1} (INNING ${currentInning})\n\nEnter the number of the player:\n\n${playerList}\n\nType a number and press OK:`
+                                                  openPlayerModal(
+                                                    `Assign to Bench Spot ${benchIdx + 1} - Inning ${currentInning}`,
+                                                    availablePlayers,
+                                                    (player) => handleBenchDrop(player, currentInning, benchIdx)
                                                   );
-                                                  const playerIdx = parseInt(result) - 1;
-                                                  if (!isNaN(playerIdx) && playerIdx >= 0 && playerIdx < availablePlayers.length) {
-                                                    handleBenchDrop(availablePlayers[playerIdx], currentInning, benchIdx);
-                                                  }
                                                 }
                                               }}
                                               disabled={availablePlayers.length === 0}
@@ -2120,6 +2390,7 @@ const printDefensiveRotation = () => {
         )}
       </div>
     </div>
+    </>
   );
 }
 
