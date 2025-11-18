@@ -57,6 +57,22 @@
 .connection-status .status-icon {
   font-size: 1rem;
 }
+
+/* Notification slide-in animation */
+@keyframes slide-in {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.animate-slide-in {
+  animation: slide-in 0.3s ease-out;
+}
     </style>
 </head>
 <body>
@@ -73,9 +89,24 @@
         import { getUpcomingTeamGames, getBattingOrder } from './firebase-roster.js';
         import { doc, setDoc, getDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
         import { db } from './firebase-data.js';
+		
+		import { 
+    subscribeToGameState,
+    subscribeToGameMetadata,
+    updateGameMetadata,
+    updatePresence,
+    removePresence,
+    canUserTrackTeam,
+    getGameTrackingPermissions
+} from './firebase-game-sync.js';
+
+
+
 
         // Save game state to Firebase
-async function saveGameState(gameId, teamId, gameState, battingOrder) {
+async function saveGameState(gameId, teamId, teamName, gameState, battingOrder, currentUserInfo) {
+    const { userId, userName } = currentUserInfo;
+    
     // OFFLINE CHECK
     if (!navigator.onLine) {
         console.log('📡 Offline - queuing game state update');
@@ -84,7 +115,8 @@ async function saveGameState(gameId, teamId, gameState, battingOrder) {
             await window.offlineQueue.addToQueue('SCORE_UPDATE', {
                 gameId: gameId,
                 teamId: teamId,
-                score: gameState.score,
+                teamName: teamName,
+                score: gameState.score.yourTeam,
                 inning: gameState.inning,
                 outs: gameState.outs,
                 bases: gameState.bases,
@@ -99,18 +131,59 @@ async function saveGameState(gameId, teamId, gameState, battingOrder) {
         return; // Exit early - don't try Firebase
     }
     
-    // ONLINE - Normal Firebase save
+    // ONLINE - Save with enhanced metadata
     try {
+        // Calculate current inning display string
+        const inningDisplay = `${gameState.isYourTeamBatting ? '▲' : '▼'} ${gameState.inning}${getOrdinalSuffix(gameState.inning)}`;
+        
         const stateRef = doc(db, 'gameStates', `${gameId}_${teamId}`);
         await setDoc(stateRef, {
-            gameState,
+            gameId,
+            teamId,
+            teamName,
+            gameState: {
+                ...gameState,
+                inning: inningDisplay // Store formatted inning
+            },
             battingOrder: battingOrder.map(p => p.id),
+            metadata: {
+                lastUpdatedBy: userId,
+                lastUpdatedByName: userName,
+                lastUpdateTimestamp: serverTimestamp(),
+                currentTracker: {
+                    userId: userId,
+                    userName: userName,
+                    activeAt: serverTimestamp()
+                }
+            },
             savedAt: serverTimestamp()
         });
+        
+        // Update game-level metadata
+        await updateGameMetadata(
+            gameId,
+            teamId,
+            teamName,
+            gameState.score.yourTeam,
+            inningDisplay,
+            gameState.gameActive ? 'in_progress' : 'final',
+            userName
+        );
+        
         console.log('💾 Game state saved');
     } catch (error) {
         console.error('Error saving game state:', error);
     }
+}
+
+// Helper function for ordinal suffixes
+function getOrdinalSuffix(num) {
+    const j = num % 10;
+    const k = num % 100;
+    if (j === 1 && k !== 11) return "st";
+    if (j === 2 && k !== 12) return "nd";
+    if (j === 3 && k !== 13) return "rd";
+    return "th";
 }
 
         // Load game state from Firebase
@@ -271,7 +344,8 @@ async function saveGameState(gameId, teamId, gameState, battingOrder) {
             getSeasonPlayerStatsOptimized,
             getUpcomingTeamGames,
             getBattingOrder,
-            saveGameState,
+    saveGameState: (gameId, teamId, teamName, gameState, battingOrder, userInfo) => 
+        saveGameState(gameId, teamId, teamName, gameState, battingOrder, userInfo),
             loadGameState,
             clearGameState,
             saveGameResults
@@ -377,6 +451,15 @@ async function saveGameState(gameId, teamId, gameState, battingOrder) {
             const [tempOuts, setTempOuts] = useState(0);
             const [draggedRunner, setDraggedRunner] = useState(null);
 
+
+			const [opponentTeamId, setOpponentTeamId] = useState(null);
+			const [opponentTeamName, setOpponentTeamName] = useState('');
+			const [opponentGameState, setOpponentGameState] = useState(null);
+			const [gameMetadata, setGameMetadata] = useState(null);
+			const [userCanTrack, setUserCanTrack] = useState(false);
+			const [presenceUsers, setPresenceUsers] = useState([]);
+			const [notifications, setNotifications] = useState([]);
+
             // Wait for Firebase to be ready, then load data
             useEffect(() => {
                 const initializeApp = async () => {
@@ -397,21 +480,157 @@ async function saveGameState(gameId, teamId, gameState, battingOrder) {
                 }
             }, [selectedTeam, currentSeason]);
 
-            // Auto-save game state whenever it changes
-            useEffect(() => {
-                if (!setupMode && selectedGame && selectedTeam && gameState.gameActive) {
-                    const saveTimer = setTimeout(() => {
-                        window.FirebaseGameTracker.saveGameState(
-                            selectedGame.id,
-                            selectedTeam,
-                            gameState,
-                            battingOrder
-                        );
-                    }, 1000);
-                    
-                    return () => clearTimeout(saveTimer);
+// Auto-save game state whenever it changes
+useEffect(() => {
+    if (!setupMode && selectedGame && selectedTeam && gameState.gameActive && currentUser) {
+        const saveTimer = setTimeout(() => {
+            window.FirebaseGameTracker.saveGameState(
+                selectedGame.id,
+                selectedTeam,
+                selectedTeam, // team name
+                gameState,
+                battingOrder,
+                {
+                    userId: currentUser.uid,
+                    userName: currentUser.displayName || currentUser.email
                 }
-            }, [gameState, setupMode, selectedGame, selectedTeam, battingOrder]);
+            );
+        }, 1000);
+        
+        return () => clearTimeout(saveTimer);
+    }
+}, [gameState, setupMode, selectedGame, selectedTeam, battingOrder, currentUser]);
+
+useEffect(() => {
+    let unsubscribeYourTeam = null;
+    let unsubscribeOpponent = null;
+    let unsubscribeMetadata = null;
+    let unsubscribePresence = null;
+    
+    async function initializeGameSync() {
+        // Only set up sync when game is selected and not in setup mode
+        if (!selectedGame || setupMode || !selectedTeam || !currentUser) {
+            return;
+        }
+        
+        console.log('🔄 Initializing real-time game sync');
+        
+        try {
+            // Get user profile to check permissions
+            const profileResult = await window.FirebaseGameTracker.getUserProfile(currentUser.uid);
+            const userProfile = profileResult.success ? profileResult.data : null;
+            
+            // Check if user can track this team
+            const canTrack = canUserTrackTeam(userProfile, selectedTeam);
+            setUserCanTrack(canTrack);
+            console.log('🔐 User can track:', canTrack);
+            
+            // Determine opponent team
+            const isHomeTeam = isHome;
+            const myTeamId = selectedTeam;
+            const opponentId = isHomeTeam ? selectedGame.awayTeamId : selectedGame.homeTeamId;
+            const opponentName = isHomeTeam ? selectedGame.awayTeam : selectedGame.homeTeam;
+            
+            setOpponentTeamId(opponentId);
+            setOpponentTeamName(opponentName);
+            console.log('🏟️ My team:', myTeamId, 'vs Opponent:', opponentId);
+            
+            // Update presence
+            await updatePresence(
+                selectedGame.id,
+                currentUser.uid,
+                currentUser.displayName || 'Unknown',
+                myTeamId,
+                canTrack
+            );
+            
+            // Subscribe to YOUR team's game state
+            unsubscribeYourTeam = subscribeToGameState(
+                selectedGame.id,
+                myTeamId,
+                (data) => {
+                    // Only update if it wasn't this user who made the change
+                    if (data.metadata?.lastUpdatedBy !== currentUser.uid) {
+                        console.log('📥 Your team updated by', data.metadata?.lastUpdatedByName);
+                        
+                        // Update game state
+                        setGameState(data.gameState);
+                        
+                        // Reconstruct batting order from IDs
+                        if (data.battingOrder && battingOrder.length > 0) {
+                            const reconstructed = data.battingOrder.map(id => 
+                                battingOrder.find(p => p.id === id)
+                            ).filter(p => p !== undefined);
+                            if (reconstructed.length > 0) {
+                                setBattingOrder(reconstructed);
+                            }
+                        }
+                        
+                        // Show notification
+                        addNotification({
+                            id: Date.now(),
+                            message: `${data.metadata?.lastUpdatedByName || 'Teammate'} updated the game`,
+                            type: 'update'
+                        });
+                    }
+                }
+            );
+            
+            // Subscribe to OPPONENT's game state
+            if (opponentId) {
+                unsubscribeOpponent = subscribeToGameState(
+                    selectedGame.id,
+                    opponentId,
+                    (data) => {
+                        console.log('📥 Opponent game state updated');
+                        setOpponentGameState(data.gameState);
+                        
+                        // Show score change notification
+                        if (data.gameState?.score?.yourTeam !== opponentGameState?.score?.yourTeam) {
+                            const opponentScore = data.gameState?.score?.yourTeam || 0;
+                            const yourScore = gameState.score.yourTeam;
+                            addNotification({
+                                id: Date.now(),
+                                message: `Score update: ${selectedTeam} ${yourScore} - ${opponentScore} ${opponentName}`,
+                                type: 'score'
+                            });
+                        }
+                    }
+                );
+            }
+            
+            // Subscribe to game metadata
+            unsubscribeMetadata = subscribeToGameMetadata(selectedGame.id, (data) => {
+                setGameMetadata(data);
+            });
+            
+            // Subscribe to presence
+            unsubscribePresence = subscribeToPresence(selectedGame.id, (users) => {
+                setPresenceUsers(users);
+            });
+            
+            console.log('✅ Real-time sync initialized');
+            
+        } catch (error) {
+            console.error('❌ Error initializing game sync:', error);
+        }
+    }
+    
+    initializeGameSync();
+    
+    // Cleanup function
+    return () => {
+        if (unsubscribeYourTeam) unsubscribeYourTeam();
+        if (unsubscribeOpponent) unsubscribeOpponent();
+        if (unsubscribeMetadata) unsubscribeMetadata();
+        if (unsubscribePresence) unsubscribePresence();
+        
+        // Remove presence on unmount
+        if (selectedGame && currentUser) {
+            removePresence(selectedGame.id, currentUser.uid);
+        }
+    };
+}, [selectedGame, setupMode, selectedTeam, currentUser, isHome]);
 
             const loadInitialData = async () => {
                 try {
@@ -1190,9 +1409,202 @@ async function saveGameState(gameId, teamId, gameState, battingOrder) {
                     avg: atBats > 0 ? (hits / atBats).toFixed(3) : '.000'
                 };
             });
+			// Notification Toast Component
+const NotificationToast = ({ notification, onDismiss }) => {
+    return (
+        <div className={`fixed top-20 right-4 max-w-sm rounded-lg shadow-lg p-4 z-50 ${
+            notification.type === 'score' ? 'bg-green-600' :
+            notification.type === 'update' ? 'bg-blue-600' :
+            'bg-gray-600'
+        } text-white animate-slide-in`}>
+            <div className="flex items-center gap-3">
+                <div className="flex-1">
+                    <div className="font-semibold">{notification.message}</div>
+                </div>
+                <button 
+                    onClick={onDismiss}
+                    className="text-white opacity-75 hover:opacity-100 text-xl leading-none"
+                >
+                    ×
+                </button>
+            </div>
+        </div>
+    );
+};
 
+// Live Score Header Component
+const LiveScoreHeader = ({ gameMetadata, yourTeamId }) => {
+    if (!gameMetadata) return null;
+    
+    const isHomeTeam = gameMetadata.homeTeam.id === yourTeamId;
+    const yourTeam = isHomeTeam ? gameMetadata.homeTeam : gameMetadata.awayTeam;
+    const opponentTeam = isHomeTeam ? gameMetadata.awayTeam : gameMetadata.homeTeam;
+    
+    return (
+        <div className="bg-gradient-to-r from-blue-600 to-purple-600 text-white p-6 rounded-xl mb-6">
+            <div className="flex items-center justify-between">
+                {/* Your Team */}
+                <div className="flex-1 text-center">
+                    <div className="text-2xl font-bold">{yourTeam.name}</div>
+                    <div className="text-6xl font-black mt-2">{yourTeam.score}</div>
+                    {yourTeam.hasTracker && (
+                        <div className="text-sm opacity-75 mt-2">
+                            📊 {yourTeam.trackerName}
+                        </div>
+                    )}
+                </div>
+                
+                <div className="text-3xl font-bold px-6">VS</div>
+                
+                {/* Opponent Team */}
+                <div className="flex-1 text-center">
+                    <div className="text-2xl font-bold">{opponentTeam.name}</div>
+                    <div className="text-6xl font-black mt-2">{opponentTeam.score}</div>
+                    {opponentTeam.hasTracker && (
+                        <div className="text-sm opacity-75 mt-2">
+                            📊 {opponentTeam.trackerName}
+                        </div>
+                    )}
+                </div>
+            </div>
+            
+            <div className="text-center mt-4 text-xl font-semibold">
+                {gameMetadata.currentInning}
+            </div>
+            
+            {gameMetadata.status === 'in_progress' && (
+                <div className="flex items-center justify-center gap-2 mt-3">
+                    <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
+                    <span className="text-sm">LIVE</span>
+                </div>
+            )}
+        </div>
+    );
+};
+
+// Presence Indicator Component
+const PresenceIndicator = ({ presenceUsers }) => {
+    if (!presenceUsers || presenceUsers.length === 0) return null;
+    
+    const trackers = presenceUsers.filter(u => u.role === 'tracker');
+    const viewers = presenceUsers.filter(u => u.role === 'viewer');
+    
+    return (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+            <div className="flex items-center gap-3">
+                <span className="text-xl">👥</span>
+                <div className="flex-1 text-sm">
+                    {trackers.length > 0 && (
+                        <div className="font-semibold text-blue-900">
+                            Tracking: {trackers.map(t => t.userName).join(', ')}
+                        </div>
+                    )}
+                    {viewers.length > 0 && (
+                        <div className="text-blue-700">
+                            Watching: {viewers.map(v => v.userName).join(', ')}
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// Merged Play-by-Play Component
+const MergedPlayByPlay = ({ yourPlays, opponentPlays, yourTeamName, opponentName }) => {
+    // Combine and sort by timestamp
+    const allPlays = React.useMemo(() => {
+        const combined = [
+            ...(yourPlays || []).map(p => ({ 
+                ...p, 
+                team: yourTeamName, 
+                isYourTeam: true 
+            })),
+            ...(opponentPlays || []).map(p => ({ 
+                ...p, 
+                team: opponentName, 
+                isYourTeam: false 
+            }))
+        ];
+        
+        return combined.sort((a, b) => b.timestamp - a.timestamp);
+    }, [yourPlays, opponentPlays, yourTeamName, opponentName]);
+    
+    return (
+        <div className="bg-white border border-gray-200 rounded-xl p-5">
+            <h2 className="text-xl font-bold mb-4">
+                Play-by-Play {opponentPlays && opponentPlays.length > 0 ? '(Both Teams)' : `(${yourTeamName} Only)`}
+            </h2>
+            <div className="max-h-80 overflow-y-auto">
+                {allPlays.length === 0 ? (
+                    <div className="text-center text-gray-400 py-5">
+                        No plays recorded yet
+                    </div>
+                ) : (
+                    allPlays.map((play, idx) => (
+                        <div 
+                            key={`${play.team}-${play.timestamp}-${idx}`}
+                            className={`p-3 border-b border-gray-100 ${
+                                play.isYourTeam ? 'bg-blue-50' : 'bg-gray-50'
+                            }`}
+                        >
+                            <span className="font-bold text-purple-600">
+                                {play.inning}
+                            </span>
+                            {' • '}
+                            <span className="font-semibold text-gray-700">
+                                {play.team}
+                            </span>
+                            {' • '}
+                            <span className="font-bold">{play.batter}</span>
+                            {' - '}
+                            <span className={`px-2 py-1 rounded text-sm font-bold ${
+                                PLAY_TYPES.find(p => p.value === play.playType)?.isHit ? 'bg-green-100 text-green-800' : 
+                                PLAY_TYPES.find(p => p.value === play.playType)?.isOut ? 'bg-red-100 text-red-800' : 
+                                'bg-blue-100 text-blue-800'
+                            }`}>
+                                {play.playLabel}
+                            </span>
+                            {play.runsScored > 0 && (
+                                <span className="ml-2 text-green-600 font-bold">
+                                    +{play.runsScored} run{play.runsScored > 1 ? 's' : ''}
+                                </span>
+                            )}
+                        </div>
+                    ))
+                )}
+            </div>
+        </div>
+    );
+};
+
+// Viewer-Only Message Component
+const ViewerOnlyMessage = () => {
+    return (
+        <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6">
+            <div className="flex items-center">
+                <AlertCircle size={20} className="text-yellow-600 mr-3" />
+                <p className="text-yellow-800 font-medium">
+                    📺 You're viewing this game. Only team captains and staff can track plays.
+                </p>
+            </div>
+        </div>
+    );
+};
             return (
-                <div className="max-w-7xl mx-auto p-5 font-sans">
+                <div className="fixed top-20 right-4 z-50 space-y-2">
+    {notifications.map(notif => (
+        <NotificationToast
+            key={notif.id}
+            notification={notif}
+            onDismiss={() => setNotifications(prev => 
+                prev.filter(n => n.id !== notif.id)
+            )}
+        />
+    ))}
+</div>
+				
+				<div className="max-w-7xl mx-auto p-5 font-sans">
                     <div className="text-center mb-6">
                         <h1 className="text-3xl font-bold text-gray-900 mb-2">
                             Live Game Tracker
@@ -1204,6 +1616,24 @@ async function saveGameState(gameId, teamId, gameState, battingOrder) {
                             {selectedGame?.date} • {isHome ? 'Home' : 'Away'} Game
                         </div>
                     </div>
+
+                    {/* Live Score Header - only show when metadata exists */}
+                    {gameMetadata && (
+                        <LiveScoreHeader 
+                            gameMetadata={gameMetadata}
+                            yourTeamId={selectedTeam}
+                        />
+                    )}
+
+                    {/* Presence Indicator */}
+                    {presenceUsers.length > 0 && (
+                        <PresenceIndicator presenceUsers={presenceUsers} />
+                    )}
+
+                    {/* Viewer-Only Message */}
+                    {!userCanTrack && (
+                        <ViewerOnlyMessage />
+                    )}
 
                     <div className="bg-gradient-to-br from-purple-500 to-purple-700 text-white p-5 rounded-xl mb-5 grid grid-cols-3 gap-4 text-center">
                         <div>
@@ -1494,7 +1924,7 @@ async function saveGameState(gameId, teamId, gameState, battingOrder) {
                                 <div className="text-base text-gray-600">{currentBatter?.position}</div>
                             </div>
 
-                            {gameState.gameActive && !pendingPlay && (
+                            {userCanTrack && gameState.gameActive && !pendingPlay && (
                                 <div className={`grid grid-cols-4 gap-3 mb-8 ${inningOver ? 'opacity-30 pointer-events-none' : ''}`}>
                                     {PLAY_TYPES.map(play => (
                                         <button
@@ -1549,44 +1979,13 @@ async function saveGameState(gameId, teamId, gameState, battingOrder) {
                         </div>
                     )}
 
-                    <div className="bg-white border border-gray-200 rounded-xl p-5">
-                        <h2 className="text-xl font-bold mb-4">Play-by-Play ({selectedTeam} Only)</h2>
-                        <div className="max-h-80 overflow-y-auto">
-                            {gameState.playHistory.length === 0 ? (
-                                <div className="text-center text-gray-400 py-5">
-                                    No plays recorded yet
-                                </div>
-                            ) : (
-                                gameState.playHistory.slice().reverse().map((play) => (
-                                    <div 
-                                        key={play.timestamp}
-                                        className="p-3 border-b border-gray-100 flex justify-between items-center"
-                                    >
-                                        <div className="flex-1">
-                                            <span className="font-bold text-purple-600">
-                                                {play.isYourTeam ? '▲' : '▼'} {play.inning}
-                                            </span>
-                                            {' • '}
-                                            <span className="font-bold">{play.batter}</span>
-                                            {' - '}
-                                            <span className={`px-2 py-1 rounded text-sm font-bold ${
-                                                PLAY_TYPES.find(p => p.value === play.playType)?.isHit ? 'bg-green-100 text-green-800' : 
-                                                PLAY_TYPES.find(p => p.value === play.playType)?.isOut ? 'bg-red-100 text-red-800' : 
-                                                'bg-blue-100 text-blue-800'
-                                            }`}>
-                                                {play.playLabel}
-                                            </span>
-                                            {play.runsScored > 0 && (
-                                                <span className="ml-2 text-green-600 font-bold">
-                                                    +{play.runsScored} run{play.runsScored > 1 ? 's' : ''}
-                                                </span>
-                                            )}
-                                        </div>
-                                    </div>
-                                ))
-                            )}
-                        </div>
-                    </div>
+                    {/* Merged Play-by-Play */}
+                    <MergedPlayByPlay
+                        yourPlays={gameState.playHistory}
+                        opponentPlays={opponentGameState?.playHistory || []}
+                        yourTeamName={selectedTeam}
+                        opponentName={opponentTeamName}
+                    />
                 </div>
             );
         }
