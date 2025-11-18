@@ -916,9 +916,70 @@ const saveLineupData = async (type, data, inning = null) => {
     setBattingOrder(newOrder);
     saveLineupData('batting', newOrder[selectedGame]);
   };
-      setBattingOrder(newBattingOrder);
-      saveLineupData('batting', newBattingOrder[selectedGame]);
+
+  // Helper functions for mobile fielding
+  const handleFieldingDrop = (player, inning, position) => {
+    if (!isCaptain) return;
+    
+    const newFieldingPositions = { ...fieldingPositions };
+    if (!newFieldingPositions[selectedGame]) newFieldingPositions[selectedGame] = {};
+    if (!newFieldingPositions[selectedGame][inning]) newFieldingPositions[selectedGame][inning] = {};
+    
+    // Remove player from any other position in this inning
+    Object.keys(newFieldingPositions[selectedGame][inning]).forEach(pos => {
+      if (newFieldingPositions[selectedGame][inning][pos]?.id === player.id) {
+        delete newFieldingPositions[selectedGame][inning][pos];
+      }
+    });
+    
+    // Remove from bench if they're there
+    const newBenchPlayers = { ...benchPlayers };
+    if (newBenchPlayers[selectedGame]?.[inning]) {
+      const benchIndex = newBenchPlayers[selectedGame][inning].findIndex(p => p?.id === player.id);
+      if (benchIndex !== -1) {
+        newBenchPlayers[selectedGame][inning].splice(benchIndex, 1);
+        setBenchPlayers(newBenchPlayers);
+      }
     }
+    
+    // Add to new position
+    newFieldingPositions[selectedGame][inning][position] = player;
+    setFieldingPositions(newFieldingPositions);
+    saveLineupData('fielding', newFieldingPositions[selectedGame], inning);
+  };
+
+  const handleBenchDrop = (player, inning, benchIndex) => {
+    if (!isCaptain) return;
+    
+    // Remove from any fielding position first
+    const newFieldingPositions = { ...fieldingPositions };
+    if (newFieldingPositions[selectedGame]?.[inning]) {
+      Object.keys(newFieldingPositions[selectedGame][inning]).forEach(pos => {
+        if (newFieldingPositions[selectedGame][inning][pos]?.id === player.id) {
+          delete newFieldingPositions[selectedGame][inning][pos];
+        }
+      });
+      setFieldingPositions(newFieldingPositions);
+    }
+    
+    const newBenchPlayers = { ...benchPlayers };
+    if (!newBenchPlayers[selectedGame]) newBenchPlayers[selectedGame] = {};
+    if (!newBenchPlayers[selectedGame][inning]) newBenchPlayers[selectedGame][inning] = [];
+    
+    // Remove from any other bench spot
+    const currentBenchIndex = newBenchPlayers[selectedGame][inning].findIndex(p => p?.id === player.id);
+    if (currentBenchIndex !== -1) {
+      newBenchPlayers[selectedGame][inning].splice(currentBenchIndex, 1);
+    }
+    
+    // Add to new bench spot
+    while (newBenchPlayers[selectedGame][inning].length <= benchIndex) {
+      newBenchPlayers[selectedGame][inning].push(null);
+    }
+    newBenchPlayers[selectedGame][inning][benchIndex] = player;
+    
+    setBenchPlayers(newBenchPlayers);
+    saveLineupData('bench', newBenchPlayers[selectedGame], inning);
   };
 
   const removeFromFielding = (inning, position) => {
