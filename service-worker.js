@@ -1,8 +1,8 @@
 // service-worker.js - Unified Service Worker
 // Handles both offline functionality AND Firebase Cloud Messaging
-// Version 1.0.4 - HTML pages use network-first (fixes stale cache issue)
+// Version 1.0.5 - shifting navigation to Firebase storage with visible flags & adjusting appropriate nav components
 
-const CACHE_VERSION = 'aces-v1.0.4';
+const CACHE_VERSION = 'aces-v1.0.5';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const DYNAMIC_CACHE = `${CACHE_VERSION}-dynamic`;
 const IMAGE_CACHE = `${CACHE_VERSION}-images`;
