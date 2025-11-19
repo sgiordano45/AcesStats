@@ -455,6 +455,15 @@ function getOrdinalSuffix(num) {
 			const [presenceUsers, setPresenceUsers] = useState([]);
 			const [notifications, setNotifications] = useState([]);
 
+            // Helper function to add notifications
+            const addNotification = (notification) => {
+                setNotifications(prev => [...prev, notification]);
+                // Auto-dismiss after 5 seconds
+                setTimeout(() => {
+                    setNotifications(prev => prev.filter(n => n.id !== notification.id));
+                }, 5000);
+            };
+
             // Wait for Firebase to be ready, then load data
             useEffect(() => {
                 const initializeApp = async () => {
@@ -548,12 +557,26 @@ useEffect(() => {
                 selectedGame.id,
                 myTeamId,
                 (data) => {
+                    if (!data) return; // Guard against null data
+                    
                     // Only update if it wasn't this user who made the change
                     if (data.metadata?.lastUpdatedBy !== currentUser.uid) {
                         console.log('📥 Your team updated by', data.metadata?.lastUpdatedByName);
                         
-                        // Update game state
-                        setGameState(data.gameState);
+                        // The data IS the game state (not data.gameState)
+                        // Map the Firebase structure to our component's gameState structure
+                        const mappedGameState = {
+                            inning: data.inning || 1,
+                            outs: data.outs || 0,
+                            bases: data.bases || { first: null, second: null, third: null },
+                            score: { yourTeam: data.score || 0, opponent: opponentGameState?.score || 0 },
+                            currentBatter: data.currentBatter || 0,
+                            playHistory: data.plays || [],
+                            gameActive: data.gameActive !== false,
+                            isYourTeamBatting: data.isYourTeamBatting !== false
+                        };
+                        
+                        setGameState(mappedGameState);
                         
                         // Reconstruct batting order from IDs
                         if (data.battingOrder && battingOrder.length > 0) {
@@ -582,12 +605,22 @@ useEffect(() => {
                     selectedGame.id,
                     opponentId,
                     (data) => {
+                        if (!data) return; // Guard against null data
+                        
                         console.log('📥 Opponent game state updated');
-                        setOpponentGameState(data.gameState);
+                        
+                        // The data IS the game state (not data.gameState)
+                        const mappedOpponentState = {
+                            score: data.score || 0,
+                            inning: data.inning || 1,
+                            outs: data.outs || 0
+                        };
+                        
+                        setOpponentGameState(mappedOpponentState);
                         
                         // Show score change notification
-                        if (data.gameState?.score?.yourTeam !== opponentGameState?.score?.yourTeam) {
-                            const opponentScore = data.gameState?.score?.yourTeam || 0;
+                        if (data.score !== opponentGameState?.score) {
+                            const opponentScore = data.score || 0;
                             const yourScore = gameState.score.yourTeam;
                             addNotification({
                                 id: Date.now(),
