@@ -30,6 +30,9 @@ import { app, db } from './firebase-data.js';
 
 import { requestNotificationPermission } from './firebase-messaging.js';
 
+// Re-export Firebase auth functions for other modules
+export { onAuthStateChanged, signOut, signInWithPopup, GoogleAuthProvider, updateProfile };
+
 const auth = getAuth(app);
 const googleProvider = new GoogleAuthProvider();
 
@@ -2183,7 +2186,7 @@ function showNotificationPrompt(userId) {
   });
 }
 
-export { auth, onAuthStateChanged };
+export { auth };
 
 // Make auth available globally for navigation component
 if (typeof window !== 'undefined') {
