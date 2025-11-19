@@ -110,7 +110,11 @@
         // Save game state to Firebase
 async function saveGameState(gameId, teamId, teamName, gameState, battingOrder, currentUserInfo, seasonId = null) {
     const { userId, userName } = currentUserInfo;
-    const season = seasonId || 'fall-2024'; // TODO: Get from game object
+    
+    if (!seasonId) {
+        console.error('❌ Cannot save game state: seasonId is required');
+        return;
+    }
     
     // OFFLINE CHECK
     if (!navigator.onLine) {
@@ -139,7 +143,7 @@ async function saveGameState(gameId, teamId, teamName, gameState, battingOrder, 
     // ONLINE - Save with new structure
     try {
         // Save team game state
-        await updateGameState(season, gameId, teamId, {
+        await updateGameState(seasonId, gameId, teamId, {
             teamId,
             teamName,
             atBats: gameState.atBats || [],
@@ -163,7 +167,7 @@ async function saveGameState(gameId, teamId, teamName, gameState, battingOrder, 
         try {
             // Determine home and away scores based on which team this is
             const isHome = teamName === teamName; // TODO: Need better way to determine this
-            await updateGameMetadata(season, gameId, {
+            await updateGameMetadata(seasonId, gameId, {
                 inning: gameState.inning,
                 outs: gameState.outs,
                 currentBattingTeam: gameState.isYourTeamBatting ? teamId : null
@@ -524,7 +528,8 @@ useEffect(() => {
                 {
                     userId: currentUser.uid,
                     userName: currentUser.displayName || currentUser.email
-                }
+                },
+                selectedGame.seasonId // Pass the correct seasonId from the game object
             );
         }, 1000);
         
@@ -567,7 +572,12 @@ useEffect(() => {
             console.log('🏟️ My team:', myTeamId, 'vs Opponent:', opponentId);
             
             // Get seasonId for all subsequent calls
-            const seasonId = selectedGame.seasonId || 'fall-2024'; // TODO: Ensure games have seasonId
+            const seasonId = selectedGame.seasonId;
+            
+            if (!seasonId) {
+                console.error('❌ Game missing seasonId - cannot sync');
+                return;
+            }
             
             // Update presence
             await window.FirebaseGameTracker.updatePresence(
@@ -705,9 +715,8 @@ useEffect(() => {
         if (unsubscribePresence) unsubscribePresence();
         
         // Remove presence on unmount
-        if (selectedGame && currentUser) {
-            const seasonId = selectedGame.seasonId || 'fall-2024';
-            window.FirebaseGameTracker.removePresence(seasonId, selectedGame.id, currentUser.uid);
+        if (selectedGame && selectedGame.seasonId && currentUser) {
+            window.FirebaseGameTracker.removePresence(selectedGame.seasonId, selectedGame.id, currentUser.uid);
         }
     };
 }, [selectedGame, setupMode, selectedTeam, currentUser, isHome]);
@@ -827,8 +836,11 @@ useEffect(() => {
                             date: gameDate,
                             homeTeam: homeTeamCapitalized,
                             awayTeam: awayTeamCapitalized,
+                            homeTeamId: game.homeTeamId,
+                            awayTeamId: game.awayTeamId,
                             opponent,
-                            isHome
+                            isHome,
+                            seasonId: currentSeason.id // Add seasonId from current season
                         };
                     });
                     
