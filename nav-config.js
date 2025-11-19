@@ -1,6 +1,69 @@
 // nav-config.js - Centralized Navigation Configuration
 // Edit this file to reorganize pages across tiers
 
+import { db, collection, getDocs } from './firebase-config.js';
+
+// Store visibility configuration from Firebase
+let visibilityConfig = {};
+let configLoaded = false;
+
+// Function to fetch page visibility from Firebase
+export async function loadPageVisibility() {
+  if (configLoaded) {
+    console.log('✅ Page visibility already loaded');
+    return visibilityConfig;
+  }
+
+  try {
+    if (typeof db === 'undefined') {
+      console.warn('⚠️ Firebase not loaded, using default visibility');
+      configLoaded = true;
+      return visibilityConfig;
+    }
+
+    const pagesRef = collection(db, 'siteConfig', 'navigation', 'pages');
+    const pagesSnapshot = await getDocs(pagesRef);
+    
+    pagesSnapshot.forEach(doc => {
+      visibilityConfig[doc.id] = doc.data();
+    });
+    
+    configLoaded = true;
+    console.log('✅ Loaded page visibility config:', visibilityConfig);
+    return visibilityConfig;
+  } catch (error) {
+    console.error('❌ Error loading page visibility:', error);
+    configLoaded = true;
+    return visibilityConfig;
+  }
+}
+
+// Helper function to check if page should be visible
+export function isPageVisible(pageId) {
+  const config = visibilityConfig[pageId];
+  // Default to visible if no config exists
+  return config === undefined || config.visible !== false;
+}
+
+// Function to get filtered navigation structure by visibility
+export function getFilteredNavStructure() {
+  const filtered = {
+    primary: [],
+    secondary: [],
+    tertiary: [],
+    auth: [],
+    authPublic: []
+  };
+
+  Object.keys(NAV_STRUCTURE).forEach(tier => {
+    filtered[tier] = NAV_STRUCTURE[tier].filter(page => {
+      return isPageVisible(page.id);
+    });
+  });
+
+  return filtered;
+}
+
 export const NAV_STRUCTURE = {
   // Tier 1: PRIMARY - Core pages (always visible on desktop)
   primary: [

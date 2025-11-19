@@ -1,5 +1,5 @@
 // nav-component.js - Reusable Navigation Component
-import { NAV_STRUCTURE, ALL_PAGES, PAGE_CONFIGS, DEFAULT_CONFIG } from './nav-config.js';
+import { NAV_STRUCTURE, ALL_PAGES, PAGE_CONFIGS, DEFAULT_CONFIG, loadPageVisibility, getFilteredNavStructure, isPageVisible } from './nav-config.js';
 
 export class NavigationComponent {
   constructor(options = {}) {
@@ -7,6 +7,7 @@ export class NavigationComponent {
     this.config = PAGE_CONFIGS[this.currentPage] || DEFAULT_CONFIG;
     this.isAuthenticated = options.isAuthenticated || this.checkAuth();
     this.userDisplayName = options.userDisplayName || this.getUserDisplayName();
+    this.navStructure = options.navStructure || NAV_STRUCTURE; // Use filtered structure if provided
   }
 
   // Auto-detect current page from URL
@@ -89,7 +90,7 @@ export class NavigationComponent {
     
     // Add public pages
     ['primary', 'secondary', 'tertiary'].forEach(tier => {
-      NAV_STRUCTURE[tier].forEach(page => {
+      this.navStructure[tier].forEach(page => {
         if (!page.hideFromNav) {
           allLinks.push({
             ...page,
@@ -101,7 +102,7 @@ export class NavigationComponent {
     
     // Add auth pages if user is authenticated
     if (this.isAuthenticated) {
-      NAV_STRUCTURE.auth.forEach(page => {
+      this.navStructure.auth.forEach(page => {
         if (!page.hideFromNav) {
           allLinks.push({
             ...page,
@@ -122,6 +123,8 @@ export class NavigationComponent {
       .map(id => ALL_PAGES[id])
       .filter(page => {
         if (!page) return false;
+        // Filter by Firebase visibility config
+        if (!isPageVisible(page.id)) return false;
         // Filter out pages that require auth if user is not authenticated
         if (page.requiresAuth && !this.isAuthenticated) return false;
         // Filter out pages marked as hideFromNav
@@ -217,8 +220,19 @@ export class NavigationComponent {
   }
 
   // Initialize navigation on page load
-  static init(options = {}) {
-    const nav = new NavigationComponent(options);
+  static async init(options = {}) {
+    // Load visibility config from Firebase FIRST
+    await loadPageVisibility();
+    
+    // Get filtered navigation structure based on Firebase visibility
+    const filteredNavStructure = getFilteredNavStructure();
+    
+    // Create nav component with filtered structure
+    const nav = new NavigationComponent({
+      ...options,
+      navStructure: filteredNavStructure
+    });
+    
     const { mobile, desktop } = nav.render();
     
     // Insert mobile nav BEFORE page-container (not inside it)
@@ -313,11 +327,11 @@ export class NavigationComponent {
 // Auto-initialize when loaded as module
 if (typeof window !== 'undefined') {
   // Store a reference to reinitialize nav when auth is ready
-  window.reinitializeNav = function() {
+  window.reinitializeNav = async function() {
     console.log('🔄 Reinitializing navigation with updated auth state...');
     document.querySelector('.mobile-nav-container')?.remove();
     document.querySelector('.nav-container')?.remove();
-    NavigationComponent.init();
+    await NavigationComponent.init();
   };
   
   // Wait for DOM to be ready
@@ -336,8 +350,8 @@ if (typeof window !== 'undefined') {
       window.auth.onAuthStateChanged((user) => {
         console.log('🔍 Auth state changed, user:', user ? user.email : 'none');
         // Reinitialize navigation with new auth state
-        setTimeout(() => {
-          window.reinitializeNav();
+        setTimeout(async () => {
+          await window.reinitializeNav();
         }, 100);
       });
       return true;
