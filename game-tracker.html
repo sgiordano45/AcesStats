@@ -158,6 +158,20 @@ async function saveGameState(gameId, teamId, teamName, gameState, battingOrder, 
             }
         });
         
+        // Also update shared game metadata with current scores/inning/outs
+        // This keeps the metadata in sync for both teams
+        try {
+            // Determine home and away scores based on which team this is
+            const isHome = teamName === teamName; // TODO: Need better way to determine this
+            await updateGameMetadata(season, gameId, {
+                inning: gameState.inning,
+                outs: gameState.outs,
+                currentBattingTeam: gameState.isYourTeamBatting ? teamId : null
+            });
+        } catch (metadataError) {
+            console.warn('Could not update game metadata:', metadataError);
+        }
+        
         console.log('💾 Game state saved');
     } catch (error) {
         console.error('Error saving game state:', error);
@@ -651,6 +665,22 @@ useEffect(() => {
             // Subscribe to game metadata
             unsubscribeMetadata = window.FirebaseGameTracker.subscribeToGameMetadata(seasonId, selectedGame.id, (data) => {
                 setGameMetadata(data);
+                
+                // Update local batting state based on shared metadata
+                if (data && data.currentBattingTeam) {
+                    const shouldWeBeBatting = (data.currentBattingTeam === myTeamId);
+                    
+                    // Only update if it changed
+                    if (gameState.isYourTeamBatting !== shouldWeBeBatting) {
+                        console.log(`🔄 Batting changed: ${shouldWeBeBatting ? 'Your team' : 'Opponent'} now batting`);
+                        setGameState(prev => ({
+                            ...prev,
+                            isYourTeamBatting: shouldWeBeBatting,
+                            inning: data.inning || prev.inning,
+                            outs: data.outs || 0
+                        }));
+                    }
+                }
             });
             
             // Subscribe to presence
@@ -923,6 +953,22 @@ useEffect(() => {
                     isYourTeamBatting: !isHome
                 });
                 
+                // Initialize shared game metadata
+                try {
+                    const seasonId = selectedGame.seasonId || 'fall-2024';
+                    const firstBattingTeam = isHome ? selectedGame.awayTeam : selectedGame.homeTeam;
+                    await window.FirebaseGameTracker.updateGameMetadata(seasonId, selectedGame.id, {
+                        inning: 1,
+                        outs: 0,
+                        homeScore: 0,
+                        awayScore: 0,
+                        currentBattingTeam: firstBattingTeam
+                    });
+                    console.log(`✅ Game metadata initialized: ${firstBattingTeam} batting first`);
+                } catch (error) {
+                    console.error('Error initializing game metadata:', error);
+                }
+                
                 setSetupMode(false);
             };
 
@@ -1142,24 +1188,51 @@ useEffect(() => {
                 setTempOuts(0);
             };
 
-            const advanceToNextHalfInning = () => {
+            const advanceToNextHalfInning = async () => {
                 const newState = { ...gameState };
                 newState.outs = 0;
                 newState.bases = { first: null, second: null, third: null };
                 
+                // Determine which team should bat next based on current state
+                let nextBattingTeam;
+                let nextInning = gameMetadata?.inning || gameState.inning;
+                
                 if (newState.isYourTeamBatting) {
+                    // Your team just finished batting, opponent bats next
                     newState.isYourTeamBatting = false;
+                    nextBattingTeam = opponentTeamId;
+                    // Increment inning if home team just batted
                     if (isHome) {
-                        newState.inning += 1;
+                        nextInning += 1;
                     }
                 } else {
+                    // Opponent just finished batting, your team bats next
                     newState.isYourTeamBatting = true;
+                    nextBattingTeam = selectedTeam;
+                    // Increment inning if away team just batted
                     if (!isHome) {
-                        newState.inning += 1;
+                        nextInning += 1;
                     }
                 }
                 
+                // Update local state
+                newState.inning = nextInning;
                 setGameState(newState);
+                
+                // Update shared game metadata so both teams know who's batting
+                try {
+                    const seasonId = selectedGame.seasonId || 'fall-2024';
+                    await window.FirebaseGameTracker.updateGameMetadata(seasonId, selectedGame.id, {
+                        inning: nextInning,
+                        outs: 0,
+                        currentBattingTeam: nextBattingTeam,
+                        homeScore: isHome ? gameState.score.yourTeam : (opponentGameState?.score || 0),
+                        awayScore: !isHome ? gameState.score.yourTeam : (opponentGameState?.score || 0)
+                    });
+                    console.log(`✅ Half-inning advanced: ${nextBattingTeam} now batting in inning ${nextInning}`);
+                } catch (error) {
+                    console.error('Error updating game metadata:', error);
+                }
             };
 
             const undoLastPlay = () => {
