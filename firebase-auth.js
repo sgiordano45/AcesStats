@@ -2183,7 +2183,7 @@ function showNotificationPrompt(userId) {
   });
 }
 
-export { auth };
+export { auth, onAuthStateChanged };
 
 // Make auth available globally for navigation component
 if (typeof window !== 'undefined') {
