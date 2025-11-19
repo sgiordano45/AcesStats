@@ -516,7 +516,7 @@ body {
         
         snapshot.forEach(doc => {
           const data = doc.data();
-          allMembers.push({
+          const member = {
             id: doc.id,
             name: data.displayName || data.linkedPlayer || 'Unknown',
             phone: data.directoryPhone || '',
@@ -525,13 +525,17 @@ body {
             photoURL: data.photoURL || null,
             linkedTeam: data.linkedTeam || '',
             linkedPlayer: data.linkedPlayer || ''
-          });
+          };
+          
+          console.log('👤 Directory member loaded:', member);
+          allMembers.push(member);
         });
         
         // Sort alphabetically by name
         allMembers.sort((a, b) => a.name.localeCompare(b.name));
         
         console.log(`✅ Loaded ${allMembers.length} directory members`);
+        console.log('📋 All members data:', allMembers);
         
         filteredMembers = [...allMembers];
         renderDirectory();
@@ -616,17 +620,30 @@ body {
     document.getElementById('searchInput').addEventListener('input', (e) => {
       const searchTerm = e.target.value.toLowerCase().trim();
       
+      console.log('🔍 Search term:', searchTerm);
+      console.log('📊 Total members:', allMembers.length);
+      
       if (!searchTerm) {
         filteredMembers = [...allMembers];
+        console.log('✅ Showing all members');
       } else {
         filteredMembers = allMembers.filter(member => {
-          return (
-            member.name.toLowerCase().includes(searchTerm) ||
-            member.occupation.toLowerCase().includes(searchTerm) ||
-            member.skills.toLowerCase().includes(searchTerm) ||
-            member.phone.includes(searchTerm)
-          );
+          // Safely check each field
+          const nameMatch = (member.name || '').toLowerCase().includes(searchTerm);
+          const occupationMatch = (member.occupation || '').toLowerCase().includes(searchTerm);
+          const skillsMatch = (member.skills || '').toLowerCase().includes(searchTerm);
+          const phoneMatch = (member.phone || '').includes(searchTerm);
+          
+          const isMatch = nameMatch || occupationMatch || skillsMatch || phoneMatch;
+          
+          if (isMatch) {
+            console.log('✓ Match found:', member.name, {nameMatch, occupationMatch, skillsMatch, phoneMatch});
+          }
+          
+          return isMatch;
         });
+        
+        console.log(`✅ Found ${filteredMembers.length} matches for "${searchTerm}"`);
       }
       
       renderDirectory();
