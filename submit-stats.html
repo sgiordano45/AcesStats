@@ -640,7 +640,7 @@ async function getAllTeamGames(teamId, seasonId) {
       } else if (data.date) {
         gameDate = new Date(data.date);
       } else {
-        return; // No valid date
+        gameDate = new Date(0); // Use epoch for games without dates (TBD)
       }
       
       gameDate.setHours(0, 0, 0, 0);
@@ -655,116 +655,24 @@ async function getAllTeamGames(teamId, seasonId) {
         opponent = data.homeTeamName || data.homeTeamId || 'Unknown';
       }
       
+      // Determine if this is a playoff game based on game_type or gameType field
+      const isPlayoffGame = 
+        data.game_type === 'Playoff' || 
+        data.gameType === 'playoff' || 
+        data.gameType === 'Playoff';
+      
       // Include ALL games (no date filter)
       games.push({
         id: doc.id,
         ...data,
         dateObj: gameDate,
         isHome: homeTeamMatch,
-        opponent: opponent
+        opponent: opponent,
+        isPlayoff: isPlayoffGame,
+        gameType: data.gameType || data.game_type || 'regular',
+        round: data.round || null
       });
     });
-    
-    // Load playoff games from bracket structure
-    try {
-      const playoffRef = doc(db, 'seasons', seasonId, 'playoffs', 'bracket');
-      const playoffDoc = await getDoc(playoffRef);
-      
-      if (playoffDoc.exists()) {
-        const playoffData = playoffDoc.data();
-        console.log('🏆 Loading playoff games from bracket...');
-        
-        // Helper function to extract team name from team display logic
-        const getTeamName = (teamData) => {
-          if (teamData?.name) return teamData.name;
-          if (teamData?.teamName) return teamData.teamName;
-          return null;
-        };
-        
-        // Helper function to process matchups from a round
-        const processMatchups = (matchups, roundName) => {
-          if (!matchups) return;
-          
-          matchups.forEach(matchup => {
-            if (!matchup) return;
-            
-            // Get team names (could be direct names or seed-based)
-            const team1Name = getTeamName(matchup.team1);
-            const team2Name = getTeamName(matchup.team2);
-            
-            // Check if this team is in this matchup
-            const team1Match = team1Name?.toLowerCase() === teamIdLower;
-            const team2Match = team2Name?.toLowerCase() === teamIdLower;
-            
-            if (!team1Match && !team2Match) return;
-            
-            // Parse game date if available
-            let gameDate = null;
-            if (matchup.gameDate) {
-              gameDate = new Date(matchup.gameDate);
-              gameDate.setHours(0, 0, 0, 0);
-            }
-            
-            // Determine opponent and home/away
-            let opponent = 'TBD';
-            let isHome = false;
-            
-            if (team1Match) {
-              opponent = team2Name || 'TBD';
-              isHome = true; // Team 1 is typically home
-            } else if (team2Match) {
-              opponent = team1Name || 'TBD';
-              isHome = false;
-            }
-            
-            // Only add if we have team names and at least one matches
-            if ((team1Match || team2Match) && (team1Name || team2Name)) {
-              games.push({
-                id: matchup.id,
-                dateObj: gameDate || new Date(0),
-                date: matchup.gameDate || null,
-                isHome: isHome,
-                opponent: opponent,
-                homeTeamId: team1Match ? teamId : (team1Name || '').toLowerCase(),
-                awayTeamId: team2Match ? teamId : (team2Name || '').toLowerCase(),
-                homeTeamName: team1Name || 'TBD',
-                awayTeamName: team2Name || 'TBD',
-                homeScore: matchup.team1Score,
-                awayScore: matchup.team2Score,
-                gameType: 'playoff',
-                round: matchup.round || roundName,
-                isPlayoff: true
-              });
-            }
-          });
-        };
-        
-        // Process all bracket sections
-        if (playoffData.winnersBracket) {
-          processMatchups(playoffData.winnersBracket.playIn, 'Play-In');
-          processMatchups(playoffData.winnersBracket.round1, 'Round 1');
-          processMatchups(playoffData.winnersBracket.semifinals, 'Semifinals');
-          processMatchups(playoffData.winnersBracket.finals, 'Winners Final');
-        }
-        
-        if (playoffData.losersBracket) {
-          processMatchups(playoffData.losersBracket.round1, 'Elimination Round 1');
-          processMatchups(playoffData.losersBracket.round2, 'Elimination Round 2');
-          processMatchups(playoffData.losersBracket.round3, 'Elimination Round 3');
-          processMatchups(playoffData.losersBracket.semifinals, 'Elimination Semifinals');
-          processMatchups(playoffData.losersBracket.finals, 'Losers Final');
-        }
-        
-        if (playoffData.championship) {
-          processMatchups(playoffData.championship, 'Championship');
-        }
-        
-        console.log('✅ Processed playoff bracket for team games');
-      }
-    } catch (playoffError) {
-      console.log('ℹ️ No playoff data found or error loading playoffs:', playoffError.message);
-      // Continue without playoff games - not an error condition
-    }
     
     // Sort by date (most recent first)
     games.sort((a, b) => {
@@ -773,7 +681,10 @@ async function getAllTeamGames(teamId, seasonId) {
       return dateB - dateA; // Reverse order for most recent first
     });
     
-    console.log(`✅ Loaded ${games.length} total games for ${teamId} (including regular season and playoffs)`);
+    const playoffCount = games.filter(g => g.isPlayoff).length;
+    const regularCount = games.length - playoffCount;
+    
+    console.log(`✅ Loaded ${games.length} total games for ${teamId} (${regularCount} regular season, ${playoffCount} playoff)`);
     if (games.length > 0) {
       console.log('📊 Sample game - Opponent:', games[0].opponent, 'IsHome:', games[0].isHome, 'Type:', games[0].gameType || 'regular');
     }
