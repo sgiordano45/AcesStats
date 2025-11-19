@@ -495,10 +495,18 @@
     </style>
 </head>
 <body>
-    <div class="query-container">
-        <h1>🔍 Stats Query Tool</h1>
-        <p class="page-subtitle">Search for players by batting or pitching statistics with custom filters</p>
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="softball-spinner"></div>
+    </div>
 
+    <!-- Page Header -->
+    <div class="page-header">
+        <h1>🔍 Stats Query Tool</h1>
+        <p>Search for players by batting or pitching statistics with custom filters</p>
+    </div>
+
+    <div class="page-container">
         <div class="query-builder">
             <div class="section-title">
                 <span>⚙️ Query Builder</span>
@@ -624,6 +632,13 @@
                 allPlayerData = [];
                 querySnapshot.forEach((doc) => {
                     const data = doc.data();
+                    
+                    // CRITICAL: Skip migrated legacy profiles to prevent duplicates
+                    if (data.migrated === true) {
+                        console.log(`⏭️ Skipping migrated profile: ${doc.id}`);
+                        return;
+                    }
+                    
                     allPlayerData.push({
                         id: doc.id,
                         name: data.name || doc.id,
@@ -631,7 +646,7 @@
                     });
                 });
 
-                console.log(`Loaded ${allPlayerData.length} players`);
+                console.log(`Loaded ${allPlayerData.length} players (excluding migrated profiles)`);
             } catch (error) {
                 console.error('Error loading player data:', error);
                 alert('Error loading player data. Please refresh the page.');
@@ -1073,6 +1088,13 @@
 
         // Initialize on page load
         initialize();
+        
+        // Hide loading overlay after initialization
+        window.addEventListener('load', function() {
+            setTimeout(function() {
+                document.getElementById('loadingOverlay')?.classList.add('hidden');
+            }, 500);
+        });
     </script>
 </body>
 </html>
