@@ -151,7 +151,11 @@ async function saveGameState(gameId, teamId, teamName, gameState, battingOrder, 
             bases: gameState.bases,
             score: gameState.score.yourTeam,
             isYourTeamBatting: gameState.isYourTeamBatting,
-            gameActive: gameState.gameActive
+            gameActive: gameState.gameActive,
+            metadata: {
+                lastUpdatedBy: userId,
+                lastUpdatedByName: userName
+            }
         });
         
         console.log('💾 Game state saved');
@@ -365,7 +369,7 @@ function getOrdinalSuffix(num) {
     </script>
 
     <script type="text/babel">
-        const { useState, useEffect } = React;
+        const { useState, useEffect, useRef } = React;
 
         // Lucide React icons as inline SVG components
         const Undo2 = ({ size = 24 }) => (
@@ -454,6 +458,9 @@ function getOrdinalSuffix(num) {
 			const [userCanTrack, setUserCanTrack] = useState(false);
 			const [presenceUsers, setPresenceUsers] = useState([]);
 			const [notifications, setNotifications] = useState([]);
+			
+			// Track whether the last state update came from Firebase to prevent save loops
+			const isUpdatingFromFirebase = useRef(false);
 
             // Helper function to add notifications
             const addNotification = (notification) => {
@@ -486,6 +493,12 @@ function getOrdinalSuffix(num) {
 
 // Auto-save game state whenever it changes
 useEffect(() => {
+    // Don't auto-save if this update came from Firebase
+    if (isUpdatingFromFirebase.current) {
+        isUpdatingFromFirebase.current = false; // Reset flag
+        return;
+    }
+    
     if (!setupMode && selectedGame && selectedTeam && gameState.gameActive && currentUser) {
         const saveTimer = setTimeout(() => {
             window.FirebaseGameTracker.saveGameState(
@@ -562,6 +575,9 @@ useEffect(() => {
                     // Only update if it wasn't this user who made the change
                     if (data.metadata?.lastUpdatedBy !== currentUser.uid) {
                         console.log('📥 Your team updated by', data.metadata?.lastUpdatedByName);
+                        
+                        // Set flag to prevent auto-save loop
+                        isUpdatingFromFirebase.current = true;
                         
                         // The data IS the game state (not data.gameState)
                         // Map the Firebase structure to our component's gameState structure
