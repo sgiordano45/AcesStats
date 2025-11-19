@@ -14,7 +14,7 @@ import {
     query,
     where,
     getDocs
-} from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
+} from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
 
 /**
  * Subscribe to game metadata (inning, outs, scores)

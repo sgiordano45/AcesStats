@@ -34,6 +34,7 @@ export const NAV_STRUCTURE = {
     { id: 'h2h', href: 'h2h_grid.html', label: 'Head-to-Head Grid', icon: '⚔️', priority: 3 },
 	{ id: 'history', href: 'league-history.html', label: 'League History', icon: '📜', priority: 3 },
     { id: 'charts', href: 'charts.html', label: 'Performance Charts', icon: '📊', priority: 3 },
+    { id: 'query-stats', href: 'query-stats.html', label: 'Stats Query Tool', icon: '🔍', priority: 3 },
     { id: 'pictures', href: 'pictures.html', label: 'Gallery', icon: '📷', priority: 3 },
     // game-preview removed - requires specific game ID parameter
   ],
@@ -152,7 +153,9 @@ export const PAGE_CONFIGS = {
     desktop: ['home', 'current-season', 'batting', 'pitching', 'teams', 'players', 'seasons', 'leaders', 'compare', 'team-compare', 'charts']
   },
   
-  
+  'query-stats.html': {
+    desktop: ['home', 'batting', 'pitching', 'players', 'leaders', 'query-stats']
+  },
   
   'pictures.html': {
     desktop: ['home', 'current-season', 'teams', 'players', 'pictures']
