@@ -857,6 +857,12 @@
                 });
 
                 console.log(`Loaded ${allPlayerData.length} players (excluding migrated profiles)`);
+                
+                // Debug: Show sample of season keys for first player with seasons
+                const samplePlayer = allPlayerData.find(p => p.seasons && Object.keys(p.seasons).length > 0);
+                if (samplePlayer) {
+                    console.log('📊 Sample season keys from first player:', Object.keys(samplePlayer.seasons));
+                }
             } catch (error) {
                 console.error('Error loading player data:', error);
                 alert('Error loading player data. Please refresh the page.');
@@ -950,6 +956,21 @@
                 return;
             }
 
+            console.log(`🔍 Executing search for season: "${season}", type: ${currentQueryType}, filters:`, filters);
+            
+            // Debug: Show season keys from a sample player
+            if (season !== 'career') {
+                const samplePlayer = allPlayerData.find(p => p.seasons && Object.keys(p.seasons).length > 0);
+                if (samplePlayer) {
+                    const availableKeys = Object.keys(samplePlayer.seasons);
+                    const matchingKey = availableKeys.find(key => key.startsWith(season));
+                    console.log(`📊 Season matching debug:
+                        - Looking for: "${season}"
+                        - Sample available keys: ${availableKeys.join(', ')}
+                        - Matching key found: ${matchingKey || 'NONE'}`);
+                }
+            }
+
             // Filter players
             const results = allPlayerData.filter(player => {
                 return filters.every(filter => {
@@ -970,14 +991,28 @@
                         }
                     } else {
                         // Use season stats
+                        // Season keys may include team name (e.g., "2025-fall-white")
+                        // So we need to find the matching season key by partial match
                         if (currentQueryType === 'batting') {
                             // Batting season stats are in seasons object
-                            const seasonStats = player.seasons?.[season];
+                            if (!player.seasons) return false;
+                            
+                            // Find the season key that starts with the selected season
+                            const seasonKey = Object.keys(player.seasons).find(key => key.startsWith(season));
+                            if (!seasonKey) return false;
+                            
+                            const seasonStats = player.seasons[seasonKey];
                             if (!seasonStats) return false;
                             playerValue = seasonStats[filter.stat];
                         } else {
                             // Pitching season stats are in pitchingSeasons object
-                            const seasonStats = player.pitchingSeasons?.[season];
+                            if (!player.pitchingSeasons) return false;
+                            
+                            // Find the season key that starts with the selected season
+                            const seasonKey = Object.keys(player.pitchingSeasons).find(key => key.startsWith(season));
+                            if (!seasonKey) return false;
+                            
+                            const seasonStats = player.pitchingSeasons[seasonKey];
                             if (!seasonStats) return false;
                             playerValue = seasonStats[filter.stat];
                         }
@@ -1036,14 +1071,19 @@
                         bVal = bStats?.[firstStat] ?? -Infinity;
                     }
                 } else {
+                    // Use partial matching for season keys
                     if (currentQueryType === 'batting') {
-                        const aStats = a.seasons?.[season];
-                        const bStats = b.seasons?.[season];
+                        const aSeasonKey = a.seasons ? Object.keys(a.seasons).find(key => key.startsWith(season)) : null;
+                        const bSeasonKey = b.seasons ? Object.keys(b.seasons).find(key => key.startsWith(season)) : null;
+                        const aStats = aSeasonKey ? a.seasons[aSeasonKey] : null;
+                        const bStats = bSeasonKey ? b.seasons[bSeasonKey] : null;
                         aVal = aStats?.[firstStat] ?? -Infinity;
                         bVal = bStats?.[firstStat] ?? -Infinity;
                     } else {
-                        const aStats = a.pitchingSeasons?.[season];
-                        const bStats = b.pitchingSeasons?.[season];
+                        const aSeasonKey = a.pitchingSeasons ? Object.keys(a.pitchingSeasons).find(key => key.startsWith(season)) : null;
+                        const bSeasonKey = b.pitchingSeasons ? Object.keys(b.pitchingSeasons).find(key => key.startsWith(season)) : null;
+                        const aStats = aSeasonKey ? a.pitchingSeasons[aSeasonKey] : null;
+                        const bStats = bSeasonKey ? b.pitchingSeasons[bSeasonKey] : null;
                         aVal = aStats?.[firstStat] ?? -Infinity;
                         bVal = bStats?.[firstStat] ?? -Infinity;
                     }
@@ -1075,11 +1115,14 @@
                             value = careerStats?.[stat];
                         }
                     } else {
+                        // Use partial matching for season keys
                         if (currentQueryType === 'batting') {
-                            const seasonStats = player.seasons?.[season];
+                            const seasonKey = player.seasons ? Object.keys(player.seasons).find(key => key.startsWith(season)) : null;
+                            const seasonStats = seasonKey ? player.seasons[seasonKey] : null;
                             value = seasonStats?.[stat];
                         } else {
-                            const seasonStats = player.pitchingSeasons?.[season];
+                            const seasonKey = player.pitchingSeasons ? Object.keys(player.pitchingSeasons).find(key => key.startsWith(season)) : null;
+                            const seasonStats = seasonKey ? player.pitchingSeasons[seasonKey] : null;
                             value = seasonStats?.[stat];
                         }
                     }
@@ -1169,14 +1212,19 @@
                                 bVal = bStats?.[sortKey] ?? -Infinity;
                             }
                         } else {
+                            // Use partial matching for season keys
                             if (currentQueryType === 'batting') {
-                                const aStats = a.seasons?.[season];
-                                const bStats = b.seasons?.[season];
+                                const aSeasonKey = a.seasons ? Object.keys(a.seasons).find(key => key.startsWith(season)) : null;
+                                const bSeasonKey = b.seasons ? Object.keys(b.seasons).find(key => key.startsWith(season)) : null;
+                                const aStats = aSeasonKey ? a.seasons[aSeasonKey] : null;
+                                const bStats = bSeasonKey ? b.seasons[bSeasonKey] : null;
                                 aVal = aStats?.[sortKey] ?? -Infinity;
                                 bVal = bStats?.[sortKey] ?? -Infinity;
                             } else {
-                                const aStats = a.pitchingSeasons?.[season];
-                                const bStats = b.pitchingSeasons?.[season];
+                                const aSeasonKey = a.pitchingSeasons ? Object.keys(a.pitchingSeasons).find(key => key.startsWith(season)) : null;
+                                const bSeasonKey = b.pitchingSeasons ? Object.keys(b.pitchingSeasons).find(key => key.startsWith(season)) : null;
+                                const aStats = aSeasonKey ? a.pitchingSeasons[aSeasonKey] : null;
+                                const bStats = bSeasonKey ? b.pitchingSeasons[bSeasonKey] : null;
                                 aVal = aStats?.[sortKey] ?? -Infinity;
                                 bVal = bStats?.[sortKey] ?? -Infinity;
                             }
@@ -1211,11 +1259,14 @@
                             value = careerStats?.[stat];
                         }
                     } else {
+                        // Use partial matching for season keys
                         if (currentQueryType === 'batting') {
-                            const seasonStats = player.seasons?.[season];
+                            const seasonKey = player.seasons ? Object.keys(player.seasons).find(key => key.startsWith(season)) : null;
+                            const seasonStats = seasonKey ? player.seasons[seasonKey] : null;
                             value = seasonStats?.[stat];
                         } else {
-                            const seasonStats = player.pitchingSeasons?.[season];
+                            const seasonKey = player.pitchingSeasons ? Object.keys(player.pitchingSeasons).find(key => key.startsWith(season)) : null;
+                            const seasonStats = seasonKey ? player.pitchingSeasons[seasonKey] : null;
                             value = seasonStats?.[stat];
                         }
                     }
@@ -1270,11 +1321,14 @@
                             value = careerStats?.[stat];
                         }
                     } else {
+                        // Use partial matching for season keys
                         if (currentQueryType === 'batting') {
-                            const seasonStats = player.seasons?.[season];
+                            const seasonKey = player.seasons ? Object.keys(player.seasons).find(key => key.startsWith(season)) : null;
+                            const seasonStats = seasonKey ? player.seasons[seasonKey] : null;
                             value = seasonStats?.[stat];
                         } else {
-                            const seasonStats = player.pitchingSeasons?.[season];
+                            const seasonKey = player.pitchingSeasons ? Object.keys(player.pitchingSeasons).find(key => key.startsWith(season)) : null;
+                            const seasonStats = seasonKey ? player.pitchingSeasons[seasonKey] : null;
                             value = seasonStats?.[stat];
                         }
                     }
