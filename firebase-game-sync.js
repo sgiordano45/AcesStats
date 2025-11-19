@@ -2,7 +2,7 @@
 // Real-time game tracking synchronization for dual-team tracking
 // Uses /seasons/{seasonId}/games/{gameId}/ structure exclusively
 
-import { db } from './firebase-config.js';
+import { db } from './firebase-data.js';
 import { 
     doc, 
     collection, 

@@ -94,19 +94,23 @@
     subscribeToGameState,
     subscribeToGameMetadata,
     updateGameMetadata,
+    updateGameState,
     updatePresence,
     removePresence,
     canUserTrackTeam,
     getGameTrackingPermissions,
-    subscribeToPresence
+    subscribeToPresence,
+    loadGameState as loadGameStateSync,
+    clearGameState as clearGameStateSync
 } from './firebase-game-sync.js';
 
 
 
 
         // Save game state to Firebase
-async function saveGameState(gameId, teamId, teamName, gameState, battingOrder, currentUserInfo) {
+async function saveGameState(gameId, teamId, teamName, gameState, battingOrder, currentUserInfo, seasonId = null) {
     const { userId, userName } = currentUserInfo;
+    const season = seasonId || 'fall-2024'; // TODO: Get from game object
     
     // OFFLINE CHECK
     if (!navigator.onLine) {
@@ -132,44 +136,23 @@ async function saveGameState(gameId, teamId, teamName, gameState, battingOrder, 
         return; // Exit early - don't try Firebase
     }
     
-    // ONLINE - Save with enhanced metadata
+    // ONLINE - Save with new structure
     try {
-        // Calculate current inning display string
-        const inningDisplay = `${gameState.isYourTeamBatting ? '▲' : '▼'} ${gameState.inning}${getOrdinalSuffix(gameState.inning)}`;
-        
-        const stateRef = doc(db, 'gameStates', `${gameId}_${teamId}`);
-        await setDoc(stateRef, {
-            gameId,
+        // Save team game state
+        await updateGameState(season, gameId, teamId, {
             teamId,
             teamName,
-            gameState: {
-                ...gameState,
-                inning: inningDisplay // Store formatted inning
-            },
+            atBats: gameState.atBats || [],
+            plays: gameState.playHistory || [],
             battingOrder: battingOrder.map(p => p.id),
-            metadata: {
-                lastUpdatedBy: userId,
-                lastUpdatedByName: userName,
-                lastUpdateTimestamp: serverTimestamp(),
-                currentTracker: {
-                    userId: userId,
-                    userName: userName,
-                    activeAt: serverTimestamp()
-                }
-            },
-            savedAt: serverTimestamp()
+            currentBatter: gameState.currentBatterIndex,
+            inning: gameState.inning,
+            outs: gameState.outs,
+            bases: gameState.bases,
+            score: gameState.score.yourTeam,
+            isYourTeamBatting: gameState.isYourTeamBatting,
+            gameActive: gameState.gameActive
         });
-        
-        // Update game-level metadata
-        await updateGameMetadata(
-            gameId,
-            teamId,
-            teamName,
-            gameState.score.yourTeam,
-            inningDisplay,
-            gameState.gameActive ? 'in_progress' : 'final',
-            userName
-        );
         
         console.log('💾 Game state saved');
     } catch (error) {
@@ -187,36 +170,35 @@ function getOrdinalSuffix(num) {
     return "th";
 }
 
-        // Load game state from Firebase
-        async function loadGameState(gameId, teamId) {
+
+        // Wrapper for loadGameState that adds seasonId from game object
+        async function loadGameState(gameId, teamId, seasonId = null) {
+            // If seasonId not provided, try to get it from the selectedGame in React state
+            // For now, default to 'fall-2024' but this should be passed properly
+            const season = seasonId || 'fall-2024'; // TODO: Get from game object
+            
             try {
-                const stateRef = doc(db, 'gameStates', `${gameId}_${teamId}`);
-                const stateDoc = await getDoc(stateRef);
-                
-                if (stateDoc.exists()) {
-                    console.log('✅ Found saved game state');
-                    return stateDoc.data();
-                }
-                return null;
+                return await loadGameStateSync(season, gameId, teamId);
             } catch (error) {
                 console.error('Error loading game state:', error);
                 return null;
             }
         }
 
-        // Delete game state from Firebase
-        async function clearGameState(gameId, teamId) {
+
+
+        // Wrapper for clearGameState that adds seasonId
+        async function clearGameState(gameId, teamId, seasonId = null) {
+            const season = seasonId || 'fall-2024'; // TODO: Get from game object
+            
             try {
-                const stateRef = doc(db, 'gameStates', `${gameId}_${teamId}`);
-                await setDoc(stateRef, {
-                    cleared: true,
-                    clearedAt: serverTimestamp()
-                });
+                await clearGameStateSync(season, gameId, teamId);
                 console.log('🗑️ Game state cleared');
             } catch (error) {
                 console.error('Error clearing game state:', error);
             }
         }
+
 
         // Calculate batting stats from play history
         function calculateBattingStats(playHistory, battingOrder) {
@@ -345,8 +327,8 @@ function getOrdinalSuffix(num) {
             getSeasonPlayerStatsOptimized,
             getUpcomingTeamGames,
             getBattingOrder,
-            saveGameState: (gameId, teamId, teamName, gameState, battingOrder, userInfo) => 
-                saveGameState(gameId, teamId, teamName, gameState, battingOrder, userInfo),
+            saveGameState: (gameId, teamId, teamName, gameState, battingOrder, userInfo, seasonId) => 
+                saveGameState(gameId, teamId, teamName, gameState, battingOrder, userInfo, seasonId),
             loadGameState,
             clearGameState,
             saveGameResults,
@@ -354,11 +336,14 @@ function getOrdinalSuffix(num) {
             subscribeToGameState,
             subscribeToGameMetadata,
             updateGameMetadata,
+            updateGameState,
             updatePresence,
             removePresence,
             canUserTrackTeam,
             getGameTrackingPermissions,
-            subscribeToPresence
+            subscribeToPresence,
+            loadGameStateSync,
+            clearGameStateSync
         };
 
         // Wait for auth state to be determined before signaling ready
@@ -545,17 +530,21 @@ useEffect(() => {
             setOpponentTeamName(opponentName);
             console.log('🏟️ My team:', myTeamId, 'vs Opponent:', opponentId);
             
+            // Get seasonId for all subsequent calls
+            const seasonId = selectedGame.seasonId || 'fall-2024'; // TODO: Ensure games have seasonId
+            
             // Update presence
             await window.FirebaseGameTracker.updatePresence(
+                seasonId,
                 selectedGame.id,
                 currentUser.uid,
-                currentUser.displayName || 'Unknown',
                 myTeamId,
-                canTrack
+                currentUser.displayName || 'Unknown'
             );
             
             // Subscribe to YOUR team's game state
             unsubscribeYourTeam = window.FirebaseGameTracker.subscribeToGameState(
+                seasonId,
                 selectedGame.id,
                 myTeamId,
                 (data) => {
@@ -589,6 +578,7 @@ useEffect(() => {
             // Subscribe to OPPONENT's game state
             if (opponentId) {
                 unsubscribeOpponent = window.FirebaseGameTracker.subscribeToGameState(
+                    seasonId,
                     selectedGame.id,
                     opponentId,
                     (data) => {
@@ -610,12 +600,12 @@ useEffect(() => {
             }
             
             // Subscribe to game metadata
-            unsubscribeMetadata = window.FirebaseGameTracker.subscribeToGameMetadata(selectedGame.id, (data) => {
+            unsubscribeMetadata = window.FirebaseGameTracker.subscribeToGameMetadata(seasonId, selectedGame.id, (data) => {
                 setGameMetadata(data);
             });
             
             // Subscribe to presence
-            unsubscribePresence = window.FirebaseGameTracker.subscribeToPresence(selectedGame.id, (users) => {
+            unsubscribePresence = window.FirebaseGameTracker.subscribeToPresence(seasonId, selectedGame.id, (users) => {
                 setPresenceUsers(users);
             });
             
@@ -637,7 +627,8 @@ useEffect(() => {
         
         // Remove presence on unmount
         if (selectedGame && currentUser) {
-            window.FirebaseGameTracker.removePresence(selectedGame.id, currentUser.uid);
+            const seasonId = selectedGame.seasonId || 'fall-2024';
+            window.FirebaseGameTracker.removePresence(seasonId, selectedGame.id, currentUser.uid);
         }
     };
 }, [selectedGame, setupMode, selectedTeam, currentUser, isHome]);
