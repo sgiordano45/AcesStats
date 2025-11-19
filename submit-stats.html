@@ -616,7 +616,7 @@ async function getAllTeamGames(teamId, seasonId) {
     
     console.log(`🔍 Loading ALL games for team: "${teamId}" in season: ${seasonId}`);
     
-    // Get ALL games for this season
+    // Get ALL games for this season (same as submit-score.html)
     const allGamesSnap = await getDocs(gamesRef);
     
     const games = [];
@@ -625,60 +625,69 @@ async function getAllTeamGames(teamId, seasonId) {
     allGamesSnap.forEach(doc => {
       const data = doc.data();
       
-      // Check if this team is involved (check homeTeamId and awayTeamId)
-      const homeTeamMatch = data.homeTeamId?.toLowerCase() === teamIdLower;
-      const awayTeamMatch = data.awayTeamId?.toLowerCase() === teamIdLower;
+      // Parse game date (same logic as submit-score.html)
+      let gameDate = null;
+      if (data.date?.seconds) {
+        // Firestore Timestamp
+        gameDate = new Date(data.date.seconds * 1000);
+      } else if (data.date && typeof data.date === 'string' && data.date.trim() !== '') {
+        // String date (but not empty string)
+        gameDate = new Date(data.date);
+        // Check if date is valid
+        if (isNaN(gameDate.getTime())) {
+          gameDate = null;
+        }
+      }
+
+      // Determine if this is a playoff game (same as submit-score.html)
+      const isPlayoffGame = 
+        data.game_type === 'Playoff' || 
+        data.gameType === 'playoff' || 
+        data.gameType === 'Playoff';
+
+      // Handle both camelCase and space-separated field names (same as submit-score.html)
+      const homeTeam = data.homeTeamName || data['home team'] || data.homeTeam || 'TBD';
+      const awayTeam = data.awayTeamName || data['away team'] || data.awayTeam || 'TBD';
+      
+      // Check if this team is involved
+      const homeTeamMatch = homeTeam.toLowerCase() === teamIdLower;
+      const awayTeamMatch = awayTeam.toLowerCase() === teamIdLower;
       
       if (!homeTeamMatch && !awayTeamMatch) {
         return; // Not this team's game
       }
       
-      // Parse the game date
-      let gameDate;
-      if (data.date?.seconds) {
-        gameDate = new Date(data.date.seconds * 1000);
-      } else if (data.date) {
-        gameDate = new Date(data.date);
-      } else {
-        gameDate = new Date(0); // Use epoch for games without dates (TBD)
-      }
-      
-      gameDate.setHours(0, 0, 0, 0);
-      
-      // Determine opponent using the correct field names
+      // Determine opponent
       let opponent = 'Unknown Opponent';
+      let isHome = false;
+      
       if (homeTeamMatch) {
-        // We are home team, opponent is away team
-        opponent = data.awayTeamName || data.awayTeamId || 'Unknown';
+        opponent = awayTeam;
+        isHome = true;
       } else {
-        // We are away team, opponent is home team
-        opponent = data.homeTeamName || data.homeTeamId || 'Unknown';
+        opponent = homeTeam;
+        isHome = false;
       }
       
-      // Determine if this is a playoff game based on game_type or gameType field
-      const isPlayoffGame = 
-        data.game_type === 'Playoff' || 
-        data.gameType === 'playoff' || 
-        data.gameType === 'Playoff';
-      
-      // Include ALL games (no date filter)
+      // Include ALL games (no date filter for stats submission)
       games.push({
         id: doc.id,
         ...data,
-        dateObj: gameDate,
-        isHome: homeTeamMatch,
+        dateObj: gameDate || new Date(0), // Use epoch for games with no date
+        date: data.date,
+        isHome: isHome,
         opponent: opponent,
         isPlayoff: isPlayoffGame,
-        gameType: data.gameType || data.game_type || 'regular',
+        gameType: data.game_type || data.gameType || 'Regular',
         round: data.round || null
       });
     });
     
     // Sort by date (most recent first)
     games.sort((a, b) => {
-      const dateA = a.date?.seconds || new Date(a.date || 0).getTime() / 1000 || 0;
-      const dateB = b.date?.seconds || new Date(b.date || 0).getTime() / 1000 || 0;
-      return dateB - dateA; // Reverse order for most recent first
+      const timeA = a.dateObj.getTime();
+      const timeB = b.dateObj.getTime();
+      return timeB - timeA; // Reverse order for most recent first
     });
     
     const playoffCount = games.filter(g => g.isPlayoff).length;
@@ -686,7 +695,13 @@ async function getAllTeamGames(teamId, seasonId) {
     
     console.log(`✅ Loaded ${games.length} total games for ${teamId} (${regularCount} regular season, ${playoffCount} playoff)`);
     if (games.length > 0) {
-      console.log('📊 Sample game - Opponent:', games[0].opponent, 'IsHome:', games[0].isHome, 'Type:', games[0].gameType || 'regular');
+      console.log('📊 Sample game:', {
+        id: games[0].id,
+        opponent: games[0].opponent,
+        isHome: games[0].isHome,
+        isPlayoff: games[0].isPlayoff,
+        round: games[0].round
+      });
     }
     return games;
   } catch (error) {
