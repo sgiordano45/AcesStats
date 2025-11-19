@@ -258,7 +258,8 @@ export class NavigationComponent {
     }
     
     // IMPORTANT: Set up event listeners AFTER the HTML is inserted
-    setTimeout(() => {
+    // Use requestAnimationFrame to ensure DOM is fully painted
+    requestAnimationFrame(() => {
       const mobileMenuBtn = document.getElementById('mobileMenuBtn');
       const mobileNavMenu = document.getElementById('mobileNavMenu');
       const mobileSignOutBtn = document.getElementById('mobileSignOutBtn');
@@ -267,21 +268,33 @@ export class NavigationComponent {
       
       // Mobile menu toggle
       if (mobileMenuBtn && mobileNavMenu) {
-        mobileMenuBtn.addEventListener('click', function(e) {
+        // Remove any existing listeners first
+        const newButton = mobileMenuBtn.cloneNode(true);
+        mobileMenuBtn.parentNode.replaceChild(newButton, mobileMenuBtn);
+        
+        newButton.addEventListener('click', function(e) {
           e.preventDefault();
+          e.stopPropagation();
           console.log('Mobile menu button clicked!');
-          mobileNavMenu.classList.toggle('open');
-          console.log('Menu open state:', mobileNavMenu.classList.contains('open'));
-        });
+          const menu = document.getElementById('mobileNavMenu');
+          if (menu) {
+            menu.classList.toggle('open');
+            console.log('Menu open state:', menu.classList.contains('open'));
+          }
+        }, { passive: false });
         console.log('✅ Mobile menu event listener attached');
       } else {
-        console.error('❌ Mobile nav elements not found!', { mobileMenuBtn, mobileNavMenu });
+        console.error('❌ Mobile nav elements not found!', { 
+          menuBtn: !!mobileMenuBtn, 
+          navMenu: !!mobileNavMenu 
+        });
       }
       
       // Mobile sign out button
       if (mobileSignOutBtn) {
         mobileSignOutBtn.addEventListener('click', async function(e) {
           e.preventDefault();
+          e.stopPropagation();
           console.log('🚪 Mobile sign out clicked');
           try {
             if (typeof window.auth !== 'undefined' && window.auth.signOut) {
@@ -299,7 +312,19 @@ export class NavigationComponent {
         });
         console.log('✅ Mobile sign-out button listener attached');
       }
-    }, 0);
+      
+      // Close menu when clicking outside
+      document.addEventListener('click', function(e) {
+        const menu = document.getElementById('mobileNavMenu');
+        const btn = document.getElementById('mobileMenuBtn');
+        if (menu && btn && menu.classList.contains('open')) {
+          if (!menu.contains(e.target) && !btn.contains(e.target)) {
+            menu.classList.remove('open');
+            console.log('Menu closed by outside click');
+          }
+        }
+      });
+    });
     
     // Keep the global function for backwards compatibility
     window.toggleMobileMenu = function() {
