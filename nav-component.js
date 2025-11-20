@@ -268,11 +268,8 @@ export class NavigationComponent {
       
       // Mobile menu toggle
       if (mobileMenuBtn && mobileNavMenu) {
-        // Remove any existing listeners first
-        const newButton = mobileMenuBtn.cloneNode(true);
-        mobileMenuBtn.parentNode.replaceChild(newButton, mobileMenuBtn);
-        
-        newButton.addEventListener('click', function(e) {
+        // Directly attach listener without cloning
+        mobileMenuBtn.addEventListener('click', function(e) {
           e.preventDefault();
           e.stopPropagation();
           console.log('Mobile menu button clicked!');
@@ -351,21 +348,47 @@ export class NavigationComponent {
 
 // Auto-initialize when loaded as module
 if (typeof window !== 'undefined') {
+  // Flag to prevent double initialization during page load
+  let isInitializing = false;
+  let hasInitialized = false;
+  
   // Store a reference to reinitialize nav when auth is ready
   window.reinitializeNav = async function() {
+    // Prevent reinit if we're currently initializing or haven't completed first init
+    if (isInitializing) {
+      console.log('⏳ Already initializing, skipping reinit...');
+      return;
+    }
+    
+    // Don't reinit during the first 2 seconds after page load (initial auth check)
+    if (!hasInitialized && performance.now() < 2000) {
+      console.log('⏳ Initial page load, skipping early reinit...');
+      return;
+    }
+    
     console.log('🔄 Reinitializing navigation with updated auth state...');
     document.querySelector('.mobile-nav-container')?.remove();
     document.querySelector('.nav-container')?.remove();
+    isInitializing = true;
     await NavigationComponent.init();
+    isInitializing = false;
   };
   
   // Wait for DOM to be ready
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => {
-      NavigationComponent.init();
+    document.addEventListener('DOMContentLoaded', async () => {
+      isInitializing = true;
+      await NavigationComponent.init();
+      isInitializing = false;
+      hasInitialized = true;
     });
   } else {
-    NavigationComponent.init();
+    (async () => {
+      isInitializing = true;
+      await NavigationComponent.init();
+      isInitializing = false;
+      hasInitialized = true;
+    })();
   }
   
   // CRITICAL: Set up Firebase auth state listener with longer wait time
