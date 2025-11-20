@@ -2528,19 +2528,93 @@ function updateRSVPCard(profile) {
     getSeasonPreviews  // ADD THIS IMPORT
   } from './firebase-data.js';
 
-  const announcements = [
-    { type: 'announcement', text: '🚨 Welcome to the upgraded Aces Softball Reference🚨', className: 'news-announcement' },
-	{ type: 'announcement', text: '⚠️ We have added the functionality to create user accounts & profiles. Please explore and let me know if you have issues or questions!⚠️ ', className: 'news-announcement' },
-	{ type: 'announcement', text: '🏆 2025 Fall Playoffs starts November 16th!', className: 'news-announcement' },
-    { type: 'announcement', text: '⭐ Remember to clean up all trash after your games!', className: 'news-announcement' }
-  ];
+  // Banner messages are now loaded from Firebase instead of hardcoded
+  let announcements = [];
 
   let recentScores = [];
   let upcomingSchedule = [];
 
+  /**
+   * Load active banner messages from Firebase
+   * Checks the 'bannerMessages' collection for active messages
+   * Sorts by priority and filters by date range if specified
+   */
+  async function loadBannerMessages() {
+    try {
+      console.log('📢 Loading banner messages from Firebase...');
+      
+      const { db } = await import('./firebase-config.js');
+      const { collection, query, where, getDocs, orderBy } = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js');
+      
+      const bannersRef = collection(db, 'bannerMessages');
+      const q = query(
+        bannersRef,
+        where('isActive', '==', true),
+        orderBy('priority', 'asc')
+      );
+      
+      const snapshot = await getDocs(q);
+      const now = new Date();
+      
+      announcements = [];
+      
+      snapshot.forEach(doc => {
+        const data = doc.data();
+        
+        // Check date range if specified
+        let isInDateRange = true;
+        
+        if (data.startDate) {
+          const startDate = data.startDate.toDate ? data.startDate.toDate() : new Date(data.startDate);
+          if (now < startDate) {
+            isInDateRange = false;
+          }
+        }
+        
+        if (data.endDate) {
+          const endDate = data.endDate.toDate ? data.endDate.toDate() : new Date(data.endDate);
+          if (now > endDate) {
+            isInDateRange = false;
+          }
+        }
+        
+        if (isInDateRange && data.message) {
+          announcements.push({
+            type: 'announcement',
+            text: data.message,
+            className: 'news-announcement'
+          });
+        }
+      });
+      
+      console.log(`✅ Loaded ${announcements.length} active banner messages`);
+      
+      // If no messages found, show default welcome message
+      if (announcements.length === 0) {
+        announcements.push({
+          type: 'announcement',
+          text: '🏆 Welcome to Mountainside Aces Statistics Hub!',
+          className: 'news-announcement'
+        });
+      }
+      
+    } catch (error) {
+      console.error('❌ Error loading banner messages:', error);
+      // Fallback to default message on error
+      announcements = [{
+        type: 'announcement',
+        text: '🏆 Welcome to Mountainside Aces Statistics Hub!',
+        className: 'news-announcement'
+      }];
+    }
+  }
+
   async function loadRecentScores() {
     try {
       console.log('📰 Loading news banner data from Firebase...');
+      
+      // Load banner messages from Firebase first
+      await loadBannerMessages();
       
       const capitalize = (str) => str ? str.charAt(0).toUpperCase() + str.slice(1) : "";
       
