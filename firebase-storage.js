@@ -1,5 +1,5 @@
 // firebase-storage.js
-import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject, listAll } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js';
+import { getStorage, ref, uploadBytes, uploadBytesResumable, getDownloadURL, deleteObject, listAll } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js';
 import { collection, addDoc, getDocs, deleteDoc, doc, query, where, orderBy, serverTimestamp, updateDoc } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
 import { app, db } from './firebase-data.js';
 import { getCurrentUser } from './firebase-auth.js';
@@ -11,6 +11,9 @@ const storage = getStorage(app);
 // ========================================
 // /team-photos/{folder}/{timestamp}_{filename}
 // Where folder = 'league', 'green', 'blue', 'gold', etc.
+//
+// /profile-photos/{userId}/{timestamp}.{ext}
+// Separate folder for user profile photos (not visible in pictures.html)
 
 // ========================================
 // UPLOAD FUNCTIONS
@@ -141,6 +144,104 @@ export async function uploadMultiplePhotos(files, folder, defaultCaption, teamId
   }
 
   return results;
+}
+
+// ========================================
+// PROFILE PHOTO FUNCTIONS
+// ========================================
+
+/**
+ * Upload profile photo to Firebase Storage
+ * Stores in a separate 'profile-photos' folder that won't appear in pictures.html
+ * @param {File} file - Image file
+ * @param {string} userId - User's UID
+ * @param {Function} progressCallback - Optional callback for upload progress (0-100)
+ * @returns {Promise<{downloadURL: string, storagePath: string}>}
+ */
+export async function uploadProfilePhoto(file, userId, progressCallback = null) {
+  console.log(`📤 Uploading profile photo for user: ${userId}`);
+
+  // Validate file type
+  if (!file.type.startsWith('image/')) {
+    throw new Error('Only image files are allowed for profile photos');
+  }
+
+  // Validate file size (5MB limit for profile photos)
+  const MAX_SIZE = 5 * 1024 * 1024; // 5MB
+  if (file.size > MAX_SIZE) {
+    throw new Error('Profile photo must be less than 5MB');
+  }
+
+  // Create unique filename
+  const timestamp = Date.now();
+  const fileExtension = file.name.split('.').pop();
+  const storagePath = `profile-photos/${userId}/${timestamp}.${fileExtension}`;
+
+  // Create storage reference
+  const storageRef = ref(storage, storagePath);
+
+  // Upload file with progress tracking
+  const uploadTask = uploadBytesResumable(storageRef, file);
+
+  return new Promise((resolve, reject) => {
+    uploadTask.on(
+      'state_changed',
+      (snapshot) => {
+        const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+        console.log(`Profile photo upload progress: ${progress.toFixed(1)}%`);
+        
+        if (progressCallback) {
+          progressCallback(progress);
+        }
+      },
+      (error) => {
+        console.error('Profile photo upload error:', error);
+        reject(error);
+      },
+      async () => {
+        try {
+          // Get download URL
+          const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+          
+          console.log(`✅ Profile photo uploaded successfully`);
+          
+          resolve({
+            downloadURL: downloadURL,
+            storagePath: storagePath
+          });
+        } catch (error) {
+          console.error('Error getting download URL:', error);
+          reject(error);
+        }
+      }
+    );
+  });
+}
+
+/**
+ * Delete old profile photo when uploading a new one
+ * @param {string} oldStoragePath - Storage path of the old photo
+ * @returns {Promise<void>}
+ */
+export async function deleteOldProfilePhoto(oldStoragePath) {
+  if (!oldStoragePath) {
+    console.log('No old profile photo to delete');
+    return;
+  }
+
+  try {
+    const storageRef = ref(storage, oldStoragePath);
+    await deleteObject(storageRef);
+    console.log('✅ Old profile photo deleted:', oldStoragePath);
+  } catch (error) {
+    // Don't throw error if file doesn't exist - it might have been deleted already
+    if (error.code === 'storage/object-not-found') {
+      console.log('Old profile photo already deleted or not found');
+    } else {
+      console.error('Error deleting old profile photo:', error);
+      // Don't throw - continue anyway
+    }
+  }
 }
 
 // ========================================
