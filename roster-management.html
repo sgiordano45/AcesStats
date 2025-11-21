@@ -455,6 +455,10 @@ function RosterManagement({ currentUser }) {
     onSelect: null,
     playerNumber: ''
   });
+  
+  // Finalization state tracking
+  const [battingFinalized, setBattingFinalized] = useState({});
+  const [fieldingFinalized, setFieldingFinalized] = useState({});
 
   const isCaptain = userProfile?.isCaptain || false;
   const seasonConfig = SEASONS[season];
@@ -652,6 +656,32 @@ function RosterManagement({ currentUser }) {
         setBattingOrder({ ...battingOrder, [selectedGame]: battingWithPlayers });
         setFieldingPositions({ ...fieldingPositions, [selectedGame]: fielding });
         setBenchPlayers({ ...benchPlayers, [selectedGame]: bench });
+        
+        // Load finalization status for batting
+        try {
+          const battingDoc = await window.FirebaseRoster.getBattingFinalizationStatus(selectedGame, selectedTeam);
+          if (battingDoc && battingDoc.finalized) {
+            setBattingFinalized(prev => ({ ...prev, [selectedGame]: true }));
+          }
+        } catch (error) {
+          console.log('No batting finalization status found');
+        }
+        
+        // Load finalization status for fielding
+        try {
+          const fieldingStatus = {};
+          for (let inning = 1; inning <= 7; inning++) {
+            const fieldingDoc = await window.FirebaseRoster.getFieldingFinalizationStatus(selectedGame, selectedTeam, inning);
+            if (fieldingDoc && fieldingDoc.finalized) {
+              fieldingStatus[inning] = true;
+            }
+          }
+          if (Object.keys(fieldingStatus).length > 0) {
+            setFieldingFinalized(prev => ({ ...prev, [selectedGame]: fieldingStatus }));
+          }
+        } catch (error) {
+          console.log('No fielding finalization status found');
+        }
       }
       
       const unsubscribes = games.map(game => 
@@ -1963,6 +1993,67 @@ const printDefensiveRotation = () => {
                           </div>
                         </div>
                       )}
+                      
+                      {/* Finalize Batting Order Button */}
+                      {isCaptain && gameBattingOrder && gameBattingOrder.length > 0 && !battingFinalized[selectedGame] && (
+                        <button 
+                          onClick={async () => {
+                            if (confirm('Finalize batting order? Your team will be notified that the lineup is ready.')) {
+                              try {
+                                await window.FirebaseRoster.finalizeBattingOrder(
+                                  selectedGame, 
+                                  selectedTeam, 
+                                  currentUser.uid
+                                );
+                                setBattingFinalized(prev => ({...prev, [selectedGame]: true}));
+                                alert('✅ Batting order finalized! Your team has been notified.');
+                              } catch (error) {
+                                console.error('Error finalizing batting order:', error);
+                                alert('Failed to finalize batting order. Please try again.');
+                              }
+                            }
+                          }}
+                          style={{
+                            marginTop: '1rem',
+                            padding: '0.75rem 2rem',
+                            background: 'linear-gradient(135deg, #2d5016 0%, #1a6b4a 100%)',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '8px',
+                            fontSize: '1rem',
+                            fontWeight: '600',
+                            cursor: 'pointer',
+                            width: '100%',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '8px',
+                            transition: 'all 0.2s ease'
+                          }}
+                          onMouseEnter={(e) => e.target.style.transform = 'translateY(-2px)'}
+                          onMouseLeave={(e) => e.target.style.transform = 'translateY(0)'}
+                        >
+                          📢 Finalize Batting Order & Notify Team
+                        </button>
+                      )}
+                      
+                      {battingFinalized[selectedGame] && (
+                        <div style={{
+                          marginTop: '1rem',
+                          padding: '0.75rem',
+                          background: '#d1fae5',
+                          border: '2px solid #10b981',
+                          borderRadius: '8px',
+                          color: '#065f46',
+                          fontWeight: '600',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                          justifyContent: 'center'
+                        }}>
+                          ✅ Batting order finalized - Team has been notified
+                        </div>
+                      )}
                     </div>
 
                     <div>
@@ -2228,6 +2319,74 @@ const printDefensiveRotation = () => {
                               ))}
                             </div>
                           </div>
+                          
+                          {/* Finalize Fielding Button - Mobile View */}
+                          {isCaptain && gameFieldingPositions[currentInning] && !fieldingFinalized[selectedGame]?.[currentInning] && (
+                            <button 
+                              onClick={async () => {
+                                if (confirm(`Finalize fielding for inning ${currentInning}? Your team will be notified.`)) {
+                                  try {
+                                    await window.FirebaseRoster.finalizeFieldingPositions(
+                                      selectedGame, 
+                                      selectedTeam, 
+                                      currentInning,
+                                      currentUser.uid
+                                    );
+                                    setFieldingFinalized(prev => ({
+                                      ...prev, 
+                                      [selectedGame]: {
+                                        ...(prev[selectedGame] || {}),
+                                        [currentInning]: true
+                                      }
+                                    }));
+                                    alert(`✅ Fielding finalized for inning ${currentInning}! Your team has been notified.`);
+                                  } catch (error) {
+                                    console.error('Error finalizing fielding:', error);
+                                    alert('Failed to finalize fielding. Please try again.');
+                                  }
+                                }
+                              }}
+                              style={{
+                                marginTop: '1rem',
+                                padding: '0.75rem 2rem',
+                                background: 'linear-gradient(135deg, #2d5016 0%, #1a6b4a 100%)',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '8px',
+                                fontSize: '1rem',
+                                fontWeight: '600',
+                                cursor: 'pointer',
+                                width: '100%',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: '8px',
+                                transition: 'all 0.2s ease'
+                              }}
+                              onMouseEnter={(e) => e.target.style.transform = 'translateY(-2px)'}
+                              onMouseLeave={(e) => e.target.style.transform = 'translateY(0)'}
+                            >
+                              📢 Finalize Inning {currentInning} Fielding & Notify Team
+                            </button>
+                          )}
+                          
+                          {fieldingFinalized[selectedGame]?.[currentInning] && (
+                            <div style={{
+                              marginTop: '1rem',
+                              padding: '0.75rem',
+                              background: '#d1fae5',
+                              border: '2px solid #10b981',
+                              borderRadius: '8px',
+                              color: '#065f46',
+                              fontWeight: '600',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '8px',
+                              justifyContent: 'center'
+                            }}>
+                              ✅ Fielding finalized for inning {currentInning} - Team has been notified
+                            </div>
+                          )}
                         </>
                       ) : (
                         // DESKTOP VIEW: Original 7-inning grid
@@ -2373,6 +2532,78 @@ const printDefensiveRotation = () => {
                             </table>
                           </div>
                         </div>
+                        
+                        {/* Finalize Fielding Buttons - Desktop View (per inning) */}
+                        {isCaptain && (
+                          <div style={{ marginTop: '1.5rem', display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '0.5rem' }}>
+                            {[1, 2, 3, 4, 5, 6, 7].map(inning => {
+                              const hasPositions = gameFieldingPositions[inning] && Object.keys(gameFieldingPositions[inning]).length > 0;
+                              const isFinalized = fieldingFinalized[selectedGame]?.[inning];
+                              
+                              return (
+                                <div key={inning} style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                  {!isFinalized && hasPositions && (
+                                    <button 
+                                      onClick={async () => {
+                                        if (confirm(`Finalize fielding for inning ${inning}? Your team will be notified.`)) {
+                                          try {
+                                            await window.FirebaseRoster.finalizeFieldingPositions(
+                                              selectedGame, 
+                                              selectedTeam, 
+                                              inning,
+                                              currentUser.uid
+                                            );
+                                            setFieldingFinalized(prev => ({
+                                              ...prev, 
+                                              [selectedGame]: {
+                                                ...(prev[selectedGame] || {}),
+                                                [inning]: true
+                                              }
+                                            }));
+                                            alert(`✅ Fielding finalized for inning ${inning}!`);
+                                          } catch (error) {
+                                            console.error('Error finalizing fielding:', error);
+                                            alert('Failed to finalize fielding. Please try again.');
+                                          }
+                                        }
+                                      }}
+                                      style={{
+                                        padding: '0.5rem',
+                                        background: 'linear-gradient(135deg, #2d5016 0%, #1a6b4a 100%)',
+                                        color: 'white',
+                                        border: 'none',
+                                        borderRadius: '8px',
+                                        fontSize: '12px',
+                                        fontWeight: '600',
+                                        cursor: 'pointer',
+                                        transition: 'all 0.2s ease'
+                                      }}
+                                      onMouseEnter={(e) => e.target.style.transform = 'translateY(-2px)'}
+                                      onMouseLeave={(e) => e.target.style.transform = 'translateY(0)'}
+                                      title={`Finalize and notify team about inning ${inning} fielding`}
+                                    >
+                                      📢 Finalize
+                                    </button>
+                                  )}
+                                  {isFinalized && (
+                                    <div style={{
+                                      padding: '0.5rem',
+                                      background: '#d1fae5',
+                                      border: '2px solid #10b981',
+                                      borderRadius: '8px',
+                                      color: '#065f46',
+                                      fontSize: '12px',
+                                      fontWeight: '600',
+                                      textAlign: 'center'
+                                    }}>
+                                      ✅ Done
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
                       )}
                     </div>
                   </>
