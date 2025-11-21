@@ -1,8 +1,8 @@
 // service-worker.js - Unified Service Worker
 // Handles both offline functionality AND Firebase Cloud Messaging
-// Version 1.0.7 - updating firebase-storage.js for profile storage
+// Version 1.0.8 - updating firebase-roster.js for RSVP changes
 
-const CACHE_VERSION = 'aces-v1.0.7';
+const CACHE_VERSION = 'aces-v1.0.8';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const DYNAMIC_CACHE = `${CACHE_VERSION}-dynamic`;
 const IMAGE_CACHE = `${CACHE_VERSION}-images`;
