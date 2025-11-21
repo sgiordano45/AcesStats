@@ -184,6 +184,62 @@ export async function getBattingOrder(gameId, teamId) {
 }
 
 /**
+ * Finalize batting order - marks it as complete and ready
+ * Triggers notification to team when finalized
+ * @param {string} gameId - The game ID
+ * @param {string} teamId - The team ID
+ * @param {string} finalizedBy - User ID finalizing the order
+ * @returns {Object} Success status
+ */
+export async function finalizeBattingOrder(gameId, teamId, finalizedBy) {
+  try {
+    const battingRef = doc(db, 'lineups', gameId, 'batting', teamId);
+    
+    // Check if document exists first
+    const docSnap = await getDoc(battingRef);
+    if (!docSnap.exists()) {
+      console.error('Cannot finalize - batting order does not exist yet');
+      return { success: false, error: 'Batting order must be created first' };
+    }
+    
+    await updateDoc(battingRef, {
+      finalized: true,
+      finalizedAt: serverTimestamp(),
+      finalizedBy: finalizedBy
+    });
+    
+    console.log(`✅ Batting order finalized for ${teamId} in game ${gameId}`);
+    return { success: true };
+  } catch (error) {
+    console.error('Error finalizing batting order:', error);
+    return { success: false, error: error.code };
+  }
+}
+
+/**
+ * Unfinalize batting order - allows captain to make changes again
+ * @param {string} gameId - The game ID
+ * @param {string} teamId - The team ID
+ * @returns {Object} Success status
+ */
+export async function unfinalizeBattingOrder(gameId, teamId) {
+  try {
+    const battingRef = doc(db, 'lineups', gameId, 'batting', teamId);
+    
+    await updateDoc(battingRef, {
+      finalized: false,
+      unfinalizedAt: serverTimestamp()
+    });
+    
+    console.log(`🔄 Batting order unfinalized for ${teamId} in game ${gameId}`);
+    return { success: true };
+  } catch (error) {
+    console.error('Error unfinalizing batting order:', error);
+    return { success: false, error: error.code };
+  }
+}
+
+/**
  * Save fielding positions for a specific inning
  * @param {string} gameId - The game ID
  * @param {string} teamId - The team ID
@@ -282,6 +338,65 @@ export async function getBenchPlayers(gameId, teamId) {
     return {};
   }
 }
+/**
+ * Finalize fielding positions for a specific inning
+ * Triggers notification to team when finalized
+ * @param {string} gameId - The game ID
+ * @param {string} teamId - The team ID
+ * @param {number} inning - Inning number
+ * @param {string} finalizedBy - User ID finalizing positions
+ * @returns {Object} Success status
+ */
+export async function finalizeFieldingPositions(gameId, teamId, inning, finalizedBy) {
+  try {
+    const fieldingRef = doc(db, 'lineups', gameId, 'fielding', teamId, 'innings', inning.toString());
+    
+    // Check if document exists first
+    const docSnap = await getDoc(fieldingRef);
+    if (!docSnap.exists()) {
+      console.error('Cannot finalize - fielding positions do not exist yet');
+      return { success: false, error: 'Fielding positions must be set first' };
+    }
+    
+    await updateDoc(fieldingRef, {
+      finalized: true,
+      finalizedAt: serverTimestamp(),
+      finalizedBy: finalizedBy
+    });
+    
+    console.log(`✅ Fielding positions finalized for ${teamId} inning ${inning}`);
+    return { success: true };
+  } catch (error) {
+    console.error('Error finalizing fielding positions:', error);
+    return { success: false, error: error.code };
+  }
+}
+
+/**
+ * Unfinalize fielding positions - allows captain to make changes again
+ * @param {string} gameId - The game ID
+ * @param {string} teamId - The team ID
+ * @param {number} inning - Inning number
+ * @returns {Object} Success status
+ */
+export async function unfinalizeFieldingPositions(gameId, teamId, inning) {
+  try {
+    const fieldingRef = doc(db, 'lineups', gameId, 'fielding', teamId, 'innings', inning.toString());
+    
+    await updateDoc(fieldingRef, {
+      finalized: false,
+      unfinalizedAt: serverTimestamp()
+    });
+    
+    console.log(`🔄 Fielding positions unfinalized for ${teamId} inning ${inning}`);
+    return { success: true };
+  } catch (error) {
+    console.error('Error unfinalizing fielding positions:', error);
+    return { success: false, error: error.code };
+  }
+}
+
+
 
 // ========================================
 // GAMES FUNCTIONS
