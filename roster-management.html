@@ -182,10 +182,20 @@ import {
   saveFieldingPositions,
   getBenchPlayers,
   saveBenchPlayers,
-  getUpcomingTeamGames
+  getUpcomingTeamGames,
+  finalizeBattingOrder,
+  unfinalizeBattingOrder,
+  finalizeFieldingPositions,
+  unfinalizeFieldingPositions
 } from './firebase-roster.js';
 
 import { onForegroundMessage } from './firebase-messaging.js';
+
+// Expose Firebase functions for finalization status checks
+import { doc, getDoc } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+import { db } from './firebase-data.js';
+
+window.firebaseImports = { doc, getDoc, db };
 
 
 let rsvpListeners = [];
@@ -340,7 +350,11 @@ window.FirebaseRoster = {
   getCurrentSeason,
   getAllTeams,
   getSeasonPlayerStatsOptimized,
-  getUserProfile
+  getUserProfile,
+  finalizeBattingOrder,
+  unfinalizeBattingOrder,
+  finalizeFieldingPositions,
+  unfinalizeFieldingPositions
 };
 </script>
 
@@ -446,6 +460,10 @@ function RosterManagement({ currentUser }) {
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const [activeTab, setActiveTab] = useState('rsvp');
   const [currentInning, setCurrentInning] = useState(1); // For mobile fielding view
+  
+  // Finalization state
+  const [battingFinalized, setBattingFinalized] = useState({});
+  const [fieldingFinalized, setFieldingFinalized] = useState({});
   
   // Player selection modal state
   const [showPlayerModal, setShowPlayerModal] = useState(false);
@@ -652,6 +670,17 @@ function RosterManagement({ currentUser }) {
         setBattingOrder({ ...battingOrder, [selectedGame]: battingWithPlayers });
         setFieldingPositions({ ...fieldingPositions, [selectedGame]: fielding });
         setBenchPlayers({ ...benchPlayers, [selectedGame]: bench });
+        
+        // Load finalization status
+        try {
+          const battingDocRef = window.firebaseImports.doc(window.firebaseImports.db, 'lineups', selectedGame, 'batting', selectedTeam);
+          const battingDoc = await window.firebaseImports.getDoc(battingDocRef);
+          if (battingDoc.exists() && battingDoc.data().finalized) {
+            setBattingFinalized(prev => ({...prev, [selectedGame]: true}));
+          }
+        } catch (error) {
+          console.log('Error loading batting finalization status:', error);
+        }
       }
       
       const unsubscribes = games.map(game => 
@@ -1965,6 +1994,79 @@ const printDefensiveRotation = () => {
                       )}
                     </div>
 
+                    {/* Finalize Batting Order Button */}
+                    {isCaptain && selectedGame && gameBattingOrder.length > 0 && (
+                      <div style={{ marginTop: '1.5rem', marginBottom: '1.5rem' }}>
+                        {!battingFinalized[selectedGame] ? (
+                          <button 
+                            onClick={async () => {
+                              if (confirm('Finalize batting order? Your team will be notified that the lineup is ready.')) {
+                                try {
+                                  setSavingLineup(true);
+                                  await window.FirebaseRoster.finalizeBattingOrder(
+                                    selectedGame, 
+                                    selectedTeam, 
+                                    currentUser.uid
+                                  );
+                                  setBattingFinalized(prev => ({...prev, [selectedGame]: true}));
+                                  alert('✅ Batting order finalized! Team has been notified.');
+                                } catch (error) {
+                                  console.error('Error finalizing batting order:', error);
+                                  alert('Error finalizing batting order. Please try again.');
+                                } finally {
+                                  setSavingLineup(false);
+                                }
+                              }
+                            }}
+                            style={{
+                              width: '100%',
+                              padding: '1rem 2rem',
+                              background: 'linear-gradient(135deg, #2d5016 0%, #1a6b4a 100%)',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '12px',
+                              fontSize: '1.1rem',
+                              fontWeight: '700',
+                              cursor: 'pointer',
+                              boxShadow: '0 4px 12px rgba(45, 80, 22, 0.3)',
+                              transition: 'all 0.2s ease',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: '0.5rem'
+                            }}
+                            onMouseEnter={(e) => {
+                              e.target.style.transform = 'translateY(-2px)';
+                              e.target.style.boxShadow = '0 6px 16px rgba(45, 80, 22, 0.4)';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.target.style.transform = 'translateY(0)';
+                              e.target.style.boxShadow = '0 4px 12px rgba(45, 80, 22, 0.3)';
+                            }}
+                          >
+                            📢 Finalize Batting Order & Notify Team
+                          </button>
+                        ) : (
+                          <div style={{
+                            padding: '1rem',
+                            background: '#d1fae5',
+                            border: '2px solid #10b981',
+                            borderRadius: '12px',
+                            color: '#065f46',
+                            fontWeight: '700',
+                            fontSize: '1rem',
+                            textAlign: 'center',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '0.5rem'
+                          }}>
+                            ✅ Batting order finalized - Team has been notified
+                          </div>
+                        )}
+                      </div>
+                    )}
+
                     <div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
   <h2 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 'bold', color: 'var(--text-dark)' }}>Defensive Positions by Inning</h2>
@@ -2375,6 +2477,92 @@ const printDefensiveRotation = () => {
                         </div>
                       )}
                     </div>
+
+                    {/* Finalize Fielding Button */}
+                    {isCaptain && selectedGame && (
+                      <div style={{ marginTop: '1.5rem' }}>
+                        {!fieldingFinalized[selectedGame] ? (
+                          <button 
+                            onClick={async () => {
+                              if (confirm('Finalize all fielding positions? Your team will be notified that defensive positions are ready.')) {
+                                try {
+                                  setSavingLineup(true);
+                                  // Finalize all innings that have been set up
+                                  const innings = Object.keys(gameFieldingPositions || {});
+                                  if (innings.length === 0) {
+                                    alert('No fielding positions set yet. Please assign positions before finalizing.');
+                                    return;
+                                  }
+                                  
+                                  // Finalize each inning
+                                  for (const inning of innings) {
+                                    await window.FirebaseRoster.finalizeFieldingPositions(
+                                      selectedGame, 
+                                      selectedTeam, 
+                                      parseInt(inning),
+                                      currentUser.uid
+                                    );
+                                  }
+                                  
+                                  setFieldingFinalized(prev => ({...prev, [selectedGame]: true}));
+                                  alert(`✅ Fielding positions finalized for ${innings.length} inning(s)! Team has been notified.`);
+                                } catch (error) {
+                                  console.error('Error finalizing fielding positions:', error);
+                                  alert('Error finalizing fielding positions. Please try again.');
+                                } finally {
+                                  setSavingLineup(false);
+                                }
+                              }
+                            }}
+                            style={{
+                              width: '100%',
+                              padding: '1rem 2rem',
+                              background: 'linear-gradient(135deg, #2d5016 0%, #1a6b4a 100%)',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '12px',
+                              fontSize: '1.1rem',
+                              fontWeight: '700',
+                              cursor: 'pointer',
+                              boxShadow: '0 4px 12px rgba(45, 80, 22, 0.3)',
+                              transition: 'all 0.2s ease',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: '0.5rem'
+                            }}
+                            onMouseEnter={(e) => {
+                              e.target.style.transform = 'translateY(-2px)';
+                              e.target.style.boxShadow = '0 6px 16px rgba(45, 80, 22, 0.4)';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.target.style.transform = 'translateY(0)';
+                              e.target.style.boxShadow = '0 4px 12px rgba(45, 80, 22, 0.3)';
+                            }}
+                          >
+                            📢 Finalize Fielding & Notify Team
+                          </button>
+                        ) : (
+                          <div style={{
+                            padding: '1rem',
+                            background: '#d1fae5',
+                            border: '2px solid #10b981',
+                            borderRadius: '12px',
+                            color: '#065f46',
+                            fontWeight: '700',
+                            fontSize: '1rem',
+                            textAlign: 'center',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '0.5rem'
+                          }}>
+                            ✅ Fielding positions finalized - Team has been notified
+                          </div>
+                        )}
+                      </div>
+                    )}
+
                   </>
                 )}
               </div>
