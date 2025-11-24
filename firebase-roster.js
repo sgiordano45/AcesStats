@@ -396,6 +396,80 @@ export async function unfinalizeFieldingPositions(gameId, teamId, inning) {
   }
 }
 
+/**
+ * Finalize all fielding for the game - sends ONE notification
+ * Creates/updates a team-level document to track overall fielding finalization
+ * @param {string} gameId - The game ID
+ * @param {string} teamId - The team ID
+ * @param {string} finalizedBy - User ID finalizing
+ * @returns {Object} Success status
+ */
+export async function finalizeAllFielding(gameId, teamId, finalizedBy) {
+  try {
+    // Create/update a team-level fielding document
+    // This sits at /lineups/{gameId}/fielding/{teamId}
+    // (above the innings subcollection)
+    const fieldingRef = doc(db, 'lineups', gameId, 'fielding', teamId);
+    
+    await setDoc(fieldingRef, {
+      allFieldingFinalized: true,
+      finalizedAt: serverTimestamp(),
+      finalizedBy: finalizedBy
+    }, { merge: true });
+    
+    console.log(`✅ All fielding finalized for ${teamId} in game ${gameId}`);
+    return { success: true };
+  } catch (error) {
+    console.error('Error finalizing all fielding:', error);
+    return { success: false, error: error.code };
+  }
+}
+
+/**
+ * Unfinalize all fielding - allows captain to make changes again
+ * @param {string} gameId - The game ID
+ * @param {string} teamId - The team ID
+ * @returns {Object} Success status
+ */
+export async function unfinalizeAllFielding(gameId, teamId) {
+  try {
+    const fieldingRef = doc(db, 'lineups', gameId, 'fielding', teamId);
+    
+    await updateDoc(fieldingRef, {
+      allFieldingFinalized: false,
+      unfinalizedAt: serverTimestamp()
+    });
+    
+    console.log(`🔄 All fielding unfinalized for ${teamId} in game ${gameId}`);
+    return { success: true };
+  } catch (error) {
+    console.error('Error unfinalizing all fielding:', error);
+    return { success: false, error: error.code };
+  }
+}
+
+/**
+ * Check if all fielding has been finalized for a team
+ * @param {string} gameId - The game ID
+ * @param {string} teamId - The team ID
+ * @returns {boolean} True if finalized
+ */
+export async function isAllFieldingFinalized(gameId, teamId) {
+  try {
+    const fieldingRef = doc(db, 'lineups', gameId, 'fielding', teamId);
+    const docSnap = await getDoc(fieldingRef);
+    
+    if (docSnap.exists()) {
+      return docSnap.data().allFieldingFinalized === true;
+    }
+    return false;
+  } catch (error) {
+    console.error('Error checking fielding finalization status:', error);
+    return false;
+  }
+}
+
+
 
 
 // ========================================
