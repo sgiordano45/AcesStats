@@ -108,7 +108,7 @@
 
 
         // Save game state to Firebase
-async function saveGameState(gameId, teamId, teamName, gameState, battingOrder, currentUserInfo, seasonId = null) {
+async function saveGameState(gameId, teamId, teamName, gameState, battingOrder, currentUserInfo, seasonId = null, gameObj = null) {
     const { userId, userName } = currentUserInfo;
     
     if (!seasonId) {
@@ -166,7 +166,7 @@ async function saveGameState(gameId, teamId, teamName, gameState, battingOrder, 
         // This keeps the metadata in sync for both teams
         try {
             // Determine home and away scores based on which team this is
-            const isHome = teamName === teamName; // TODO: Need better way to determine this
+            const isHome = gameObj ? (gameObj.homeTeam?.toLowerCase() === teamName.toLowerCase()) : false;
             await updateGameMetadata(seasonId, gameId, {
                 inning: gameState.inning,
                 outs: gameState.outs,
@@ -349,8 +349,8 @@ function getOrdinalSuffix(num) {
             getSeasonPlayerStatsOptimized,
             getUpcomingTeamGames,
             getBattingOrder,
-            saveGameState: (gameId, teamId, teamName, gameState, battingOrder, userInfo, seasonId) => 
-                saveGameState(gameId, teamId, teamName, gameState, battingOrder, userInfo, seasonId),
+            saveGameState: (gameId, teamId, teamName, gameState, battingOrder, userInfo, seasonId, gameObj) => 
+                saveGameState(gameId, teamId, teamName, gameState, battingOrder, userInfo, seasonId, gameObj),
             loadGameState,
             clearGameState,
             saveGameResults,
@@ -457,8 +457,8 @@ function getOrdinalSuffix(num) {
                 score: { yourTeam: 0, opponent: 0 },
                 currentBatter: 0,
                 playHistory: [],
-                gameActive: true,
-                isYourTeamBatting: true
+                gameActive: false,  // Start as false until game is initialized
+                isYourTeamBatting: false  // Will be set correctly when game starts based on home/away
             });
 
             const [battingOrder, setBattingOrder] = useState([]);
@@ -529,7 +529,8 @@ useEffect(() => {
                     userId: currentUser.uid,
                     userName: currentUser.displayName || currentUser.email
                 },
-                selectedGame.seasonId // Pass the correct seasonId from the game object
+                selectedGame.seasonId, // Pass the correct seasonId from the game object
+                selectedGame // Pass the game object for home/away determination
             );
         }, 1000);
         
