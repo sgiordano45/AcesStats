@@ -1173,6 +1173,33 @@
             `;
         }
 
+        // Helper function to get team by seed - uses lockedSeeds when bracket is locked
+        function getTeamBySeed(seed) {
+            // When bracket is locked, ALWAYS use lockedSeeds (frozen at lock time)
+            if (!isProjected && playoffData && playoffData.lockedSeeds) {
+                const lockedTeam = playoffData.lockedSeeds.find(t => t.seed === seed);
+                if (lockedTeam) {
+                    return {
+                        seed: lockedTeam.seed,
+                        name: lockedTeam.teamName,
+                        teamId: lockedTeam.teamId,
+                        record: lockedTeam.record ? `(${lockedTeam.record})` : ''
+                    };
+                }
+            }
+            // Fallback to dynamically calculated teams (for projected brackets)
+            const team = teams.find(t => t.seed === seed);
+            if (team) {
+                return {
+                    seed: team.seed,
+                    name: team.name || team.teamName,
+                    teamId: team.id,
+                    record: (team.wins !== undefined) ? `(${team.wins}-${team.losses})` : ''
+                };
+            }
+            return null;
+        }
+
         function getTeamDisplay(teamData, matchup = null) {
             if (!teamData) return { name: 'TBD', seed: '', record: '' };
             
@@ -1187,12 +1214,12 @@
             }
             
             if (teamData.seed) {
-                const team = teams.find(t => t.seed === teamData.seed);
+                const team = getTeamBySeed(teamData.seed);
                 return {
                     seed: teamData.seed,
-                    name: team ? (team.name || team.teamName) : `Seed ${teamData.seed}`,
-                    teamId: team?.id,
-                    record: team && (team.wins !== undefined) ? `(${team.wins}-${team.losses})` : ''
+                    name: team ? team.name : `Seed ${teamData.seed}`,
+                    teamId: team?.teamId,
+                    record: team ? team.record : ''
                 };
             }
             
@@ -1252,10 +1279,10 @@
             if (!teamData) return 'TBD';
             
             if (teamData.seed) {
-                // Find the actual team name for this seed
-                const team = teams.find(t => t.seed === teamData.seed);
+                // Use the helper function that respects lockedSeeds
+                const team = getTeamBySeed(teamData.seed);
                 if (team) {
-                    return team.name || team.teamName || `Seed ${teamData.seed}`;
+                    return team.name || `Seed ${teamData.seed}`;
                 }
                 return `Seed ${teamData.seed}`;
             }
