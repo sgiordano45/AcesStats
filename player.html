@@ -1349,7 +1349,7 @@
         <table class="card-back-stats-table">
           <thead>
             <tr>
-              <th>YEAR</th>
+              <th>YR/SN</th>
               <th>TEAM</th>
               <th>G</th>
               <th>AB</th>
@@ -1478,43 +1478,25 @@
     const statsBody = document.getElementById('cardBackStatsBody');
     const statsFoot = document.getElementById('cardBackStatsFoot');
     
-    // Group stats by year (combine seasons in same year)
-    const yearlyStats = {};
-    regularStats.forEach(s => {
-      const year = s.year;
-      if (!yearlyStats[year]) {
-        yearlyStats[year] = {
-          year: year,
-          team: s.team,
-          games: 0,
-          atBats: 0,
-          hits: 0,
-          runs: 0,
-          walks: 0
-        };
-      }
-      yearlyStats[year].games += s.games;
-      yearlyStats[year].atBats += s.atBats;
-      yearlyStats[year].hits += s.hits;
-      yearlyStats[year].runs += s.runs;
-      yearlyStats[year].walks += s.walks;
-      // Use most recent team for that year
-      yearlyStats[year].team = s.team;
+    // Sort stats chronologically (oldest first for card back)
+    const sortedStats = [...regularStats].sort((a, b) => {
+      if (a.year !== b.year) return a.year.localeCompare(b.year);
+      // Season order: Spring, Summer, Fall
+      const seasonOrder = { 'Spring': 1, 'Summer': 2, 'Fall': 3 };
+      return (seasonOrder[a.season] || 0) - (seasonOrder[b.season] || 0);
     });
     
-    // Sort years chronologically (oldest first for card back)
-    const sortedYears = Object.keys(yearlyStats).sort();
-    
-    // Build table rows
+    // Build table rows - each season is its own row
     let tableHTML = '';
-    sortedYears.forEach(year => {
-      const s = yearlyStats[year];
+    sortedStats.forEach(s => {
       const avg = s.atBats > 0 ? (s.hits / s.atBats).toFixed(3) : '.000';
       // Abbreviate team name if too long
-      const teamAbbr = s.team.length > 6 ? s.team.substring(0, 5) + '.' : s.team;
+      const teamAbbr = s.team.length > 5 ? s.team.substring(0, 4) + '.' : s.team;
+      // Abbreviate season
+      const seasonAbbr = s.season.substring(0, 2).toUpperCase(); // "Fa", "Su", "Sp"
       tableHTML += `
         <tr>
-          <td>${year}</td>
+          <td>${s.year.slice(-2)}${seasonAbbr}</td>
           <td>${teamAbbr}</td>
           <td>${s.games}</td>
           <td>${s.atBats}</td>
@@ -1531,7 +1513,7 @@
     const careerAvg = totals.atBats > 0 ? (totals.hits / totals.atBats).toFixed(3) : '.000';
     statsFoot.innerHTML = `
       <tr>
-        <td>CAREER</td>
+        <td>TOT</td>
         <td>-</td>
         <td>${totals.games}</td>
         <td>${totals.atBats}</td>
