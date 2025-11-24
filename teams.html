@@ -599,6 +599,7 @@ body {
 
     let allData = [];
     let allGames = [];
+    let activeSeasonIds = new Set(); // Track seasons with isActive: true (playoffs ongoing)
 
     // Mobile menu toggle
     function toggleMobileMenu() {
@@ -657,6 +658,7 @@ body {
         allGames = [];
         
         for (const seasonDoc of seasonsSnapshot.docs) {
+          const seasonData = seasonDoc.data();
           const gamesSnapshot = await getDocs(collection(db, 'seasons', seasonDoc.id, 'games'));
           const parts = seasonDoc.id.split('-');
           const year = parts[0];
@@ -666,6 +668,13 @@ body {
           if (!year || !season) {
             console.warn(`Invalid season ID format: ${seasonDoc.id}`);
             continue;
+          }
+          
+          // Track active seasons (playoffs likely ongoing - skip championship calculation)
+          if (seasonData.isActive === true) {
+            const seasonKey = `${year}-${season.charAt(0).toUpperCase() + season.slice(1)}`;
+            activeSeasonIds.add(seasonKey);
+            console.log(`📍 Active season detected: ${seasonKey} (skipping championship calculation)`);
           }
           
           gamesSnapshot.forEach(gameDoc => {
@@ -836,6 +845,12 @@ body {
       
       teamSeasons.forEach(seasonKey => {
         const [year, season] = seasonKey.split('-');
+        
+        // Skip active seasons (playoffs still ongoing)
+        if (activeSeasonIds.has(seasonKey)) {
+          console.log(`⏭️ Skipping ${seasonKey} championship calc for ${teamName} (season is active)`);
+          return;
+        }
         
         const allPlayoffGames = allGames.filter(g =>
           g.year === year &&
