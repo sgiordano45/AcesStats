@@ -1080,6 +1080,21 @@
         if (!year && season.year) year = season.year;
         if (!seasonName && season.season) seasonName = season.season;
         
+        // Determine if this is a sub season
+        const isSub = season.sub === 'Yes' || season.sub === 'yes' || season.sub === true;
+        
+        // Force N/A for sub seasons regardless of stored value
+        let acesBPIValue;
+        if (isSub) {
+          acesBPIValue = "N/A";
+        } else if (typeof season.acesBPI === 'number') {
+          acesBPIValue = season.acesBPI;
+        } else if (season.acesBPI === "N/A") {
+          acesBPIValue = "N/A";
+        } else {
+          acesBPIValue = Number(season.acesBPI) || 0;
+        }
+        
         allStats.push({
           name: formatPlayerName(resolvedPlayer.name || resolvedPlayer.displayName || resolvedPlayer.userId),
           team: capitalize(season.team || resolvedPlayer.currentTeam || ""),
@@ -1090,11 +1105,10 @@
           hits: Number(season.hits) || 0,
           runs: Number(season.runs) || 0,
           walks: Number(season.walks) || 0,
-          AcesWar: typeof season.acesBPI === 'number' ? season.acesBPI :
-                   (season.acesBPI === "N/A" ? "N/A" : Number(season.acesBPI) || 0),
+          AcesWar: acesBPIValue,
           BA: season.battingAverage || 0,
           OBP: season.onBasePercentage || 0,
-          sub: season.sub || "No"
+          sub: isSub ? "Yes" : "No"
         });
       });
 
@@ -1150,7 +1164,7 @@
     const { stats, info, awards, playerId, playerName, careerStats } = playerData;
     if (stats.length === 0) return;
     populatePlayerHeader(stats, info, playerName);
-    populateStatsTables(stats, playerId);
+    populateStatsTables(stats, playerId, careerStats);
     handleMasterChefSection(playerName);
     if ((awards && awards.length > 0) || careerStats) {
       await populateAwards(awards, playerName, careerStats);
@@ -1228,7 +1242,7 @@
     }
   }
 
-  function populateStatsTables(stats, playerId) {
+  function populateStatsTables(stats, playerId, careerStats) {
     const regularStats = stats.filter(s => s.sub === 'No');
     const regularTbody = document.querySelector('#regularStatsTable tbody');
     regularTbody.innerHTML = regularStats.map(s => `
@@ -1271,14 +1285,18 @@
       subTbody.innerHTML = '<tr><td colspan="12">No substitute stats</td></tr>';
     }
 
-    calculateCareerStats(stats);
+    calculateCareerStats(stats, careerStats);
   }
 
-  function calculateCareerStats(stats) {
+  function calculateCareerStats(stats, careerStats) {
     const careerTbody = document.querySelector('#careerStatsTable tbody');
     const regularStats = stats.filter(s => s.sub === 'No');
     const regularTotals = calculateTotals(regularStats);
     const careerTotals = calculateTotals(stats);
+    
+    // Use pre-calculated avgAcesWar from Firebase if available (only for regular seasons)
+    // This is the authoritative value calculated during aggregation
+    const regularAvgAcesWar = careerStats?.avgAcesWar ?? regularTotals.avgAcesWar;
 
     careerTbody.innerHTML = `
       <tr>
@@ -1288,7 +1306,7 @@
         <td>${regularTotals.hits}</td>
         <td>${regularTotals.runs}</td>
         <td>${regularTotals.walks}</td>
-        <td>${regularTotals.avgAcesWar.toFixed(2)}</td>
+        <td>${regularAvgAcesWar.toFixed(2)}</td>
         <td>${regularTotals.BA.toFixed(3)}</td>
         <td>${regularTotals.OBP.toFixed(3)}</td>
       </tr>
@@ -1299,7 +1317,7 @@
         <td>${careerTotals.hits}</td>
         <td>${careerTotals.runs}</td>
         <td>${careerTotals.walks}</td>
-        <td>${careerTotals.avgAcesWar.toFixed(2)}</td>
+        <td>${regularAvgAcesWar.toFixed(2)}</td>
         <td>${careerTotals.BA.toFixed(3)}</td>
         <td>${careerTotals.OBP.toFixed(3)}</td>
       </tr>
