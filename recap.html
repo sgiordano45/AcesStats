@@ -861,32 +861,73 @@
   }
 
   function findChampion(games, standings) {
-    // First, try to find from playoff championship game
+    // First, try to find from playoff games
     const playoffGames = games.filter(g => {
       const gameType = (g.gameType || g.game_type || '').toLowerCase();
       return gameType === 'playoff';
     });
     
     if (playoffGames.length > 0) {
-      // Find the last playoff game with a winner (championship)
-      const completedPlayoffs = playoffGames.filter(g => g.winner && g.winner.trim() !== '');
-      if (completedPlayoffs.length > 0) {
-        // Sort by date descending to get the final game
-        completedPlayoffs.sort((a, b) => {
-          const dateA = new Date(a.date || a.gameDate);
-          const dateB = new Date(b.date || b.gameDate);
-          return dateB - dateA;
-        });
-        return completedPlayoffs[0].winner;
+      // Calculate playoff standings
+      const playoffStandings = calculatePlayoffStandings(playoffGames);
+      
+      if (playoffStandings.length > 0) {
+        // Champion is the team with the best playoff record
+        // (most wins, or in double elimination, the team that didn't lose 2 games)
+        return playoffStandings[0].name;
       }
     }
     
-    // Fallback: first place in standings
+    // Fallback: first place in regular season standings
     if (standings.length > 0) {
       return standings[0].name;
     }
     
     return null;
+  }
+
+  function calculatePlayoffStandings(playoffGames) {
+    const teamStats = {};
+    
+    playoffGames.forEach(game => {
+      const homeTeam = game.homeTeam || game["home team"] || game.home_team;
+      const awayTeam = game.awayTeam || game["away team"] || game.away_team;
+      const winner = game.winner;
+      
+      if (!homeTeam || !awayTeam) return;
+      
+      if (!teamStats[homeTeam]) {
+        teamStats[homeTeam] = { name: homeTeam, wins: 0, losses: 0, ties: 0 };
+      }
+      if (!teamStats[awayTeam]) {
+        teamStats[awayTeam] = { name: awayTeam, wins: 0, losses: 0, ties: 0 };
+      }
+      
+      if (!winner || winner.trim() === '') return;
+      
+      if (winner === "Tie") {
+        teamStats[homeTeam].ties++;
+        teamStats[awayTeam].ties++;
+      } else if (winner === homeTeam) {
+        teamStats[homeTeam].wins++;
+        teamStats[awayTeam].losses++;
+      } else if (winner === awayTeam) {
+        teamStats[awayTeam].wins++;
+        teamStats[homeTeam].losses++;
+      }
+    });
+    
+    // Convert to array and sort by playoff record
+    const standings = Object.values(teamStats).sort((a, b) => {
+      // First by wins (descending)
+      if (b.wins !== a.wins) return b.wins - a.wins;
+      // Then by losses (ascending) - team with fewer losses is better
+      if (a.losses !== b.losses) return a.losses - b.losses;
+      // Then by ties (descending)
+      return b.ties - a.ties;
+    });
+    
+    return standings;
   }
 
   function calculateBattingLeaders(battingStats) {
