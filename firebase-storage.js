@@ -145,6 +145,93 @@ export async function uploadMultiplePhotos(files, folder, defaultCaption, teamId
 
   return results;
 }
+// ========================================
+// PLAYER PHOTO UPLOAD FUNCTIONS
+// Add these to your firebase-storage.js file
+// ========================================
+
+/**
+ * Upload a player photo to Firebase Storage
+ * Stored in player-photos/{userId}/{timestamp}.{extension}
+ * 
+ * @param {File} file - The image file to upload
+ * @param {string} userId - The user's document ID (who owns this player page)
+ * @param {function} onProgress - Optional progress callback
+ * @returns {Promise<{downloadURL: string, storagePath: string}>}
+ */
+export async function uploadPlayerPhoto(file, userId, onProgress) {
+  const timestamp = Date.now();
+  const extension = file.name.split('.').pop();
+  const filename = `${timestamp}.${extension}`;
+  const storagePath = `player-photos/${userId}/${filename}`;
+  const storageRef = ref(storage, storagePath);
+  
+  const uploadTask = uploadBytesResumable(storageRef, file);
+  
+  return new Promise((resolve, reject) => {
+    uploadTask.on('state_changed',
+      (snapshot) => {
+        const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+        if (onProgress) onProgress(progress);
+      },
+      (error) => {
+        console.error('❌ Player photo upload error:', error);
+        reject(error);
+      },
+      async () => {
+        try {
+          const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+          console.log('✅ Player photo uploaded to:', storagePath);
+          resolve({ downloadURL, storagePath });
+        } catch (error) {
+          reject(error);
+        }
+      }
+    );
+  });
+}
+
+/**
+ * Delete an old player photo from Firebase Storage
+ * 
+ * @param {string} storagePath - The storage path of the photo to delete
+ */
+export async function deleteOldPlayerPhoto(storagePath) {
+  if (!storagePath) return;
+  
+  const storageRef = ref(storage, storagePath);
+  
+  try {
+    await deleteObject(storageRef);
+    console.log('✅ Old player photo deleted:', storagePath);
+  } catch (error) {
+    // Don't throw - old photo may not exist
+    console.warn('⚠️ Could not delete old player photo:', error.message);
+  }
+}
+
+
+// ========================================
+// FIREBASE STORAGE RULES UPDATE
+// ========================================
+// You'll also need to update your Firebase Storage rules to allow
+// the player-photos path. Add this to your storage.rules:
+//
+//   match /player-photos/{userId}/{allPaths=**} {
+//     // Allow read for everyone (photos are public)
+//     allow read: if true;
+//     
+//     // Allow write only if user is authenticated and is either:
+//     // 1. The owner of this folder (their own player photo)
+//     // 2. An admin (can edit any player photo)
+//     allow write: if request.auth != null && 
+//       (request.auth.uid == userId || 
+//        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.userRole == 'admin');
+//   }
+
+
+
+
 
 // ========================================
 // PROFILE PHOTO FUNCTIONS
