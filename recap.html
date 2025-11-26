@@ -869,19 +869,30 @@
     });
     
     if (playoffGames.length > 0) {
-      // Calculate playoff standings
+      // Calculate playoff standings (includes all teams, including kings)
       const playoffStandings = calculatePlayoffStandings(playoffGames);
       
       if (playoffStandings.length > 0) {
-        // Champion is the team with the best playoff record
-        // (most wins, or in double elimination, the team that didn't lose 2 games)
-        return playoffStandings[0].name;
+        // Filter out substitute "kings" team from champion consideration
+        const eligibleTeams = playoffStandings.filter(team => 
+          !team.name.toLowerCase().includes('kings')
+        );
+        
+        if (eligibleTeams.length > 0) {
+          // Champion is the top eligible team with best playoff record
+          return eligibleTeams[0].name;
+        }
       }
     }
     
-    // Fallback: first place in regular season standings
+    // Fallback: first place in regular season standings (also excluding kings)
     if (standings.length > 0) {
-      return standings[0].name;
+      const eligibleTeams = standings.filter(team => 
+        !team.name.toLowerCase().includes('kings')
+      );
+      if (eligibleTeams.length > 0) {
+        return eligibleTeams[0].name;
+      }
     }
     
     return null;
@@ -897,6 +908,7 @@
       
       if (!homeTeam || !awayTeam) return;
       
+      // INCLUDE all teams (including kings) in calculations
       if (!teamStats[homeTeam]) {
         teamStats[homeTeam] = { name: homeTeam, wins: 0, losses: 0, ties: 0 };
       }
@@ -915,17 +927,39 @@
       } else if (winner === awayTeam) {
         teamStats[awayTeam].wins++;
         teamStats[homeTeam].losses++;
+      } else if (winner && winner.includes("Forfeit")) {
+        // Handle forfeit wins
+        const actualWinner = winner.replace("Forfeit - ", "").replace("Tie", "").trim();
+        if (actualWinner && actualWinner !== "Tie") {
+          if (actualWinner === homeTeam) {
+            teamStats[homeTeam].wins++;
+            teamStats[awayTeam].losses++;
+          } else if (actualWinner === awayTeam) {
+            teamStats[awayTeam].wins++;
+            teamStats[homeTeam].losses++;
+          }
+        } else {
+          teamStats[homeTeam].ties++;
+          teamStats[awayTeam].ties++;
+        }
       }
     });
     
-    // Convert to array and sort by playoff record
-    const standings = Object.values(teamStats).sort((a, b) => {
-      // First by wins (descending)
+    // Convert to array and calculate win percentage
+    const standings = Object.values(teamStats).map(team => {
+      const totalDecidedGames = team.wins + team.losses;
+      team.winPct = totalDecidedGames > 0 ? team.wins / totalDecidedGames : 0;
+      return team;
+    });
+    
+    // Sort by win percentage, then by wins
+    standings.sort((a, b) => {
+      // First by win percentage (descending)
+      if (b.winPct !== a.winPct) return b.winPct - a.winPct;
+      // Then by total wins (descending)
       if (b.wins !== a.wins) return b.wins - a.wins;
-      // Then by losses (ascending) - team with fewer losses is better
-      if (a.losses !== b.losses) return a.losses - b.losses;
-      // Then by ties (descending)
-      return b.ties - a.ties;
+      // Then by fewest losses (ascending)
+      return a.losses - b.losses;
     });
     
     return standings;
