@@ -910,13 +910,38 @@
   function calculatePlayoffStandings(playoffGames) {
     const teamStats = {};
     
-    playoffGames.forEach(game => {
+    // Debug: Log first playoff game to see its structure
+    if (playoffGames.length > 0) {
+      console.log('Sample playoff game structure:', playoffGames[0]);
+      console.log('Available fields:', Object.keys(playoffGames[0]));
+    }
+    
+    playoffGames.forEach((game, index) => {
       // Match teams.html field names exactly
-      const homeTeam = game["home team"] || game.homeTeam || game.home_team;
-      const awayTeam = game["away team"] || game.awayTeam || game.away_team;
+      const homeTeam = game["home team"] || game.homeTeam || game.home_team || game.homeTeamName;
+      const awayTeam = game["away team"] || game.awayTeam || game.away_team || game.awayTeamName;
       const winner = game.winner;
       
-      if (!homeTeam || !awayTeam) return;
+      // Debug first few games
+      if (index < 3) {
+        console.log(`Game ${index + 1}:`, {
+          homeTeam,
+          awayTeam,
+          winner,
+          rawGame: game
+        });
+      }
+      
+      if (!homeTeam || !awayTeam) {
+        if (index < 5) {
+          console.warn(`Skipping game ${index + 1} - missing team names:`, {
+            homeTeam,
+            awayTeam,
+            gameFields: Object.keys(game)
+          });
+        }
+        return;
+      }
       
       // INCLUDE all teams (including kings) in calculations
       if (!teamStats[homeTeam]) {
@@ -954,6 +979,8 @@
         }
       }
     });
+    
+    console.log('Team stats after processing:', teamStats);
     
     // Convert to array and calculate win percentage
     const standings = Object.values(teamStats).map(team => {
