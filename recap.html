@@ -798,8 +798,9 @@
     });
     
     regularGames.forEach(game => {
-      const homeTeam = game.homeTeamName || game.homeTeam || game['home team'];
-      const awayTeam = game.awayTeamName || game.awayTeam || game['away team'];
+      // Use correct field names from Firebase
+      const homeTeam = game.homeTeamName || game['home team'] || game.homeTeam;
+      const awayTeam = game.awayTeamName || game['away team'] || game.awayTeam;
       const winner = game.winner;
       
       if (!homeTeam || !awayTeam) return;
@@ -825,6 +826,7 @@
         teams[awayTeam].runsFor += awayScore;
         teams[awayTeam].runsAgainst += homeScore;
         
+        // Case-insensitive comparison
         const winnerLower = winner.toLowerCase();
         const homeLower = homeTeam.toLowerCase();
         const awayLower = awayTeam.toLowerCase();
@@ -863,9 +865,10 @@
 
   function findChampion(games, standings) {
     // First, try to find from playoff games
-    // Match teams.html exactly: check for game_type === 'Playoff' (capital P)
+    // Check for both game_type === 'Playoff' (old format) and gameType === 'playoff' (new format)
     const playoffGames = games.filter(g => 
       g.game_type === 'Playoff' || 
+      g.gameType === 'playoff' ||
       (g.gameType && g.gameType.toLowerCase() === 'playoff')
     );
     
@@ -917,9 +920,9 @@
     }
     
     playoffGames.forEach((game, index) => {
-      // Match teams.html field names exactly
-      const homeTeam = game["home team"] || game.homeTeam || game.home_team || game.homeTeamName;
-      const awayTeam = game["away team"] || game.awayTeam || game.away_team || game.awayTeamName;
+      // Use the correct field names from Firebase
+      const homeTeam = game.homeTeamName || game["home team"] || game.homeTeam || game.home_team;
+      const awayTeam = game.awayTeamName || game["away team"] || game.awayTeam || game.away_team;
       const winner = game.winner;
       
       // Debug first few games
@@ -928,7 +931,8 @@
           homeTeam,
           awayTeam,
           winner,
-          rawGame: game
+          homeScore: game.homeScore,
+          awayScore: game.awayScore
         });
       }
       
@@ -953,23 +957,29 @@
       
       if (!winner || winner.trim() === '') return;
       
-      if (winner === "Tie") {
+      // Case-insensitive comparison since winner is lowercase but team names are capitalized
+      const winnerLower = winner.toLowerCase();
+      const homeLower = homeTeam.toLowerCase();
+      const awayLower = awayTeam.toLowerCase();
+      
+      if (winnerLower === "tie") {
         teamStats[homeTeam].ties++;
         teamStats[awayTeam].ties++;
-      } else if (winner === homeTeam) {
+      } else if (winnerLower === homeLower) {
         teamStats[homeTeam].wins++;
         teamStats[awayTeam].losses++;
-      } else if (winner === awayTeam) {
+      } else if (winnerLower === awayLower) {
         teamStats[awayTeam].wins++;
         teamStats[homeTeam].losses++;
-      } else if (winner && winner.includes("Forfeit")) {
+      } else if (winner.includes("Forfeit")) {
         // Handle forfeit wins
         const actualWinner = winner.replace("Forfeit - ", "").replace("Tie", "").trim();
-        if (actualWinner && actualWinner !== "Tie") {
-          if (actualWinner === homeTeam) {
+        const actualWinnerLower = actualWinner.toLowerCase();
+        if (actualWinner && actualWinnerLower !== "tie") {
+          if (actualWinnerLower === homeLower) {
             teamStats[homeTeam].wins++;
             teamStats[awayTeam].losses++;
-          } else if (actualWinner === awayTeam) {
+          } else if (actualWinnerLower === awayLower) {
             teamStats[awayTeam].wins++;
             teamStats[homeTeam].losses++;
           }
