@@ -863,14 +863,19 @@
 
   function findChampion(games, standings) {
     // First, try to find from playoff games
-    const playoffGames = games.filter(g => {
-      const gameType = (g.gameType || g.game_type || '').toLowerCase();
-      return gameType === 'playoff';
-    });
+    // Match teams.html exactly: check for game_type === 'Playoff' (capital P)
+    const playoffGames = games.filter(g => 
+      g.game_type === 'Playoff' || 
+      (g.gameType && g.gameType.toLowerCase() === 'playoff')
+    );
+    
+    console.log(`Found ${playoffGames.length} playoff games out of ${games.length} total games`);
     
     if (playoffGames.length > 0) {
       // Calculate playoff standings (includes all teams, including kings)
       const playoffStandings = calculatePlayoffStandings(playoffGames);
+      
+      console.log('Playoff standings:', playoffStandings.map(t => `${t.name}: ${t.wins}-${t.losses} (${t.winPct.toFixed(3)})`));
       
       if (playoffStandings.length > 0) {
         // Filter out substitute "kings" team from champion consideration
@@ -878,12 +883,16 @@
           !team.name.toLowerCase().includes('kings')
         );
         
+        console.log('Eligible teams (excluding kings):', eligibleTeams.map(t => `${t.name}: ${t.wins}-${t.losses}`));
+        
         if (eligibleTeams.length > 0) {
-          // Champion is the top eligible team with best playoff record
+          console.log(`Champion from playoffs: ${eligibleTeams[0].name}`);
           return eligibleTeams[0].name;
         }
       }
     }
+    
+    console.log('No playoff games found, using regular season standings');
     
     // Fallback: first place in regular season standings (also excluding kings)
     if (standings.length > 0) {
@@ -902,8 +911,9 @@
     const teamStats = {};
     
     playoffGames.forEach(game => {
-      const homeTeam = game.homeTeam || game["home team"] || game.home_team;
-      const awayTeam = game.awayTeam || game["away team"] || game.away_team;
+      // Match teams.html field names exactly
+      const homeTeam = game["home team"] || game.homeTeam || game.home_team;
+      const awayTeam = game["away team"] || game.awayTeam || game.away_team;
       const winner = game.winner;
       
       if (!homeTeam || !awayTeam) return;
@@ -952,7 +962,7 @@
       return team;
     });
     
-    // Sort by win percentage, then by wins
+    // Sort by win percentage, then by wins (match teams.html logic)
     standings.sort((a, b) => {
       // First by win percentage (descending)
       if (b.winPct !== a.winPct) return b.winPct - a.winPct;
