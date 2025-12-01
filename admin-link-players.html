@@ -845,7 +845,19 @@
             claimedPlayers.add(data.linkedPlayer);
           }
           
-          if ((data.userRole === 'fan' || !data.userRole) && !data.linkedPlayer) {
+          // Only include ACTUAL authenticated users who are fans
+          // Must have: email (all auth users have this) AND userRole = 'fan'
+          // Exclude: legacy profiles (no email, or ID format is first_last)
+          const isAuthenticatedUser = data.email && data.createdAt;
+          const isFanRole = data.userRole === 'fan';
+          const notLinked = !data.linkedPlayer;
+          const notMigrated = !data.migrated;
+          
+          // Also check document ID format - Firebase UIDs are long alphanumeric
+          // Legacy profiles use format like "steve_giordano"
+          const isFirebaseUID = docSnap.id.length > 20 && !docSnap.id.includes('_');
+          
+          if (isAuthenticatedUser && isFanRole && notLinked && notMigrated && isFirebaseUID) {
             allFans.push({ id: docSnap.id, ...data });
           }
         });
