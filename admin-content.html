@@ -1,0 +1,1624 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<link rel="manifest" href="/manifest.json">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Content Admin - Mountainside Aces</title>
+<meta name="theme-color" content="#2d5016">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="stylesheet" href="mobile-enhancements.css">
+<link rel="stylesheet" href="nav-styles.css">
+<style>
+  :root {
+    --primary-color: #2d5016;
+    --secondary-color: #1a6b4a;
+    --accent-color: #ffd700;
+    --admin-color: #6b21a8;
+    --admin-secondary: #7c3aed;
+    --card-bg: #ffffff;
+    --text-dark: #2d3748;
+    --text-light: #718096;
+    --border-color: #e2e8f0;
+    --shadow-sm: 0 2px 8px rgba(0,0,0,0.08);
+    --shadow-md: 0 4px 16px rgba(0,0,0,0.12);
+    --shadow-lg: 0 12px 32px rgba(0,0,0,0.16);
+    --success-color: #22c55e;
+    --warning-color: #f59e0b;
+    --danger-color: #ef4444;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    margin: 0;
+    padding: 0;
+    background: linear-gradient(135deg, #f7fafc 0%, #edf2f7 100%);
+    min-height: 100vh;
+    color: var(--text-dark);
+  }
+
+  .loading-overlay {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(255,255,255,0.95);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    transition: opacity 0.5s ease;
+  }
+
+  .loading-overlay.hidden {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .softball-spinner::before {
+    content: '⚾';
+    font-size: 80px;
+    animation: spin 1.5s ease-in-out infinite;
+  }
+
+  @keyframes spin {
+    0%, 100% { transform: rotate(0deg) scale(1); }
+    50% { transform: rotate(180deg) scale(1.1); }
+  }
+
+  /* Auth Gate */
+  .auth-gate {
+    max-width: 500px;
+    margin: 4rem auto;
+    padding: 3rem;
+    background: var(--card-bg);
+    border-radius: 16px;
+    box-shadow: var(--shadow-lg);
+    text-align: center;
+  }
+
+  .auth-gate h2 {
+    color: var(--danger-color);
+    margin-bottom: 1rem;
+  }
+
+  .auth-gate p {
+    color: var(--text-light);
+    margin-bottom: 2rem;
+  }
+
+  .auth-gate a {
+    display: inline-block;
+    padding: 0.75rem 2rem;
+    background: var(--primary-color);
+    color: white;
+    text-decoration: none;
+    border-radius: 8px;
+    font-weight: 600;
+  }
+
+  /* Header */
+  .header {
+    background: linear-gradient(135deg, var(--admin-color) 0%, var(--admin-secondary) 100%);
+    color: white;
+    text-align: center;
+    padding: 3rem 2rem;
+    box-shadow: var(--shadow-lg);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .header::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    right: -10%;
+    width: 400px;
+    height: 400px;
+    background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+    border-radius: 50%;
+  }
+
+  .header::after {
+    content: '⚙️';
+    position: absolute;
+    bottom: -30px;
+    left: 10%;
+    font-size: 120px;
+    opacity: 0.15;
+    transform: rotate(-15deg);
+  }
+
+  .header h1 {
+    margin: 0;
+    font-size: 2.5rem;
+    font-weight: 800;
+    position: relative;
+    z-index: 1;
+  }
+
+  .header p {
+    margin: 0.5rem 0 0;
+    opacity: 0.9;
+    position: relative;
+    z-index: 1;
+  }
+
+  .admin-badge {
+    display: inline-block;
+    background: rgba(255,255,255,0.2);
+    padding: 0.25rem 0.75rem;
+    border-radius: 20px;
+    font-size: 0.85rem;
+    margin-top: 0.75rem;
+  }
+
+  /* Container */
+  .container {
+    max-width: 1200px;
+    margin: 2rem auto;
+    padding: 0 1.5rem;
+  }
+
+  /* Tab Navigation */
+  .tab-nav {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 2rem;
+    flex-wrap: wrap;
+    background: var(--card-bg);
+    padding: 0.5rem;
+    border-radius: 12px;
+    box-shadow: var(--shadow-sm);
+  }
+
+  .tab-btn {
+    flex: 1;
+    min-width: 150px;
+    padding: 1rem 1.5rem;
+    border: none;
+    background: transparent;
+    color: var(--text-light);
+    font-weight: 600;
+    font-size: 0.95rem;
+    cursor: pointer;
+    border-radius: 8px;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+  }
+
+  .tab-btn:hover {
+    background: #f1f5f9;
+    color: var(--text-dark);
+  }
+
+  .tab-btn.active {
+    background: var(--admin-color);
+    color: white;
+  }
+
+  .tab-btn .icon {
+    font-size: 1.2rem;
+  }
+
+  /* Tab Content */
+  .tab-content {
+    display: none;
+  }
+
+  .tab-content.active {
+    display: block;
+  }
+
+  /* Section Cards */
+  .section {
+    background: var(--card-bg);
+    border-radius: 16px;
+    margin-bottom: 2rem;
+    box-shadow: var(--shadow-sm);
+    border: 1px solid var(--border-color);
+    overflow: hidden;
+  }
+
+  .section-header {
+    background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+    color: white;
+    padding: 1.25rem 1.5rem;
+    font-size: 1.25rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .section-content {
+    padding: 1.5rem;
+  }
+
+  /* Form Styles */
+  .form-group {
+    margin-bottom: 1.5rem;
+  }
+
+  .form-group label {
+    display: block;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+    color: var(--text-dark);
+  }
+
+  .form-group .hint {
+    font-size: 0.85rem;
+    color: var(--text-light);
+    margin-top: 0.25rem;
+  }
+
+  .form-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+  }
+
+  input, select, textarea {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    border: 2px solid var(--border-color);
+    border-radius: 8px;
+    font-size: 1rem;
+    font-family: inherit;
+    transition: border-color 0.3s ease, box-shadow 0.3s ease;
+  }
+
+  input:focus, select:focus, textarea:focus {
+    outline: none;
+    border-color: var(--admin-color);
+    box-shadow: 0 0 0 3px rgba(107, 33, 168, 0.1);
+  }
+
+  textarea {
+    min-height: 150px;
+    resize: vertical;
+  }
+
+  /* Buttons */
+  .btn {
+    padding: 0.75rem 1.5rem;
+    border: none;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .btn-primary {
+    background: var(--admin-color);
+    color: white;
+  }
+
+  .btn-primary:hover {
+    background: var(--admin-secondary);
+    transform: translateY(-2px);
+  }
+
+  .btn-success {
+    background: var(--success-color);
+    color: white;
+  }
+
+  .btn-success:hover {
+    background: #16a34a;
+  }
+
+  .btn-danger {
+    background: var(--danger-color);
+    color: white;
+  }
+
+  .btn-danger:hover {
+    background: #dc2626;
+  }
+
+  .btn-secondary {
+    background: #e2e8f0;
+    color: var(--text-dark);
+  }
+
+  .btn-secondary:hover {
+    background: #cbd5e1;
+  }
+
+  .btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+  }
+
+  .btn-group {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    margin-top: 1.5rem;
+  }
+
+  /* Item List */
+  .item-list {
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    max-height: 400px;
+    overflow-y: auto;
+  }
+
+  .item-row {
+    padding: 1rem;
+    border-bottom: 1px solid var(--border-color);
+    cursor: pointer;
+    transition: background 0.2s ease;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .item-row:last-child {
+    border-bottom: none;
+  }
+
+  .item-row:hover {
+    background: #f8fafc;
+  }
+
+  .item-row.selected {
+    background: #ede9fe;
+    border-left: 4px solid var(--admin-color);
+  }
+
+  .item-info {
+    flex: 1;
+  }
+
+  .item-title {
+    font-weight: 600;
+    color: var(--text-dark);
+  }
+
+  .item-subtitle {
+    font-size: 0.85rem;
+    color: var(--text-light);
+    margin-top: 0.25rem;
+  }
+
+  .item-badges {
+    display: flex;
+    gap: 0.5rem;
+    margin-left: 1rem;
+  }
+
+  .badge {
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+  }
+
+  .badge-locked {
+    background: #fef3c7;
+    color: #92400e;
+  }
+
+  .badge-preview {
+    background: #dbeafe;
+    color: #1e40af;
+  }
+
+  .badge-completed {
+    background: #dcfce7;
+    color: #166534;
+  }
+
+  .badge-champion {
+    background: #fef3c7;
+    color: #92400e;
+  }
+
+  /* Toast Notifications */
+  .toast-container {
+    position: fixed;
+    bottom: 2rem;
+    right: 2rem;
+    z-index: 10000;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .toast {
+    padding: 1rem 1.5rem;
+    border-radius: 8px;
+    color: white;
+    font-weight: 500;
+    box-shadow: var(--shadow-lg);
+    animation: slideIn 0.3s ease;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .toast-success {
+    background: var(--success-color);
+  }
+
+  .toast-error {
+    background: var(--danger-color);
+  }
+
+  .toast-warning {
+    background: var(--warning-color);
+  }
+
+  @keyframes slideIn {
+    from {
+      transform: translateX(100%);
+      opacity: 0;
+    }
+    to {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
+
+  /* Editor Panel */
+  .editor-panel {
+    background: #f8fafc;
+    border: 2px dashed var(--border-color);
+    border-radius: 12px;
+    padding: 2rem;
+    margin-top: 1.5rem;
+  }
+
+  .editor-panel.active {
+    border-style: solid;
+    border-color: var(--admin-color);
+    background: white;
+  }
+
+  .editor-panel h3 {
+    margin: 0 0 1.5rem 0;
+    color: var(--text-dark);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .no-selection {
+    text-align: center;
+    padding: 3rem;
+    color: var(--text-light);
+  }
+
+  .no-selection .icon {
+    font-size: 3rem;
+    margin-bottom: 1rem;
+  }
+
+  /* Manual Edit Warning */
+  .manual-edit-warning {
+    background: #fef3c7;
+    border: 1px solid #fcd34d;
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 1.5rem;
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+
+  .manual-edit-warning .icon {
+    font-size: 1.5rem;
+  }
+
+  .manual-edit-warning p {
+    margin: 0;
+    font-size: 0.9rem;
+    color: #92400e;
+  }
+
+  /* Checkbox */
+  .checkbox-group {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 1rem;
+    background: #f8fafc;
+    border-radius: 8px;
+    margin-top: 1rem;
+  }
+
+  .checkbox-group input[type="checkbox"] {
+    width: 20px;
+    height: 20px;
+    cursor: pointer;
+  }
+
+  .checkbox-group label {
+    margin: 0;
+    cursor: pointer;
+  }
+
+  /* Empty State */
+  .empty-state {
+    text-align: center;
+    padding: 3rem;
+    color: var(--text-light);
+  }
+
+  /* Season Selector */
+  .season-selector {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .season-selector label {
+    font-weight: 600;
+  }
+
+  .season-selector select {
+    width: auto;
+    min-width: 200px;
+  }
+
+  /* Responsive */
+  @media (max-width: 768px) {
+    .header h1 {
+      font-size: 1.75rem;
+    }
+
+    .container {
+      padding: 0 1rem;
+    }
+
+    .tab-btn {
+      min-width: 100px;
+      padding: 0.75rem 1rem;
+      font-size: 0.85rem;
+    }
+
+    .form-row {
+      grid-template-columns: 1fr;
+    }
+
+    .btn-group {
+      flex-direction: column;
+    }
+
+    .btn-group .btn {
+      width: 100%;
+      justify-content: center;
+    }
+
+    .toast-container {
+      left: 1rem;
+      right: 1rem;
+      bottom: 1rem;
+    }
+  }
+</style>
+</head>
+<body>
+
+<!-- Loading Overlay -->
+<div class="loading-overlay" id="loadingOverlay">
+  <div class="softball-spinner"></div>
+</div>
+
+<!-- Auth Gate (shown if not authorized) -->
+<div class="auth-gate" id="authGate" style="display: none;">
+  <h2>🔒 Admin Access Required</h2>
+  <p>You must be logged in as an administrator to access this page.</p>
+  <a href="signin.html">Sign In</a>
+</div>
+
+<!-- Main Content (shown when authorized) -->
+<div id="mainContent" style="display: none;">
+  <header class="header">
+    <h1>⚙️ Content Admin</h1>
+    <p>Manage previews, eulogies, and game data</p>
+    <div class="admin-badge" id="userBadge">Admin</div>
+  </header>
+
+  <div class="container">
+    <!-- Tab Navigation -->
+    <div class="tab-nav">
+      <button class="tab-btn active" data-tab="previews">
+        <span class="icon">📝</span>
+        Peters Previews
+      </button>
+      <button class="tab-btn" data-tab="eulogies">
+        <span class="icon">⚰️</span>
+        Eulogies
+      </button>
+      <button class="tab-btn" data-tab="games">
+        <span class="icon">⚾</span>
+        Game Editor
+      </button>
+    </div>
+
+    <!-- Tab: Peters Previews -->
+    <div class="tab-content active" id="tab-previews">
+      <div class="section">
+        <div class="section-header">
+          📝 Peters Preview & Odds Editor
+        </div>
+        <div class="section-content">
+          <div class="season-selector">
+            <label>Season:</label>
+            <select id="previewSeasonSelect">
+              <option value="">Loading seasons...</option>
+            </select>
+            <button class="btn btn-secondary" onclick="loadPreviews()">🔄 Refresh</button>
+          </div>
+
+          <div class="form-row">
+            <div style="flex: 1;">
+              <label style="font-weight: 600; margin-bottom: 0.5rem; display: block;">Select Game to Edit:</label>
+              <div class="item-list" id="previewList">
+                <div class="empty-state">Select a season to load games</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="editor-panel" id="previewEditor">
+            <div class="no-selection">
+              <div class="icon">📋</div>
+              <p>Select a game from the list above to edit its preview</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab: Eulogies -->
+    <div class="tab-content" id="tab-eulogies">
+      <div class="section">
+        <div class="section-header">
+          ⚰️ Team Eulogies Editor
+        </div>
+        <div class="section-content">
+          <div class="season-selector">
+            <label>Season:</label>
+            <select id="eulogySeasonSelect">
+              <option value="">Loading seasons...</option>
+            </select>
+            <button class="btn btn-secondary" onclick="loadEulogies()">🔄 Refresh</button>
+            <button class="btn btn-primary" onclick="showNewEulogyForm()">➕ Add Eulogy</button>
+          </div>
+
+          <div class="item-list" id="eulogyList">
+            <div class="empty-state">Select a season to load eulogies</div>
+          </div>
+
+          <div class="editor-panel" id="eulogyEditor">
+            <div class="no-selection">
+              <div class="icon">✍️</div>
+              <p>Select a eulogy to edit or click "Add Eulogy" to create a new one</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab: Game Editor -->
+    <div class="tab-content" id="tab-games">
+      <div class="section">
+        <div class="section-header">
+          ⚾ Game Data Editor
+        </div>
+        <div class="section-content">
+          <div class="manual-edit-warning">
+            <span class="icon">⚠️</span>
+            <div>
+              <p><strong>Manual Edit Protection:</strong> When you save changes here, the game will be marked as "manually edited". This prevents the weekly update script from overwriting your changes to date, time, or team assignments. Score updates will still be allowed.</p>
+            </div>
+          </div>
+
+          <div class="season-selector">
+            <label>Season:</label>
+            <select id="gameSeasonSelect">
+              <option value="">Loading seasons...</option>
+            </select>
+            <button class="btn btn-secondary" onclick="loadGames()">🔄 Refresh</button>
+          </div>
+
+          <div class="item-list" id="gameList">
+            <div class="empty-state">Select a season to load games</div>
+          </div>
+
+          <div class="editor-panel" id="gameEditor">
+            <div class="no-selection">
+              <div class="icon">🎮</div>
+              <p>Select a game from the list to edit its details</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Toast Container -->
+<div class="toast-container" id="toastContainer"></div>
+
+<script type="module">
+  import { auth } from './firebase-auth.js';
+  import { db } from './firebase-config.js';
+  import { onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
+  import { 
+    collection, 
+    getDocs, 
+    doc, 
+    getDoc,
+    setDoc,
+    updateDoc,
+    deleteDoc,
+    addDoc,
+    query,
+    where,
+    orderBy,
+    Timestamp,
+    serverTimestamp
+  } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+
+  // ========================================
+  // GLOBAL STATE
+  // ========================================
+  let currentUser = null;
+  let userProfile = null;
+  let allSeasons = [];
+  
+  // Current selections
+  let selectedPreview = null;
+  let selectedEulogy = null;
+  let selectedGame = null;
+  
+  // Cached data
+  let previewsCache = [];
+  let eulogiesCache = [];
+  let gamesCache = [];
+
+  // Team list for dropdowns
+  const TEAMS = ['Black', 'Green', 'Red', 'Blue', 'White', 'Orange', 'Silver', 'Purple', 'Gold', 'Carolina', 'Army'];
+
+  // ========================================
+  // INITIALIZATION
+  // ========================================
+  
+  onAuthStateChanged(auth, async (user) => {
+    if (user) {
+      currentUser = user;
+      await checkAuthorization();
+    } else {
+      showAuthGate();
+    }
+  });
+
+  async function checkAuthorization() {
+    try {
+      const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+      
+      if (!userDoc.exists()) {
+        showAuthGate();
+        return;
+      }
+
+      userProfile = userDoc.data();
+
+      // Check if user is admin or league-staff
+      const isAuthorized = userProfile.isAdmin === true || 
+                          userProfile.userType === 'league-staff';
+
+      if (isAuthorized) {
+        document.getElementById('userBadge').textContent = 
+          userProfile.isAdmin ? '👑 Admin' : '🏟️ League Staff';
+        showMainContent();
+        await initialize();
+      } else {
+        showAuthGate();
+      }
+    } catch (error) {
+      console.error('Authorization check failed:', error);
+      showAuthGate();
+    }
+  }
+
+  function showAuthGate() {
+    document.getElementById('loadingOverlay').classList.add('hidden');
+    document.getElementById('authGate').style.display = 'block';
+    document.getElementById('mainContent').style.display = 'none';
+  }
+
+  function showMainContent() {
+    document.getElementById('loadingOverlay').classList.add('hidden');
+    document.getElementById('authGate').style.display = 'none';
+    document.getElementById('mainContent').style.display = 'block';
+  }
+
+  async function initialize() {
+    // Load seasons
+    await loadSeasons();
+    
+    // Setup tab navigation
+    setupTabs();
+    
+    // Load initial data
+    const defaultSeason = getDefaultSeason();
+    if (defaultSeason) {
+      document.getElementById('previewSeasonSelect').value = defaultSeason;
+      document.getElementById('eulogySeasonSelect').value = defaultSeason;
+      document.getElementById('gameSeasonSelect').value = defaultSeason;
+      
+      await Promise.all([
+        loadPreviews(),
+        loadEulogies(),
+        loadGames()
+      ]);
+    }
+  }
+
+  async function loadSeasons() {
+    try {
+      const seasonsSnapshot = await getDocs(collection(db, 'seasons'));
+      allSeasons = seasonsSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })).sort((a, b) => {
+        // Sort by year desc, then fall before summer
+        const [yearA, seasonA] = a.id.split('-');
+        const [yearB, seasonB] = b.id.split('-');
+        if (yearA !== yearB) return parseInt(yearB) - parseInt(yearA);
+        return seasonA === 'fall' ? -1 : 1;
+      });
+
+      const optionsHtml = allSeasons.map(s => {
+        const [year, season] = s.id.split('-');
+        const label = `${season.charAt(0).toUpperCase() + season.slice(1)} ${year}`;
+        const active = s.isActive ? ' (Active)' : '';
+        return `<option value="${s.id}">${label}${active}</option>`;
+      }).join('');
+
+      document.getElementById('previewSeasonSelect').innerHTML = optionsHtml;
+      document.getElementById('eulogySeasonSelect').innerHTML = optionsHtml;
+      document.getElementById('gameSeasonSelect').innerHTML = optionsHtml;
+
+    } catch (error) {
+      console.error('Error loading seasons:', error);
+      showToast('Error loading seasons', 'error');
+    }
+  }
+
+  function getDefaultSeason() {
+    // Find active season or most recent
+    const active = allSeasons.find(s => s.isActive);
+    return active ? active.id : (allSeasons[0]?.id || null);
+  }
+
+  function setupTabs() {
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const tabId = btn.dataset.tab;
+        
+        // Update buttons
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        
+        // Update content
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        document.getElementById(`tab-${tabId}`).classList.add('active');
+      });
+    });
+  }
+
+  // ========================================
+  // PREVIEWS TAB
+  // ========================================
+  
+  window.loadPreviews = async function() {
+    const seasonId = document.getElementById('previewSeasonSelect').value;
+    if (!seasonId) return;
+
+    const listEl = document.getElementById('previewList');
+    listEl.innerHTML = '<div class="empty-state">Loading previews...</div>';
+
+    try {
+      // Load both previews and games to show all upcoming games
+      const [previewsSnap, gamesSnap] = await Promise.all([
+        getDocs(collection(db, 'seasons', seasonId, 'previews')),
+        getDocs(collection(db, 'seasons', seasonId, 'games'))
+      ]);
+
+      const previews = new Map();
+      previewsSnap.docs.forEach(doc => {
+        previews.set(doc.id, { id: doc.id, ...doc.data() });
+      });
+
+      const games = gamesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      
+      // Combine games with their previews
+      previewsCache = games.map(game => {
+        const previewId = buildPreviewId(game);
+        const preview = previews.get(previewId);
+        return {
+          ...game,
+          previewId,
+          previewText: preview?.preview || '',
+          homeOdds: preview?.homeOdds || null,
+          awayOdds: preview?.awayOdds || null,
+          previewStatus: preview?.status || 'none',
+          previewManuallyEdited: preview?.manuallyEdited || false
+        };
+      }).sort((a, b) => {
+        const dateA = a.date?.seconds || 0;
+        const dateB = b.date?.seconds || 0;
+        return dateA - dateB;
+      });
+
+      if (previewsCache.length === 0) {
+        listEl.innerHTML = '<div class="empty-state">No games found for this season</div>';
+        return;
+      }
+
+      listEl.innerHTML = previewsCache.map((game, idx) => {
+        const dateStr = formatDate(game.date);
+        const hasPreview = game.previewText && game.previewText.trim() !== '';
+        const homeTeam = game.homeTeamName || game.homeTeam || capitalize(game.homeTeamId);
+        const awayTeam = game.awayTeamName || game.awayTeam || capitalize(game.awayTeamId);
+        
+        return `
+          <div class="item-row" data-idx="${idx}" onclick="selectPreview(${idx})">
+            <div class="item-info">
+              <div class="item-title">${awayTeam} @ ${homeTeam}</div>
+              <div class="item-subtitle">${dateStr} ${game.time || ''}</div>
+            </div>
+            <div class="item-badges">
+              ${hasPreview ? '<span class="badge badge-preview">Preview</span>' : ''}
+              ${game.previewManuallyEdited ? '<span class="badge badge-locked">🔒</span>' : ''}
+            </div>
+          </div>
+        `;
+      }).join('');
+
+    } catch (error) {
+      console.error('Error loading previews:', error);
+      listEl.innerHTML = '<div class="empty-state">Error loading previews</div>';
+      showToast('Error loading previews', 'error');
+    }
+  };
+
+  window.selectPreview = function(idx) {
+    selectedPreview = previewsCache[idx];
+    
+    // Update selection UI
+    document.querySelectorAll('#previewList .item-row').forEach((row, i) => {
+      row.classList.toggle('selected', i === idx);
+    });
+
+    const homeTeam = selectedPreview.homeTeamName || selectedPreview.homeTeam || capitalize(selectedPreview.homeTeamId);
+    const awayTeam = selectedPreview.awayTeamName || selectedPreview.awayTeam || capitalize(selectedPreview.awayTeamId);
+    const dateStr = formatDate(selectedPreview.date);
+
+    const editorEl = document.getElementById('previewEditor');
+    editorEl.classList.add('active');
+    editorEl.innerHTML = `
+      <h3>✏️ Edit Preview: ${awayTeam} @ ${homeTeam}</h3>
+      <p style="color: var(--text-light); margin-bottom: 1.5rem;">${dateStr}</p>
+      
+      <div class="form-row">
+        <div class="form-group">
+          <label>Away Team Odds (${awayTeam})</label>
+          <input type="number" id="awayOddsInput" value="${selectedPreview.awayOdds || ''}" placeholder="e.g., +150 or -120">
+          <div class="hint">Positive = underdog, Negative = favorite</div>
+        </div>
+        <div class="form-group">
+          <label>Home Team Odds (${homeTeam})</label>
+          <input type="number" id="homeOddsInput" value="${selectedPreview.homeOdds || ''}" placeholder="e.g., +150 or -120">
+        </div>
+      </div>
+      
+      <div class="form-group">
+        <label>Peters Preview Text</label>
+        <textarea id="previewTextInput" placeholder="Enter Peter's preview text for this game...">${selectedPreview.previewText || ''}</textarea>
+        <div class="hint">This text appears in the game preview page and weekend preview</div>
+      </div>
+      
+      <div class="btn-group">
+        <button class="btn btn-success" onclick="savePreview()">💾 Save Preview</button>
+        <button class="btn btn-secondary" onclick="clearPreviewSelection()">Cancel</button>
+      </div>
+    `;
+  };
+
+  window.savePreview = async function() {
+    if (!selectedPreview) return;
+
+    const seasonId = document.getElementById('previewSeasonSelect').value;
+    const previewText = document.getElementById('previewTextInput').value.trim();
+    const homeOdds = parseInt(document.getElementById('homeOddsInput').value) || null;
+    const awayOdds = parseInt(document.getElementById('awayOddsInput').value) || null;
+
+    try {
+      const previewRef = doc(db, 'seasons', seasonId, 'previews', selectedPreview.previewId);
+      
+      const homeTeam = selectedPreview.homeTeamName || selectedPreview.homeTeam || capitalize(selectedPreview.homeTeamId);
+      const awayTeam = selectedPreview.awayTeamName || selectedPreview.awayTeam || capitalize(selectedPreview.awayTeamId);
+
+      await setDoc(previewRef, {
+        date: selectedPreview.date,
+        homeTeam: homeTeam,
+        awayTeam: awayTeam,
+        homeTeamId: selectedPreview.homeTeamId,
+        awayTeamId: selectedPreview.awayTeamId,
+        homeOdds: homeOdds,
+        awayOdds: awayOdds,
+        preview: previewText,
+        time: selectedPreview.time || null,
+        status: previewText ? 'preview_available' : 'scheduled',
+        lastUpdate: serverTimestamp()
+      }, { merge: true });
+
+      showToast('Preview saved successfully!', 'success');
+      await loadPreviews();
+      clearPreviewSelection();
+
+    } catch (error) {
+      console.error('Error saving preview:', error);
+      showToast('Error saving preview: ' + error.message, 'error');
+    }
+  };
+
+  window.clearPreviewSelection = function() {
+    selectedPreview = null;
+    document.querySelectorAll('#previewList .item-row').forEach(row => {
+      row.classList.remove('selected');
+    });
+    document.getElementById('previewEditor').classList.remove('active');
+    document.getElementById('previewEditor').innerHTML = `
+      <div class="no-selection">
+        <div class="icon">📋</div>
+        <p>Select a game from the list above to edit its preview</p>
+      </div>
+    `;
+  };
+
+  // ========================================
+  // EULOGIES TAB
+  // ========================================
+  
+  window.loadEulogies = async function() {
+    const seasonId = document.getElementById('eulogySeasonSelect').value;
+    if (!seasonId) return;
+
+    const listEl = document.getElementById('eulogyList');
+    listEl.innerHTML = '<div class="empty-state">Loading eulogies...</div>';
+
+    try {
+      const q = query(
+        collection(db, 'eulogies'),
+        where('seasonId', '==', seasonId),
+        orderBy('eliminationOrder', 'asc')
+      );
+      const snapshot = await getDocs(q);
+
+      eulogiesCache = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+
+      if (eulogiesCache.length === 0) {
+        listEl.innerHTML = '<div class="empty-state">No eulogies found for this season. Click "Add Eulogy" to create one.</div>';
+        return;
+      }
+
+      listEl.innerHTML = eulogiesCache.map((eulogy, idx) => `
+        <div class="item-row" data-idx="${idx}" onclick="selectEulogy(${idx})">
+          <div class="item-info">
+            <div class="item-title">${eulogy.isChampion ? '🏆' : '🪦'} ${eulogy.teamName}</div>
+            <div class="item-subtitle">${eulogy.eliminatedInRound || 'Elimination round not set'}</div>
+          </div>
+          <div class="item-badges">
+            ${eulogy.isChampion ? '<span class="badge badge-champion">Champion</span>' : ''}
+          </div>
+        </div>
+      `).join('');
+
+    } catch (error) {
+      console.error('Error loading eulogies:', error);
+      listEl.innerHTML = '<div class="empty-state">Error loading eulogies</div>';
+      showToast('Error loading eulogies', 'error');
+    }
+  };
+
+  window.selectEulogy = function(idx) {
+    selectedEulogy = eulogiesCache[idx];
+    
+    document.querySelectorAll('#eulogyList .item-row').forEach((row, i) => {
+      row.classList.toggle('selected', i === idx);
+    });
+
+    renderEulogyEditor(false);
+  };
+
+  window.showNewEulogyForm = function() {
+    selectedEulogy = null;
+    document.querySelectorAll('#eulogyList .item-row').forEach(row => {
+      row.classList.remove('selected');
+    });
+    renderEulogyEditor(true);
+  };
+
+  function renderEulogyEditor(isNew) {
+    const editorEl = document.getElementById('eulogyEditor');
+    editorEl.classList.add('active');
+    
+    const teamOptions = TEAMS.map(t => 
+      `<option value="${t}" ${!isNew && selectedEulogy?.teamName === t ? 'selected' : ''}>${t}</option>`
+    ).join('');
+
+    editorEl.innerHTML = `
+      <h3>${isNew ? '➕ New Eulogy' : '✏️ Edit Eulogy'}</h3>
+      
+      <div class="form-row">
+        <div class="form-group">
+          <label>Team</label>
+          <select id="eulogyTeamSelect">
+            <option value="">Select team...</option>
+            ${teamOptions}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Elimination Order</label>
+          <input type="number" id="eulogyOrderInput" value="${isNew ? '' : (selectedEulogy?.eliminationOrder || '')}" min="1" max="20" placeholder="1-20">
+          <div class="hint">Order in which team was eliminated (1 = first out)</div>
+        </div>
+      </div>
+      
+      <div class="form-row">
+        <div class="form-group">
+          <label>Eliminated In Round</label>
+          <input type="text" id="eulogyRoundInput" value="${isNew ? '' : (selectedEulogy?.eliminatedInRound || '')}" placeholder="e.g., Losers Round 2">
+        </div>
+      </div>
+      
+      <div class="checkbox-group">
+        <input type="checkbox" id="eulogyChampionCheck" ${!isNew && selectedEulogy?.isChampion ? 'checked' : ''}>
+        <label for="eulogyChampionCheck">🏆 This team is the champion (celebration instead of eulogy)</label>
+      </div>
+      
+      <div class="form-group" style="margin-top: 1.5rem;">
+        <label>Eulogy Text</label>
+        <textarea id="eulogyTextInput" placeholder="Write the eulogy for this team..." style="min-height: 200px;">${isNew ? '' : (selectedEulogy?.text || '')}</textarea>
+        <div class="hint">Use double line breaks for paragraphs. HTML will be escaped.</div>
+      </div>
+      
+      <div class="btn-group">
+        <button class="btn btn-success" onclick="saveEulogy(${isNew})">${isNew ? '➕ Create' : '💾 Save'}</button>
+        ${!isNew ? `<button class="btn btn-danger" onclick="deleteEulogy()">🗑️ Delete</button>` : ''}
+        <button class="btn btn-secondary" onclick="clearEulogySelection()">Cancel</button>
+      </div>
+    `;
+  }
+
+  window.saveEulogy = async function(isNew) {
+    const seasonId = document.getElementById('eulogySeasonSelect').value;
+    const teamName = document.getElementById('eulogyTeamSelect').value;
+    const eliminationOrder = parseInt(document.getElementById('eulogyOrderInput').value) || 1;
+    const eliminatedInRound = document.getElementById('eulogyRoundInput').value.trim();
+    const isChampion = document.getElementById('eulogyChampionCheck').checked;
+    const text = document.getElementById('eulogyTextInput').value.trim();
+
+    if (!teamName) {
+      showToast('Please select a team', 'warning');
+      return;
+    }
+
+    if (!text) {
+      showToast('Please enter eulogy text', 'warning');
+      return;
+    }
+
+    try {
+      const eulogyData = {
+        seasonId,
+        teamName,
+        eliminationOrder,
+        eliminatedInRound,
+        isChampion,
+        text,
+        lastUpdate: serverTimestamp()
+      };
+
+      if (isNew) {
+        await addDoc(collection(db, 'eulogies'), eulogyData);
+        showToast('Eulogy created successfully!', 'success');
+      } else {
+        await updateDoc(doc(db, 'eulogies', selectedEulogy.id), eulogyData);
+        showToast('Eulogy updated successfully!', 'success');
+      }
+
+      await loadEulogies();
+      clearEulogySelection();
+
+    } catch (error) {
+      console.error('Error saving eulogy:', error);
+      showToast('Error saving eulogy: ' + error.message, 'error');
+    }
+  };
+
+  window.deleteEulogy = async function() {
+    if (!selectedEulogy || !confirm('Are you sure you want to delete this eulogy?')) return;
+
+    try {
+      await deleteDoc(doc(db, 'eulogies', selectedEulogy.id));
+      showToast('Eulogy deleted', 'success');
+      await loadEulogies();
+      clearEulogySelection();
+    } catch (error) {
+      console.error('Error deleting eulogy:', error);
+      showToast('Error deleting eulogy: ' + error.message, 'error');
+    }
+  };
+
+  window.clearEulogySelection = function() {
+    selectedEulogy = null;
+    document.querySelectorAll('#eulogyList .item-row').forEach(row => {
+      row.classList.remove('selected');
+    });
+    document.getElementById('eulogyEditor').classList.remove('active');
+    document.getElementById('eulogyEditor').innerHTML = `
+      <div class="no-selection">
+        <div class="icon">✍️</div>
+        <p>Select a eulogy to edit or click "Add Eulogy" to create a new one</p>
+      </div>
+    `;
+  };
+
+  // ========================================
+  // GAMES TAB
+  // ========================================
+  
+  window.loadGames = async function() {
+    const seasonId = document.getElementById('gameSeasonSelect').value;
+    if (!seasonId) return;
+
+    const listEl = document.getElementById('gameList');
+    listEl.innerHTML = '<div class="empty-state">Loading games...</div>';
+
+    try {
+      const gamesSnap = await getDocs(collection(db, 'seasons', seasonId, 'games'));
+      
+      gamesCache = gamesSnap.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })).sort((a, b) => {
+        const dateA = a.date?.seconds || 0;
+        const dateB = b.date?.seconds || 0;
+        return dateA - dateB;
+      });
+
+      if (gamesCache.length === 0) {
+        listEl.innerHTML = '<div class="empty-state">No games found for this season</div>';
+        return;
+      }
+
+      listEl.innerHTML = gamesCache.map((game, idx) => {
+        const dateStr = formatDate(game.date);
+        const homeTeam = game.homeTeamName || capitalize(game.homeTeamId);
+        const awayTeam = game.awayTeamName || capitalize(game.awayTeamId);
+        const score = game.homeScore !== undefined ? `${game.awayScore || 0} - ${game.homeScore || 0}` : 'TBD';
+        const gameType = (game.gameType || game.game_type || 'regular').toLowerCase();
+        
+        return `
+          <div class="item-row" data-idx="${idx}" onclick="selectGame(${idx})">
+            <div class="item-info">
+              <div class="item-title">${awayTeam} @ ${homeTeam}</div>
+              <div class="item-subtitle">${dateStr} • ${score} • ${capitalize(gameType)}</div>
+            </div>
+            <div class="item-badges">
+              ${game.status === 'completed' ? '<span class="badge badge-completed">Final</span>' : ''}
+              ${game.manuallyEdited ? '<span class="badge badge-locked">🔒 Locked</span>' : ''}
+              ${gameType === 'playoff' ? '<span class="badge badge-preview">Playoff</span>' : ''}
+            </div>
+          </div>
+        `;
+      }).join('');
+
+    } catch (error) {
+      console.error('Error loading games:', error);
+      listEl.innerHTML = '<div class="empty-state">Error loading games</div>';
+      showToast('Error loading games', 'error');
+    }
+  };
+
+  window.selectGame = function(idx) {
+    selectedGame = gamesCache[idx];
+    
+    document.querySelectorAll('#gameList .item-row').forEach((row, i) => {
+      row.classList.toggle('selected', i === idx);
+    });
+
+    const homeTeam = selectedGame.homeTeamName || capitalize(selectedGame.homeTeamId);
+    const awayTeam = selectedGame.awayTeamName || capitalize(selectedGame.awayTeamId);
+    
+    // Parse date for input
+    let dateValue = '';
+    let timeValue = '';
+    if (selectedGame.date?.seconds) {
+      const d = new Date(selectedGame.date.seconds * 1000);
+      dateValue = d.toISOString().split('T')[0];
+      timeValue = d.toTimeString().slice(0, 5);
+    }
+
+    const teamOptions = TEAMS.map(t => `<option value="${t.toLowerCase()}">${t}</option>`).join('');
+    const gameType = (selectedGame.gameType || selectedGame.game_type || 'regular').toLowerCase();
+
+    const editorEl = document.getElementById('gameEditor');
+    editorEl.classList.add('active');
+    editorEl.innerHTML = `
+      <h3>✏️ Edit Game: ${awayTeam} @ ${homeTeam}</h3>
+      
+      ${selectedGame.manuallyEdited ? `
+        <div class="manual-edit-warning">
+          <span class="icon">🔒</span>
+          <div>
+            <p><strong>This game is locked.</strong> It was previously manually edited. Changes you make here will be preserved from automatic updates.</p>
+          </div>
+        </div>
+      ` : ''}
+      
+      <div class="form-row">
+        <div class="form-group">
+          <label>Game Date</label>
+          <input type="date" id="gameDateInput" value="${dateValue}">
+        </div>
+        <div class="form-group">
+          <label>Game Time</label>
+          <input type="time" id="gameTimeInput" value="${timeValue}">
+        </div>
+      </div>
+      
+      <div class="form-row">
+        <div class="form-group">
+          <label>Away Team</label>
+          <select id="awayTeamSelect">
+            ${teamOptions}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Home Team</label>
+          <select id="homeTeamSelect">
+            ${teamOptions}
+          </select>
+        </div>
+      </div>
+      
+      <div class="form-row">
+        <div class="form-group">
+          <label>Away Score</label>
+          <input type="number" id="awayScoreInput" value="${selectedGame.awayScore || 0}" min="0">
+        </div>
+        <div class="form-group">
+          <label>Home Score</label>
+          <input type="number" id="homeScoreInput" value="${selectedGame.homeScore || 0}" min="0">
+        </div>
+      </div>
+      
+      <div class="form-row">
+        <div class="form-group">
+          <label>Game Type</label>
+          <select id="gameTypeSelect">
+            <option value="regular" ${gameType === 'regular' ? 'selected' : ''}>Regular Season</option>
+            <option value="playoff" ${gameType === 'playoff' ? 'selected' : ''}>Playoff</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Status</label>
+          <select id="gameStatusSelect">
+            <option value="scheduled" ${selectedGame.status === 'scheduled' ? 'selected' : ''}>Scheduled</option>
+            <option value="in_progress" ${selectedGame.status === 'in_progress' ? 'selected' : ''}>In Progress</option>
+            <option value="completed" ${selectedGame.status === 'completed' ? 'selected' : ''}>Completed</option>
+            <option value="postponed" ${selectedGame.status === 'postponed' ? 'selected' : ''}>Postponed</option>
+            <option value="cancelled" ${selectedGame.status === 'cancelled' ? 'selected' : ''}>Cancelled</option>
+          </select>
+        </div>
+      </div>
+      
+      <div class="checkbox-group">
+        <input type="checkbox" id="forfeitCheck" ${selectedGame.forfeit ? 'checked' : ''}>
+        <label for="forfeitCheck">⚠️ Game was a forfeit</label>
+      </div>
+      
+      <div class="checkbox-group">
+        <input type="checkbox" id="manualEditCheck" ${selectedGame.manuallyEdited ? 'checked' : ''}>
+        <label for="manualEditCheck">🔒 Mark as manually edited (protects from automatic updates)</label>
+      </div>
+      
+      <div class="btn-group">
+        <button class="btn btn-success" onclick="saveGame()">💾 Save Changes</button>
+        <button class="btn btn-secondary" onclick="clearGameSelection()">Cancel</button>
+      </div>
+    `;
+
+    // Set team select values after DOM is ready
+    setTimeout(() => {
+      document.getElementById('awayTeamSelect').value = selectedGame.awayTeamId || '';
+      document.getElementById('homeTeamSelect').value = selectedGame.homeTeamId || '';
+    }, 0);
+  };
+
+  window.saveGame = async function() {
+    if (!selectedGame) return;
+
+    const seasonId = document.getElementById('gameSeasonSelect').value;
+    
+    const dateInput = document.getElementById('gameDateInput').value;
+    const timeInput = document.getElementById('gameTimeInput').value;
+    const awayTeamId = document.getElementById('awayTeamSelect').value;
+    const homeTeamId = document.getElementById('homeTeamSelect').value;
+    const awayScore = parseInt(document.getElementById('awayScoreInput').value) || 0;
+    const homeScore = parseInt(document.getElementById('homeScoreInput').value) || 0;
+    const gameType = document.getElementById('gameTypeSelect').value;
+    const status = document.getElementById('gameStatusSelect').value;
+    const forfeit = document.getElementById('forfeitCheck').checked;
+    const manuallyEdited = document.getElementById('manualEditCheck').checked;
+
+    if (!dateInput || !awayTeamId || !homeTeamId) {
+      showToast('Please fill in all required fields', 'warning');
+      return;
+    }
+
+    try {
+      // Combine date and time
+      const dateTimeStr = timeInput ? `${dateInput}T${timeInput}` : dateInput;
+      const gameDate = new Date(dateTimeStr);
+
+      // Determine winner
+      let winner = null;
+      if (status === 'completed' && awayScore !== homeScore) {
+        winner = awayScore > homeScore ? awayTeamId : homeTeamId;
+      } else if (status === 'completed' && awayScore === homeScore) {
+        winner = 'tie';
+      }
+
+      const gameRef = doc(db, 'seasons', seasonId, 'games', selectedGame.id);
+      
+      await updateDoc(gameRef, {
+        date: Timestamp.fromDate(gameDate),
+        homeTeamId: homeTeamId,
+        awayTeamId: awayTeamId,
+        homeTeamName: capitalize(homeTeamId),
+        awayTeamName: capitalize(awayTeamId),
+        homeScore: homeScore,
+        awayScore: awayScore,
+        winner: winner,
+        gameType: gameType,
+        status: status,
+        forfeit: forfeit,
+        manuallyEdited: manuallyEdited,
+        lastUpdate: serverTimestamp()
+      });
+
+      // Also update the preview if it exists (sync date/teams)
+      const previewId = buildPreviewIdFromInputs(gameDate, homeTeamId, awayTeamId);
+      const previewRef = doc(db, 'seasons', seasonId, 'previews', previewId);
+      const previewSnap = await getDoc(previewRef);
+      
+      if (previewSnap.exists()) {
+        await updateDoc(previewRef, {
+          date: Timestamp.fromDate(gameDate),
+          homeTeamId: homeTeamId,
+          awayTeamId: awayTeamId,
+          homeTeam: capitalize(homeTeamId),
+          awayTeam: capitalize(awayTeamId),
+          manuallyEdited: manuallyEdited,
+          lastUpdate: serverTimestamp()
+        });
+      }
+
+      showToast('Game saved successfully!', 'success');
+      await loadGames();
+      clearGameSelection();
+
+    } catch (error) {
+      console.error('Error saving game:', error);
+      showToast('Error saving game: ' + error.message, 'error');
+    }
+  };
+
+  window.clearGameSelection = function() {
+    selectedGame = null;
+    document.querySelectorAll('#gameList .item-row').forEach(row => {
+      row.classList.remove('selected');
+    });
+    document.getElementById('gameEditor').classList.remove('active');
+    document.getElementById('gameEditor').innerHTML = `
+      <div class="no-selection">
+        <div class="icon">🎮</div>
+        <p>Select a game from the list to edit its details</p>
+      </div>
+    `;
+  };
+
+  // ========================================
+  // UTILITY FUNCTIONS
+  // ========================================
+  
+  function buildPreviewId(game) {
+    let dateStr = '';
+    if (game.date?.seconds) {
+      const d = new Date(game.date.seconds * 1000);
+      dateStr = `${d.getMonth() + 1}-${d.getDate()}-${d.getFullYear()}`;
+    }
+    const homeTeam = (game.homeTeamId || '').toLowerCase().replace(/\s+/g, '_');
+    const awayTeam = (game.awayTeamId || '').toLowerCase().replace(/\s+/g, '_');
+    return `${dateStr}_${homeTeam}_vs_${awayTeam}`.replace(/[^a-z0-9_]/g, '_');
+  }
+
+  function buildPreviewIdFromInputs(date, homeTeamId, awayTeamId) {
+    const d = new Date(date);
+    const dateStr = `${d.getMonth() + 1}-${d.getDate()}-${d.getFullYear()}`;
+    const homeTeam = homeTeamId.toLowerCase().replace(/\s+/g, '_');
+    const awayTeam = awayTeamId.toLowerCase().replace(/\s+/g, '_');
+    return `${dateStr}_${homeTeam}_vs_${awayTeam}`.replace(/[^a-z0-9_]/g, '_');
+  }
+
+  function formatDate(timestamp) {
+    if (!timestamp?.seconds) return 'TBD';
+    const d = new Date(timestamp.seconds * 1000);
+    return d.toLocaleDateString('en-US', { 
+      weekday: 'short', 
+      month: 'short', 
+      day: 'numeric',
+      year: 'numeric'
+    });
+  }
+
+  function capitalize(str) {
+    if (!str) return '';
+    return str.charAt(0).toUpperCase() + str.slice(1);
+  }
+
+  function showToast(message, type = 'success') {
+    const container = document.getElementById('toastContainer');
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+    
+    const icon = type === 'success' ? '✓' : type === 'error' ? '✕' : '⚠';
+    toast.innerHTML = `<span>${icon}</span> ${message}`;
+    
+    container.appendChild(toast);
+    
+    setTimeout(() => {
+      toast.style.opacity = '0';
+      setTimeout(() => toast.remove(), 300);
+    }, 4000);
+  }
+
+  // Make functions globally available
+  window.showToast = showToast;
+</script>
+
+<script type="module">
+  import { NavigationComponent } from './nav-component.js';
+</script>
+<script src="team-colors.js"></script>
+<script src="mobile-enhancements.js"></script>
+</body>
+</html>
