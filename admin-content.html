@@ -813,25 +813,55 @@
 
   async function checkAuthorization() {
     try {
+      console.log('🔐 Checking authorization for UID:', currentUser.uid);
+      console.log('🔐 User email:', currentUser.email);
+      
       const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
       
       if (!userDoc.exists()) {
+        console.log('❌ No user document found for UID:', currentUser.uid);
+        console.log('💡 Document path: users/' + currentUser.uid);
         showAuthGate();
         return;
       }
 
       userProfile = userDoc.data();
+      console.log('📋 User profile data:', userProfile);
+      console.log('📋 isAdmin:', userProfile.isAdmin);
+      console.log('📋 userType:', userProfile.userType);
+      console.log('📋 userRole:', userProfile.userRole);
+      console.log('📋 role:', userProfile.role);
+      console.log('📋 isCaptain:', userProfile.isCaptain);
 
-      // Check if user is admin or league-staff
-      const isAuthorized = userProfile.isAdmin === true || 
-                          userProfile.userType === 'league-staff';
+      // Normalize values for comparison (handle case variations)
+      const userRole = (userProfile.userRole || '').toLowerCase();
+      const userType = (userProfile.userType || '').toLowerCase();
+      const role = (userProfile.role || '').toLowerCase();
+      
+      // Check if user is admin or league-staff (check multiple field variations)
+      const isAuthorized = 
+        userProfile.isAdmin === true || 
+        userType === 'league-staff' ||
+        userType === 'admin' ||
+        userRole === 'admin' ||
+        userRole === 'staff' ||
+        role === 'admin' ||
+        role === 'staff' ||
+        role === 'league-staff';
+
+      console.log('✅ Authorization result:', isAuthorized);
 
       if (isAuthorized) {
-        document.getElementById('userBadge').textContent = 
-          userProfile.isAdmin ? '👑 Admin' : '🏟️ League Staff';
+        // Determine badge based on role
+        let badge = '🏟️ League Staff';
+        if (userProfile.isAdmin === true || userRole === 'admin' || userType === 'admin' || role === 'admin') {
+          badge = '👑 Admin';
+        }
+        document.getElementById('userBadge').textContent = badge;
         showMainContent();
         await initialize();
       } else {
+        console.log('❌ User not authorized. Available fields:', Object.keys(userProfile));
         showAuthGate();
       }
     } catch (error) {
