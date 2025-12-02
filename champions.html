@@ -541,6 +541,16 @@
     background: linear-gradient(90deg, rgba(255,215,0,0.1) 0%, #f8f9fa 100%);
   }
 
+  .journey-step.playoff {
+    border-left-color: var(--primary-color);
+    background: linear-gradient(90deg, rgba(45,80,22,0.08) 0%, #f8f9fa 100%);
+  }
+
+  .journey-step.playoff .journey-round {
+    color: var(--primary-color);
+    font-weight: 700;
+  }
+
   .journey-round {
     font-weight: 600;
     color: var(--text-light);
@@ -789,11 +799,11 @@
     </div>
   </div>
 
-  <!-- Playoff Journey -->
+  <!-- Season Journey -->
   <div class="section-card">
     <div class="section-header">
       <span style="font-size: 1.5rem;">🛤️</span>
-      <h2>Road to the Championship</h2>
+      <h2>Season Journey</h2>
     </div>
     <div class="section-content">
       <div class="playoff-journey" id="playoffJourney">
@@ -1050,7 +1060,7 @@
       renderTeamStars(champion, seasonData);
       renderTeamPitching(champion, seasonData);
       renderChampionRoster(champion, seasonData);
-      renderPlayoffJourney(champion, seasonData.games);
+      renderSeasonJourney(champion, seasonData.games);
       renderChampionsTimeline(seasonId);
 
     } catch (error) {
@@ -1230,11 +1240,13 @@
     // Update header with team name
     header.textContent = `${formatTeamName(champion)} Stars`;
     
-    // Filter to only champion team players
+    // Filter to only champion team players with minimum 24 at bats
     const championLower = champion.toLowerCase().replace(/\s+/g, '').replace(/_/g, '');
     let teamPlayers = data.batting.filter(p => {
       const teamName = (p.team || p.teamId || '').toLowerCase().replace(/\s+/g, '').replace(/_/g, '');
-      return teamName === championLower || teamName.includes(championLower) || championLower.includes(teamName);
+      const atBats = p.atBats || p.ab || 0;
+      return (teamName === championLower || teamName.includes(championLower) || championLower.includes(teamName)) 
+             && atBats >= 24;
     });
 
     if (teamPlayers.length === 0) {
@@ -1461,11 +1473,11 @@
     }).join('');
   }
 
-  function renderPlayoffJourney(champion, games) {
+  function renderSeasonJourney(champion, games) {
     const container = document.getElementById('playoffJourney');
     
     if (!champion) {
-      container.innerHTML = '<div class="empty-state"><p>No playoff journey available</p></div>';
+      container.innerHTML = '<div class="empty-state"><p>No season journey available</p></div>';
       return;
     }
 
@@ -1480,14 +1492,19 @@
       return new Date(dateVal);
     }
     
-    // Get playoff games involving the champion
-    const playoffGames = games
-      .filter(g => g.gameType === 'playoff' || g.game_type === 'Playoff')
+    // Get ALL games involving the champion (regular season + playoffs)
+    const teamGames = games
       .filter(g => {
         const home = (g.homeTeam || g['home team'] || '').toLowerCase().replace(/\s+/g, '').replace(/_/g, '');
         const away = (g.awayTeam || g['away team'] || '').toLowerCase().replace(/\s+/g, '').replace(/_/g, '');
         return home.includes(championLower) || away.includes(championLower) || 
                championLower.includes(home) || championLower.includes(away);
+      })
+      .filter(g => {
+        // Only include games with scores (completed games)
+        const homeScore = g.homeScore || g['home score'];
+        const awayScore = g.awayScore || g['away score'];
+        return homeScore !== undefined && awayScore !== undefined;
       })
       .sort((a, b) => {
         // First, check if either is the championship - championship always goes last
@@ -1505,23 +1522,25 @@
         return dateA - dateB;
       });
 
-    if (playoffGames.length === 0) {
+    if (teamGames.length === 0) {
       container.innerHTML = `
         <div class="empty-state">
           <div class="empty-state-icon">🛤️</div>
-          <p>Playoff journey data not available</p>
+          <p>Season journey data not available</p>
         </div>
       `;
       return;
     }
 
-    container.innerHTML = playoffGames.map(game => {
+    container.innerHTML = teamGames.map(game => {
       const home = game.homeTeam || game['home team'];
       const away = game.awayTeam || game['away team'];
       const homeScore = game.homeScore || game['home score'] || 0;
       const awayScore = game.awayScore || game['away score'] || 0;
       const winner = game.winner || game.Winner;
-      const round = game.round || game.playoff_round || 'Playoff';
+      const gameType = game.gameType || game.game_type || 'regular';
+      const isPlayoff = gameType.toLowerCase() === 'playoff';
+      const round = game.round || game.playoff_round || (isPlayoff ? 'Playoff' : 'Regular Season');
       const isChampionship = round.toLowerCase().includes('champ');
       
       const homeLower = (home || '').toLowerCase().replace(/\s+/g, '').replace(/_/g, '');
@@ -1536,7 +1555,7 @@
       const didWin = winnerLower.includes(championLower) || championLower.includes(winnerLower);
 
       return `
-        <div class="journey-step ${isChampionship ? 'championship' : ''}">
+        <div class="journey-step ${isChampionship ? 'championship' : ''} ${isPlayoff ? 'playoff' : ''}">
           <div class="journey-round">${round}</div>
           <div class="journey-result">
             <span class="${didWin ? 'win' : ''}">${didWin ? '✅ W' : '❌ L'}</span>
