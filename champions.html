@@ -847,24 +847,27 @@
       const championsSnap = await getDocs(collection(db, 'champions'));
       championsData = {};
       
-      championsSnap.forEach(doc => {
-        championsData[doc.id] = { id: doc.id, ...doc.data() };
+      championsSnap.forEach(docSnap => {
+        championsData[docSnap.id] = { id: docSnap.id, ...docSnap.data() };
       });
 
       console.log('🏆 Loaded champions:', Object.keys(championsData));
+      console.log('🏆 Champions data:', championsData);
 
       // Load seasons
       const seasonsSnap = await getDocs(collection(db, 'seasons'));
       allSeasons = [];
       
-      seasonsSnap.forEach(doc => {
-        const data = doc.data();
+      seasonsSnap.forEach(docSnap => {
+        const data = docSnap.data();
         allSeasons.push({
-          id: doc.id,
+          id: docSnap.id,
           ...data,
           startDate: data.startDate || data.start_date
         });
       });
+
+      console.log('📅 All seasons:', allSeasons.map(s => s.id));
 
       // Sort by date descending
       allSeasons.sort((a, b) => {
@@ -875,6 +878,7 @@
 
       // Filter to seasons that have champions in the champions collection
       const champSeasons = allSeasons.filter(s => championsData[s.id]);
+      console.log('🏆 Seasons with champions:', champSeasons.map(s => s.id));
 
       // Render season selector
       renderSeasonSelector(champSeasons);
@@ -883,6 +887,7 @@
       if (champSeasons.length > 0) {
         await loadSeasonData(champSeasons[0].id);
       } else {
+        console.log('⚠️ No champion seasons found');
         showNoChampion();
       }
 
@@ -924,6 +929,7 @@
 
   async function loadSeasonData(seasonId) {
     currentSeasonId = seasonId;
+    console.log('🏆 Loading season data for:', seasonId);
     
     // Update active button
     document.querySelectorAll('.season-btn').forEach(btn => {
@@ -934,16 +940,23 @@
       // Load season document
       const seasonDoc = await getDoc(doc(db, 'seasons', seasonId));
       seasonData = seasonDoc.exists() ? { id: seasonId, ...seasonDoc.data() } : { id: seasonId };
+      console.log('📅 Season doc exists:', seasonDoc.exists());
 
       // Load games from seasons/{seasonId}/games
       const gamesSnap = await getDocs(collection(db, 'seasons', seasonId, 'games'));
       seasonData.games = [];
-      gamesSnap.forEach(doc => {
-        seasonData.games.push({ id: doc.id, ...doc.data() });
+      gamesSnap.forEach(docSnap => {
+        seasonData.games.push({ id: docSnap.id, ...docSnap.data() });
       });
+      console.log('🎮 Games loaded:', seasonData.games.length);
+      if (seasonData.games.length > 0) {
+        console.log('🎮 Sample game:', seasonData.games[0]);
+      }
 
       // Load batting stats from aggregatedPlayerStats and filter by season
       const allPlayersSnap = await getDocs(collection(db, 'aggregatedPlayerStats'));
+      console.log('👥 Total players in aggregatedPlayerStats:', allPlayersSnap.size);
+      
       seasonData.batting = [];
       allPlayersSnap.forEach(docSnap => {
         const playerData = docSnap.data();
@@ -971,17 +984,29 @@
           });
         }
       });
+      console.log('⚾ Batting stats for season:', seasonData.batting.length);
+      if (seasonData.batting.length > 0) {
+        console.log('⚾ Sample batting:', seasonData.batting[0]);
+      }
+      
+      // Log available seasons from first player to help debug
+      if (allPlayersSnap.size > 0) {
+        const firstPlayer = allPlayersSnap.docs[0].data();
+        console.log('📊 Available seasons in first player:', Object.keys(firstPlayer.seasons || {}));
+      }
 
       // Load teams from top-level teams collection
       const teamsSnap = await getDocs(collection(db, 'teams'));
       seasonData.teams = {};
-      teamsSnap.forEach(doc => {
-        seasonData.teams[doc.id] = { id: doc.id, ...doc.data() };
+      teamsSnap.forEach(docSnap => {
+        seasonData.teams[docSnap.id] = { id: docSnap.id, ...docSnap.data() };
       });
+      console.log('🏟️ Teams loaded:', Object.keys(seasonData.teams).length);
 
       // Get champion from champions collection
       const championDoc = championsData[seasonId];
       const champion = championDoc?.team || findChampionFromGames(seasonData.games);
+      console.log('🏆 Champion:', champion);
 
       // Render everything
       renderChampionHero(champion, seasonId);
