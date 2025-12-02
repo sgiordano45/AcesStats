@@ -1,0 +1,1542 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<link rel="manifest" href="/manifest.json">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Champions - Mountainside Aces</title>
+<meta name="theme-color" content="#2d5016">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="stylesheet" href="mobile-enhancements.css">
+<link rel="stylesheet" href="nav-styles.css">
+<style>
+  :root {
+    --primary-color: #2d5016;
+    --secondary-color: #1a6b4a;
+    --accent-color: #ffd700;
+    --gold-gradient: linear-gradient(135deg, #ffd700 0%, #ffb300 100%);
+    --champion-gradient: linear-gradient(135deg, #ffd700 0%, #f0c14b 50%, #daa520 100%);
+    --card-bg: #ffffff;
+    --text-dark: #2d3748;
+    --text-light: #718096;
+    --border-color: #e2e8f0;
+    --shadow-sm: 0 2px 8px rgba(0,0,0,0.08);
+    --shadow-md: 0 4px 16px rgba(0,0,0,0.12);
+    --shadow-lg: 0 12px 32px rgba(0,0,0,0.16);
+    --shadow-gold: 0 8px 24px rgba(255,215,0,0.3);
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    margin: 0;
+    padding: 0;
+    background: linear-gradient(135deg, #f7fafc 0%, #edf2f7 100%);
+    min-height: 100vh;
+    line-height: 1.6;
+    color: var(--text-dark);
+  }
+
+  /* Loading Spinner */
+  .loading-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(255,255,255,0.95);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    transition: opacity 0.5s ease;
+  }
+
+  .loading-overlay.hidden {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .softball-spinner::before {
+    content: '⚾';
+    font-size: 80px;
+    animation: spin 1.5s ease-in-out infinite;
+  }
+
+  @keyframes spin {
+    0%, 100% { transform: rotate(0deg) scale(1); }
+    50% { transform: rotate(180deg) scale(1.1); }
+  }
+
+  .page-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 2rem;
+  }
+
+  /* Season Selector */
+  .season-selector {
+    display: flex;
+    justify-content: center;
+    gap: 1rem;
+    margin-bottom: 2rem;
+    flex-wrap: wrap;
+  }
+
+  .season-btn {
+    padding: 0.75rem 1.5rem;
+    border: 2px solid var(--primary-color);
+    background: white;
+    color: var(--primary-color);
+    border-radius: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+  }
+
+  .season-btn:hover, .season-btn.active {
+    background: var(--primary-color);
+    color: white;
+  }
+
+  /* Champion Hero Section */
+  .champion-hero {
+    background: var(--champion-gradient);
+    border-radius: 24px;
+    padding: 3rem;
+    margin-bottom: 2rem;
+    box-shadow: var(--shadow-gold);
+    position: relative;
+    overflow: hidden;
+    text-align: center;
+  }
+
+  .champion-hero::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: radial-gradient(circle, rgba(255,255,255,0.3) 0%, transparent 50%);
+    animation: shimmer 3s ease-in-out infinite;
+  }
+
+  @keyframes shimmer {
+    0%, 100% { transform: rotate(0deg); }
+    50% { transform: rotate(180deg); }
+  }
+
+  .champion-hero::after {
+    content: '🏆';
+    position: absolute;
+    bottom: -40px;
+    right: -20px;
+    font-size: 200px;
+    opacity: 0.15;
+  }
+
+  .champion-crown {
+    font-size: 4rem;
+    margin-bottom: 1rem;
+    position: relative;
+    z-index: 1;
+    animation: bounce 2s ease-in-out infinite;
+  }
+
+  @keyframes bounce {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-10px); }
+  }
+
+  .champion-title {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: #5d4e00;
+    text-transform: uppercase;
+    letter-spacing: 3px;
+    margin-bottom: 0.5rem;
+    position: relative;
+    z-index: 1;
+  }
+
+  .champion-team-name {
+    font-size: 3.5rem;
+    font-weight: 800;
+    color: #3d3200;
+    margin: 0;
+    position: relative;
+    z-index: 1;
+    text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
+  }
+
+  .champion-season {
+    font-size: 1.5rem;
+    color: #5d4e00;
+    margin-top: 0.5rem;
+    position: relative;
+    z-index: 1;
+  }
+
+  .champion-record {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: rgba(255,255,255,0.5);
+    padding: 0.5rem 1.5rem;
+    border-radius: 50px;
+    margin-top: 1rem;
+    font-weight: 600;
+    color: #3d3200;
+    position: relative;
+    z-index: 1;
+  }
+
+  /* Championship Game Card */
+  .championship-game {
+    background: var(--card-bg);
+    border-radius: 16px;
+    padding: 2rem;
+    margin-bottom: 2rem;
+    box-shadow: var(--shadow-md);
+    border: 3px solid var(--accent-color);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .championship-game::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 6px;
+    background: var(--gold-gradient);
+  }
+
+  .championship-game-header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .championship-game-header h2 {
+    margin: 0;
+    font-size: 1.5rem;
+    color: var(--text-dark);
+  }
+
+  .championship-matchup {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 2rem;
+    flex-wrap: wrap;
+  }
+
+  .championship-team {
+    text-align: center;
+    padding: 1.5rem;
+    border-radius: 12px;
+    min-width: 200px;
+    flex: 1;
+    max-width: 300px;
+  }
+
+  .championship-team.winner {
+    background: linear-gradient(135deg, rgba(255,215,0,0.15) 0%, rgba(255,179,0,0.1) 100%);
+    border: 2px solid var(--accent-color);
+  }
+
+  .championship-team.loser {
+    background: #f7fafc;
+    border: 2px solid var(--border-color);
+  }
+
+  .championship-team-name {
+    font-size: 1.25rem;
+    font-weight: 700;
+    margin-bottom: 0.5rem;
+  }
+
+  .championship-score {
+    font-size: 3rem;
+    font-weight: 800;
+    color: var(--primary-color);
+  }
+
+  .championship-team.winner .championship-score {
+    color: #b8860b;
+  }
+
+  .championship-vs {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--text-light);
+  }
+
+  .championship-details {
+    text-align: center;
+    margin-top: 1.5rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--border-color);
+    color: var(--text-light);
+  }
+
+  /* Section Cards */
+  .section-card {
+    background: var(--card-bg);
+    border-radius: 16px;
+    margin-bottom: 2rem;
+    box-shadow: var(--shadow-md);
+    overflow: hidden;
+    border: 1px solid var(--border-color);
+  }
+
+  .section-header {
+    background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+    color: white;
+    padding: 1.5rem 2rem;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .section-header.gold {
+    background: var(--gold-gradient);
+    color: #3d3200;
+  }
+
+  .section-header h2 {
+    margin: 0;
+    font-size: 1.5rem;
+    font-weight: 700;
+  }
+
+  .section-content {
+    padding: 2rem;
+  }
+
+  /* Player Cards Grid */
+  .players-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1.5rem;
+  }
+
+  .player-card {
+    background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
+    border-radius: 12px;
+    padding: 1.5rem;
+    border: 1px solid var(--border-color);
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .player-card:hover {
+    transform: translateY(-4px);
+    box-shadow: var(--shadow-md);
+    border-color: var(--primary-color);
+  }
+
+  .player-card.mvp {
+    border: 2px solid var(--accent-color);
+    background: linear-gradient(135deg, rgba(255,215,0,0.08) 0%, #ffffff 100%);
+  }
+
+  .player-card.mvp::before {
+    content: '👑 MVP';
+    position: absolute;
+    top: 0;
+    right: 0;
+    background: var(--gold-gradient);
+    color: #3d3200;
+    padding: 0.25rem 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 700;
+    border-bottom-left-radius: 8px;
+  }
+
+  .player-rank {
+    position: absolute;
+    top: 1rem;
+    left: 1rem;
+    width: 32px;
+    height: 32px;
+    background: var(--primary-color);
+    color: white;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 0.9rem;
+  }
+
+  .player-card.mvp .player-rank {
+    background: var(--gold-gradient);
+    color: #3d3200;
+  }
+
+  .player-info {
+    margin-left: 2.5rem;
+  }
+
+  .player-name {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--text-dark);
+    margin-bottom: 0.25rem;
+  }
+
+  .player-name a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  .player-name a:hover {
+    color: var(--primary-color);
+  }
+
+  .player-team {
+    font-size: 0.9rem;
+    color: var(--text-light);
+    margin-bottom: 1rem;
+  }
+
+  .player-stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.5rem;
+    font-size: 0.85rem;
+  }
+
+  .player-stat {
+    text-align: center;
+    padding: 0.5rem;
+    background: rgba(45,80,22,0.05);
+    border-radius: 8px;
+  }
+
+  .player-stat-value {
+    font-weight: 700;
+    color: var(--primary-color);
+    font-size: 1.1rem;
+  }
+
+  .player-stat-label {
+    color: var(--text-light);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+  }
+
+  /* Games List */
+  .games-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .game-card {
+    background: #f8f9fa;
+    border-radius: 12px;
+    padding: 1.25rem 1.5rem;
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    border: 1px solid var(--border-color);
+    transition: all 0.3s ease;
+  }
+
+  .game-card:hover {
+    transform: translateX(4px);
+    border-color: var(--primary-color);
+  }
+
+  .game-rank {
+    width: 40px;
+    height: 40px;
+    background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+    color: white;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+
+  .game-rank.gold {
+    background: var(--gold-gradient);
+    color: #3d3200;
+  }
+
+  .game-info {
+    flex: 1;
+  }
+
+  .game-matchup {
+    font-weight: 700;
+    font-size: 1.1rem;
+    color: var(--text-dark);
+    margin-bottom: 0.25rem;
+  }
+
+  .game-matchup .winner {
+    color: var(--primary-color);
+  }
+
+  .game-date {
+    font-size: 0.85rem;
+    color: var(--text-light);
+  }
+
+  .game-score {
+    font-size: 1.5rem;
+    font-weight: 800;
+    color: var(--primary-color);
+    text-align: right;
+  }
+
+  .game-type {
+    font-size: 0.75rem;
+    color: white;
+    background: var(--secondary-color);
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    text-transform: uppercase;
+    font-weight: 600;
+  }
+
+  .game-type.championship {
+    background: var(--gold-gradient);
+    color: #3d3200;
+  }
+
+  /* Playoff Journey */
+  .playoff-journey {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .journey-step {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1rem 1.5rem;
+    background: #f8f9fa;
+    border-radius: 12px;
+    border-left: 4px solid var(--primary-color);
+  }
+
+  .journey-step.championship {
+    border-left-color: var(--accent-color);
+    background: linear-gradient(90deg, rgba(255,215,0,0.1) 0%, #f8f9fa 100%);
+  }
+
+  .journey-round {
+    font-weight: 600;
+    color: var(--text-light);
+    min-width: 140px;
+  }
+
+  .journey-result {
+    flex: 1;
+    font-weight: 600;
+    color: var(--text-dark);
+  }
+
+  .journey-result .win {
+    color: var(--primary-color);
+  }
+
+  .journey-score {
+    font-weight: 700;
+    color: var(--primary-color);
+  }
+
+  /* Stats Leaders Table */
+  .leaders-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  .leaders-table th {
+    background: var(--primary-color);
+    color: white;
+    padding: 0.75rem 1rem;
+    text-align: left;
+    font-weight: 600;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+  }
+
+  .leaders-table th:first-child {
+    border-top-left-radius: 8px;
+  }
+
+  .leaders-table th:last-child {
+    border-top-right-radius: 8px;
+  }
+
+  .leaders-table td {
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  .leaders-table tr:hover {
+    background: #f7fafc;
+  }
+
+  .leaders-table .rank-cell {
+    width: 50px;
+    text-align: center;
+    font-weight: 700;
+    color: var(--text-light);
+  }
+
+  .leaders-table .stat-value {
+    font-weight: 700;
+    color: var(--primary-color);
+  }
+
+  /* Empty State */
+  .empty-state {
+    text-align: center;
+    padding: 3rem;
+    color: var(--text-light);
+  }
+
+  .empty-state-icon {
+    font-size: 4rem;
+    margin-bottom: 1rem;
+    opacity: 0.5;
+  }
+
+  /* All-Time Champions */
+  .champions-timeline {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .timeline-item {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    padding: 1.25rem 1.5rem;
+    background: #f8f9fa;
+    border-radius: 12px;
+    border: 1px solid var(--border-color);
+    transition: all 0.3s ease;
+  }
+
+  .timeline-item:hover {
+    transform: translateX(4px);
+    border-color: var(--accent-color);
+  }
+
+  .timeline-item.current {
+    background: linear-gradient(90deg, rgba(255,215,0,0.15) 0%, #f8f9fa 100%);
+    border: 2px solid var(--accent-color);
+  }
+
+  .timeline-season {
+    min-width: 120px;
+    font-weight: 700;
+    color: var(--text-dark);
+  }
+
+  .timeline-team {
+    flex: 1;
+    font-weight: 600;
+    color: var(--primary-color);
+  }
+
+  .timeline-trophy {
+    font-size: 1.5rem;
+  }
+
+  /* Responsive */
+  @media (max-width: 768px) {
+    .page-container {
+      padding: 1rem;
+    }
+
+    .champion-hero {
+      padding: 2rem 1.5rem;
+    }
+
+    .champion-team-name {
+      font-size: 2.5rem;
+    }
+
+    .championship-matchup {
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    .championship-team {
+      min-width: 100%;
+    }
+
+    .championship-vs {
+      display: none;
+    }
+
+    .players-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .game-card {
+      flex-wrap: wrap;
+    }
+
+    .game-score {
+      width: 100%;
+      text-align: center;
+      margin-top: 0.5rem;
+    }
+
+    .journey-step {
+      flex-wrap: wrap;
+    }
+
+    .journey-round {
+      width: 100%;
+    }
+  }
+</style>
+</head>
+<body>
+
+<div class="loading-overlay" id="loadingOverlay">
+  <div class="softball-spinner"></div>
+</div>
+
+<nav id="nav-placeholder"></nav>
+
+<div class="page-container">
+  
+  <!-- Season Selector -->
+  <div class="season-selector" id="seasonSelector">
+    <!-- Populated by JavaScript -->
+  </div>
+
+  <!-- Champion Hero -->
+  <div class="champion-hero" id="championHero">
+    <div class="champion-crown">🏆</div>
+    <div class="champion-title">League Champions</div>
+    <h1 class="champion-team-name" id="championTeamName">Loading...</h1>
+    <div class="champion-season" id="championSeason"></div>
+    <div class="champion-record" id="championRecord"></div>
+  </div>
+
+  <!-- Championship Game -->
+  <div class="championship-game" id="championshipGame">
+    <div class="championship-game-header">
+      <span style="font-size: 1.5rem;">🏆</span>
+      <h2>Championship Game</h2>
+    </div>
+    <div id="championshipGameContent">
+      <!-- Populated by JavaScript -->
+    </div>
+  </div>
+
+  <!-- Top Performers -->
+  <div class="section-card">
+    <div class="section-header gold">
+      <span style="font-size: 1.5rem;">⭐</span>
+      <h2>Playoff Stars</h2>
+    </div>
+    <div class="section-content">
+      <div class="players-grid" id="playoffStars">
+        <!-- Populated by JavaScript -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Championship Team Roster -->
+  <div class="section-card">
+    <div class="section-header">
+      <span style="font-size: 1.5rem;">👥</span>
+      <h2 id="rosterHeader">Champion Roster</h2>
+    </div>
+    <div class="section-content">
+      <div class="players-grid" id="championRoster">
+        <!-- Populated by JavaScript -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Playoff Journey -->
+  <div class="section-card">
+    <div class="section-header">
+      <span style="font-size: 1.5rem;">🛤️</span>
+      <h2>Road to the Championship</h2>
+    </div>
+    <div class="section-content">
+      <div class="playoff-journey" id="playoffJourney">
+        <!-- Populated by JavaScript -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Top Playoff Games -->
+  <div class="section-card">
+    <div class="section-header">
+      <span style="font-size: 1.5rem;">🔥</span>
+      <h2>Top Playoff Games</h2>
+    </div>
+    <div class="section-content">
+      <div class="games-list" id="topGames">
+        <!-- Populated by JavaScript -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Playoff Statistical Leaders -->
+  <div class="section-card">
+    <div class="section-header">
+      <span style="font-size: 1.5rem;">📊</span>
+      <h2>Playoff Leaders</h2>
+    </div>
+    <div class="section-content">
+      <div style="overflow-x: auto;">
+        <table class="leaders-table" id="playoffLeaders">
+          <!-- Populated by JavaScript -->
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- All-Time Champions -->
+  <div class="section-card">
+    <div class="section-header gold">
+      <span style="font-size: 1.5rem;">🏆</span>
+      <h2>Championship History</h2>
+    </div>
+    <div class="section-content">
+      <div class="champions-timeline" id="championsTimeline">
+        <!-- Populated by JavaScript -->
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script type="module">
+  import { getFirestore, collection, doc, getDoc, getDocs, query, where, orderBy, limit } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+  import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+  import { NavigationComponent } from './nav-component.js';
+
+  // Firebase configuration
+  const firebaseConfig = {
+    apiKey: "AIzaSyBJK3OU6R1xYvtPl5Ddxs1DH5YcN1Y0nC0",
+    authDomain: "aces-39377.firebaseapp.com",
+    projectId: "aces-39377",
+    storageBucket: "aces-39377.firebasestorage.app",
+    messagingSenderId: "130401007797",
+    appId: "1:130401007797:web:02b04c23ab9a0e56dd5b8e",
+    measurementId: "G-VQ4KQGK5TL"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+
+  let allSeasons = [];
+  let championsData = {}; // Map of seasonId -> champion data from Firebase
+  let currentSeasonId = null;
+  let seasonData = {};
+
+  async function init() {
+    try {
+      // Load champions collection first
+      const championsSnap = await getDocs(collection(db, 'champions'));
+      championsData = {};
+      
+      championsSnap.forEach(doc => {
+        championsData[doc.id] = { id: doc.id, ...doc.data() };
+      });
+
+      console.log('🏆 Loaded champions:', Object.keys(championsData));
+
+      // Load seasons
+      const seasonsSnap = await getDocs(collection(db, 'seasons'));
+      allSeasons = [];
+      
+      seasonsSnap.forEach(doc => {
+        const data = doc.data();
+        allSeasons.push({
+          id: doc.id,
+          ...data,
+          startDate: data.startDate || data.start_date
+        });
+      });
+
+      // Sort by date descending
+      allSeasons.sort((a, b) => {
+        const dateA = a.startDate ? new Date(a.startDate) : new Date(0);
+        const dateB = b.startDate ? new Date(b.startDate) : new Date(0);
+        return dateB - dateA;
+      });
+
+      // Filter to seasons that have champions in the champions collection
+      const champSeasons = allSeasons.filter(s => championsData[s.id]);
+
+      // Render season selector
+      renderSeasonSelector(champSeasons);
+
+      // Load most recent season with a champion
+      if (champSeasons.length > 0) {
+        await loadSeasonData(champSeasons[0].id);
+      } else {
+        showNoChampion();
+      }
+
+    } catch (error) {
+      console.error('Error initializing:', error);
+      showError();
+    } finally {
+      document.getElementById('loadingOverlay').classList.add('hidden');
+    }
+  }
+
+  function renderSeasonSelector(seasons) {
+    const container = document.getElementById('seasonSelector');
+    container.innerHTML = seasons.map(s => {
+      const displayName = formatSeasonName(s.id);
+      return `<button class="season-btn" data-season="${s.id}">${displayName}</button>`;
+    }).join('');
+
+    // Add click handlers
+    container.querySelectorAll('.season-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        container.querySelectorAll('.season-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        loadSeasonData(btn.dataset.season);
+      });
+    });
+  }
+
+  function formatSeasonName(seasonId) {
+    // Convert "2025-fall" to "Fall 2025"
+    const parts = seasonId.split('-');
+    if (parts.length >= 2) {
+      const year = parts[0];
+      const season = parts[1].charAt(0).toUpperCase() + parts[1].slice(1);
+      return `${season} ${year}`;
+    }
+    return seasonId;
+  }
+
+  async function loadSeasonData(seasonId) {
+    currentSeasonId = seasonId;
+    
+    // Update active button
+    document.querySelectorAll('.season-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.season === seasonId);
+    });
+
+    try {
+      // Load season data
+      const seasonDoc = await getDoc(doc(db, 'seasons', seasonId));
+      seasonData = seasonDoc.exists() ? { id: seasonId, ...seasonDoc.data() } : { id: seasonId };
+
+      // Load games
+      const gamesSnap = await getDocs(collection(db, 'seasons', seasonId, 'games'));
+      seasonData.games = [];
+      gamesSnap.forEach(doc => {
+        seasonData.games.push({ id: doc.id, ...doc.data() });
+      });
+
+      // Load batting stats
+      const battingSnap = await getDocs(collection(db, 'seasons', seasonId, 'batting'));
+      seasonData.batting = [];
+      battingSnap.forEach(doc => {
+        seasonData.batting.push({ id: doc.id, ...doc.data() });
+      });
+
+      // Load teams for this season
+      const teamsSnap = await getDocs(collection(db, 'seasons', seasonId, 'teams'));
+      seasonData.teams = {};
+      teamsSnap.forEach(doc => {
+        seasonData.teams[doc.id] = { id: doc.id, ...doc.data() };
+      });
+
+      // Determine champion from champions collection
+      const championDoc = championsData[seasonId];
+      const champion = championDoc?.team || findChampionFromGames(seasonData.games);
+
+      // Render everything
+      renderChampionHero(champion, seasonId);
+      renderChampionshipGame(champion, seasonData.games);
+      renderPlayoffStars(champion, seasonData);
+      renderChampionRoster(champion, seasonData);
+      renderPlayoffJourney(champion, seasonData.games);
+      renderTopGames(seasonData.games);
+      renderPlayoffLeaders(seasonData);
+      renderChampionsTimeline(seasonId);
+
+    } catch (error) {
+      console.error('Error loading season data:', error);
+      showError();
+    }
+  }
+
+  function findChampionFromGames(games) {
+    // Find championship game
+    const champGame = games.find(g => 
+      (g.gameType === 'playoff' || g.game_type === 'Playoff') &&
+      (g.round?.toLowerCase().includes('champ') || g.playoff_round?.toLowerCase().includes('champ'))
+    );
+    
+    if (champGame) {
+      const winner = champGame.winner || champGame.Winner;
+      if (winner && winner.toLowerCase() !== 'tie') {
+        return winner;
+      }
+    }
+    return null;
+  }
+
+  function renderChampionHero(champion, seasonId) {
+    const teamName = champion ? formatTeamName(champion) : 'No Champion Yet';
+    const seasonName = formatSeasonName(seasonId);
+    const championDoc = championsData[seasonId] || {};
+    
+    document.getElementById('championTeamName').textContent = teamName;
+    document.getElementById('championSeason').textContent = seasonName + ' Champions';
+    
+    // Build record/info line
+    let infoHtml = '';
+    
+    // Calculate record if we have games
+    const record = calculateTeamRecord(champion, seasonData.games);
+    if (record) {
+      infoHtml = `⚾ ${record.wins}-${record.losses}${record.ties ? '-' + record.ties : ''} Overall`;
+    }
+    
+    // Add runner-up if available
+    if (championDoc.runnerUp) {
+      if (infoHtml) infoHtml += ' • ';
+      infoHtml += `Runner-up: ${formatTeamName(championDoc.runnerUp)}`;
+    }
+    
+    document.getElementById('championRecord').innerHTML = infoHtml;
+  }
+
+  function formatTeamName(teamId) {
+    if (!teamId) return 'Unknown';
+    return teamId
+      .replace(/_/g, ' ')
+      .replace(/([A-Z])/g, ' $1')
+      .replace(/^\s+/, '')
+      .trim();
+  }
+
+  function calculateTeamRecord(teamName, games) {
+    if (!teamName || !games) return null;
+    
+    const teamLower = teamName.toLowerCase().replace(/\s+/g, '').replace(/_/g, '');
+    let wins = 0, losses = 0, ties = 0;
+
+    games.forEach(game => {
+      const home = (game.homeTeam || game['home team'] || '').toLowerCase().replace(/\s+/g, '').replace(/_/g, '');
+      const away = (game.awayTeam || game['away team'] || '').toLowerCase().replace(/\s+/g, '').replace(/_/g, '');
+      const winner = (game.winner || game.Winner || '').toLowerCase().replace(/\s+/g, '').replace(/_/g, '');
+      
+      if (home !== teamLower && away !== teamLower) return;
+      
+      if (winner === 'tie') {
+        ties++;
+      } else if (winner === teamLower || winner === home && home === teamLower || winner === away && away === teamLower) {
+        wins++;
+      } else if (home === teamLower || away === teamLower) {
+        losses++;
+      }
+    });
+
+    return { wins, losses, ties };
+  }
+
+  function renderChampionshipGame(champion, games) {
+    const container = document.getElementById('championshipGameContent');
+    
+    // Find championship game
+    const champGame = games.find(g => 
+      (g.gameType === 'playoff' || g.game_type === 'Playoff') &&
+      (g.round?.toLowerCase().includes('champ') || g.playoff_round?.toLowerCase().includes('champ'))
+    );
+
+    if (!champGame) {
+      container.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-state-icon">🏆</div>
+          <p>Championship game details not available</p>
+        </div>
+      `;
+      return;
+    }
+
+    const homeTeam = champGame.homeTeam || champGame['home team'];
+    const awayTeam = champGame.awayTeam || champGame['away team'];
+    const homeScore = champGame.homeScore || champGame['home score'] || 0;
+    const awayScore = champGame.awayScore || champGame['away score'] || 0;
+    const winner = (champGame.winner || champGame.Winner || '').toLowerCase();
+    const gameDate = champGame.date || champGame.Date;
+
+    const homeIsWinner = winner.includes(homeTeam?.toLowerCase().replace(/\s+/g, '').replace(/_/g, ''));
+    const awayIsWinner = winner.includes(awayTeam?.toLowerCase().replace(/\s+/g, '').replace(/_/g, ''));
+
+    container.innerHTML = `
+      <div class="championship-matchup">
+        <div class="championship-team ${awayIsWinner ? 'winner' : 'loser'}">
+          <div class="championship-team-name">${formatTeamName(awayTeam)}</div>
+          <div class="championship-score">${awayScore}</div>
+          ${awayIsWinner ? '<div style="color: #b8860b; font-weight: 600;">🏆 CHAMPION</div>' : ''}
+        </div>
+        <div class="championship-vs">VS</div>
+        <div class="championship-team ${homeIsWinner ? 'winner' : 'loser'}">
+          <div class="championship-team-name">${formatTeamName(homeTeam)}</div>
+          <div class="championship-score">${homeScore}</div>
+          ${homeIsWinner ? '<div style="color: #b8860b; font-weight: 600;">🏆 CHAMPION</div>' : ''}
+        </div>
+      </div>
+      ${gameDate ? `
+        <div class="championship-details">
+          📅 ${formatDate(gameDate)}
+        </div>
+      ` : ''}
+    `;
+  }
+
+  function formatDate(dateStr) {
+    if (!dateStr) return '';
+    try {
+      const date = new Date(dateStr);
+      return date.toLocaleDateString('en-US', { 
+        weekday: 'long', 
+        year: 'numeric', 
+        month: 'long', 
+        day: 'numeric' 
+      });
+    } catch {
+      return dateStr;
+    }
+  }
+
+  function renderPlayoffStars(champion, data) {
+    const container = document.getElementById('playoffStars');
+    const championDoc = championsData[currentSeasonId] || {};
+    const mvpId = championDoc.mvp; // Player ID if MVP is specified in champions collection
+    
+    // Get playoff games
+    const playoffGames = data.games.filter(g => 
+      g.gameType === 'playoff' || g.game_type === 'Playoff'
+    );
+
+    if (playoffGames.length === 0 || !data.batting || data.batting.length === 0) {
+      container.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-state-icon">⭐</div>
+          <p>Playoff statistics not available</p>
+        </div>
+      `;
+      return;
+    }
+
+    // For now, show top performers from the season (ideally we'd have playoff-specific stats)
+    // Sort by AcesBPI or batting average
+    let topPlayers = [...data.batting]
+      .filter(p => p.games >= 3)
+      .sort((a, b) => {
+        const bpiA = a.acesBPI || a.AcesWar || a.acesBpi || 0;
+        const bpiB = b.acesBPI || b.AcesWar || b.acesBpi || 0;
+        return bpiB - bpiA;
+      })
+      .slice(0, 6);
+
+    // If MVP is specified, ensure they're first
+    if (mvpId) {
+      const mvpIndex = topPlayers.findIndex(p => {
+        const playerId = p.id || p.playerId || p.name?.toLowerCase().replace(/\s+/g, '_');
+        return playerId === mvpId || p.name?.toLowerCase().replace(/\s+/g, '_') === mvpId;
+      });
+      
+      if (mvpIndex > 0) {
+        // Move MVP to front
+        const [mvpPlayer] = topPlayers.splice(mvpIndex, 1);
+        topPlayers.unshift(mvpPlayer);
+      } else if (mvpIndex === -1) {
+        // MVP not in top 6, find them in full data and add to front
+        const mvpPlayer = data.batting.find(p => {
+          const playerId = p.id || p.playerId || p.name?.toLowerCase().replace(/\s+/g, '_');
+          return playerId === mvpId || p.name?.toLowerCase().replace(/\s+/g, '_') === mvpId;
+        });
+        if (mvpPlayer) {
+          topPlayers.unshift(mvpPlayer);
+          topPlayers = topPlayers.slice(0, 6);
+        }
+      }
+    }
+
+    container.innerHTML = topPlayers.map((player, index) => {
+      const playerId = player.id || player.playerId || player.name?.toLowerCase().replace(/\s+/g, '_');
+      const bpi = player.acesBPI || player.AcesWar || player.acesBpi || 0;
+      const ba = player.ba || player.avg || player.battingAverage || 0;
+      const hits = player.hits || player.h || 0;
+      const runs = player.runs || player.r || 0;
+      
+      // Check if this player is the designated MVP
+      const isMvp = mvpId ? (playerId === mvpId || player.name?.toLowerCase().replace(/\s+/g, '_') === mvpId) : (index === 0);
+      
+      return `
+        <div class="player-card ${isMvp ? 'mvp' : ''}">
+          <div class="player-rank">${index + 1}</div>
+          <div class="player-info">
+            <div class="player-name">
+              <a href="player.html?id=${encodeURIComponent(playerId)}">${player.name || 'Unknown'}</a>
+            </div>
+            <div class="player-team">${formatTeamName(player.team || player.teamId)}</div>
+            <div class="player-stats">
+              <div class="player-stat">
+                <div class="player-stat-value">${ba.toFixed(3)}</div>
+                <div class="player-stat-label">AVG</div>
+              </div>
+              <div class="player-stat">
+                <div class="player-stat-value">${hits}</div>
+                <div class="player-stat-label">Hits</div>
+              </div>
+              <div class="player-stat">
+                <div class="player-stat-value">${bpi.toFixed(2)}</div>
+                <div class="player-stat-label">BPI</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  function renderChampionRoster(champion, data) {
+    const container = document.getElementById('championRoster');
+    const header = document.getElementById('rosterHeader');
+    
+    if (!champion) {
+      container.innerHTML = '<div class="empty-state"><p>No champion data available</p></div>';
+      return;
+    }
+
+    header.textContent = `${formatTeamName(champion)} Roster`;
+
+    // Find players from champion team
+    const championLower = champion.toLowerCase().replace(/\s+/g, '').replace(/_/g, '');
+    const teamPlayers = data.batting
+      .filter(p => {
+        const teamName = (p.team || p.teamId || '').toLowerCase().replace(/\s+/g, '').replace(/_/g, '');
+        return teamName === championLower || teamName.includes(championLower) || championLower.includes(teamName);
+      })
+      .sort((a, b) => {
+        const bpiA = a.acesBPI || a.AcesWar || a.acesBpi || 0;
+        const bpiB = b.acesBPI || b.AcesWar || b.acesBpi || 0;
+        return bpiB - bpiA;
+      });
+
+    if (teamPlayers.length === 0) {
+      container.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-state-icon">👥</div>
+          <p>Roster data not available</p>
+        </div>
+      `;
+      return;
+    }
+
+    container.innerHTML = teamPlayers.map((player, index) => {
+      const playerId = player.id || player.playerId || player.name?.toLowerCase().replace(/\s+/g, '_');
+      const ba = player.ba || player.avg || player.battingAverage || 0;
+      const hits = player.hits || player.h || 0;
+      const runs = player.runs || player.r || 0;
+      const games = player.games || player.g || 0;
+      
+      return `
+        <div class="player-card">
+          <div class="player-rank">${index + 1}</div>
+          <div class="player-info">
+            <div class="player-name">
+              <a href="player.html?id=${encodeURIComponent(playerId)}">${player.name || 'Unknown'}</a>
+            </div>
+            <div class="player-team">${games} games played</div>
+            <div class="player-stats">
+              <div class="player-stat">
+                <div class="player-stat-value">${ba.toFixed(3)}</div>
+                <div class="player-stat-label">AVG</div>
+              </div>
+              <div class="player-stat">
+                <div class="player-stat-value">${hits}</div>
+                <div class="player-stat-label">Hits</div>
+              </div>
+              <div class="player-stat">
+                <div class="player-stat-value">${runs}</div>
+                <div class="player-stat-label">Runs</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  function renderPlayoffJourney(champion, games) {
+    const container = document.getElementById('playoffJourney');
+    
+    if (!champion) {
+      container.innerHTML = '<div class="empty-state"><p>No playoff journey available</p></div>';
+      return;
+    }
+
+    const championLower = champion.toLowerCase().replace(/\s+/g, '').replace(/_/g, '');
+    
+    // Get playoff games involving the champion
+    const playoffGames = games
+      .filter(g => g.gameType === 'playoff' || g.game_type === 'Playoff')
+      .filter(g => {
+        const home = (g.homeTeam || g['home team'] || '').toLowerCase().replace(/\s+/g, '').replace(/_/g, '');
+        const away = (g.awayTeam || g['away team'] || '').toLowerCase().replace(/\s+/g, '').replace(/_/g, '');
+        return home.includes(championLower) || away.includes(championLower) || 
+               championLower.includes(home) || championLower.includes(away);
+      })
+      .sort((a, b) => {
+        const dateA = new Date(a.date || a.Date || 0);
+        const dateB = new Date(b.date || b.Date || 0);
+        return dateA - dateB;
+      });
+
+    if (playoffGames.length === 0) {
+      container.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-state-icon">🛤️</div>
+          <p>Playoff journey data not available</p>
+        </div>
+      `;
+      return;
+    }
+
+    container.innerHTML = playoffGames.map(game => {
+      const home = game.homeTeam || game['home team'];
+      const away = game.awayTeam || game['away team'];
+      const homeScore = game.homeScore || game['home score'] || 0;
+      const awayScore = game.awayScore || game['away score'] || 0;
+      const winner = game.winner || game.Winner;
+      const round = game.round || game.playoff_round || 'Playoff';
+      const isChampionship = round.toLowerCase().includes('champ');
+      
+      const homeLower = (home || '').toLowerCase().replace(/\s+/g, '').replace(/_/g, '');
+      const awayLower = (away || '').toLowerCase().replace(/\s+/g, '').replace(/_/g, '');
+      
+      const championIsHome = homeLower.includes(championLower) || championLower.includes(homeLower);
+      const opponent = championIsHome ? away : home;
+      const champScore = championIsHome ? homeScore : awayScore;
+      const oppScore = championIsHome ? awayScore : homeScore;
+      
+      const winnerLower = (winner || '').toLowerCase().replace(/\s+/g, '').replace(/_/g, '');
+      const didWin = winnerLower.includes(championLower) || championLower.includes(winnerLower);
+
+      return `
+        <div class="journey-step ${isChampionship ? 'championship' : ''}">
+          <div class="journey-round">${round}</div>
+          <div class="journey-result">
+            <span class="${didWin ? 'win' : ''}">${didWin ? '✅ W' : '❌ L'}</span>
+            vs ${formatTeamName(opponent)}
+          </div>
+          <div class="journey-score">${champScore} - ${oppScore}</div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  function renderTopGames(games) {
+    const container = document.getElementById('topGames');
+    
+    const playoffGames = games
+      .filter(g => g.gameType === 'playoff' || g.game_type === 'Playoff')
+      .map(g => {
+        const homeScore = parseInt(g.homeScore || g['home score'] || 0);
+        const awayScore = parseInt(g.awayScore || g['away score'] || 0);
+        const totalRuns = homeScore + awayScore;
+        const margin = Math.abs(homeScore - awayScore);
+        
+        // Score: close games with high runs are best
+        const excitement = totalRuns + (margin <= 2 ? 10 : margin <= 4 ? 5 : 0);
+        
+        return { ...g, excitement, totalRuns, margin };
+      })
+      .sort((a, b) => b.excitement - a.excitement)
+      .slice(0, 5);
+
+    if (playoffGames.length === 0) {
+      container.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-state-icon">🔥</div>
+          <p>No playoff games available</p>
+        </div>
+      `;
+      return;
+    }
+
+    container.innerHTML = playoffGames.map((game, index) => {
+      const home = game.homeTeam || game['home team'];
+      const away = game.awayTeam || game['away team'];
+      const homeScore = game.homeScore || game['home score'];
+      const awayScore = game.awayScore || game['away score'];
+      const winner = game.winner || game.Winner;
+      const round = game.round || game.playoff_round || 'Playoff';
+      const gameDate = game.date || game.Date;
+      const isChampionship = round.toLowerCase().includes('champ');
+
+      return `
+        <div class="game-card">
+          <div class="game-rank ${isChampionship ? 'gold' : ''}">${index + 1}</div>
+          <div class="game-info">
+            <div class="game-matchup">
+              ${formatTeamName(away)} @ ${formatTeamName(home)}
+            </div>
+            <div class="game-date">${gameDate ? formatDate(gameDate) : round}</div>
+          </div>
+          <div class="game-type ${isChampionship ? 'championship' : ''}">${round}</div>
+          <div class="game-score">${awayScore} - ${homeScore}</div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  function renderPlayoffLeaders(data) {
+    const container = document.getElementById('playoffLeaders');
+    
+    if (!data.batting || data.batting.length === 0) {
+      container.innerHTML = '';
+      container.parentElement.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-state-icon">📊</div>
+          <p>Playoff statistics not available</p>
+        </div>
+      `;
+      return;
+    }
+
+    // Get top players in different categories
+    const qualified = data.batting.filter(p => (p.games || p.g || 0) >= 3);
+    
+    const topBA = [...qualified].sort((a, b) => (b.ba || b.avg || 0) - (a.ba || a.avg || 0)).slice(0, 5);
+    const topHits = [...qualified].sort((a, b) => (b.hits || b.h || 0) - (a.hits || a.h || 0)).slice(0, 5);
+    const topRuns = [...qualified].sort((a, b) => (b.runs || b.r || 0) - (a.runs || a.r || 0)).slice(0, 5);
+
+    container.innerHTML = `
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Player</th>
+          <th>Team</th>
+          <th>AVG</th>
+          <th>Hits</th>
+          <th>Runs</th>
+          <th>Games</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${topBA.map((player, index) => {
+          const playerId = player.id || player.playerId || player.name?.toLowerCase().replace(/\s+/g, '_');
+          return `
+            <tr>
+              <td class="rank-cell">${index + 1}</td>
+              <td><a href="player.html?id=${encodeURIComponent(playerId)}">${player.name}</a></td>
+              <td>${formatTeamName(player.team || player.teamId)}</td>
+              <td class="stat-value">${(player.ba || player.avg || 0).toFixed(3)}</td>
+              <td>${player.hits || player.h || 0}</td>
+              <td>${player.runs || player.r || 0}</td>
+              <td>${player.games || player.g || 0}</td>
+            </tr>
+          `;
+        }).join('')}
+      </tbody>
+    `;
+  }
+
+  function renderChampionsTimeline(currentSeason) {
+    const container = document.getElementById('championsTimeline');
+    
+    // Get all seasons with champions from the champions collection
+    const champSeasons = allSeasons
+      .filter(s => championsData[s.id])
+      .sort((a, b) => {
+        const dateA = a.startDate ? new Date(a.startDate) : new Date(0);
+        const dateB = b.startDate ? new Date(b.startDate) : new Date(0);
+        return dateB - dateA;
+      });
+
+    if (champSeasons.length === 0) {
+      container.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-state-icon">🏆</div>
+          <p>Championship history not available</p>
+        </div>
+      `;
+      return;
+    }
+
+    container.innerHTML = champSeasons.map(season => {
+      const championDoc = championsData[season.id];
+      const champion = championDoc?.team;
+      const isCurrent = season.id === currentSeason;
+      
+      return `
+        <div class="timeline-item ${isCurrent ? 'current' : ''}" onclick="loadSeasonData('${season.id}')">
+          <div class="timeline-season">${formatSeasonName(season.id)}</div>
+          <div class="timeline-team">${formatTeamName(champion)}</div>
+          <div class="timeline-trophy">🏆</div>
+        </div>
+      `;
+    }).join('');
+
+    // Make timeline items clickable
+    container.querySelectorAll('.timeline-item').forEach(item => {
+      item.style.cursor = 'pointer';
+    });
+  }
+
+  function showNoChampion() {
+    document.getElementById('championTeamName').textContent = 'No Champion Yet';
+    document.getElementById('championSeason').textContent = 'Season in progress';
+    document.getElementById('championRecord').innerHTML = '';
+  }
+
+  function showError() {
+    document.getElementById('championTeamName').textContent = 'Error Loading Data';
+    document.getElementById('championSeason').textContent = 'Please try again later';
+  }
+
+  // Make loadSeasonData available globally for timeline clicks
+  window.loadSeasonData = loadSeasonData;
+
+  // Initialize on load
+  window.addEventListener('load', () => {
+    setTimeout(() => {
+      document.getElementById('loadingOverlay').classList.add('hidden');
+    }, 500);
+  });
+
+  init();
+</script>
+
+<script src="team-colors.js"></script>
+<script src="mobile-enhancements.js"></script>
+</body>
+</html>
