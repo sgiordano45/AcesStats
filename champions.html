@@ -853,6 +853,11 @@
 
       console.log('🏆 Loaded champions:', Object.keys(championsData));
       console.log('🏆 Champions data:', championsData);
+      
+      // Show each champion's season ID to verify format
+      Object.entries(championsData).forEach(([seasonId, data]) => {
+        console.log(`  - ${seasonId}: ${data.team}`);
+      });
 
       // Load seasons
       const seasonsSnap = await getDocs(collection(db, 'seasons'));
@@ -869,7 +874,7 @@
 
       console.log('📅 All seasons:', allSeasons.map(s => s.id));
 
-      // Sort by date descending
+      // Sort by date descending (most recent first)
       allSeasons.sort((a, b) => {
         const dateA = a.startDate ? new Date(a.startDate) : new Date(0);
         const dateB = b.startDate ? new Date(b.startDate) : new Date(0);
@@ -877,8 +882,29 @@
       });
 
       // Filter to seasons that have champions in the champions collection
-      const champSeasons = allSeasons.filter(s => championsData[s.id]);
-      console.log('🏆 Seasons with champions:', champSeasons.map(s => s.id));
+      let champSeasons = allSeasons.filter(s => championsData[s.id]);
+      
+      console.log('🏆 Seasons with champions (before sort):', champSeasons.map(s => s.id));
+      
+      // Ensure proper sorting: most recent first (2025-fall, 2025-summer, 2024-fall, etc.)
+      champSeasons.sort((a, b) => {
+        const partsA = a.id.split('-');
+        const partsB = b.id.split('-');
+        const yearA = parseInt(partsA[0]) || 0;
+        const yearB = parseInt(partsB[0]) || 0;
+        const seasonA = (partsA[1] || '').toLowerCase();
+        const seasonB = (partsB[1] || '').toLowerCase();
+        
+        // Sort by year descending
+        if (yearA !== yearB) return yearB - yearA;
+        
+        // Within same year: fall comes after summer, so fall should appear first
+        if (seasonA === 'fall' && seasonB === 'summer') return -1;
+        if (seasonA === 'summer' && seasonB === 'fall') return 1;
+        return 0;
+      });
+      
+      console.log('🏆 Seasons with champions (after sort):', champSeasons.map(s => s.id));
 
       // Render season selector
       renderSeasonSelector(champSeasons);
@@ -965,23 +991,35 @@
         if (playerData.migrated === true) return;
         
         // Check if player has stats for this season
-        if (playerData.seasons && playerData.seasons[seasonId]) {
-          const seasonStats = playerData.seasons[seasonId];
-          seasonData.batting.push({
-            id: docSnap.id,
-            playerId: docSnap.id,
-            name: playerData.name || playerData.displayName,
-            team: seasonStats.team || seasonStats.teamId,
-            teamId: seasonStats.teamId || seasonStats.team,
-            games: seasonStats.games || seasonStats.g || 0,
-            ba: seasonStats.ba || seasonStats.avg || 0,
-            hits: seasonStats.hits || seasonStats.h || 0,
-            runs: seasonStats.runs || seasonStats.r || 0,
-            walks: seasonStats.walks || seasonStats.bb || 0,
-            obp: seasonStats.obp || 0,
-            acesBPI: seasonStats.acesBPI || seasonStats.AcesWar || seasonStats.acesBpi || 0,
-            ...seasonStats
-          });
+        // Season keys include team: "2025-fall-green", "2025-fall-gold-sub"
+        // We need to match any key that starts with the seasonId (e.g., "2025-fall")
+        if (playerData.seasons) {
+          const matchingSeasonKeys = Object.keys(playerData.seasons).filter(key => 
+            key.startsWith(seasonId + '-') || key === seasonId
+          );
+          
+          // Use the first matching season (primary team, not sub appearances)
+          // Prefer non-sub entries
+          const primaryKey = matchingSeasonKeys.find(k => !k.includes('-sub')) || matchingSeasonKeys[0];
+          
+          if (primaryKey) {
+            const seasonStats = playerData.seasons[primaryKey];
+            seasonData.batting.push({
+              id: docSnap.id,
+              playerId: docSnap.id,
+              name: playerData.name || playerData.displayName,
+              team: seasonStats.team || seasonStats.teamId,
+              teamId: seasonStats.teamId || seasonStats.team,
+              games: seasonStats.games || seasonStats.g || 0,
+              ba: seasonStats.ba || seasonStats.battingAverage || seasonStats.avg || 0,
+              hits: seasonStats.hits || seasonStats.h || 0,
+              runs: seasonStats.runs || seasonStats.r || 0,
+              walks: seasonStats.walks || seasonStats.bb || 0,
+              obp: seasonStats.obp || seasonStats.onBasePercentage || 0,
+              acesBPI: seasonStats.acesBPI || seasonStats.AcesWar || seasonStats.acesBpi || 0,
+              ...seasonStats
+            });
+          }
         }
       });
       console.log('⚾ Batting stats for season:', seasonData.batting.length);
@@ -992,7 +1030,19 @@
       // Log available seasons from first player to help debug
       if (allPlayersSnap.size > 0) {
         const firstPlayer = allPlayersSnap.docs[0].data();
-        console.log('📊 Available seasons in first player:', Object.keys(firstPlayer.seasons || {}));
+        const availableSeasons = Object.keys(firstPlayer.seasons || {});
+        console.log('📊 Available seasons in first player:', availableSeasons);
+        console.log('📊 Looking for seasonId:', seasonId);
+        console.log('📊 Match found?', availableSeasons.includes(seasonId));
+        
+        // Try to find a close match
+        const possibleMatch = availableSeasons.find(s => 
+          s.toLowerCase().includes(seasonId.toLowerCase()) || 
+          seasonId.toLowerCase().includes(s.toLowerCase())
+        );
+        if (possibleMatch && possibleMatch !== seasonId) {
+          console.log('📊 Possible format mismatch - found similar:', possibleMatch);
+        }
       }
 
       // Load teams from top-level teams collection
@@ -1516,9 +1566,14 @@
     const champSeasons = allSeasons
       .filter(s => championsData[s.id])
       .sort((a, b) => {
-        const dateA = a.startDate ? new Date(a.startDate) : new Date(0);
-        const dateB = b.startDate ? new Date(b.startDate) : new Date(0);
-        return dateB - dateA;
+        // Sort by year-season: 2025-fall, 2025-summer, 2024-fall, etc.
+        const [yearA, seasonA] = a.id.split('-');
+        const [yearB, seasonB] = b.id.split('-');
+        
+        if (yearA !== yearB) return parseInt(yearB) - parseInt(yearA);
+        if (seasonA === 'fall' && seasonB === 'summer') return -1;
+        if (seasonA === 'summer' && seasonB === 'fall') return 1;
+        return 0;
       });
 
     if (champSeasons.length === 0) {
