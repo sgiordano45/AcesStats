@@ -754,10 +754,23 @@
   <div class="section-card">
     <div class="section-header gold">
       <span style="font-size: 1.5rem;">⭐</span>
-      <h2>Playoff Stars</h2>
+      <h2 id="teamStarsHeader">Team Stars</h2>
     </div>
     <div class="section-content">
-      <div class="players-grid" id="playoffStars">
+      <div class="players-grid" id="teamStars">
+        <!-- Populated by JavaScript -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Team Pitching -->
+  <div class="section-card" id="teamPitchingSection">
+    <div class="section-header">
+      <span style="font-size: 1.5rem;">🥎</span>
+      <h2 id="teamPitchingHeader">Team Pitching</h2>
+    </div>
+    <div class="section-content">
+      <div class="players-grid" id="teamPitching">
         <!-- Populated by JavaScript -->
       </div>
     </div>
@@ -785,34 +798,6 @@
     <div class="section-content">
       <div class="playoff-journey" id="playoffJourney">
         <!-- Populated by JavaScript -->
-      </div>
-    </div>
-  </div>
-
-  <!-- Top Playoff Games -->
-  <div class="section-card">
-    <div class="section-header">
-      <span style="font-size: 1.5rem;">🔥</span>
-      <h2>Top Playoff Games</h2>
-    </div>
-    <div class="section-content">
-      <div class="games-list" id="topGames">
-        <!-- Populated by JavaScript -->
-      </div>
-    </div>
-  </div>
-
-  <!-- Playoff Statistical Leaders -->
-  <div class="section-card">
-    <div class="section-header">
-      <span style="font-size: 1.5rem;">📊</span>
-      <h2>Playoff Leaders</h2>
-    </div>
-    <div class="section-content">
-      <div style="overflow-x: auto;">
-        <table class="leaders-table" id="playoffLeaders">
-          <!-- Populated by JavaScript -->
-        </table>
       </div>
     </div>
   </div>
@@ -984,6 +969,7 @@
       console.log('👥 Total players in aggregatedPlayerStats:', allPlayersSnap.size);
       
       seasonData.batting = [];
+      seasonData.pitching = [];
       allPlayersSnap.forEach(docSnap => {
         const playerData = docSnap.data();
         
@@ -1021,29 +1007,29 @@
             });
           }
         }
+        
+        // Check for pitching stats independently (player may have pitching without batting)
+        if (playerData.pitchingSeasons) {
+          const pitchingKeys = Object.keys(playerData.pitchingSeasons).filter(key => 
+            key.startsWith(seasonId + '-') || key === seasonId
+          );
+          const pitchingKey = pitchingKeys.find(k => !k.includes('-sub')) || pitchingKeys[0];
+          
+          if (pitchingKey) {
+            const pitchingStats = playerData.pitchingSeasons[pitchingKey];
+            seasonData.pitching.push({
+              id: docSnap.id,
+              playerId: docSnap.id,
+              name: playerData.name || playerData.displayName,
+              team: pitchingStats.team || pitchingStats.teamId,
+              teamId: pitchingStats.teamId || pitchingStats.team,
+              ...pitchingStats
+            });
+          }
+        }
       });
       console.log('⚾ Batting stats for season:', seasonData.batting.length);
-      if (seasonData.batting.length > 0) {
-        console.log('⚾ Sample batting:', seasonData.batting[0]);
-      }
-      
-      // Log available seasons from first player to help debug
-      if (allPlayersSnap.size > 0) {
-        const firstPlayer = allPlayersSnap.docs[0].data();
-        const availableSeasons = Object.keys(firstPlayer.seasons || {});
-        console.log('📊 Available seasons in first player:', availableSeasons);
-        console.log('📊 Looking for seasonId:', seasonId);
-        console.log('📊 Match found?', availableSeasons.includes(seasonId));
-        
-        // Try to find a close match
-        const possibleMatch = availableSeasons.find(s => 
-          s.toLowerCase().includes(seasonId.toLowerCase()) || 
-          seasonId.toLowerCase().includes(s.toLowerCase())
-        );
-        if (possibleMatch && possibleMatch !== seasonId) {
-          console.log('📊 Possible format mismatch - found similar:', possibleMatch);
-        }
-      }
+      console.log('🥎 Pitching stats for season:', (seasonData.pitching || []).length);
 
       // Load teams from top-level teams collection
       const teamsSnap = await getDocs(collection(db, 'teams'));
@@ -1061,11 +1047,10 @@
       // Render everything
       renderChampionHero(champion, seasonId);
       renderChampionshipGame(champion, seasonData.games);
-      renderPlayoffStars(champion, seasonData);
+      renderTeamStars(champion, seasonData);
+      renderTeamPitching(champion, seasonData);
       renderChampionRoster(champion, seasonData);
       renderPlayoffJourney(champion, seasonData.games);
-      renderTopGames(seasonData.games);
-      renderPlayoffLeaders(seasonData);
       renderChampionsTimeline(seasonId);
 
     } catch (error) {
@@ -1204,7 +1189,22 @@
   function formatDate(dateStr) {
     if (!dateStr) return '';
     try {
-      const date = new Date(dateStr);
+      let date;
+      
+      // Handle Firebase Timestamp
+      if (dateStr.seconds) {
+        date = new Date(dateStr.seconds * 1000);
+      } else if (dateStr.toDate && typeof dateStr.toDate === 'function') {
+        date = dateStr.toDate();
+      } else {
+        date = new Date(dateStr);
+      }
+      
+      // Check for invalid date
+      if (isNaN(date.getTime())) {
+        return typeof dateStr === 'string' ? dateStr : '';
+      }
+      
       return date.toLocaleDateString('en-US', { 
         weekday: 'long', 
         year: 'numeric', 
@@ -1212,66 +1212,79 @@
         day: 'numeric' 
       });
     } catch {
-      return dateStr;
+      return typeof dateStr === 'string' ? dateStr : '';
     }
   }
 
-  function renderPlayoffStars(champion, data) {
-    const container = document.getElementById('playoffStars');
+  function renderTeamStars(champion, data) {
+    const container = document.getElementById('teamStars');
+    const header = document.getElementById('teamStarsHeader');
     const championDoc = championsData[currentSeasonId] || {};
     const mvpId = championDoc.mvp; // Player ID if MVP is specified in champions collection
     
-    // Get playoff games
-    const playoffGames = data.games.filter(g => 
-      g.gameType === 'playoff' || g.game_type === 'Playoff'
-    );
+    if (!champion) {
+      container.innerHTML = '<div class="empty-state"><p>No champion data available</p></div>';
+      return;
+    }
+    
+    // Update header with team name
+    header.textContent = `${formatTeamName(champion)} Stars`;
+    
+    // Filter to only champion team players
+    const championLower = champion.toLowerCase().replace(/\s+/g, '').replace(/_/g, '');
+    let teamPlayers = data.batting.filter(p => {
+      const teamName = (p.team || p.teamId || '').toLowerCase().replace(/\s+/g, '').replace(/_/g, '');
+      return teamName === championLower || teamName.includes(championLower) || championLower.includes(teamName);
+    });
 
-    if (playoffGames.length === 0 || !data.batting || data.batting.length === 0) {
+    if (teamPlayers.length === 0) {
       container.innerHTML = `
         <div class="empty-state">
           <div class="empty-state-icon">⭐</div>
-          <p>Playoff statistics not available</p>
+          <p>Team statistics not available</p>
         </div>
       `;
       return;
     }
 
-    // For now, show top performers from the season (ideally we'd have playoff-specific stats)
-    // Sort by AcesBPI or batting average
-    let topPlayers = [...data.batting]
-      .filter(p => p.games >= 3)
+    // Sort by AcesBPI and take top 3
+    teamPlayers = teamPlayers
       .sort((a, b) => {
         const bpiA = a.acesBPI || a.AcesWar || a.acesBpi || 0;
         const bpiB = b.acesBPI || b.AcesWar || b.acesBpi || 0;
         return bpiB - bpiA;
       })
-      .slice(0, 6);
+      .slice(0, 3);
 
     // If MVP is specified, ensure they're first
     if (mvpId) {
-      const mvpIndex = topPlayers.findIndex(p => {
+      const mvpIndex = teamPlayers.findIndex(p => {
         const playerId = p.id || p.playerId || p.name?.toLowerCase().replace(/\s+/g, '_');
         return playerId === mvpId || p.name?.toLowerCase().replace(/\s+/g, '_') === mvpId;
       });
       
       if (mvpIndex > 0) {
-        // Move MVP to front
-        const [mvpPlayer] = topPlayers.splice(mvpIndex, 1);
-        topPlayers.unshift(mvpPlayer);
+        const [mvpPlayer] = teamPlayers.splice(mvpIndex, 1);
+        teamPlayers.unshift(mvpPlayer);
+        teamPlayers = teamPlayers.slice(0, 3);
       } else if (mvpIndex === -1) {
-        // MVP not in top 6, find them in full data and add to front
-        const mvpPlayer = data.batting.find(p => {
+        // MVP not in top 3, find them in full team data
+        const allTeamPlayers = data.batting.filter(p => {
+          const teamName = (p.team || p.teamId || '').toLowerCase().replace(/\s+/g, '').replace(/_/g, '');
+          return teamName === championLower || teamName.includes(championLower) || championLower.includes(teamName);
+        });
+        const mvpPlayer = allTeamPlayers.find(p => {
           const playerId = p.id || p.playerId || p.name?.toLowerCase().replace(/\s+/g, '_');
           return playerId === mvpId || p.name?.toLowerCase().replace(/\s+/g, '_') === mvpId;
         });
         if (mvpPlayer) {
-          topPlayers.unshift(mvpPlayer);
-          topPlayers = topPlayers.slice(0, 6);
+          teamPlayers.unshift(mvpPlayer);
+          teamPlayers = teamPlayers.slice(0, 3);
         }
       }
     }
 
-    container.innerHTML = topPlayers.map((player, index) => {
+    container.innerHTML = teamPlayers.map((player, index) => {
       const playerId = player.id || player.playerId || player.name?.toLowerCase().replace(/\s+/g, '_');
       const bpi = player.acesBPI || player.AcesWar || player.acesBpi || 0;
       const ba = player.ba || player.avg || player.battingAverage || 0;
@@ -1301,6 +1314,76 @@
               <div class="player-stat">
                 <div class="player-stat-value">${bpi.toFixed(2)}</div>
                 <div class="player-stat-label">BPI</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  function renderTeamPitching(champion, data) {
+    const container = document.getElementById('teamPitching');
+    const header = document.getElementById('teamPitchingHeader');
+    const section = document.getElementById('teamPitchingSection');
+    
+    if (!champion || !data.pitching || data.pitching.length === 0) {
+      // Hide the entire section if no pitching data
+      if (section) section.style.display = 'none';
+      return;
+    }
+    
+    // Filter to only champion team pitchers
+    const championLower = champion.toLowerCase().replace(/\s+/g, '').replace(/_/g, '');
+    const teamPitchers = data.pitching.filter(p => {
+      const teamName = (p.team || p.teamId || '').toLowerCase().replace(/\s+/g, '').replace(/_/g, '');
+      return teamName === championLower || teamName.includes(championLower) || championLower.includes(teamName);
+    });
+
+    if (teamPitchers.length === 0) {
+      // Hide the entire section if no team pitchers
+      if (section) section.style.display = 'none';
+      return;
+    }
+    
+    // Show section and update header
+    if (section) section.style.display = 'block';
+    header.textContent = `${formatTeamName(champion)} Pitching`;
+
+    // Sort by innings pitched (most to least)
+    const sortedPitchers = teamPitchers.sort((a, b) => {
+      const ipA = a.inningsPitched || a.ip || 0;
+      const ipB = b.inningsPitched || b.ip || 0;
+      return ipB - ipA;
+    });
+
+    container.innerHTML = sortedPitchers.map((player, index) => {
+      const playerId = player.id || player.playerId || player.name?.toLowerCase().replace(/\s+/g, '_');
+      const era = player.earnedRunAverage || player.era || 0;
+      const ip = player.inningsPitched || player.ip || 0;
+      const games = player.games || player.g || 0;
+      const runsAllowed = player.runsAllowed || player.ra || 0;
+      
+      return `
+        <div class="player-card">
+          <div class="player-rank">${index + 1}</div>
+          <div class="player-info">
+            <div class="player-name">
+              <a href="player.html?id=${encodeURIComponent(playerId)}">${player.name || 'Unknown'}</a>
+            </div>
+            <div class="player-team">${games} game${games !== 1 ? 's' : ''} pitched</div>
+            <div class="player-stats">
+              <div class="player-stat">
+                <div class="player-stat-value">${era.toFixed(2)}</div>
+                <div class="player-stat-label">ERA</div>
+              </div>
+              <div class="player-stat">
+                <div class="player-stat-value">${ip}</div>
+                <div class="player-stat-label">IP</div>
+              </div>
+              <div class="player-stat">
+                <div class="player-stat-value">${runsAllowed}</div>
+                <div class="player-stat-label">RA</div>
               </div>
             </div>
           </div>
@@ -1388,6 +1471,15 @@
 
     const championLower = champion.toLowerCase().replace(/\s+/g, '').replace(/_/g, '');
     
+    // Helper to parse date (handles Firebase timestamps)
+    function parseGameDate(game) {
+      const dateVal = game.date || game.Date;
+      if (!dateVal) return new Date(0);
+      if (dateVal.seconds) return new Date(dateVal.seconds * 1000);
+      if (dateVal.toDate) return dateVal.toDate();
+      return new Date(dateVal);
+    }
+    
     // Get playoff games involving the champion
     const playoffGames = games
       .filter(g => g.gameType === 'playoff' || g.game_type === 'Playoff')
@@ -1398,8 +1490,18 @@
                championLower.includes(home) || championLower.includes(away);
       })
       .sort((a, b) => {
-        const dateA = new Date(a.date || a.Date || 0);
-        const dateB = new Date(b.date || b.Date || 0);
+        // First, check if either is the championship - championship always goes last
+        const roundA = (a.round || a.playoff_round || '').toLowerCase();
+        const roundB = (b.round || b.playoff_round || '').toLowerCase();
+        const aIsChamp = roundA.includes('champ');
+        const bIsChamp = roundB.includes('champ');
+        
+        if (aIsChamp && !bIsChamp) return 1;  // a (championship) goes after b
+        if (bIsChamp && !aIsChamp) return -1; // b (championship) goes after a
+        
+        // Otherwise sort by date ascending (earliest first)
+        const dateA = parseGameDate(a);
+        const dateB = parseGameDate(b);
         return dateA - dateB;
       });
 
@@ -1444,119 +1546,6 @@
         </div>
       `;
     }).join('');
-  }
-
-  function renderTopGames(games) {
-    const container = document.getElementById('topGames');
-    
-    const playoffGames = games
-      .filter(g => g.gameType === 'playoff' || g.game_type === 'Playoff')
-      .map(g => {
-        const homeScore = parseInt(g.homeScore || g['home score'] || 0);
-        const awayScore = parseInt(g.awayScore || g['away score'] || 0);
-        const totalRuns = homeScore + awayScore;
-        const margin = Math.abs(homeScore - awayScore);
-        
-        // Score: close games with high runs are best
-        const excitement = totalRuns + (margin <= 2 ? 10 : margin <= 4 ? 5 : 0);
-        
-        return { ...g, excitement, totalRuns, margin };
-      })
-      .sort((a, b) => b.excitement - a.excitement)
-      .slice(0, 5);
-
-    if (playoffGames.length === 0) {
-      container.innerHTML = `
-        <div class="empty-state">
-          <div class="empty-state-icon">🔥</div>
-          <p>No playoff games available</p>
-        </div>
-      `;
-      return;
-    }
-
-    container.innerHTML = playoffGames.map((game, index) => {
-      const home = game.homeTeam || game['home team'];
-      const away = game.awayTeam || game['away team'];
-      const homeScore = game.homeScore || game['home score'];
-      const awayScore = game.awayScore || game['away score'];
-      const winner = game.winner || game.Winner;
-      const round = game.round || game.playoff_round || 'Playoff';
-      const gameDate = game.date || game.Date;
-      const isChampionship = round.toLowerCase().includes('champ');
-
-      return `
-        <div class="game-card">
-          <div class="game-rank ${isChampionship ? 'gold' : ''}">${index + 1}</div>
-          <div class="game-info">
-            <div class="game-matchup">
-              ${formatTeamName(away)} @ ${formatTeamName(home)}
-            </div>
-            <div class="game-date">${gameDate ? formatDate(gameDate) : round}</div>
-          </div>
-          <div class="game-type ${isChampionship ? 'championship' : ''}">${round}</div>
-          <div class="game-score">${awayScore} - ${homeScore}</div>
-        </div>
-      `;
-    }).join('');
-  }
-
-  function renderPlayoffLeaders(data) {
-    const container = document.getElementById('playoffLeaders');
-    
-    if (!container) {
-      console.warn('playoffLeaders container not found');
-      return;
-    }
-    
-    if (!data.batting || data.batting.length === 0) {
-      container.innerHTML = `
-        <tbody>
-          <tr>
-            <td colspan="7" style="text-align: center; padding: 3rem; color: var(--text-light);">
-              <div style="font-size: 3rem; margin-bottom: 1rem; opacity: 0.5;">📊</div>
-              <p>Playoff statistics not available</p>
-            </td>
-          </tr>
-        </tbody>
-      `;
-      return;
-    }
-
-    // Get top players in different categories
-    const qualified = data.batting.filter(p => (p.games || p.g || 0) >= 3);
-    
-    const topBA = [...qualified].sort((a, b) => (b.ba || b.avg || 0) - (a.ba || a.avg || 0)).slice(0, 5);
-
-    container.innerHTML = `
-      <thead>
-        <tr>
-          <th>#</th>
-          <th>Player</th>
-          <th>Team</th>
-          <th>AVG</th>
-          <th>Hits</th>
-          <th>Runs</th>
-          <th>Games</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${topBA.map((player, index) => {
-          const playerId = player.id || player.playerId || player.name?.toLowerCase().replace(/\s+/g, '_');
-          return `
-            <tr>
-              <td class="rank-cell">${index + 1}</td>
-              <td><a href="player.html?id=${encodeURIComponent(playerId)}">${player.name}</a></td>
-              <td>${formatTeamName(player.team || player.teamId)}</td>
-              <td class="stat-value">${(player.ba || player.avg || 0).toFixed(3)}</td>
-              <td>${player.hits || player.h || 0}</td>
-              <td>${player.runs || player.r || 0}</td>
-              <td>${player.games || player.g || 0}</td>
-            </tr>
-          `;
-        }).join('')}
-      </tbody>
-    `;
   }
 
   function renderChampionsTimeline(currentSeason) {
