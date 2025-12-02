@@ -1462,19 +1462,35 @@
   }
 
   /**
-   * Calculate career totals by summing all seasons for a player
-   * @param {Object} player - Player object from allPlayers with seasons object
-   * @returns {Object} Career totals for hits, runs, walks
+   * Calculate career totals up to and including a specific season
+   * @param {Object} player - Player object with seasons object
+   * @param {string} upToSeasonId - Season ID to calculate through (e.g., "2024-fall")
+   * @returns {Object} Career totals for hits, runs, walks through that season
    */
-  function calculateCareerTotals(player) {
+  function calculateCareerTotalsThrough(player, upToSeasonId) {
     const totals = { hits: 0, runs: 0, walks: 0 };
     
     if (!player.seasons) return totals;
     
-    Object.values(player.seasons).forEach(season => {
-      totals.hits += Number(season.hits) || 0;
-      totals.runs += Number(season.runs) || 0;
-      totals.walks += Number(season.walks) || 0;
+    // Parse the target season for comparison
+    const [targetYear, targetSeason] = upToSeasonId.split('-');
+    const targetYearNum = parseInt(targetYear);
+    const targetSeasonValue = targetSeason === 'summer' ? 0 : 1; // summer=0, fall=1
+    
+    Object.entries(player.seasons).forEach(([seasonKey, season]) => {
+      // Parse this season key (e.g., "2024-fall-orange" -> 2024, fall)
+      const parts = seasonKey.split('-');
+      const seasonYear = parseInt(parts[0]);
+      const seasonType = parts[1];
+      const seasonValue = seasonType === 'summer' ? 0 : 1;
+      
+      // Only include if this season is <= target season chronologically
+      if (seasonYear < targetYearNum || 
+          (seasonYear === targetYearNum && seasonValue <= targetSeasonValue)) {
+        totals.hits += Number(season.hits) || 0;
+        totals.runs += Number(season.runs) || 0;
+        totals.walks += Number(season.walks) || 0;
+      }
     });
     
     return totals;
@@ -1511,8 +1527,8 @@
       
       if (!careerPlayer || !careerPlayer.seasons) return;
       
-      // Calculate career totals (across ALL seasons)
-      const careerTotals = calculateCareerTotals(careerPlayer);
+      // Calculate career totals through this season only (not future seasons)
+      const careerTotals = calculateCareerTotalsThrough(careerPlayer, seasonId);
       
       // Get this season's stats
       const seasonHits = Number(seasonPlayer.hits) || 0;
