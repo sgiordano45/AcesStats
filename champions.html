@@ -931,32 +931,55 @@
     });
 
     try {
-      // Load season data
+      // Load season document
       const seasonDoc = await getDoc(doc(db, 'seasons', seasonId));
       seasonData = seasonDoc.exists() ? { id: seasonId, ...seasonDoc.data() } : { id: seasonId };
 
-      // Load games
+      // Load games from seasons/{seasonId}/games
       const gamesSnap = await getDocs(collection(db, 'seasons', seasonId, 'games'));
       seasonData.games = [];
       gamesSnap.forEach(doc => {
         seasonData.games.push({ id: doc.id, ...doc.data() });
       });
 
-      // Load batting stats
-      const battingSnap = await getDocs(collection(db, 'seasons', seasonId, 'batting'));
+      // Load batting stats from aggregatedPlayerStats and filter by season
+      const allPlayersSnap = await getDocs(collection(db, 'aggregatedPlayerStats'));
       seasonData.batting = [];
-      battingSnap.forEach(doc => {
-        seasonData.batting.push({ id: doc.id, ...doc.data() });
+      allPlayersSnap.forEach(docSnap => {
+        const playerData = docSnap.data();
+        
+        // Skip migrated legacy profiles
+        if (playerData.migrated === true) return;
+        
+        // Check if player has stats for this season
+        if (playerData.seasons && playerData.seasons[seasonId]) {
+          const seasonStats = playerData.seasons[seasonId];
+          seasonData.batting.push({
+            id: docSnap.id,
+            playerId: docSnap.id,
+            name: playerData.name || playerData.displayName,
+            team: seasonStats.team || seasonStats.teamId,
+            teamId: seasonStats.teamId || seasonStats.team,
+            games: seasonStats.games || seasonStats.g || 0,
+            ba: seasonStats.ba || seasonStats.avg || 0,
+            hits: seasonStats.hits || seasonStats.h || 0,
+            runs: seasonStats.runs || seasonStats.r || 0,
+            walks: seasonStats.walks || seasonStats.bb || 0,
+            obp: seasonStats.obp || 0,
+            acesBPI: seasonStats.acesBPI || seasonStats.AcesWar || seasonStats.acesBpi || 0,
+            ...seasonStats
+          });
+        }
       });
 
-      // Load teams for this season
-      const teamsSnap = await getDocs(collection(db, 'seasons', seasonId, 'teams'));
+      // Load teams from top-level teams collection
+      const teamsSnap = await getDocs(collection(db, 'teams'));
       seasonData.teams = {};
       teamsSnap.forEach(doc => {
         seasonData.teams[doc.id] = { id: doc.id, ...doc.data() };
       });
 
-      // Determine champion from champions collection
+      // Get champion from champions collection
       const championDoc = championsData[seasonId];
       const champion = championDoc?.team || findChampionFromGames(seasonData.games);
 
