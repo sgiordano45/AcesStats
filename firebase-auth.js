@@ -2034,6 +2034,19 @@ export function canManageUser(currentUser, targetUser, teamId) {
   return false;
 }
 
+/**
+ * Check if user has a special role (oddsmaker, photographer, historian, etc.)
+ * Special roles grant access to specific pages without changing base role
+ * @param {Object} user - User profile object
+ * @param {string} role - Special role to check
+ * @returns {boolean}
+ */
+export function hasSpecialRole(user, role) {
+  if (!user) return false;
+  if (user.userRole === USER_ROLES.ADMIN) return true;
+  return user.specialRoles?.includes(role) || false;
+}
+
 // ========================================
 // MIGRATION HELPER
 // ========================================
