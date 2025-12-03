@@ -969,36 +969,8 @@
       gamesSnap.forEach(docSnap => {
         seasonData.games.push({ id: docSnap.id, ...docSnap.data() });
       });
-      console.log('🎮 Games from /games:', seasonData.games.length);
-
-      // For newer seasons (2025-fall+), also check /playoffs for better round labels
-      // These will replace any playoff games from /games
-      try {
-        const playoffsSnap = await getDocs(collection(db, 'seasons', seasonId, 'playoffs'));
-        if (playoffsSnap.size > 0) {
-          console.log('🏆 Found /playoffs collection with', playoffsSnap.size, 'games');
-          
-          // Remove playoff games from /games to avoid duplicates
-          seasonData.games = seasonData.games.filter(g => {
-            const gameType = (g.gameType || g.game_type || '').toLowerCase();
-            return gameType !== 'playoff';
-          });
-          
-          // Add playoff games from /playoffs (these have better round info)
-          playoffsSnap.forEach(docSnap => {
-            const playoffGame = { 
-              id: docSnap.id, 
-              ...docSnap.data(),
-              gameType: 'playoff' // Ensure marked as playoff
-            };
-            seasonData.games.push(playoffGame);
-          });
-        }
-      } catch (e) {
-        // No /playoffs collection - that's fine, older seasons store everything in /games
-      }
       
-      // Log final game breakdown
+      // Log game breakdown
       const regularGames = seasonData.games.filter(g => {
         const gameType = (g.gameType || g.game_type || '').toLowerCase();
         return gameType !== 'playoff';
@@ -1007,7 +979,7 @@
         const gameType = (g.gameType || g.game_type || '').toLowerCase();
         return gameType === 'playoff';
       });
-      console.log('📊 Total games:', seasonData.games.length, '(Regular:', regularGames.length, ', Playoff:', playoffGames.length + ')');
+      console.log('📊 Games loaded:', seasonData.games.length, '(Regular:', regularGames.length, ', Playoff:', playoffGames.length + ')');
 
       // Load batting stats from aggregatedPlayerStats and filter by season
       const allPlayersSnap = await getDocs(collection(db, 'aggregatedPlayerStats'));
