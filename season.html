@@ -1160,15 +1160,32 @@ function renderSchedule() {
     return;
   }
   
-  // Separate regular and playoff games (case-insensitive)
+  // Helper function to parse date for sorting
+  function getDateValue(game) {
+    if (!game.date) return 0;
+    if (game.date.toDate) {
+      // Firebase Timestamp
+      return game.date.toDate().getTime();
+    } else if (typeof game.date === 'string') {
+      // String date - try to parse it
+      const parsed = new Date(game.date);
+      return isNaN(parsed.getTime()) ? 0 : parsed.getTime();
+    } else if (game.date instanceof Date) {
+      return game.date.getTime();
+    }
+    return 0;
+  }
+  
+  // Separate regular and playoff games (case-insensitive), sorted by date
   const regularGames = seasonGames.filter(g => {
     const gameType = (g.gameType || '').toLowerCase();
     return gameType === 'regular' || gameType === '';
-  });
+  }).sort((a, b) => getDateValue(a) - getDateValue(b));
+  
   const playoffGames = seasonGames.filter(g => {
     const gameType = (g.gameType || '').toLowerCase();
     return gameType === 'playoff';
-  });
+  }).sort((a, b) => getDateValue(a) - getDateValue(b));
   
   let html = '';
   
