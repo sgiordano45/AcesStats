@@ -963,16 +963,51 @@
       seasonData = seasonDoc.exists() ? { id: seasonId, ...seasonDoc.data() } : { id: seasonId };
       console.log('📅 Season doc exists:', seasonDoc.exists());
 
-      // Load games from seasons/{seasonId}/games
+      // Load all games from seasons/{seasonId}/games
       const gamesSnap = await getDocs(collection(db, 'seasons', seasonId, 'games'));
       seasonData.games = [];
       gamesSnap.forEach(docSnap => {
         seasonData.games.push({ id: docSnap.id, ...docSnap.data() });
       });
-      console.log('🎮 Games loaded:', seasonData.games.length);
-      if (seasonData.games.length > 0) {
-        console.log('🎮 Sample game:', seasonData.games[0]);
+      console.log('🎮 Games from /games:', seasonData.games.length);
+
+      // For newer seasons (2025-fall+), also check /playoffs for better round labels
+      // These will replace any playoff games from /games
+      try {
+        const playoffsSnap = await getDocs(collection(db, 'seasons', seasonId, 'playoffs'));
+        if (playoffsSnap.size > 0) {
+          console.log('🏆 Found /playoffs collection with', playoffsSnap.size, 'games');
+          
+          // Remove playoff games from /games to avoid duplicates
+          seasonData.games = seasonData.games.filter(g => {
+            const gameType = (g.gameType || g.game_type || '').toLowerCase();
+            return gameType !== 'playoff';
+          });
+          
+          // Add playoff games from /playoffs (these have better round info)
+          playoffsSnap.forEach(docSnap => {
+            const playoffGame = { 
+              id: docSnap.id, 
+              ...docSnap.data(),
+              gameType: 'playoff' // Ensure marked as playoff
+            };
+            seasonData.games.push(playoffGame);
+          });
+        }
+      } catch (e) {
+        // No /playoffs collection - that's fine, older seasons store everything in /games
       }
+      
+      // Log final game breakdown
+      const regularGames = seasonData.games.filter(g => {
+        const gameType = (g.gameType || g.game_type || '').toLowerCase();
+        return gameType !== 'playoff';
+      });
+      const playoffGames = seasonData.games.filter(g => {
+        const gameType = (g.gameType || g.game_type || '').toLowerCase();
+        return gameType === 'playoff';
+      });
+      console.log('📊 Total games:', seasonData.games.length, '(Regular:', regularGames.length, ', Playoff:', playoffGames.length + ')');
 
       // Load batting stats from aggregatedPlayerStats and filter by season
       const allPlayersSnap = await getDocs(collection(db, 'aggregatedPlayerStats'));
@@ -1070,11 +1105,12 @@
   }
 
   function findChampionFromGames(games) {
-    // Find championship game
-    const champGame = games.find(g => 
-      (g.gameType === 'playoff' || g.game_type === 'Playoff') &&
-      (g.round?.toLowerCase().includes('champ') || g.playoff_round?.toLowerCase().includes('champ'))
-    );
+    // Find championship game - handle both gameType and game_type fields
+    const champGame = games.find(g => {
+      const gameType = (g.gameType || g.game_type || '').toLowerCase();
+      const round = (g.round || g.playoff_round || '').toLowerCase();
+      return gameType === 'playoff' && round.includes('champ');
+    });
     
     if (champGame) {
       const winner = champGame.winner || champGame.Winner;
@@ -1113,10 +1149,12 @@
 
   function formatTeamName(teamId) {
     if (!teamId) return 'Unknown';
+    // Capitalize first letter of each word, handle underscores
     return teamId
       .replace(/_/g, ' ')
-      .replace(/([A-Z])/g, ' $1')
-      .replace(/^\s+/, '')
+      .split(' ')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join(' ')
       .trim();
   }
 
@@ -1126,18 +1164,32 @@
     const teamLower = teamName.toLowerCase().replace(/\s+/g, '').replace(/_/g, '');
     let wins = 0, losses = 0, ties = 0;
 
+    // Helper to get team name from various field formats
+    function getTeamName(game, side) {
+      return game[`${side}Team`] || game[`${side}TeamName`] || game[`${side}TeamId`] || '';
+    }
+
     games.forEach(game => {
-      const home = (game.homeTeam || game['home team'] || '').toLowerCase().replace(/\s+/g, '').replace(/_/g, '');
-      const away = (game.awayTeam || game['away team'] || '').toLowerCase().replace(/\s+/g, '').replace(/_/g, '');
+      const home = getTeamName(game, 'home').toLowerCase().replace(/\s+/g, '').replace(/_/g, '');
+      const away = getTeamName(game, 'away').toLowerCase().replace(/\s+/g, '').replace(/_/g, '');
       const winner = (game.winner || game.Winner || '').toLowerCase().replace(/\s+/g, '').replace(/_/g, '');
       
-      if (home !== teamLower && away !== teamLower) return;
+      // Check if this team played in this game
+      const teamIsHome = home === teamLower || home.includes(teamLower) || teamLower.includes(home);
+      const teamIsAway = away === teamLower || away.includes(teamLower) || teamLower.includes(away);
+      
+      if (!teamIsHome && !teamIsAway) return;
+      
+      // Only count completed games with scores
+      const homeScore = game.homeScore || game['home score'];
+      const awayScore = game.awayScore || game['away score'];
+      if (homeScore === undefined || awayScore === undefined) return;
       
       if (winner === 'tie') {
         ties++;
-      } else if (winner === teamLower || winner === home && home === teamLower || winner === away && away === teamLower) {
+      } else if (winner.includes(teamLower) || teamLower.includes(winner)) {
         wins++;
-      } else if (home === teamLower || away === teamLower) {
+      } else if (winner) {
         losses++;
       }
     });
@@ -1148,11 +1200,23 @@
   function renderChampionshipGame(champion, games) {
     const container = document.getElementById('championshipGameContent');
     
-    // Find championship game
-    const champGame = games.find(g => 
-      (g.gameType === 'playoff' || g.game_type === 'Playoff') &&
-      (g.round?.toLowerCase().includes('champ') || g.playoff_round?.toLowerCase().includes('champ'))
-    );
+    // Helper to get team name from various field formats
+    function getTeamName(game, side) {
+      return game[`${side}Team`] || game[`${side}TeamName`] || game[`${side}TeamId`] || '';
+    }
+    
+    // Helper to get score (handles both string and number)
+    function getScore(game, side) {
+      const score = game[`${side}Score`] || game[`${side} score`] || 0;
+      return parseInt(score, 10) || 0;
+    }
+    
+    // Find championship game - check both gameType and game_type
+    const champGame = games.find(g => {
+      const gameType = (g.gameType || g.game_type || '').toLowerCase();
+      const round = (g.round || g.playoff_round || '').toLowerCase();
+      return gameType === 'playoff' && round.includes('champ');
+    });
 
     if (!champGame) {
       container.innerHTML = `
@@ -1164,15 +1228,18 @@
       return;
     }
 
-    const homeTeam = champGame.homeTeam || champGame['home team'];
-    const awayTeam = champGame.awayTeam || champGame['away team'];
-    const homeScore = champGame.homeScore || champGame['home score'] || 0;
-    const awayScore = champGame.awayScore || champGame['away score'] || 0;
-    const winner = (champGame.winner || champGame.Winner || '').toLowerCase();
+    const homeTeam = getTeamName(champGame, 'home');
+    const awayTeam = getTeamName(champGame, 'away');
+    const homeScore = getScore(champGame, 'home');
+    const awayScore = getScore(champGame, 'away');
+    const winner = (champGame.winner || champGame.Winner || '').toLowerCase().replace(/\s+/g, '').replace(/_/g, '');
     const gameDate = champGame.date || champGame.Date;
 
-    const homeIsWinner = winner.includes(homeTeam?.toLowerCase().replace(/\s+/g, '').replace(/_/g, ''));
-    const awayIsWinner = winner.includes(awayTeam?.toLowerCase().replace(/\s+/g, '').replace(/_/g, ''));
+    const homeLower = homeTeam.toLowerCase().replace(/\s+/g, '').replace(/_/g, '');
+    const awayLower = awayTeam.toLowerCase().replace(/\s+/g, '').replace(/_/g, '');
+    
+    const homeIsWinner = winner.includes(homeLower) || homeLower.includes(winner);
+    const awayIsWinner = winner.includes(awayLower) || awayLower.includes(winner);
 
     container.innerHTML = `
       <div class="championship-matchup">
@@ -1492,11 +1559,29 @@
       return new Date(dateVal);
     }
     
+    // Helper to get team name from various field formats
+    function getTeamName(game, side) {
+      // side is 'home' or 'away'
+      return game[`${side}Team`] || game[`${side}TeamName`] || game[`${side}TeamId`] || '';
+    }
+    
+    // Helper to get score (handles both string and number)
+    function getScore(game, side) {
+      const score = game[`${side}Score`] || game[`${side} score`] || 0;
+      return parseInt(score, 10) || 0;
+    }
+    
+    // Helper to check if game is a playoff game
+    function isPlayoffGame(game) {
+      const gameType = (game.gameType || game.game_type || '').toLowerCase();
+      return gameType === 'playoff';
+    }
+    
     // Get ALL games involving the champion (regular season + playoffs)
     const teamGames = games
       .filter(g => {
-        const home = (g.homeTeam || g['home team'] || '').toLowerCase().replace(/\s+/g, '').replace(/_/g, '');
-        const away = (g.awayTeam || g['away team'] || '').toLowerCase().replace(/\s+/g, '').replace(/_/g, '');
+        const home = getTeamName(g, 'home').toLowerCase().replace(/\s+/g, '').replace(/_/g, '');
+        const away = getTeamName(g, 'away').toLowerCase().replace(/\s+/g, '').replace(/_/g, '');
         return home.includes(championLower) || away.includes(championLower) || 
                championLower.includes(home) || championLower.includes(away);
       })
@@ -1533,25 +1618,24 @@
     }
 
     container.innerHTML = teamGames.map(game => {
-      const home = game.homeTeam || game['home team'];
-      const away = game.awayTeam || game['away team'];
-      const homeScore = game.homeScore || game['home score'] || 0;
-      const awayScore = game.awayScore || game['away score'] || 0;
-      const winner = game.winner || game.Winner;
-      const gameType = game.gameType || game.game_type || 'regular';
-      const isPlayoff = gameType.toLowerCase() === 'playoff';
+      const home = getTeamName(game, 'home');
+      const away = getTeamName(game, 'away');
+      const homeScore = getScore(game, 'home');
+      const awayScore = getScore(game, 'away');
+      const winner = (game.winner || game.Winner || '').toLowerCase();
+      const isPlayoff = isPlayoffGame(game);
       const round = game.round || game.playoff_round || (isPlayoff ? 'Playoff' : 'Regular Season');
       const isChampionship = round.toLowerCase().includes('champ');
       
-      const homeLower = (home || '').toLowerCase().replace(/\s+/g, '').replace(/_/g, '');
-      const awayLower = (away || '').toLowerCase().replace(/\s+/g, '').replace(/_/g, '');
+      const homeLower = home.toLowerCase().replace(/\s+/g, '').replace(/_/g, '');
+      const awayLower = away.toLowerCase().replace(/\s+/g, '').replace(/_/g, '');
       
       const championIsHome = homeLower.includes(championLower) || championLower.includes(homeLower);
       const opponent = championIsHome ? away : home;
       const champScore = championIsHome ? homeScore : awayScore;
       const oppScore = championIsHome ? awayScore : homeScore;
       
-      const winnerLower = (winner || '').toLowerCase().replace(/\s+/g, '').replace(/_/g, '');
+      const winnerLower = winner.replace(/\s+/g, '').replace(/_/g, '');
       const didWin = winnerLower.includes(championLower) || championLower.includes(winnerLower);
 
       return `
