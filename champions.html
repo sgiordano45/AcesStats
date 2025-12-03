@@ -293,6 +293,25 @@
     color: var(--text-light);
   }
 
+  .championship-game-label {
+    text-align: center;
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--primary-color);
+    margin-bottom: 1rem;
+    padding: 0.5rem 1rem;
+    background: linear-gradient(135deg, rgba(45,80,22,0.1) 0%, rgba(26,107,74,0.1) 100%);
+    border-radius: 8px;
+    display: inline-block;
+    width: 100%;
+  }
+
+  .championship-divider {
+    border: none;
+    border-top: 2px dashed var(--border-color);
+    margin: 2rem 0;
+  }
+
   /* Section Cards */
   .section-card {
     background: var(--card-bg);
@@ -1189,14 +1208,25 @@
       return parseInt(score, 10) || 0;
     }
     
-    // Find championship game - check both gameType and game_type
-    const champGame = games.find(g => {
-      const gameType = (g.gameType || g.game_type || '').toLowerCase();
-      const round = (g.round || g.playoff_round || '').toLowerCase();
-      return gameType === 'playoff' && round.includes('champ');
-    });
+    // Helper to parse date for sorting
+    function parseGameDate(game) {
+      const dateVal = game.date || game.Date;
+      if (!dateVal) return new Date(0);
+      if (dateVal.seconds) return new Date(dateVal.seconds * 1000);
+      if (dateVal.toDate) return dateVal.toDate();
+      return new Date(dateVal);
+    }
+    
+    // Find ALL championship games - check both gameType and game_type
+    const champGames = games
+      .filter(g => {
+        const gameType = (g.gameType || g.game_type || '').toLowerCase();
+        const round = (g.round || g.playoff_round || '').toLowerCase();
+        return gameType === 'playoff' && round.includes('champ');
+      })
+      .sort((a, b) => parseGameDate(a) - parseGameDate(b)); // Sort by date ascending
 
-    if (!champGame) {
+    if (champGames.length === 0) {
       container.innerHTML = `
         <div class="empty-state">
           <div class="empty-state-icon">🏆</div>
@@ -1206,39 +1236,51 @@
       return;
     }
 
-    const homeTeam = getTeamName(champGame, 'home');
-    const awayTeam = getTeamName(champGame, 'away');
-    const homeScore = getScore(champGame, 'home');
-    const awayScore = getScore(champGame, 'away');
-    const winner = (champGame.winner || champGame.Winner || '').toLowerCase().replace(/\s+/g, '').replace(/_/g, '');
-    const gameDate = champGame.date || champGame.Date;
+    // Render each championship game
+    container.innerHTML = champGames.map((champGame, index) => {
+      const homeTeam = getTeamName(champGame, 'home');
+      const awayTeam = getTeamName(champGame, 'away');
+      const homeScore = getScore(champGame, 'home');
+      const awayScore = getScore(champGame, 'away');
+      const winner = (champGame.winner || champGame.Winner || '').toLowerCase().replace(/\s+/g, '').replace(/_/g, '');
+      const gameDate = champGame.date || champGame.Date;
 
-    const homeLower = homeTeam.toLowerCase().replace(/\s+/g, '').replace(/_/g, '');
-    const awayLower = awayTeam.toLowerCase().replace(/\s+/g, '').replace(/_/g, '');
-    
-    const homeIsWinner = winner.includes(homeLower) || homeLower.includes(winner);
-    const awayIsWinner = winner.includes(awayLower) || awayLower.includes(winner);
+      const homeLower = homeTeam.toLowerCase().replace(/\s+/g, '').replace(/_/g, '');
+      const awayLower = awayTeam.toLowerCase().replace(/\s+/g, '').replace(/_/g, '');
+      
+      const homeIsWinner = winner.includes(homeLower) || homeLower.includes(winner);
+      const awayIsWinner = winner.includes(awayLower) || awayLower.includes(winner);
+      
+      // Only show CHAMPION badge on the last game (the decisive one)
+      const isLastGame = index === champGames.length - 1;
+      const showChampionBadge = isLastGame;
+      
+      // Game label for multiple championship games
+      const gameLabel = champGames.length > 1 ? `Game ${index + 1}${isLastGame ? ' (Deciding Game)' : ''}` : '';
 
-    container.innerHTML = `
-      <div class="championship-matchup">
-        <div class="championship-team ${awayIsWinner ? 'winner' : 'loser'}">
-          <div class="championship-team-name">${formatTeamName(awayTeam)}</div>
-          <div class="championship-score">${awayScore}</div>
-          ${awayIsWinner ? '<div style="color: #b8860b; font-weight: 600;">🏆 CHAMPION</div>' : ''}
+      return `
+        ${gameLabel ? `<div class="championship-game-label">${gameLabel}</div>` : ''}
+        <div class="championship-matchup">
+          <div class="championship-team ${awayIsWinner ? 'winner' : 'loser'}">
+            <div class="championship-team-name">${formatTeamName(awayTeam)}</div>
+            <div class="championship-score">${awayScore}</div>
+            ${showChampionBadge && awayIsWinner ? '<div style="color: #b8860b; font-weight: 600;">🏆 CHAMPION</div>' : ''}
+          </div>
+          <div class="championship-vs">VS</div>
+          <div class="championship-team ${homeIsWinner ? 'winner' : 'loser'}">
+            <div class="championship-team-name">${formatTeamName(homeTeam)}</div>
+            <div class="championship-score">${homeScore}</div>
+            ${showChampionBadge && homeIsWinner ? '<div style="color: #b8860b; font-weight: 600;">🏆 CHAMPION</div>' : ''}
+          </div>
         </div>
-        <div class="championship-vs">VS</div>
-        <div class="championship-team ${homeIsWinner ? 'winner' : 'loser'}">
-          <div class="championship-team-name">${formatTeamName(homeTeam)}</div>
-          <div class="championship-score">${homeScore}</div>
-          ${homeIsWinner ? '<div style="color: #b8860b; font-weight: 600;">🏆 CHAMPION</div>' : ''}
-        </div>
-      </div>
-      ${gameDate ? `
-        <div class="championship-details">
-          📅 ${formatDate(gameDate)}
-        </div>
-      ` : ''}
-    `;
+        ${gameDate ? `
+          <div class="championship-details">
+            📅 ${formatDate(gameDate)}
+          </div>
+        ` : ''}
+        ${index < champGames.length - 1 ? '<hr class="championship-divider">' : ''}
+      `;
+    }).join('');
   }
 
   function formatDate(dateStr) {
