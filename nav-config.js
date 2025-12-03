@@ -84,6 +84,7 @@ export const NAV_STRUCTURE = {
     	{ id: 'clinching', href: 'playoff-clinching.html', label: 'Playoff Clinching', icon: '🔒', priority: 2 },
 			    { id: 'bracket', href: 'bracket.html', label: 'Create your own Playoff bracket', icon: '🔭', priority: 2 },
 	{ id: 'seasons', href: 'seasons.html', label: 'All Seasons', icon: '📅', priority: 2 },
+    { id: 'champions', href: 'champions.html', label: 'Champions', icon: '🏆', priority: 2 },
     { id: 'recap', href: 'recap.html', label: 'Year in Review', icon: '📖', priority: 2 },
     { id: 'leaders', href: 'leaders.html', label: 'Career Leaders', icon: '👑', priority: 2 },
     { id: 'awards', href: 'awards.html', label: 'Awards', icon: '🏅', priority: 2 },
@@ -181,7 +182,7 @@ export const PAGE_CONFIGS = {
   },
   
   'seasons.html': {
-    desktop: ['home', 'current-season', 'seasons', 'batting', 'pitching', 'teams', 'players', 'awards']
+    desktop: ['home', 'current-season', 'seasons', 'champions', 'batting', 'pitching', 'teams', 'players', 'awards']
   },
   
   'season.html': {
@@ -193,11 +194,15 @@ export const PAGE_CONFIGS = {
   },
   
   'awards.html': {
-    desktop: ['home', 'current-season', 'seasons', 'leaders', 'awards', 'players']
+    desktop: ['home', 'current-season', 'seasons', 'champions', 'leaders', 'awards', 'players']
   },
   
   'recap.html': {
-    desktop: ['home', 'current-season', 'seasons', 'recap', 'awards', 'leaders', 'teams', 'players']
+    desktop: ['home', 'current-season', 'seasons', 'recap', 'champions', 'awards', 'leaders', 'teams', 'players']
+  },
+  
+  'champions.html': {
+    desktop: ['home', 'current-season', 'seasons', 'champions', 'recap', 'awards', 'leaders', 'teams']
   },
   
   'milestones.html': {
