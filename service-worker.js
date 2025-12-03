@@ -1,8 +1,8 @@
 // service-worker.js - Unified Service Worker
 // Handles both offline functionality AND Firebase Cloud Messaging
-// Version 1.0.9 - updating firebase-roster.js for batting & fielding finalizing updates
+// Version 1.0.11 - updating nav-config.js for recap & champions + firebase-auth.js for specialize roles
 
-const CACHE_VERSION = 'aces-v1.0.9';
+const CACHE_VERSION = 'aces-v1.0.11';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const DYNAMIC_CACHE = `${CACHE_VERSION}-dynamic`;
 const IMAGE_CACHE = `${CACHE_VERSION}-images`;
@@ -76,6 +76,9 @@ const HTML_PAGES = [
   `${BASE_PATH}/team_compare.html`,
   `${BASE_PATH}/h2h_grid.html`,
   `${BASE_PATH}/charts.html`,
+  `${BASE_PATH}/recap.html`,
+  `${BASE_PATH}/champions.html`,
+  `${BASE_PATH}/query-stats.html`,
   `${BASE_PATH}/aggregate-stats.html`,
   `${BASE_PATH}/manage-team.html`,
   `${BASE_PATH}/approve-links.html`,
