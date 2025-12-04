@@ -1,0 +1,844 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Playoff History - Mountainside Aces</title>
+  <link rel="icon" type="image/png" href="aces-favicon.png">
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="nav-styles.css">
+  <link rel="stylesheet" href="mobile-enhancements.css">
+  <style>
+    /* Page Layout */
+    .page-header {
+      background: linear-gradient(135deg, rgba(26, 107, 74, 0.95) 0%, rgba(45, 80, 22, 0.95) 100%);
+      color: white;
+      padding: 2.5rem 1rem;
+      text-align: center;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+
+    .page-header h1 {
+      font-size: 2.5rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+      text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+    }
+
+    .page-header p {
+      font-size: 1.1rem;
+      opacity: 0.95;
+    }
+
+    .container {
+      max-width: 1400px;
+      margin: 2rem auto;
+      padding: 0 1.5rem;
+    }
+
+    /* Season Selector */
+    .season-selector {
+      background: white;
+      padding: 1.5rem 2rem;
+      border-radius: 12px;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+      margin-bottom: 2rem;
+      display: flex;
+      align-items: center;
+      gap: 1.5rem;
+      flex-wrap: wrap;
+    }
+
+    .season-selector label {
+      font-weight: 600;
+      color: #2d5016;
+      font-size: 1.1rem;
+    }
+
+    .season-selector select {
+      padding: 0.75rem 1.5rem;
+      font-size: 1rem;
+      border: 2px solid #1a6b4a;
+      border-radius: 8px;
+      background: white;
+      cursor: pointer;
+      min-width: 220px;
+    }
+
+    .season-selector select:focus {
+      outline: none;
+      border-color: #2d5016;
+      box-shadow: 0 0 0 3px rgba(26, 107, 74, 0.2);
+    }
+
+    .season-info {
+      margin-left: auto;
+      padding: 0.5rem 1rem;
+      background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
+      border-radius: 8px;
+      border-left: 4px solid #1a6b4a;
+    }
+
+    .champion-badge {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-weight: 600;
+      color: #1a6b4a;
+    }
+
+    .champion-badge .trophy {
+      font-size: 1.2rem;
+    }
+
+    /* Loading State */
+    .loading-container {
+      text-align: center;
+      padding: 4rem 2rem;
+    }
+
+    .spinner {
+      width: 50px;
+      height: 50px;
+      border: 4px solid #e2e8f0;
+      border-top-color: #1a6b4a;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 1rem;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* No Data State */
+    .no-data {
+      text-align: center;
+      padding: 4rem 2rem;
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+
+    .no-data h3 {
+      color: #64748b;
+      margin-bottom: 0.5rem;
+    }
+
+    .no-data p {
+      color: #94a3b8;
+    }
+
+    /* Bracket Container */
+    .bracket-container {
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+      padding: 2rem;
+      overflow-x: auto;
+    }
+
+    /* Round Section */
+    .round-section {
+      margin-bottom: 2rem;
+      padding-bottom: 1.5rem;
+      border-bottom: 1px solid #e2e8f0;
+    }
+
+    .round-section:last-child {
+      margin-bottom: 0;
+      padding-bottom: 0;
+      border-bottom: none;
+    }
+
+    .round-header {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+    }
+
+    .round-header h3 {
+      color: #2d5016;
+      font-size: 1.25rem;
+      margin: 0;
+    }
+
+    .round-header .round-badge {
+      background: linear-gradient(135deg, #1a6b4a 0%, #2d5016 100%);
+      color: white;
+      padding: 0.25rem 0.75rem;
+      border-radius: 20px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+
+    /* Games Grid */
+    .games-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      gap: 1.25rem;
+    }
+
+    /* Game Card */
+    .game-card {
+      background: #f8fafc;
+      border-radius: 10px;
+      border: 2px solid #e2e8f0;
+      overflow: hidden;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+
+    .game-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    }
+
+    .game-card.championship {
+      border: 3px solid #f59e0b;
+      background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+    }
+
+    .game-header {
+      background: linear-gradient(135deg, #1a6b4a 0%, #2d5016 100%);
+      color: white;
+      padding: 0.5rem 1rem;
+      font-size: 0.8rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .game-number {
+      font-weight: 600;
+    }
+
+    .game-date {
+      opacity: 0.9;
+    }
+
+    .game-body {
+      padding: 1rem;
+    }
+
+    /* Team Row */
+    .team-row {
+      display: flex;
+      align-items: center;
+      padding: 0.75rem;
+      border-radius: 6px;
+      margin-bottom: 0.5rem;
+      background: white;
+      transition: background 0.2s;
+    }
+
+    .team-row:last-child {
+      margin-bottom: 0;
+    }
+
+    .team-row.winner {
+      background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
+      border-left: 4px solid #1a6b4a;
+    }
+
+    .team-row.loser {
+      opacity: 0.7;
+    }
+
+    .team-name {
+      flex: 1;
+      font-weight: 600;
+      color: #2d3748;
+    }
+
+    .team-score {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: #2d5016;
+      min-width: 40px;
+      text-align: right;
+    }
+
+    .team-row.winner .team-score {
+      color: #1a6b4a;
+    }
+
+    .team-row.loser .team-score {
+      color: #94a3b8;
+    }
+
+    .winner-indicator {
+      margin-left: 0.5rem;
+      color: #1a6b4a;
+      font-weight: bold;
+    }
+
+    /* Score divider */
+    .score-divider {
+      text-align: center;
+      color: #94a3b8;
+      font-size: 0.75rem;
+      padding: 0.25rem 0;
+    }
+
+    /* Championship Section */
+    .championship-section {
+      background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+      border: 3px solid #f59e0b;
+      border-radius: 12px;
+      padding: 2rem;
+      text-align: center;
+      margin-top: 2rem;
+    }
+
+    .championship-section h2 {
+      color: #b45309;
+      margin-bottom: 1rem;
+      font-size: 1.75rem;
+    }
+
+    .champion-name {
+      font-size: 2.5rem;
+      font-weight: 700;
+      color: #1a6b4a;
+      margin: 1rem 0;
+      text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.1);
+    }
+
+    .championship-score {
+      font-size: 1.1rem;
+      color: #64748b;
+    }
+
+    /* Stats Summary */
+    .stats-summary {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 1rem;
+      margin-top: 1.5rem;
+      padding-top: 1.5rem;
+      border-top: 2px solid rgba(245, 158, 11, 0.3);
+    }
+
+    .stat-item {
+      text-align: center;
+    }
+
+    .stat-value {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: #2d5016;
+    }
+
+    .stat-label {
+      font-size: 0.85rem;
+      color: #64748b;
+    }
+
+    /* Bracket Legend */
+    .bracket-legend {
+      display: flex;
+      gap: 1.5rem;
+      flex-wrap: wrap;
+      padding: 1rem;
+      background: #f8fafc;
+      border-radius: 8px;
+      margin-bottom: 1.5rem;
+      font-size: 0.9rem;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .legend-color {
+      width: 16px;
+      height: 16px;
+      border-radius: 4px;
+    }
+
+    .legend-color.winners {
+      background: linear-gradient(135deg, #1a6b4a 0%, #2d5016 100%);
+    }
+
+    .legend-color.losers {
+      background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+    }
+
+    .legend-color.playin {
+      background: linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%);
+    }
+
+    /* Mobile Responsive */
+    @media (max-width: 768px) {
+      .page-header h1 {
+        font-size: 1.75rem;
+      }
+
+      .season-selector {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      .season-selector select {
+        width: 100%;
+      }
+
+      .season-info {
+        margin-left: 0;
+      }
+
+      .games-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .bracket-container {
+        padding: 1rem;
+      }
+
+      .championship-section {
+        padding: 1.5rem;
+      }
+
+      .champion-name {
+        font-size: 1.75rem;
+      }
+    }
+
+    /* Print Styles */
+    @media print {
+      .season-selector,
+      .bracket-legend,
+      nav {
+        display: none !important;
+      }
+
+      .bracket-container {
+        box-shadow: none;
+        padding: 0;
+      }
+
+      .page-header {
+        background: #1a6b4a !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+    }
+  </style>
+</head>
+<body>
+  <!-- Navigation will be injected here -->
+  <nav id="main-nav"></nav>
+
+  <!-- Header -->
+  <div class="page-header">
+    <h1>🏆 Playoff History</h1>
+    <p>Explore historical playoff brackets from past seasons</p>
+  </div>
+
+  <!-- Main Container -->
+  <div class="container">
+    <!-- Season Selector -->
+    <div class="season-selector">
+      <label for="seasonSelect">Select Season:</label>
+      <select id="seasonSelect">
+        <option value="">Loading seasons...</option>
+      </select>
+      <div class="season-info" id="seasonInfo" style="display: none;">
+        <div class="champion-badge">
+          <span class="trophy">🏆</span>
+          <span id="championName">Champion</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bracket Container -->
+    <div id="bracketContainer">
+      <div class="loading-container">
+        <div class="spinner"></div>
+        <p>Loading playoff history...</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Navigation Component -->
+  <script src="nav-component.js"></script>
+
+  <!-- Firebase and Data -->
+  <script type="module">
+    import { getAllSeasons, getSeasonGames } from './firebase-data.js';
+
+    // Global state
+    let allSeasons = [];
+    let currentPlayoffGames = [];
+
+    // Round display order and names
+    const roundOrder = [
+      { key: 'Play-In', display: 'Play-In Round', type: 'playin' },
+      { key: 'Round 1', display: 'First Round (Winners Bracket)', type: 'winners' },
+      { key: 'First Round', display: 'First Round (Winners Bracket)', type: 'winners' },
+      { key: 'Losers Round 1', display: 'Losers Bracket - Round 1', type: 'losers' },
+      { key: 'Elimination Round 1', display: 'Losers Bracket - Round 1', type: 'losers' },
+      { key: 'Winners Semifinals', display: 'Winners Bracket - Semifinals', type: 'winners' },
+      { key: 'Winners Round 2', display: 'Winners Bracket - Semifinals', type: 'winners' },
+      { key: 'Losers Round 2', display: 'Losers Bracket - Round 2', type: 'losers' },
+      { key: 'Elimination Round 2', display: 'Losers Bracket - Round 2', type: 'losers' },
+      { key: 'Winners Finals', display: 'Winners Bracket Final', type: 'winners' },
+      { key: 'Winners Final', display: 'Winners Bracket Final', type: 'winners' },
+      { key: 'Losers Round 3', display: 'Losers Bracket - Round 3', type: 'losers' },
+      { key: 'Elimination Round 3', display: 'Losers Bracket - Round 3', type: 'losers' },
+      { key: 'Losers Semifinals', display: 'Losers Bracket - Semifinals', type: 'losers' },
+      { key: 'Elimination Semifinals', display: 'Losers Bracket - Semifinals', type: 'losers' },
+      { key: 'Losers Final', display: 'Losers Bracket Final', type: 'losers' },
+      { key: 'Championship', display: '🏆 Championship', type: 'championship' },
+      { key: 'Championship (If Necessary)', display: '🏆 Championship Game 2 (If Necessary)', type: 'championship' }
+    ];
+
+    // Initialize on page load
+    document.addEventListener('DOMContentLoaded', async () => {
+      await loadSeasons();
+    });
+
+    async function loadSeasons() {
+      try {
+        console.log('📅 Loading seasons...');
+        allSeasons = await getAllSeasons();
+        
+        // Sort seasons: most recent first
+        allSeasons.sort((a, b) => {
+          if (b.year !== a.year) return b.year - a.year;
+          // Fall comes after Spring in the same year
+          return a.season === 'spring' ? 1 : -1;
+        });
+
+        const select = document.getElementById('seasonSelect');
+        select.innerHTML = '<option value="">-- Select a Season --</option>';
+
+        // Filter to seasons that might have playoff data (you could also check for playoffStarted flag)
+        const playoffSeasons = allSeasons.filter(s => 
+          // Include seasons that are not currently active (completed seasons)
+          // or have explicit playoff data
+          !s.isActive || s.playoffsStarted || s.playoffStarted
+        );
+
+        // If no filtered seasons, show all seasons
+        const seasonsToShow = playoffSeasons.length > 0 ? playoffSeasons : allSeasons;
+
+        seasonsToShow.forEach(season => {
+          const option = document.createElement('option');
+          option.value = season.id;
+          const seasonName = season.season.charAt(0).toUpperCase() + season.season.slice(1);
+          const label = `${season.year} ${seasonName}`;
+          option.textContent = season.isActive ? `${label} (Current)` : label;
+          select.appendChild(option);
+        });
+
+        // Set up event listener
+        select.addEventListener('change', (e) => {
+          if (e.target.value) {
+            loadPlayoffBracket(e.target.value);
+          } else {
+            showEmptyState();
+          }
+        });
+
+        // Show initial empty state
+        showEmptyState();
+
+        console.log(`✅ Loaded ${allSeasons.length} seasons`);
+
+      } catch (error) {
+        console.error('❌ Error loading seasons:', error);
+        document.getElementById('bracketContainer').innerHTML = `
+          <div class="no-data">
+            <h3>Error Loading Seasons</h3>
+            <p>${error.message}</p>
+          </div>
+        `;
+      }
+    }
+
+    function showEmptyState() {
+      document.getElementById('seasonInfo').style.display = 'none';
+      document.getElementById('bracketContainer').innerHTML = `
+        <div class="no-data">
+          <h3>📋 Select a Season</h3>
+          <p>Choose a season from the dropdown above to view its playoff bracket.</p>
+        </div>
+      `;
+    }
+
+    async function loadPlayoffBracket(seasonId) {
+      const container = document.getElementById('bracketContainer');
+      container.innerHTML = `
+        <div class="loading-container">
+          <div class="spinner"></div>
+          <p>Loading playoff bracket...</p>
+        </div>
+      `;
+
+      try {
+        console.log(`🏆 Loading playoff games for ${seasonId}...`);
+        
+        const allGames = await getSeasonGames(seasonId);
+        console.log(`📊 Total games loaded: ${allGames.length}`);
+
+        // Filter for playoff games
+        currentPlayoffGames = allGames.filter(g => 
+          g.game_type === 'Playoff' || 
+          g.gameType === 'playoff' ||
+          g.game_type === 'playoff' ||
+          g.gameType === 'Playoff' ||
+          (g.round && g.round !== '')
+        );
+
+        console.log(`🎯 Playoff games found: ${currentPlayoffGames.length}`);
+
+        if (currentPlayoffGames.length === 0) {
+          container.innerHTML = `
+            <div class="no-data">
+              <h3>No Playoff Data</h3>
+              <p>No playoff games have been recorded for this season yet.</p>
+            </div>
+          `;
+          document.getElementById('seasonInfo').style.display = 'none';
+          return;
+        }
+
+        // Render the bracket
+        renderBracket(seasonId);
+
+      } catch (error) {
+        console.error('❌ Error loading playoff bracket:', error);
+        container.innerHTML = `
+          <div class="no-data">
+            <h3>Error Loading Bracket</h3>
+            <p>${error.message}</p>
+          </div>
+        `;
+      }
+    }
+
+    function renderBracket(seasonId) {
+      const container = document.getElementById('bracketContainer');
+      
+      // Group games by round
+      const gamesByRound = {};
+      currentPlayoffGames.forEach(game => {
+        const round = game.round || 'Unknown Round';
+        if (!gamesByRound[round]) {
+          gamesByRound[round] = [];
+        }
+        gamesByRound[round].push(game);
+      });
+
+      console.log('📋 Games by round:', Object.keys(gamesByRound));
+
+      // Find the champion
+      const championshipGames = gamesByRound['Championship'] || [];
+      let champion = null;
+      let championshipGame = null;
+      
+      if (championshipGames.length > 0) {
+        // Sort to get the final championship game (in case there were 2)
+        championshipGames.sort((a, b) => {
+          const dateA = parseGameDate(a);
+          const dateB = parseGameDate(b);
+          return dateB - dateA;
+        });
+        
+        championshipGame = championshipGames.find(g => g.winner);
+        if (championshipGame) {
+          champion = championshipGame.winner;
+        }
+      }
+
+      // Update champion display
+      const seasonInfo = document.getElementById('seasonInfo');
+      if (champion) {
+        document.getElementById('championName').textContent = `Champion: ${capitalize(champion)}`;
+        seasonInfo.style.display = 'block';
+      } else {
+        seasonInfo.style.display = 'none';
+      }
+
+      // Build HTML
+      let html = '<div class="bracket-container">';
+      
+      // Legend
+      html += `
+        <div class="bracket-legend">
+          <div class="legend-item">
+            <div class="legend-color playin"></div>
+            <span>Play-In</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-color winners"></div>
+            <span>Winners Bracket</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-color losers"></div>
+            <span>Losers Bracket</span>
+          </div>
+        </div>
+      `;
+
+      // Track which rounds we've rendered to avoid duplicates
+      const renderedRounds = new Set();
+
+      // Render rounds in order
+      roundOrder.forEach(roundConfig => {
+        if (gamesByRound[roundConfig.key] && !renderedRounds.has(roundConfig.display)) {
+          const games = gamesByRound[roundConfig.key];
+          html += renderRoundSection(roundConfig.display, games, roundConfig.type);
+          renderedRounds.add(roundConfig.display);
+        }
+      });
+
+      // Render any remaining rounds not in our predefined order
+      Object.keys(gamesByRound).forEach(roundName => {
+        const alreadyRendered = roundOrder.some(r => r.key === roundName);
+        if (!alreadyRendered && !renderedRounds.has(roundName)) {
+          const games = gamesByRound[roundName];
+          const type = roundName.toLowerCase().includes('loser') ? 'losers' : 'winners';
+          html += renderRoundSection(roundName, games, type);
+          renderedRounds.add(roundName);
+        }
+      });
+
+      // Championship summary if we have a champion
+      if (champion && championshipGame) {
+        const homeTeam = championshipGame['home team'] || championshipGame.homeTeamName || '';
+        const awayTeam = championshipGame['away team'] || championshipGame.awayTeamName || '';
+        const homeScore = championshipGame['home score'] ?? championshipGame.homeScore ?? '';
+        const awayScore = championshipGame['away score'] ?? championshipGame.awayScore ?? '';
+        
+        let runnerUp = '';
+        if (champion.toLowerCase() === homeTeam.toLowerCase()) {
+          runnerUp = awayTeam;
+        } else {
+          runnerUp = homeTeam;
+        }
+
+        // Calculate stats
+        const totalGames = currentPlayoffGames.length;
+        const completedGames = currentPlayoffGames.filter(g => g.winner).length;
+        
+        html += `
+          <div class="championship-section">
+            <h2>🏆 Season Champion</h2>
+            <div class="champion-name">${capitalize(champion)}</div>
+            <div class="championship-score">
+              Defeated ${capitalize(runnerUp)} ${homeScore}-${awayScore}
+            </div>
+            <div class="stats-summary">
+              <div class="stat-item">
+                <div class="stat-value">${totalGames}</div>
+                <div class="stat-label">Total Playoff Games</div>
+              </div>
+              <div class="stat-item">
+                <div class="stat-value">${completedGames}</div>
+                <div class="stat-label">Games Completed</div>
+              </div>
+              <div class="stat-item">
+                <div class="stat-value">${Object.keys(gamesByRound).length}</div>
+                <div class="stat-label">Rounds Played</div>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+
+      html += '</div>';
+      container.innerHTML = html;
+    }
+
+    function renderRoundSection(roundName, games, type) {
+      // Sort games by date or game number
+      games.sort((a, b) => {
+        const dateA = parseGameDate(a);
+        const dateB = parseGameDate(b);
+        return dateA - dateB;
+      });
+
+      let badgeClass = type === 'losers' ? 'background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);' :
+                       type === 'playin' ? 'background: linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%);' :
+                       'background: linear-gradient(135deg, #1a6b4a 0%, #2d5016 100%);';
+
+      let html = `
+        <div class="round-section">
+          <div class="round-header">
+            <h3>${roundName}</h3>
+            <span class="round-badge" style="${badgeClass}">${games.length} ${games.length === 1 ? 'Game' : 'Games'}</span>
+          </div>
+          <div class="games-grid">
+      `;
+
+      games.forEach((game, index) => {
+        html += renderGameCard(game, index + 1, type === 'championship');
+      });
+
+      html += '</div></div>';
+      return html;
+    }
+
+    function renderGameCard(game, gameNum, isChampionship) {
+      const homeTeam = game['home team'] || game.homeTeamName || 'TBD';
+      const awayTeam = game['away team'] || game.awayTeamName || 'TBD';
+      const homeScore = game['home score'] ?? game.homeScore ?? '';
+      const awayScore = game['away score'] ?? game.awayScore ?? '';
+      const winner = game.winner || '';
+      const gameDate = formatGameDate(game);
+
+      const homeIsWinner = winner && winner.toLowerCase() === homeTeam.toLowerCase();
+      const awayIsWinner = winner && winner.toLowerCase() === awayTeam.toLowerCase();
+
+      return `
+        <div class="game-card ${isChampionship ? 'championship' : ''}">
+          <div class="game-header">
+            <span class="game-number">Game ${gameNum}</span>
+            <span class="game-date">${gameDate}</span>
+          </div>
+          <div class="game-body">
+            <div class="team-row ${homeIsWinner ? 'winner' : ''} ${awayIsWinner ? 'loser' : ''}">
+              <span class="team-name">${capitalize(homeTeam)}</span>
+              <span class="team-score">${homeScore}</span>
+              ${homeIsWinner ? '<span class="winner-indicator">✓</span>' : ''}
+            </div>
+            <div class="score-divider">vs</div>
+            <div class="team-row ${awayIsWinner ? 'winner' : ''} ${homeIsWinner ? 'loser' : ''}">
+              <span class="team-name">${capitalize(awayTeam)}</span>
+              <span class="team-score">${awayScore}</span>
+              ${awayIsWinner ? '<span class="winner-indicator">✓</span>' : ''}
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function parseGameDate(game) {
+      if (game.date && game.date.seconds) {
+        return new Date(game.date.seconds * 1000);
+      } else if (game.date) {
+        return new Date(game.date);
+      }
+      return new Date(0);
+    }
+
+    function formatGameDate(game) {
+      const date = parseGameDate(game);
+      if (date.getTime() === 0) return '';
+      
+      const options = { month: 'short', day: 'numeric', year: 'numeric' };
+      return date.toLocaleDateString('en-US', options);
+    }
+
+    function capitalize(str) {
+      if (!str) return '';
+      return str.charAt(0).toUpperCase() + str.slice(1);
+    }
+  </script>
+</body>
+</html>
