@@ -1233,7 +1233,7 @@
   }
 
   function calculateSeeds() {
-    // Calculate standings from regular season games only
+    // Calculate standings from regular season games only with proper tiebreakers
     const standings = {};
     
     seasonGames.forEach(game => {
@@ -1243,35 +1243,64 @@
       const home = getTeamName(game, 'home');
       const away = getTeamName(game, 'away');
       const winner = game.winner || '';
+      const homeScore = parseInt(game.homeScore) || 0;
+      const awayScore = parseInt(game.awayScore) || 0;
       
       if (game.homeScore === undefined || game.awayScore === undefined) return;
 
       [home, away].forEach(team => {
         const key = normalizeTeamName(team);
         if (!standings[key]) {
-          standings[key] = { name: team, wins: 0, losses: 0 };
+          standings[key] = { 
+            name: team, 
+            wins: 0, 
+            losses: 0, 
+            runsFor: 0, 
+            runsAgainst: 0,
+            h2h: {} 
+          };
         }
       });
 
       const homeKey = normalizeTeamName(home);
       const awayKey = normalizeTeamName(away);
 
+      // Track runs
+      standings[homeKey].runsFor += homeScore;
+      standings[homeKey].runsAgainst += awayScore;
+      standings[awayKey].runsFor += awayScore;
+      standings[awayKey].runsAgainst += homeScore;
+
+      // Initialize h2h if needed
+      if (!standings[homeKey].h2h[awayKey]) {
+        standings[homeKey].h2h[awayKey] = { wins: 0, losses: 0 };
+      }
+      if (!standings[awayKey].h2h[homeKey]) {
+        standings[awayKey].h2h[homeKey] = { wins: 0, losses: 0 };
+      }
+
       if (teamsMatch(winner, home)) {
         standings[homeKey].wins++;
         standings[awayKey].losses++;
+        standings[homeKey].h2h[awayKey].wins++;
+        standings[awayKey].h2h[homeKey].losses++;
       } else if (teamsMatch(winner, away)) {
         standings[awayKey].wins++;
         standings[homeKey].losses++;
+        standings[awayKey].h2h[homeKey].wins++;
+        standings[homeKey].h2h[awayKey].losses++;
       }
     });
 
-    // Sort by win percentage
-    const sorted = Object.values(standings).sort((a, b) => {
-      const pctA = a.wins / (a.wins + a.losses) || 0;
-      const pctB = b.wins / (b.wins + b.losses) || 0;
-      if (pctB !== pctA) return pctB - pctA;
-      return b.wins - a.wins;
-    });
+    // Calculate win percentage and run differential
+    const teamsArray = Object.values(standings).map(team => ({
+      ...team,
+      winPct: (team.wins + team.losses) > 0 ? team.wins / (team.wins + team.losses) : 0,
+      runDifferential: team.runsFor - team.runsAgainst
+    }));
+
+    // Sort with proper tiebreakers
+    const sorted = sortWithTiebreakers(teamsArray);
 
     const seeds = {};
     sorted.forEach((team, index) => {
@@ -1279,6 +1308,92 @@
     });
 
     return seeds;
+  }
+
+  /**
+   * Compare head-to-head record between two teams
+   */
+  function compareHeadToHead(teamA, teamB) {
+    const keyB = normalizeTeamName(teamB.name);
+    const aVsB = teamA.h2h[keyB];
+    
+    if (!aVsB) return 0;
+    
+    const totalGames = aVsB.wins + aVsB.losses;
+    if (totalGames === 0) return 0;
+    
+    const aH2HWinPct = aVsB.wins / totalGames;
+    const bH2HWinPct = aVsB.losses / totalGames;
+    
+    if (aH2HWinPct !== bH2HWinPct) {
+      return bH2HWinPct - aH2HWinPct; // Higher win pct = better = lower return value for sort
+    }
+    
+    return 0;
+  }
+
+  /**
+   * Sort teams with proper tiebreaker handling
+   * Tiebreaker order:
+   * 1. Win Percentage
+   * 2. Head-to-Head (2-team ties ONLY)
+   * 3. Runs Allowed (fewer is better)
+   * 4. Run Differential (higher is better)
+   */
+  function sortWithTiebreakers(teams) {
+    // First sort by win percentage
+    const sorted = [...teams].sort((a, b) => b.winPct - a.winPct);
+    
+    // Find groups of teams with identical win percentages
+    const winPctGroups = [];
+    let currentGroup = [sorted[0]];
+    
+    for (let i = 1; i < sorted.length; i++) {
+      if (Math.abs(sorted[i].winPct - sorted[i-1].winPct) < 0.0001) {
+        currentGroup.push(sorted[i]);
+      } else {
+        winPctGroups.push(currentGroup);
+        currentGroup = [sorted[i]];
+      }
+    }
+    winPctGroups.push(currentGroup);
+    
+    // Apply appropriate tiebreakers to each group
+    const brokenTies = winPctGroups.map(group => {
+      if (group.length === 1) {
+        return group;
+      } else if (group.length === 2) {
+        // 2-team tie: Use Head-to-Head
+        const [a, b] = group;
+        const h2hComp = compareHeadToHead(a, b);
+        
+        if (h2hComp !== 0) {
+          return h2hComp > 0 ? [b, a] : [a, b];
+        } else {
+          // H2H tied, use Runs Allowed
+          return breakTieByRunsAllowed(group);
+        }
+      } else {
+        // 3+ team tie: Skip H2H, use Runs Allowed directly
+        return breakTieByRunsAllowed(group);
+      }
+    });
+    
+    return brokenTies.flat();
+  }
+
+  /**
+   * Break ties using Runs Allowed (fewer is better), then Run Differential
+   */
+  function breakTieByRunsAllowed(teams) {
+    return [...teams].sort((a, b) => {
+      // Runs Allowed (fewer is better)
+      if (a.runsAgainst !== b.runsAgainst) {
+        return a.runsAgainst - b.runsAgainst;
+      }
+      // Run Differential (higher is better)
+      return b.runDifferential - a.runDifferential;
+    });
   }
 
   function renderH2H() {
@@ -1354,8 +1469,7 @@
       .filter(g => {
         const home = getTeamName(g, 'home');
         const away = getTeamName(g, 'away');
-        return (teamsMatch(home, teamName) || teamsMatch(away, teamName)) &&
-               (g.homeScore !== undefined && g.awayScore !== undefined);
+        return teamsMatch(home, teamName) || teamsMatch(away, teamName);
       })
       .map(g => {
         const home = getTeamName(g, 'home');
@@ -1364,11 +1478,18 @@
         const opponent = isHome ? away : home;
         const teamScore = isHome ? g.homeScore : g.awayScore;
         const oppScore = isHome ? g.awayScore : g.homeScore;
-        const didWin = teamsMatch(g.winner, teamName);
         const gameType = (g.gameType || g.game_type || '').toLowerCase();
         const round = g.round || g.playoff_round || (gameType === 'playoff' ? 'Playoff' : 'Regular');
         const isPlayoff = gameType === 'playoff';
         const isChampionship = round.toLowerCase().includes('champ');
+        
+        // Check if game has been played (has a winner and scores)
+        const hasBeenPlayed = g.winner && g.winner.trim() !== '' && 
+                              teamScore !== undefined && oppScore !== undefined &&
+                              (teamScore !== 0 || oppScore !== 0 || g.winner.toLowerCase() !== 'tie');
+        
+        const didWin = hasBeenPlayed && teamsMatch(g.winner, teamName);
+        const isPending = !hasBeenPlayed;
         
         // Parse date for sorting
         let dateObj = new Date(0);
@@ -1384,15 +1505,18 @@
 
         return {
           opponent,
-          teamScore,
-          oppScore,
+          teamScore: hasBeenPlayed ? teamScore : null,
+          oppScore: hasBeenPlayed ? oppScore : null,
           didWin,
+          isPending,
           round,
           isPlayoff,
           isChampionship,
           date: dateObj
         };
       })
+      // Only include played games OR championship games (even if pending)
+      .filter(g => !g.isPending || g.isChampionship)
       .sort((a, b) => {
         // Championship always last
         if (a.isChampionship && !b.isChampionship) return 1;
@@ -1410,6 +1534,21 @@
 
     return journey.map(game => {
       const typeClass = game.isChampionship ? 'championship' : (game.isPlayoff ? 'playoff' : '');
+      
+      // Handle pending games (championship not yet played)
+      if (game.isPending) {
+        return `
+          <div class="journey-step ${typeClass}">
+            <div class="journey-round">${game.round}</div>
+            <div class="journey-result">
+              <span style="color: var(--accent-color); font-weight: 700;">❓ TBD</span>
+              vs ${formatTeamName(game.opponent)}
+            </div>
+            <div class="journey-score">-</div>
+          </div>
+        `;
+      }
+      
       const resultClass = game.didWin ? 'win' : 'loss';
       const indicator = game.didWin ? '✅' : '❌';
       const resultText = game.didWin ? 'W' : 'L';
@@ -1448,7 +1587,12 @@
 
   function getTopPlayers(teamName, count) {
     return playerData
-      .filter(p => teamsMatch(p.team, teamName))
+      .filter(p => {
+        if (!teamsMatch(p.team, teamName)) return false;
+        // Require minimum 20 plate appearances
+        const pa = (p.atBats || p.ab || 0) + (p.walks || p.bb || 0) + (p.hbp || 0) + (p.sf || 0);
+        return pa >= 20;
+      })
       .sort((a, b) => {
         const bpiA = a.acesBPI || a.AcesWar || 0;
         const bpiB = b.acesBPI || b.AcesWar || 0;
