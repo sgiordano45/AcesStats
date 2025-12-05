@@ -1,7 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<link rel="manifest" href="/manifest.json">
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Weekend Preview - Mountainside Aces</title>
@@ -106,7 +105,7 @@ body {
 }
 
 .header::after {
-  content: '🔮';
+  content: 'ðŸ”®';
   position: absolute;
   bottom: -40px;
   left: -40px;
@@ -854,11 +853,11 @@ import {
 
 // DIAGNOSTIC CODE - ADD THIS:
 setTimeout(() => {
-  console.log('🔍 Checking for Firebase persistence...');
+  console.log('ðŸ” Checking for Firebase persistence...');
   indexedDB.databases().then(dbs => {
-    console.log('🔍 All IndexedDB databases:', dbs.map(db => db.name));
+    console.log('ðŸ” All IndexedDB databases:', dbs.map(db => db.name));
     const fbDb = dbs.find(db => db.name === 'firebaseLocalStorageDb');
-    console.log(fbDb ? '✅ Firebase DB found!' : '❌ Firebase DB NOT found!');
+    console.log(fbDb ? '✅ Firebase DB found!' : 'âŒ Firebase DB NOT found!');
   });
 }, 2000);
 
@@ -893,14 +892,14 @@ window.addEventListener('load', function() {
 
 async function loadWeekendData() {
   try {
-    console.log('📊 Loading weekend data from Firebase...');
+    console.log('ðŸ“Š Loading weekend data from Firebase...');
     
     currentSeasonData = await getCurrentSeason();
     console.log('✅ Current season:', currentSeasonData);
     
     // CHECK FOR NULL - If no cached season data, we can't load anything offline
     if (!currentSeasonData) {
-      console.log('⚠️ No season data available');
+      console.log('âš ï¸ No season data available');
       throw new Error('No season data cached - please visit this page online first');
     }
     
@@ -984,7 +983,7 @@ async function loadWeekendData() {
     generateWeekendPreview();
     
   } catch (error) {
-    console.error('❌ Error loading weekend data:', error);
+    console.error('âŒ Error loading weekend data:', error);
     showError();
   }
 }
@@ -1080,12 +1079,34 @@ function calculateTeamStanding(teamName) {
     const homeTeam = game["home team"];
     const awayTeam = game["away team"];
     const winner = game.winner;
+    const homeScore = parseInt(game.home_score) || 0;
+    const awayScore = parseInt(game.away_score) || 0;
 
     if (!teamStats[homeTeam]) {
-      teamStats[homeTeam] = { name: homeTeam, wins: 0, losses: 0, ties: 0 };
+      teamStats[homeTeam] = {
+        name: homeTeam, wins: 0, losses: 0, ties: 0,
+        runsFor: 0, runsAgainst: 0, h2h: {}
+      };
     }
     if (!teamStats[awayTeam]) {
-      teamStats[awayTeam] = { name: awayTeam, wins: 0, losses: 0, ties: 0 };
+      teamStats[awayTeam] = {
+        name: awayTeam, wins: 0, losses: 0, ties: 0,
+        runsFor: 0, runsAgainst: 0, h2h: {}
+      };
+    }
+
+    // Track runs
+    teamStats[homeTeam].runsFor += homeScore;
+    teamStats[homeTeam].runsAgainst += awayScore;
+    teamStats[awayTeam].runsFor += awayScore;
+    teamStats[awayTeam].runsAgainst += homeScore;
+
+    // Initialize h2h if needed
+    if (!teamStats[homeTeam].h2h[awayTeam]) {
+      teamStats[homeTeam].h2h[awayTeam] = { wins: 0, losses: 0, ties: 0 };
+    }
+    if (!teamStats[awayTeam].h2h[homeTeam]) {
+      teamStats[awayTeam].h2h[homeTeam] = { wins: 0, losses: 0, ties: 0 };
     }
 
     const winnerLower = (winner || "").toLowerCase();
@@ -1095,23 +1116,65 @@ function calculateTeamStanding(teamName) {
     if (winnerLower.includes("tie")) {
       teamStats[homeTeam].ties++;
       teamStats[awayTeam].ties++;
+      teamStats[homeTeam].h2h[awayTeam].ties++;
+      teamStats[awayTeam].h2h[homeTeam].ties++;
     } else if (winnerLower === homeLower) {
       teamStats[homeTeam].wins++;
       teamStats[awayTeam].losses++;
+      teamStats[homeTeam].h2h[awayTeam].wins++;
+      teamStats[awayTeam].h2h[homeTeam].losses++;
     } else if (winnerLower === awayLower) {
       teamStats[awayTeam].wins++;
       teamStats[homeTeam].losses++;
+      teamStats[awayTeam].h2h[homeTeam].wins++;
+      teamStats[homeTeam].h2h[awayTeam].losses++;
     }
   });
 
-  const standings = Object.values(teamStats).map(team => {
+  // Calculate derived stats
+  const preliminaryStandings = Object.values(teamStats).map(team => {
     const totalDecided = team.wins + team.losses;
     team.winPct = totalDecided > 0 ? team.wins / totalDecided : 0;
+    team.runDifferential = team.runsFor - team.runsAgainst;
     return team;
-  }).sort((a, b) => b.winPct - a.winPct);
+  });
+
+  // Sort with proper tiebreakers
+  const standings = preliminaryStandings.sort((a, b) => {
+    // First tiebreaker: Win percentage
+    if (a.winPct !== b.winPct) return b.winPct - a.winPct;
+    
+    // Check if there are 3+ teams tied at this win percentage
+    const teamsAtSameWinPct = preliminaryStandings.filter(t => t.winPct === a.winPct);
+    
+    // Second tiebreaker: Only use H2H if EXACTLY 2 teams are tied
+    if (teamsAtSameWinPct.length === 2) {
+      const h2hComp = compareStandingsHeadToHead(a, b);
+      if (h2hComp !== 0) return h2hComp;
+    }
+    
+    // Third tiebreaker: Runs Against (fewest - for 3+ teams tied, or if H2H didn't resolve)
+    if (a.runsAgainst !== b.runsAgainst) return a.runsAgainst - b.runsAgainst;
+    
+    // Fourth tiebreaker: Run Differential
+    return b.runDifferential - a.runDifferential;
+  });
 
   const teamPosition = standings.findIndex(team => team.name === teamName) + 1;
   return teamPosition > 0 ? teamPosition : null;
+}
+
+function compareStandingsHeadToHead(teamA, teamB) {
+  const aVsB = teamA.h2h[teamB.name];
+  const bVsA = teamB.h2h[teamA.name];
+  
+  if (!aVsB || !bVsA) return 0;
+  
+  // Compare head-to-head wins
+  if (aVsB.wins > bVsA.wins) return -1;
+  if (bVsA.wins > aVsB.wins) return 1;
+  
+  return 0; // H2H is tied
 }
 
 function getGamePreview(homeTeam, awayTeam, gameDate) {
@@ -1194,7 +1257,7 @@ async function loadWeatherData() {
     document.getElementById('weatherModule').innerHTML = `
       <div class="weather-error">
         <div class="weather-header">
-          <span class="weather-icon">🌤️</span>
+          <span class="weather-icon">ðŸŒ¤ï¸</span>
           <h3>Weather for Mountainside, NJ</h3>
         </div>
         <p>Weather data unavailable - API key required</p>
@@ -1239,7 +1302,7 @@ async function loadWeatherData() {
     document.getElementById('weatherModule').innerHTML = `
       <div class="weather-error">
         <div class="weather-header">
-          <span class="weather-icon">⚠️</span>
+          <span class="weather-icon">âš ï¸</span>
           <h3>Weather Unavailable</h3>
         </div>
         <p>Unable to load weather data at this time</p>
@@ -1364,7 +1427,7 @@ function displayWeather(current, forecast, isStale = false) {
 
   const staleWarning = isStale ? `
     <div style="background: rgba(255, 193, 7, 0.2); padding: 0.75rem; border-radius: 8px; margin-bottom: 1rem; font-size: 0.9rem; color: #856404; text-align: center; font-weight: 600;">
-      ⚠️ Showing recent weather data - current conditions may vary
+      âš ï¸ Showing recent weather data - current conditions may vary
     </div>
   ` : '';
 
@@ -1384,10 +1447,10 @@ function displayWeather(current, forecast, isStale = false) {
       </div>
       
       <div class="current-weather">
-        <div class="temperature">${Math.round(current.main.temp)}°F</div>
+        <div class="temperature">${Math.round(current.main.temp)}Â°F</div>
         <div class="weather-description">${current.weather[0].description}</div>
         <div class="weather-details">
-          Feels like ${Math.round(current.main.feels_like)}°F<br>
+          Feels like ${Math.round(current.main.feels_like)}Â°F<br>
           Humidity: ${current.main.humidity}%<br>
           Wind: ${Math.round(current.wind?.speed || 0)} mph
         </div>
@@ -1398,7 +1461,7 @@ function displayWeather(current, forecast, isStale = false) {
           <div class="forecast-item">
             <div class="forecast-day">${day.day}</div>
             <div class="weather-icon">${day.icon}</div>
-            <div class="forecast-temp">${day.temp}°F</div>
+            <div class="forecast-temp">${day.temp}Â°F</div>
             <div class="forecast-desc">${day.description}</div>
           </div>
         `).join('')}
@@ -1411,17 +1474,17 @@ function displayWeather(current, forecast, isStale = false) {
 
 function getWeatherIcon(condition) {
   const iconMap = {
-    'Clear': '☀️',
-    'Clouds': '☁️',
-    'Rain': '🌧️',
-    'Drizzle': '🌦️',
-    'Thunderstorm': '⛈️',
-    'Snow': '❄️',
-    'Mist': '🌫️',
-    'Fog': '🌫️',
-    'Haze': '🌫️'
+    'Clear': 'â˜€ï¸',
+    'Clouds': 'â˜ï¸',
+    'Rain': 'ðŸŒ§ï¸',
+    'Drizzle': 'ðŸŒ¦ï¸',
+    'Thunderstorm': 'â›ˆï¸',
+    'Snow': 'â„ï¸',
+    'Mist': 'ðŸŒ«ï¸',
+    'Fog': 'ðŸŒ«ï¸',
+    'Haze': 'ðŸŒ«ï¸'
   };
-  return iconMap[condition] || '🌤️';
+  return iconMap[condition] || 'ðŸŒ¤ï¸';
 }
 
 function generateWeekendPreview() {
@@ -1666,7 +1729,7 @@ function showError() {
   weekendInfoElement.innerHTML = `
     <h3>Error Loading Data</h3>
     <p>Unable to load weekend games. Please try again later.</p>
-  `;
+    `;
   
   document.getElementById('gamesGrid').innerHTML = `
     <div class="no-games">
