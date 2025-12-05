@@ -746,8 +746,10 @@
               <ul style="margin-left: 1.5rem; margin-top: 0.5rem;">
                 <li>23 games per team</li>
                 <li><strong>Game Days:</strong> Monday, Tuesday, Wednesday</li>
-                <li><strong>Time Slots:</strong> 7:00 PM, 8:00 PM, 9:00 PM (3 games per night)</li>
-                <li><strong>Double Headers:</strong> Each team plays 1 double header per week (same opponent)</li>
+                <li><strong>Each Night:</strong> 1 Double Header + 1 Single Game</li>
+                <li><strong>DH Times:</strong> ~35% at 7pm/8pm, ~65% at 8pm/9pm</li>
+                <li><strong>Weekly Limit:</strong> Max 4 games per team per week</li>
+                <li><strong>DH Rotation:</strong> Teams without a DH one week get priority the next</li>
                 <li>Minimum 8 players to start</li>
               </ul>
             </div>
@@ -825,10 +827,10 @@
             </div>
 
             <div class="form-group" id="gamesPerWeekGroup" style="display: none;">
-              <label for="gamesPerWeek">Double Headers Per Week (Per Team)</label>
-              <input type="number" id="gamesPerWeek" min="1" max="2" value="1">
+              <label for="gamesPerWeek">Max Games Per Team Per Week</label>
+              <input type="number" id="gamesPerWeek" min="2" max="4" value="4">
               <small style="color: var(--text-light); display: block; margin-top: 0.25rem;">
-                Summer: 1 double header (2 games vs same opponent) per week
+                Summer: Each night has 1 DH + 1 single game (3 games total)
               </small>
             </div>
           </div>
@@ -877,13 +879,6 @@
             <label for="balanceHomeAway">
               <input type="checkbox" id="balanceHomeAway" checked style="width: auto; display: inline; margin-right: 0.5rem;">
               Balance Home/Away Games
-            </label>
-          </div>
-
-          <div class="form-group" id="doubleHeaderInfo" style="display: none;">
-            <label>
-              <input type="checkbox" id="minimizeDoubleHeaders" checked disabled style="width: auto; display: inline; margin-right: 0.5rem;">
-              Double Headers Enabled (Required for Summer)
             </label>
           </div>
 
@@ -1016,11 +1011,10 @@
       seasonYear: 2025,
       selectedTeams: [],
       startDate: '',
-      gamesPerWeek: 1, // 1 double header per week
+      gamesPerWeek: 4, // Max games per team per week
       timeSlots: [],
       teamRestrictions: [], // Array of {teamId, teamName, restrictedDay}
       balanceHomeAway: true,
-      doubleHeaders: true, // Summer uses double headers
       generatedSchedule: []
     };
 
@@ -1066,11 +1060,9 @@
     function populateTimeSlots(seasonType) {
       const container = document.getElementById('timeSlotContainer');
       const gamesPerWeekGroup = document.getElementById('gamesPerWeekGroup');
-      const doubleHeaderInfo = document.getElementById('doubleHeaderInfo');
       
       if (seasonType === 'fall') {
         gamesPerWeekGroup.style.display = 'none';
-        if (doubleHeaderInfo) doubleHeaderInfo.style.display = 'none';
         // Fall: Sunday time slots
         const fallSlots = ['8:00 AM', '9:00 AM', '10:00 AM', '11:00 AM', '12:00 PM'];
         container.innerHTML = fallSlots.map(slot => `
@@ -1081,7 +1073,6 @@
         scheduleConfig.timeSlots = [...fallSlots];
       } else if (seasonType === 'summer') {
         gamesPerWeekGroup.style.display = 'block';
-        if (doubleHeaderInfo) doubleHeaderInfo.style.display = 'block';
         // Summer: Mon-Wed evening slots
         const summerSlots = ['7:00 PM', '8:00 PM', '9:00 PM'];
         container.innerHTML = summerSlots.map(slot => `
@@ -1331,9 +1322,8 @@
 
     function captureParameters() {
       scheduleConfig.startDate = document.getElementById('startDate').value;
-      scheduleConfig.gamesPerWeek = parseInt(document.getElementById('gamesPerWeek').value) || 1;
+      scheduleConfig.gamesPerWeek = parseInt(document.getElementById('gamesPerWeek').value) || 4;
       scheduleConfig.balanceHomeAway = document.getElementById('balanceHomeAway').checked;
-      scheduleConfig.doubleHeaders = scheduleConfig.seasonType === 'summer'; // Summer uses double headers
       captureRestrictions();
     }
 
@@ -1349,7 +1339,7 @@
         ).join(', ');
       }
       
-      const dhText = scheduleConfig.seasonType === 'summer' ? ' • Double Headers' : '';
+      const dhText = scheduleConfig.seasonType === 'summer' ? ' • DH + Single each night (varied times)' : '';
       
       const summary = `
         <strong>${scheduleConfig.seasonYear} ${scheduleConfig.seasonType.charAt(0).toUpperCase() + scheduleConfig.seasonType.slice(1)} Season</strong><br>
@@ -1367,6 +1357,8 @@
 
       // Calculate total games needed
       const totalGames = (numTeams * gamesPerTeam) / 2;
+      
+      console.log(`🎯 Generating schedule: ${numTeams} teams, ${gamesPerTeam} games each = ${totalGames} total games`);
 
       // Generate round-robin schedule
       const schedule = [];
@@ -1404,9 +1396,13 @@
 
         schedule.push(...roundGames);
       }
+      
+      console.log(`📋 Round-robin generated ${schedule.length} games`);
 
       // Trim to exact number of games needed
       const finalSchedule = schedule.slice(0, totalGames);
+      
+      console.log(`✂️ Trimmed to ${finalSchedule.length} games`);
 
       // Assign dates and times based on season type
       if (scheduleConfig.seasonType === 'fall') {
@@ -1421,9 +1417,11 @@
       displaySchedule(finalSchedule);
 
       // Update stats
+      // Summer: 9 games per week (3 DHs + 3 singles), ~13 weeks for 115 games
+      // Fall: 1 game per team per week
       const weeksNeeded = scheduleConfig.seasonType === 'fall' 
         ? Math.ceil(gamesPerTeam) 
-        : Math.ceil(gamesPerTeam / 2); // Summer: 2 games per week (double header)
+        : Math.ceil(totalGames / 9); // Summer: 9 games per week
         
       document.getElementById('totalGames').textContent = finalSchedule.length;
       document.getElementById('weeksNeeded').textContent = weeksNeeded;
@@ -1511,156 +1509,216 @@
     }
 
     function assignSummerSchedule(schedule) {
-      // Summer: Mon-Tue-Wed, double headers (same opponent plays twice per week)
-      // Each team plays 1 double header per week (2 games against same opponent)
+      // Summer: Mon-Tue-Wed, each night = 1 double header + 1 single game
+      // DH at 7pm & 8pm, single at 9pm
+      // Teams without DH last week get priority this week
+      // Max games per team per week from config
       const startDate = new Date(scheduleConfig.startDate);
-      const timeSlots = scheduleConfig.timeSlots;
+      const timeSlots = scheduleConfig.timeSlots; // ['7:00 PM', '8:00 PM', '9:00 PM']
+      const maxGamesPerTeamPerWeek = scheduleConfig.gamesPerWeek || 4;
       
       // Find next Monday
       let currentDate = new Date(startDate);
-      while (currentDate.getDay() !== 1) { // 1 = Monday
+      while (currentDate.getDay() !== 1) {
         currentDate.setDate(currentDate.getDate() + 1);
       }
 
-      let weekNumber = 1;
-      let dayOfWeek = 0; // 0=Mon, 1=Tue, 2=Wed
-      let slotIndex = 0;
-      let weeklyTeamGameCount = {}; // Track double headers per team this week
+      console.log(`📊 Scheduling ${schedule.length} games with DH + single format`);
 
-      // Process games in pairs (double headers)
-      // Group games by matchup to create double headers
-      const processedMatchups = new Map(); // Track matchups we've scheduled
-      const doubleHeaders = [];
+      // Create a pool of unscheduled games
+      const gamePool = schedule.map((game, idx) => ({
+        ...game,
+        originalIndex: idx,
+        scheduled: false
+      }));
       
-      // First, identify unique matchups and create double headers
-      for (let i = 0; i < schedule.length; i++) {
-        const game = schedule[i];
-        const matchupKey = [game.home.id, game.away.id].sort().join('-');
+      const scheduledGames = [];
+      let weekNumber = 1;
+      let teamsWithDHLastWeek = new Set(); // Track who had a DH last week
+      
+      while (gamePool.some(g => !g.scheduled)) {
+        // Track this week's stats
+        const weeklyGameCount = {}; // games per team this week
+        const teamsWithDHThisWeek = new Set();
         
-        if (!processedMatchups.has(matchupKey)) {
-          processedMatchups.set(matchupKey, [game]);
-        } else {
-          const existing = processedMatchups.get(matchupKey);
-          if (existing.length < 2) {
-            existing.push(game);
-            if (existing.length === 2) {
-              // We have a double header pair
-              doubleHeaders.push({
-                game1: existing[0],
-                game2: existing[1],
-                home: existing[0].home,
-                away: existing[0].away
-              });
+        // Calculate dates for this week
+        const mondayDate = new Date(currentDate);
+        const tuesdayDate = new Date(currentDate);
+        tuesdayDate.setDate(tuesdayDate.getDate() + 1);
+        const wednesdayDate = new Date(currentDate);
+        wednesdayDate.setDate(wednesdayDate.getDate() + 2);
+        const nightDates = [mondayDate, tuesdayDate, wednesdayDate];
+        const nightNames = ['Monday', 'Tuesday', 'Wednesday'];
+        
+        // Schedule each night: 1 DH + 1 single
+        for (let nightIdx = 0; nightIdx < 3; nightIdx++) {
+          const nightDate = nightDates[nightIdx];
+          
+          // --- SCHEDULE DOUBLE HEADER ---
+          // Find a matchup for DH, prioritizing teams that didn't have DH last week
+          // 35% at 7/8pm, 65% at 8/9pm
+          let dhGame1 = null;
+          let dhGame2 = null;
+          const dhAt7and8 = Math.random() < 0.35; // 35% chance for 7/8, 65% for 8/9
+          const dhSlot1 = dhAt7and8 ? 0 : 1; // 7pm or 8pm
+          const dhSlot2 = dhAt7and8 ? 1 : 2; // 8pm or 9pm
+          const singleSlot = dhAt7and8 ? 2 : 0; // 9pm or 7pm
+          
+          // First pass: find teams that NEED a DH (didn't have one last week)
+          for (const game of gamePool) {
+            if (game.scheduled) continue;
+            
+            const team1 = game.home.id;
+            const team2 = game.away.id;
+            const t1Games = weeklyGameCount[team1] || 0;
+            const t2Games = weeklyGameCount[team2] || 0;
+            
+            // Check if both teams can play 2 more games this week
+            if (t1Games + 2 > maxGamesPerTeamPerWeek || t2Games + 2 > maxGamesPerTeamPerWeek) continue;
+            if (teamsWithDHThisWeek.has(team1) || teamsWithDHThisWeek.has(team2)) continue;
+            
+            // Prioritize teams that didn't have DH last week
+            const needsDH = !teamsWithDHLastWeek.has(team1) || !teamsWithDHLastWeek.has(team2);
+            
+            if (needsDH || !dhGame1) {
+              // Find a second game with same matchup for the DH
+              const matchupKey = [team1, team2].sort().join('-');
+              
+              for (const game2 of gamePool) {
+                if (game2.scheduled || game2 === game) continue;
+                const key2 = [game2.home.id, game2.away.id].sort().join('-');
+                if (key2 === matchupKey) {
+                  dhGame1 = game;
+                  dhGame2 = game2;
+                  break;
+                }
+              }
+              
+              if (dhGame1 && dhGame2 && needsDH) break; // Found priority DH
             }
           }
-        }
-      }
-
-      // Any remaining single games become their own "half double header"
-      processedMatchups.forEach((games, key) => {
-        if (games.length === 1) {
-          // Create a duplicate game for the double header
-          const originalGame = games[0];
-          const game2 = {
-            home: originalGame.away, // Swap home/away for game 2
-            away: originalGame.home
-          };
-          doubleHeaders.push({
-            game1: originalGame,
-            game2: game2,
-            home: originalGame.home,
-            away: originalGame.away
-          });
-        }
-      });
-
-      // Now schedule double headers
-      doubleHeaders.forEach((dh, index) => {
-        const homeTeamId = dh.home.id;
-        const awayTeamId = dh.away.id;
-        
-        // Initialize counters for the week
-        if (!weeklyTeamGameCount[homeTeamId]) weeklyTeamGameCount[homeTeamId] = 0;
-        if (!weeklyTeamGameCount[awayTeamId]) weeklyTeamGameCount[awayTeamId] = 0;
-
-        // Check if either team already has a double header this week
-        let needsNewWeek = weeklyTeamGameCount[homeTeamId] >= 1 || 
-                           weeklyTeamGameCount[awayTeamId] >= 1;
-
-        // Check team restrictions for current day
-        const currentDayName = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][currentDate.getDay()];
-        const homeRestriction = scheduleConfig.teamRestrictions.find(r => r.teamId === homeTeamId && r.restrictedDay === currentDayName);
-        const awayRestriction = scheduleConfig.teamRestrictions.find(r => r.teamId === awayTeamId && r.restrictedDay === currentDayName);
-        
-        // If day is restricted for either team, try next day
-        if (homeRestriction || awayRestriction) {
-          console.log(`⚠️ Team restriction: ${homeRestriction ? dh.home.name : dh.away.name} cannot play on ${currentDayName}`);
           
-          // Move to next day
-          dayOfWeek++;
-          slotIndex = 0;
+          // If no pair found, create game 2 as reverse of game 1
+          if (dhGame1 && !dhGame2) {
+            // Find any unscheduled game for this matchup or create synthetic game 2
+            dhGame2 = {
+              home: dhGame1.away,
+              away: dhGame1.home,
+              scheduled: false,
+              synthetic: true
+            };
+          }
           
-          if (dayOfWeek >= 3) { // After Wednesday
-            // Move to next Monday
-            currentDate.setDate(currentDate.getDate() + 5); // Wed + 5 = Mon
-            weekNumber++;
-            weeklyTeamGameCount = {};
-            dayOfWeek = 0;
-          } else {
-            // Move to next day (Tue or Wed)
-            currentDate.setDate(currentDate.getDate() + 1);
+          // Schedule the double header
+          if (dhGame1) {
+            const team1 = dhGame1.home.id;
+            const team2 = dhGame1.away.id;
+            
+            // Game 1 of DH
+            dhGame1.date = new Date(nightDate);
+            dhGame1.time = timeSlots[dhSlot1];
+            dhGame1.week = weekNumber;
+            dhGame1.isDoubleHeader = true;
+            dhGame1.dhGame = 1;
+            dhGame1.scheduled = true;
+            scheduledGames.push(dhGame1);
+            
+            // Game 2 of DH
+            dhGame2.date = new Date(nightDate);
+            dhGame2.time = timeSlots[dhSlot2];
+            dhGame2.week = weekNumber;
+            dhGame2.isDoubleHeader = true;
+            dhGame2.dhGame = 2;
+            dhGame2.scheduled = true;
+            if (!dhGame2.synthetic) {
+              scheduledGames.push(dhGame2);
+            } else {
+              // Add synthetic game to scheduled
+              scheduledGames.push({
+                home: dhGame2.home,
+                away: dhGame2.away,
+                date: dhGame2.date,
+                time: dhGame2.time,
+                week: dhGame2.week,
+                isDoubleHeader: true,
+                dhGame: 2
+              });
+            }
+            
+            // Update counts
+            weeklyGameCount[team1] = (weeklyGameCount[team1] || 0) + 2;
+            weeklyGameCount[team2] = (weeklyGameCount[team2] || 0) + 2;
+            teamsWithDHThisWeek.add(team1);
+            teamsWithDHThisWeek.add(team2);
+          }
+          
+          // --- SCHEDULE SINGLE GAME at 9pm ---
+          let singleGame = null;
+          
+          for (const game of gamePool) {
+            if (game.scheduled) continue;
+            
+            const team1 = game.home.id;
+            const team2 = game.away.id;
+            const t1Games = weeklyGameCount[team1] || 0;
+            const t2Games = weeklyGameCount[team2] || 0;
+            
+            // Check if both teams can play 1 more game
+            if (t1Games + 1 > maxGamesPerTeamPerWeek || t2Games + 1 > maxGamesPerTeamPerWeek) continue;
+            
+            singleGame = game;
+            break;
+          }
+          
+          if (singleGame) {
+            const team1 = singleGame.home.id;
+            const team2 = singleGame.away.id;
+            
+            singleGame.date = new Date(nightDate);
+            singleGame.time = timeSlots[singleSlot];
+            singleGame.week = weekNumber;
+            singleGame.isDoubleHeader = false;
+            singleGame.scheduled = true;
+            scheduledGames.push(singleGame);
+            
+            weeklyGameCount[team1] = (weeklyGameCount[team1] || 0) + 1;
+            weeklyGameCount[team2] = (weeklyGameCount[team2] || 0) + 1;
           }
         }
-
-        if (needsNewWeek) {
-          // Move to next week's Monday
-          currentDate.setDate(currentDate.getDate() + (7 - currentDate.getDay() + 1));
-          weekNumber++;
-          weeklyTeamGameCount = {};
-          dayOfWeek = 0;
-          slotIndex = 0;
-        }
-
-        // Assign Game 1 of double header
-        dh.game1.date = new Date(currentDate);
-        dh.game1.time = timeSlots[slotIndex % timeSlots.length];
-        dh.game1.week = weekNumber;
-        dh.game1.gameNumber = index * 2 + 1;
-        dh.game1.isDoubleHeader = true;
-        dh.game1.dhGame = 1;
-
-        // Assign Game 2 of double header (next time slot, same day)
-        dh.game2.date = new Date(currentDate);
-        dh.game2.time = timeSlots[(slotIndex + 1) % timeSlots.length];
-        dh.game2.week = weekNumber;
-        dh.game2.gameNumber = index * 2 + 2;
-        dh.game2.isDoubleHeader = true;
-        dh.game2.dhGame = 2;
-
-        // Mark teams as having played their double header this week
-        weeklyTeamGameCount[homeTeamId] = 1;
-        weeklyTeamGameCount[awayTeamId] = 1;
-
-        // Move to next day for next double header pair
-        slotIndex = 0;
-        dayOfWeek++;
         
-        if (dayOfWeek >= 3) { // After Wednesday, move to next Monday
-          currentDate.setDate(currentDate.getDate() + 5); // Wed + 5 = Mon
-          weekNumber++;
-          weeklyTeamGameCount = {};
-          dayOfWeek = 0;
-        } else {
-          currentDate.setDate(currentDate.getDate() + 1);
+        console.log(`📅 Week ${weekNumber}: Scheduled games, team counts:`, weeklyGameCount);
+        
+        // Update DH tracking for next week
+        teamsWithDHLastWeek = new Set(teamsWithDHThisWeek);
+        
+        // Move to next week
+        currentDate.setDate(currentDate.getDate() + 7);
+        weekNumber++;
+        
+        // Safety check
+        if (weekNumber > 30) {
+          console.warn('⚠️ Reached 30 weeks, stopping');
+          break;
         }
+      }
+      
+      // Replace schedule with scheduled games
+      schedule.length = 0;
+      scheduledGames.forEach(game => schedule.push(game));
+      
+      // Sort by date and time
+      schedule.sort((a, b) => {
+        const dateCompare = a.date - b.date;
+        if (dateCompare !== 0) return dateCompare;
+        return timeSlots.indexOf(a.time) - timeSlots.indexOf(b.time);
+      });
+      
+      // Assign game numbers
+      schedule.forEach((game, idx) => {
+        game.gameNumber = idx + 1;
       });
 
-      // Rebuild schedule from double headers
-      schedule.length = 0;
-      doubleHeaders.forEach(dh => {
-        schedule.push(dh.game1);
-        schedule.push(dh.game2);
-      });
+      console.log(`✅ Final: ${schedule.length} games over ${weekNumber - 1} weeks`);
     }
 
     function displaySchedule(schedule) {
@@ -1804,11 +1862,10 @@
         seasonYear: 2025,
         selectedTeams: [],
         startDate: '',
-        gamesPerWeek: 1,
+        gamesPerWeek: 4,
         timeSlots: [],
         teamRestrictions: [],
         balanceHomeAway: true,
-        doubleHeaders: true,
         generatedSchedule: []
       };
 
