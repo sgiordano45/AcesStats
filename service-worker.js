@@ -1,8 +1,8 @@
 // service-worker.js - Unified Service Worker
 // Handles both offline functionality AND Firebase Cloud Messaging
-// Version 1.0.11 - updating nav-config.js for recap & champions + firebase-auth.js for specialize roles
+// Version 1.0.12 - updating team images for Blue/Carolina/Army
 
-const CACHE_VERSION = 'aces-v1.0.11';
+const CACHE_VERSION = 'aces-v1.0.12';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const DYNAMIC_CACHE = `${CACHE_VERSION}-dynamic`;
 const IMAGE_CACHE = `${CACHE_VERSION}-images`;
