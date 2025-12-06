@@ -617,31 +617,10 @@
     }
   }
   
-  /* Action buttons container */
-  .action-buttons {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-    align-items: center;
-    margin-bottom: 2rem;
-  }
-  
-  .action-buttons .back-button {
-    margin-bottom: 0;
-  }
-  
   @media (max-width: 600px) {
-    .action-buttons {
-      flex-direction: column;
-      align-items: stretch;
-    }
-    
-    .action-buttons .back-button,
-    .action-buttons .print-card-button,
-    .action-buttons .share-card-button {
+    .share-card-button {
       margin-left: 0;
-      width: 100%;
-      justify-content: center;
+      margin-top: 0.5rem;
     }
   }
   
@@ -1328,8 +1307,8 @@
 </div>
 
 <div class="page-container">
-  <div class="action-buttons">
-    <button class="back-button" onclick="window.history.back()">← Back</button>
+  <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 2rem;">
+    <button class="back-button" onclick="window.history.back()" style="margin-bottom: 0;">← Back</button>
     <button class="print-card-button" onclick="printBaseballCard()">🖨️ Print Card</button>
     <button class="share-card-button" id="shareCardBtn" onclick="sharePlayerCard()">📤 Share Card</button>
   </div>
@@ -1816,7 +1795,6 @@
   // SHARE PLAYER CARD FUNCTIONALITY
   // ========================================
   
-  // Toast notification for share actions
   function showShareToast(message, duration = 3000) {
     const existingToast = document.querySelector('.share-toast');
     if (existingToast) existingToast.remove();
@@ -1829,9 +1807,7 @@
     setTimeout(() => toast.remove(), duration);
   }
   
-  // Generate player card image using html2canvas
   async function generateCardImage() {
-    // Make sure card is populated
     const success = populateBaseballCard();
     if (!success) {
       throw new Error('Player data is still loading');
@@ -1857,55 +1833,34 @@
         throw new Error('html2canvas not loaded');
       }
       
-      // Note: Player photos from Firebase Storage may not render due to CORS
-      // This is a Firebase configuration issue - photos need CORS headers
-      const html2canvasOptions = {
+      const options = {
         scale: 2,
         backgroundColor: '#ffffff',
         logging: false,
         useCORS: true,
-        allowTaint: false, // Set to false so we get the card even if photo fails
-        onclone: (clonedDoc) => {
-          // Hide photo if it might cause taint issues
-          const clonedPhoto = clonedDoc.getElementById('cardPhoto');
-          if (clonedPhoto && clonedPhoto.src && clonedPhoto.src.includes('firebasestorage')) {
-            clonedPhoto.style.display = 'none';
-            const placeholder = clonedDoc.getElementById('cardPhotoPlaceholder');
-            if (placeholder) placeholder.style.display = 'flex';
-          }
-        }
+        allowTaint: true
       };
       
       // Capture both sides
       const [frontCanvas, backCanvas] = await Promise.all([
-        html2canvas(cardFront, html2canvasOptions),
-        html2canvas(cardBack, html2canvasOptions)
+        html2canvas(cardFront, options),
+        html2canvas(cardBack, options)
       ]);
       
-      // Create combined canvas with both cards side by side
+      // Combine side by side
       const gap = 40;
-      const combinedWidth = frontCanvas.width + backCanvas.width + gap;
-      const combinedHeight = Math.max(frontCanvas.height, backCanvas.height);
-      
       const combinedCanvas = document.createElement('canvas');
-      combinedCanvas.width = combinedWidth;
-      combinedCanvas.height = combinedHeight;
+      combinedCanvas.width = frontCanvas.width + backCanvas.width + gap;
+      combinedCanvas.height = Math.max(frontCanvas.height, backCanvas.height);
       
       const ctx = combinedCanvas.getContext('2d');
-      
-      // Fill background
       ctx.fillStyle = '#f0f0f0';
-      ctx.fillRect(0, 0, combinedWidth, combinedHeight);
-      
-      // Draw front card on left
+      ctx.fillRect(0, 0, combinedCanvas.width, combinedCanvas.height);
       ctx.drawImage(frontCanvas, 0, 0);
-      
-      // Draw back card on right
       ctx.drawImage(backCanvas, frontCanvas.width + gap, 0);
       
       return combinedCanvas;
     } finally {
-      // Restore original display
       cardContainer.style.display = originalDisplay;
       cardContainer.style.position = '';
       cardContainer.style.left = '';
@@ -1913,89 +1868,55 @@
     }
   }
   
-  // Main share function
   async function sharePlayerCard() {
     const shareBtn = document.getElementById('shareCardBtn');
     const originalText = shareBtn.innerHTML;
     
     try {
-      // Show loading state
       shareBtn.disabled = true;
       shareBtn.innerHTML = '⏳ Generating...';
       
-      // Generate the card image
       const canvas = await generateCardImage();
+      const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
       
-      // Get player name for file naming
       const playerName = document.getElementById('playerName')?.textContent || 'Player';
       const fileName = `${playerName.replace(/\s+/g, '-')}-player-card.png`;
+      const file = new File([blob], fileName, { type: 'image/png' });
       
-      // Check if we're on mobile and can share files
-      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+      // Check if native share with files is supported
+      const canShareFiles = navigator.canShare && navigator.canShare({ files: [file] });
       
-      if (isMobile && navigator.share) {
-        // Convert canvas to blob for file sharing
-        const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
-        const file = new File([blob], fileName, { type: 'image/png' });
-        
-        // Check if file sharing is supported
-        let canShareFiles = false;
-        try {
-          canShareFiles = navigator.canShare && navigator.canShare({ files: [file] });
-        } catch (e) {
-          canShareFiles = false;
-        }
-        
-        if (canShareFiles) {
-          shareBtn.innerHTML = '📤 Sharing...';
-          
-          try {
-            await navigator.share({
-              files: [file],
-              title: `${playerName} - Mountainside Aces`,
-              text: `Check out ${playerName}'s player card!`
-            });
-            showShareToast('Shared successfully! 🎉');
-            return; // Success - exit early
-          } catch (shareErr) {
-            if (shareErr.name === 'AbortError') {
-              showShareToast('Share cancelled');
-              return;
-            }
-            // Other error - fall through to download
-            console.warn('File share failed, falling back to download:', shareErr);
-          }
-        }
+      if (canShareFiles) {
+        shareBtn.innerHTML = '📤 Sharing...';
+        await navigator.share({
+          files: [file],
+          title: `${playerName} - Mountainside Aces`,
+          text: `Check out ${playerName}'s player card from Mountainside Aces Softball!`
+        });
+        showShareToast('Shared successfully! 🎉');
+      } else {
+        // Fallback: download
+        shareBtn.innerHTML = '📥 Downloading...';
+        const link = document.createElement('a');
+        link.download = fileName;
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+        showShareToast('Player card downloaded! 📥');
       }
-      
-      // Fallback: Download the image
-      shareBtn.innerHTML = '📥 Downloading...';
-      downloadCardImage(canvas, fileName);
-      showShareToast('Player card downloaded! 📥');
       
     } catch (error) {
       console.error('Share error:', error);
-      
-      if (error.message === 'Player data is still loading') {
+      if (error.name === 'AbortError') {
+        showShareToast('Share cancelled');
+      } else if (error.message === 'Player data is still loading') {
         showShareToast('Please wait for player data to load');
       } else {
         showShareToast('Could not generate card. Try again.');
       }
     } finally {
-      // Restore button state
       shareBtn.disabled = false;
       shareBtn.innerHTML = originalText;
     }
-  }
-  
-  // Download card image
-  function downloadCardImage(canvas, fileName) {
-    const link = document.createElement('a');
-    link.download = fileName;
-    link.href = canvas.toDataURL('image/png');
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
   }
 </script>
 
