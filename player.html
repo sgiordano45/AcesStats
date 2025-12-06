@@ -558,6 +558,93 @@
     background: linear-gradient(135deg, #A0522D 0%, #CD853F 100%);
   }
   
+  /* Share Card Button */
+  .share-card-button {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border: none;
+    padding: 12px 24px;
+    border-radius: 12px;
+    cursor: pointer;
+    margin-left: 1rem;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 700;
+    font-size: 0.95rem;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+  }
+  
+  .share-card-button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
+    background: linear-gradient(135deg, #7c8ff0 0%, #8b5fbf 100%);
+  }
+  
+  .share-card-button:disabled {
+    opacity: 0.7;
+    cursor: wait;
+  }
+  
+  /* Share toast notification */
+  .share-toast {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #2d5016;
+    color: white;
+    padding: 12px 24px;
+    border-radius: 8px;
+    font-size: 14px;
+    z-index: 10000;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    max-width: 90%;
+    text-align: center;
+    animation: slideUp 0.3s ease;
+  }
+  
+  @keyframes slideUp {
+    from {
+      transform: translateX(-50%) translateY(20px);
+      opacity: 0;
+    }
+    to {
+      transform: translateX(-50%) translateY(0);
+      opacity: 1;
+    }
+  }
+  
+  /* Action buttons container */
+  .action-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: center;
+    margin-bottom: 2rem;
+  }
+  
+  .action-buttons .back-button {
+    margin-bottom: 0;
+  }
+  
+  @media (max-width: 600px) {
+    .action-buttons {
+      flex-direction: column;
+      align-items: stretch;
+    }
+    
+    .action-buttons .back-button,
+    .action-buttons .print-card-button,
+    .action-buttons .share-card-button {
+      margin-left: 0;
+      width: 100%;
+      justify-content: center;
+    }
+  }
+  
   .print-card-button::before {
     content: '🃏';
     font-size: 1.2em;
@@ -1241,9 +1328,10 @@
 </div>
 
 <div class="page-container">
-  <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 2rem;">
-    <button class="back-button" onclick="window.history.back()" style="margin-bottom: 0;">← Back</button>
-    <button class="print-card-button" onclick="printBaseballCard()">Print Card</button>
+  <div class="action-buttons">
+    <button class="back-button" onclick="window.history.back()">← Back</button>
+    <button class="print-card-button" onclick="printBaseballCard()">🖨️ Print Card</button>
+    <button class="share-card-button" id="shareCardBtn" onclick="sharePlayerCard()">📤 Share Card</button>
   </div>
 
   <div class="player-header" id="playerHeader" style="display: none;">
@@ -1723,7 +1811,172 @@
       tip.remove();
     }, 5000);
   }
+  
+  // ========================================
+  // SHARE PLAYER CARD FUNCTIONALITY
+  // ========================================
+  
+  // Toast notification for share actions
+  function showShareToast(message, duration = 3000) {
+    const existingToast = document.querySelector('.share-toast');
+    if (existingToast) existingToast.remove();
+    
+    const toast = document.createElement('div');
+    toast.className = 'share-toast';
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    
+    setTimeout(() => toast.remove(), duration);
+  }
+  
+  // Generate player card image using html2canvas
+  async function generateCardImage() {
+    // Make sure card is populated
+    const success = populateBaseballCard();
+    if (!success) {
+      throw new Error('Player data is still loading');
+    }
+    
+    // Get the front of the card element
+    const cardContainer = document.getElementById('baseballCardContainer');
+    const cardFront = cardContainer.querySelector('.card-front');
+    
+    if (!cardFront) {
+      throw new Error('Card element not found');
+    }
+    
+    // Temporarily show the card container for capture
+    const originalDisplay = cardContainer.style.display;
+    cardContainer.style.display = 'block';
+    cardContainer.style.position = 'fixed';
+    cardContainer.style.left = '-9999px';
+    cardContainer.style.top = '0';
+    
+    try {
+      // Wait for html2canvas to be available
+      if (typeof html2canvas === 'undefined') {
+        throw new Error('html2canvas not loaded');
+      }
+      
+      const canvas = await html2canvas(cardFront, {
+        scale: 2, // Higher resolution
+        backgroundColor: null,
+        logging: false,
+        useCORS: true,
+        allowTaint: true
+      });
+      
+      return canvas;
+    } finally {
+      // Restore original display
+      cardContainer.style.display = originalDisplay;
+      cardContainer.style.position = '';
+      cardContainer.style.left = '';
+      cardContainer.style.top = '';
+    }
+  }
+  
+  // Convert canvas to blob for sharing
+  function canvasToBlob(canvas) {
+    return new Promise((resolve) => {
+      canvas.toBlob(resolve, 'image/png');
+    });
+  }
+  
+  // Main share function
+  async function sharePlayerCard() {
+    const shareBtn = document.getElementById('shareCardBtn');
+    const originalText = shareBtn.innerHTML;
+    
+    try {
+      // Show loading state
+      shareBtn.disabled = true;
+      shareBtn.innerHTML = '⏳ Generating...';
+      
+      // Generate the card image
+      const canvas = await generateCardImage();
+      const blob = await canvasToBlob(canvas);
+      
+      // Get player name for file naming
+      const playerName = document.getElementById('playerName')?.textContent || 'Player';
+      const fileName = `${playerName.replace(/\s+/g, '-')}-player-card.png`;
+      
+      // Create file object for sharing
+      const file = new File([blob], fileName, { type: 'image/png' });
+      
+      // Check if native share with files is supported
+      const canShareFiles = navigator.canShare && navigator.canShare({ files: [file] });
+      
+      if (canShareFiles) {
+        // Use native share with image
+        shareBtn.innerHTML = '📤 Sharing...';
+        
+        await navigator.share({
+          files: [file],
+          title: `${playerName} - Mountainside Aces`,
+          text: `Check out ${playerName}'s player card from Mountainside Aces Softball!`
+        });
+        
+        showShareToast('Shared successfully! 🎉');
+      } else if (navigator.share) {
+        // Native share without files - share URL instead and download image
+        shareBtn.innerHTML = '📥 Downloading...';
+        
+        // Download the image
+        downloadCardImage(canvas, fileName);
+        
+        // Then share the URL
+        try {
+          await navigator.share({
+            title: `${playerName} - Mountainside Aces`,
+            text: `Check out ${playerName}'s stats on Mountainside Aces Softball!`,
+            url: window.location.href
+          });
+          showShareToast('Image downloaded & link shared! 🎉');
+        } catch (shareErr) {
+          // User cancelled share, but image was downloaded
+          showShareToast('Player card downloaded! 📥');
+        }
+      } else {
+        // No native share - just download
+        shareBtn.innerHTML = '📥 Downloading...';
+        downloadCardImage(canvas, fileName);
+        showShareToast('Player card downloaded! 📥');
+      }
+      
+    } catch (error) {
+      console.error('Share error:', error);
+      
+      if (error.name === 'AbortError') {
+        // User cancelled - that's fine
+        showShareToast('Share cancelled');
+      } else if (error.message === 'Player data is still loading') {
+        showShareToast('Please wait for player data to load');
+      } else {
+        showShareToast('Could not generate card. Try again.');
+      }
+    } finally {
+      // Restore button state
+      shareBtn.disabled = false;
+      shareBtn.innerHTML = originalText;
+    }
+  }
+  
+  // Download card image
+  function downloadCardImage(canvas, fileName) {
+    const link = document.createElement('a');
+    link.download = fileName;
+    link.href = canvas.toDataURL('image/png');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
 </script>
+
+<!-- html2canvas for card image generation -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" 
+        integrity="sha512-BNaRQnYJYiPSqHHDb58B0yaPfCu+Wgds8Gp/gU33kqBtgNS4tSPHuGibyoeqMV/TJlSKda6FXzoEyYGjTe+vXA==" 
+        crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 
 <script type="module">
   import {
