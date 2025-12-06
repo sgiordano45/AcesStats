@@ -1930,29 +1930,48 @@
       const playerName = document.getElementById('playerName')?.textContent || 'Player';
       const fileName = `${playerName.replace(/\s+/g, '-')}-player-card.png`;
       
-      // Always download first - this is reliable
-      shareBtn.innerHTML = '📥 Downloading...';
-      downloadCardImage(canvas, fileName);
-      
-      // Check if we can try native share (mobile only)
+      // Check if we're on mobile and can share files
       const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
       
       if (isMobile && navigator.share) {
-        // On mobile, also try to share the URL after download
+        // Convert canvas to blob for file sharing
+        const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+        const file = new File([blob], fileName, { type: 'image/png' });
+        
+        // Check if file sharing is supported
+        let canShareFiles = false;
         try {
-          await navigator.share({
-            title: `${playerName} - Mountainside Aces`,
-            text: `Check out ${playerName}'s player card from Mountainside Aces Softball!`,
-            url: window.location.href
-          });
-          showShareToast('Card downloaded & link shared! 🎉');
-        } catch (shareErr) {
-          // Share cancelled or failed - that's fine, we already downloaded
-          showShareToast('Player card downloaded! 📥');
+          canShareFiles = navigator.canShare && navigator.canShare({ files: [file] });
+        } catch (e) {
+          canShareFiles = false;
         }
-      } else {
-        showShareToast('Player card downloaded! 📥');
+        
+        if (canShareFiles) {
+          shareBtn.innerHTML = '📤 Sharing...';
+          
+          try {
+            await navigator.share({
+              files: [file],
+              title: `${playerName} - Mountainside Aces`,
+              text: `Check out ${playerName}'s player card!`
+            });
+            showShareToast('Shared successfully! 🎉');
+            return; // Success - exit early
+          } catch (shareErr) {
+            if (shareErr.name === 'AbortError') {
+              showShareToast('Share cancelled');
+              return;
+            }
+            // Other error - fall through to download
+            console.warn('File share failed, falling back to download:', shareErr);
+          }
+        }
       }
+      
+      // Fallback: Download the image
+      shareBtn.innerHTML = '📥 Downloading...';
+      downloadCardImage(canvas, fileName);
+      showShareToast('Player card downloaded! 📥');
       
     } catch (error) {
       console.error('Share error:', error);
