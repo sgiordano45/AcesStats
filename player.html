@@ -1773,16 +1773,30 @@
       const cardFront = cardContainer.querySelector('.card-front');
       const cardBack = cardContainer.querySelector('.card-back');
       
+      // IMPORTANT: Hide Firebase photo BEFORE capture to avoid CORS timeout
+      const cardPhoto = document.getElementById('cardPhoto');
+      const cardPlaceholder = document.getElementById('cardPhotoPlaceholder');
+      let photoWasVisible = false;
+      let originalPhotoSrc = '';
+      
+      if (cardPhoto && cardPhoto.src && cardPhoto.src.includes('firebasestorage')) {
+        photoWasVisible = cardPhoto.style.display !== 'none';
+        originalPhotoSrc = cardPhoto.src;
+        cardPhoto.src = '';
+        cardPhoto.style.display = 'none';
+        if (cardPlaceholder) cardPlaceholder.style.display = 'flex';
+      }
+      
       // Show card container off-screen for capture
       cardContainer.style.display = 'block';
       cardContainer.style.position = 'fixed';
       cardContainer.style.left = '-9999px';
       cardContainer.style.top = '0';
       
-      // Capture both sides
+      // Capture both sides (should be fast now without Firebase image)
       const [frontCanvas, backCanvas] = await Promise.all([
-        html2canvas(cardFront, { scale: 2, backgroundColor: '#fff', useCORS: true, allowTaint: true }),
-        html2canvas(cardBack, { scale: 2, backgroundColor: '#fff', useCORS: true, allowTaint: true })
+        html2canvas(cardFront, { scale: 2, backgroundColor: '#fff' }),
+        html2canvas(cardBack, { scale: 2, backgroundColor: '#fff' })
       ]);
       
       // Hide container
@@ -1790,6 +1804,13 @@
       cardContainer.style.position = '';
       cardContainer.style.left = '';
       cardContainer.style.top = '';
+      
+      // Restore photo if it was visible
+      if (photoWasVisible && originalPhotoSrc) {
+        cardPhoto.src = originalPhotoSrc;
+        cardPhoto.style.display = 'block';
+        if (cardPlaceholder) cardPlaceholder.style.display = 'none';
+      }
       
       // Combine side by side
       const gap = 40;
