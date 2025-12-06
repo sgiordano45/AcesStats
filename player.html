@@ -1829,6 +1829,27 @@
     setTimeout(() => toast.remove(), duration);
   }
   
+  // Convert image URL to base64 to avoid CORS issues
+  async function imageToBase64(imgElement) {
+    if (!imgElement || !imgElement.src || imgElement.src.startsWith('data:')) {
+      return null; // Already base64 or no src
+    }
+    
+    try {
+      const response = await fetch(imgElement.src);
+      const blob = await response.blob();
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result);
+        reader.onerror = () => resolve(null);
+        reader.readAsDataURL(blob);
+      });
+    } catch (error) {
+      console.warn('Could not convert image to base64:', error);
+      return null;
+    }
+  }
+  
   // Generate player card image using html2canvas
   async function generateCardImage() {
     // Make sure card is populated
@@ -1837,12 +1858,24 @@
       throw new Error('Player data is still loading');
     }
     
-    // Get the front of the card element
     const cardContainer = document.getElementById('baseballCardContainer');
     const cardFront = cardContainer.querySelector('.card-front');
+    const cardBack = cardContainer.querySelector('.card-back');
     
-    if (!cardFront) {
-      throw new Error('Card element not found');
+    if (!cardFront || !cardBack) {
+      throw new Error('Card elements not found');
+    }
+    
+    // Convert player photo to base64 to avoid CORS issues
+    const cardPhoto = document.getElementById('cardPhoto');
+    let originalPhotoSrc = null;
+    
+    if (cardPhoto && cardPhoto.src && cardPhoto.style.display !== 'none') {
+      originalPhotoSrc = cardPhoto.src;
+      const base64Photo = await imageToBase64(cardPhoto);
+      if (base64Photo) {
+        cardPhoto.src = base64Photo;
+      }
     }
     
     // Temporarily show the card container for capture
@@ -1853,26 +1886,57 @@
     cardContainer.style.top = '0';
     
     try {
-      // Wait for html2canvas to be available
       if (typeof html2canvas === 'undefined') {
         throw new Error('html2canvas not loaded');
       }
       
-      const canvas = await html2canvas(cardFront, {
-        scale: 2, // Higher resolution
-        backgroundColor: null,
+      const html2canvasOptions = {
+        scale: 2,
+        backgroundColor: '#ffffff',
         logging: false,
         useCORS: true,
         allowTaint: true
-      });
+      };
       
-      return canvas;
+      // Capture both sides
+      const [frontCanvas, backCanvas] = await Promise.all([
+        html2canvas(cardFront, html2canvasOptions),
+        html2canvas(cardBack, html2canvasOptions)
+      ]);
+      
+      // Create combined canvas with both cards side by side
+      const gap = 40; // Gap between cards
+      const combinedWidth = frontCanvas.width + backCanvas.width + gap;
+      const combinedHeight = Math.max(frontCanvas.height, backCanvas.height);
+      
+      const combinedCanvas = document.createElement('canvas');
+      combinedCanvas.width = combinedWidth;
+      combinedCanvas.height = combinedHeight;
+      
+      const ctx = combinedCanvas.getContext('2d');
+      
+      // Fill background
+      ctx.fillStyle = '#f0f0f0';
+      ctx.fillRect(0, 0, combinedWidth, combinedHeight);
+      
+      // Draw front card on left
+      ctx.drawImage(frontCanvas, 0, 0);
+      
+      // Draw back card on right
+      ctx.drawImage(backCanvas, frontCanvas.width + gap, 0);
+      
+      return combinedCanvas;
     } finally {
       // Restore original display
       cardContainer.style.display = originalDisplay;
       cardContainer.style.position = '';
       cardContainer.style.left = '';
       cardContainer.style.top = '';
+      
+      // Restore original photo src
+      if (originalPhotoSrc && cardPhoto) {
+        cardPhoto.src = originalPhotoSrc;
+      }
     }
   }
   
