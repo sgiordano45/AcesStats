@@ -1837,16 +1837,24 @@
         scale: 2,
         backgroundColor: '#ffffff',
         logging: false,
-        useCORS: true,
+        useCORS: false,
         allowTaint: false,
-        onclone: (clonedDoc) => {
-          // Hide Firebase photos to avoid CORS issues
-          const photo = clonedDoc.getElementById('cardPhoto');
-          if (photo && photo.src && photo.src.includes('firebasestorage')) {
-            photo.style.display = 'none';
-            const placeholder = clonedDoc.getElementById('cardPhotoPlaceholder');
-            if (placeholder) placeholder.style.display = 'flex';
+        ignoreElements: (element) => {
+          // Skip any images from Firebase Storage
+          if (element.tagName === 'IMG' && element.src && element.src.includes('firebasestorage')) {
+            return true;
           }
+          return false;
+        },
+        onclone: (clonedDoc) => {
+          // Also ensure placeholder is visible
+          const photo = clonedDoc.getElementById('cardPhoto');
+          if (photo) {
+            photo.style.display = 'none';
+            photo.removeAttribute('src');
+          }
+          const placeholder = clonedDoc.getElementById('cardPhotoPlaceholder');
+          if (placeholder) placeholder.style.display = 'flex';
         }
       };
       
@@ -1893,31 +1901,45 @@
       const file = new File([blob], fileName, { type: 'image/png' });
       
       // Check if native share with files is supported
-      const canShareFiles = navigator.canShare && navigator.canShare({ files: [file] });
+      let canShareFiles = false;
+      try {
+        canShareFiles = navigator.canShare && navigator.canShare({ files: [file] });
+      } catch (e) {
+        canShareFiles = false;
+      }
       
       if (canShareFiles) {
         shareBtn.innerHTML = '📤 Sharing...';
-        await navigator.share({
-          files: [file],
-          title: `${playerName} - Mountainside Aces`,
-          text: `Check out ${playerName}'s player card from Mountainside Aces Softball!`
-        });
-        showShareToast('Shared successfully! 🎉');
-      } else {
-        // Fallback: download
-        shareBtn.innerHTML = '📥 Downloading...';
-        const link = document.createElement('a');
-        link.download = fileName;
-        link.href = canvas.toDataURL('image/png');
-        link.click();
-        showShareToast('Player card downloaded! 📥');
+        try {
+          await navigator.share({
+            files: [file],
+            title: `${playerName} - Mountainside Aces`,
+            text: `Check out ${playerName}'s player card from Mountainside Aces Softball!`
+          });
+          showShareToast('Shared successfully! 🎉');
+          return;
+        } catch (shareErr) {
+          // Share failed or was cancelled
+          if (shareErr.name === 'AbortError') {
+            showShareToast('Share cancelled');
+            return;
+          }
+          // NotAllowedError or other - fall through to download
+          console.log('Share not allowed, downloading instead');
+        }
       }
+      
+      // Fallback: download
+      shareBtn.innerHTML = '📥 Downloading...';
+      const link = document.createElement('a');
+      link.download = fileName;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+      showShareToast('Player card downloaded! 📥');
       
     } catch (error) {
       console.error('Share error:', error);
-      if (error.name === 'AbortError') {
-        showShareToast('Share cancelled');
-      } else if (error.message === 'Player data is still loading') {
+      if (error.message === 'Player data is still loading') {
         showShareToast('Please wait for player data to load');
       } else {
         showShareToast('Could not generate card. Try again.');
