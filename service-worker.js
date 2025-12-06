@@ -1,8 +1,8 @@
 // service-worker.js - Unified Service Worker
 // Handles both offline functionality AND Firebase Cloud Messaging
-// Version 1.0.12 - updating team images for Blue/Carolina/Army
+// Version 1.0.13 - fixing sharing of Player Car
 
-const CACHE_VERSION = 'aces-v1.0.12';
+const CACHE_VERSION = 'aces-v1.0.13';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const DYNAMIC_CACHE = `${CACHE_VERSION}-dynamic`;
 const IMAGE_CACHE = `${CACHE_VERSION}-images`;
@@ -277,10 +277,16 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Skip Chrome extension requests
-  if (url.protocol === 'chrome-extension:') {
-    return;
-  }
+    // Skip Chrome extension requests
+      if (url.protocol === 'chrome-extension:') {
+        return;
+      }
+
+      // Skip Firebase Storage requests - let browser handle directly (CORS configured)
+      if (url.hostname.includes('firebasestorage.googleapis.com')) {
+        return;
+      }
+
 
   // Only handle requests for our app (not other origins)
   if (!url.pathname.startsWith(BASE_PATH) && !isExternalResource(url)) {
