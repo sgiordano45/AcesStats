@@ -1829,27 +1829,6 @@
     setTimeout(() => toast.remove(), duration);
   }
   
-  // Convert image URL to base64 to avoid CORS issues
-  async function imageToBase64(imgElement) {
-    if (!imgElement || !imgElement.src || imgElement.src.startsWith('data:')) {
-      return null; // Already base64 or no src
-    }
-    
-    try {
-      const response = await fetch(imgElement.src);
-      const blob = await response.blob();
-      return new Promise((resolve) => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve(reader.result);
-        reader.onerror = () => resolve(null);
-        reader.readAsDataURL(blob);
-      });
-    } catch (error) {
-      console.warn('Could not convert image to base64:', error);
-      return null;
-    }
-  }
-  
   // Generate player card image using html2canvas
   async function generateCardImage() {
     // Make sure card is populated
@@ -1866,18 +1845,6 @@
       throw new Error('Card elements not found');
     }
     
-    // Convert player photo to base64 to avoid CORS issues
-    const cardPhoto = document.getElementById('cardPhoto');
-    let originalPhotoSrc = null;
-    
-    if (cardPhoto && cardPhoto.src && cardPhoto.style.display !== 'none') {
-      originalPhotoSrc = cardPhoto.src;
-      const base64Photo = await imageToBase64(cardPhoto);
-      if (base64Photo) {
-        cardPhoto.src = base64Photo;
-      }
-    }
-    
     // Temporarily show the card container for capture
     const originalDisplay = cardContainer.style.display;
     cardContainer.style.display = 'block';
@@ -1890,12 +1857,23 @@
         throw new Error('html2canvas not loaded');
       }
       
+      // Note: Player photos from Firebase Storage may not render due to CORS
+      // This is a Firebase configuration issue - photos need CORS headers
       const html2canvasOptions = {
         scale: 2,
         backgroundColor: '#ffffff',
         logging: false,
         useCORS: true,
-        allowTaint: true
+        allowTaint: false, // Set to false so we get the card even if photo fails
+        onclone: (clonedDoc) => {
+          // Hide photo if it might cause taint issues
+          const clonedPhoto = clonedDoc.getElementById('cardPhoto');
+          if (clonedPhoto && clonedPhoto.src && clonedPhoto.src.includes('firebasestorage')) {
+            clonedPhoto.style.display = 'none';
+            const placeholder = clonedDoc.getElementById('cardPhotoPlaceholder');
+            if (placeholder) placeholder.style.display = 'flex';
+          }
+        }
       };
       
       // Capture both sides
@@ -1905,7 +1883,7 @@
       ]);
       
       // Create combined canvas with both cards side by side
-      const gap = 40; // Gap between cards
+      const gap = 40;
       const combinedWidth = frontCanvas.width + backCanvas.width + gap;
       const combinedHeight = Math.max(frontCanvas.height, backCanvas.height);
       
@@ -1932,19 +1910,7 @@
       cardContainer.style.position = '';
       cardContainer.style.left = '';
       cardContainer.style.top = '';
-      
-      // Restore original photo src
-      if (originalPhotoSrc && cardPhoto) {
-        cardPhoto.src = originalPhotoSrc;
-      }
     }
-  }
-  
-  // Convert canvas to blob for sharing
-  function canvasToBlob(canvas) {
-    return new Promise((resolve) => {
-      canvas.toBlob(resolve, 'image/png');
-    });
   }
   
   // Main share function
@@ -1959,62 +1925,39 @@
       
       // Generate the card image
       const canvas = await generateCardImage();
-      const blob = await canvasToBlob(canvas);
       
       // Get player name for file naming
       const playerName = document.getElementById('playerName')?.textContent || 'Player';
       const fileName = `${playerName.replace(/\s+/g, '-')}-player-card.png`;
       
-      // Create file object for sharing
-      const file = new File([blob], fileName, { type: 'image/png' });
+      // Always download first - this is reliable
+      shareBtn.innerHTML = '📥 Downloading...';
+      downloadCardImage(canvas, fileName);
       
-      // Check if native share with files is supported
-      const canShareFiles = navigator.canShare && navigator.canShare({ files: [file] });
+      // Check if we can try native share (mobile only)
+      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
       
-      if (canShareFiles) {
-        // Use native share with image
-        shareBtn.innerHTML = '📤 Sharing...';
-        
-        await navigator.share({
-          files: [file],
-          title: `${playerName} - Mountainside Aces`,
-          text: `Check out ${playerName}'s player card from Mountainside Aces Softball!`
-        });
-        
-        showShareToast('Shared successfully! 🎉');
-      } else if (navigator.share) {
-        // Native share without files - share URL instead and download image
-        shareBtn.innerHTML = '📥 Downloading...';
-        
-        // Download the image
-        downloadCardImage(canvas, fileName);
-        
-        // Then share the URL
+      if (isMobile && navigator.share) {
+        // On mobile, also try to share the URL after download
         try {
           await navigator.share({
             title: `${playerName} - Mountainside Aces`,
-            text: `Check out ${playerName}'s stats on Mountainside Aces Softball!`,
+            text: `Check out ${playerName}'s player card from Mountainside Aces Softball!`,
             url: window.location.href
           });
-          showShareToast('Image downloaded & link shared! 🎉');
+          showShareToast('Card downloaded & link shared! 🎉');
         } catch (shareErr) {
-          // User cancelled share, but image was downloaded
+          // Share cancelled or failed - that's fine, we already downloaded
           showShareToast('Player card downloaded! 📥');
         }
       } else {
-        // No native share - just download
-        shareBtn.innerHTML = '📥 Downloading...';
-        downloadCardImage(canvas, fileName);
         showShareToast('Player card downloaded! 📥');
       }
       
     } catch (error) {
       console.error('Share error:', error);
       
-      if (error.name === 'AbortError') {
-        // User cancelled - that's fine
-        showShareToast('Share cancelled');
-      } else if (error.message === 'Player data is still loading') {
+      if (error.message === 'Player data is still loading') {
         showShareToast('Please wait for player data to load');
       } else {
         showShareToast('Could not generate card. Try again.');
