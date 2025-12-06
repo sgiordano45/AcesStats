@@ -558,7 +558,6 @@
     background: linear-gradient(135deg, #A0522D 0%, #CD853F 100%);
   }
   
-  /* Share Card Button */
   .share-card-button {
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     color: white;
@@ -567,7 +566,6 @@
     border-radius: 12px;
     cursor: pointer;
     margin-left: 1rem;
-    text-decoration: none;
     display: inline-flex;
     align-items: center;
     gap: 8px;
@@ -580,48 +578,11 @@
   .share-card-button:hover {
     transform: translateY(-2px);
     box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
-    background: linear-gradient(135deg, #7c8ff0 0%, #8b5fbf 100%);
   }
   
   .share-card-button:disabled {
     opacity: 0.7;
     cursor: wait;
-  }
-  
-  /* Share toast notification */
-  .share-toast {
-    position: fixed;
-    bottom: 20px;
-    left: 50%;
-    transform: translateX(-50%);
-    background: #2d5016;
-    color: white;
-    padding: 12px 24px;
-    border-radius: 8px;
-    font-size: 14px;
-    z-index: 10000;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-    max-width: 90%;
-    text-align: center;
-    animation: slideUp 0.3s ease;
-  }
-  
-  @keyframes slideUp {
-    from {
-      transform: translateX(-50%) translateY(20px);
-      opacity: 0;
-    }
-    to {
-      transform: translateX(-50%) translateY(0);
-      opacity: 1;
-    }
-  }
-  
-  @media (max-width: 600px) {
-    .share-card-button {
-      margin-left: 0;
-      margin-top: 0.5rem;
-    }
   }
   
   .print-card-button::before {
@@ -1791,99 +1752,7 @@
     }, 5000);
   }
   
-  // ========================================
-  // SHARE PLAYER CARD FUNCTIONALITY
-  // ========================================
-  
-  function showShareToast(message, duration = 3000) {
-    const existingToast = document.querySelector('.share-toast');
-    if (existingToast) existingToast.remove();
-    
-    const toast = document.createElement('div');
-    toast.className = 'share-toast';
-    toast.textContent = message;
-    document.body.appendChild(toast);
-    
-    setTimeout(() => toast.remove(), duration);
-  }
-  
-  async function generateCardImage() {
-    const success = populateBaseballCard();
-    if (!success) {
-      throw new Error('Player data is still loading');
-    }
-    
-    const cardContainer = document.getElementById('baseballCardContainer');
-    const cardFront = cardContainer.querySelector('.card-front');
-    const cardBack = cardContainer.querySelector('.card-back');
-    
-    if (!cardFront || !cardBack) {
-      throw new Error('Card elements not found');
-    }
-    
-    // Temporarily show the card container for capture
-    const originalDisplay = cardContainer.style.display;
-    cardContainer.style.display = 'block';
-    cardContainer.style.position = 'fixed';
-    cardContainer.style.left = '-9999px';
-    cardContainer.style.top = '0';
-    
-    try {
-      if (typeof html2canvas === 'undefined') {
-        throw new Error('html2canvas not loaded');
-      }
-      
-      const options = {
-        scale: 2,
-        backgroundColor: '#ffffff',
-        logging: false,
-        useCORS: false,
-        allowTaint: false,
-        ignoreElements: (element) => {
-          // Skip any images from Firebase Storage
-          if (element.tagName === 'IMG' && element.src && element.src.includes('firebasestorage')) {
-            return true;
-          }
-          return false;
-        },
-        onclone: (clonedDoc) => {
-          // Also ensure placeholder is visible
-          const photo = clonedDoc.getElementById('cardPhoto');
-          if (photo) {
-            photo.style.display = 'none';
-            photo.removeAttribute('src');
-          }
-          const placeholder = clonedDoc.getElementById('cardPhotoPlaceholder');
-          if (placeholder) placeholder.style.display = 'flex';
-        }
-      };
-      
-      // Capture both sides
-      const [frontCanvas, backCanvas] = await Promise.all([
-        html2canvas(cardFront, options),
-        html2canvas(cardBack, options)
-      ]);
-      
-      // Combine side by side
-      const gap = 40;
-      const combinedCanvas = document.createElement('canvas');
-      combinedCanvas.width = frontCanvas.width + backCanvas.width + gap;
-      combinedCanvas.height = Math.max(frontCanvas.height, backCanvas.height);
-      
-      const ctx = combinedCanvas.getContext('2d');
-      ctx.fillStyle = '#f0f0f0';
-      ctx.fillRect(0, 0, combinedCanvas.width, combinedCanvas.height);
-      ctx.drawImage(frontCanvas, 0, 0);
-      ctx.drawImage(backCanvas, frontCanvas.width + gap, 0);
-      
-      return combinedCanvas;
-    } finally {
-      cardContainer.style.display = originalDisplay;
-      cardContainer.style.position = '';
-      cardContainer.style.left = '';
-      cardContainer.style.top = '';
-    }
-  }
+  // ========== SHARE CARD ==========
   
   async function sharePlayerCard() {
     const shareBtn = document.getElementById('shareCardBtn');
@@ -1893,56 +1762,70 @@
       shareBtn.disabled = true;
       shareBtn.innerHTML = '⏳ Generating...';
       
-      const canvas = await generateCardImage();
-      const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+      // Populate the card
+      const success = populateBaseballCard();
+      if (!success) {
+        alert('Player data is still loading. Please wait.');
+        return;
+      }
       
+      const cardContainer = document.getElementById('baseballCardContainer');
+      const cardFront = cardContainer.querySelector('.card-front');
+      const cardBack = cardContainer.querySelector('.card-back');
+      
+      // Show card container off-screen for capture
+      cardContainer.style.display = 'block';
+      cardContainer.style.position = 'fixed';
+      cardContainer.style.left = '-9999px';
+      cardContainer.style.top = '0';
+      
+      // Capture both sides
+      const [frontCanvas, backCanvas] = await Promise.all([
+        html2canvas(cardFront, { scale: 2, backgroundColor: '#fff', useCORS: true, allowTaint: true }),
+        html2canvas(cardBack, { scale: 2, backgroundColor: '#fff', useCORS: true, allowTaint: true })
+      ]);
+      
+      // Hide container
+      cardContainer.style.display = 'none';
+      cardContainer.style.position = '';
+      cardContainer.style.left = '';
+      cardContainer.style.top = '';
+      
+      // Combine side by side
+      const gap = 40;
+      const combined = document.createElement('canvas');
+      combined.width = frontCanvas.width + backCanvas.width + gap;
+      combined.height = Math.max(frontCanvas.height, backCanvas.height);
+      const ctx = combined.getContext('2d');
+      ctx.fillStyle = '#f0f0f0';
+      ctx.fillRect(0, 0, combined.width, combined.height);
+      ctx.drawImage(frontCanvas, 0, 0);
+      ctx.drawImage(backCanvas, frontCanvas.width + gap, 0);
+      
+      // Create file
+      const blob = await new Promise(r => combined.toBlob(r, 'image/png'));
       const playerName = document.getElementById('playerName')?.textContent || 'Player';
       const fileName = `${playerName.replace(/\s+/g, '-')}-player-card.png`;
       const file = new File([blob], fileName, { type: 'image/png' });
       
-      // Check if native share with files is supported
-      let canShareFiles = false;
-      try {
-        canShareFiles = navigator.canShare && navigator.canShare({ files: [file] });
-      } catch (e) {
-        canShareFiles = false;
-      }
-      
-      if (canShareFiles) {
-        shareBtn.innerHTML = '📤 Sharing...';
-        try {
-          await navigator.share({
-            files: [file],
-            title: `${playerName} - Mountainside Aces`,
-            text: `Check out ${playerName}'s player card from Mountainside Aces Softball!`
-          });
-          showShareToast('Shared successfully! 🎉');
-          return;
-        } catch (shareErr) {
-          // Share failed or was cancelled
-          if (shareErr.name === 'AbortError') {
-            showShareToast('Share cancelled');
-            return;
-          }
-          // NotAllowedError or other - fall through to download
-          console.log('Share not allowed, downloading instead');
-        }
-      }
-      
-      // Fallback: download
-      shareBtn.innerHTML = '📥 Downloading...';
-      const link = document.createElement('a');
-      link.download = fileName;
-      link.href = canvas.toDataURL('image/png');
-      link.click();
-      showShareToast('Player card downloaded! 📥');
-      
-    } catch (error) {
-      console.error('Share error:', error);
-      if (error.message === 'Player data is still loading') {
-        showShareToast('Please wait for player data to load');
+      // Share
+      shareBtn.innerHTML = '📤 Sharing...';
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          files: [file],
+          title: `${playerName} - Mountainside Aces`
+        });
       } else {
-        showShareToast('Could not generate card. Try again.');
+        // Download fallback
+        const link = document.createElement('a');
+        link.download = fileName;
+        link.href = combined.toDataURL('image/png');
+        link.click();
+      }
+      
+    } catch (err) {
+      if (err.name !== 'AbortError') {
+        console.error('Share error:', err);
       }
     } finally {
       shareBtn.disabled = false;
@@ -1951,10 +1834,7 @@
   }
 </script>
 
-<!-- html2canvas for card image generation -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" 
-        integrity="sha512-BNaRQnYJYiPSqHHDb58B0yaPfCu+Wgds8Gp/gU33kqBtgNS4tSPHuGibyoeqMV/TJlSKda6FXzoEyYGjTe+vXA==" 
-        crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
 <script type="module">
   import {
