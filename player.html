@@ -1754,65 +1754,50 @@
   
   // ========== SHARE CARD ==========
   
-  async function sharePlayerCard() {
-    const shareBtn = document.getElementById('shareCardBtn');
-    const originalText = shareBtn.innerHTML;
-    
+  let preGeneratedCardBlob = null;
+  let preGeneratedFileName = '';
+  
+  // Pre-generate card image after page loads
+  async function preGenerateCardImage() {
     try {
-      shareBtn.disabled = true;
-      shareBtn.innerHTML = '⏳ Generating...';
-      
-      // Populate the card
       const success = populateBaseballCard();
-      if (!success) {
-        alert('Player data is still loading. Please wait.');
-        return;
-      }
+      if (!success) return;
       
       const cardContainer = document.getElementById('baseballCardContainer');
       const cardFront = cardContainer.querySelector('.card-front');
       const cardBack = cardContainer.querySelector('.card-back');
       
-      // IMPORTANT: Hide Firebase photo BEFORE capture to avoid CORS timeout
+      // Hide Firebase photo
       const cardPhoto = document.getElementById('cardPhoto');
       const cardPlaceholder = document.getElementById('cardPhotoPlaceholder');
-      let photoWasVisible = false;
       let originalPhotoSrc = '';
       
       if (cardPhoto && cardPhoto.src && cardPhoto.src.includes('firebasestorage')) {
-        photoWasVisible = cardPhoto.style.display !== 'none';
         originalPhotoSrc = cardPhoto.src;
         cardPhoto.src = '';
         cardPhoto.style.display = 'none';
         if (cardPlaceholder) cardPlaceholder.style.display = 'flex';
       }
       
-      // Show card container off-screen for capture
       cardContainer.style.display = 'block';
       cardContainer.style.position = 'fixed';
       cardContainer.style.left = '-9999px';
       cardContainer.style.top = '0';
       
-      // Capture both sides (should be fast now without Firebase image)
+      const opts = { scale: 2, backgroundColor: '#fff', logging: false };
       const [frontCanvas, backCanvas] = await Promise.all([
-        html2canvas(cardFront, { scale: 2, backgroundColor: '#fff' }),
-        html2canvas(cardBack, { scale: 2, backgroundColor: '#fff' })
+        html2canvas(cardFront, opts),
+        html2canvas(cardBack, opts)
       ]);
       
-      // Hide container
       cardContainer.style.display = 'none';
-      cardContainer.style.position = '';
-      cardContainer.style.left = '';
-      cardContainer.style.top = '';
-      
-      // Restore photo if it was visible
-      if (photoWasVisible && originalPhotoSrc) {
+      if (originalPhotoSrc) {
         cardPhoto.src = originalPhotoSrc;
         cardPhoto.style.display = 'block';
         if (cardPlaceholder) cardPlaceholder.style.display = 'none';
       }
       
-      // Combine side by side
+      // Combine
       const gap = 40;
       const combined = document.createElement('canvas');
       combined.width = frontCanvas.width + backCanvas.width + gap;
@@ -1823,31 +1808,51 @@
       ctx.drawImage(frontCanvas, 0, 0);
       ctx.drawImage(backCanvas, frontCanvas.width + gap, 0);
       
-      // Create file
-      const blob = await new Promise(r => combined.toBlob(r, 'image/png'));
+      preGeneratedCardBlob = await new Promise(r => combined.toBlob(r, 'image/png'));
       const playerName = document.getElementById('playerName')?.textContent || 'Player';
-      const fileName = `${playerName.replace(/\s+/g, '-')}-player-card.png`;
-      const file = new File([blob], fileName, { type: 'image/png' });
+      preGeneratedFileName = `${playerName.replace(/\s+/g, '-')}-player-card.png`;
       
-      // Share
+      console.log('✅ Card pre-generated for sharing');
+    } catch (err) {
+      console.log('Could not pre-generate card:', err);
+    }
+  }
+  
+  // Call after a short delay to let page settle
+  setTimeout(preGenerateCardImage, 2000);
+  
+  async function sharePlayerCard() {
+    const shareBtn = document.getElementById('shareCardBtn');
+    const originalText = shareBtn.innerHTML;
+    
+    try {
+      shareBtn.disabled = true;
+      
+      // If not pre-generated, generate now
+      if (!preGeneratedCardBlob) {
+        shareBtn.innerHTML = '⏳ Generating...';
+        await preGenerateCardImage();
+      }
+      
+      if (!preGeneratedCardBlob) {
+        alert('Could not generate card. Please try again.');
+        return;
+      }
+      
+      const file = new File([preGeneratedCardBlob], preGeneratedFileName, { type: 'image/png' });
+      
       shareBtn.innerHTML = '📤 Sharing...';
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        await navigator.share({
-          files: [file],
-          title: `${playerName} - Mountainside Aces`
-        });
+        await navigator.share({ files: [file] });
       } else {
-        // Download fallback
         const link = document.createElement('a');
-        link.download = fileName;
-        link.href = combined.toDataURL('image/png');
+        link.download = preGeneratedFileName;
+        link.href = URL.createObjectURL(preGeneratedCardBlob);
         link.click();
       }
       
     } catch (err) {
-      if (err.name !== 'AbortError') {
-        console.error('Share error:', err);
-      }
+      if (err.name !== 'AbortError') console.error('Share error:', err);
     } finally {
       shareBtn.disabled = false;
       shareBtn.innerHTML = originalText;
