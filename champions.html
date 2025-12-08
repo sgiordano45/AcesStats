@@ -746,6 +746,65 @@
     .journey-round {
       width: 100%;
     }
+
+    .champion-photo-container {
+      padding: 1rem;
+    }
+
+    .champion-photo-container img {
+      max-height: 350px;
+    }
+  }
+
+  /* Champion Photo Section */
+  .champion-photo-container {
+    background: var(--card-bg);
+    border-radius: 16px;
+    padding: 1.5rem;
+    margin-bottom: 2rem;
+    box-shadow: var(--shadow-md);
+    border: 3px solid var(--accent-color);
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .champion-photo-container::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 6px;
+    background: var(--gold-gradient);
+  }
+
+  .champion-photo-container img {
+    max-width: 100%;
+    max-height: 500px;
+    border-radius: 12px;
+    box-shadow: var(--shadow-md);
+    object-fit: contain;
+  }
+
+  .champion-photo-caption {
+    margin-top: 1rem;
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--text-dark);
+  }
+
+  .champion-photo-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: var(--gold-gradient);
+    color: #3d3200;
+    padding: 0.5rem 1rem;
+    border-radius: 50px;
+    font-weight: 700;
+    font-size: 0.9rem;
+    margin-bottom: 1rem;
   }
 </style>
 </head>
@@ -772,6 +831,13 @@
     <h1 class="champion-team-name" id="championTeamName">Loading...</h1>
     <div class="champion-season" id="championSeason"></div>
     <div class="champion-record" id="championRecord"></div>
+  </div>
+
+  <!-- Champion Photo (only displays if photo exists) -->
+  <div class="champion-photo-container" id="championPhotoContainer" style="display: none;">
+    <div class="champion-photo-badge">📸 Championship Celebration</div>
+    <img id="championPhotoImg" src="" alt="Championship Team Photo">
+    <div class="champion-photo-caption" id="championPhotoCaption"></div>
   </div>
 
   <!-- Championship Game -->
@@ -855,6 +921,7 @@
 <script type="module">
   import { db, collection, doc, getDoc, getDocs, query, where, orderBy, limit } from './firebase-config.js';
   import { NavigationComponent } from './nav-component.js';
+  import { getChampionPhoto } from './firebase-storage.js';
 
   let allSeasons = [];
   let championsData = {}; // Map of seasonId -> champion data from Firebase
@@ -1088,6 +1155,7 @@
 
       // Render everything
       renderChampionHero(champion, seasonId);
+      await renderChampionPhoto(seasonId); // Load champion photo if exists
       renderChampionshipGame(champion, seasonData.games);
       renderTeamStars(champion, seasonData);
       renderTeamPitching(champion, seasonData);
@@ -1142,6 +1210,46 @@
     }
     
     document.getElementById('championRecord').innerHTML = infoHtml;
+  }
+
+  /**
+   * Render champion photo if one exists for this season
+   * Photo must have champs=true and seasonId matching the current season
+   */
+  async function renderChampionPhoto(seasonId) {
+    const container = document.getElementById('championPhotoContainer');
+    const img = document.getElementById('championPhotoImg');
+    const caption = document.getElementById('championPhotoCaption');
+    
+    // Hide by default
+    container.style.display = 'none';
+    
+    try {
+      const photo = await getChampionPhoto(seasonId);
+      
+      if (photo && photo.url) {
+        // Set the image source
+        img.src = photo.url;
+        img.alt = photo.name || `${formatSeasonName(seasonId)} Championship Photo`;
+        
+        // Set caption if available
+        if (photo.name) {
+          caption.textContent = photo.name;
+          caption.style.display = 'block';
+        } else {
+          caption.style.display = 'none';
+        }
+        
+        // Show the container
+        container.style.display = 'block';
+        console.log(`📷 Champion photo displayed for ${seasonId}`);
+      } else {
+        console.log(`📷 No champion photo to display for ${seasonId}`);
+      }
+    } catch (error) {
+      console.error('Error loading champion photo:', error);
+      container.style.display = 'none';
+    }
   }
 
   function formatTeamName(teamId) {

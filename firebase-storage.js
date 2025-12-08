@@ -569,4 +569,72 @@ export function getAvailableFolders() {
   ];
 }
 
+// ========================================
+// CHAMPION PHOTO FUNCTIONS
+// ========================================
+
+/**
+ * Get champion photo for a specific season
+ * Looks for photos in teamPhotos collection with champs=true and matching seasonId
+ * @param {string} seasonId - The season ID (e.g., "2025-fall")
+ * @returns {Promise<Object|null>} Photo object if found, null otherwise
+ */
+export async function getChampionPhoto(seasonId) {
+  try {
+    const q = query(
+      collection(db, 'teamPhotos'),
+      where('champs', '==', true),
+      where('seasonId', '==', seasonId)
+    );
+    const querySnapshot = await getDocs(q);
+    
+    if (querySnapshot.empty) {
+      console.log(`📷 No champion photo found for season: ${seasonId}`);
+      return null;
+    }
+
+    // Return the first matching photo
+    const docSnap = querySnapshot.docs[0];
+    const photo = {
+      id: docSnap.id,
+      ...docSnap.data()
+    };
+
+    console.log(`✅ Champion photo found for season ${seasonId}:`, photo.name || photo.url);
+    return photo;
+  } catch (error) {
+    console.error('❌ Error retrieving champion photo:', error);
+    return null;
+  }
+}
+
+/**
+ * Get all champion photos (for history/gallery views)
+ * @returns {Promise<Array>} Array of champion photo objects
+ */
+export async function getAllChampionPhotos() {
+  try {
+    const q = query(
+      collection(db, 'teamPhotos'),
+      where('champs', '==', true),
+      orderBy('createdAt', 'desc')
+    );
+    const querySnapshot = await getDocs(q);
+    
+    const photos = [];
+    querySnapshot.forEach((doc) => {
+      photos.push({
+        id: doc.id,
+        ...doc.data()
+      });
+    });
+
+    console.log(`✅ Retrieved ${photos.length} champion photos`);
+    return photos;
+  } catch (error) {
+    console.error('❌ Error retrieving champion photos:', error);
+    return [];
+  }
+}
+
 export { storage };
