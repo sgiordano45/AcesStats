@@ -101,6 +101,8 @@ export const NAV_STRUCTURE = {
     { id: 'charts', href: 'charts.html', label: 'Performance Charts', icon: '📊', priority: 3 },
     { id: 'query-stats', href: 'query-stats.html', label: 'Stats Query Tool', icon: '🔍', priority: 3 },
     { id: 'pictures', href: 'pictures.html', label: 'Gallery', icon: '📷', priority: 3 },
+    { id: 'rule-proposals', href: 'rule-proposals.html', label: 'Rule Proposals', icon: '📋', priority: 3 },
+    
     // game-preview removed - requires specific game ID parameter
   ],
   
