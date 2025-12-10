@@ -1,0 +1,1618 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<link rel="manifest" href="/manifest.json">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Role Management - Mountainside Aces</title>
+<meta name="theme-color" content="#2d5016">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="stylesheet" href="mobile-enhancements.css">
+<link rel="stylesheet" href="nav-styles.css">
+<style>
+  :root {
+    --primary-color: #2d5016;
+    --secondary-color: #1a6b4a;
+    --accent-color: #ffd700;
+    --admin-color: #6b21a8;
+    --admin-secondary: #7c3aed;
+    --card-bg: #ffffff;
+    --text-dark: #2d3748;
+    --text-light: #718096;
+    --border-color: #e2e8f0;
+    --shadow-sm: 0 2px 8px rgba(0,0,0,0.08);
+    --shadow-md: 0 4px 16px rgba(0,0,0,0.12);
+    --shadow-lg: 0 12px 32px rgba(0,0,0,0.16);
+    --success-color: #22c55e;
+    --warning-color: #f59e0b;
+    --danger-color: #ef4444;
+    --info-color: #3b82f6;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    margin: 0;
+    padding: 0;
+    background: linear-gradient(135deg, #f7fafc 0%, #edf2f7 100%);
+    min-height: 100vh;
+    color: var(--text-dark);
+  }
+
+  .loading-overlay {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(255,255,255,0.95);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    transition: opacity 0.5s ease;
+  }
+
+  .loading-overlay.hidden {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .softball-spinner::before {
+    content: '🎛️';
+    font-size: 80px;
+    animation: spin 1.5s ease-in-out infinite;
+  }
+
+  @keyframes spin {
+    0%, 100% { transform: rotate(0deg) scale(1); }
+    50% { transform: rotate(180deg) scale(1.1); }
+  }
+
+  /* Auth Gate */
+  .auth-gate {
+    max-width: 500px;
+    margin: 4rem auto;
+    padding: 3rem;
+    background: var(--card-bg);
+    border-radius: 16px;
+    box-shadow: var(--shadow-lg);
+    text-align: center;
+  }
+
+  .auth-gate h2 {
+    color: var(--danger-color);
+    margin-bottom: 1rem;
+  }
+
+  .auth-gate p {
+    color: var(--text-light);
+    margin-bottom: 2rem;
+  }
+
+  .auth-gate a {
+    display: inline-block;
+    padding: 0.75rem 2rem;
+    background: var(--primary-color);
+    color: white;
+    text-decoration: none;
+    border-radius: 8px;
+    font-weight: 600;
+  }
+
+  /* Header */
+  .header {
+    background: linear-gradient(135deg, var(--admin-color) 0%, var(--admin-secondary) 100%);
+    color: white;
+    padding: 2.5rem 2rem;
+    box-shadow: var(--shadow-lg);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .header::before {
+    content: '';
+    position: absolute;
+    top: -100px;
+    right: -100px;
+    width: 300px;
+    height: 300px;
+    background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+    border-radius: 50%;
+  }
+
+  .header::after {
+    content: '👥';
+    position: absolute;
+    bottom: -40px;
+    left: -30px;
+    font-size: 180px;
+    opacity: 0.08;
+  }
+
+  .header-content {
+    max-width: 1400px;
+    margin: 0 auto;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    position: relative;
+    z-index: 1;
+    flex-wrap: wrap;
+    gap: 1rem;
+  }
+
+  .header h1 {
+    margin: 0;
+    font-size: 2rem;
+    font-weight: 800;
+    margin-bottom: 0.25rem;
+  }
+
+  .header p {
+    margin: 0;
+    opacity: 0.9;
+    font-size: 0.95rem;
+  }
+
+  .header-buttons {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+
+  /* Navigation Buttons */
+  .nav-btn {
+    padding: 0.875rem 1.5rem;
+    border: 2px solid white;
+    background: white;
+    color: var(--admin-color);
+    border-radius: 12px;
+    font-weight: 600;
+    font-size: 0.9rem;
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    transition: all 0.3s ease;
+  }
+
+  .nav-btn::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background: var(--accent-color);
+    transform: translateX(-100%);
+    transition: transform 0.3s ease;
+    z-index: -1;
+  }
+
+  .nav-btn:hover::before {
+    transform: translateX(0);
+  }
+
+  .nav-btn:hover {
+    color: var(--admin-color);
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+  }
+
+  .admin-badge {
+    display: inline-block;
+    background: rgba(255,255,255,0.2);
+    padding: 0.25rem 0.75rem;
+    border-radius: 20px;
+    font-size: 0.85rem;
+    margin-top: 0.5rem;
+  }
+
+  /* Container */
+  .container {
+    max-width: 1400px;
+    margin: 2rem auto;
+    padding: 0 1.5rem;
+  }
+
+  /* Stats Cards */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 1rem;
+    margin-bottom: 2rem;
+  }
+
+  .stat-card {
+    background: var(--card-bg);
+    border-radius: 12px;
+    padding: 1.25rem;
+    box-shadow: var(--shadow-sm);
+    text-align: center;
+  }
+
+  .stat-card .stat-value {
+    font-size: 2rem;
+    font-weight: 800;
+    color: var(--admin-color);
+  }
+
+  .stat-card .stat-label {
+    font-size: 0.85rem;
+    color: var(--text-light);
+    margin-top: 0.25rem;
+  }
+
+  /* Section Cards */
+  .section {
+    background: var(--card-bg);
+    border-radius: 16px;
+    margin-bottom: 2rem;
+    box-shadow: var(--shadow-sm);
+    border: 1px solid var(--border-color);
+  }
+
+  .section-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 1.5rem;
+    border-bottom: 1px solid var(--border-color);
+    flex-wrap: wrap;
+  }
+
+  .section-header h2 {
+    margin: 0;
+    font-size: 1.25rem;
+    font-weight: 700;
+    flex: 1;
+  }
+
+  .section-header .icon {
+    font-size: 1.5rem;
+  }
+
+  .section-body {
+    padding: 1.5rem;
+  }
+
+  /* Search and Filter */
+  .filter-bar {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+    flex-wrap: wrap;
+  }
+
+  .search-box {
+    flex: 1;
+    min-width: 200px;
+    position: relative;
+  }
+
+  .search-box input {
+    width: 100%;
+    padding: 0.875rem 1rem 0.875rem 2.75rem;
+    border: 2px solid var(--border-color);
+    border-radius: 10px;
+    font-size: 0.95rem;
+    transition: all 0.3s ease;
+  }
+
+  .search-box input:focus {
+    outline: none;
+    border-color: var(--admin-color);
+    box-shadow: 0 0 0 3px rgba(107, 33, 168, 0.1);
+  }
+
+  .search-box::before {
+    content: '🔍';
+    position: absolute;
+    left: 1rem;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 1rem;
+  }
+
+  .filter-select {
+    padding: 0.875rem 2rem 0.875rem 1rem;
+    border: 2px solid var(--border-color);
+    border-radius: 10px;
+    font-size: 0.95rem;
+    background: white;
+    cursor: pointer;
+    min-width: 150px;
+  }
+
+  .filter-select:focus {
+    outline: none;
+    border-color: var(--admin-color);
+  }
+
+  /* Users Table */
+  .users-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  .users-table th,
+  .users-table td {
+    padding: 1rem;
+    text-align: left;
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  .users-table th {
+    background: #f8fafc;
+    font-weight: 600;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-light);
+  }
+
+  .users-table tbody tr:hover {
+    background: #f8fafc;
+  }
+
+  .users-table tbody tr.selected {
+    background: rgba(107, 33, 168, 0.08);
+  }
+
+  /* User Info Cell */
+  .user-info {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .user-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: var(--admin-color);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 0.9rem;
+  }
+
+  .user-avatar img {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    object-fit: cover;
+  }
+
+  .user-details {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .user-name {
+    font-weight: 600;
+    color: var(--text-dark);
+  }
+
+  .user-email {
+    font-size: 0.8rem;
+    color: var(--text-light);
+  }
+
+  /* Role Badges */
+  .role-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.35rem 0.75rem;
+    border-radius: 20px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  .role-admin { background: #fef3c7; color: #92400e; }
+  .role-league-staff { background: #dbeafe; color: #1e40af; }
+  .role-captain { background: #d1fae5; color: #065f46; }
+  .role-team-staff { background: #e0e7ff; color: #3730a3; }
+  .role-player { background: #f3f4f6; color: #374151; }
+  .role-fan { background: #fce7f3; color: #9d174d; }
+  .role-family { background: #fef9c3; color: #854d0e; }
+  .role-photographer { background: #ccfbf1; color: #0f766e; }
+  .role-oddsmaker { background: #fecaca; color: #991b1b; }
+
+  /* Team Badge */
+  .team-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.35rem 0.75rem;
+    border-radius: 8px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    background: #f3f4f6;
+    color: var(--text-dark);
+  }
+
+  /* Action Buttons */
+  .btn {
+    padding: 0.5rem 1rem;
+    border: none;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+
+  .btn-primary {
+    background: var(--admin-color);
+    color: white;
+  }
+
+  .btn-primary:hover {
+    background: var(--admin-secondary);
+    transform: translateY(-1px);
+  }
+
+  .btn-success {
+    background: var(--success-color);
+    color: white;
+  }
+
+  .btn-success:hover {
+    background: #16a34a;
+  }
+
+  .btn-warning {
+    background: var(--warning-color);
+    color: white;
+  }
+
+  .btn-danger {
+    background: var(--danger-color);
+    color: white;
+  }
+
+  .btn-secondary {
+    background: #e2e8f0;
+    color: var(--text-dark);
+  }
+
+  .btn-secondary:hover {
+    background: #cbd5e1;
+  }
+
+  .btn-sm {
+    padding: 0.35rem 0.75rem;
+    font-size: 0.8rem;
+  }
+
+  /* Editor Panel */
+  .editor-panel {
+    position: fixed;
+    top: 0;
+    right: -500px;
+    width: 100%;
+    max-width: 450px;
+    height: 100vh;
+    background: white;
+    box-shadow: -4px 0 24px rgba(0,0,0,0.15);
+    z-index: 1000;
+    transition: right 0.3s ease;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .editor-panel.active {
+    right: 0;
+  }
+
+  .editor-header {
+    padding: 1.5rem;
+    background: var(--admin-color);
+    color: white;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .editor-header h3 {
+    margin: 0;
+    font-size: 1.25rem;
+  }
+
+  .editor-close {
+    background: none;
+    border: none;
+    color: white;
+    font-size: 1.5rem;
+    cursor: pointer;
+    padding: 0.5rem;
+    line-height: 1;
+  }
+
+  .editor-body {
+    flex: 1;
+    padding: 1.5rem;
+    overflow-y: auto;
+  }
+
+  .editor-footer {
+    padding: 1.5rem;
+    border-top: 1px solid var(--border-color);
+    display: flex;
+    gap: 1rem;
+  }
+
+  .editor-footer .btn {
+    flex: 1;
+    justify-content: center;
+    padding: 0.875rem;
+  }
+
+  /* Form Groups */
+  .form-group {
+    margin-bottom: 1.25rem;
+  }
+
+  .form-group label {
+    display: block;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+    color: var(--text-dark);
+  }
+
+  .form-group input,
+  .form-group select {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    border: 2px solid var(--border-color);
+    border-radius: 8px;
+    font-size: 0.95rem;
+    transition: all 0.2s ease;
+  }
+
+  .form-group input:focus,
+  .form-group select:focus {
+    outline: none;
+    border-color: var(--admin-color);
+  }
+
+  .form-hint {
+    font-size: 0.8rem;
+    color: var(--text-light);
+    margin-top: 0.35rem;
+  }
+
+  /* Role Selection */
+  .role-options {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .role-option {
+    display: flex;
+    align-items: center;
+    padding: 0.75rem 1rem;
+    border: 2px solid var(--border-color);
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .role-option:hover {
+    border-color: var(--admin-color);
+    background: #f8fafc;
+  }
+
+  .role-option.selected {
+    border-color: var(--admin-color);
+    background: rgba(107, 33, 168, 0.05);
+  }
+
+  .role-option input {
+    margin-right: 0.75rem;
+    accent-color: var(--admin-color);
+  }
+
+  .role-option-content {
+    flex: 1;
+  }
+
+  .role-option-name {
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .role-option-desc {
+    font-size: 0.8rem;
+    color: var(--text-light);
+    margin-top: 0.15rem;
+  }
+
+  /* User Preview in Editor */
+  .user-preview {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1rem;
+    background: #f8fafc;
+    border-radius: 12px;
+    margin-bottom: 1.5rem;
+  }
+
+  .user-preview-avatar {
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    background: var(--admin-color);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 1.25rem;
+  }
+
+  .user-preview-avatar img {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    object-fit: cover;
+  }
+
+  .user-preview-info h4 {
+    margin: 0 0 0.25rem 0;
+    font-size: 1.1rem;
+  }
+
+  .user-preview-info p {
+    margin: 0;
+    font-size: 0.85rem;
+    color: var(--text-light);
+  }
+
+  /* Current Roles Display */
+  .current-roles {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+  }
+
+  /* Special Roles Section */
+  .special-roles-section {
+    margin-top: 1.5rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--border-color);
+  }
+
+  .special-roles-section h4 {
+    margin: 0 0 1rem 0;
+    font-size: 0.95rem;
+    color: var(--text-dark);
+  }
+
+  .special-roles-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.5rem;
+  }
+
+  .special-role-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem;
+    border: 2px solid var(--border-color);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .special-role-toggle:hover {
+    border-color: var(--admin-color);
+  }
+
+  .special-role-toggle.active {
+    border-color: var(--success-color);
+    background: rgba(34, 197, 94, 0.05);
+  }
+
+  .special-role-toggle input {
+    accent-color: var(--success-color);
+  }
+
+  /* Backdrop */
+  .editor-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.5);
+    z-index: 999;
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.3s ease;
+  }
+
+  .editor-backdrop.active {
+    opacity: 1;
+    visibility: visible;
+  }
+
+  /* Toast Notifications */
+  .toast-container {
+    position: fixed;
+    bottom: 2rem;
+    right: 2rem;
+    z-index: 10000;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .toast {
+    padding: 1rem 1.5rem;
+    border-radius: 10px;
+    color: white;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    animation: slideIn 0.3s ease;
+    box-shadow: var(--shadow-lg);
+  }
+
+  .toast-success { background: var(--success-color); }
+  .toast-error { background: var(--danger-color); }
+  .toast-warning { background: var(--warning-color); }
+  .toast-info { background: var(--info-color); }
+
+  @keyframes slideIn {
+    from { transform: translateX(100%); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+  }
+
+  /* Empty State */
+  .empty-state {
+    text-align: center;
+    padding: 3rem;
+    color: var(--text-light);
+  }
+
+  .empty-state .icon {
+    font-size: 3rem;
+    margin-bottom: 1rem;
+  }
+
+  /* Pagination */
+  .pagination {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 1.5rem;
+  }
+
+  .pagination button {
+    padding: 0.5rem 1rem;
+    border: 1px solid var(--border-color);
+    background: white;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .pagination button:hover:not(:disabled) {
+    border-color: var(--admin-color);
+    color: var(--admin-color);
+  }
+
+  .pagination button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .pagination .page-info {
+    padding: 0.5rem 1rem;
+    color: var(--text-light);
+  }
+
+  /* Responsive */
+  @media (max-width: 768px) {
+    .header-content {
+      flex-direction: column;
+      text-align: center;
+    }
+
+    .header-buttons {
+      justify-content: center;
+    }
+
+    .stats-grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+
+    .users-table {
+      display: block;
+      overflow-x: auto;
+    }
+
+    .filter-bar {
+      flex-direction: column;
+    }
+
+    .filter-select {
+      width: 100%;
+    }
+
+    .editor-panel {
+      max-width: 100%;
+    }
+
+    .special-roles-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+</head>
+<body>
+
+<!-- Loading Overlay -->
+<div class="loading-overlay" id="loadingOverlay">
+  <div class="softball-spinner"></div>
+</div>
+
+<!-- Auth Gate (shown when not authorized) -->
+<div class="auth-gate" id="authGate" style="display: none;">
+  <h2>🔒 Access Denied</h2>
+  <p>You must be an Admin or League Staff to access this page.</p>
+  <a href="profile.html">← Back to Profile</a>
+</div>
+
+<!-- Main Content (hidden until authorized) -->
+<div id="mainContent" style="display: none;">
+  
+  <!-- Header -->
+  <header class="header">
+    <div class="header-content">
+      <div>
+        <h1>👥 Role Management</h1>
+        <p>Assign and manage user roles across the league</p>
+        <div class="admin-badge" id="userBadge">Loading...</div>
+      </div>
+      <div class="header-buttons">
+        <a href="admin-content.html" class="nav-btn">📊 Content Admin</a>
+        <a href="profile.html" class="nav-btn">👤 Profile</a>
+        <a href="index.html" class="nav-btn">🏠 Home</a>
+      </div>
+    </div>
+  </header>
+
+  <div class="container">
+    
+    <!-- Stats Grid -->
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-value" id="totalUsers">-</div>
+        <div class="stat-label">Total Users</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="totalAdmins">-</div>
+        <div class="stat-label">Admins</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="totalLeagueStaff">-</div>
+        <div class="stat-label">League Staff</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="totalCaptains">-</div>
+        <div class="stat-label">Captains</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="totalPlayers">-</div>
+        <div class="stat-label">Players</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="totalSpecialRoles">-</div>
+        <div class="stat-label">Special Roles</div>
+      </div>
+    </div>
+
+    <!-- Users Section -->
+    <div class="section">
+      <div class="section-header">
+        <span class="icon">👥</span>
+        <h2>All Users</h2>
+        <button class="btn btn-primary btn-sm" onclick="refreshUsers()">🔄 Refresh</button>
+      </div>
+      <div class="section-body">
+        
+        <!-- Filter Bar -->
+        <div class="filter-bar">
+          <div class="search-box">
+            <input type="text" id="searchInput" placeholder="Search by name or email..." oninput="filterUsers()">
+          </div>
+          <select class="filter-select" id="roleFilter" onchange="filterUsers()">
+            <option value="all">All Roles</option>
+            <option value="admin">Admin</option>
+            <option value="league-staff">League Staff</option>
+            <option value="captain">Captain</option>
+            <option value="team-staff">Team Staff</option>
+            <option value="player">Player</option>
+            <option value="fan">Fan</option>
+            <option value="family">Family</option>
+            <option value="photographer">Photographer</option>
+            <option value="oddsmaker">Oddsmaker</option>
+          </select>
+          <select class="filter-select" id="teamFilter" onchange="filterUsers()">
+            <option value="all">All Teams</option>
+          </select>
+        </div>
+
+        <!-- Users Table -->
+        <div style="overflow-x: auto;">
+          <table class="users-table">
+            <thead>
+              <tr>
+                <th>User</th>
+                <th>Role</th>
+                <th>Team</th>
+                <th>Linked Player</th>
+                <th>Special Roles</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="usersTableBody">
+              <tr>
+                <td colspan="6" class="empty-state">
+                  <div class="icon">⏳</div>
+                  <p>Loading users...</p>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Pagination -->
+        <div class="pagination" id="pagination" style="display: none;">
+          <button onclick="previousPage()" id="prevBtn">← Previous</button>
+          <span class="page-info" id="pageInfo">Page 1 of 1</span>
+          <button onclick="nextPage()" id="nextBtn">Next →</button>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Editor Panel -->
+<div class="editor-backdrop" id="editorBackdrop" onclick="closeEditor()"></div>
+<div class="editor-panel" id="editorPanel">
+  <div class="editor-header">
+    <h3>Edit User Role</h3>
+    <button class="editor-close" onclick="closeEditor()">×</button>
+  </div>
+  <div class="editor-body" id="editorBody">
+    <!-- Dynamically populated -->
+  </div>
+  <div class="editor-footer">
+    <button class="btn btn-secondary" onclick="closeEditor()">Cancel</button>
+    <button class="btn btn-success" onclick="saveUserRole()">💾 Save Changes</button>
+  </div>
+</div>
+
+<!-- Toast Container -->
+<div class="toast-container" id="toastContainer"></div>
+
+<!-- Navigation Component -->
+<script type="module">
+  import { NavigationComponent } from './nav-component.js';
+</script>
+
+<script type="module">
+  import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
+  import { doc, getDoc, getDocs, updateDoc, collection, query, where, serverTimestamp, orderBy, limit, startAfter } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+  import { app, db } from './firebase-data.js';
+  import { USER_ROLES, getUserProfile } from './firebase-auth.js';
+  
+  const auth = getAuth(app);
+  
+  // State
+  let currentUser = null;
+  let userProfile = null;
+  let allUsers = [];
+  let filteredUsers = [];
+  let selectedUser = null;
+  let currentPage = 1;
+  const PAGE_SIZE = 20;
+  let teams = [];
+
+  // Special roles (these are toggleable badges, not primary roles)
+  const SPECIAL_ROLES = {
+    photographer: { icon: '📸', label: 'Photographer', desc: 'Can upload and manage league photos' },
+    oddsmaker: { icon: '🎲', label: 'Oddsmaker', desc: 'Can create and manage betting odds' },
+    statistician: { icon: '📊', label: 'Statistician', desc: 'Advanced stats access and editing' },
+    historian: { icon: '📚', label: 'Historian', desc: 'Can edit historical records' },
+    umpire: { icon: '⚖️', label: 'Umpire', desc: 'League umpire designation' }
+  };
+
+  // Role definitions for the selector
+  const ROLE_DEFINITIONS = {
+    admin: { icon: '👑', label: 'Admin', desc: 'Full system access and control', level: 1 },
+    'league-staff': { icon: '⚙️', label: 'League Staff', desc: 'Manage league operations', level: 2 },
+    captain: { icon: '🎯', label: 'Captain', desc: 'Team captain with roster management', level: 3 },
+    'team-staff': { icon: '📋', label: 'Team Staff', desc: 'Assist captain with team operations', level: 4 },
+    player: { icon: '🥎', label: 'Player', desc: 'Active league player', level: 5 },
+    fan: { icon: '📣', label: 'Fan', desc: 'League follower without playing status', level: 6 },
+    family: { icon: '👨‍👩‍👧', label: 'Family', desc: 'Family member of a player', level: 7 }
+  };
+
+  // Initialize
+  onAuthStateChanged(auth, async (user) => {
+    if (user) {
+      currentUser = user;
+      
+      try {
+        const profileResult = await getUserProfile(user.uid);
+        
+        if (!profileResult.success) {
+          showAuthGate();
+          return;
+        }
+        
+        userProfile = profileResult.data;
+        
+        console.log('📋 User profile loaded:', {
+          userRole: userProfile.userRole,
+          isAdmin: userProfile.isAdmin
+        });
+
+        // Check authorization
+        const userRole = (userProfile.userRole || '').toLowerCase();
+        const isAuthorized = 
+          userProfile.isAdmin === true || 
+          userRole === 'admin' ||
+          userRole === 'league-staff';
+
+        if (isAuthorized) {
+          let badge = '🏟️ League Staff';
+          if (userProfile.isAdmin === true || userRole === 'admin') {
+            badge = '👑 Admin';
+          }
+          document.getElementById('userBadge').textContent = badge;
+          showMainContent();
+          await initialize();
+        } else {
+          showAuthGate();
+        }
+        
+      } catch (error) {
+        console.error('❌ Error loading profile:', error);
+        showAuthGate();
+      }
+    } else {
+      window.location.href = 'signin.html?redirect=' + encodeURIComponent(window.location.pathname);
+    }
+  });
+
+  function showAuthGate() {
+    document.getElementById('loadingOverlay').classList.add('hidden');
+    document.getElementById('authGate').style.display = 'block';
+    document.getElementById('mainContent').style.display = 'none';
+  }
+
+  function showMainContent() {
+    document.getElementById('loadingOverlay').classList.add('hidden');
+    document.getElementById('authGate').style.display = 'none';
+    document.getElementById('mainContent').style.display = 'block';
+  }
+
+  async function initialize() {
+    await loadTeams();
+    await loadUsers();
+  }
+
+  // Load teams for filter dropdown
+  async function loadTeams() {
+    try {
+      const teamsSnap = await getDocs(collection(db, 'teams'));
+      teams = [];
+      
+      teamsSnap.forEach(doc => {
+        teams.push({
+          id: doc.id,
+          name: doc.data().teamName || doc.id
+        });
+      });
+
+      // Populate team filter
+      const teamFilter = document.getElementById('teamFilter');
+      teams.sort((a, b) => a.name.localeCompare(b.name));
+      teams.forEach(team => {
+        const option = document.createElement('option');
+        option.value = team.id;
+        option.textContent = team.name;
+        teamFilter.appendChild(option);
+      });
+
+    } catch (error) {
+      console.error('❌ Error loading teams:', error);
+    }
+  }
+
+  // Load all users
+  async function loadUsers() {
+    try {
+      const usersSnap = await getDocs(collection(db, 'users'));
+      allUsers = [];
+      
+      usersSnap.forEach(doc => {
+        allUsers.push({
+          id: doc.id,
+          ...doc.data()
+        });
+      });
+
+      // Sort by display name
+      allUsers.sort((a, b) => {
+        const nameA = (a.displayName || a.preferredDisplayName || a.email || '').toLowerCase();
+        const nameB = (b.displayName || b.preferredDisplayName || b.email || '').toLowerCase();
+        return nameA.localeCompare(nameB);
+      });
+
+      updateStats();
+      filterUsers();
+      
+    } catch (error) {
+      console.error('❌ Error loading users:', error);
+      showToast('Error loading users', 'error');
+    }
+  }
+
+  // Update stats
+  function updateStats() {
+    const stats = {
+      total: allUsers.length,
+      admins: 0,
+      leagueStaff: 0,
+      captains: 0,
+      players: 0,
+      specialRoles: 0
+    };
+
+    allUsers.forEach(user => {
+      const role = (user.userRole || '').toLowerCase();
+      
+      if (role === 'admin' || user.isAdmin) stats.admins++;
+      else if (role === 'league-staff') stats.leagueStaff++;
+      else if (role === 'captain' || user.isCaptain) stats.captains++;
+      else if (role === 'player') stats.players++;
+
+      // Count special roles
+      if (user.specialRoles && Object.values(user.specialRoles).some(v => v === true)) {
+        stats.specialRoles++;
+      }
+    });
+
+    document.getElementById('totalUsers').textContent = stats.total;
+    document.getElementById('totalAdmins').textContent = stats.admins;
+    document.getElementById('totalLeagueStaff').textContent = stats.leagueStaff;
+    document.getElementById('totalCaptains').textContent = stats.captains;
+    document.getElementById('totalPlayers').textContent = stats.players;
+    document.getElementById('totalSpecialRoles').textContent = stats.specialRoles;
+  }
+
+  // Filter users
+  window.filterUsers = function() {
+    const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+    const roleFilter = document.getElementById('roleFilter').value;
+    const teamFilter = document.getElementById('teamFilter').value;
+
+    filteredUsers = allUsers.filter(user => {
+      // Search filter
+      const name = (user.displayName || user.preferredDisplayName || '').toLowerCase();
+      const email = (user.email || '').toLowerCase();
+      const matchesSearch = !searchTerm || name.includes(searchTerm) || email.includes(searchTerm);
+
+      // Role filter
+      let matchesRole = true;
+      if (roleFilter !== 'all') {
+        const userRole = (user.userRole || '').toLowerCase();
+        
+        if (roleFilter === 'photographer' || roleFilter === 'oddsmaker') {
+          // Check special roles
+          matchesRole = user.specialRoles?.[roleFilter] === true;
+        } else if (roleFilter === 'captain') {
+          matchesRole = userRole === 'captain' || user.isCaptain === true;
+        } else if (roleFilter === 'admin') {
+          matchesRole = userRole === 'admin' || user.isAdmin === true;
+        } else {
+          matchesRole = userRole === roleFilter;
+        }
+      }
+
+      // Team filter
+      let matchesTeam = true;
+      if (teamFilter !== 'all') {
+        matchesTeam = user.linkedTeam === teamFilter || 
+                      (user.teamRoles && user.teamRoles[teamFilter]?.status === 'active');
+      }
+
+      return matchesSearch && matchesRole && matchesTeam;
+    });
+
+    currentPage = 1;
+    renderUsers();
+  };
+
+  // Render users table
+  function renderUsers() {
+    const tbody = document.getElementById('usersTableBody');
+    
+    if (filteredUsers.length === 0) {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="6" class="empty-state">
+            <div class="icon">🔍</div>
+            <p>No users found matching your filters</p>
+          </td>
+        </tr>
+      `;
+      document.getElementById('pagination').style.display = 'none';
+      return;
+    }
+
+    // Pagination
+    const totalPages = Math.ceil(filteredUsers.length / PAGE_SIZE);
+    const startIdx = (currentPage - 1) * PAGE_SIZE;
+    const endIdx = startIdx + PAGE_SIZE;
+    const pageUsers = filteredUsers.slice(startIdx, endIdx);
+
+    tbody.innerHTML = pageUsers.map(user => {
+      const displayName = user.preferredDisplayName || user.displayName || 'Unknown';
+      const email = user.email || '';
+      const initials = displayName.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+      const role = user.userRole || 'player';
+      const linkedTeam = user.linkedTeam || '-';
+      const linkedPlayer = user.linkedPlayer || '-';
+
+      // Get role badge class
+      let roleBadgeClass = `role-${role}`;
+      let roleIcon = ROLE_DEFINITIONS[role]?.icon || '👤';
+      let roleLabel = ROLE_DEFINITIONS[role]?.label || capitalize(role);
+      
+      // Handle legacy captain flag
+      if (user.isCaptain && role !== 'captain') {
+        roleBadgeClass = 'role-captain';
+        roleIcon = '🎯';
+        roleLabel = 'Captain';
+      }
+
+      // Special roles badges
+      const specialRolesBadges = [];
+      if (user.specialRoles) {
+        Object.entries(user.specialRoles).forEach(([key, value]) => {
+          if (value === true && SPECIAL_ROLES[key]) {
+            specialRolesBadges.push(`
+              <span class="role-badge role-${key}">${SPECIAL_ROLES[key].icon} ${SPECIAL_ROLES[key].label}</span>
+            `);
+          }
+        });
+      }
+
+      return `
+        <tr data-user-id="${user.id}">
+          <td>
+            <div class="user-info">
+              <div class="user-avatar">
+                ${user.profilePhotoURL ? `<img src="${user.profilePhotoURL}" alt="">` : initials}
+              </div>
+              <div class="user-details">
+                <span class="user-name">${displayName}</span>
+                <span class="user-email">${email}</span>
+              </div>
+            </div>
+          </td>
+          <td>
+            <span class="role-badge ${roleBadgeClass}">${roleIcon} ${roleLabel}</span>
+          </td>
+          <td>
+            ${linkedTeam !== '-' ? `<span class="team-badge">🏟️ ${capitalize(linkedTeam)}</span>` : '-'}
+          </td>
+          <td>${linkedPlayer}</td>
+          <td>${specialRolesBadges.length > 0 ? specialRolesBadges.join('') : '-'}</td>
+          <td>
+            <button class="btn btn-primary btn-sm" onclick="editUser('${user.id}')">✏️ Edit</button>
+          </td>
+        </tr>
+      `;
+    }).join('');
+
+    // Update pagination
+    if (totalPages > 1) {
+      document.getElementById('pagination').style.display = 'flex';
+      document.getElementById('pageInfo').textContent = `Page ${currentPage} of ${totalPages}`;
+      document.getElementById('prevBtn').disabled = currentPage === 1;
+      document.getElementById('nextBtn').disabled = currentPage === totalPages;
+    } else {
+      document.getElementById('pagination').style.display = 'none';
+    }
+  }
+
+  // Pagination
+  window.previousPage = function() {
+    if (currentPage > 1) {
+      currentPage--;
+      renderUsers();
+    }
+  };
+
+  window.nextPage = function() {
+    const totalPages = Math.ceil(filteredUsers.length / PAGE_SIZE);
+    if (currentPage < totalPages) {
+      currentPage++;
+      renderUsers();
+    }
+  };
+
+  // Edit user
+  window.editUser = function(userId) {
+    selectedUser = allUsers.find(u => u.id === userId);
+    if (!selectedUser) return;
+
+    const displayName = selectedUser.preferredDisplayName || selectedUser.displayName || 'Unknown';
+    const email = selectedUser.email || '';
+    const initials = displayName.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+    const currentRole = selectedUser.userRole || 'player';
+    const linkedTeam = selectedUser.linkedTeam || '';
+
+    // Build role options
+    const roleOptions = Object.entries(ROLE_DEFINITIONS).map(([key, def]) => {
+      const isSelected = currentRole === key || (key === 'captain' && selectedUser.isCaptain);
+      return `
+        <label class="role-option ${isSelected ? 'selected' : ''}">
+          <input type="radio" name="userRole" value="${key}" ${isSelected ? 'checked' : ''} onchange="updateRoleSelection(this)">
+          <div class="role-option-content">
+            <div class="role-option-name">${def.icon} ${def.label}</div>
+            <div class="role-option-desc">${def.desc}</div>
+          </div>
+        </label>
+      `;
+    }).join('');
+
+    // Build special roles toggles
+    const specialRolesHtml = Object.entries(SPECIAL_ROLES).map(([key, def]) => {
+      const isActive = selectedUser.specialRoles?.[key] === true;
+      return `
+        <label class="special-role-toggle ${isActive ? 'active' : ''}">
+          <input type="checkbox" name="specialRole_${key}" ${isActive ? 'checked' : ''} onchange="toggleSpecialRole(this)">
+          <span>${def.icon} ${def.label}</span>
+        </label>
+      `;
+    }).join('');
+
+    // Build team options
+    const teamOptions = teams.map(team => {
+      return `<option value="${team.id}" ${linkedTeam === team.id ? 'selected' : ''}>${team.name}</option>`;
+    }).join('');
+
+    // Current special roles display
+    const currentSpecialRoles = [];
+    if (selectedUser.specialRoles) {
+      Object.entries(selectedUser.specialRoles).forEach(([key, value]) => {
+        if (value === true && SPECIAL_ROLES[key]) {
+          currentSpecialRoles.push(`<span class="role-badge role-${key}">${SPECIAL_ROLES[key].icon} ${SPECIAL_ROLES[key].label}</span>`);
+        }
+      });
+    }
+
+    document.getElementById('editorBody').innerHTML = `
+      <div class="user-preview">
+        <div class="user-preview-avatar">
+          ${selectedUser.profilePhotoURL ? `<img src="${selectedUser.profilePhotoURL}" alt="">` : initials}
+        </div>
+        <div class="user-preview-info">
+          <h4>${displayName}</h4>
+          <p>${email}</p>
+          <div class="current-roles">
+            <span class="role-badge role-${currentRole}">${ROLE_DEFINITIONS[currentRole]?.icon || '👤'} ${ROLE_DEFINITIONS[currentRole]?.label || capitalize(currentRole)}</span>
+            ${currentSpecialRoles.join('')}
+          </div>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Primary Role</label>
+        <div class="role-options">
+          ${roleOptions}
+        </div>
+      </div>
+
+      <div class="form-group" id="teamSelectGroup" style="display: ${['captain', 'team-staff', 'player'].includes(currentRole) ? 'block' : 'none'}">
+        <label>Linked Team</label>
+        <select id="linkedTeamSelect">
+          <option value="">-- No Team --</option>
+          ${teamOptions}
+        </select>
+        <div class="form-hint">Required for Captain, Team Staff, and Player roles</div>
+      </div>
+
+      <div class="special-roles-section">
+        <h4>🏷️ Special Roles (Badges)</h4>
+        <p class="form-hint" style="margin-bottom: 1rem;">These are additional designations that can be combined with any primary role.</p>
+        <div class="special-roles-grid">
+          ${specialRolesHtml}
+        </div>
+      </div>
+    `;
+
+    // Show editor
+    document.getElementById('editorBackdrop').classList.add('active');
+    document.getElementById('editorPanel').classList.add('active');
+  };
+
+  // Update role selection styling
+  window.updateRoleSelection = function(radio) {
+    document.querySelectorAll('.role-option').forEach(opt => {
+      opt.classList.toggle('selected', opt.contains(radio) && radio.checked);
+    });
+
+    // Show/hide team select based on role
+    const selectedRole = radio.value;
+    const teamGroup = document.getElementById('teamSelectGroup');
+    if (['captain', 'team-staff', 'player'].includes(selectedRole)) {
+      teamGroup.style.display = 'block';
+    } else {
+      teamGroup.style.display = 'none';
+    }
+  };
+
+  // Toggle special role styling
+  window.toggleSpecialRole = function(checkbox) {
+    const label = checkbox.closest('.special-role-toggle');
+    label.classList.toggle('active', checkbox.checked);
+  };
+
+  // Close editor
+  window.closeEditor = function() {
+    document.getElementById('editorBackdrop').classList.remove('active');
+    document.getElementById('editorPanel').classList.remove('active');
+    selectedUser = null;
+  };
+
+  // Save user role
+  window.saveUserRole = async function() {
+    if (!selectedUser) return;
+
+    const selectedRole = document.querySelector('input[name="userRole"]:checked')?.value;
+    const linkedTeam = document.getElementById('linkedTeamSelect')?.value || null;
+
+    if (!selectedRole) {
+      showToast('Please select a role', 'warning');
+      return;
+    }
+
+    // Validate team for certain roles
+    if (['captain', 'team-staff', 'player'].includes(selectedRole) && !linkedTeam) {
+      showToast('Please select a team for this role', 'warning');
+      return;
+    }
+
+    try {
+      const userRef = doc(db, 'users', selectedUser.id);
+      
+      // Collect special roles
+      const specialRoles = {};
+      Object.keys(SPECIAL_ROLES).forEach(key => {
+        const checkbox = document.querySelector(`input[name="specialRole_${key}"]`);
+        specialRoles[key] = checkbox?.checked || false;
+      });
+
+      // Build update object
+      const updates = {
+        userRole: selectedRole,
+        specialRoles: specialRoles,
+        roleUpdatedBy: currentUser.uid,
+        roleUpdatedAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      };
+
+      // Update linked team
+      if (['captain', 'team-staff', 'player'].includes(selectedRole)) {
+        updates.linkedTeam = linkedTeam;
+        
+        // Update teamRoles for captain/team-staff
+        if (selectedRole === 'captain' || selectedRole === 'team-staff') {
+          const teamRoles = selectedUser.teamRoles || {};
+          teamRoles[linkedTeam] = {
+            role: selectedRole,
+            status: 'active',
+            approvedBy: currentUser.uid,
+            approvedAt: serverTimestamp()
+          };
+          updates.teamRoles = teamRoles;
+        }
+
+        // Handle captain flag for backward compatibility
+        if (selectedRole === 'captain') {
+          updates.isCaptain = true;
+        } else if (selectedUser.isCaptain) {
+          updates.isCaptain = false;
+        }
+      } else {
+        updates.linkedTeam = null;
+        if (selectedUser.isCaptain) {
+          updates.isCaptain = false;
+        }
+      }
+
+      // Handle admin flag
+      if (selectedRole === 'admin') {
+        updates.isAdmin = true;
+      } else if (selectedUser.isAdmin) {
+        updates.isAdmin = false;
+      }
+
+      await updateDoc(userRef, updates);
+
+      showToast(`Role updated for ${selectedUser.displayName || selectedUser.email}`, 'success');
+      closeEditor();
+      await loadUsers();
+
+    } catch (error) {
+      console.error('❌ Error saving role:', error);
+      showToast('Error saving role: ' + error.message, 'error');
+    }
+  };
+
+  // Refresh users
+  window.refreshUsers = async function() {
+    showToast('Refreshing user list...', 'info');
+    await loadUsers();
+    showToast('User list refreshed', 'success');
+  };
+
+  // Utility functions
+  function capitalize(str) {
+    if (!str) return '';
+    return str.charAt(0).toUpperCase() + str.slice(1);
+  }
+
+  function showToast(message, type = 'success') {
+    const container = document.getElementById('toastContainer');
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+    
+    const icons = { success: '✔', error: '✖', warning: '⚠', info: 'ℹ' };
+    toast.innerHTML = `<span>${icons[type] || '•'}</span> ${message}`;
+    
+    container.appendChild(toast);
+    
+    setTimeout(() => {
+      toast.style.opacity = '0';
+      setTimeout(() => toast.remove(), 300);
+    }, 4000);
+  }
+
+  // Make showToast globally available
+  window.showToast = showToast;
+</script>
+
+<script src="team-colors.js"></script>
+<script src="mobile-enhancements.js"></script>
+</body>
+</html>
