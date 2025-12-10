@@ -1,9 +1,9 @@
 // service-worker.js - Unified Service Worker
 // Handles both offline functionality AND Firebase Cloud Messaging
-// Version 1.0.16 - fix firebase auth for new role system
+// Version 1.0.17 - team logo updates
 
 
-const CACHE_VERSION = 'aces-v1.0.16';
+const CACHE_VERSION = 'aces-v1.0.17';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const DYNAMIC_CACHE = `${CACHE_VERSION}-dynamic`;
 const IMAGE_CACHE = `${CACHE_VERSION}-images`;
