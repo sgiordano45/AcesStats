@@ -1271,7 +1271,7 @@
       teams.forEach(team => {
         const option = document.createElement('option');
         option.value = team.id;
-        option.textContent = team.name;
+        option.textContent = capitalize(team.name);
         teamFilter.appendChild(option);
       });
 
@@ -1440,9 +1440,18 @@
       // Build team roles badges
       const teamRolesBadges = [];
       if (user.teamRoles) {
+        // Track which teams we've already processed (to avoid duplicates from case mismatch)
+        const processedTeams = new Set();
+        
         Object.entries(user.teamRoles).forEach(([teamId, tr]) => {
+          const normalizedTeamId = teamId.toLowerCase();
+          
+          // Skip if we've already processed this team (handles duplicate entries from case mismatch)
+          if (processedTeams.has(normalizedTeamId)) return;
+          processedTeams.add(normalizedTeamId);
+          
           if (tr.status === 'active' && tr.role && tr.role !== 'none') {
-            const teamName = teams.find(t => t.id === teamId)?.name || capitalize(teamId);
+            const teamName = capitalize(teams.find(t => t.id.toLowerCase() === normalizedTeamId)?.name || teamId);
             const roleInfo = TEAM_ROLES[tr.role] || { icon: '👤', label: tr.role };
             teamRolesBadges.push(`
               <span class="role-badge role-${tr.role}" title="${roleInfo.label} of ${teamName}">${roleInfo.icon} ${teamName}</span>
@@ -1565,13 +1574,28 @@
 
     // Build team roles section - show each team with dropdown
     const teamRolesHtml = teams.map(team => {
-      const teamRole = selectedUser.teamRoles?.[team.id];
-      const currentTeamRole = (teamRole?.status === 'active') ? teamRole.role : 'none';
+      // Check both capitalized and lowercase versions of team ID
+      const teamKey = capitalize(team.id);
+      const teamRole = selectedUser.teamRoles?.[teamKey] || selectedUser.teamRoles?.[team.id];
+      let currentTeamRole = (teamRole?.status === 'active') ? teamRole.role : 'none';
+      
+      // LEGACY FALLBACK: If no teamRoles but user is captain of this team via legacy fields
+      // Check both casings for linkedTeam
+      const linkedTeamMatch = selectedUser.linkedTeam?.toLowerCase() === team.id.toLowerCase();
+      if (currentTeamRole === 'none' && 
+          selectedUser.isCaptain === true && 
+          linkedTeamMatch &&
+          !selectedUser.teamRoles?.[teamKey] &&
+          !selectedUser.teamRoles?.[team.id]) {
+        currentTeamRole = 'captain';
+      }
+      
       const hasRole = currentTeamRole !== 'none';
+      const teamDisplayName = capitalize(team.name || team.id);
       
       return `
         <div class="team-role-row ${hasRole ? 'has-role' : ''}" data-team-id="${team.id}">
-          <span class="team-role-name">🏟️ ${team.name}</span>
+          <span class="team-role-name">🏟️ ${teamDisplayName}</span>
           <select class="team-role-select" name="teamRole_${team.id}" onchange="updateTeamRoleRow(this)">
             <option value="none" ${currentTeamRole === 'none' ? 'selected' : ''}>➖ None</option>
             <option value="captain" ${currentTeamRole === 'captain' ? 'selected' : ''}>🎯 Captain</option>
@@ -1602,9 +1626,18 @@
     
     // Team role badges
     if (selectedUser.teamRoles) {
+      // Track which teams we've already processed (to avoid duplicates from case mismatch)
+      const processedTeams = new Set();
+      
       Object.entries(selectedUser.teamRoles).forEach(([teamId, tr]) => {
+        const normalizedTeamId = teamId.toLowerCase();
+        
+        // Skip if we've already processed this team
+        if (processedTeams.has(normalizedTeamId)) return;
+        processedTeams.add(normalizedTeamId);
+        
         if (tr.status === 'active' && tr.role !== 'none') {
-          const teamName = teams.find(t => t.id === teamId)?.name || teamId;
+          const teamName = capitalize(teams.find(t => t.id.toLowerCase() === normalizedTeamId)?.name || teamId);
           const roleInfo = TEAM_ROLES[tr.role] || { icon: '👤', label: tr.role };
           currentRolesBadges.push(`<span class="role-badge role-${tr.role}">${roleInfo.icon} ${teamName}</span>`);
         }
@@ -1627,7 +1660,8 @@
 
     // Linked team options for player role
     const linkedTeamOptions = teams.map(team => {
-      return `<option value="${team.id}" ${linkedTeam === team.id ? 'selected' : ''}>${team.name}</option>`;
+      const teamDisplayName = capitalize(team.name || team.id);
+      return `<option value="${team.id}" ${linkedTeam === team.id ? 'selected' : ''}>${teamDisplayName}</option>`;
     }).join('');
 
     document.getElementById('editorBody').innerHTML = `
@@ -1749,28 +1783,38 @@
       });
 
       // Collect team roles from all team dropdowns
-      const teamRoles = selectedUser.teamRoles || {};
+      // IMPORTANT: Use capitalized team IDs to match existing data format
+      const teamRoles = {};
       let hasCaptainRole = false;
       let firstCaptainTeam = null;
+      
+      // First, preserve any existing teamRoles with their original casing
+      // but mark them for potential update
+      const existingTeamRoles = selectedUser.teamRoles || {};
       
       teams.forEach(team => {
         const select = document.querySelector(`select[name="teamRole_${team.id}"]`);
         if (select) {
           const selectedTeamRole = select.value;
+          const teamKey = capitalize(team.id); // Use capitalized key for consistency
           
           if (selectedTeamRole === 'none') {
-            // Mark as inactive if previously had a role, or remove
-            if (teamRoles[team.id]) {
-              teamRoles[team.id] = {
-                ...teamRoles[team.id],
+            // Mark as inactive if previously had a role
+            // Check both capitalized and lowercase versions
+            const existingRole = existingTeamRoles[teamKey] || existingTeamRoles[team.id];
+            if (existingRole) {
+              teamRoles[teamKey] = {
+                ...existingRole,
                 status: 'removed',
                 removedBy: currentUser.uid,
                 removedAt: new Date().toISOString()
               };
             }
           } else {
-            // Add or update team role
-            teamRoles[team.id] = {
+            // Add or update team role with capitalized key
+            const existingRole = existingTeamRoles[teamKey] || existingTeamRoles[team.id];
+            teamRoles[teamKey] = {
+              ...(existingRole || {}),
               role: selectedTeamRole,
               status: 'active',
               approvedBy: currentUser.uid,
@@ -1780,7 +1824,7 @@
             // Track if any captain roles
             if (selectedTeamRole === 'captain') {
               hasCaptainRole = true;
-              if (!firstCaptainTeam) firstCaptainTeam = team.id;
+              if (!firstCaptainTeam) firstCaptainTeam = teamKey;
             }
           }
         }
@@ -1796,14 +1840,15 @@
         updatedAt: serverTimestamp()
       };
 
-      // Set linkedTeam
+      // Set linkedTeam (capitalized for consistency)
       if (selectedLeagueRole === 'player' && linkedTeam) {
-        updates.linkedTeam = linkedTeam;
+        updates.linkedTeam = capitalize(linkedTeam);
       } else if (firstCaptainTeam) {
-        // If they're a captain, use first captain team as linkedTeam
+        // If they're a captain, use first captain team as linkedTeam (already capitalized)
         updates.linkedTeam = firstCaptainTeam;
       } else {
-        updates.linkedTeam = selectedUser.linkedTeam || null;
+        // Preserve existing linkedTeam, capitalizing if present
+        updates.linkedTeam = selectedUser.linkedTeam ? capitalize(selectedUser.linkedTeam) : null;
       }
 
       // Handle isCaptain flag for backward compatibility
@@ -1820,6 +1865,7 @@
       console.log('📝 Saving user role updates:', {
         userId: selectedUser.id,
         leagueRole: selectedLeagueRole,
+        linkedTeam: updates.linkedTeam,
         teamRoles: teamRoles,
         isCaptain: hasCaptainRole,
         isAdmin: selectedLeagueRole === 'admin'
