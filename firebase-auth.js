@@ -720,7 +720,7 @@ export async function linkPlayerToUser(userId, playerName, teamId, isCaptain = f
     const user = auth.currentUser;
     
     // Update auth user's display name to match player profile
-    if (playerName && user) {
+      if (playerName && user && user.uid === userId) {
       try {
         await updateProfile(user, { displayName: playerName });
         console.log('✅ Updated auth displayName to:', playerName);
@@ -2044,7 +2044,257 @@ export function canManageUser(currentUser, targetUser, teamId) {
 export function hasSpecialRole(user, role) {
   if (!user) return false;
   if (user.userRole === USER_ROLES.ADMIN) return true;
-  return user.specialRoles?.includes(role) || false;
+  // Check object property (specialRoles is an object like { photographer: true })
+  return user.specialRoles?.[role] === true;
+}
+
+// ========================================
+// DUAL-ROLE HELPER FUNCTIONS
+// These functions support the separation of league-level roles (admin, league-staff)
+// from team-level roles (captain, team-staff) allowing users to have both.
+// ========================================
+
+/**
+ * Check if user is captain of ANY team
+ * Checks all possible captain indicators for backward compatibility
+ * @param {Object} userProfile - User profile object
+ * @returns {boolean}
+ */
+export function isUserCaptain(userProfile) {
+  if (!userProfile) return false;
+  
+  // Legacy flag (always check first for backward compatibility)
+  if (userProfile.isCaptain === true) return true;
+  
+  // Legacy userRole field
+  if (userProfile.userRole === USER_ROLES.CAPTAIN) return true;
+  
+  // Modern teamRoles - check if captain of any team
+  if (userProfile.teamRoles) {
+    return Object.values(userProfile.teamRoles).some(
+      tr => tr.role === USER_ROLES.CAPTAIN && tr.status === 'active'
+    );
+  }
+  
+  return false;
+}
+
+/**
+ * Check if user is captain of a SPECIFIC team
+ * @param {Object} userProfile - User profile object
+ * @param {string} teamId - Team ID to check
+ * @returns {boolean}
+ */
+export function isTeamCaptain(userProfile, teamId) {
+  if (!userProfile || !teamId) return false;
+  
+  const teamRole = userProfile.teamRoles?.[teamId];
+  if (teamRole?.role === USER_ROLES.CAPTAIN && teamRole?.status === 'active') {
+    return true;
+  }
+  
+  // Legacy fallback: if isCaptain and linkedTeam matches
+  if (userProfile.isCaptain === true && userProfile.linkedTeam === teamId) {
+    return true;
+  }
+  
+  return false;
+}
+
+/**
+ * Check if user is team-staff of a SPECIFIC team
+ * @param {Object} userProfile - User profile object
+ * @param {string} teamId - Team ID to check
+ * @returns {boolean}
+ */
+export function isTeamStaff(userProfile, teamId) {
+  if (!userProfile || !teamId) return false;
+  
+  const teamRole = userProfile.teamRoles?.[teamId];
+  return teamRole?.role === USER_ROLES.TEAM_STAFF && teamRole?.status === 'active';
+}
+
+/**
+ * Check if user has a league-wide elevated role (admin or league-staff)
+ * These roles have permissions across all teams
+ * @param {Object} userProfile - User profile object
+ * @returns {boolean}
+ */
+export function hasLeagueRole(userProfile) {
+  if (!userProfile) return false;
+  
+  // Check isAdmin flag
+  if (userProfile.isAdmin === true) return true;
+  
+  // Check userRole for admin or league-staff
+  const role = userProfile.userRole;
+  return role === USER_ROLES.ADMIN || role === USER_ROLES.LEAGUE_STAFF;
+}
+
+/**
+ * Check if user is specifically an admin
+ * @param {Object} userProfile - User profile object
+ * @returns {boolean}
+ */
+export function isAdmin(userProfile) {
+  if (!userProfile) return false;
+  return userProfile.isAdmin === true || userProfile.userRole === USER_ROLES.ADMIN;
+}
+
+/**
+ * Check if user is specifically league staff (not admin)
+ * @param {Object} userProfile - User profile object
+ * @returns {boolean}
+ */
+export function isLeagueStaff(userProfile) {
+  if (!userProfile) return false;
+  return userProfile.userRole === USER_ROLES.LEAGUE_STAFF;
+}
+
+/**
+ * Check if user can access captain-level features
+ * This includes: admins, league-staff, and captains of any team
+ * Use this for features like "Approve Links", "Captain Tools" sections
+ * @param {Object} userProfile - User profile object
+ * @returns {boolean}
+ */
+export function canAccessCaptainFeatures(userProfile) {
+  if (!userProfile) return false;
+  
+  // League-wide roles have captain-level access everywhere
+  if (hasLeagueRole(userProfile)) return true;
+  
+  // Check if captain of any team
+  return isUserCaptain(userProfile);
+}
+
+/**
+ * Check if user can manage a SPECIFIC team (roster, lineup, etc.)
+ * @param {Object} userProfile - User profile object
+ * @param {string} teamId - Team ID to check
+ * @returns {boolean}
+ */
+export function canManageTeam(userProfile, teamId) {
+  if (!userProfile) return false;
+  
+  // Admins and league-staff can manage any team
+  if (hasLeagueRole(userProfile)) return true;
+  
+  // Check if captain or team-staff of this specific team
+  if (isTeamCaptain(userProfile, teamId)) return true;
+  if (isTeamStaff(userProfile, teamId)) return true;
+  
+  return false;
+}
+
+/**
+ * Check if user can submit scores/stats for a team
+ * @param {Object} userProfile - User profile object
+ * @param {string} teamId - Optional team ID for team-specific check
+ * @returns {boolean}
+ */
+export function canSubmitForTeam(userProfile, teamId = null) {
+  if (!userProfile) return false;
+  
+  // Admins and league-staff can submit for any team
+  if (hasLeagueRole(userProfile)) return true;
+  
+  // If teamId provided, check specific team permissions
+  if (teamId) {
+    return canManageTeam(userProfile, teamId);
+  }
+  
+  // Without teamId, check if user is captain of any team
+  return isUserCaptain(userProfile);
+}
+
+/**
+ * Get the user's primary display role for UI badges
+ * Returns the highest-level role for display purposes
+ * @param {Object} userProfile - User profile object
+ * @returns {Object} { role: string, label: string, icon: string }
+ */
+export function getPrimaryDisplayRole(userProfile) {
+  if (!userProfile) return { role: 'unknown', label: 'Unknown', icon: '👤' };
+  
+  // Priority order: Admin > League Staff > Captain > Team Staff > Player > Fan/Family
+  if (isAdmin(userProfile)) {
+    return { role: 'admin', label: 'Admin', icon: '👑' };
+  }
+  
+  if (isLeagueStaff(userProfile)) {
+    return { role: 'league-staff', label: 'League Staff', icon: '⚙️' };
+  }
+  
+  if (isUserCaptain(userProfile)) {
+    return { role: 'captain', label: 'Captain', icon: '🎯' };
+  }
+  
+  // Check for team-staff in any team
+  if (userProfile.teamRoles) {
+    const hasTeamStaff = Object.values(userProfile.teamRoles).some(
+      tr => tr.role === USER_ROLES.TEAM_STAFF && tr.status === 'active'
+    );
+    if (hasTeamStaff) {
+      return { role: 'team-staff', label: 'Team Staff', icon: '📋' };
+    }
+  }
+  
+  if (userProfile.userRole === USER_ROLES.PLAYER || userProfile.linkedPlayer) {
+    return { role: 'player', label: 'Player', icon: '🥎' };
+  }
+  
+  if (userProfile.userRole === USER_ROLES.FAMILY) {
+    return { role: 'family', label: 'Family', icon: '👨‍👩‍👧' };
+  }
+  
+  return { role: 'fan', label: 'Fan', icon: '📣' };
+}
+
+/**
+ * Get all active team roles for a user
+ * @param {Object} userProfile - User profile object
+ * @returns {Array} Array of { teamId, role, status }
+ */
+export function getActiveTeamRoles(userProfile) {
+  if (!userProfile?.teamRoles) return [];
+  
+  return Object.entries(userProfile.teamRoles)
+    .filter(([_, tr]) => tr.status === 'active')
+    .map(([teamId, tr]) => ({
+      teamId,
+      role: tr.role,
+      status: tr.status,
+      approvedBy: tr.approvedBy,
+      approvedAt: tr.approvedAt
+    }));
+}
+
+/**
+ * Get teams where user is captain
+ * @param {Object} userProfile - User profile object
+ * @returns {Array} Array of team IDs
+ */
+export function getCaptainTeams(userProfile) {
+  if (!userProfile) return [];
+  
+  const teams = [];
+  
+  // Check teamRoles
+  if (userProfile.teamRoles) {
+    Object.entries(userProfile.teamRoles).forEach(([teamId, tr]) => {
+      if (tr.role === USER_ROLES.CAPTAIN && tr.status === 'active') {
+        teams.push(teamId);
+      }
+    });
+  }
+  
+  // Legacy fallback
+  if (teams.length === 0 && userProfile.isCaptain && userProfile.linkedTeam) {
+    teams.push(userProfile.linkedTeam);
+  }
+  
+  return teams;
 }
 
 // ========================================

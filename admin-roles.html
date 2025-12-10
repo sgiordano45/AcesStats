@@ -733,6 +733,107 @@
     accent-color: var(--success-color);
   }
 
+  /* Team Roles Section */
+  .team-roles-section {
+    margin-top: 1.5rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--border-color);
+  }
+
+  .team-roles-section h4 {
+    margin: 0 0 0.5rem 0;
+    font-size: 0.95rem;
+    color: var(--text-dark);
+  }
+
+  .team-roles-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .team-role-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem;
+    background: #f8fafc;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+  }
+
+  .team-role-row.has-role {
+    background: rgba(34, 197, 94, 0.05);
+    border-color: var(--success-color);
+  }
+
+  .team-role-name {
+    flex: 1;
+    font-weight: 600;
+    font-size: 0.9rem;
+  }
+
+  .team-role-select {
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    font-size: 0.85rem;
+    min-width: 140px;
+  }
+
+  .team-role-select:focus {
+    outline: none;
+    border-color: var(--admin-color);
+  }
+
+  .team-role-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+  }
+
+  .team-role-badge.captain {
+    background: #d1fae5;
+    color: #065f46;
+  }
+
+  .team-role-badge.team-staff {
+    background: #e0e7ff;
+    color: #3730a3;
+  }
+
+  /* Section Divider */
+  .section-divider {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin: 1.5rem 0;
+    color: var(--text-light);
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .section-divider::before,
+  .section-divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border-color);
+  }
+
+  /* Current Roles Summary */
+  .current-roles-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+  }
+
   /* Backdrop */
   .editor-backdrop {
     position: fixed;
@@ -976,8 +1077,8 @@
             <thead>
               <tr>
                 <th>User</th>
-                <th>Role</th>
-                <th>Team</th>
+                <th>League Role</th>
+                <th>Team Roles</th>
                 <th>Linked Player</th>
                 <th>Special Roles</th>
                 <th>Actions</th>
@@ -1059,7 +1160,23 @@
     umpire: { icon: '⚖️', label: 'Umpire', desc: 'League umpire designation' }
   };
 
-  // Role definitions for the selector
+  // League-wide roles (stored in userRole field)
+  const LEAGUE_ROLES = {
+    admin: { icon: '👑', label: 'Admin', desc: 'Full system access and control', level: 1 },
+    'league-staff': { icon: '⚙️', label: 'League Staff', desc: 'Manage league operations', level: 2 },
+    player: { icon: '🥎', label: 'Player', desc: 'Active league player', level: 3 },
+    fan: { icon: '📣', label: 'Fan', desc: 'League follower without playing status', level: 4 },
+    family: { icon: '👨‍👩‍👧', label: 'Family', desc: 'Family member of a player', level: 5 }
+  };
+
+  // Team-specific roles (stored in teamRoles field)
+  const TEAM_ROLES = {
+    captain: { icon: '🎯', label: 'Captain', desc: 'Team captain with roster management' },
+    'team-staff': { icon: '📋', label: 'Team Staff', desc: 'Assist captain with team operations' },
+    none: { icon: '➖', label: 'None', desc: 'No team role' }
+  };
+
+  // Combined for display purposes (backward compat)
   const ROLE_DEFINITIONS = {
     admin: { icon: '👑', label: 'Admin', desc: 'Full system access and control', level: 1 },
     'league-staff': { icon: '⚙️', label: 'League Staff', desc: 'Manage league operations', level: 2 },
@@ -1310,21 +1427,35 @@
       const displayName = user.preferredDisplayName || user.displayName || 'Unknown';
       const email = user.email || '';
       const initials = displayName.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
-      const role = user.userRole || 'player';
+      const leagueRole = user.userRole || 'fan';
       const linkedTeam = user.linkedTeam || '-';
       const linkedPlayer = user.linkedPlayer || '-';
       const isMigrated = user.migrated === true;
 
-      // Get role badge class
-      let roleBadgeClass = `role-${role}`;
-      let roleIcon = ROLE_DEFINITIONS[role]?.icon || '👤';
-      let roleLabel = ROLE_DEFINITIONS[role]?.label || capitalize(role);
+      // Get league role badge
+      let leagueRoleBadgeClass = `role-${leagueRole}`;
+      let leagueRoleIcon = LEAGUE_ROLES[leagueRole]?.icon || ROLE_DEFINITIONS[leagueRole]?.icon || '👤';
+      let leagueRoleLabel = LEAGUE_ROLES[leagueRole]?.label || ROLE_DEFINITIONS[leagueRole]?.label || capitalize(leagueRole);
       
-      // Handle legacy captain flag
-      if (user.isCaptain && role !== 'captain') {
-        roleBadgeClass = 'role-captain';
-        roleIcon = '🎯';
-        roleLabel = 'Captain';
+      // Build team roles badges
+      const teamRolesBadges = [];
+      if (user.teamRoles) {
+        Object.entries(user.teamRoles).forEach(([teamId, tr]) => {
+          if (tr.status === 'active' && tr.role && tr.role !== 'none') {
+            const teamName = teams.find(t => t.id === teamId)?.name || capitalize(teamId);
+            const roleInfo = TEAM_ROLES[tr.role] || { icon: '👤', label: tr.role };
+            teamRolesBadges.push(`
+              <span class="role-badge role-${tr.role}" title="${roleInfo.label} of ${teamName}">${roleInfo.icon} ${teamName}</span>
+            `);
+          }
+        });
+      }
+      
+      // Legacy captain fallback
+      if (user.isCaptain && teamRolesBadges.length === 0 && linkedTeam !== '-') {
+        teamRolesBadges.push(`
+          <span class="role-badge role-captain" title="Captain (legacy)">🎯 ${capitalize(linkedTeam)}</span>
+        `);
       }
 
       // Special roles badges
@@ -1357,10 +1488,10 @@
             </div>
           </td>
           <td>
-            <span class="role-badge ${roleBadgeClass}">${roleIcon} ${roleLabel}</span>
+            <span class="role-badge ${leagueRoleBadgeClass}">${leagueRoleIcon} ${leagueRoleLabel}</span>
           </td>
           <td>
-            ${linkedTeam !== '-' ? `<span class="team-badge">🏟️ ${capitalize(linkedTeam)}</span>` : '-'}
+            ${teamRolesBadges.length > 0 ? teamRolesBadges.join('') : '-'}
           </td>
           <td>${linkedPlayer}</td>
           <td>${specialRolesBadges.length > 0 ? specialRolesBadges.join('') : '-'}</td>
@@ -1409,20 +1540,44 @@
     const displayName = selectedUser.preferredDisplayName || selectedUser.displayName || 'Unknown';
     const email = selectedUser.email || '';
     const initials = displayName.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
-    const currentRole = selectedUser.userRole || 'player';
     const linkedTeam = selectedUser.linkedTeam || '';
+    
+    // Determine current league role (filter out captain/team-staff as those are team-specific)
+    let currentLeagueRole = selectedUser.userRole || 'fan';
+    if (currentLeagueRole === 'captain' || currentLeagueRole === 'team-staff') {
+      // These are team roles, default league role to player if they have linkedPlayer, else fan
+      currentLeagueRole = selectedUser.linkedPlayer ? 'player' : 'fan';
+    }
 
-    // Build role options
-    const roleOptions = Object.entries(ROLE_DEFINITIONS).map(([key, def]) => {
-      const isSelected = currentRole === key || (key === 'captain' && selectedUser.isCaptain);
+    // Build league role options (admin, league-staff, player, fan, family)
+    const leagueRoleOptions = Object.entries(LEAGUE_ROLES).map(([key, def]) => {
+      const isSelected = currentLeagueRole === key;
       return `
         <label class="role-option ${isSelected ? 'selected' : ''}">
-          <input type="radio" name="userRole" value="${key}" ${isSelected ? 'checked' : ''} onchange="updateRoleSelection(this)">
+          <input type="radio" name="leagueRole" value="${key}" ${isSelected ? 'checked' : ''} onchange="updateLeagueRoleSelection(this)">
           <div class="role-option-content">
             <div class="role-option-name">${def.icon} ${def.label}</div>
             <div class="role-option-desc">${def.desc}</div>
           </div>
         </label>
+      `;
+    }).join('');
+
+    // Build team roles section - show each team with dropdown
+    const teamRolesHtml = teams.map(team => {
+      const teamRole = selectedUser.teamRoles?.[team.id];
+      const currentTeamRole = (teamRole?.status === 'active') ? teamRole.role : 'none';
+      const hasRole = currentTeamRole !== 'none';
+      
+      return `
+        <div class="team-role-row ${hasRole ? 'has-role' : ''}" data-team-id="${team.id}">
+          <span class="team-role-name">🏟️ ${team.name}</span>
+          <select class="team-role-select" name="teamRole_${team.id}" onchange="updateTeamRoleRow(this)">
+            <option value="none" ${currentTeamRole === 'none' ? 'selected' : ''}>➖ None</option>
+            <option value="captain" ${currentTeamRole === 'captain' ? 'selected' : ''}>🎯 Captain</option>
+            <option value="team-staff" ${currentTeamRole === 'team-staff' ? 'selected' : ''}>📋 Team Staff</option>
+          </select>
+        </div>
       `;
     }).join('');
 
@@ -1437,20 +1592,43 @@
       `;
     }).join('');
 
-    // Build team options
-    const teamOptions = teams.map(team => {
-      return `<option value="${team.id}" ${linkedTeam === team.id ? 'selected' : ''}>${team.name}</option>`;
-    }).join('');
-
-    // Current special roles display
-    const currentSpecialRoles = [];
-    if (selectedUser.specialRoles) {
-      Object.entries(selectedUser.specialRoles).forEach(([key, value]) => {
-        if (value === true && SPECIAL_ROLES[key]) {
-          currentSpecialRoles.push(`<span class="role-badge role-${key}">${SPECIAL_ROLES[key].icon} ${SPECIAL_ROLES[key].label}</span>`);
+    // Build current roles summary for display
+    const currentRolesBadges = [];
+    
+    // League role badge
+    if (LEAGUE_ROLES[currentLeagueRole]) {
+      currentRolesBadges.push(`<span class="role-badge role-${currentLeagueRole}">${LEAGUE_ROLES[currentLeagueRole].icon} ${LEAGUE_ROLES[currentLeagueRole].label}</span>`);
+    }
+    
+    // Team role badges
+    if (selectedUser.teamRoles) {
+      Object.entries(selectedUser.teamRoles).forEach(([teamId, tr]) => {
+        if (tr.status === 'active' && tr.role !== 'none') {
+          const teamName = teams.find(t => t.id === teamId)?.name || teamId;
+          const roleInfo = TEAM_ROLES[tr.role] || { icon: '👤', label: tr.role };
+          currentRolesBadges.push(`<span class="role-badge role-${tr.role}">${roleInfo.icon} ${teamName}</span>`);
         }
       });
     }
+    
+    // Legacy captain check
+    if (selectedUser.isCaptain && currentRolesBadges.length <= 1) {
+      currentRolesBadges.push(`<span class="role-badge role-captain">🎯 Captain (legacy)</span>`);
+    }
+    
+    // Special roles
+    if (selectedUser.specialRoles) {
+      Object.entries(selectedUser.specialRoles).forEach(([key, value]) => {
+        if (value === true && SPECIAL_ROLES[key]) {
+          currentRolesBadges.push(`<span class="role-badge role-${key}">${SPECIAL_ROLES[key].icon} ${SPECIAL_ROLES[key].label}</span>`);
+        }
+      });
+    }
+
+    // Linked team options for player role
+    const linkedTeamOptions = teams.map(team => {
+      return `<option value="${team.id}" ${linkedTeam === team.id ? 'selected' : ''}>${team.name}</option>`;
+    }).join('');
 
     document.getElementById('editorBody').innerHTML = `
       <div class="user-preview">
@@ -1460,32 +1638,40 @@
         <div class="user-preview-info">
           <h4>${displayName}</h4>
           <p>${email}</p>
-          <div class="current-roles">
-            <span class="role-badge role-${currentRole}">${ROLE_DEFINITIONS[currentRole]?.icon || '👤'} ${ROLE_DEFINITIONS[currentRole]?.label || capitalize(currentRole)}</span>
-            ${currentSpecialRoles.join('')}
+          <div class="current-roles-summary">
+            ${currentRolesBadges.join('')}
           </div>
         </div>
       </div>
 
       <div class="form-group">
-        <label>Primary Role</label>
+        <label>🌐 League Role</label>
+        <p class="form-hint" style="margin-bottom: 0.75rem;">This is the user's league-wide role. Admin and League Staff have access across all teams.</p>
         <div class="role-options">
-          ${roleOptions}
+          ${leagueRoleOptions}
         </div>
       </div>
 
-      <div class="form-group" id="teamSelectGroup" style="display: ${['captain', 'team-staff', 'player'].includes(currentRole) ? 'block' : 'none'}">
-        <label>Linked Team</label>
+      <div class="form-group" id="linkedTeamGroup" style="display: ${currentLeagueRole === 'player' ? 'block' : 'none'}">
+        <label>Primary Team</label>
         <select id="linkedTeamSelect">
           <option value="">-- No Team --</option>
-          ${teamOptions}
+          ${linkedTeamOptions}
         </select>
-        <div class="form-hint">Required for Captain, Team Staff, and Player roles</div>
+        <div class="form-hint">The player's primary team for stats and roster</div>
+      </div>
+
+      <div class="team-roles-section">
+        <h4>🏟️ Team Roles</h4>
+        <p class="form-hint" style="margin-bottom: 1rem;">Assign Captain or Team Staff roles for specific teams. A user can be captain of multiple teams while also having a league role.</p>
+        <div class="team-roles-list">
+          ${teamRolesHtml}
+        </div>
       </div>
 
       <div class="special-roles-section">
         <h4>🏷️ Special Roles (Badges)</h4>
-        <p class="form-hint" style="margin-bottom: 1rem;">These are additional designations that can be combined with any primary role.</p>
+        <p class="form-hint" style="margin-bottom: 1rem;">These are additional designations that can be combined with any role.</p>
         <div class="special-roles-grid">
           ${specialRolesHtml}
         </div>
@@ -1497,20 +1683,27 @@
     document.getElementById('editorPanel').classList.add('active');
   };
 
-  // Update role selection styling
-  window.updateRoleSelection = function(radio) {
+  // Update league role selection styling
+  window.updateLeagueRoleSelection = function(radio) {
     document.querySelectorAll('.role-option').forEach(opt => {
       opt.classList.toggle('selected', opt.contains(radio) && radio.checked);
     });
 
-    // Show/hide team select based on role
+    // Show/hide linked team select based on role
     const selectedRole = radio.value;
-    const teamGroup = document.getElementById('teamSelectGroup');
-    if (['captain', 'team-staff', 'player'].includes(selectedRole)) {
-      teamGroup.style.display = 'block';
+    const linkedTeamGroup = document.getElementById('linkedTeamGroup');
+    if (selectedRole === 'player') {
+      linkedTeamGroup.style.display = 'block';
     } else {
-      teamGroup.style.display = 'none';
+      linkedTeamGroup.style.display = 'none';
     }
+  };
+
+  // Update team role row styling
+  window.updateTeamRoleRow = function(select) {
+    const row = select.closest('.team-role-row');
+    const hasRole = select.value !== 'none';
+    row.classList.toggle('has-role', hasRole);
   };
 
   // Toggle special role styling
@@ -1530,17 +1723,18 @@
   window.saveUserRole = async function() {
     if (!selectedUser) return;
 
-    const selectedRole = document.querySelector('input[name="userRole"]:checked')?.value;
+    // Get selected league role
+    const selectedLeagueRole = document.querySelector('input[name="leagueRole"]:checked')?.value;
     const linkedTeam = document.getElementById('linkedTeamSelect')?.value || null;
 
-    if (!selectedRole) {
-      showToast('Please select a role', 'warning');
+    if (!selectedLeagueRole) {
+      showToast('Please select a league role', 'warning');
       return;
     }
 
-    // Validate team for certain roles
-    if (['captain', 'team-staff', 'player'].includes(selectedRole) && !linkedTeam) {
-      showToast('Please select a team for this role', 'warning');
+    // Validate linked team for players
+    if (selectedLeagueRole === 'player' && !linkedTeam) {
+      showToast('Please select a primary team for the player', 'warning');
       return;
     }
 
@@ -1554,54 +1748,86 @@
         specialRoles[key] = checkbox?.checked || false;
       });
 
+      // Collect team roles from all team dropdowns
+      const teamRoles = selectedUser.teamRoles || {};
+      let hasCaptainRole = false;
+      let firstCaptainTeam = null;
+      
+      teams.forEach(team => {
+        const select = document.querySelector(`select[name="teamRole_${team.id}"]`);
+        if (select) {
+          const selectedTeamRole = select.value;
+          
+          if (selectedTeamRole === 'none') {
+            // Mark as inactive if previously had a role, or remove
+            if (teamRoles[team.id]) {
+              teamRoles[team.id] = {
+                ...teamRoles[team.id],
+                status: 'removed',
+                removedBy: currentUser.uid,
+                removedAt: new Date().toISOString()
+              };
+            }
+          } else {
+            // Add or update team role
+            teamRoles[team.id] = {
+              role: selectedTeamRole,
+              status: 'active',
+              approvedBy: currentUser.uid,
+              approvedAt: new Date().toISOString()
+            };
+            
+            // Track if any captain roles
+            if (selectedTeamRole === 'captain') {
+              hasCaptainRole = true;
+              if (!firstCaptainTeam) firstCaptainTeam = team.id;
+            }
+          }
+        }
+      });
+
       // Build update object
       const updates = {
-        userRole: selectedRole,
+        userRole: selectedLeagueRole,
+        teamRoles: teamRoles,
         specialRoles: specialRoles,
         roleUpdatedBy: currentUser.uid,
         roleUpdatedAt: serverTimestamp(),
         updatedAt: serverTimestamp()
       };
 
-      // Update linked team
-      if (['captain', 'team-staff', 'player'].includes(selectedRole)) {
+      // Set linkedTeam
+      if (selectedLeagueRole === 'player' && linkedTeam) {
         updates.linkedTeam = linkedTeam;
-        
-        // Update teamRoles for captain/team-staff
-        if (selectedRole === 'captain' || selectedRole === 'team-staff') {
-          const teamRoles = selectedUser.teamRoles || {};
-          teamRoles[linkedTeam] = {
-            role: selectedRole,
-            status: 'active',
-            approvedBy: currentUser.uid,
-            approvedAt: serverTimestamp()
-          };
-          updates.teamRoles = teamRoles;
-        }
-
-        // Handle captain flag for backward compatibility
-        if (selectedRole === 'captain') {
-          updates.isCaptain = true;
-        } else if (selectedUser.isCaptain) {
-          updates.isCaptain = false;
-        }
+      } else if (firstCaptainTeam) {
+        // If they're a captain, use first captain team as linkedTeam
+        updates.linkedTeam = firstCaptainTeam;
       } else {
-        updates.linkedTeam = null;
-        if (selectedUser.isCaptain) {
-          updates.isCaptain = false;
-        }
+        updates.linkedTeam = selectedUser.linkedTeam || null;
       }
 
+      // Handle isCaptain flag for backward compatibility
+      // Set to true if user is captain of ANY team
+      updates.isCaptain = hasCaptainRole;
+
       // Handle admin flag
-      if (selectedRole === 'admin') {
+      if (selectedLeagueRole === 'admin') {
         updates.isAdmin = true;
-      } else if (selectedUser.isAdmin) {
+      } else {
         updates.isAdmin = false;
       }
 
+      console.log('📝 Saving user role updates:', {
+        userId: selectedUser.id,
+        leagueRole: selectedLeagueRole,
+        teamRoles: teamRoles,
+        isCaptain: hasCaptainRole,
+        isAdmin: selectedLeagueRole === 'admin'
+      });
+
       await updateDoc(userRef, updates);
 
-      showToast(`Role updated for ${selectedUser.displayName || selectedUser.email}`, 'success');
+      showToast(`Roles updated for ${selectedUser.displayName || selectedUser.email}`, 'success');
       closeEditor();
       await loadUsers();
 
