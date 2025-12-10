@@ -929,6 +929,10 @@
         <div class="stat-value" id="totalSpecialRoles">-</div>
         <div class="stat-label">Special Roles</div>
       </div>
+      <div class="stat-card" style="opacity: 0.7;">
+        <div class="stat-value" id="totalMigrated" style="color: var(--text-light);">-</div>
+        <div class="stat-label">Migrated (Hidden)</div>
+      </div>
     </div>
 
     <!-- Users Section -->
@@ -960,6 +964,10 @@
           <select class="filter-select" id="teamFilter" onchange="filterUsers()">
             <option value="all">All Teams</option>
           </select>
+          <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; color: var(--text-light); cursor: pointer; white-space: nowrap;">
+            <input type="checkbox" id="showMigratedToggle" onchange="loadUsers()" style="accent-color: var(--admin-color);">
+            Show migrated
+          </label>
         </div>
 
         <!-- Users Table -->
@@ -1040,6 +1048,7 @@
   let currentPage = 1;
   const PAGE_SIZE = 20;
   let teams = [];
+  let migratedCount = 0;
 
   // Special roles (these are toggleable badges, not primary roles)
   const SPECIAL_ROLES = {
@@ -1157,15 +1166,29 @@
   // Load all users
   async function loadUsers() {
     try {
+      const showMigrated = document.getElementById('showMigratedToggle')?.checked || false;
       const usersSnap = await getDocs(collection(db, 'users'));
       allUsers = [];
+      migratedCount = 0;
       
       usersSnap.forEach(doc => {
+        const data = doc.data();
+        
+        // Skip migrated legacy profiles unless toggle is checked
+        if (data.migrated === true) {
+          migratedCount++;
+          if (!showMigrated) {
+            return;
+          }
+        }
+        
         allUsers.push({
           id: doc.id,
-          ...doc.data()
+          ...data
         });
       });
+
+      console.log(`📊 Loaded ${allUsers.length} users (${migratedCount} migrated profiles ${showMigrated ? 'included' : 'hidden'})`);
 
       // Sort by display name
       allUsers.sort((a, b) => {
@@ -1214,6 +1237,7 @@
     document.getElementById('totalCaptains').textContent = stats.captains;
     document.getElementById('totalPlayers').textContent = stats.players;
     document.getElementById('totalSpecialRoles').textContent = stats.specialRoles;
+    document.getElementById('totalMigrated').textContent = migratedCount;
   }
 
   // Filter users
@@ -1289,6 +1313,7 @@
       const role = user.userRole || 'player';
       const linkedTeam = user.linkedTeam || '-';
       const linkedPlayer = user.linkedPlayer || '-';
+      const isMigrated = user.migrated === true;
 
       // Get role badge class
       let roleBadgeClass = `role-${role}`;
@@ -1314,16 +1339,20 @@
         });
       }
 
+      // Migrated badge
+      const migratedBadge = isMigrated ? 
+        `<span class="role-badge" style="background: #fee2e2; color: #991b1b; margin-left: 0.5rem;">📦 Migrated → ${user.migratedTo?.slice(0,8) || '?'}...</span>` : '';
+
       return `
-        <tr data-user-id="${user.id}">
+        <tr data-user-id="${user.id}" style="${isMigrated ? 'opacity: 0.6; background: #fef2f2;' : ''}">
           <td>
             <div class="user-info">
-              <div class="user-avatar">
+              <div class="user-avatar" style="${isMigrated ? 'opacity: 0.5;' : ''}">
                 ${user.profilePhotoURL ? `<img src="${user.profilePhotoURL}" alt="">` : initials}
               </div>
               <div class="user-details">
-                <span class="user-name">${displayName}</span>
-                <span class="user-email">${email}</span>
+                <span class="user-name">${displayName}${migratedBadge}</span>
+                <span class="user-email">${email || '(legacy profile)'}</span>
               </div>
             </div>
           </td>
@@ -1336,7 +1365,10 @@
           <td>${linkedPlayer}</td>
           <td>${specialRolesBadges.length > 0 ? specialRolesBadges.join('') : '-'}</td>
           <td>
-            <button class="btn btn-primary btn-sm" onclick="editUser('${user.id}')">✏️ Edit</button>
+            ${isMigrated ? 
+              '<span style="color: var(--text-light); font-size: 0.8rem;">Read-only</span>' :
+              `<button class="btn btn-primary btn-sm" onclick="editUser('${user.id}')">✏️ Edit</button>`
+            }
           </td>
         </tr>
       `;
