@@ -155,14 +155,15 @@
     <strong>What this script does:</strong>
     <ol>
       <li>Scans all documents in <code>playerStats/*/games/*</code> and <code>pitchingStats/*/games/*</code></li>
-      <li>Identifies documents missing the <code>seasonId</code> field OR not using the new ID format</li>
+      <li>Identifies documents where the ID doesn't start with <code>{seasonId}_</code></li>
       <li>Creates new documents with format <code>{seasonId}_{originalGameId}</code></li>
+      <li>Uses existing <code>seasonId</code> field from document, or falls back to target season</li>
       <li>Optionally deletes the old documents after migration</li>
     </ol>
   </div>
 
   <div>
-    <label>Target Season ID (for documents without seasonId field):</label>
+    <label>Fallback Season ID (only used if document has no seasonId field):</label>
     <input type="text" id="targetSeasonId" value="2025-summer" placeholder="e.g., 2025-summer">
   </div>
 
@@ -368,14 +369,13 @@
         
         battingDocs.push({ path, docId, playerId, data, type: 'batting' });
         
-        // Check if needs migration
-        const hasSeasonId = data.seasonId && data.seasonId.length > 0;
+        // Check if document ID has the season prefix format
         const hasSeasonPrefix = docId.match(/^\d{4}-(summer|fall)_/);
         
-        if (!hasSeasonId || !hasSeasonPrefix) {
+        if (!hasSeasonPrefix) {
+          // Need to migrate - document ID doesn't have season prefix
           const seasonId = data.seasonId || targetSeasonId;
-          const originalGameId = hasSeasonPrefix ? docId.replace(/^\d{4}-(summer|fall)_/, '') : docId;
-          const newDocId = `${seasonId}_${originalGameId}`;
+          const newDocId = `${seasonId}_${docId}`;
           
           needsMigration.push({
             type: 'batting',
@@ -384,10 +384,8 @@
             playerId,
             data,
             seasonId,
-            originalGameId,
-            newDocId,
-            needsSeasonIdField: !hasSeasonId,
-            needsNewDocId: !hasSeasonPrefix
+            originalGameId: docId,
+            newDocId
           });
         } else {
           alreadyOk.push({ path, type: 'batting' });
@@ -413,14 +411,13 @@
         
         pitchingDocs.push({ path, docId, playerId, data, type: 'pitching' });
         
-        // Check if needs migration
-        const hasSeasonId = data.seasonId && data.seasonId.length > 0;
+        // Check if document ID has the season prefix format
         const hasSeasonPrefix = docId.match(/^\d{4}-(summer|fall)_/);
         
-        if (!hasSeasonId || !hasSeasonPrefix) {
+        if (!hasSeasonPrefix) {
+          // Need to migrate - document ID doesn't have season prefix
           const seasonId = data.seasonId || targetSeasonId;
-          const originalGameId = hasSeasonPrefix ? docId.replace(/^\d{4}-(summer|fall)_/, '') : docId;
-          const newDocId = `${seasonId}_${originalGameId}`;
+          const newDocId = `${seasonId}_${docId}`;
           
           needsMigration.push({
             type: 'pitching',
@@ -429,10 +426,8 @@
             playerId,
             data,
             seasonId,
-            originalGameId,
-            newDocId,
-            needsSeasonIdField: !hasSeasonId,
-            needsNewDocId: !hasSeasonPrefix
+            originalGameId: docId,
+            newDocId
           });
         } else {
           alreadyOk.push({ path, type: 'pitching' });
