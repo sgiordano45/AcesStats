@@ -1140,54 +1140,67 @@
     }
 
     try {
-      // STEP 1: Get all player legacy IDs from aggregatedPlayerStats
-      log('Step 1: Getting player IDs from aggregatedPlayerStats...', 'game');
+      // STEP 1: Get all player IDs and build legacyId → documentId mapping
+      log('Step 1: Getting player IDs and building ID mapping...', 'game');
       
       const aggregatedRef = window.collection(window.db, 'aggregatedPlayerStats');
       const aggregatedSnap = await window.getDocs(aggregatedRef);
       
       const playerLegacyIds = new Set();
+      const legacyToDocId = new Map();  // Maps legacyId -> actual document ID
+      const docIdToPlayerInfo = new Map(); // Maps docId -> player info for non-sub detection
       
       aggregatedSnap.forEach(docSnap => {
         const data = docSnap.data();
         if (data.migrated) return; // Skip migrated profiles
         
-        // Determine the legacyId to query for game stats
+        const docId = docSnap.id;
         let legacyId;
+        
         if (data.isAuthUser && data.linkedPlayer) {
           // Auth user - derive legacyId from linkedPlayer name
           legacyId = data.linkedPlayer.toLowerCase().replace(/\./g, '').replace(/\s+/g, '_');
+          log(`  Auth user: ${data.linkedPlayer} (${legacyId}) → docId: ${docId}`);
         } else {
           // Legacy user - doc ID is the legacyId
-          legacyId = docSnap.id;
+          legacyId = docId;
         }
+        
         playerLegacyIds.add(legacyId);
+        legacyToDocId.set(legacyId, docId);
+        docIdToPlayerInfo.set(docId, {
+          name: data.name || data.linkedPlayer || legacyId,
+          isAuthUser: data.isAuthUser || false,
+          existingData: data
+        });
       });
       
       const playerIds = Array.from(playerLegacyIds);
       log(`Found ${playerIds.length} unique player IDs to check`, 'success');
+      log(`Built mapping for ${legacyToDocId.size} players`, 'success');
 
       // Query each player's games for this season
+      log('');
       log('Scanning player game stats...', 'game');
       
       const playerBattingGames = new Map();
       const playerPitchingGames = new Map();
       let checkedCount = 0;
       
-      for (const playerId of playerIds) {
+      for (const legacyId of playerIds) {
         // Check batting stats
         try {
-          const gamesRef = window.collection(window.db, 'playerStats', playerId, 'games');
+          const gamesRef = window.collection(window.db, 'playerStats', legacyId, 'games');
           const gamesSnap = await window.getDocs(gamesRef);
           
           gamesSnap.forEach(gameDoc => {
             const data = gameDoc.data();
             // Only include games for this season
             if (data.seasonId === seasonId) {
-              if (!playerBattingGames.has(playerId)) {
-                playerBattingGames.set(playerId, []);
+              if (!playerBattingGames.has(legacyId)) {
+                playerBattingGames.set(legacyId, []);
               }
-              playerBattingGames.get(playerId).push({
+              playerBattingGames.get(legacyId).push({
                 gameId: gameDoc.id,
                 ...data
               });
@@ -1199,17 +1212,17 @@
         
         // Check pitching stats
         try {
-          const pitchingRef = window.collection(window.db, 'pitchingStats', playerId, 'games');
+          const pitchingRef = window.collection(window.db, 'pitchingStats', legacyId, 'games');
           const pitchingSnap = await window.getDocs(pitchingRef);
           
           pitchingSnap.forEach(gameDoc => {
             const data = gameDoc.data();
             // Only include games for this season
             if (data.seasonId === seasonId) {
-              if (!playerPitchingGames.has(playerId)) {
-                playerPitchingGames.set(playerId, []);
+              if (!playerPitchingGames.has(legacyId)) {
+                playerPitchingGames.set(legacyId, []);
               }
-              playerPitchingGames.get(playerId).push({
+              playerPitchingGames.get(legacyId).push({
                 gameId: gameDoc.id,
                 ...data
               });
@@ -1228,57 +1241,191 @@
       log(`Found ${playerBattingGames.size} players with batting games`, 'success');
       log(`Found ${playerPitchingGames.size} players with pitching games`, 'success');
 
-      // STEP 2: Aggregate batting stats
+      // STEP 2: Calculate season totals for all players (first pass - no acesBPI yet)
       log('');
-      log('Step 2: Aggregating batting stats...', 'game');
+      log('Step 2: Calculating season totals...', 'game');
 
       let battingUpdatedCount = 0;
       let pitchingUpdatedCount = 0;
       let totalGamesProcessed = 0;
       let errorCount = 0;
+      
+      // Store all season totals for acesBPI calculation
+      const allSeasonTotals = new Map(); // legacyId -> seasonTotals
 
-      for (const [playerId, games] of playerBattingGames) {
+      for (const [legacyId, games] of playerBattingGames) {
+        const seasonTotals = {
+          games: games.length,
+          atBats: 0,
+          hits: 0,
+          runs: 0,
+          walks: 0,
+          doubles: 0,
+          triples: 0,
+          homeRuns: 0,
+          rbi: 0,
+          strikeouts: 0,
+          stolenBases: 0,
+          team: null,
+          playerName: null,
+          vsOpponent: {}  // Per-opponent breakdown
+        };
+
+        games.forEach(game => {
+          seasonTotals.atBats += game.atBats || 0;
+          seasonTotals.hits += game.hits || 0;
+          seasonTotals.runs += game.runs || 0;
+          seasonTotals.walks += game.walks || 0;
+          seasonTotals.doubles += game.doubles || 0;
+          seasonTotals.triples += game.triples || 0;
+          seasonTotals.homeRuns += game.homeRuns || 0;
+          seasonTotals.rbi += game.rbi || 0;
+          seasonTotals.strikeouts += game.strikeouts || 0;
+          seasonTotals.stolenBases += game.stolenBases || 0;
+          if (!seasonTotals.team) seasonTotals.team = game.teamId || '';
+          if (!seasonTotals.playerName) seasonTotals.playerName = game.playerName || '';
+          
+          // Track per-opponent stats
+          const opponent = game.opponent || 'Unknown';
+          if (!seasonTotals.vsOpponent[opponent]) {
+            seasonTotals.vsOpponent[opponent] = {
+              games: 0, atBats: 0, hits: 0, runs: 0, walks: 0,
+              doubles: 0, triples: 0, homeRuns: 0, rbi: 0
+            };
+          }
+          const opp = seasonTotals.vsOpponent[opponent];
+          opp.games++;
+          opp.atBats += game.atBats || 0;
+          opp.hits += game.hits || 0;
+          opp.runs += game.runs || 0;
+          opp.walks += game.walks || 0;
+          opp.doubles += game.doubles || 0;
+          opp.triples += game.triples || 0;
+          opp.homeRuns += game.homeRuns || 0;
+          opp.rbi += game.rbi || 0;
+        });
+
+        // Calculate basic stats for season totals
+        seasonTotals.battingAverage = seasonTotals.atBats > 0 ? seasonTotals.hits / seasonTotals.atBats : 0;
+        seasonTotals.onBasePercentage = (seasonTotals.atBats + seasonTotals.walks) > 0
+          ? (seasonTotals.hits + seasonTotals.walks) / (seasonTotals.atBats + seasonTotals.walks) : 0;
+        seasonTotals.runsPerPA = (seasonTotals.atBats + seasonTotals.walks) > 0
+          ? seasonTotals.runs / (seasonTotals.atBats + seasonTotals.walks) : 0;
+        
+        // Calculate per-opponent averages
+        Object.values(seasonTotals.vsOpponent).forEach(opp => {
+          opp.battingAverage = opp.atBats > 0 ? opp.hits / opp.atBats : 0;
+          opp.onBasePercentage = (opp.atBats + opp.walks) > 0
+            ? (opp.hits + opp.walks) / (opp.atBats + opp.walks) : 0;
+        });
+
+        allSeasonTotals.set(legacyId, seasonTotals);
+        totalGamesProcessed += games.length;
+      }
+
+      // STEP 3: Calculate league averages for acesBPI
+      log('');
+      log('Step 3: Calculating league averages for acesBPI...', 'game');
+      
+      // Determine max games played (for reference/logging only)
+      let maxGames = 0;
+      allSeasonTotals.forEach(stats => {
+        if (stats.games > maxGames) maxGames = stats.games;
+      });
+      
+      log(`  Max games in season: ${maxGames}`);
+      
+      // Collect stats from all players for mean/stddev calculation
+      // Note: sub flag check kept for backward compatibility with old seasons
+      const nonSubStats = {
+        battingAverage: [],
+        onBasePercentage: [],
+        runsPerPA: [],
+        games: []
+      };
+      
+      allSeasonTotals.forEach((stats, legacyId) => {
+        // Only exclude if explicitly marked as sub (for old data or future use)
+        const isSub = (stats.sub || '').toLowerCase() === 'yes';
+        
+        if (!isSub && stats.atBats > 0) {
+          nonSubStats.battingAverage.push(stats.battingAverage);
+          nonSubStats.onBasePercentage.push(stats.onBasePercentage);
+          nonSubStats.runsPerPA.push(stats.runsPerPA);
+          nonSubStats.games.push(stats.games);
+        }
+      });
+      
+      log(`  Players for league averages: ${nonSubStats.battingAverage.length}`);
+      
+      // Calculate mean and standard deviation for each stat
+      function calcMean(arr) {
+        if (arr.length === 0) return 0;
+        return arr.reduce((a, b) => a + b, 0) / arr.length;
+      }
+      
+      function calcStdDev(arr, mean) {
+        if (arr.length < 2) return 1; // Avoid division by zero
+        const squaredDiffs = arr.map(x => Math.pow(x - mean, 2));
+        return Math.sqrt(squaredDiffs.reduce((a, b) => a + b, 0) / arr.length) || 1;
+      }
+      
+      const leagueStats = {
+        battingAverage: { mean: calcMean(nonSubStats.battingAverage), stdDev: 0 },
+        onBasePercentage: { mean: calcMean(nonSubStats.onBasePercentage), stdDev: 0 },
+        runsPerPA: { mean: calcMean(nonSubStats.runsPerPA), stdDev: 0 },
+        games: { mean: calcMean(nonSubStats.games), stdDev: 0 }
+      };
+      
+      leagueStats.battingAverage.stdDev = calcStdDev(nonSubStats.battingAverage, leagueStats.battingAverage.mean);
+      leagueStats.onBasePercentage.stdDev = calcStdDev(nonSubStats.onBasePercentage, leagueStats.onBasePercentage.mean);
+      leagueStats.runsPerPA.stdDev = calcStdDev(nonSubStats.runsPerPA, leagueStats.runsPerPA.mean);
+      leagueStats.games.stdDev = calcStdDev(nonSubStats.games, leagueStats.games.mean);
+      
+      log(`  League BA: ${leagueStats.battingAverage.mean.toFixed(3)} (σ=${leagueStats.battingAverage.stdDev.toFixed(3)})`);
+      log(`  League OBP: ${leagueStats.onBasePercentage.mean.toFixed(3)} (σ=${leagueStats.onBasePercentage.stdDev.toFixed(3)})`);
+      log(`  League R/PA: ${leagueStats.runsPerPA.mean.toFixed(3)} (σ=${leagueStats.runsPerPA.stdDev.toFixed(3)})`);
+      log(`  League Games: ${leagueStats.games.mean.toFixed(1)} (σ=${leagueStats.games.stdDev.toFixed(1)})`);
+
+      // STEP 4: Calculate acesBPI and save all player data
+      log('');
+      log('Step 4: Calculating acesBPI and saving...', 'game');
+      
+      // acesBPI weights: 50% BA, 10% OBP, 30% Runs/PA, 10% Games
+      const weights = { battingAverage: 0.5, onBasePercentage: 0.1, runsPerPA: 0.3, games: 0.1 };
+      
+      function calcZScore(value, mean, stdDev) {
+        if (stdDev === 0) return 0;
+        return (value - mean) / stdDev;
+      }
+
+      for (const [legacyId, seasonTotals] of allSeasonTotals) {
         try {
-          const seasonTotals = {
-            games: games.length,
-            atBats: 0,
-            hits: 0,
-            runs: 0,
-            walks: 0,
-            doubles: 0,
-            triples: 0,
-            homeRuns: 0,
-            rbi: 0,
-            strikeouts: 0,
-            stolenBases: 0,
-            team: null,
-            playerName: null
+          // Calculate z-scores
+          const zScores = {
+            battingAverage: calcZScore(seasonTotals.battingAverage, leagueStats.battingAverage.mean, leagueStats.battingAverage.stdDev),
+            onBasePercentage: calcZScore(seasonTotals.onBasePercentage, leagueStats.onBasePercentage.mean, leagueStats.onBasePercentage.stdDev),
+            runsPerPA: calcZScore(seasonTotals.runsPerPA, leagueStats.runsPerPA.mean, leagueStats.runsPerPA.stdDev),
+            games: calcZScore(seasonTotals.games, leagueStats.games.mean, leagueStats.games.stdDev)
           };
-
-          games.forEach(game => {
-            seasonTotals.atBats += game.atBats || 0;
-            seasonTotals.hits += game.hits || 0;
-            seasonTotals.runs += game.runs || 0;
-            seasonTotals.walks += game.walks || 0;
-            seasonTotals.doubles += game.doubles || 0;
-            seasonTotals.triples += game.triples || 0;
-            seasonTotals.homeRuns += game.homeRuns || 0;
-            seasonTotals.rbi += game.rbi || 0;
-            seasonTotals.strikeouts += game.strikeouts || 0;
-            seasonTotals.stolenBases += game.stolenBases || 0;
-            if (!seasonTotals.team) seasonTotals.team = game.teamId || '';
-            if (!seasonTotals.playerName) seasonTotals.playerName = game.playerName || '';
-          });
-
-          seasonTotals.battingAverage = seasonTotals.atBats > 0 ? seasonTotals.hits / seasonTotals.atBats : 0;
-          seasonTotals.onBasePercentage = (seasonTotals.atBats + seasonTotals.walks) > 0
-            ? (seasonTotals.hits + seasonTotals.walks) / (seasonTotals.atBats + seasonTotals.walks) : 0;
-          seasonTotals.acesBPI = seasonTotals.games > 0
-            ? (seasonTotals.runs + seasonTotals.hits + seasonTotals.walks) / seasonTotals.games : 0;
-
+          
+          // Weighted average of z-scores
+          const weightedZScore = 
+            (zScores.battingAverage * weights.battingAverage) +
+            (zScores.onBasePercentage * weights.onBasePercentage) +
+            (zScores.runsPerPA * weights.runsPerPA) +
+            (zScores.games * weights.games);
+          
+          // acesBPI = 50 + 10 * weighted z-score
+          seasonTotals.acesBPI = 50 + (10 * weightedZScore);
+          
+          // Get the correct document ID (authUID for auth users, legacyId for legacy users)
+          const docId = legacyToDocId.get(legacyId) || legacyId;
+          const playerInfo = docIdToPlayerInfo.get(docId) || {};
+          
           // Get existing data (from test or production collection)
-          const aggregatedRef = window.doc(window.db, getAggregatedCollection(), playerId);
-          const existingDoc = await window.getDoc(aggregatedRef);
+          const aggregatedDocRef = window.doc(window.db, getAggregatedCollection(), docId);
+          const existingDoc = await window.getDoc(aggregatedDocRef);
           const existingData = existingDoc.exists() ? existingDoc.data() : {};
           const existingSeasons = { ...(existingData.seasons || {}) };
 
@@ -1286,7 +1433,7 @@
 
           const career = recalculateCareer(existingSeasons);
 
-          await window.setDoc(aggregatedRef, {
+          await window.setDoc(aggregatedDocRef, {
             ...existingData,
             name: existingData.name || seasonTotals.playerName,
             seasons: existingSeasons,
@@ -1296,27 +1443,27 @@
             lastGameAggregation: seasonId
           }, { merge: true });
 
-          totalGamesProcessed += games.length;
           battingUpdatedCount++;
 
           const avgDisplay = seasonTotals.atBats > 0 
             ? '.' + (seasonTotals.battingAverage * 1000).toFixed(0).padStart(3, '0') : '.000';
-          log(`  ✓ ${seasonTotals.playerName || playerId}: ${games.length} G, ${seasonTotals.hits}/${seasonTotals.atBats} (${avgDisplay})`, 'success');
+          const oppCount = Object.keys(seasonTotals.vsOpponent).length;
+          log(`  ✓ ${seasonTotals.playerName || legacyId}: ${seasonTotals.games} G, ${avgDisplay} BA, ${seasonTotals.acesBPI.toFixed(1)} BPI, vs ${oppCount} teams → ${docId}`, 'success');
 
           updateSeasonStats(playerBattingGames.size, totalGamesProcessed, battingUpdatedCount, pitchingUpdatedCount);
 
         } catch (error) {
-          log(`  ✗ Error with ${playerId}: ${error.message}`, 'error');
+          log(`  ✗ Error with ${legacyId}: ${error.message}`, 'error');
           errorCount++;
         }
       }
 
-      // STEP 3: Aggregate pitching stats
+      // STEP 5: Aggregate pitching stats
       if (playerPitchingGames.size > 0) {
         log('');
-        log('Step 3: Aggregating pitching stats...', 'pitching');
+        log('Step 5: Aggregating pitching stats...', 'pitching');
 
-        for (const [playerId, games] of playerPitchingGames) {
+        for (const [legacyId, games] of playerPitchingGames) {
           try {
             const pitchingTotals = {
               games: games.length,
@@ -1348,15 +1495,18 @@
             pitchingTotals.earnedRunAverage = pitchingTotals.inningsPitched > 0
               ? (pitchingTotals.runsAllowed * 7) / pitchingTotals.inningsPitched : 0;
 
-            const aggregatedRef = window.doc(window.db, getAggregatedCollection(), playerId);
-            const existingDoc = await window.getDoc(aggregatedRef);
+            // Get the correct document ID (authUID for auth users, legacyId for legacy users)
+            const docId = legacyToDocId.get(legacyId) || legacyId;
+            
+            const aggregatedDocRef = window.doc(window.db, getAggregatedCollection(), docId);
+            const existingDoc = await window.getDoc(aggregatedDocRef);
             const existingData = existingDoc.exists() ? existingDoc.data() : {};
             const existingPitchingSeasons = { ...(existingData.pitchingSeasons || {}) };
 
             existingPitchingSeasons[seasonId] = pitchingTotals;
             const pitchingCareer = recalculatePitchingCareer(existingPitchingSeasons);
 
-            await window.setDoc(aggregatedRef, {
+            await window.setDoc(aggregatedDocRef, {
               pitchingSeasons: existingPitchingSeasons,
               'career.pitching': pitchingCareer,
               hasPitchingStats: true,
@@ -1364,15 +1514,21 @@
             }, { merge: true });
 
             pitchingUpdatedCount++;
-            log(`  ⚾ ${pitchingTotals.playerName || playerId}: ${pitchingTotals.inningsPitched} IP, ${pitchingTotals.earnedRunAverage.toFixed(2)} ERA`, 'pitching');
+            log(`  ⚾ ${pitchingTotals.playerName || legacyId}: ${pitchingTotals.inningsPitched} IP, ${pitchingTotals.earnedRunAverage.toFixed(2)} ERA → ${docId}`, 'pitching');
 
             updateSeasonStats(playerBattingGames.size, totalGamesProcessed, battingUpdatedCount, pitchingUpdatedCount);
 
           } catch (error) {
-            log(`  ✗ Pitching error ${playerId}: ${error.message}`, 'error');
+            log(`  ✗ Pitching error ${legacyId}: ${error.message}`, 'error');
           }
         }
       }
+
+      // Collect all unique opponents for summary
+      const allOpponents = new Set();
+      allSeasonTotals.forEach(stats => {
+        Object.keys(stats.vsOpponent || {}).forEach(opp => allOpponents.add(opp));
+      });
 
       // COMPLETE
       log('');
@@ -1382,11 +1538,12 @@
       log(`✓ Players with batting: ${battingUpdatedCount}`, 'success');
       log(`✓ Players with pitching: ${pitchingUpdatedCount}`, 'success');
       log(`✓ Total games processed: ${totalGamesProcessed}`, 'success');
+      log(`✓ Opponents tracked: ${allOpponents.size} (${Array.from(allOpponents).join(', ')})`, 'success');
       if (errorCount > 0) {
         log(`✗ Errors: ${errorCount}`, 'error');
       }
       log('');
-      log('💡 Career totals have been recalculated automatically.');
+      log('💡 Career totals and vsOpponent stats have been recalculated automatically.');
 
     } catch (error) {
       log(`Fatal error: ${error.message}`, 'error');
@@ -1406,7 +1563,8 @@
       games: 0, atBats: 0, hits: 0, runs: 0, walks: 0,
       doubles: 0, triples: 0, homeRuns: 0, rbi: 0,
       strikeouts: 0, stolenBases: 0,
-      acesBPITotal: 0, acesBPICount: 0
+      acesBPITotal: 0, acesBPICount: 0,
+      vsOpponent: {}  // Career vs opponent totals
     };
 
     Object.entries(seasonsObject).forEach(([seasonId, season]) => {
@@ -1427,12 +1585,41 @@
         career.acesBPITotal += season.acesBPI;
         career.acesBPICount++;
       }
+      
+      // Aggregate vsOpponent data from seasons that have it (game-based seasons)
+      if (season.vsOpponent) {
+        Object.entries(season.vsOpponent).forEach(([opponent, oppStats]) => {
+          if (!career.vsOpponent[opponent]) {
+            career.vsOpponent[opponent] = {
+              games: 0, atBats: 0, hits: 0, runs: 0, walks: 0,
+              doubles: 0, triples: 0, homeRuns: 0, rbi: 0
+            };
+          }
+          const careerOpp = career.vsOpponent[opponent];
+          careerOpp.games += oppStats.games || 0;
+          careerOpp.atBats += oppStats.atBats || 0;
+          careerOpp.hits += oppStats.hits || 0;
+          careerOpp.runs += oppStats.runs || 0;
+          careerOpp.walks += oppStats.walks || 0;
+          careerOpp.doubles += oppStats.doubles || 0;
+          careerOpp.triples += oppStats.triples || 0;
+          careerOpp.homeRuns += oppStats.homeRuns || 0;
+          careerOpp.rbi += oppStats.rbi || 0;
+        });
+      }
     });
 
     career.battingAverage = career.atBats > 0 ? career.hits / career.atBats : 0;
     career.onBasePercentage = (career.atBats + career.walks) > 0
       ? (career.hits + career.walks) / (career.atBats + career.walks) : 0;
     career.acesBPI = career.acesBPICount > 0 ? career.acesBPITotal / career.acesBPICount : 0;
+    
+    // Calculate per-opponent career averages
+    Object.values(career.vsOpponent).forEach(opp => {
+      opp.battingAverage = opp.atBats > 0 ? opp.hits / opp.atBats : 0;
+      opp.onBasePercentage = (opp.atBats + opp.walks) > 0
+        ? (opp.hits + opp.walks) / (opp.atBats + opp.walks) : 0;
+    });
 
     delete career.acesBPITotal;
     delete career.acesBPICount;
