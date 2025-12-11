@@ -1,7 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<link rel="manifest" href="/manifest.json">
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Submit Stats - Mountainside Aces</title>
@@ -854,10 +853,26 @@ async function loadTeamRoster(teamId) {
 
     const players = filteredPlayers.map(player => {
       const name = player.name || player.playerName;
+      
+      // Derive legacyId for game-level stats lookups
+      // Auth users: use linkedPlayer converted to legacy format
+      // Legacy users: playerId is already the legacy format
+      let legacyId;
+      if (player.isAuthUser && player.linkedPlayer) {
+        // Convert "Steve Giordano" or "John Smith Jr." to "steve_giordano" or "john_smith_jr"
+        legacyId = player.linkedPlayer.toLowerCase().replace(/\./g, '').replace(/\s+/g, '_');
+      } else {
+        // Already a legacy ID (e.g., "steve_giordano")
+        legacyId = player.playerId;
+      }
+      
       return {
-        id: player.playerId,
+        id: player.playerId,      // Auth ID or legacy ID (for aggregatedPlayerStats lookups)
+        legacyId: legacyId,       // Legacy ID (for playerStats/games and pitchingStats/games)
         name: name,
-        displayName: name
+        displayName: name,
+        linkedPlayer: player.linkedPlayer || null,
+        isAuthUser: player.isAuthUser || false
       };
     });
 
@@ -865,6 +880,14 @@ async function loadTeamRoster(teamId) {
     players.sort((a, b) => a.name.localeCompare(b.name));
 
     console.log(`✅ Loaded ${players.length} players for team ${teamId}`);
+    if (players.length > 0) {
+      console.log('📋 Sample player mapping:', {
+        name: players[0].name,
+        id: players[0].id,
+        legacyId: players[0].legacyId,
+        isAuthUser: players[0].isAuthUser
+      });
+    }
     
     // Also load games for this team
     teamGames = await getAllTeamGames(teamId, currentSeason.id);
@@ -1010,12 +1033,14 @@ async function loadExistingStatsForGame(gameId) {
     const existingStats = {};
     
     // Load batting stats for all players on the roster
+    // Use legacyId for Firebase paths since game stats are stored under legacy IDs
     for (const player of rosterPlayers) {
-      const playerId = player.id;
+      const legacyId = player.legacyId;  // Use legacyId for game stats lookups
+      const playerId = player.id;        // Keep playerId as key for existingStats object
       
       // Try to load batting stats
       try {
-        const battingRef = doc(db, 'playerStats', playerId, 'games', gameId);
+        const battingRef = doc(db, 'playerStats', legacyId, 'games', gameId);
         const battingDoc = await getDoc(battingRef);
         
         if (battingDoc.exists()) {
@@ -1029,7 +1054,7 @@ async function loadExistingStatsForGame(gameId) {
             runsAllowed: 0,
             hasBattingStats: true
           };
-          console.log(`✅ Loaded batting stats for ${player.name}`);
+          console.log(`✅ Loaded batting stats for ${player.name} (legacyId: ${legacyId})`);
         }
       } catch (error) {
         // Player doesn't have batting stats for this game yet
@@ -1037,7 +1062,7 @@ async function loadExistingStatsForGame(gameId) {
       
       // Try to load pitching stats
       try {
-        const pitchingRef = doc(db, 'pitchingStats', playerId, 'games', gameId);
+        const pitchingRef = doc(db, 'pitchingStats', legacyId, 'games', gameId);
         const pitchingDoc = await getDoc(pitchingRef);
         
         if (pitchingDoc.exists()) {
@@ -1055,7 +1080,7 @@ async function loadExistingStatsForGame(gameId) {
           existingStats[playerId].inningsPitched = pitchingData.inningsPitched || 0;
           existingStats[playerId].runsAllowed = pitchingData.runsAllowed || 0;
           existingStats[playerId].hasPitchingStats = true;
-          console.log(`✅ Loaded pitching stats for ${player.name}`);
+          console.log(`✅ Loaded pitching stats for ${player.name} (legacyId: ${legacyId})`);
         }
       } catch (error) {
         // Player doesn't have pitching stats for this game yet
@@ -1128,9 +1153,10 @@ async function loadExistingStatsForGame(gameId) {
   }
 }
 
-// Convert player name to userId format
+// Convert player name to userId format (legacy ID)
+// Handles periods (Jr. → Jr) and spaces
 function nameToUserId(name) {
-  return name.toLowerCase().replace(/\s+/g, '_');
+  return name.toLowerCase().replace(/\./g, '').replace(/\s+/g, '_');
 }
 
 // Submit stats to Firebase
@@ -1169,7 +1195,9 @@ async function submitStats() {
     checkboxes.forEach((checkbox, index) => {
       if (checkbox.checked) {
         const playerId = checkbox.dataset.playerId;
-        const playerName = rosterPlayers.find(p => p.id === playerId)?.name;
+        const player = rosterPlayers.find(p => p.id === playerId);
+        const playerName = player?.name;
+        const legacyId = player?.legacyId;  // Get legacyId for Firebase paths
 
         const atBats = parseInt(document.getElementById(`ab_${index}`).value) || 0;
         const hits = parseInt(document.getElementById(`hits_${index}`).value) || 0;
@@ -1182,6 +1210,7 @@ async function submitStats() {
         if (atBats > 0 || hits > 0 || runs > 0 || walks > 0 || inningsPitched > 0 || runsAllowed > 0) {
           statsToSubmit.push({
             playerId,
+            legacyId,  // Include legacyId for Firebase writes
             playerName,
             atBats,
             hits,
@@ -1210,8 +1239,11 @@ async function submitStats() {
 
     for (const playerStats of statsToSubmit) {
       try {
-        const userId = nameToUserId(playerStats.playerName);
+        // Use legacyId directly from player data (no conversion needed)
+        const legacyId = playerStats.legacyId;
         const seasonId = currentSeason.id;
+        
+        console.log(`📝 Writing stats for ${playerStats.playerName} using legacyId: ${legacyId}`);
 
         // Format game date for display
         let gameDateFormatted = 'Unknown';
@@ -1225,12 +1257,12 @@ async function submitStats() {
 
         // Write BATTING stats to game-level database
         if (playerStats.atBats > 0 || playerStats.hits > 0 || playerStats.runs > 0 || playerStats.walks > 0) {
-          const gameStatsRef = doc(db, 'playerStats', userId, 'games', selectedGameId);
+          const gameStatsRef = doc(db, 'playerStats', legacyId, 'games', selectedGameId);
           
           await setDoc(gameStatsRef, {
             // Game identification
             gameId: selectedGameId,
-            playerId: userId,
+            playerId: legacyId,
             playerName: playerStats.playerName,
             seasonId: seasonId,
             teamId: selectedTeam,
@@ -1240,8 +1272,6 @@ async function submitStats() {
             gameDateFormatted: gameDateFormatted,
             opponent: gameData.opponent || 'Unknown',
             isHome: gameData.isHome || false,
-            gameType: gameData.gameType || 'Regular',
-            isPlayoff: gameData.isPlayoff || false,
             
             // Batting stats for this game
             atBats: playerStats.atBats,
@@ -1269,12 +1299,12 @@ async function submitStats() {
 
         // Write PITCHING stats to game-level database
         if (playerStats.inningsPitched > 0 || playerStats.runsAllowed > 0) {
-          const gamePitchingRef = doc(db, 'pitchingStats', userId, 'games', selectedGameId);
+          const gamePitchingRef = doc(db, 'pitchingStats', legacyId, 'games', selectedGameId);
           
           await setDoc(gamePitchingRef, {
             // Game identification
             gameId: selectedGameId,
-            playerId: userId,
+            playerId: legacyId,
             playerName: playerStats.playerName,
             seasonId: seasonId,
             teamId: selectedTeam,
@@ -1284,8 +1314,6 @@ async function submitStats() {
             gameDateFormatted: gameDateFormatted,
             opponent: gameData.opponent || 'Unknown',
             isHome: gameData.isHome || false,
-            gameType: gameData.gameType || 'Regular',
-            isPlayoff: gameData.isPlayoff || false,
             
             // Pitching stats for this game
             inningsPitched: playerStats.inningsPitched,

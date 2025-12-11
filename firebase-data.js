@@ -49,7 +49,7 @@ function userIdToName(userId) {
  */
 export async function resolvePlayerName(searchName) {
   try {
-    console.log(`🔍 Resolving player name: "${searchName}"`);
+    console.log(`ðŸ” Resolving player name: "${searchName}"`);
     
     const statsRef = collection(db, 'aggregatedPlayerStats');
     const snapshot = await getDocs(statsRef);
@@ -110,7 +110,7 @@ export async function resolvePlayerName(searchName) {
     const result = foundPlayer || bestMatch;
     
     if (result) {
-      console.log(`✅ Resolved "${searchName}" to "${result.name}" (ID: ${result.id}, Score: ${foundPlayer ? 100 : bestMatchScore})`);
+      console.log(`âœ… Resolved "${searchName}" to "${result.name}" (ID: ${result.id}, Score: ${foundPlayer ? 100 : bestMatchScore})`);
       return {
         id: result.id,
         name: result.name || result.displayName,
@@ -119,11 +119,11 @@ export async function resolvePlayerName(searchName) {
       };
     }
     
-    console.warn(`⚠️ Could not resolve player name: "${searchName}"`);
+    console.warn(`âš ï¸ Could not resolve player name: "${searchName}"`);
     return null;
     
   } catch (error) {
-    console.error('❌ Error resolving player name:', error);
+    console.error('âŒ Error resolving player name:', error);
     return null;
   }
 }
@@ -145,7 +145,7 @@ export async function getPlayerByIdentifier(identifier) {
     return await resolvePlayerName(identifier);
     
   } catch (error) {
-    console.error('❌ Error getting player by identifier:', error);
+    console.error('âŒ Error getting player by identifier:', error);
     return null;
   }
 }
@@ -258,7 +258,7 @@ export async function getAllPlayerStatsOptimized() {
       });
     });
     
-    console.log(`âœ“ Loaded ${players.length} players from aggregated collection (optimized)`);
+    console.log(`Ã¢Å“â€œ Loaded ${players.length} players from aggregated collection (optimized)`);
     return players;
     
   } catch (error) {
@@ -300,7 +300,7 @@ export async function getAllPitchingStatsOptimized() {
       }
     });
     
-    console.log(`âœ“ Loaded ${pitchers.length} pitchers from aggregated collection (optimized)`);
+    console.log(`Ã¢Å“â€œ Loaded ${pitchers.length} pitchers from aggregated collection (optimized)`);
     return pitchers;
     
   } catch (error) {
@@ -395,6 +395,9 @@ export async function getSeasonPlayerStatsOptimized(seasonId) {
           currentTeam: data.currentTeam || teamFromKey || '',
           team: seasonStats.team || data.currentTeam || teamFromKey || '',
           photoURL: data.photoURL || '',
+          // Auth user info for legacyId resolution
+          linkedPlayer: data.linkedPlayer || null,
+          isAuthUser: data.isAuthUser || false,
           // Include the specific season stats
           ...seasonStats,
           seasonId: seasonId,
@@ -403,7 +406,7 @@ export async function getSeasonPlayerStatsOptimized(seasonId) {
       }
     });
     
-    console.log(`âœ“ Found ${players.length} players with stats for season ${seasonId}`);
+    console.log(`Ã¢Å“â€œ Found ${players.length} players with stats for season ${seasonId}`);
     return players;
     
   } catch (error) {
@@ -467,7 +470,7 @@ export async function getSeasonPitchingStatsOptimized(seasonId) {
       }
     });
     
-    console.log(`âœ“ Found ${players.length} players with pitching stats for season ${seasonId}`);
+    console.log(`Ã¢Å“â€œ Found ${players.length} players with pitching stats for season ${seasonId}`);
     return players;
     
   } catch (error) {
@@ -508,7 +511,7 @@ export async function searchPlayersOptimized(searchTerm) {
       }
     });
     
-    console.log(`âœ“ Found ${players.length} players matching "${searchTerm}"`);
+    console.log(`Ã¢Å“â€œ Found ${players.length} players matching "${searchTerm}"`);
     return players;
     
   } catch (error) {
@@ -637,7 +640,7 @@ export async function getPlayersByTeamOptimized(teamName) {
       });
     });
     
-    console.log(`âœ“ Found ${players.length} players on team ${teamName}`);
+    console.log(`Ã¢Å“â€œ Found ${players.length} players on team ${teamName}`);
     return players;
     
   } catch (error) {
@@ -952,7 +955,7 @@ export async function getSeasonPreviews(seasonId) {
       };
     });
     
-    console.log(`âœ… Loaded ${previews.length} previews for season ${seasonId}`);
+    console.log(`Ã¢Å“â€¦ Loaded ${previews.length} previews for season ${seasonId}`);
     return previews;
     
   } catch (error) {
