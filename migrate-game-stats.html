@@ -345,96 +345,75 @@
     }
   };
 
-  // Find documents to migrate
+  // Find documents to migrate using collectionGroup
   async function findDocumentsToMigrate(targetSeasonId) {
     const battingDocs = [];
     const pitchingDocs = [];
     const needsMigration = [];
     const alreadyOk = [];
 
-    // Scan playerStats
-    log('Scanning playerStats collection...');
-    const playerStatsRef = collection(db, 'playerStats');
-    const playerStatsSnap = await getDocs(playerStatsRef);
+    // Use collectionGroup to find ALL 'games' subcollections
+    log('Scanning all games subcollections using collectionGroup...');
     
-    for (const playerDoc of playerStatsSnap.docs) {
-      const playerId = playerDoc.id;
-      const gamesRef = collection(db, 'playerStats', playerId, 'games');
-      const gamesSnap = await getDocs(gamesRef);
-      
-      gamesSnap.forEach(gameDoc => {
-        const data = gameDoc.data();
-        const docId = gameDoc.id;
-        const path = `playerStats/${playerId}/games/${docId}`;
-        
-        battingDocs.push({ path, docId, playerId, data, type: 'batting' });
-        
-        // Check if document ID has the season prefix format
-        const hasSeasonPrefix = docId.match(/^\d{4}-(summer|fall)_/);
-        
-        if (!hasSeasonPrefix) {
-          // Need to migrate - document ID doesn't have season prefix
-          const seasonId = data.seasonId || targetSeasonId;
-          const newDocId = `${seasonId}_${docId}`;
-          
-          needsMigration.push({
-            type: 'batting',
-            path,
-            docId,
-            playerId,
-            data,
-            seasonId,
-            originalGameId: docId,
-            newDocId
-          });
-        } else {
-          alreadyOk.push({ path, type: 'batting' });
-        }
-      });
-    }
-    log(`  Found ${battingDocs.length} batting game documents`);
-
-    // Scan pitchingStats
-    log('Scanning pitchingStats collection...');
-    const pitchingStatsRef = collection(db, 'pitchingStats');
-    const pitchingStatsSnap = await getDocs(pitchingStatsRef);
+    const gamesQuery = collectionGroup(db, 'games');
+    const gamesSnap = await getDocs(gamesQuery);
     
-    for (const playerDoc of pitchingStatsSnap.docs) {
-      const playerId = playerDoc.id;
-      const gamesRef = collection(db, 'pitchingStats', playerId, 'games');
-      const gamesSnap = await getDocs(gamesRef);
+    log(`Found ${gamesSnap.size} total game documents`);
+    
+    gamesSnap.forEach(gameDoc => {
+      const data = gameDoc.data();
+      const docId = gameDoc.id;
+      const path = gameDoc.ref.path;
       
-      gamesSnap.forEach(gameDoc => {
-        const data = gameDoc.data();
-        const docId = gameDoc.id;
-        const path = `pitchingStats/${playerId}/games/${docId}`;
+      // Determine if this is batting or pitching based on path
+      const isBatting = path.startsWith('playerStats/');
+      const isPitching = path.startsWith('pitchingStats/');
+      
+      if (!isBatting && !isPitching) {
+        // Skip - this is from some other collection (like seasons/*/games)
+        return;
+      }
+      
+      // Extract playerId from path
+      const pathParts = path.split('/');
+      const playerId = pathParts[1]; // playerStats/{playerId}/games/{docId}
+      
+      const type = isBatting ? 'batting' : 'pitching';
+      
+      if (isBatting) {
+        battingDocs.push({ path, docId, playerId, data, type });
+      } else {
+        pitchingDocs.push({ path, docId, playerId, data, type });
+      }
+      
+      // Check if document ID has the season prefix format (e.g., 2025-summer_)
+      const hasSeasonPrefix = docId.match(/^\d{4}-(summer|fall)_/);
+      
+      if (!hasSeasonPrefix) {
+        // Need to migrate - document ID doesn't have season prefix
+        const seasonId = data.seasonId || targetSeasonId;
+        const newDocId = `${seasonId}_${docId}`;
         
-        pitchingDocs.push({ path, docId, playerId, data, type: 'pitching' });
+        needsMigration.push({
+          type,
+          path,
+          docId,
+          playerId,
+          data,
+          seasonId,
+          originalGameId: docId,
+          newDocId
+        });
         
-        // Check if document ID has the season prefix format
-        const hasSeasonPrefix = docId.match(/^\d{4}-(summer|fall)_/);
-        
-        if (!hasSeasonPrefix) {
-          // Need to migrate - document ID doesn't have season prefix
-          const seasonId = data.seasonId || targetSeasonId;
-          const newDocId = `${seasonId}_${docId}`;
-          
-          needsMigration.push({
-            type: 'pitching',
-            path,
-            docId,
-            playerId,
-            data,
-            seasonId,
-            originalGameId: docId,
-            newDocId
-          });
-        } else {
-          alreadyOk.push({ path, type: 'pitching' });
-        }
-      });
-    }
-    log(`  Found ${pitchingDocs.length} pitching game documents`);
+        log(`  📋 ${type}: ${path}`);
+        log(`      seasonId: ${seasonId}, newDocId: ${newDocId}`);
+      } else {
+        alreadyOk.push({ path, type });
+      }
+    });
+    
+    log(`Batting documents: ${battingDocs.length}`);
+    log(`Pitching documents: ${pitchingDocs.length}`);
 
     return { battingDocs, pitchingDocs, needsMigration, alreadyOk };
   }
