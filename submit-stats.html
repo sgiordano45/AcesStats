@@ -1027,7 +1027,12 @@ function renderStatsTable(players) {
 // Load existing stats for a game
 async function loadExistingStatsForGame(gameId) {
   try {
+    // Build season-prefixed document ID
+    const seasonId = currentSeason.id;
+    const gameDocId = `${seasonId}_${gameId}`;
+    
     console.log('🔍 Loading existing stats for game:', gameId);
+    console.log('📄 Using document ID:', gameDocId);
     showMessage('info', 'Loading existing stats for this game...');
     
     const existingStats = {};
@@ -1038,9 +1043,9 @@ async function loadExistingStatsForGame(gameId) {
       const legacyId = player.legacyId;  // Use legacyId for game stats lookups
       const playerId = player.id;        // Keep playerId as key for existingStats object
       
-      // Try to load batting stats
+      // Try to load batting stats (using season-prefixed document ID)
       try {
-        const battingRef = doc(db, 'playerStats', legacyId, 'games', gameId);
+        const battingRef = doc(db, 'playerStats', legacyId, 'games', gameDocId);
         const battingDoc = await getDoc(battingRef);
         
         if (battingDoc.exists()) {
@@ -1060,9 +1065,9 @@ async function loadExistingStatsForGame(gameId) {
         // Player doesn't have batting stats for this game yet
       }
       
-      // Try to load pitching stats
+      // Try to load pitching stats (using season-prefixed document ID)
       try {
-        const pitchingRef = doc(db, 'pitchingStats', legacyId, 'games', gameId);
+        const pitchingRef = doc(db, 'pitchingStats', legacyId, 'games', gameDocId);
         const pitchingDoc = await getDoc(pitchingRef);
         
         if (pitchingDoc.exists()) {
@@ -1257,11 +1262,14 @@ async function submitStats() {
 
         // Write BATTING stats to game-level database
         if (playerStats.atBats > 0 || playerStats.hits > 0 || playerStats.runs > 0 || playerStats.walks > 0) {
-          const gameStatsRef = doc(db, 'playerStats', legacyId, 'games', selectedGameId);
+          // Use season-prefixed document ID to prevent collisions across seasons
+          const gameDocId = `${seasonId}_${selectedGameId}`;
+          const gameStatsRef = doc(db, 'playerStats', legacyId, 'games', gameDocId);
           
           await setDoc(gameStatsRef, {
             // Game identification
-            gameId: selectedGameId,
+            gameId: selectedGameId,  // Original game ID for reference
+            gameDocId: gameDocId,    // Full document ID with season prefix
             playerId: legacyId,
             playerName: playerStats.playerName,
             seasonId: seasonId,
@@ -1301,11 +1309,14 @@ async function submitStats() {
 
         // Write PITCHING stats to game-level database
         if (playerStats.inningsPitched > 0 || playerStats.runsAllowed > 0) {
-          const gamePitchingRef = doc(db, 'pitchingStats', legacyId, 'games', selectedGameId);
+          // Use season-prefixed document ID to prevent collisions across seasons
+          const pitchingGameDocId = `${seasonId}_${selectedGameId}`;
+          const gamePitchingRef = doc(db, 'pitchingStats', legacyId, 'games', pitchingGameDocId);
           
           await setDoc(gamePitchingRef, {
             // Game identification
-            gameId: selectedGameId,
+            gameId: selectedGameId,  // Original game ID for reference
+            gameDocId: pitchingGameDocId,  // Full document ID with season prefix
             playerId: legacyId,
             playerName: playerStats.playerName,
             seasonId: seasonId,
@@ -1350,11 +1361,12 @@ async function submitStats() {
 
     // Show result
     if (errorCount === 0) {
-      showMessage('success', `Successfully submitted game-level stats for ${successCount} player(s)! Game ID: ${selectedGameId}`);
+      const gameDocId = `${currentSeason.id}_${selectedGameId}`;
+      showMessage('success', `Successfully submitted game-level stats for ${successCount} player(s)! Game Doc ID: ${gameDocId}`);
       console.log('✅ All stats saved to game-level database');
       console.log('📝 Database paths:');
-      console.log('   - /playerStats/{userId}/games/' + selectedGameId);
-      console.log('   - /pitchingStats/{userId}/games/' + selectedGameId);
+      console.log('   - /playerStats/{userId}/games/' + gameDocId);
+      console.log('   - /pitchingStats/{userId}/games/' + gameDocId);
       
       // Clear the form after successful submission
       setTimeout(() => {
