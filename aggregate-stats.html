@@ -1,0 +1,1499 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<link rel="manifest" href="/manifest.json">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stats Aggregator - Mountainside Aces Admin</title>
+<meta name="theme-color" content="#6b21a8">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="stylesheet" href="mobile-enhancements.css">
+<link rel="stylesheet" href="nav-styles.css">
+<style>
+  :root {
+    --primary-color: #2d5016;
+    --secondary-color: #1a6b4a;
+    --accent-color: #ffd700;
+    --admin-color: #6b21a8;
+    --admin-secondary: #7c3aed;
+    --card-bg: #ffffff;
+    --text-dark: #2d3748;
+    --text-light: #718096;
+    --border-color: #e2e8f0;
+    --shadow-sm: 0 2px 8px rgba(0,0,0,0.08);
+    --shadow-md: 0 4px 16px rgba(0,0,0,0.12);
+    --shadow-lg: 0 12px 32px rgba(0,0,0,0.16);
+    --success-color: #22c55e;
+    --warning-color: #f59e0b;
+    --danger-color: #ef4444;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    margin: 0;
+    padding: 0;
+    background: linear-gradient(135deg, #f7fafc 0%, #edf2f7 100%);
+    min-height: 100vh;
+    color: var(--text-dark);
+  }
+
+  /* Loading Overlay */
+  .loading-overlay {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(255,255,255,0.95);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    transition: opacity 0.5s ease;
+  }
+
+  .loading-overlay.hidden {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .loading-spinner::before {
+    content: '📊';
+    font-size: 80px;
+    animation: pulse 1.5s ease-in-out infinite;
+  }
+
+  .loading-text {
+    margin-top: 1rem;
+    color: var(--text-light);
+    font-size: 1.1rem;
+  }
+
+  @keyframes pulse {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.1); opacity: 0.8; }
+  }
+
+  /* Auth Gate */
+  .auth-gate {
+    display: none;
+    max-width: 500px;
+    margin: 4rem auto;
+    padding: 3rem;
+    background: var(--card-bg);
+    border-radius: 16px;
+    box-shadow: var(--shadow-lg);
+    text-align: center;
+  }
+
+  .auth-gate.visible {
+    display: block;
+  }
+
+  .auth-gate h2 {
+    color: var(--danger-color);
+    margin-bottom: 1rem;
+  }
+
+  .auth-gate p {
+    color: var(--text-light);
+    margin-bottom: 2rem;
+  }
+
+  .auth-gate a {
+    display: inline-block;
+    padding: 0.75rem 2rem;
+    background: var(--admin-color);
+    color: white;
+    text-decoration: none;
+    border-radius: 8px;
+    font-weight: 600;
+    margin: 0.5rem;
+  }
+
+  /* Header */
+  .header {
+    background: linear-gradient(135deg, var(--admin-color) 0%, var(--admin-secondary) 100%);
+    color: white;
+    padding: 2rem 2rem;
+    box-shadow: var(--shadow-lg);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .header::before {
+    content: '';
+    position: absolute;
+    top: -100px;
+    right: -100px;
+    width: 300px;
+    height: 300px;
+    background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+    border-radius: 50%;
+  }
+
+  .header::after {
+    content: '📊';
+    position: absolute;
+    bottom: -40px;
+    left: -30px;
+    font-size: 180px;
+    opacity: 0.08;
+  }
+
+  .header-content {
+    max-width: 1200px;
+    margin: 0 auto;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    position: relative;
+    z-index: 1;
+  }
+
+  .header h1 {
+    margin: 0;
+    font-size: 1.75rem;
+    font-weight: 800;
+    margin-bottom: 0.25rem;
+  }
+
+  .header p {
+    margin: 0;
+    opacity: 0.9;
+    font-size: 0.95rem;
+  }
+
+  .admin-badge {
+    display: inline-block;
+    background: rgba(255,255,255,0.2);
+    padding: 0.25rem 0.75rem;
+    border-radius: 20px;
+    font-size: 0.85rem;
+    margin-top: 0.5rem;
+  }
+
+  .header-buttons {
+    display: flex;
+    gap: 0.75rem;
+  }
+
+  .nav-btn {
+    padding: 0.75rem 1.25rem;
+    border: 2px solid white;
+    background: white;
+    color: var(--admin-color);
+    border-radius: 10px;
+    font-weight: 600;
+    font-size: 0.9rem;
+    cursor: pointer;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    transition: all 0.3s ease;
+  }
+
+  .nav-btn:hover {
+    background: var(--accent-color);
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+  }
+
+  /* Main Content */
+  .main-content {
+    display: none;
+  }
+
+  .main-content.visible {
+    display: block;
+  }
+
+  .container {
+    max-width: 1200px;
+    margin: 2rem auto;
+    padding: 0 1.5rem;
+  }
+
+  /* Info Boxes */
+  .info-box {
+    background: #eff6ff;
+    border-left: 4px solid #3b82f6;
+    padding: 1rem 1.25rem;
+    margin: 1rem 0;
+    border-radius: 0 8px 8px 0;
+  }
+
+  .warning-box {
+    background: #fffbeb;
+    border-left: 4px solid #f59e0b;
+    padding: 1rem 1.25rem;
+    margin: 1rem 0;
+    border-radius: 0 8px 8px 0;
+  }
+
+  .success-box {
+    background: #f0fdf4;
+    border-left: 4px solid #22c55e;
+    padding: 1rem 1.25rem;
+    margin: 1rem 0;
+    border-radius: 0 8px 8px 0;
+  }
+
+  .new-box {
+    background: #faf5ff;
+    border-left: 4px solid var(--admin-color);
+    padding: 1rem 1.25rem;
+    margin: 1rem 0;
+    border-radius: 0 8px 8px 0;
+  }
+
+  .info-box ul, .warning-box ul, .success-box ul, .new-box ul {
+    margin: 0.5rem 0 0 0;
+    padding-left: 1.25rem;
+  }
+
+  .info-box li, .warning-box li, .success-box li, .new-box li {
+    margin: 0.25rem 0;
+  }
+
+  /* Section Cards */
+  .section {
+    background: var(--card-bg);
+    border-radius: 16px;
+    margin-bottom: 1.5rem;
+    box-shadow: var(--shadow-sm);
+    overflow: hidden;
+  }
+
+  .section-header {
+    background: linear-gradient(135deg, var(--admin-color) 0%, var(--admin-secondary) 100%);
+    color: white;
+    padding: 1rem 1.5rem;
+    font-weight: 700;
+    font-size: 1.1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .section-content {
+    padding: 1.5rem;
+  }
+
+  .section h2 {
+    margin: 0 0 0.5rem 0;
+    color: var(--text-dark);
+    font-size: 1.1rem;
+  }
+
+  .section p {
+    color: var(--text-light);
+    margin: 0 0 1rem 0;
+  }
+
+  /* Buttons */
+  button {
+    padding: 0.75rem 1.5rem;
+    border: none;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 0.95rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  .btn-primary {
+    background: var(--admin-color);
+    color: white;
+  }
+
+  .btn-primary:hover:not(:disabled) {
+    background: var(--admin-secondary);
+    transform: translateY(-1px);
+  }
+
+  .btn-success {
+    background: var(--success-color);
+    color: white;
+  }
+
+  .btn-success:hover:not(:disabled) {
+    background: #16a34a;
+    transform: translateY(-1px);
+  }
+
+  .btn-secondary {
+    background: #64748b;
+    color: white;
+  }
+
+  .btn-secondary:hover:not(:disabled) {
+    background: #475569;
+  }
+
+  .btn-warning {
+    background: var(--warning-color);
+    color: white;
+  }
+
+  .btn-warning:hover:not(:disabled) {
+    background: #d97706;
+  }
+
+  /* Form Elements */
+  select {
+    padding: 0.75rem 1rem;
+    font-size: 1rem;
+    border: 2px solid var(--border-color);
+    border-radius: 8px;
+    min-width: 200px;
+    background: white;
+    cursor: pointer;
+    transition: border-color 0.2s;
+  }
+
+  select:focus {
+    outline: none;
+    border-color: var(--admin-color);
+  }
+
+  .flex-row {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+
+  /* Stats Grid */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 1rem;
+    margin: 1.5rem 0;
+  }
+
+  .stat-card {
+    background: #f8fafc;
+    padding: 1.25rem;
+    border-radius: 12px;
+    text-align: center;
+    border: 1px solid var(--border-color);
+  }
+
+  .stat-number {
+    font-size: 2rem;
+    font-weight: 800;
+    color: var(--admin-color);
+  }
+
+  .stat-number.green {
+    color: var(--success-color);
+  }
+
+  .stat-number.orange {
+    color: var(--warning-color);
+  }
+
+  .stat-number.blue {
+    color: #3b82f6;
+  }
+
+  .stat-label {
+    font-size: 0.8rem;
+    color: var(--text-light);
+    margin-top: 0.25rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  /* Console Output */
+  #output {
+    background: #1e293b;
+    color: #a5f3fc;
+    padding: 1.5rem;
+    border-radius: 12px;
+    max-height: 500px;
+    overflow-y: auto;
+    font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
+    font-size: 13px;
+    line-height: 1.7;
+    white-space: pre-wrap;
+    margin-top: 1.5rem;
+    border: 1px solid #334155;
+  }
+
+  #output::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  #output::-webkit-scrollbar-track {
+    background: #334155;
+    border-radius: 4px;
+  }
+
+  #output::-webkit-scrollbar-thumb {
+    background: #64748b;
+    border-radius: 4px;
+  }
+
+  /* Responsive */
+  @media (max-width: 768px) {
+    .header {
+      padding: 1.5rem 1rem;
+    }
+
+    .header h1 {
+      font-size: 1.4rem;
+    }
+
+    .header-content {
+      flex-direction: column;
+      text-align: center;
+      gap: 1rem;
+    }
+
+    .header-buttons {
+      width: 100%;
+      justify-content: center;
+    }
+
+    .flex-row {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    select {
+      width: 100%;
+    }
+
+    button {
+      width: 100%;
+      justify-content: center;
+    }
+  }
+</style>
+</head>
+<body>
+
+<!-- Loading Overlay -->
+<div class="loading-overlay" id="loadingOverlay">
+  <div class="loading-spinner"></div>
+  <div class="loading-text">Checking permissions...</div>
+</div>
+
+<!-- Auth Gate (shown if not authorized) -->
+<div class="auth-gate" id="authGate">
+  <h2>🔒 Admin Access Required</h2>
+  <p>You need admin or league staff permissions to access the Stats Aggregator.</p>
+  <a href="signin.html">Sign In</a>
+  <a href="index.html" style="background: var(--primary-color);">Back to Home</a>
+</div>
+
+<!-- Main Content (shown if authorized) -->
+<div class="main-content" id="mainContent">
+  
+  <!-- Header -->
+  <header class="header">
+    <div class="header-content">
+      <div>
+        <h1>📊 Stats Aggregator</h1>
+        <p>Aggregate game-level stats into season and career totals</p>
+        <span class="admin-badge">🔒 Admin Tool</span>
+      </div>
+      <div class="header-buttons">
+        <a href="admin-content.html" class="nav-btn">
+          ← Back to Admin
+        </a>
+        <a href="index.html" class="nav-btn">
+          🏠 Home
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <div class="container">
+    
+    <!-- Info Boxes -->
+    <div class="new-box">
+      <strong>🆕 Game-Level Stats Support (2026+)</strong>
+      <ul>
+        <li><strong>Historical seasons (pre-2026):</strong> Uses existing aggregated data (no changes)</li>
+        <li><strong>2026-summer and beyond:</strong> Aggregates from game-level stats</li>
+        <li><strong>Career totals:</strong> Recalculated from ALL seasons combined</li>
+      </ul>
+    </div>
+
+    <div class="success-box">
+      <strong>✅ No Duplicates - Hybrid Approach</strong>
+      <ul>
+        <li><strong>Auth users:</strong> Aggregates from their linked player stats</li>
+        <li><strong>Legacy players:</strong> Aggregates normally (not migrated)</li>
+        <li><strong>Migrated profiles:</strong> Skipped (prevents duplicates)</li>
+      </ul>
+    </div>
+
+    <!-- Section 1: Aggregate Game-Based Season -->
+    <div class="section">
+      <div class="section-header">
+        🎮 Step 1: Aggregate Game-Level Stats (2026+)
+      </div>
+      <div class="section-content">
+        <p>Select a season that uses game-level stats collection:</p>
+        
+        <div class="flex-row">
+          <select id="seasonSelect">
+            <option value="">-- Select Season --</option>
+            <option value="2026-summer">2026 Summer</option>
+            <option value="2026-fall">2026 Fall</option>
+            <option value="2027-summer">2027 Summer</option>
+            <option value="2027-fall">2027 Fall</option>
+          </select>
+          <button id="previewSeasonBtn" class="btn-success" onclick="previewGameBasedSeason()">
+            👁️ Preview
+          </button>
+          <button id="aggregateSeasonBtn" class="btn-primary" onclick="aggregateGameBasedSeason()">
+            🎮 Aggregate Season
+          </button>
+        </div>
+        
+        <div class="info-box" style="margin-top: 1rem;">
+          <strong>💡 Tip:</strong> Use "Preview" first to see what will be aggregated without making any changes.
+        </div>
+        
+        <div class="stats" id="seasonStatsDisplay" style="display: none;">
+          <div class="stat-card">
+            <div class="stat-number" id="playersWithGames">0</div>
+            <div class="stat-label">Players Found</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-number blue" id="totalGamesProcessed">0</div>
+            <div class="stat-label">Games Processed</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-number green" id="battingUpdated">0</div>
+            <div class="stat-label">Batting Updated</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-number orange" id="pitchingUpdated">0</div>
+            <div class="stat-label">Pitching Updated</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Section 2: Full Career Recalculation -->
+    <div class="section">
+      <div class="section-header">
+        🔄 Step 2: Career Recalculation (Optional)
+      </div>
+      <div class="section-content">
+        <p>Recalculates career totals from ALL seasons (historical + game-based). Only needed if data gets out of sync.</p>
+        
+        <div class="flex-row">
+          <button id="aggregateBtn" class="btn-warning" onclick="runFullAggregation()">
+            🚀 Recalculate All Careers
+          </button>
+          <button id="verifyBtn" class="btn-success" onclick="verifyAggregation()">
+            ✓ Verify Collection
+          </button>
+          <button onclick="clearOutput()" class="btn-secondary">
+            Clear Output
+          </button>
+        </div>
+
+        <div class="stats" id="fullStatsDisplay" style="display: none;">
+          <div class="stat-card">
+            <div class="stat-number" id="playersProcessed">0</div>
+            <div class="stat-label">Processed</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-number blue" id="legacyCount">0</div>
+            <div class="stat-label">Legacy</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-number green" id="authCount">0</div>
+            <div class="stat-label">Auth Users</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-number orange" id="skippedCount">0</div>
+            <div class="stat-label">Skipped</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-number" id="errorCount" style="color: var(--danger-color);">0</div>
+            <div class="stat-label">Errors</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Console Output -->
+    <div id="output">Initializing...</div>
+
+  </div>
+</div>
+
+<!-- Firebase Auth Script -->
+<script type="module">
+  import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+  import { 
+    getAuth, 
+    onAuthStateChanged 
+  } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
+  import {
+    getFirestore,
+    collection,
+    collectionGroup,
+    doc,
+    getDocs,
+    getDoc,
+    setDoc,
+    updateDoc,
+    query,
+    where
+  } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+
+  // Firebase configuration
+  const firebaseConfig = {
+    apiKey: "AIzaSyCAEWkrTcprzJ2KPPJu-vFJPvYOVU4ky20",
+    authDomain: "acessoftballreference-84791.firebaseapp.com",
+    projectId: "acessoftballreference-84791",
+    storageBucket: "acessoftballreference-84791.firebasestorage.app",
+    messagingSenderId: "777699560175",
+    appId: "1:777699560175:web:4092b422e7d7116352e91a"
+  };
+
+  // Initialize Firebase
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+
+  // Make functions globally available
+  window.db = db;
+  window.collection = collection;
+  window.collectionGroup = collectionGroup;
+  window.doc = doc;
+  window.getDocs = getDocs;
+  window.getDoc = getDoc;
+  window.setDoc = setDoc;
+  window.updateDoc = updateDoc;
+  window.query = query;
+  window.where = where;
+
+  // Seasons that use game-level stats
+  const GAME_BASED_SEASONS = ['2026-summer', '2026-fall', '2027-summer', '2027-fall'];
+
+  // ============================================
+  // AUTH CHECK
+  // ============================================
+  
+  onAuthStateChanged(auth, async (user) => {
+    const loadingOverlay = document.getElementById('loadingOverlay');
+    const authGate = document.getElementById('authGate');
+    const mainContent = document.getElementById('mainContent');
+    
+    if (!user) {
+      // Not signed in
+      loadingOverlay.classList.add('hidden');
+      authGate.classList.add('visible');
+      return;
+    }
+
+    try {
+      // Check user role in Firestore
+      const userDoc = await getDoc(doc(db, 'users', user.uid));
+      
+      if (!userDoc.exists()) {
+        loadingOverlay.classList.add('hidden');
+        authGate.classList.add('visible');
+        authGate.querySelector('h2').textContent = '🔒 Profile Not Found';
+        authGate.querySelector('p').textContent = 'Your user profile was not found. Please contact an administrator.';
+        return;
+      }
+
+      const userData = userDoc.data();
+      const userRole = (userData.userRole || userData.role || '').toLowerCase();
+      
+      // Check if admin or league-staff
+      if (userRole === 'admin' || userRole === 'league-staff') {
+        // Authorized!
+        loadingOverlay.classList.add('hidden');
+        mainContent.classList.add('visible');
+        log(`✓ Welcome, ${userData.displayName || userData.name || user.email}!`);
+        log(`✓ Role: ${userRole}`);
+        log(`✓ Game-based seasons configured: ${GAME_BASED_SEASONS.join(', ')}`);
+        log('');
+        log('Ready to aggregate stats. Select a season and click Preview or Aggregate.');
+      } else {
+        // Not authorized
+        loadingOverlay.classList.add('hidden');
+        authGate.classList.add('visible');
+        authGate.querySelector('p').textContent = `Your role (${userRole || 'none'}) does not have access to this tool. Admin or league-staff required.`;
+      }
+      
+    } catch (error) {
+      console.error('Error checking permissions:', error);
+      loadingOverlay.classList.add('hidden');
+      authGate.classList.add('visible');
+      authGate.querySelector('p').textContent = 'Error checking permissions. Please try again.';
+    }
+  });
+
+  // ============================================
+  // UTILITY FUNCTIONS
+  // ============================================
+
+  function log(message, type = 'info') {
+    const output = document.getElementById('output');
+    const timestamp = new Date().toLocaleTimeString();
+    let prefix = '◆';
+    
+    if (type === 'success') prefix = '✓';
+    if (type === 'error') prefix = '✗';
+    if (type === 'header') prefix = '═══';
+    if (type === 'auth') prefix = '🔐';
+    if (type === 'legacy') prefix = '📁';
+    if (type === 'skip') prefix = '⏭️';
+    if (type === 'game') prefix = '🎮';
+    if (type === 'pitching') prefix = '⚾';
+    
+    const line = `[${timestamp}] ${prefix} ${message}\n`;
+    output.textContent += line;
+    output.scrollTop = output.scrollHeight;
+  }
+  window.log = log;
+
+  function updateSeasonStats(players, games, batting, pitching) {
+    document.getElementById('seasonStatsDisplay').style.display = 'grid';
+    document.getElementById('playersWithGames').textContent = players;
+    document.getElementById('totalGamesProcessed').textContent = games;
+    document.getElementById('battingUpdated').textContent = batting;
+    document.getElementById('pitchingUpdated').textContent = pitching;
+  }
+  window.updateSeasonStats = updateSeasonStats;
+
+  function updateFullStats(processed, legacy, auth, skipped, errors) {
+    document.getElementById('fullStatsDisplay').style.display = 'grid';
+    document.getElementById('playersProcessed').textContent = processed;
+    document.getElementById('legacyCount').textContent = legacy;
+    document.getElementById('authCount').textContent = auth;
+    document.getElementById('skippedCount').textContent = skipped;
+    document.getElementById('errorCount').textContent = errors;
+  }
+  window.updateFullStats = updateFullStats;
+
+  window.clearOutput = function() {
+    document.getElementById('output').textContent = 'Output cleared. Ready for new operations.\n';
+    document.getElementById('seasonStatsDisplay').style.display = 'none';
+    document.getElementById('fullStatsDisplay').style.display = 'none';
+  };
+
+  // ============================================
+  // PREVIEW FUNCTION (READ-ONLY)
+  // ============================================
+
+  window.previewGameBasedSeason = async function() {
+    const seasonId = document.getElementById('seasonSelect').value;
+    if (!seasonId) {
+      alert('Please select a season first');
+      return;
+    }
+
+    const btn = document.getElementById('previewSeasonBtn');
+    btn.disabled = true;
+    btn.textContent = '⏳ Loading...';
+
+    log('═══════════════════════════════════════', 'header');
+    log(`PREVIEW: Game-Level Stats for ${seasonId}`, 'header');
+    log('⚠️  NO CHANGES WILL BE MADE TO DATABASE', 'header');
+    log('═══════════════════════════════════════', 'header');
+
+    try {
+      // STEP 1: Find all game documents
+      log('Step 1: Finding players with game stats...', 'game');
+      
+      const gamesQuery = window.query(
+        window.collectionGroup(window.db, 'games'),
+        window.where('seasonId', '==', seasonId)
+      );
+      
+      let allGames;
+      try {
+        allGames = await window.getDocs(gamesQuery);
+      } catch (indexError) {
+        if (indexError.message.includes('index')) {
+          log('⚠️ Collection group index required!', 'error');
+          log('Click the link in the browser console to create it.', 'error');
+          log('Then re-run this preview.', 'error');
+          console.error('Index creation link:', indexError);
+          btn.disabled = false;
+          btn.textContent = '👁️ Preview';
+          return;
+        }
+        throw indexError;
+      }
+
+      log(`Found ${allGames.size} total game documents`, 'success');
+
+      // Separate batting and pitching games by path
+      const playerBattingGames = new Map();
+      const playerPitchingGames = new Map();
+      
+      allGames.forEach(gameDoc => {
+        const pathParts = gameDoc.ref.path.split('/');
+        const collectionName = pathParts[0];
+        const playerId = pathParts[1];
+        
+        if (collectionName === 'playerStats') {
+          if (!playerBattingGames.has(playerId)) {
+            playerBattingGames.set(playerId, []);
+          }
+          playerBattingGames.get(playerId).push({
+            gameId: gameDoc.id,
+            ...gameDoc.data()
+          });
+        } else if (collectionName === 'pitchingStats') {
+          if (!playerPitchingGames.has(playerId)) {
+            playerPitchingGames.set(playerId, []);
+          }
+          playerPitchingGames.get(playerId).push({
+            gameId: gameDoc.id,
+            ...gameDoc.data()
+          });
+        }
+      });
+
+      log(`Found ${playerBattingGames.size} players with batting games`, 'success');
+      log(`Found ${playerPitchingGames.size} players with pitching games`, 'success');
+
+      // STEP 2: Preview batting aggregations
+      log('');
+      log('Step 2: Previewing batting aggregations...', 'game');
+
+      const previewData = [];
+      let totalGamesProcessed = 0;
+
+      for (const [playerId, games] of playerBattingGames) {
+        const seasonTotals = {
+          games: games.length,
+          atBats: 0,
+          hits: 0,
+          runs: 0,
+          walks: 0,
+          playerName: null,
+          team: null
+        };
+
+        games.forEach(game => {
+          seasonTotals.atBats += game.atBats || 0;
+          seasonTotals.hits += game.hits || 0;
+          seasonTotals.runs += game.runs || 0;
+          seasonTotals.walks += game.walks || 0;
+          if (!seasonTotals.playerName) seasonTotals.playerName = game.playerName || '';
+          if (!seasonTotals.team) seasonTotals.team = game.teamId || '';
+        });
+
+        seasonTotals.battingAverage = seasonTotals.atBats > 0
+          ? seasonTotals.hits / seasonTotals.atBats
+          : 0;
+
+        // Check if player exists
+        const aggregatedRef = window.doc(window.db, 'aggregatedPlayerStats', playerId);
+        const existingDoc = await window.getDoc(aggregatedRef);
+        const isNewPlayer = !existingDoc.exists();
+        const existingSeasonCount = existingDoc.exists() 
+          ? Object.keys(existingDoc.data().seasons || {}).length 
+          : 0;
+
+        const avgDisplay = seasonTotals.atBats > 0 
+          ? '.' + (seasonTotals.battingAverage * 1000).toFixed(0).padStart(3, '0')
+          : '.000';
+
+        const status = isNewPlayer ? ' [NEW PLAYER]' : ` [${existingSeasonCount} existing seasons]`;
+        log(`  👁️ ${seasonTotals.playerName || playerId}: ${games.length} G, ${seasonTotals.hits}/${seasonTotals.atBats} (${avgDisplay})${status}`, 'success');
+
+        previewData.push({
+          playerId,
+          playerName: seasonTotals.playerName || playerId,
+          type: 'batting',
+          games: games.length,
+          seasonTotals,
+          isNewPlayer,
+          existingSeasonCount
+        });
+
+        totalGamesProcessed += games.length;
+      }
+
+      updateSeasonStats(playerBattingGames.size, totalGamesProcessed, playerBattingGames.size, playerPitchingGames.size);
+
+      // STEP 3: Preview pitching
+      if (playerPitchingGames.size > 0) {
+        log('');
+        log('Step 3: Previewing pitching aggregations...', 'pitching');
+
+        for (const [playerId, games] of playerPitchingGames) {
+          const pitchingTotals = {
+            games: games.length,
+            inningsPitched: 0,
+            runsAllowed: 0,
+            playerName: null
+          };
+
+          games.forEach(game => {
+            pitchingTotals.inningsPitched += game.inningsPitched || 0;
+            pitchingTotals.runsAllowed += game.runsAllowed || 0;
+            if (!pitchingTotals.playerName) pitchingTotals.playerName = game.playerName || '';
+          });
+
+          pitchingTotals.earnedRunAverage = pitchingTotals.inningsPitched > 0
+            ? (pitchingTotals.runsAllowed * 7) / pitchingTotals.inningsPitched
+            : 0;
+
+          log(`  👁️ ⚾ ${pitchingTotals.playerName || playerId}: ${pitchingTotals.inningsPitched} IP, ${pitchingTotals.earnedRunAverage.toFixed(2)} ERA`, 'pitching');
+
+          previewData.push({
+            playerId,
+            playerName: pitchingTotals.playerName || playerId,
+            type: 'pitching',
+            games: games.length,
+            pitchingTotals
+          });
+        }
+      }
+
+      // SUMMARY
+      log('');
+      log('═══════════════════════════════════════', 'header');
+      log('PREVIEW SUMMARY', 'header');
+      log('═══════════════════════════════════════', 'header');
+      log(`📊 Players with batting stats: ${playerBattingGames.size}`);
+      log(`⚾ Players with pitching stats: ${playerPitchingGames.size}`);
+      log(`🎮 Total games to process: ${totalGamesProcessed}`);
+
+      const newPlayers = previewData.filter(p => p.isNewPlayer && p.type === 'batting');
+      if (newPlayers.length > 0) {
+        log('');
+        log(`🆕 NEW PLAYERS (${newPlayers.length}):`, 'header');
+        newPlayers.forEach(p => {
+          log(`   • ${p.playerName} - will create new aggregatedPlayerStats document`);
+        });
+      }
+
+      const battingPreviews = previewData.filter(p => p.type === 'batting' && p.seasonTotals.atBats >= 10);
+      if (battingPreviews.length > 0) {
+        battingPreviews.sort((a, b) => b.seasonTotals.battingAverage - a.seasonTotals.battingAverage);
+        log('');
+        log('🏆 TOP BATTING AVERAGES (min 10 AB):', 'header');
+        battingPreviews.slice(0, 5).forEach((p, i) => {
+          const avg = '.' + (p.seasonTotals.battingAverage * 1000).toFixed(0).padStart(3, '0');
+          log(`   ${i + 1}. ${p.playerName}: ${avg} (${p.seasonTotals.hits}/${p.seasonTotals.atBats})`);
+        });
+      }
+
+      log('');
+      log('═══════════════════════════════════════', 'header');
+      log('✅ Preview complete. No changes were made.', 'success');
+      log('👉 Click "Aggregate Season" to save these changes.', 'success');
+      log('═══════════════════════════════════════', 'header');
+
+    } catch (error) {
+      log(`Fatal error: ${error.message}`, 'error');
+      console.error('Preview error:', error);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '👁️ Preview';
+    }
+  };
+
+  // ============================================
+  // AGGREGATION FUNCTION
+  // ============================================
+
+  window.aggregateGameBasedSeason = async function() {
+    const seasonId = document.getElementById('seasonSelect').value;
+    if (!seasonId) {
+      alert('Please select a season first');
+      return;
+    }
+
+    const confirmed = confirm(
+      `This will aggregate all game stats for ${seasonId} and update career totals.\n\n` +
+      `💡 Tip: Use "Preview" first to see what will change.\n\n` +
+      `Continue with aggregation?`
+    );
+    if (!confirmed) return;
+
+    const btn = document.getElementById('aggregateSeasonBtn');
+    btn.disabled = true;
+    btn.textContent = '⏳ Processing...';
+
+    log('═══════════════════════════════════════', 'header');
+    log(`Aggregating Game-Level Stats for ${seasonId}`, 'header');
+    log('═══════════════════════════════════════', 'header');
+
+    try {
+      // STEP 1: Find all game documents
+      log('Step 1: Finding players with game stats...', 'game');
+      
+      const gamesQuery = window.query(
+        window.collectionGroup(window.db, 'games'),
+        window.where('seasonId', '==', seasonId)
+      );
+      
+      let allGames;
+      try {
+        allGames = await window.getDocs(gamesQuery);
+      } catch (indexError) {
+        if (indexError.message.includes('index')) {
+          log('⚠️ Collection group index required!', 'error');
+          log('Click the link in the browser console to create it.', 'error');
+          console.error('Index creation link:', indexError);
+          btn.disabled = false;
+          btn.textContent = '🎮 Aggregate Season';
+          return;
+        }
+        throw indexError;
+      }
+
+      log(`Found ${allGames.size} total game documents`, 'success');
+
+      // Separate batting and pitching games
+      const playerBattingGames = new Map();
+      const playerPitchingGames = new Map();
+      
+      allGames.forEach(gameDoc => {
+        const pathParts = gameDoc.ref.path.split('/');
+        const collectionName = pathParts[0];
+        const playerId = pathParts[1];
+        
+        if (collectionName === 'playerStats') {
+          if (!playerBattingGames.has(playerId)) {
+            playerBattingGames.set(playerId, []);
+          }
+          playerBattingGames.get(playerId).push({
+            gameId: gameDoc.id,
+            ...gameDoc.data()
+          });
+        } else if (collectionName === 'pitchingStats') {
+          if (!playerPitchingGames.has(playerId)) {
+            playerPitchingGames.set(playerId, []);
+          }
+          playerPitchingGames.get(playerId).push({
+            gameId: gameDoc.id,
+            ...gameDoc.data()
+          });
+        }
+      });
+
+      log(`Found ${playerBattingGames.size} players with batting games`, 'success');
+      log(`Found ${playerPitchingGames.size} players with pitching games`, 'success');
+
+      // STEP 2: Aggregate batting stats
+      log('');
+      log('Step 2: Aggregating batting stats...', 'game');
+
+      let battingUpdatedCount = 0;
+      let pitchingUpdatedCount = 0;
+      let totalGamesProcessed = 0;
+      let errorCount = 0;
+
+      for (const [playerId, games] of playerBattingGames) {
+        try {
+          const seasonTotals = {
+            games: games.length,
+            atBats: 0,
+            hits: 0,
+            runs: 0,
+            walks: 0,
+            doubles: 0,
+            triples: 0,
+            homeRuns: 0,
+            rbi: 0,
+            strikeouts: 0,
+            stolenBases: 0,
+            team: null,
+            playerName: null
+          };
+
+          games.forEach(game => {
+            seasonTotals.atBats += game.atBats || 0;
+            seasonTotals.hits += game.hits || 0;
+            seasonTotals.runs += game.runs || 0;
+            seasonTotals.walks += game.walks || 0;
+            seasonTotals.doubles += game.doubles || 0;
+            seasonTotals.triples += game.triples || 0;
+            seasonTotals.homeRuns += game.homeRuns || 0;
+            seasonTotals.rbi += game.rbi || 0;
+            seasonTotals.strikeouts += game.strikeouts || 0;
+            seasonTotals.stolenBases += game.stolenBases || 0;
+            if (!seasonTotals.team) seasonTotals.team = game.teamId || '';
+            if (!seasonTotals.playerName) seasonTotals.playerName = game.playerName || '';
+          });
+
+          seasonTotals.battingAverage = seasonTotals.atBats > 0 ? seasonTotals.hits / seasonTotals.atBats : 0;
+          seasonTotals.onBasePercentage = (seasonTotals.atBats + seasonTotals.walks) > 0
+            ? (seasonTotals.hits + seasonTotals.walks) / (seasonTotals.atBats + seasonTotals.walks) : 0;
+          seasonTotals.acesBPI = seasonTotals.games > 0
+            ? (seasonTotals.runs + seasonTotals.hits + seasonTotals.walks) / seasonTotals.games : 0;
+
+          // Get existing data
+          const aggregatedRef = window.doc(window.db, 'aggregatedPlayerStats', playerId);
+          const existingDoc = await window.getDoc(aggregatedRef);
+          const existingData = existingDoc.exists() ? existingDoc.data() : {};
+          const existingSeasons = { ...(existingData.seasons || {}) };
+
+          existingSeasons[seasonId] = seasonTotals;
+
+          const career = recalculateCareer(existingSeasons);
+
+          await window.setDoc(aggregatedRef, {
+            ...existingData,
+            name: existingData.name || seasonTotals.playerName,
+            seasons: existingSeasons,
+            career: career,
+            totalSeasons: Object.keys(existingSeasons).length,
+            lastUpdated: new Date(),
+            lastGameAggregation: seasonId
+          }, { merge: true });
+
+          totalGamesProcessed += games.length;
+          battingUpdatedCount++;
+
+          const avgDisplay = seasonTotals.atBats > 0 
+            ? '.' + (seasonTotals.battingAverage * 1000).toFixed(0).padStart(3, '0') : '.000';
+          log(`  ✓ ${seasonTotals.playerName || playerId}: ${games.length} G, ${seasonTotals.hits}/${seasonTotals.atBats} (${avgDisplay})`, 'success');
+
+          updateSeasonStats(playerBattingGames.size, totalGamesProcessed, battingUpdatedCount, pitchingUpdatedCount);
+
+        } catch (error) {
+          log(`  ✗ Error with ${playerId}: ${error.message}`, 'error');
+          errorCount++;
+        }
+      }
+
+      // STEP 3: Aggregate pitching stats
+      if (playerPitchingGames.size > 0) {
+        log('');
+        log('Step 3: Aggregating pitching stats...', 'pitching');
+
+        for (const [playerId, games] of playerPitchingGames) {
+          try {
+            const pitchingTotals = {
+              games: games.length,
+              inningsPitched: 0,
+              runsAllowed: 0,
+              earnedRuns: 0,
+              strikeouts: 0,
+              walks: 0,
+              hits: 0,
+              wins: 0,
+              losses: 0,
+              saves: 0,
+              playerName: null
+            };
+
+            games.forEach(game => {
+              pitchingTotals.inningsPitched += game.inningsPitched || 0;
+              pitchingTotals.runsAllowed += game.runsAllowed || 0;
+              pitchingTotals.earnedRuns += game.earnedRuns || 0;
+              pitchingTotals.strikeouts += game.strikeouts || 0;
+              pitchingTotals.walks += game.walks || 0;
+              pitchingTotals.hits += game.hits || 0;
+              pitchingTotals.wins += game.wins || 0;
+              pitchingTotals.losses += game.losses || 0;
+              pitchingTotals.saves += game.saves || 0;
+              if (!pitchingTotals.playerName) pitchingTotals.playerName = game.playerName || '';
+            });
+
+            pitchingTotals.earnedRunAverage = pitchingTotals.inningsPitched > 0
+              ? (pitchingTotals.runsAllowed * 7) / pitchingTotals.inningsPitched : 0;
+
+            const aggregatedRef = window.doc(window.db, 'aggregatedPlayerStats', playerId);
+            const existingDoc = await window.getDoc(aggregatedRef);
+            const existingData = existingDoc.exists() ? existingDoc.data() : {};
+            const existingPitchingSeasons = { ...(existingData.pitchingSeasons || {}) };
+
+            existingPitchingSeasons[seasonId] = pitchingTotals;
+            const pitchingCareer = recalculatePitchingCareer(existingPitchingSeasons);
+
+            await window.setDoc(aggregatedRef, {
+              pitchingSeasons: existingPitchingSeasons,
+              'career.pitching': pitchingCareer,
+              hasPitchingStats: true,
+              lastUpdated: new Date()
+            }, { merge: true });
+
+            pitchingUpdatedCount++;
+            log(`  ⚾ ${pitchingTotals.playerName || playerId}: ${pitchingTotals.inningsPitched} IP, ${pitchingTotals.earnedRunAverage.toFixed(2)} ERA`, 'pitching');
+
+            updateSeasonStats(playerBattingGames.size, totalGamesProcessed, battingUpdatedCount, pitchingUpdatedCount);
+
+          } catch (error) {
+            log(`  ✗ Pitching error ${playerId}: ${error.message}`, 'error');
+          }
+        }
+      }
+
+      // COMPLETE
+      log('');
+      log('═══════════════════════════════════════', 'header');
+      log(`Season Aggregation Complete: ${seasonId}`, 'header');
+      log('═══════════════════════════════════════', 'header');
+      log(`✓ Players with batting: ${battingUpdatedCount}`, 'success');
+      log(`✓ Players with pitching: ${pitchingUpdatedCount}`, 'success');
+      log(`✓ Total games processed: ${totalGamesProcessed}`, 'success');
+      if (errorCount > 0) {
+        log(`✗ Errors: ${errorCount}`, 'error');
+      }
+      log('');
+      log('💡 Career totals have been recalculated automatically.');
+
+    } catch (error) {
+      log(`Fatal error: ${error.message}`, 'error');
+      console.error('Aggregation error:', error);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '🎮 Aggregate Season';
+    }
+  };
+
+  // ============================================
+  // CAREER CALCULATION HELPERS
+  // ============================================
+
+  function recalculateCareer(seasonsObject) {
+    const career = {
+      games: 0, atBats: 0, hits: 0, runs: 0, walks: 0,
+      doubles: 0, triples: 0, homeRuns: 0, rbi: 0,
+      strikeouts: 0, stolenBases: 0,
+      acesBPITotal: 0, acesBPICount: 0
+    };
+
+    Object.entries(seasonsObject).forEach(([seasonId, season]) => {
+      career.games += season.games || 0;
+      career.atBats += season.atBats || 0;
+      career.hits += season.hits || 0;
+      career.runs += season.runs || 0;
+      career.walks += season.walks || 0;
+      career.doubles += season.doubles || 0;
+      career.triples += season.triples || 0;
+      career.homeRuns += season.homeRuns || 0;
+      career.rbi += season.rbi || 0;
+      career.strikeouts += season.strikeouts || 0;
+      career.stolenBases += season.stolenBases || 0;
+      
+      const sub = (season.sub || '').toLowerCase();
+      if (season.acesBPI && season.acesBPI > 0 && sub !== 'yes') {
+        career.acesBPITotal += season.acesBPI;
+        career.acesBPICount++;
+      }
+    });
+
+    career.battingAverage = career.atBats > 0 ? career.hits / career.atBats : 0;
+    career.onBasePercentage = (career.atBats + career.walks) > 0
+      ? (career.hits + career.walks) / (career.atBats + career.walks) : 0;
+    career.acesBPI = career.acesBPICount > 0 ? career.acesBPITotal / career.acesBPICount : 0;
+
+    delete career.acesBPITotal;
+    delete career.acesBPICount;
+
+    return career;
+  }
+
+  function recalculatePitchingCareer(pitchingSeasonsObject) {
+    const career = {
+      games: 0, inningsPitched: 0, runsAllowed: 0, earnedRuns: 0,
+      strikeouts: 0, walks: 0, hits: 0, wins: 0, losses: 0, saves: 0
+    };
+
+    Object.values(pitchingSeasonsObject).forEach(season => {
+      career.games += season.games || 0;
+      career.inningsPitched += season.inningsPitched || 0;
+      career.runsAllowed += season.runsAllowed || 0;
+      career.earnedRuns += season.earnedRuns || 0;
+      career.strikeouts += season.strikeouts || 0;
+      career.walks += season.walks || 0;
+      career.hits += season.hits || 0;
+      career.wins += season.wins || 0;
+      career.losses += season.losses || 0;
+      career.saves += season.saves || 0;
+    });
+
+    career.earnedRunAverage = career.inningsPitched > 0
+      ? (career.runsAllowed * 7) / career.inningsPitched : 0;
+
+    return career;
+  }
+
+  // ============================================
+  // FULL AGGREGATION (LEGACY)
+  // ============================================
+
+  window.runFullAggregation = async function() {
+    const confirmed = confirm(
+      'This will recalculate career stats for ALL players from their season data.\n\n' +
+      'This is typically only needed if data gets out of sync.\n\n' +
+      'Continue?'
+    );
+    if (!confirmed) return;
+
+    const btn = document.getElementById('aggregateBtn');
+    btn.disabled = true;
+    btn.textContent = '⏳ Processing...';
+    
+    log('═══════════════════════════════════════', 'header');
+    log('Full Career Recalculation', 'header');
+    log('═══════════════════════════════════════', 'header');
+    
+    try {
+      const aggregatedRef = window.collection(window.db, 'aggregatedPlayerStats');
+      const allPlayersSnapshot = await window.getDocs(aggregatedRef);
+      
+      log(`Found ${allPlayersSnapshot.size} players in aggregatedPlayerStats`);
+      
+      let processed = 0, legacyCount = 0, authCount = 0, migratedCount = 0, errorCount = 0;
+
+      for (const playerDoc of allPlayersSnapshot.docs) {
+        const playerData = playerDoc.data();
+
+        if (playerData.migrated === true) {
+          migratedCount++;
+          continue;
+        }
+
+        try {
+          processed++;
+          if (playerData.isAuthUser) authCount++; else legacyCount++;
+
+          if (playerData.seasons && Object.keys(playerData.seasons).length > 0) {
+            const career = recalculateCareer(playerData.seasons);
+            await window.updateDoc(playerDoc.ref, { career: career, lastUpdated: new Date() });
+            log(`  ✓ ${playerData.name || playerDoc.id}: ${career.games} G, .${(career.battingAverage * 1000).toFixed(0)} AVG`, 'success');
+          }
+
+          if (playerData.pitchingSeasons && Object.keys(playerData.pitchingSeasons).length > 0) {
+            const pitchingCareer = recalculatePitchingCareer(playerData.pitchingSeasons);
+            await window.updateDoc(playerDoc.ref, { 'career.pitching': pitchingCareer });
+          }
+
+          updateFullStats(processed, legacyCount, authCount, migratedCount, errorCount);
+
+        } catch (error) {
+          log(`  ✗ Error with ${playerData.name || playerDoc.id}: ${error.message}`, 'error');
+          errorCount++;
+        }
+      }
+
+      log('═══════════════════════════════════════', 'header');
+      log('Full Aggregation Complete!', 'header');
+      log(`✓ Processed: ${processed}`, 'success');
+      log(`📁 Legacy: ${legacyCount}`, 'legacy');
+      log(`🔐 Auth users: ${authCount}`, 'auth');
+      log(`⏭️ Skipped: ${migratedCount}`, 'skip');
+      if (errorCount > 0) log(`✗ Errors: ${errorCount}`, 'error');
+
+    } catch (error) {
+      log(`Fatal error: ${error.message}`, 'error');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '🚀 Recalculate All Careers';
+    }
+  };
+
+  // ============================================
+  // VERIFICATION
+  // ============================================
+
+  window.verifyAggregation = async function() {
+    const btn = document.getElementById('verifyBtn');
+    btn.disabled = true;
+    
+    log('═══════════════════════════════════════', 'header');
+    log('Verifying Aggregated Collection', 'header');
+    log('═══════════════════════════════════════', 'header');
+    
+    try {
+      const statsRef = window.collection(window.db, 'aggregatedPlayerStats');
+      const snapshot = await window.getDocs(statsRef);
+      
+      log(`Found ${snapshot.size} documents in aggregatedPlayerStats`, 'success');
+      
+      let authUserCount = 0, legacyCount = 0, migratedCount = 0, hasGameBasedSeasons = 0;
+      const issues = [];
+      
+      snapshot.docs.forEach(doc => {
+        const data = doc.data();
+        
+        if (data.migrated) migratedCount++;
+        else if (data.isAuthUser) authUserCount++;
+        else legacyCount++;
+        
+        if (data.seasons) {
+          const hasGameBased = Object.keys(data.seasons).some(s => GAME_BASED_SEASONS.includes(s));
+          if (hasGameBased) hasGameBasedSeasons++;
+        }
+        
+        if (!data.name && !data.displayName) issues.push(`${doc.id}: Missing name`);
+        if (data.career && data.career.battingAverage > 1) issues.push(`${doc.id}: Invalid batting average`);
+      });
+      
+      log(`\n📊 Breakdown:`);
+      log(`  📁 Legacy players: ${legacyCount}`);
+      log(`  🔐 Auth users: ${authUserCount}`);
+      log(`  ⏭️ Migrated: ${migratedCount}`);
+      log(`  🎮 Has 2026+ seasons: ${hasGameBasedSeasons}`);
+      log(`  📈 Active total: ${legacyCount + authUserCount}`);
+      
+      // Check for duplicates
+      const nameMap = new Map();
+      snapshot.docs.forEach(doc => {
+        const data = doc.data();
+        if (data.migrated) return;
+        const name = data.name || data.displayName;
+        if (name) {
+          if (!nameMap.has(name)) nameMap.set(name, []);
+          nameMap.get(name).push(doc.id);
+        }
+      });
+      
+      const duplicates = Array.from(nameMap.entries()).filter(([name, ids]) => ids.length > 1);
+      
+      if (duplicates.length > 0) {
+        log(`\n⚠️ Potential duplicates found:`, 'error');
+        duplicates.forEach(([name, ids]) => log(`  ${name}: ${ids.join(', ')}`, 'error'));
+      } else {
+        log(`\n✅ No duplicates found!`, 'success');
+      }
+      
+      if (issues.length > 0) {
+        log(`\n⚠️ Issues found:`, 'error');
+        issues.slice(0, 10).forEach(issue => log(`  ${issue}`, 'error'));
+        if (issues.length > 10) log(`  ... and ${issues.length - 10} more`, 'error');
+      } else {
+        log(`\n✅ No data issues found!`, 'success');
+      }
+      
+    } catch (error) {
+      log(`Verification error: ${error.message}`, 'error');
+    } finally {
+      btn.disabled = false;
+    }
+  };
+</script>
+
+<script type="module">
+  import { NavigationComponent } from './nav-component.js';
+</script>
+<script src="mobile-enhancements.js"></script>
+</body>
+</html>
