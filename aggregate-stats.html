@@ -548,11 +548,33 @@
         🎮 Step 1: Aggregate Game-Level Stats (2026+)
       </div>
       <div class="section-content">
+        
+        <!-- Test Mode Banner (hidden by default) -->
+        <div id="testModeBanner" style="
+          display: none;
+          background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+          border: 2px solid #f59e0b;
+          border-radius: 8px;
+          padding: 1rem;
+          margin-bottom: 1.5rem;
+          align-items: center;
+          gap: 0.75rem;
+        ">
+          <span style="font-size: 1.5rem;">🧪</span>
+          <div>
+            <div style="font-weight: 700; color: #92400e;">TEST MODE ACTIVE</div>
+            <div style="color: #b45309; font-size: 0.9rem;">
+              Data will be written to <code style="background: rgba(0,0,0,0.1); padding: 0.1rem 0.3rem; border-radius: 3px;">aggregatedPlayerStats_test</code> — production data is safe!
+            </div>
+          </div>
+        </div>
+
         <p>Select a season that uses game-level stats collection:</p>
         
         <div class="flex-row">
           <select id="seasonSelect">
             <option value="">-- Select Season --</option>
+            <option value="2025-summer" style="color: #f59e0b;">⚠️ 2025 Summer (TEST DATA)</option>
             <option value="2026-summer">2026 Summer</option>
             <option value="2026-fall">2026 Fall</option>
             <option value="2027-summer">2027 Summer</option>
@@ -566,6 +588,30 @@
           </button>
         </div>
         
+        <!-- Test Mode Toggle -->
+        <div style="
+          margin-top: 1rem;
+          padding: 1rem;
+          background: #fffbeb;
+          border: 2px solid #fcd34d;
+          border-radius: 8px;
+          display: flex;
+          align-items: center;
+          gap: 0.75rem;
+        ">
+          <input type="checkbox" id="testModeCheckbox" style="
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+          " onchange="toggleTestMode()">
+          <label for="testModeCheckbox" style="cursor: pointer; flex: 1;">
+            <strong style="color: #92400e;">🧪 Test Mode</strong>
+            <span style="color: #b45309; font-size: 0.9rem; display: block;">
+              Write to <code>aggregatedPlayerStats_test</code> instead of production. Use with 2025-summer test data.
+            </span>
+          </label>
+        </div>
+
         <div class="info-box" style="margin-top: 1rem;">
           <strong>💡 Tip:</strong> Use "Preview" first to see what will be aggregated without making any changes.
         </div>
@@ -690,7 +736,37 @@
   window.where = where;
 
   // Seasons that use game-level stats
-  const GAME_BASED_SEASONS = ['2026-summer', '2026-fall', '2027-summer', '2027-fall'];
+  const GAME_BASED_SEASONS = ['2025-summer', '2026-summer', '2026-fall', '2027-summer', '2027-fall'];
+
+  // Test mode state
+  let testModeEnabled = false;
+
+  // Get the appropriate collection name based on test mode
+  function getAggregatedCollection() {
+    return testModeEnabled ? 'aggregatedPlayerStats_test' : 'aggregatedPlayerStats';
+  }
+
+  // Toggle test mode
+  window.toggleTestMode = function() {
+    testModeEnabled = document.getElementById('testModeCheckbox').checked;
+    const banner = document.getElementById('testModeBanner');
+    
+    if (testModeEnabled) {
+      banner.style.display = 'flex';
+      log('');
+      log('═══════════════════════════════════════', 'header');
+      log('🧪 TEST MODE ENABLED', 'header');
+      log('═══════════════════════════════════════', 'header');
+      log('Data will be written to: aggregatedPlayerStats_test');
+      log('Production data (aggregatedPlayerStats) will NOT be modified.');
+      log('');
+    } else {
+      banner.style.display = 'none';
+      log('');
+      log('🔴 Test mode disabled - using production collection');
+      log('');
+    }
+  };
 
   // ============================================
   // AUTH CHECK
@@ -906,8 +982,8 @@
           ? seasonTotals.hits / seasonTotals.atBats
           : 0;
 
-        // Check if player exists
-        const aggregatedRef = window.doc(window.db, 'aggregatedPlayerStats', playerId);
+        // Check if player exists (in test or production collection based on mode)
+        const aggregatedRef = window.doc(window.db, getAggregatedCollection(), playerId);
         const existingDoc = await window.getDoc(aggregatedRef);
         const isNewPlayer = !existingDoc.exists();
         const existingSeasonCount = existingDoc.exists() 
@@ -1026,9 +1102,13 @@
       return;
     }
 
+    const testModeNote = testModeEnabled 
+      ? `\n\n🧪 TEST MODE: Data will be written to "${getAggregatedCollection()}" (production is safe)`
+      : '';
+
     const confirmed = confirm(
       `This will aggregate all game stats for ${seasonId} and update career totals.\n\n` +
-      `💡 Tip: Use "Preview" first to see what will change.\n\n` +
+      `💡 Tip: Use "Preview" first to see what will change.${testModeNote}\n\n` +
       `Continue with aggregation?`
     );
     if (!confirmed) return;
@@ -1040,6 +1120,10 @@
     log('═══════════════════════════════════════', 'header');
     log(`Aggregating Game-Level Stats for ${seasonId}`, 'header');
     log('═══════════════════════════════════════', 'header');
+
+    if (testModeEnabled) {
+      log(`🧪 TEST MODE: Writing to ${getAggregatedCollection()}`, 'header');
+    }
 
     try {
       // STEP 1: Find all game documents
@@ -1146,8 +1230,8 @@
           seasonTotals.acesBPI = seasonTotals.games > 0
             ? (seasonTotals.runs + seasonTotals.hits + seasonTotals.walks) / seasonTotals.games : 0;
 
-          // Get existing data
-          const aggregatedRef = window.doc(window.db, 'aggregatedPlayerStats', playerId);
+          // Get existing data (from test or production collection)
+          const aggregatedRef = window.doc(window.db, getAggregatedCollection(), playerId);
           const existingDoc = await window.getDoc(aggregatedRef);
           const existingData = existingDoc.exists() ? existingDoc.data() : {};
           const existingSeasons = { ...(existingData.seasons || {}) };
@@ -1218,7 +1302,7 @@
             pitchingTotals.earnedRunAverage = pitchingTotals.inningsPitched > 0
               ? (pitchingTotals.runsAllowed * 7) / pitchingTotals.inningsPitched : 0;
 
-            const aggregatedRef = window.doc(window.db, 'aggregatedPlayerStats', playerId);
+            const aggregatedRef = window.doc(window.db, getAggregatedCollection(), playerId);
             const existingDoc = await window.getDoc(aggregatedRef);
             const existingData = existingDoc.exists() ? existingDoc.data() : {};
             const existingPitchingSeasons = { ...(existingData.pitchingSeasons || {}) };
@@ -1355,11 +1439,15 @@
     log('Full Career Recalculation', 'header');
     log('═══════════════════════════════════════', 'header');
     
+    if (testModeEnabled) {
+      log(`🧪 TEST MODE: Reading/writing to ${getAggregatedCollection()}`);
+    }
+    
     try {
-      const aggregatedRef = window.collection(window.db, 'aggregatedPlayerStats');
+      const aggregatedRef = window.collection(window.db, getAggregatedCollection());
       const allPlayersSnapshot = await window.getDocs(aggregatedRef);
       
-      log(`Found ${allPlayersSnapshot.size} players in aggregatedPlayerStats`);
+      log(`Found ${allPlayersSnapshot.size} players in ${getAggregatedCollection()}`);
       
       let processed = 0, legacyCount = 0, authCount = 0, migratedCount = 0, errorCount = 0;
 
@@ -1422,11 +1510,15 @@
     log('Verifying Aggregated Collection', 'header');
     log('═══════════════════════════════════════', 'header');
     
+    if (testModeEnabled) {
+      log(`🧪 TEST MODE: Verifying ${getAggregatedCollection()}`);
+    }
+    
     try {
-      const statsRef = window.collection(window.db, 'aggregatedPlayerStats');
+      const statsRef = window.collection(window.db, getAggregatedCollection());
       const snapshot = await window.getDocs(statsRef);
       
-      log(`Found ${snapshot.size} documents in aggregatedPlayerStats`, 'success');
+      log(`Found ${snapshot.size} documents in ${getAggregatedCollection()}`, 'success');
       
       let authUserCount = 0, legacyCount = 0, migratedCount = 0, hasGameBasedSeasons = 0;
       const issues = [];
