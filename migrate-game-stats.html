@@ -169,7 +169,9 @@
 
   <div class="checkbox-group">
     <input type="checkbox" id="deleteOldDocs">
-    <label for="deleteOldDocs" style="margin: 0;">Delete old documents after successful migration</label>
+    <label for="deleteOldDocs" style="margin: 0;">Delete old documents after successful migration 
+      <span style="color: #f59e0b; font-size: 12px;">(Note: Firestore rules may block deletes - old docs are harmless if they remain)</span>
+    </label>
   </div>
 
   <div>
@@ -357,24 +359,45 @@
     const aggregatedRef = collection(db, 'aggregatedPlayerStats');
     const aggregatedSnap = await getDocs(aggregatedRef);
     
-    const playerIds = [];
-    aggregatedSnap.forEach(doc => {
-      if (!doc.data().migrated) {  // Skip migrated profiles
-        playerIds.push(doc.id);
+    const playerLegacyIds = new Set(); // Use Set to avoid duplicates
+    
+    aggregatedSnap.forEach(docSnap => {
+      const data = docSnap.data();
+      if (data.migrated) return; // Skip migrated profiles
+      
+      // Determine the legacyId to query for game stats
+      let legacyId;
+      
+      if (data.isAuthUser && data.linkedPlayer) {
+        // Auth user - derive legacyId from linkedPlayer name
+        // "Steve Giordano" -> "steve_giordano"
+        legacyId = data.linkedPlayer.toLowerCase().replace(/\./g, '').replace(/\s+/g, '_');
+        log(`  Auth user: ${data.linkedPlayer} -> legacyId: ${legacyId}`);
+      } else {
+        // Legacy user - doc ID is the legacyId
+        legacyId = docSnap.id;
       }
+      
+      playerLegacyIds.add(legacyId);
     });
     
-    log(`Found ${playerIds.length} player IDs to check`);
+    const playerIds = Array.from(playerLegacyIds);
+    log(`Found ${playerIds.length} unique legacy IDs to check`);
     log('');
     
     // Check each player's game stats
     log('Scanning playerStats/*/games for each player...');
     let checkedCount = 0;
+    let foundGames = 0;
     
     for (const playerId of playerIds) {
       try {
         const gamesRef = collection(db, 'playerStats', playerId, 'games');
         const gamesSnap = await getDocs(gamesRef);
+        
+        if (gamesSnap.size > 0) {
+          log(`  ✓ ${playerId}: ${gamesSnap.size} game(s)`);
+        }
         
         gamesSnap.forEach(gameDoc => {
           const data = gameDoc.data();
@@ -382,8 +405,9 @@
           const path = `playerStats/${playerId}/games/${docId}`;
           
           battingDocs.push({ path, docId, playerId, data, type: 'batting' });
+          foundGames++;
           
-          // Check if document ID has the season prefix format (e.g., 2025-summer_)
+          // Check if document ID has the season prefix format (e.g., 2025-fall_)
           const hasSeasonPrefix = docId.match(/^\d{4}-(summer|fall)_/);
           
           if (!hasSeasonPrefix) {
@@ -406,7 +430,7 @@
         });
         
         checkedCount++;
-        if (checkedCount % 20 === 0) {
+        if (checkedCount % 50 === 0) {
           log(`  Checked ${checkedCount}/${playerIds.length} players...`);
         }
       } catch (err) {
@@ -425,6 +449,10 @@
       try {
         const gamesRef = collection(db, 'pitchingStats', playerId, 'games');
         const gamesSnap = await getDocs(gamesRef);
+        
+        if (gamesSnap.size > 0) {
+          log(`  ✓ ${playerId}: ${gamesSnap.size} pitching game(s)`);
+        }
         
         gamesSnap.forEach(gameDoc => {
           const data = gameDoc.data();
@@ -456,9 +484,6 @@
         });
         
         checkedCount++;
-        if (checkedCount % 20 === 0) {
-          log(`  Checked ${checkedCount}/${playerIds.length} players...`);
-        }
       } catch (err) {
         // Player might not have any pitching stats, that's OK
       }
@@ -527,10 +552,14 @@
 
           // Delete old document if requested
           if (deleteOld && item.docId !== item.newDocId) {
-            const oldDocRef = doc(db, collectionName, item.playerId, 'games', item.docId);
-            await deleteDoc(oldDocRef);
-            log(`  🗑️ Deleted old: ${item.docId}`);
-            deleted++;
+            try {
+              const oldDocRef = doc(db, collectionName, item.playerId, 'games', item.docId);
+              await deleteDoc(oldDocRef);
+              log(`  🗑️ Deleted old: ${item.docId}`);
+              deleted++;
+            } catch (delErr) {
+              log(`  ⚠️ Could not delete old doc (rules may block deletes): ${item.docId}`);
+            }
           }
 
         } catch (err) {
