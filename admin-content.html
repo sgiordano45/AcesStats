@@ -728,6 +728,10 @@
         <span class="icon">📊</span>
         Stats Tools
       </button>
+      <button class="tab-btn" data-tab="users">
+        <span class="icon">👥</span>
+        Users
+      </button>
     </div>
 
     <!-- Tab: Peters Previews -->
@@ -929,6 +933,149 @@
         </div>
       </div>
     </div>
+
+    <!-- Tab: User Management -->
+    <div class="tab-content" id="tab-users">
+      <div class="section">
+        <div class="section-header">
+          👥 User Management
+        </div>
+        <div class="section-content">
+          <p style="color: var(--text-light); margin-bottom: 1rem;">
+            Create placeholder user accounts for new players when rosters are finalized.
+            Players can later link their real accounts to these profiles.
+          </p>
+          
+          <div class="info-box" style="background: #eff6ff; border-left: 4px solid #3b82f6; padding: 1rem; border-radius: 0 8px 8px 0; margin-bottom: 1.5rem;">
+            <div>
+              <strong style="color: #1e40af;">📋 What gets created:</strong>
+              <ul style="margin: 0.5rem 0 0 1.25rem; padding: 0; color: var(--text-light);">
+                <li><code>users/{player_id}</code> - User profile for authentication</li>
+                <li><code>aggregatedPlayerStats/{player_id}</code> - Stats record (required for roster visibility)</li>
+              </ul>
+              <p style="margin: 0.75rem 0 0 0; font-size: 0.9rem; color: var(--text-light);">
+                Players will be added to the <strong id="activeSeasonDisplay">active season</strong> roster and appear in stats submission.
+              </p>
+            </div>
+          </div>
+
+          <!-- Create Single User -->
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin-bottom: 2rem;">
+            <div style="background: #f8fafc; padding: 1.5rem; border-radius: 12px; border: 1px solid var(--border-color);">
+              <h4 style="margin: 0 0 1rem 0; display: flex; align-items: center; gap: 0.5rem;">
+                <span>➕</span> Create Single User
+              </h4>
+              <div class="form-group">
+                <label>Player Name</label>
+                <input type="text" id="newUserName" placeholder="First Last">
+              </div>
+              <div class="form-group">
+                <label>Team</label>
+                <select id="newUserTeam">
+                  <option value="">Select team...</option>
+                  <option value="Black">Black</option>
+                  <option value="Blue">Blue</option>
+                  <option value="Green">Green</option>
+                  <option value="Red">Red</option>
+                  <option value="White">White</option>
+                  <option value="Orange">Orange</option>
+                  <option value="Silver">Silver</option>
+                  <option value="Purple">Purple</option>
+                  <option value="Gold">Gold</option>
+                  <option value="Carolina">Carolina</option>
+                  <option value="Army">Army</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Document ID (auto-generated)</label>
+                <input type="text" id="newUserLegacyId" readonly style="background: #e2e8f0; cursor: not-allowed; font-family: monospace;">
+                <div class="hint">Matches playerStats format for aggregation</div>
+              </div>
+              <button class="btn btn-success" onclick="createSingleUser()">
+                ✅ Create User
+              </button>
+            </div>
+
+            <!-- Bulk Import -->
+            <div style="background: #f8fafc; padding: 1.5rem; border-radius: 12px; border: 1px solid var(--border-color);">
+              <h4 style="margin: 0 0 1rem 0; display: flex; align-items: center; gap: 0.5rem;">
+                <span>📋</span> Bulk Import
+              </h4>
+              <div class="form-group">
+                <label>Team for All Players</label>
+                <select id="bulkUserTeam">
+                  <option value="">Select team...</option>
+                  <option value="Black">Black</option>
+                  <option value="Blue">Blue</option>
+                  <option value="Green">Green</option>
+                  <option value="Red">Red</option>
+                  <option value="White">White</option>
+                  <option value="Orange">Orange</option>
+                  <option value="Silver">Silver</option>
+                  <option value="Purple">Purple</option>
+                  <option value="Gold">Gold</option>
+                  <option value="Carolina">Carolina</option>
+                  <option value="Army">Army</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Player Names (one per line)</label>
+                <textarea id="bulkUserNames" placeholder="John Smith&#10;Jane Doe&#10;Mike Johnson" style="min-height: 120px;"></textarea>
+                <div class="hint">Enter player names, one per line</div>
+              </div>
+              <button class="btn btn-primary" onclick="previewBulkImport()">
+                👁️ Preview Import
+              </button>
+            </div>
+          </div>
+
+          <!-- Bulk Preview Panel -->
+          <div id="bulkPreviewPanel" style="display: none; margin-bottom: 2rem; padding: 1.5rem; background: white; border: 2px solid var(--admin-color); border-radius: 12px;">
+            <h4 style="margin: 0 0 1rem 0;">📝 Preview Users to Create</h4>
+            <div id="bulkPreviewList"></div>
+            <div class="btn-group" style="margin-top: 1rem;">
+              <button class="btn btn-success" onclick="executeBulkImport()">
+                ✅ Create All Users
+              </button>
+              <button class="btn btn-secondary" onclick="cancelBulkImport()">
+                Cancel
+              </button>
+            </div>
+          </div>
+
+          <!-- Existing Users List -->
+          <div style="border-top: 1px solid var(--border-color); padding-top: 2rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+              <h4 style="margin: 0; display: flex; align-items: center; gap: 0.5rem;">
+                <span>📇</span> Existing Placeholder Users
+              </h4>
+              <div style="display: flex; gap: 0.5rem; align-items: center;">
+                <input type="text" id="userSearchInput" placeholder="Search by name..." style="width: 200px;" oninput="filterUserList()">
+                <select id="userTeamFilter" style="width: 150px;" onchange="filterUserList()">
+                  <option value="">All Teams</option>
+                  <option value="Black">Black</option>
+                  <option value="Blue">Blue</option>
+                  <option value="Green">Green</option>
+                  <option value="Red">Red</option>
+                  <option value="White">White</option>
+                  <option value="Orange">Orange</option>
+                  <option value="Silver">Silver</option>
+                  <option value="Purple">Purple</option>
+                  <option value="Gold">Gold</option>
+                  <option value="Carolina">Carolina</option>
+                  <option value="Army">Army</option>
+                </select>
+                <button class="btn btn-secondary" onclick="loadPlaceholderUsers()">🔄 Refresh</button>
+              </div>
+            </div>
+            <div class="item-list" id="placeholderUserList" style="max-height: 350px;">
+              <div class="empty-state">Click refresh to load placeholder users</div>
+            </div>
+            <div id="userListStats" style="margin-top: 0.75rem; font-size: 0.85rem; color: var(--text-light);"></div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -1066,6 +1213,9 @@
     // Setup tab navigation
     setupTabs();
     
+    // Setup user management event listeners
+    setupUserManagementListeners();
+    
     // Load initial data
     const defaultSeason = getDefaultSeason();
     if (defaultSeason) {
@@ -1078,6 +1228,16 @@
         loadEulogies(),
         loadGames()
       ]);
+    }
+  }
+
+  function setupUserManagementListeners() {
+    const nameInput = document.getElementById('newUserName');
+    if (nameInput) {
+      nameInput.addEventListener('input', () => {
+        const legacyId = generateLegacyId(nameInput.value);
+        document.getElementById('newUserLegacyId').value = legacyId;
+      });
     }
   }
 
@@ -1120,7 +1280,7 @@
 
   function setupTabs() {
     document.querySelectorAll('.tab-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
+      btn.addEventListener('click', async () => {
         const tabId = btn.dataset.tab;
         
         // Update buttons
@@ -1130,6 +1290,18 @@
         // Update content
         document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
         document.getElementById(`tab-${tabId}`).classList.add('active');
+        
+        // Load active season info when Users tab is clicked
+        if (tabId === 'users') {
+          const activeSeason = allSeasons.find(s => s.isActive);
+          const displayEl = document.getElementById('activeSeasonDisplay');
+          if (displayEl && activeSeason) {
+            const [year, season] = activeSeason.id.split('-');
+            displayEl.textContent = `${season.charAt(0).toUpperCase() + season.slice(1)} ${year}`;
+          } else if (displayEl) {
+            displayEl.textContent = 'no active season found';
+          }
+        }
       });
     });
   }
@@ -1777,6 +1949,466 @@
       </div>
     `;
   };
+
+  // ========================================
+  // USER MANAGEMENT TAB
+  // ========================================
+
+  let placeholderUsersCache = [];
+  let bulkUsersToCreate = [];
+
+  function generatePlaceholderEmail(name) {
+    if (!name || !name.trim()) return '';
+    // Convert "First Last" to "first_last@placeholder.aces"
+    const normalized = name.trim()
+      .toLowerCase()
+      .replace(/\./g, '')           // Remove periods (e.g., "Jr.")
+      .replace(/[^a-z0-9\s]/g, '')  // Remove other special chars
+      .replace(/\s+/g, '_');        // Spaces to underscores
+    return `${normalized}@placeholder.aces`;
+  }
+
+  function generateLegacyId(name) {
+    // Generate ID matching the playerStats convention: first_last
+    // This MUST match the format used by aggregate-stats and submit-stats
+    return name.trim()
+      .toLowerCase()
+      .replace(/\./g, '')           // Remove periods (e.g., "Jr.")
+      .replace(/[^a-z0-9\s]/g, '')  // Remove other special chars
+      .replace(/\s+/g, '_');        // Spaces to underscores
+  }
+
+  window.createSingleUser = async function() {
+    const name = document.getElementById('newUserName').value.trim();
+    const team = document.getElementById('newUserTeam').value;
+
+    if (!name) {
+      showToast('Please enter a player name', 'warning');
+      return;
+    }
+
+    if (!team) {
+      showToast('Please select a team', 'warning');
+      return;
+    }
+
+    const email = generatePlaceholderEmail(name);
+    const legacyId = generateLegacyId(name);
+    
+    try {
+      // Check if user with same legacyId already exists
+      const userRef = doc(db, 'users', legacyId);
+      const existingDoc = await getDoc(userRef);
+      
+      if (existingDoc.exists()) {
+        showToast(`User "${name}" (${legacyId}) already exists`, 'error');
+        return;
+      }
+
+      // Get current active season for the roster entry
+      const seasonsSnap = await getDocs(collection(db, 'seasons'));
+      let activeSeason = null;
+      seasonsSnap.forEach(doc => {
+        const data = doc.data();
+        if (data.isActive) {
+          activeSeason = doc.id;
+        }
+      });
+
+      // 1. Create the user document
+      await setDoc(userRef, {
+        name: name,
+        displayName: name,
+        email: email,
+        currentTeam: team,
+        role: 'player',
+        isPlaceholder: true,
+        createdAt: serverTimestamp()
+      });
+
+      // 2. Create/update aggregatedPlayerStats so player appears in roster
+      // This is required for submit-stats.html to see the player
+      const statsRef = doc(db, 'aggregatedPlayerStats', legacyId);
+      const existingStatsDoc = await getDoc(statsRef);
+      
+      if (!existingStatsDoc.exists()) {
+        // Create new aggregatedPlayerStats document with season placeholder
+        const statsData = {
+          name: name,
+          displayName: name,
+          email: email,
+          currentTeam: team,
+          isPlaceholder: true,
+          createdAt: serverTimestamp(),
+          lastUpdated: serverTimestamp(),
+          seasons: {},
+          career: {
+            games: 0,
+            atBats: 0,
+            hits: 0,
+            runs: 0,
+            walks: 0,
+            doubles: 0,
+            triples: 0,
+            homeRuns: 0,
+            rbi: 0,
+            strikeouts: 0,
+            stolenBases: 0,
+            battingAverage: 0,
+            onBasePercentage: 0
+          }
+        };
+        
+        // Add current season placeholder so player appears in roster
+        if (activeSeason) {
+          statsData.seasons[activeSeason] = {
+            team: team,
+            games: 0,
+            atBats: 0,
+            hits: 0,
+            runs: 0,
+            walks: 0,
+            doubles: 0,
+            triples: 0,
+            homeRuns: 0,
+            rbi: 0,
+            strikeouts: 0,
+            stolenBases: 0,
+            battingAverage: 0,
+            onBasePercentage: 0
+          };
+        }
+        
+        await setDoc(statsRef, statsData);
+        console.log(`✅ Created aggregatedPlayerStats for ${name}`);
+      }
+
+      showToast(`Created user: ${name} (${legacyId})`, 'success');
+      
+      // Clear form
+      document.getElementById('newUserName').value = '';
+      document.getElementById('newUserTeam').value = '';
+      document.getElementById('newUserLegacyId').value = '';
+      
+      // Refresh user list if loaded
+      if (placeholderUsersCache.length > 0) {
+        await loadPlaceholderUsers();
+      }
+
+    } catch (error) {
+      console.error('Error creating user:', error);
+      showToast('Error creating user: ' + error.message, 'error');
+    }
+  };
+
+  window.previewBulkImport = function() {
+    const team = document.getElementById('bulkUserTeam').value;
+    const namesText = document.getElementById('bulkUserNames').value.trim();
+
+    if (!team) {
+      showToast('Please select a team', 'warning');
+      return;
+    }
+
+    if (!namesText) {
+      showToast('Please enter player names', 'warning');
+      return;
+    }
+
+    // Parse names (one per line, skip empty lines)
+    const names = namesText
+      .split('\n')
+      .map(n => n.trim())
+      .filter(n => n.length > 0);
+
+    if (names.length === 0) {
+      showToast('No valid names found', 'warning');
+      return;
+    }
+
+    // Generate preview data with legacyId
+    bulkUsersToCreate = names.map(name => ({
+      name: name,
+      displayName: name,
+      email: generatePlaceholderEmail(name),
+      legacyId: generateLegacyId(name),
+      currentTeam: team,
+      role: 'player',
+      isPlaceholder: true
+    }));
+
+    // Show preview panel
+    const previewPanel = document.getElementById('bulkPreviewPanel');
+    const previewList = document.getElementById('bulkPreviewList');
+    
+    previewList.innerHTML = `
+      <table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">
+        <thead>
+          <tr style="background: #f1f5f9; border-bottom: 2px solid var(--border-color);">
+            <th style="padding: 0.75rem; text-align: left;">Name</th>
+            <th style="padding: 0.75rem; text-align: left;">Document ID</th>
+            <th style="padding: 0.75rem; text-align: left;">Team</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${bulkUsersToCreate.map((u, i) => `
+            <tr style="border-bottom: 1px solid var(--border-color);">
+              <td style="padding: 0.75rem;">${u.name}</td>
+              <td style="padding: 0.75rem; font-family: monospace; color: var(--text-light);">${u.legacyId}</td>
+              <td style="padding: 0.75rem;">${u.currentTeam}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+      <p style="margin: 1rem 0 0; color: var(--text-light);">
+        <strong>${bulkUsersToCreate.length}</strong> users will be created.
+        Document IDs match playerStats format for aggregation.
+      </p>
+    `;
+
+    previewPanel.style.display = 'block';
+  };
+
+  window.executeBulkImport = async function() {
+    if (bulkUsersToCreate.length === 0) {
+      showToast('No users to create', 'warning');
+      return;
+    }
+
+    // Get current active season for the roster entries
+    const seasonsSnap = await getDocs(collection(db, 'seasons'));
+    let activeSeason = null;
+    seasonsSnap.forEach(doc => {
+      const data = doc.data();
+      if (data.isActive) {
+        activeSeason = doc.id;
+      }
+    });
+
+    let created = 0;
+    let skipped = 0;
+    const errors = [];
+
+    for (const userData of bulkUsersToCreate) {
+      try {
+        const legacyId = generateLegacyId(userData.name);
+        
+        // Check if user already exists by document ID
+        const userRef = doc(db, 'users', legacyId);
+        const existingDoc = await getDoc(userRef);
+        
+        if (existingDoc.exists()) {
+          skipped++;
+          continue;
+        }
+
+        // 1. Create user document
+        await setDoc(userRef, {
+          name: userData.name,
+          displayName: userData.displayName,
+          email: userData.email,
+          currentTeam: userData.currentTeam,
+          role: userData.role,
+          isPlaceholder: userData.isPlaceholder,
+          createdAt: serverTimestamp()
+        });
+
+        // 2. Create aggregatedPlayerStats so player appears in roster
+        const statsRef = doc(db, 'aggregatedPlayerStats', legacyId);
+        const existingStatsDoc = await getDoc(statsRef);
+        
+        if (!existingStatsDoc.exists()) {
+          const statsData = {
+            name: userData.name,
+            displayName: userData.displayName,
+            email: userData.email,
+            currentTeam: userData.currentTeam,
+            isPlaceholder: true,
+            createdAt: serverTimestamp(),
+            lastUpdated: serverTimestamp(),
+            seasons: {},
+            career: {
+              games: 0,
+              atBats: 0,
+              hits: 0,
+              runs: 0,
+              walks: 0,
+              doubles: 0,
+              triples: 0,
+              homeRuns: 0,
+              rbi: 0,
+              strikeouts: 0,
+              stolenBases: 0,
+              battingAverage: 0,
+              onBasePercentage: 0
+            }
+          };
+          
+          // Add current season placeholder so player appears in roster
+          if (activeSeason) {
+            statsData.seasons[activeSeason] = {
+              team: userData.currentTeam,
+              games: 0,
+              atBats: 0,
+              hits: 0,
+              runs: 0,
+              walks: 0,
+              doubles: 0,
+              triples: 0,
+              homeRuns: 0,
+              rbi: 0,
+              strikeouts: 0,
+              stolenBases: 0,
+              battingAverage: 0,
+              onBasePercentage: 0
+            };
+          }
+          
+          await setDoc(statsRef, statsData);
+        }
+
+        created++;
+      } catch (error) {
+        console.error(`Error creating user ${userData.name}:`, error);
+        errors.push(userData.name);
+      }
+    }
+
+    // Show results
+    let message = `Created ${created} users`;
+    if (skipped > 0) message += `, ${skipped} skipped (already exist)`;
+    if (errors.length > 0) message += `, ${errors.length} errors`;
+    
+    showToast(message, errors.length > 0 ? 'warning' : 'success');
+
+    // Clear form and hide preview
+    cancelBulkImport();
+    document.getElementById('bulkUserNames').value = '';
+    document.getElementById('bulkUserTeam').value = '';
+
+    // Refresh user list
+    await loadPlaceholderUsers();
+  };
+
+  window.cancelBulkImport = function() {
+    bulkUsersToCreate = [];
+    document.getElementById('bulkPreviewPanel').style.display = 'none';
+  };
+
+  window.loadPlaceholderUsers = async function() {
+    const listEl = document.getElementById('placeholderUserList');
+    listEl.innerHTML = '<div class="empty-state">Loading users...</div>';
+
+    try {
+      const q = query(
+        collection(db, 'users'),
+        where('isPlaceholder', '==', true)
+      );
+      const snapshot = await getDocs(q);
+
+      placeholderUsersCache = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })).sort((a, b) => {
+        // Sort by team, then by name
+        const teamCompare = (a.currentTeam || '').localeCompare(b.currentTeam || '');
+        if (teamCompare !== 0) return teamCompare;
+        return (a.name || '').localeCompare(b.name || '');
+      });
+
+      renderUserList(placeholderUsersCache);
+
+    } catch (error) {
+      console.error('Error loading placeholder users:', error);
+      listEl.innerHTML = '<div class="empty-state">Error loading users</div>';
+      showToast('Error loading users', 'error');
+    }
+  };
+
+  window.filterUserList = function() {
+    const searchTerm = (document.getElementById('userSearchInput').value || '').toLowerCase().trim();
+    const teamFilter = document.getElementById('userTeamFilter').value;
+
+    let filtered = placeholderUsersCache;
+
+    if (searchTerm) {
+      filtered = filtered.filter(u => 
+        (u.name || '').toLowerCase().includes(searchTerm) ||
+        (u.email || '').toLowerCase().includes(searchTerm)
+      );
+    }
+
+    if (teamFilter) {
+      filtered = filtered.filter(u => u.currentTeam === teamFilter);
+    }
+
+    renderUserList(filtered);
+  };
+
+  function renderUserList(users) {
+    const listEl = document.getElementById('placeholderUserList');
+    const statsEl = document.getElementById('userListStats');
+
+    if (users.length === 0) {
+      listEl.innerHTML = '<div class="empty-state">No placeholder users found</div>';
+      statsEl.textContent = '';
+      return;
+    }
+
+    listEl.innerHTML = users.map(user => {
+      const createdDate = user.createdAt?.seconds 
+        ? new Date(user.createdAt.seconds * 1000).toLocaleDateString()
+        : 'Unknown';
+      
+      return `
+        <div class="item-row">
+          <div class="item-info">
+            <div class="item-title">${user.name || 'Unknown'}</div>
+            <div class="item-subtitle">
+              <span style="font-family: monospace; background: #f1f5f9; padding: 0.1rem 0.4rem; border-radius: 4px;">${user.id}</span>
+              <span style="margin-left: 0.5rem; color: var(--text-light);">• ${createdDate}</span>
+            </div>
+          </div>
+          <div class="item-badges">
+            <span class="badge" style="background: ${getTeamBadgeColor(user.currentTeam)}; color: white;">
+              ${user.currentTeam || 'No Team'}
+            </span>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    // Calculate team breakdown
+    const teamCounts = {};
+    users.forEach(u => {
+      const team = u.currentTeam || 'No Team';
+      teamCounts[team] = (teamCounts[team] || 0) + 1;
+    });
+    
+    const teamBreakdown = Object.entries(teamCounts)
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([team, count]) => `${team}: ${count}`)
+      .join(' • ');
+
+    statsEl.textContent = `Showing ${users.length} of ${placeholderUsersCache.length} users • ${teamBreakdown}`;
+  }
+
+  function getTeamBadgeColor(team) {
+    const colors = {
+      'Black': '#1a1a2e',
+      'Blue': '#1e40af',
+      'Green': '#15803d',
+      'Red': '#dc2626',
+      'White': '#6b7280',
+      'Orange': '#ea580c',
+      'Silver': '#64748b',
+      'Purple': '#7c3aed',
+      'Gold': '#ca8a04',
+      'Carolina': '#0891b2',
+      'Army': '#4d7c0f'
+    };
+    return colors[team] || '#6b7280';
+  }
 
   // ========================================
   // UTILITY FUNCTIONS
