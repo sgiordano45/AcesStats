@@ -876,66 +876,98 @@
     log('═══════════════════════════════════════', 'header');
 
     try {
-      // STEP 1: Find all game documents
-      log('Step 1: Finding players with game stats...', 'game');
+      // STEP 1: Get all player legacy IDs from aggregatedPlayerStats
+      log('Step 1: Getting player IDs from aggregatedPlayerStats...', 'game');
       
-      const gamesQuery = window.query(
-        window.collectionGroup(window.db, 'games'),
-        window.where('seasonId', '==', seasonId)
-      );
+      const aggregatedRef = window.collection(window.db, 'aggregatedPlayerStats');
+      const aggregatedSnap = await window.getDocs(aggregatedRef);
       
-      let allGames;
-      try {
-        allGames = await window.getDocs(gamesQuery);
-      } catch (indexError) {
-        if (indexError.message.includes('index')) {
-          log('⚠️ Collection group index required!', 'error');
-          log('Click the link in the browser console to create it.', 'error');
-          log('Then re-run this preview.', 'error');
-          console.error('Index creation link:', indexError);
-          btn.disabled = false;
-          btn.textContent = '👁️ Preview';
-          return;
+      const playerLegacyIds = new Set();
+      
+      aggregatedSnap.forEach(docSnap => {
+        const data = docSnap.data();
+        if (data.migrated) return; // Skip migrated profiles
+        
+        // Determine the legacyId to query for game stats
+        let legacyId;
+        if (data.isAuthUser && data.linkedPlayer) {
+          // Auth user - derive legacyId from linkedPlayer name
+          legacyId = data.linkedPlayer.toLowerCase().replace(/\./g, '').replace(/\s+/g, '_');
+        } else {
+          // Legacy user - doc ID is the legacyId
+          legacyId = docSnap.id;
         }
-        throw indexError;
-      }
+        playerLegacyIds.add(legacyId);
+      });
+      
+      const playerIds = Array.from(playerLegacyIds);
+      log(`Found ${playerIds.length} unique player IDs to check`, 'success');
 
-      log(`Found ${allGames.size} total game documents`, 'success');
-
-      // Separate batting and pitching games by path
+      // STEP 2: Query each player's games for this season
+      log('');
+      log('Step 2: Scanning player game stats...', 'game');
+      
       const playerBattingGames = new Map();
       const playerPitchingGames = new Map();
+      let checkedCount = 0;
       
-      allGames.forEach(gameDoc => {
-        const pathParts = gameDoc.ref.path.split('/');
-        const collectionName = pathParts[0];
-        const playerId = pathParts[1];
-        
-        if (collectionName === 'playerStats') {
-          if (!playerBattingGames.has(playerId)) {
-            playerBattingGames.set(playerId, []);
-          }
-          playerBattingGames.get(playerId).push({
-            gameId: gameDoc.id,
-            ...gameDoc.data()
+      for (const playerId of playerIds) {
+        // Check batting stats
+        try {
+          const gamesRef = window.collection(window.db, 'playerStats', playerId, 'games');
+          const gamesSnap = await window.getDocs(gamesRef);
+          
+          gamesSnap.forEach(gameDoc => {
+            const data = gameDoc.data();
+            // Only include games for this season
+            if (data.seasonId === seasonId) {
+              if (!playerBattingGames.has(playerId)) {
+                playerBattingGames.set(playerId, []);
+              }
+              playerBattingGames.get(playerId).push({
+                gameId: gameDoc.id,
+                ...data
+              });
+            }
           });
-        } else if (collectionName === 'pitchingStats') {
-          if (!playerPitchingGames.has(playerId)) {
-            playerPitchingGames.set(playerId, []);
-          }
-          playerPitchingGames.get(playerId).push({
-            gameId: gameDoc.id,
-            ...gameDoc.data()
-          });
+        } catch (err) {
+          // Player might not have any game stats yet
         }
-      });
+        
+        // Check pitching stats
+        try {
+          const pitchingRef = window.collection(window.db, 'pitchingStats', playerId, 'games');
+          const pitchingSnap = await window.getDocs(pitchingRef);
+          
+          pitchingSnap.forEach(gameDoc => {
+            const data = gameDoc.data();
+            // Only include games for this season
+            if (data.seasonId === seasonId) {
+              if (!playerPitchingGames.has(playerId)) {
+                playerPitchingGames.set(playerId, []);
+              }
+              playerPitchingGames.get(playerId).push({
+                gameId: gameDoc.id,
+                ...data
+              });
+            }
+          });
+        } catch (err) {
+          // Player might not have pitching stats
+        }
+        
+        checkedCount++;
+        if (checkedCount % 50 === 0) {
+          log(`  Checked ${checkedCount}/${playerIds.length} players...`);
+        }
+      }
 
       log(`Found ${playerBattingGames.size} players with batting games`, 'success');
       log(`Found ${playerPitchingGames.size} players with pitching games`, 'success');
 
-      // STEP 2: Preview batting aggregations
+      // STEP 3: Preview batting aggregations
       log('');
-      log('Step 2: Previewing batting aggregations...', 'game');
+      log('Step 3: Previewing batting aggregations...', 'game');
 
       const previewData = [];
       let totalGamesProcessed = 0;
@@ -994,10 +1026,10 @@
 
       updateSeasonStats(playerBattingGames.size, totalGamesProcessed, playerBattingGames.size, playerPitchingGames.size);
 
-      // STEP 3: Preview pitching
+      // STEP 4: Preview pitching
       if (playerPitchingGames.size > 0) {
         log('');
-        log('Step 3: Previewing pitching aggregations...', 'pitching');
+        log('Step 4: Previewing pitching aggregations...', 'pitching');
 
         for (const [playerId, games] of playerPitchingGames) {
           const pitchingTotals = {
@@ -1108,58 +1140,90 @@
     }
 
     try {
-      // STEP 1: Find all game documents
-      log('Step 1: Finding players with game stats...', 'game');
+      // STEP 1: Get all player legacy IDs from aggregatedPlayerStats
+      log('Step 1: Getting player IDs from aggregatedPlayerStats...', 'game');
       
-      const gamesQuery = window.query(
-        window.collectionGroup(window.db, 'games'),
-        window.where('seasonId', '==', seasonId)
-      );
+      const aggregatedRef = window.collection(window.db, 'aggregatedPlayerStats');
+      const aggregatedSnap = await window.getDocs(aggregatedRef);
       
-      let allGames;
-      try {
-        allGames = await window.getDocs(gamesQuery);
-      } catch (indexError) {
-        if (indexError.message.includes('index')) {
-          log('⚠️ Collection group index required!', 'error');
-          log('Click the link in the browser console to create it.', 'error');
-          console.error('Index creation link:', indexError);
-          btn.disabled = false;
-          btn.textContent = '🎮 Aggregate Season';
-          return;
+      const playerLegacyIds = new Set();
+      
+      aggregatedSnap.forEach(docSnap => {
+        const data = docSnap.data();
+        if (data.migrated) return; // Skip migrated profiles
+        
+        // Determine the legacyId to query for game stats
+        let legacyId;
+        if (data.isAuthUser && data.linkedPlayer) {
+          // Auth user - derive legacyId from linkedPlayer name
+          legacyId = data.linkedPlayer.toLowerCase().replace(/\./g, '').replace(/\s+/g, '_');
+        } else {
+          // Legacy user - doc ID is the legacyId
+          legacyId = docSnap.id;
         }
-        throw indexError;
-      }
+        playerLegacyIds.add(legacyId);
+      });
+      
+      const playerIds = Array.from(playerLegacyIds);
+      log(`Found ${playerIds.length} unique player IDs to check`, 'success');
 
-      log(`Found ${allGames.size} total game documents`, 'success');
-
-      // Separate batting and pitching games
+      // Query each player's games for this season
+      log('Scanning player game stats...', 'game');
+      
       const playerBattingGames = new Map();
       const playerPitchingGames = new Map();
+      let checkedCount = 0;
       
-      allGames.forEach(gameDoc => {
-        const pathParts = gameDoc.ref.path.split('/');
-        const collectionName = pathParts[0];
-        const playerId = pathParts[1];
-        
-        if (collectionName === 'playerStats') {
-          if (!playerBattingGames.has(playerId)) {
-            playerBattingGames.set(playerId, []);
-          }
-          playerBattingGames.get(playerId).push({
-            gameId: gameDoc.id,
-            ...gameDoc.data()
+      for (const playerId of playerIds) {
+        // Check batting stats
+        try {
+          const gamesRef = window.collection(window.db, 'playerStats', playerId, 'games');
+          const gamesSnap = await window.getDocs(gamesRef);
+          
+          gamesSnap.forEach(gameDoc => {
+            const data = gameDoc.data();
+            // Only include games for this season
+            if (data.seasonId === seasonId) {
+              if (!playerBattingGames.has(playerId)) {
+                playerBattingGames.set(playerId, []);
+              }
+              playerBattingGames.get(playerId).push({
+                gameId: gameDoc.id,
+                ...data
+              });
+            }
           });
-        } else if (collectionName === 'pitchingStats') {
-          if (!playerPitchingGames.has(playerId)) {
-            playerPitchingGames.set(playerId, []);
-          }
-          playerPitchingGames.get(playerId).push({
-            gameId: gameDoc.id,
-            ...gameDoc.data()
-          });
+        } catch (err) {
+          // Player might not have any game stats yet
         }
-      });
+        
+        // Check pitching stats
+        try {
+          const pitchingRef = window.collection(window.db, 'pitchingStats', playerId, 'games');
+          const pitchingSnap = await window.getDocs(pitchingRef);
+          
+          pitchingSnap.forEach(gameDoc => {
+            const data = gameDoc.data();
+            // Only include games for this season
+            if (data.seasonId === seasonId) {
+              if (!playerPitchingGames.has(playerId)) {
+                playerPitchingGames.set(playerId, []);
+              }
+              playerPitchingGames.get(playerId).push({
+                gameId: gameDoc.id,
+                ...data
+              });
+            }
+          });
+        } catch (err) {
+          // Player might not have pitching stats
+        }
+        
+        checkedCount++;
+        if (checkedCount % 50 === 0) {
+          log(`  Checked ${checkedCount}/${playerIds.length} players...`);
+        }
+      }
 
       log(`Found ${playerBattingGames.size} players with batting games`, 'success');
       log(`Found ${playerPitchingGames.size} players with pitching games`, 'success');
