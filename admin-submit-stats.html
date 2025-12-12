@@ -2144,26 +2144,64 @@ window.clearBulkUpload = function() {
   showMessage('info', 'Upload cleared. Select a team and upload a new CSV file.');
 };
 
-window.downloadTemplate = function() {
-  const template = `Player,GameDate,Opponent,IsHome,AB,H,R,BB,IP,RA
-John Smith,2025-09-15,Blue,true,4,2,1,0,0,0
-Jane Doe,2025-09-15,Blue,true,3,1,0,1,2,1
-Mike Johnson,2025-09-15,Blue,true,4,0,0,0,0,0
-John Smith,2025-09-22,Green,false,3,1,1,1,0,0
-Jane Doe,2025-09-22,Green,false,4,2,1,0,0,0`;
+window.downloadTemplate = async function() {
+  const teamId = document.getElementById('bulkTeamSelect').value;
+  const seasonId = document.getElementById('bulkSeasonSelect').value || currentSeason?.id;
+  
+  if (!teamId) {
+    showMessage('warning', 'Please select a team first to download a template with your roster.');
+    return;
+  }
+  
+  showMessage('info', 'Generating template with roster...');
+  
+  try {
+    // Load roster for the selected team
+    const seasonPlayers = await getSeasonPlayerStatsOptimized(seasonId);
+    const teamIdLower = teamId.toLowerCase();
+    
+    const filteredPlayers = seasonPlayers.filter(p => {
+      return (p.team || '').toLowerCase() === teamIdLower && !p.migrated;
+    });
+    
+    if (filteredPlayers.length === 0) {
+      showMessage('warning', 'No players found for this team. Downloading generic template.');
+      // Fall back to generic template
+      const template = `Player,GameDate,Opponent,IsHome,AB,H,R,BB,IP,RA
+John Smith,2025-09-15,Blue,true,0,0,0,0,0,0`;
+      downloadCSVBlob(template, 'stats_template.csv');
+      return;
+    }
+    
+    // Build CSV with player names pre-filled
+    let csv = 'Player,GameDate,Opponent,IsHome,AB,H,R,BB,IP,RA\n';
+    const sampleDate = new Date().toISOString().split('T')[0];
+    
+    filteredPlayers.forEach(player => {
+      const name = player.name || player.playerName;
+      csv += `${name},${sampleDate},OPPONENT,true,0,0,0,0,0,0\n`;
+    });
+    
+    downloadCSVBlob(csv, `stats_template_${teamId}.csv`);
+    showToast(`Template downloaded with ${filteredPlayers.length} players!`, 'success');
+    
+  } catch (error) {
+    console.error('Error generating template:', error);
+    showMessage('error', 'Error generating template. Please try again.');
+  }
+};
 
-  const blob = new Blob([template], { type: 'text/csv' });
+function downloadCSVBlob(content, filename) {
+  const blob = new Blob([content], { type: 'text/csv' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = 'stats_template.csv';
+  a.download = filename;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
-  
-  showToast('Template downloaded', 'success');
-};
+}
 
 // Drag and drop support
 const uploadArea = document.getElementById('uploadArea');
