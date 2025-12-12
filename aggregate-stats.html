@@ -1268,7 +1268,13 @@
           stolenBases: 0,
           team: null,
           playerName: null,
-          vsOpponent: {}  // Per-opponent breakdown
+          vsOpponent: {},  // Per-opponent breakdown
+          splits: {        // Home/Away and Playoff/Regular splits
+            home: { games: 0, atBats: 0, hits: 0, runs: 0, walks: 0, doubles: 0, triples: 0, homeRuns: 0, rbi: 0 },
+            away: { games: 0, atBats: 0, hits: 0, runs: 0, walks: 0, doubles: 0, triples: 0, homeRuns: 0, rbi: 0 },
+            regular: { games: 0, atBats: 0, hits: 0, runs: 0, walks: 0, doubles: 0, triples: 0, homeRuns: 0, rbi: 0 },
+            playoff: { games: 0, atBats: 0, hits: 0, runs: 0, walks: 0, doubles: 0, triples: 0, homeRuns: 0, rbi: 0 }
+          }
         };
 
         games.forEach(game => {
@@ -1303,6 +1309,31 @@
           opp.triples += game.triples || 0;
           opp.homeRuns += game.homeRuns || 0;
           opp.rbi += game.rbi || 0;
+          
+          // Track Home/Away splits
+          const homeAwaySplit = game.isHome === true ? seasonTotals.splits.home : seasonTotals.splits.away;
+          homeAwaySplit.games++;
+          homeAwaySplit.atBats += game.atBats || 0;
+          homeAwaySplit.hits += game.hits || 0;
+          homeAwaySplit.runs += game.runs || 0;
+          homeAwaySplit.walks += game.walks || 0;
+          homeAwaySplit.doubles += game.doubles || 0;
+          homeAwaySplit.triples += game.triples || 0;
+          homeAwaySplit.homeRuns += game.homeRuns || 0;
+          homeAwaySplit.rbi += game.rbi || 0;
+          
+          // Track Playoff/Regular splits
+          const isPlayoffGame = game.isPlayoff === true || game.gameType === 'playoff';
+          const gameTypeSplit = isPlayoffGame ? seasonTotals.splits.playoff : seasonTotals.splits.regular;
+          gameTypeSplit.games++;
+          gameTypeSplit.atBats += game.atBats || 0;
+          gameTypeSplit.hits += game.hits || 0;
+          gameTypeSplit.runs += game.runs || 0;
+          gameTypeSplit.walks += game.walks || 0;
+          gameTypeSplit.doubles += game.doubles || 0;
+          gameTypeSplit.triples += game.triples || 0;
+          gameTypeSplit.homeRuns += game.homeRuns || 0;
+          gameTypeSplit.rbi += game.rbi || 0;
         });
 
         // Calculate basic stats for season totals
@@ -1317,6 +1348,13 @@
           opp.battingAverage = opp.atBats > 0 ? opp.hits / opp.atBats : 0;
           opp.onBasePercentage = (opp.atBats + opp.walks) > 0
             ? (opp.hits + opp.walks) / (opp.atBats + opp.walks) : 0;
+        });
+        
+        // Calculate splits averages (home/away, playoff/regular)
+        Object.values(seasonTotals.splits).forEach(split => {
+          split.battingAverage = split.atBats > 0 ? split.hits / split.atBats : 0;
+          split.onBasePercentage = (split.atBats + split.walks) > 0
+            ? (split.hits + split.walks) / (split.atBats + split.walks) : 0;
         });
 
         allSeasonTotals.set(legacyId, seasonTotals);
@@ -1448,7 +1486,10 @@
           const avgDisplay = seasonTotals.atBats > 0 
             ? '.' + (seasonTotals.battingAverage * 1000).toFixed(0).padStart(3, '0') : '.000';
           const oppCount = Object.keys(seasonTotals.vsOpponent).length;
-          log(`  ✓ ${seasonTotals.playerName || legacyId}: ${seasonTotals.games} G, ${avgDisplay} BA, ${seasonTotals.acesBPI.toFixed(1)} BPI, vs ${oppCount} teams → ${docId}`, 'success');
+          const homeGames = seasonTotals.splits.home.games;
+          const awayGames = seasonTotals.splits.away.games;
+          const playoffGames = seasonTotals.splits.playoff.games;
+          log(`  ✓ ${seasonTotals.playerName || legacyId}: ${seasonTotals.games} G (${homeGames}H/${awayGames}A, ${playoffGames} playoff), ${avgDisplay} BA, ${seasonTotals.acesBPI.toFixed(1)} BPI, vs ${oppCount} teams → ${docId}`, 'success');
 
           updateSeasonStats(playerBattingGames.size, totalGamesProcessed, battingUpdatedCount, pitchingUpdatedCount);
 
@@ -1543,7 +1584,7 @@
         log(`✗ Errors: ${errorCount}`, 'error');
       }
       log('');
-      log('💡 Career totals and vsOpponent stats have been recalculated automatically.');
+      log('💡 Career totals, vsOpponent stats, and splits (home/away, playoff/regular) have been recalculated automatically.');
 
     } catch (error) {
       log(`Fatal error: ${error.message}`, 'error');
@@ -1564,7 +1605,13 @@
       doubles: 0, triples: 0, homeRuns: 0, rbi: 0,
       strikeouts: 0, stolenBases: 0,
       acesBPITotal: 0, acesBPICount: 0,
-      vsOpponent: {}  // Career vs opponent totals
+      vsOpponent: {},  // Career vs opponent totals
+      splits: {        // Career splits aggregated from seasons with game-level data
+        home: { games: 0, atBats: 0, hits: 0, runs: 0, walks: 0, doubles: 0, triples: 0, homeRuns: 0, rbi: 0 },
+        away: { games: 0, atBats: 0, hits: 0, runs: 0, walks: 0, doubles: 0, triples: 0, homeRuns: 0, rbi: 0 },
+        regular: { games: 0, atBats: 0, hits: 0, runs: 0, walks: 0, doubles: 0, triples: 0, homeRuns: 0, rbi: 0 },
+        playoff: { games: 0, atBats: 0, hits: 0, runs: 0, walks: 0, doubles: 0, triples: 0, homeRuns: 0, rbi: 0 }
+      }
     };
 
     Object.entries(seasonsObject).forEach(([seasonId, season]) => {
@@ -1607,6 +1654,25 @@
           careerOpp.rbi += oppStats.rbi || 0;
         });
       }
+      
+      // Aggregate splits data from seasons that have it (game-based seasons)
+      if (season.splits) {
+        ['home', 'away', 'regular', 'playoff'].forEach(splitKey => {
+          const seasonSplit = season.splits[splitKey];
+          const careerSplit = career.splits[splitKey];
+          if (seasonSplit) {
+            careerSplit.games += seasonSplit.games || 0;
+            careerSplit.atBats += seasonSplit.atBats || 0;
+            careerSplit.hits += seasonSplit.hits || 0;
+            careerSplit.runs += seasonSplit.runs || 0;
+            careerSplit.walks += seasonSplit.walks || 0;
+            careerSplit.doubles += seasonSplit.doubles || 0;
+            careerSplit.triples += seasonSplit.triples || 0;
+            careerSplit.homeRuns += seasonSplit.homeRuns || 0;
+            careerSplit.rbi += seasonSplit.rbi || 0;
+          }
+        });
+      }
     });
 
     career.battingAverage = career.atBats > 0 ? career.hits / career.atBats : 0;
@@ -1619,6 +1685,13 @@
       opp.battingAverage = opp.atBats > 0 ? opp.hits / opp.atBats : 0;
       opp.onBasePercentage = (opp.atBats + opp.walks) > 0
         ? (opp.hits + opp.walks) / (opp.atBats + opp.walks) : 0;
+    });
+    
+    // Calculate career splits averages
+    Object.values(career.splits).forEach(split => {
+      split.battingAverage = split.atBats > 0 ? split.hits / split.atBats : 0;
+      split.onBasePercentage = (split.atBats + split.walks) > 0
+        ? (split.hits + split.walks) / (split.atBats + split.walks) : 0;
     });
 
     delete career.acesBPITotal;
