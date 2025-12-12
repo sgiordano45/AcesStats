@@ -717,7 +717,9 @@
     doc, 
     getDoc,
     collection,
-    getDocs
+    getDocs,
+    query,
+    where
   } from './firebase-config.js';
   
   // Get player ID from URL
@@ -1022,26 +1024,53 @@
   
   async function loadPlayerPhoto() {
     try {
-      // Check if player has a linked user with photo
-      if (currentPlayer.isAuthUser || currentPlayer.linkedUserId) {
-        const userId = currentPlayer.linkedUserId || currentPlayer.id;
-        const userDoc = await getDoc(doc(db, 'users', userId));
+      const displayName = currentPlayer.name || currentPlayer.displayName;
+      let playerPhotoURL = null;
+      
+      // Method 1: Query users collection for linkedPlayer matching display name
+      const usersRef = collection(db, 'users');
+      const q = query(usersRef, where('linkedPlayer', '==', displayName));
+      const querySnapshot = await getDocs(q);
+      
+      if (!querySnapshot.empty) {
+        const userDoc = querySnapshot.docs[0];
+        const userData = userDoc.data();
         
-        if (userDoc.exists()) {
-          const userData = userDoc.data();
-          const photoURL = userData.playerPhotoURL || userData.photoURL;
-          
-          if (photoURL) {
-            const photoEl = document.getElementById('playerPhoto');
-            const placeholderEl = document.getElementById('playerPhotoPlaceholder');
-            
-            photoEl.src = photoURL;
-            photoEl.onload = () => {
-              photoEl.classList.add('loaded');
-              placeholderEl.classList.add('hidden');
-            };
+        console.log('🔗 Found linked user for player:', displayName);
+        
+        // Check for player photo first, then fall back to profile photo
+        if (userData.playerPhotoURL) {
+          playerPhotoURL = userData.playerPhotoURL;
+          console.log('📸 Using playerPhotoURL');
+        } else if (userData.profilePhotoURL) {
+          playerPhotoURL = userData.profilePhotoURL;
+          console.log('📸 Using profilePhotoURL as fallback');
+        }
+      }
+      
+      // Method 2: Direct lookup if player ID matches a user document
+      if (!playerPhotoURL && currentPlayer.id) {
+        const directUserDoc = await getDoc(doc(db, 'users', currentPlayer.id));
+        if (directUserDoc.exists()) {
+          const userData = directUserDoc.data();
+          if (userData.playerPhotoURL) {
+            playerPhotoURL = userData.playerPhotoURL;
+          } else if (userData.profilePhotoURL) {
+            playerPhotoURL = userData.profilePhotoURL;
           }
         }
+      }
+      
+      // Apply photo if found
+      if (playerPhotoURL) {
+        const photoEl = document.getElementById('playerPhoto');
+        const placeholderEl = document.getElementById('playerPhotoPlaceholder');
+        
+        photoEl.src = playerPhotoURL;
+        photoEl.onload = () => {
+          photoEl.classList.add('loaded');
+          placeholderEl.classList.add('hidden');
+        };
       }
     } catch (error) {
       console.warn('Could not load player photo:', error);
