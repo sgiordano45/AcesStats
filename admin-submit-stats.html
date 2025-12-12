@@ -1232,8 +1232,10 @@ async function loadTeamRoster(teamId) {
     const seasonPlayers = await getSeasonPlayerStatsOptimized(seasonId);
     
     // Filter for the selected team and exclude migrated players
+    // Use case-insensitive comparison since team IDs may vary in case
+    const teamIdLower = teamId.toLowerCase();
     const filteredPlayers = seasonPlayers.filter(p => {
-      return p.team === teamId && !p.migrated;
+      return (p.team || '').toLowerCase() === teamIdLower && !p.migrated;
     });
 
     teamRoster = filteredPlayers.map(player => {
@@ -1442,8 +1444,17 @@ window.handleGameChange = async function() {
   
   selectedGameData = JSON.parse(selectedOption.dataset.gameData);
   
+  // Reconstruct dateObj from the stored date string (JSON.parse loses Date objects)
+  if (selectedGameData.dateObj) {
+    selectedGameData.dateObj = new Date(selectedGameData.dateObj);
+  }
+  
   // Show game details
-  const dateStr = selectedGameData.dateObj && selectedGameData.dateObj.getTime() !== 0
+  const hasValidDate = selectedGameData.dateObj && 
+                       !isNaN(selectedGameData.dateObj.getTime()) && 
+                       selectedGameData.dateObj.getTime() !== 0;
+  
+  const dateStr = hasValidDate
     ? selectedGameData.dateObj.toLocaleDateString('en-US', { 
         weekday: 'long', 
         year: 'numeric',
@@ -1636,8 +1647,15 @@ window.submitSingleGameStats = async function() {
     
     // Format date for storage
     let gameDateFormatted = 'Unknown';
-    if (selectedGameData?.dateObj && selectedGameData.dateObj.getTime() !== 0) {
-      gameDateFormatted = selectedGameData.dateObj.toISOString().split('T')[0];
+    if (selectedGameData?.dateObj) {
+      // Ensure dateObj is a Date object
+      const dateObj = selectedGameData.dateObj instanceof Date 
+        ? selectedGameData.dateObj 
+        : new Date(selectedGameData.dateObj);
+      
+      if (!isNaN(dateObj.getTime()) && dateObj.getTime() !== 0) {
+        gameDateFormatted = dateObj.toISOString().split('T')[0];
+      }
     }
     
     let successCount = 0;
