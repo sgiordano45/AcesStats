@@ -1,0 +1,2228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<link rel="manifest" href="/manifest.json">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin Stats Entry - Mountainside Aces</title>
+<meta name="theme-color" content="#2d5016">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="stylesheet" href="mobile-enhancements.css">
+<link rel="stylesheet" href="nav-styles.css">
+<style>
+  :root {
+    --primary-color: #2d5016;
+    --secondary-color: #1a6b4a;
+    --accent-color: #ffd700;
+    --admin-color: #6b21a8;
+    --admin-secondary: #7c3aed;
+    --card-bg: #ffffff;
+    --text-dark: #2d3748;
+    --text-light: #718096;
+    --border-color: #e2e8f0;
+    --shadow-sm: 0 2px 8px rgba(0,0,0,0.08);
+    --shadow-md: 0 4px 16px rgba(0,0,0,0.12);
+    --shadow-lg: 0 12px 32px rgba(0,0,0,0.16);
+    --success-color: #22c55e;
+    --warning-color: #f59e0b;
+    --danger-color: #ef4444;
+    --info-color: #3b82f6;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    margin: 0;
+    padding: 0;
+    background: linear-gradient(135deg, #f7fafc 0%, #edf2f7 100%);
+    min-height: 100vh;
+    color: var(--text-dark);
+  }
+
+  .loading-overlay {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(255,255,255,0.95);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    transition: opacity 0.5s ease;
+  }
+
+  .loading-overlay.hidden {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .softball-spinner::before {
+    content: '📊';
+    font-size: 80px;
+    animation: spin 1.5s ease-in-out infinite;
+  }
+
+  .loading-text {
+    margin-top: 1rem;
+    font-size: 1.125rem;
+    color: var(--text-dark);
+    font-weight: 600;
+  }
+
+  @keyframes spin {
+    0%, 100% { transform: rotate(0deg) scale(1); }
+    50% { transform: rotate(180deg) scale(1.1); }
+  }
+
+  /* Auth Gate */
+  .auth-gate {
+    max-width: 500px;
+    margin: 4rem auto;
+    padding: 3rem;
+    background: var(--card-bg);
+    border-radius: 16px;
+    box-shadow: var(--shadow-lg);
+    text-align: center;
+  }
+
+  .auth-gate h2 {
+    color: var(--danger-color);
+    margin-bottom: 1rem;
+  }
+
+  .auth-gate p {
+    color: var(--text-light);
+    margin-bottom: 2rem;
+  }
+
+  .auth-gate a {
+    display: inline-block;
+    padding: 0.75rem 2rem;
+    background: var(--primary-color);
+    color: white;
+    text-decoration: none;
+    border-radius: 8px;
+    font-weight: 600;
+  }
+
+  /* Header */
+  .header {
+    background: linear-gradient(135deg, var(--admin-color) 0%, var(--admin-secondary) 100%);
+    color: white;
+    padding: 2.5rem 2rem;
+    box-shadow: var(--shadow-lg);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .header::before {
+    content: '';
+    position: absolute;
+    top: -100px;
+    right: -100px;
+    width: 300px;
+    height: 300px;
+    background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+    border-radius: 50%;
+  }
+
+  .header::after {
+    content: '📊';
+    position: absolute;
+    bottom: -40px;
+    left: -30px;
+    font-size: 180px;
+    opacity: 0.08;
+  }
+
+  .header-content {
+    max-width: 1400px;
+    margin: 0 auto;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    position: relative;
+    z-index: 1;
+    flex-wrap: wrap;
+    gap: 1rem;
+  }
+
+  .header h1 {
+    margin: 0;
+    font-size: 2rem;
+    font-weight: 800;
+    margin-bottom: 0.25rem;
+  }
+
+  .header p {
+    margin: 0;
+    opacity: 0.9;
+    font-size: 0.95rem;
+  }
+
+  .header-buttons {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+
+  /* Navigation Buttons */
+  .nav-btn {
+    padding: 0.875rem 1.5rem;
+    border: 2px solid white;
+    background: white;
+    color: var(--admin-color);
+    border-radius: 12px;
+    font-weight: 600;
+    font-size: 0.9rem;
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    transition: all 0.3s ease;
+  }
+
+  .nav-btn::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background: var(--accent-color);
+    transform: translateX(-100%);
+    transition: transform 0.3s ease;
+    z-index: -1;
+  }
+
+  .nav-btn:hover::before {
+    transform: translateX(0);
+  }
+
+  .nav-btn:hover {
+    color: var(--admin-color);
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+  }
+
+  .admin-badge {
+    display: inline-block;
+    background: rgba(255,255,255,0.2);
+    padding: 0.25rem 0.75rem;
+    border-radius: 20px;
+    font-size: 0.85rem;
+    margin-top: 0.5rem;
+  }
+
+  /* Container */
+  .container {
+    max-width: 1400px;
+    margin: 2rem auto;
+    padding: 0 1.5rem;
+  }
+
+  /* Tab Navigation */
+  .tab-nav {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 2rem;
+    flex-wrap: wrap;
+    background: var(--card-bg);
+    padding: 0.5rem;
+    border-radius: 12px;
+    box-shadow: var(--shadow-sm);
+  }
+
+  .tab-btn {
+    flex: 1;
+    min-width: 200px;
+    padding: 1rem 1.5rem;
+    border: none;
+    background: transparent;
+    color: var(--text-light);
+    font-weight: 600;
+    font-size: 0.95rem;
+    cursor: pointer;
+    border-radius: 8px;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+  }
+
+  .tab-btn:hover {
+    background: #f1f5f9;
+    color: var(--text-dark);
+  }
+
+  .tab-btn.active {
+    background: var(--admin-color);
+    color: white;
+  }
+
+  .tab-btn .icon {
+    font-size: 1.2rem;
+  }
+
+  /* Tab Content */
+  .tab-content {
+    display: none;
+  }
+
+  .tab-content.active {
+    display: block;
+  }
+
+  /* Section Cards */
+  .section {
+    background: var(--card-bg);
+    border-radius: 16px;
+    margin-bottom: 2rem;
+    box-shadow: var(--shadow-sm);
+    border: 1px solid var(--border-color);
+    overflow: hidden;
+  }
+
+  .section-header {
+    background: linear-gradient(135deg, var(--admin-color) 0%, var(--admin-secondary) 100%);
+    color: white;
+    padding: 1.25rem 1.5rem;
+    font-size: 1.25rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .section-header.green {
+    background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+  }
+
+  .section-content {
+    padding: 1.5rem;
+  }
+
+  /* Form Styles */
+  .form-group {
+    margin-bottom: 1.5rem;
+  }
+
+  .form-group label {
+    display: block;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+    color: var(--text-dark);
+  }
+
+  .form-group .hint {
+    font-size: 0.85rem;
+    color: var(--text-light);
+    margin-top: 0.25rem;
+  }
+
+  .form-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 1rem;
+  }
+
+  input[type="text"],
+  input[type="email"],
+  input[type="number"],
+  input[type="date"],
+  input[type="file"],
+  select,
+  textarea {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    border: 2px solid var(--border-color);
+    border-radius: 8px;
+    font-size: 1rem;
+    transition: all 0.2s ease;
+    background: white;
+  }
+
+  input:focus,
+  select:focus,
+  textarea:focus {
+    outline: none;
+    border-color: var(--admin-color);
+    box-shadow: 0 0 0 3px rgba(107, 33, 168, 0.1);
+  }
+
+  /* Buttons */
+  .btn {
+    padding: 0.75rem 1.5rem;
+    border: none;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.95rem;
+  }
+
+  .btn-primary {
+    background: var(--admin-color);
+    color: white;
+  }
+
+  .btn-primary:hover {
+    background: var(--admin-secondary);
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+  }
+
+  .btn-primary:disabled {
+    background: #cbd5e0;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+  }
+
+  .btn-success {
+    background: var(--success-color);
+    color: white;
+  }
+
+  .btn-success:hover {
+    background: #16a34a;
+  }
+
+  .btn-secondary {
+    background: white;
+    color: var(--text-dark);
+    border: 2px solid var(--border-color);
+  }
+
+  .btn-secondary:hover {
+    background: #f8fafc;
+    border-color: var(--admin-color);
+  }
+
+  .btn-danger {
+    background: var(--danger-color);
+    color: white;
+  }
+
+  .btn-danger:hover {
+    background: #dc2626;
+  }
+
+  /* Message Boxes */
+  .message-box {
+    padding: 1rem 1.25rem;
+    border-radius: 8px;
+    margin-bottom: 1.5rem;
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+
+  .message-box.hidden {
+    display: none;
+  }
+
+  .message-box svg {
+    width: 24px;
+    height: 24px;
+    flex-shrink: 0;
+  }
+
+  .info-box {
+    background: #eff6ff;
+    border: 2px solid var(--info-color);
+    color: #1e40af;
+  }
+
+  .info-box svg { color: var(--info-color); }
+
+  .success-box {
+    background: #d1fae5;
+    border: 2px solid var(--success-color);
+    color: #166534;
+  }
+
+  .success-box svg { color: var(--success-color); }
+
+  .warning-box {
+    background: #fef3c7;
+    border: 2px solid var(--warning-color);
+    color: #92400e;
+  }
+
+  .warning-box svg { color: var(--warning-color); }
+
+  .error-box {
+    background: #fee2e2;
+    border: 2px solid var(--danger-color);
+    color: #991b1b;
+  }
+
+  .error-box svg { color: var(--danger-color); }
+
+  /* Stats Table */
+  .table-scroll-container {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .stats-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+  }
+
+  .stats-table thead th {
+    background: #f8fafc;
+    color: var(--text-dark);
+    font-weight: 600;
+    padding: 12px 8px;
+    text-align: center;
+    border-bottom: 2px solid var(--border-color);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    white-space: nowrap;
+  }
+
+  .stats-table thead th.player-col {
+    text-align: left;
+    position: sticky;
+    left: 0;
+    z-index: 20;
+    background: #f8fafc;
+    min-width: 150px;
+  }
+
+  .stats-table tbody td {
+    padding: 8px;
+    border-bottom: 1px solid var(--border-color);
+    text-align: center;
+  }
+
+  .stats-table tbody td.player-cell {
+    position: sticky;
+    left: 0;
+    background: white;
+    z-index: 5;
+    text-align: left;
+    font-weight: 500;
+  }
+
+  .stats-table tbody tr:hover td {
+    background: #f8fafc;
+  }
+
+  .stats-table tbody tr:hover td.player-cell {
+    background: #f1f5f9;
+  }
+
+  .stats-input {
+    width: 70px;
+    padding: 6px 8px;
+    border: 2px solid var(--border-color);
+    border-radius: 6px;
+    text-align: center;
+    font-size: 14px;
+    font-weight: 500;
+    transition: all 0.2s;
+  }
+
+  .stats-input:focus {
+    outline: none;
+    border-color: var(--admin-color);
+    box-shadow: 0 0 0 3px rgba(107, 33, 168, 0.1);
+  }
+
+  .checkbox-cell input[type="checkbox"] {
+    width: 20px;
+    height: 20px;
+    cursor: pointer;
+    accent-color: var(--admin-color);
+  }
+
+  /* Game Details Card */
+  .game-details {
+    display: none;
+    padding: 1rem;
+    background: #f8fafc;
+    border-radius: 8px;
+    margin-top: 1rem;
+  }
+
+  .game-details.visible {
+    display: block;
+  }
+
+  .game-details-grid {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 0.5rem 1rem;
+    font-size: 14px;
+  }
+
+  /* Edit Mode Banner */
+  .edit-mode-banner {
+    background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+    border: 2px solid var(--warning-color);
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 1.5rem;
+    display: none;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .edit-mode-banner.visible {
+    display: flex;
+  }
+
+  .edit-mode-banner svg {
+    width: 24px;
+    height: 24px;
+    color: #d97706;
+    flex-shrink: 0;
+  }
+
+  .edit-mode-banner .banner-content {
+    flex: 1;
+  }
+
+  .edit-mode-banner .banner-title {
+    font-weight: 700;
+    color: #92400e;
+    margin-bottom: 0.25rem;
+  }
+
+  .edit-mode-banner .banner-text {
+    color: #b45309;
+    font-size: 14px;
+  }
+
+  /* CSV Upload Area */
+  .upload-area {
+    border: 3px dashed var(--border-color);
+    border-radius: 12px;
+    padding: 3rem 2rem;
+    text-align: center;
+    transition: all 0.3s ease;
+    cursor: pointer;
+  }
+
+  .upload-area:hover,
+  .upload-area.dragover {
+    border-color: var(--admin-color);
+    background: rgba(107, 33, 168, 0.05);
+  }
+
+  .upload-area .icon {
+    font-size: 3rem;
+    margin-bottom: 1rem;
+  }
+
+  .upload-area input[type="file"] {
+    display: none;
+  }
+
+  /* CSV Preview Table */
+  .csv-preview {
+    max-height: 400px;
+    overflow: auto;
+    margin-top: 1rem;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+  }
+
+  .csv-preview table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+
+  .csv-preview th,
+  .csv-preview td {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border-color);
+    text-align: left;
+    white-space: nowrap;
+  }
+
+  .csv-preview th {
+    background: var(--admin-color);
+    color: white;
+    position: sticky;
+    top: 0;
+    font-weight: 600;
+  }
+
+  .csv-preview tr:nth-child(even) {
+    background: #f8fafc;
+  }
+
+  .csv-preview .status-valid {
+    color: var(--success-color);
+  }
+
+  .csv-preview .status-warning {
+    color: var(--warning-color);
+  }
+
+  .csv-preview .status-error {
+    color: var(--danger-color);
+  }
+
+  /* Action Buttons Row */
+  .action-buttons {
+    display: flex;
+    gap: 1rem;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin-top: 2rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--border-color);
+  }
+
+  /* Toast Notifications */
+  .toast-container {
+    position: fixed;
+    bottom: 2rem;
+    right: 2rem;
+    z-index: 10000;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .toast {
+    background: var(--card-bg);
+    padding: 1rem 1.5rem;
+    border-radius: 8px;
+    box-shadow: var(--shadow-lg);
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    min-width: 300px;
+    animation: slideIn 0.3s ease;
+  }
+
+  .toast-success { border-left: 4px solid var(--success-color); }
+  .toast-error { border-left: 4px solid var(--danger-color); }
+  .toast-warning { border-left: 4px solid var(--warning-color); }
+  .toast-info { border-left: 4px solid var(--info-color); }
+
+  @keyframes slideIn {
+    from { transform: translateX(100%); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+  }
+
+  /* Stats Summary */
+  .stats-summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 1rem;
+    padding: 1rem;
+    background: #f8fafc;
+    border-radius: 8px;
+    margin-top: 1rem;
+  }
+
+  .stats-summary-item {
+    text-align: center;
+  }
+
+  .stats-summary-item .value {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--admin-color);
+  }
+
+  .stats-summary-item .label {
+    font-size: 0.75rem;
+    color: var(--text-light);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  /* Template Download Link */
+  .template-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--admin-color);
+    font-weight: 600;
+    text-decoration: none;
+    margin-top: 1rem;
+  }
+
+  .template-link:hover {
+    text-decoration: underline;
+  }
+
+  /* Mobile Responsive */
+  @media (max-width: 768px) {
+    .header-content {
+      flex-direction: column;
+      text-align: center;
+    }
+
+    .header h1 {
+      font-size: 1.5rem;
+    }
+
+    .header-buttons {
+      justify-content: center;
+    }
+
+    .container {
+      padding: 0 1rem;
+    }
+
+    .tab-btn {
+      min-width: 150px;
+      padding: 0.75rem 1rem;
+      font-size: 0.85rem;
+    }
+
+    .form-row {
+      grid-template-columns: 1fr;
+    }
+
+    .stats-input {
+      width: 60px;
+      padding: 4px 6px;
+      font-size: 13px;
+    }
+
+    .stats-table thead th,
+    .stats-table tbody td {
+      padding: 6px 4px;
+      font-size: 12px;
+    }
+
+    .action-buttons {
+      flex-direction: column;
+    }
+
+    .action-buttons .btn {
+      width: 100%;
+      justify-content: center;
+    }
+  }
+</style>
+</head>
+<body>
+
+<div id="loadingOverlay" class="loading-overlay">
+  <div class="softball-spinner"></div>
+  <div class="loading-text">Loading admin stats entry...</div>
+</div>
+
+<div id="authGate" class="auth-gate" style="display: none;">
+  <h2>🔒 Access Denied</h2>
+  <p>You must be an admin to access this page.</p>
+  <a href="profile.html">Go to Profile</a>
+</div>
+
+<div id="mainApp" style="display: none;">
+  <header class="header">
+    <div class="header-content">
+      <div>
+        <h1>📊 Admin Stats Entry</h1>
+        <p>Submit game statistics for any team</p>
+        <span class="admin-badge">🛡️ Admin Only</span>
+      </div>
+      <div class="header-buttons">
+        <a href="admin-content.html" class="nav-btn">🎛️ Content Admin</a>
+        <a href="profile.html" class="nav-btn">👤 Profile</a>
+      </div>
+    </div>
+  </header>
+
+  <div class="container">
+    <!-- Tab Navigation -->
+    <div class="tab-nav">
+      <button class="tab-btn active" onclick="switchTab('single')">
+        <span class="icon">📝</span> Game-by-Game Entry
+      </button>
+      <button class="tab-btn" onclick="switchTab('bulk')">
+        <span class="icon">📤</span> CSV Bulk Upload
+      </button>
+    </div>
+
+    <!-- Messages -->
+    <div id="infoMessage" class="message-box info-box hidden">
+      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+      </svg>
+      <div id="infoMessageText"></div>
+    </div>
+
+    <div id="successMessage" class="message-box success-box hidden">
+      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+      </svg>
+      <div id="successMessageText"></div>
+    </div>
+
+    <div id="warningMessage" class="message-box warning-box hidden">
+      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+      </svg>
+      <div id="warningMessageText"></div>
+    </div>
+
+    <div id="errorMessage" class="message-box error-box hidden">
+      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+      </svg>
+      <div id="errorMessageText"></div>
+    </div>
+
+    <!-- SINGLE GAME ENTRY TAB -->
+    <div id="singleTab" class="tab-content active">
+      <!-- Team & Game Selection -->
+      <div class="section">
+        <div class="section-header green">
+          <span>🎯</span> Select Team & Game
+        </div>
+        <div class="section-content">
+          <div class="form-row">
+            <div class="form-group">
+              <label for="teamSelect">Team *</label>
+              <select id="teamSelect" onchange="handleTeamChange()">
+                <option value="">-- Select a team --</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="seasonSelect">Season</label>
+              <select id="seasonSelect" onchange="handleSeasonChange()">
+                <option value="">Loading seasons...</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="gameSelect">Game *</label>
+            <select id="gameSelect" onchange="handleGameChange()">
+              <option value="">-- Select a team first --</option>
+            </select>
+          </div>
+
+          <div id="gameDetails" class="game-details">
+            <div class="game-details-grid">
+              <strong>Date:</strong> <span id="selectedGameDate"></span>
+              <strong>Opponent:</strong> <span id="selectedGameOpponent"></span>
+              <strong>Location:</strong> <span id="selectedGameLocation"></span>
+              <strong>Type:</strong> <span id="selectedGameType"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Edit Mode Banner -->
+      <div id="editModeBanner" class="edit-mode-banner">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+        </svg>
+        <div class="banner-content">
+          <div class="banner-title">Editing Existing Stats</div>
+          <div class="banner-text">This game already has stats submitted. Changes will update the existing records.</div>
+        </div>
+      </div>
+
+      <!-- Stats Entry Table -->
+      <div id="statsGridContainer" class="section" style="display: none;">
+        <div class="section-header">
+          <span>📊</span> Enter Player Stats
+        </div>
+        <div class="section-content">
+          <div class="table-scroll-container">
+            <table class="stats-table">
+              <thead>
+                <tr>
+                  <th class="player-col">Player</th>
+                  <th title="Player participated in game">Played</th>
+                  <th title="At Bats">AB</th>
+                  <th title="Hits">H</th>
+                  <th title="Runs">R</th>
+                  <th title="Walks">BB</th>
+                  <th title="Innings Pitched">IP</th>
+                  <th title="Runs Allowed">RA</th>
+                </tr>
+              </thead>
+              <tbody id="statsTableBody">
+                <!-- Populated by JavaScript -->
+              </tbody>
+            </table>
+          </div>
+
+          <div class="action-buttons">
+            <button type="button" class="btn btn-success" id="submitBtn" onclick="submitSingleGameStats()">
+              <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+              </svg>
+              Submit Stats
+            </button>
+            <button type="button" class="btn btn-secondary" onclick="clearSingleGameForm()">
+              <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+              </svg>
+              Clear All
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- BULK UPLOAD TAB -->
+    <div id="bulkTab" class="tab-content">
+      <div class="section">
+        <div class="section-header green">
+          <span>📤</span> CSV Bulk Upload
+        </div>
+        <div class="section-content">
+          <div class="form-row">
+            <div class="form-group">
+              <label for="bulkTeamSelect">Team *</label>
+              <select id="bulkTeamSelect">
+                <option value="">-- Select a team --</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="bulkSeasonSelect">Season</label>
+              <select id="bulkSeasonSelect">
+                <option value="">Loading seasons...</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="upload-area" id="uploadArea" onclick="document.getElementById('csvFileInput').click()">
+            <input type="file" id="csvFileInput" accept=".csv" onchange="handleCSVUpload(event)">
+            <div class="icon">📁</div>
+            <div><strong>Click to upload</strong> or drag and drop</div>
+            <div style="color: var(--text-light); margin-top: 0.5rem;">CSV file with player stats</div>
+          </div>
+
+          <a href="#" class="template-link" onclick="downloadTemplate(); return false;">
+            <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+            </svg>
+            Download CSV Template
+          </a>
+
+          <div class="form-group" style="margin-top: 1.5rem;">
+            <label>Expected CSV Format:</label>
+            <div class="hint">
+              <code style="background: #f1f5f9; padding: 0.5rem; border-radius: 4px; display: block; overflow-x: auto; white-space: pre;">
+Player,GameDate,Opponent,IsHome,AB,H,R,BB,IP,RA
+John Smith,2025-09-15,Blue,true,4,2,1,0,0,0
+Jane Doe,2025-09-15,Blue,true,3,1,0,1,2,1</code>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- CSV Preview -->
+      <div id="csvPreviewSection" class="section" style="display: none;">
+        <div class="section-header">
+          <span>👁️</span> Preview Upload (<span id="csvRowCount">0</span> rows)
+        </div>
+        <div class="section-content">
+          <div id="csvValidationSummary" class="stats-summary" style="display: none;">
+            <div class="stats-summary-item">
+              <div class="value" id="validRowCount">0</div>
+              <div class="label">Valid Rows</div>
+            </div>
+            <div class="stats-summary-item">
+              <div class="value" id="warningRowCount">0</div>
+              <div class="label">Warnings</div>
+            </div>
+            <div class="stats-summary-item">
+              <div class="value" id="errorRowCount">0</div>
+              <div class="label">Errors</div>
+            </div>
+            <div class="stats-summary-item">
+              <div class="value" id="uniqueGamesCount">0</div>
+              <div class="label">Games</div>
+            </div>
+          </div>
+
+          <div class="csv-preview" id="csvPreviewTable">
+            <!-- Populated by JavaScript -->
+          </div>
+
+          <div class="action-buttons">
+            <button type="button" class="btn btn-success" id="bulkSubmitBtn" onclick="submitBulkStats()">
+              <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+              </svg>
+              Upload All Stats
+            </button>
+            <button type="button" class="btn btn-secondary" onclick="clearBulkUpload()">
+              <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+              </svg>
+              Clear Upload
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="toastContainer" class="toast-container"></div>
+
+<script type="module">
+import { 
+  db, 
+  collection, 
+  doc, 
+  getDocs, 
+  getDoc, 
+  setDoc,
+  query, 
+  where,
+  orderBy,
+  serverTimestamp
+} from './firebase-config.js';
+
+import { onAuthChange, getUserProfile } from './firebase-auth.js';
+import { getSeasonPlayerStatsOptimized, getCurrentSeason } from './firebase-data.js';
+
+// ============================================
+// STATE
+// ============================================
+let currentUser = null;
+let userProfile = null;
+let currentSeason = null;
+let allSeasons = [];
+let allTeams = [];
+let teamRoster = [];
+let teamGames = [];
+let selectedGameData = null;
+let csvData = [];
+let csvValidation = [];
+
+// ============================================
+// INITIALIZATION
+// ============================================
+async function initializePage(user) {
+  if (!user) {
+    document.getElementById('loadingOverlay').classList.add('hidden');
+    document.getElementById('authGate').style.display = 'block';
+    return;
+  }
+
+  try {
+    currentUser = user;
+    
+    // Get user profile
+    const profileResult = await getUserProfile(user.uid);
+    if (!profileResult.success || profileResult.data.role !== 'admin') {
+      document.getElementById('loadingOverlay').classList.add('hidden');
+      document.getElementById('authGate').style.display = 'block';
+      return;
+    }
+    
+    userProfile = profileResult.data;
+    console.log('✅ Admin verified:', userProfile.name || userProfile.email);
+
+    // Load seasons
+    await loadSeasons();
+    
+    // Load teams
+    await loadTeams();
+    
+    // Show main app
+    document.getElementById('mainApp').style.display = 'block';
+    document.getElementById('loadingOverlay').classList.add('hidden');
+    
+    showMessage('info', 'Select a team and game to enter stats, or use the CSV upload tab for bulk entry.');
+    
+  } catch (error) {
+    console.error('❌ Error initializing:', error);
+    showMessage('error', `Error loading page: ${error.message}`);
+    document.getElementById('loadingOverlay').classList.add('hidden');
+  }
+}
+
+// ============================================
+// DATA LOADING
+// ============================================
+async function loadSeasons() {
+  try {
+    const seasonsSnap = await getDocs(collection(db, 'seasons'));
+    allSeasons = [];
+    let activeSeason = null;
+    
+    seasonsSnap.forEach(doc => {
+      const data = { id: doc.id, ...doc.data() };
+      allSeasons.push(data);
+      if (data.isActive) {
+        activeSeason = data;
+      }
+    });
+    
+    // Sort by most recent first
+    allSeasons.sort((a, b) => {
+      if (a.isActive) return -1;
+      if (b.isActive) return 1;
+      return (b.id || '').localeCompare(a.id || '');
+    });
+    
+    currentSeason = activeSeason || allSeasons[0];
+    
+    // Populate season dropdowns
+    const seasonSelects = ['seasonSelect', 'bulkSeasonSelect'];
+    seasonSelects.forEach(id => {
+      const select = document.getElementById(id);
+      select.innerHTML = allSeasons.map(s => 
+        `<option value="${s.id}" ${s.id === currentSeason?.id ? 'selected' : ''}>${s.name || s.id}${s.isActive ? ' (Active)' : ''}</option>`
+      ).join('');
+    });
+    
+    console.log(`✅ Loaded ${allSeasons.length} seasons, active: ${currentSeason?.id}`);
+  } catch (error) {
+    console.error('❌ Error loading seasons:', error);
+  }
+}
+
+async function loadTeams() {
+  try {
+    const teamsSnap = await getDocs(collection(db, 'teams'));
+    allTeams = [];
+    
+    teamsSnap.forEach(doc => {
+      allTeams.push({ id: doc.id, ...doc.data() });
+    });
+    
+    // Sort alphabetically
+    allTeams.sort((a, b) => (a.name || a.id).localeCompare(b.name || b.id));
+    
+    // Populate team dropdowns
+    const teamSelects = ['teamSelect', 'bulkTeamSelect'];
+    teamSelects.forEach(id => {
+      const select = document.getElementById(id);
+      select.innerHTML = '<option value="">-- Select a team --</option>' +
+        allTeams.map(t => `<option value="${t.id}">${t.name || t.id}</option>`).join('');
+    });
+    
+    console.log(`✅ Loaded ${allTeams.length} teams`);
+  } catch (error) {
+    console.error('❌ Error loading teams:', error);
+  }
+}
+
+async function loadTeamRoster(teamId) {
+  try {
+    console.log('🔍 Loading roster for team:', teamId);
+    
+    const seasonId = document.getElementById('seasonSelect').value || currentSeason?.id;
+    const seasonPlayers = await getSeasonPlayerStatsOptimized(seasonId);
+    
+    // Filter for the selected team and exclude migrated players
+    const filteredPlayers = seasonPlayers.filter(p => {
+      return p.team === teamId && !p.migrated;
+    });
+
+    teamRoster = filteredPlayers.map(player => {
+      const name = player.name || player.playerName;
+      
+      // Derive legacyId for game-level stats lookups
+      let legacyId;
+      if (player.isAuthUser && player.linkedPlayer) {
+        legacyId = player.linkedPlayer.toLowerCase().replace(/\./g, '').replace(/\s+/g, '_');
+      } else {
+        legacyId = player.playerId;
+      }
+      
+      return {
+        id: player.playerId,
+        legacyId: legacyId,
+        name: name,
+        displayName: name,
+        linkedPlayer: player.linkedPlayer || null,
+        isAuthUser: player.isAuthUser || false
+      };
+    });
+
+    // Sort players by name
+    teamRoster.sort((a, b) => a.name.localeCompare(b.name));
+
+    console.log(`✅ Loaded ${teamRoster.length} players for team ${teamId}`);
+    return teamRoster;
+  } catch (error) {
+    console.error('❌ Error loading team roster:', error);
+    throw error;
+  }
+}
+
+async function loadTeamGames(teamId) {
+  try {
+    const seasonId = document.getElementById('seasonSelect').value || currentSeason?.id;
+    console.log(`🔍 Loading games for team ${teamId} in season ${seasonId}`);
+    
+    const gamesRef = collection(db, 'seasons', seasonId, 'games');
+    const gamesSnap = await getDocs(gamesRef);
+    
+    const games = [];
+    const teamIdLower = teamId.toLowerCase();
+    
+    gamesSnap.forEach(doc => {
+      const data = doc.data();
+      
+      // Parse game date
+      let gameDate = null;
+      if (data.date?.seconds) {
+        gameDate = new Date(data.date.seconds * 1000);
+      } else if (data.date && typeof data.date === 'string' && data.date.trim() !== '') {
+        gameDate = new Date(data.date);
+        if (isNaN(gameDate.getTime())) {
+          gameDate = null;
+        }
+      }
+
+      // Determine if playoff game
+      const isPlayoffGame = 
+        data.game_type === 'Playoff' || 
+        data.gameType === 'playoff' || 
+        data.gameType === 'Playoff';
+
+      // Handle field name variations
+      const homeTeam = data.homeTeamName || data['home team'] || data.homeTeam || 'TBD';
+      const awayTeam = data.awayTeamName || data['away team'] || data.awayTeam || 'TBD';
+      
+      // Check if this team is involved
+      const homeTeamMatch = homeTeam.toLowerCase() === teamIdLower;
+      const awayTeamMatch = awayTeam.toLowerCase() === teamIdLower;
+      
+      if (!homeTeamMatch && !awayTeamMatch) return;
+      
+      // Determine opponent
+      let opponent = 'Unknown Opponent';
+      let isHome = false;
+      
+      if (homeTeamMatch) {
+        opponent = awayTeam;
+        isHome = true;
+      } else {
+        opponent = homeTeam;
+        isHome = false;
+      }
+      
+      games.push({
+        id: doc.id,
+        ...data,
+        dateObj: gameDate || new Date(0),
+        date: data.date,
+        isHome: isHome,
+        opponent: opponent,
+        isPlayoff: isPlayoffGame,
+        gameType: data.game_type || data.gameType || 'Regular',
+        round: data.round || null
+      });
+    });
+    
+    // Sort by date (most recent first)
+    games.sort((a, b) => b.dateObj.getTime() - a.dateObj.getTime());
+    
+    teamGames = games;
+    console.log(`✅ Loaded ${games.length} games for ${teamId}`);
+    return games;
+  } catch (error) {
+    console.error('❌ Error loading team games:', error);
+    return [];
+  }
+}
+
+// ============================================
+// EVENT HANDLERS
+// ============================================
+window.switchTab = function(tab) {
+  document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+  
+  if (tab === 'single') {
+    document.querySelector('.tab-btn:nth-child(1)').classList.add('active');
+    document.getElementById('singleTab').classList.add('active');
+  } else {
+    document.querySelector('.tab-btn:nth-child(2)').classList.add('active');
+    document.getElementById('bulkTab').classList.add('active');
+  }
+};
+
+window.handleTeamChange = async function() {
+  const teamId = document.getElementById('teamSelect').value;
+  
+  if (!teamId) {
+    document.getElementById('gameSelect').innerHTML = '<option value="">-- Select a team first --</option>';
+    document.getElementById('statsGridContainer').style.display = 'none';
+    return;
+  }
+  
+  showMessage('info', 'Loading team data...');
+  
+  try {
+    // Load roster and games in parallel
+    await Promise.all([
+      loadTeamRoster(teamId),
+      loadTeamGames(teamId)
+    ]);
+    
+    // Populate game dropdown
+    const gameSelect = document.getElementById('gameSelect');
+    gameSelect.innerHTML = '<option value="">-- Select a game --</option>';
+    
+    if (teamGames.length === 0) {
+      gameSelect.innerHTML += '<option value="" disabled>No games found for this team</option>';
+    } else {
+      teamGames.forEach(game => {
+        const option = document.createElement('option');
+        option.value = game.id;
+        
+        // Format date
+        let dateStr = 'TBD';
+        if (game.dateObj && game.dateObj.getTime() !== 0) {
+          dateStr = game.dateObj.toLocaleDateString('en-US', { 
+            weekday: 'short', 
+            month: 'short', 
+            day: 'numeric' 
+          });
+        }
+        
+        const location = game.isHome ? 'vs' : '@';
+        const playoffIndicator = game.isPlayoff ? '🏆 ' : '';
+        const roundInfo = game.round ? ` (${game.round})` : '';
+        
+        option.textContent = `${playoffIndicator}${dateStr} ${location} ${game.opponent}${roundInfo}`;
+        option.dataset.gameData = JSON.stringify(game);
+        
+        gameSelect.appendChild(option);
+      });
+    }
+    
+    // Render stats table
+    renderStatsTable();
+    
+    showMessage('info', `Loaded ${teamRoster.length} players and ${teamGames.length} games. Select a game to continue.`);
+    
+  } catch (error) {
+    showMessage('error', `Error loading team data: ${error.message}`);
+  }
+};
+
+window.handleSeasonChange = async function() {
+  const teamId = document.getElementById('teamSelect').value;
+  if (teamId) {
+    await handleTeamChange();
+  }
+};
+
+window.handleGameChange = async function() {
+  const gameSelect = document.getElementById('gameSelect');
+  const selectedOption = gameSelect.options[gameSelect.selectedIndex];
+  
+  if (!selectedOption.value) {
+    document.getElementById('gameDetails').classList.remove('visible');
+    document.getElementById('editModeBanner').classList.remove('visible');
+    selectedGameData = null;
+    return;
+  }
+  
+  selectedGameData = JSON.parse(selectedOption.dataset.gameData);
+  
+  // Show game details
+  const dateStr = selectedGameData.dateObj && selectedGameData.dateObj.getTime() !== 0
+    ? selectedGameData.dateObj.toLocaleDateString('en-US', { 
+        weekday: 'long', 
+        year: 'numeric',
+        month: 'long', 
+        day: 'numeric' 
+      })
+    : 'TBD';
+  
+  document.getElementById('selectedGameDate').textContent = dateStr;
+  document.getElementById('selectedGameOpponent').textContent = selectedGameData.opponent || 'Unknown';
+  document.getElementById('selectedGameLocation').textContent = selectedGameData.isHome ? 'Home' : 'Away';
+  document.getElementById('selectedGameType').textContent = selectedGameData.isPlayoff ? '🏆 Playoff' : 'Regular Season';
+  document.getElementById('gameDetails').classList.add('visible');
+  
+  // Load existing stats for this game
+  await loadExistingStatsForGame(selectedOption.value);
+};
+
+async function loadExistingStatsForGame(gameId) {
+  const seasonId = document.getElementById('seasonSelect').value || currentSeason?.id;
+  const gameDocId = `${seasonId}_${gameId}`;
+  
+  console.log(`🔍 Loading existing stats for game: ${gameDocId}`);
+  
+  let existingStatsCount = 0;
+  
+  for (let i = 0; i < teamRoster.length; i++) {
+    const player = teamRoster[i];
+    const legacyId = player.legacyId;
+    
+    try {
+      // Check batting stats
+      const battingRef = doc(db, 'playerStats', legacyId, 'games', gameDocId);
+      const battingSnap = await getDoc(battingRef);
+      
+      if (battingSnap.exists()) {
+        const data = battingSnap.data();
+        existingStatsCount++;
+        
+        // Populate form fields
+        const abInput = document.getElementById(`ab_${i}`);
+        const hitsInput = document.getElementById(`hits_${i}`);
+        const runsInput = document.getElementById(`runs_${i}`);
+        const walksInput = document.getElementById(`walks_${i}`);
+        
+        if (abInput) abInput.value = data.atBats || 0;
+        if (hitsInput) hitsInput.value = data.hits || 0;
+        if (runsInput) runsInput.value = data.runs || 0;
+        if (walksInput) walksInput.value = data.walks || 0;
+      }
+      
+      // Check pitching stats
+      const pitchingRef = doc(db, 'pitchingStats', legacyId, 'games', gameDocId);
+      const pitchingSnap = await getDoc(pitchingRef);
+      
+      if (pitchingSnap.exists()) {
+        const data = pitchingSnap.data();
+        
+        const ipInput = document.getElementById(`ip_${i}`);
+        const raInput = document.getElementById(`ra_${i}`);
+        
+        if (ipInput) ipInput.value = data.inningsPitched || 0;
+        if (raInput) raInput.value = data.runsAllowed || 0;
+      }
+      
+    } catch (error) {
+      console.warn(`Could not load existing stats for ${player.name}:`, error);
+    }
+  }
+  
+  // Show edit mode banner if stats exist
+  if (existingStatsCount > 0) {
+    document.getElementById('editModeBanner').classList.add('visible');
+    showMessage('warning', `Found existing stats for ${existingStatsCount} player(s). Editing will update these records.`);
+  } else {
+    document.getElementById('editModeBanner').classList.remove('visible');
+  }
+}
+
+// ============================================
+// STATS TABLE RENDERING
+// ============================================
+function renderStatsTable() {
+  const tbody = document.getElementById('statsTableBody');
+  tbody.innerHTML = '';
+
+  if (teamRoster.length === 0) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="8" style="text-align: center; padding: 2rem; color: #718096;">
+          No players found for this team in the selected season.
+        </td>
+      </tr>
+    `;
+    document.getElementById('statsGridContainer').style.display = 'block';
+    return;
+  }
+
+  teamRoster.forEach((player, index) => {
+    const row = document.createElement('tr');
+    row.innerHTML = `
+      <td class="player-cell">${player.name}</td>
+      <td class="checkbox-cell">
+        <input type="checkbox" id="played_${index}" data-player-id="${player.id}" checked>
+      </td>
+      <td>
+        <input type="number" class="stats-input" id="ab_${index}" data-player-id="${player.id}" 
+               data-stat="atBats" min="0" value="0">
+      </td>
+      <td>
+        <input type="number" class="stats-input" id="hits_${index}" data-player-id="${player.id}" 
+               data-stat="hits" min="0" value="0">
+      </td>
+      <td>
+        <input type="number" class="stats-input" id="runs_${index}" data-player-id="${player.id}" 
+               data-stat="runs" min="0" value="0">
+      </td>
+      <td>
+        <input type="number" class="stats-input" id="walks_${index}" data-player-id="${player.id}" 
+               data-stat="walks" min="0" value="0">
+      </td>
+      <td>
+        <input type="number" class="stats-input" id="ip_${index}" data-player-id="${player.id}" 
+               data-stat="inningsPitched" min="0" step="0.1" value="0">
+      </td>
+      <td>
+        <input type="number" class="stats-input" id="ra_${index}" data-player-id="${player.id}" 
+               data-stat="runsAllowed" min="0" value="0">
+      </td>
+    `;
+    tbody.appendChild(row);
+  });
+
+  document.getElementById('statsGridContainer').style.display = 'block';
+}
+
+// ============================================
+// SINGLE GAME SUBMISSION
+// ============================================
+window.submitSingleGameStats = async function() {
+  const teamId = document.getElementById('teamSelect').value;
+  const gameId = document.getElementById('gameSelect').value;
+  const seasonId = document.getElementById('seasonSelect').value || currentSeason?.id;
+  
+  if (!teamId || !gameId) {
+    showMessage('error', 'Please select a team and game.');
+    return;
+  }
+  
+  const submitBtn = document.getElementById('submitBtn');
+  const originalBtnText = submitBtn.innerHTML;
+  submitBtn.disabled = true;
+  submitBtn.innerHTML = '<span class="spinner">⏳</span> Submitting...';
+  
+  try {
+    // Collect stats from form
+    const playerStats = [];
+    
+    for (let i = 0; i < teamRoster.length; i++) {
+      const player = teamRoster[i];
+      const played = document.getElementById(`played_${i}`)?.checked;
+      
+      if (!played) continue;
+      
+      const stats = {
+        playerName: player.name,
+        playerId: player.id,
+        legacyId: player.legacyId,
+        atBats: parseInt(document.getElementById(`ab_${i}`)?.value) || 0,
+        hits: parseInt(document.getElementById(`hits_${i}`)?.value) || 0,
+        runs: parseInt(document.getElementById(`runs_${i}`)?.value) || 0,
+        walks: parseInt(document.getElementById(`walks_${i}`)?.value) || 0,
+        inningsPitched: parseFloat(document.getElementById(`ip_${i}`)?.value) || 0,
+        runsAllowed: parseInt(document.getElementById(`ra_${i}`)?.value) || 0
+      };
+      
+      // Only include players with some stats
+      if (stats.atBats > 0 || stats.hits > 0 || stats.runs > 0 || stats.walks > 0 || 
+          stats.inningsPitched > 0 || stats.runsAllowed > 0) {
+        playerStats.push(stats);
+      }
+    }
+    
+    if (playerStats.length === 0) {
+      showMessage('warning', 'No stats to submit. Enter stats for at least one player.');
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = originalBtnText;
+      return;
+    }
+    
+    // Format date for storage
+    let gameDateFormatted = 'Unknown';
+    if (selectedGameData?.dateObj && selectedGameData.dateObj.getTime() !== 0) {
+      gameDateFormatted = selectedGameData.dateObj.toISOString().split('T')[0];
+    }
+    
+    let successCount = 0;
+    let errorCount = 0;
+    
+    for (const stats of playerStats) {
+      try {
+        const gameDocId = `${seasonId}_${gameId}`;
+        
+        // Write batting stats
+        if (stats.atBats > 0 || stats.hits > 0 || stats.runs > 0 || stats.walks > 0) {
+          const battingRef = doc(db, 'playerStats', stats.legacyId, 'games', gameDocId);
+          
+          await setDoc(battingRef, {
+            gameId: gameId,
+            gameDocId: gameDocId,
+            playerId: stats.legacyId,
+            playerName: stats.playerName,
+            seasonId: seasonId,
+            teamId: teamId,
+            gameDate: selectedGameData?.date || null,
+            gameDateFormatted: gameDateFormatted,
+            opponent: selectedGameData?.opponent || 'Unknown',
+            isHome: selectedGameData?.isHome || false,
+            gameType: selectedGameData?.gameType || 'Regular',
+            isPlayoff: selectedGameData?.isPlayoff || false,
+            atBats: stats.atBats,
+            hits: stats.hits,
+            runs: stats.runs,
+            walks: stats.walks,
+            doubles: 0,
+            triples: 0,
+            homeRuns: 0,
+            rbi: 0,
+            strikeouts: 0,
+            stolenBases: 0,
+            caughtStealing: 0,
+            submittedBy: currentUser.uid,
+            submittedByName: currentUser.displayName || currentUser.email,
+            submittedAt: serverTimestamp(),
+            lastModified: serverTimestamp(),
+            dataVersion: 1
+          }, { merge: true });
+          
+          console.log(`✅ Saved batting stats for ${stats.playerName}`);
+        }
+        
+        // Write pitching stats
+        if (stats.inningsPitched > 0 || stats.runsAllowed > 0) {
+          const pitchingRef = doc(db, 'pitchingStats', stats.legacyId, 'games', gameDocId);
+          
+          await setDoc(pitchingRef, {
+            gameId: gameId,
+            gameDocId: gameDocId,
+            playerId: stats.legacyId,
+            playerName: stats.playerName,
+            seasonId: seasonId,
+            teamId: teamId,
+            gameDate: selectedGameData?.date || null,
+            gameDateFormatted: gameDateFormatted,
+            opponent: selectedGameData?.opponent || 'Unknown',
+            isHome: selectedGameData?.isHome || false,
+            gameType: selectedGameData?.gameType || 'Regular',
+            isPlayoff: selectedGameData?.isPlayoff || false,
+            inningsPitched: stats.inningsPitched,
+            runsAllowed: stats.runsAllowed,
+            earnedRuns: 0,
+            strikeouts: 0,
+            walks: 0,
+            hits: 0,
+            wins: 0,
+            losses: 0,
+            saves: 0,
+            submittedBy: currentUser.uid,
+            submittedByName: currentUser.displayName || currentUser.email,
+            submittedAt: serverTimestamp(),
+            lastModified: serverTimestamp(),
+            dataVersion: 1
+          }, { merge: true });
+          
+          console.log(`✅ Saved pitching stats for ${stats.playerName}`);
+        }
+        
+        successCount++;
+      } catch (error) {
+        console.error(`❌ Error saving stats for ${stats.playerName}:`, error);
+        errorCount++;
+      }
+    }
+    
+    // Show result
+    if (errorCount === 0) {
+      showMessage('success', `Successfully submitted stats for ${successCount} player(s)!`);
+      showToast(`Stats saved for ${successCount} players`, 'success');
+      
+      setTimeout(() => {
+        clearSingleGameForm();
+      }, 2000);
+    } else {
+      showMessage('warning', `Submitted ${successCount} player(s), but ${errorCount} failed.`);
+    }
+    
+  } catch (error) {
+    console.error('❌ Error submitting stats:', error);
+    showMessage('error', `Error submitting stats: ${error.message}`);
+  }
+  
+  submitBtn.disabled = false;
+  submitBtn.innerHTML = originalBtnText;
+};
+
+window.clearSingleGameForm = function() {
+  document.querySelectorAll('.stats-input').forEach(input => input.value = '0');
+  document.querySelectorAll('input[type="checkbox"][id^="played_"]').forEach(cb => cb.checked = true);
+  document.getElementById('gameSelect').value = '';
+  document.getElementById('gameDetails').classList.remove('visible');
+  document.getElementById('editModeBanner').classList.remove('visible');
+  selectedGameData = null;
+  showMessage('info', 'Form cleared. Select a game to enter new stats.');
+};
+
+// ============================================
+// CSV BULK UPLOAD
+// ============================================
+window.handleCSVUpload = function(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    parseCSV(e.target.result);
+  };
+  reader.readAsText(file);
+};
+
+function parseCSV(content) {
+  const lines = content.trim().split('\n');
+  if (lines.length < 2) {
+    showMessage('error', 'CSV file must have a header row and at least one data row.');
+    return;
+  }
+  
+  // Parse header
+  const header = lines[0].split(',').map(h => h.trim().toLowerCase());
+  
+  // Expected columns
+  const requiredColumns = ['player', 'gamedate', 'opponent'];
+  const missingColumns = requiredColumns.filter(col => !header.includes(col));
+  
+  if (missingColumns.length > 0) {
+    showMessage('error', `Missing required columns: ${missingColumns.join(', ')}`);
+    return;
+  }
+  
+  // Parse data rows
+  csvData = [];
+  csvValidation = [];
+  
+  for (let i = 1; i < lines.length; i++) {
+    const values = parseCSVLine(lines[i]);
+    if (values.length === 0) continue;
+    
+    const row = {};
+    header.forEach((col, idx) => {
+      row[col] = values[idx]?.trim() || '';
+    });
+    
+    // Validate row
+    const validation = validateCSVRow(row, i);
+    
+    csvData.push(row);
+    csvValidation.push(validation);
+  }
+  
+  renderCSVPreview();
+  document.getElementById('csvPreviewSection').style.display = 'block';
+}
+
+function parseCSVLine(line) {
+  const result = [];
+  let current = '';
+  let inQuotes = false;
+  
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+    
+    if (char === '"') {
+      inQuotes = !inQuotes;
+    } else if (char === ',' && !inQuotes) {
+      result.push(current);
+      current = '';
+    } else {
+      current += char;
+    }
+  }
+  result.push(current);
+  
+  return result;
+}
+
+function validateCSVRow(row, rowIndex) {
+  const errors = [];
+  const warnings = [];
+  
+  // Required fields
+  if (!row.player) errors.push('Missing player name');
+  if (!row.gamedate) errors.push('Missing game date');
+  if (!row.opponent) errors.push('Missing opponent');
+  
+  // Validate date format
+  if (row.gamedate) {
+    const date = new Date(row.gamedate);
+    if (isNaN(date.getTime())) {
+      errors.push('Invalid date format');
+    }
+  }
+  
+  // Validate numeric fields
+  const numericFields = ['ab', 'h', 'r', 'bb', 'ip', 'ra'];
+  numericFields.forEach(field => {
+    if (row[field] && isNaN(parseFloat(row[field]))) {
+      warnings.push(`Invalid ${field.toUpperCase()} value`);
+    }
+  });
+  
+  // Check if player exists in roster (warning only)
+  const teamId = document.getElementById('bulkTeamSelect').value;
+  if (teamId && row.player) {
+    // This would require loading roster for validation
+    // For now, just a basic check
+  }
+  
+  return {
+    row: rowIndex,
+    valid: errors.length === 0,
+    errors: errors,
+    warnings: warnings
+  };
+}
+
+function renderCSVPreview() {
+  const previewEl = document.getElementById('csvPreviewTable');
+  const validCount = csvValidation.filter(v => v.valid).length;
+  const warningCount = csvValidation.filter(v => v.warnings.length > 0).length;
+  const errorCount = csvValidation.filter(v => !v.valid).length;
+  
+  // Count unique games
+  const uniqueGames = new Set();
+  csvData.forEach(row => {
+    uniqueGames.add(`${row.gamedate}_${row.opponent}`);
+  });
+  
+  // Update summary
+  document.getElementById('csvRowCount').textContent = csvData.length;
+  document.getElementById('validRowCount').textContent = validCount;
+  document.getElementById('warningRowCount').textContent = warningCount;
+  document.getElementById('errorRowCount').textContent = errorCount;
+  document.getElementById('uniqueGamesCount').textContent = uniqueGames.size;
+  document.getElementById('csvValidationSummary').style.display = 'grid';
+  
+  // Build preview table
+  if (csvData.length === 0) {
+    previewEl.innerHTML = '<p style="padding: 1rem; color: var(--text-light);">No data to preview</p>';
+    return;
+  }
+  
+  let html = '<table><thead><tr>';
+  html += '<th>Status</th>';
+  html += '<th>Player</th>';
+  html += '<th>Date</th>';
+  html += '<th>Opponent</th>';
+  html += '<th>Home</th>';
+  html += '<th>AB</th>';
+  html += '<th>H</th>';
+  html += '<th>R</th>';
+  html += '<th>BB</th>';
+  html += '<th>IP</th>';
+  html += '<th>RA</th>';
+  html += '</tr></thead><tbody>';
+  
+  csvData.forEach((row, idx) => {
+    const validation = csvValidation[idx];
+    let statusClass = 'status-valid';
+    let statusIcon = '✓';
+    
+    if (!validation.valid) {
+      statusClass = 'status-error';
+      statusIcon = '✕';
+    } else if (validation.warnings.length > 0) {
+      statusClass = 'status-warning';
+      statusIcon = '⚠';
+    }
+    
+    const errorText = [...validation.errors, ...validation.warnings].join(', ');
+    
+    html += `<tr>`;
+    html += `<td class="${statusClass}" title="${errorText}">${statusIcon}</td>`;
+    html += `<td>${row.player || '-'}</td>`;
+    html += `<td>${row.gamedate || '-'}</td>`;
+    html += `<td>${row.opponent || '-'}</td>`;
+    html += `<td>${row.ishome || '-'}</td>`;
+    html += `<td>${row.ab || '0'}</td>`;
+    html += `<td>${row.h || '0'}</td>`;
+    html += `<td>${row.r || '0'}</td>`;
+    html += `<td>${row.bb || '0'}</td>`;
+    html += `<td>${row.ip || '0'}</td>`;
+    html += `<td>${row.ra || '0'}</td>`;
+    html += `</tr>`;
+  });
+  
+  html += '</tbody></table>';
+  previewEl.innerHTML = html;
+}
+
+window.submitBulkStats = async function() {
+  const teamId = document.getElementById('bulkTeamSelect').value;
+  const seasonId = document.getElementById('bulkSeasonSelect').value || currentSeason?.id;
+  
+  if (!teamId) {
+    showMessage('error', 'Please select a team for the bulk upload.');
+    return;
+  }
+  
+  if (csvData.length === 0) {
+    showMessage('error', 'No CSV data to upload. Please upload a file first.');
+    return;
+  }
+  
+  // Check for errors
+  const errorRows = csvValidation.filter(v => !v.valid);
+  if (errorRows.length > 0) {
+    showMessage('error', `Cannot upload: ${errorRows.length} row(s) have errors. Please fix and re-upload.`);
+    return;
+  }
+  
+  const bulkSubmitBtn = document.getElementById('bulkSubmitBtn');
+  const originalBtnText = bulkSubmitBtn.innerHTML;
+  bulkSubmitBtn.disabled = true;
+  bulkSubmitBtn.innerHTML = '<span class="spinner">⏳</span> Uploading...';
+  
+  try {
+    let successCount = 0;
+    let errorCount = 0;
+    
+    // Group by game for efficient game ID lookups
+    const gameGroups = {};
+    csvData.forEach(row => {
+      const gameKey = `${row.gamedate}_${row.opponent}`;
+      if (!gameGroups[gameKey]) {
+        gameGroups[gameKey] = {
+          date: row.gamedate,
+          opponent: row.opponent,
+          isHome: row.ishome?.toLowerCase() === 'true',
+          rows: []
+        };
+      }
+      gameGroups[gameKey].rows.push(row);
+    });
+    
+    // Process each game
+    for (const gameKey of Object.keys(gameGroups)) {
+      const game = gameGroups[gameKey];
+      
+      // Generate game ID
+      const gameDate = new Date(game.date);
+      const dateStr = `${gameDate.getMonth() + 1}-${gameDate.getDate()}-${gameDate.getFullYear()}`;
+      const gameId = `${dateStr}_${teamId.toLowerCase()}_vs_${game.opponent.toLowerCase()}`.replace(/\s+/g, '_');
+      const gameDocId = `${seasonId}_${gameId}`;
+      
+      // Process each player in this game
+      for (const row of game.rows) {
+        try {
+          const playerLegacyId = row.player.toLowerCase().replace(/\./g, '').replace(/\s+/g, '_');
+          
+          // Write batting stats
+          const ab = parseInt(row.ab) || 0;
+          const h = parseInt(row.h) || 0;
+          const r = parseInt(row.r) || 0;
+          const bb = parseInt(row.bb) || 0;
+          
+          if (ab > 0 || h > 0 || r > 0 || bb > 0) {
+            const battingRef = doc(db, 'playerStats', playerLegacyId, 'games', gameDocId);
+            
+            await setDoc(battingRef, {
+              gameId: gameId,
+              gameDocId: gameDocId,
+              playerId: playerLegacyId,
+              playerName: row.player,
+              seasonId: seasonId,
+              teamId: teamId,
+              gameDateFormatted: game.date,
+              opponent: game.opponent,
+              isHome: game.isHome,
+              gameType: 'Regular',
+              isPlayoff: false,
+              atBats: ab,
+              hits: h,
+              runs: r,
+              walks: bb,
+              doubles: 0,
+              triples: 0,
+              homeRuns: 0,
+              rbi: 0,
+              strikeouts: 0,
+              stolenBases: 0,
+              caughtStealing: 0,
+              submittedBy: currentUser.uid,
+              submittedByName: currentUser.displayName || currentUser.email,
+              submittedAt: serverTimestamp(),
+              lastModified: serverTimestamp(),
+              dataVersion: 1,
+              bulkImport: true
+            }, { merge: true });
+          }
+          
+          // Write pitching stats
+          const ip = parseFloat(row.ip) || 0;
+          const ra = parseInt(row.ra) || 0;
+          
+          if (ip > 0 || ra > 0) {
+            const pitchingRef = doc(db, 'pitchingStats', playerLegacyId, 'games', gameDocId);
+            
+            await setDoc(pitchingRef, {
+              gameId: gameId,
+              gameDocId: gameDocId,
+              playerId: playerLegacyId,
+              playerName: row.player,
+              seasonId: seasonId,
+              teamId: teamId,
+              gameDateFormatted: game.date,
+              opponent: game.opponent,
+              isHome: game.isHome,
+              gameType: 'Regular',
+              isPlayoff: false,
+              inningsPitched: ip,
+              runsAllowed: ra,
+              earnedRuns: 0,
+              strikeouts: 0,
+              walks: 0,
+              hits: 0,
+              wins: 0,
+              losses: 0,
+              saves: 0,
+              submittedBy: currentUser.uid,
+              submittedByName: currentUser.displayName || currentUser.email,
+              submittedAt: serverTimestamp(),
+              lastModified: serverTimestamp(),
+              dataVersion: 1,
+              bulkImport: true
+            }, { merge: true });
+          }
+          
+          successCount++;
+        } catch (error) {
+          console.error(`❌ Error saving stats for ${row.player}:`, error);
+          errorCount++;
+        }
+      }
+    }
+    
+    if (errorCount === 0) {
+      showMessage('success', `Successfully uploaded stats for ${successCount} player-game combinations across ${Object.keys(gameGroups).length} games!`);
+      showToast(`Bulk upload complete: ${successCount} records`, 'success');
+      
+      setTimeout(() => {
+        clearBulkUpload();
+      }, 2000);
+    } else {
+      showMessage('warning', `Uploaded ${successCount} records, but ${errorCount} failed.`);
+    }
+    
+  } catch (error) {
+    console.error('❌ Error in bulk upload:', error);
+    showMessage('error', `Error during bulk upload: ${error.message}`);
+  }
+  
+  bulkSubmitBtn.disabled = false;
+  bulkSubmitBtn.innerHTML = originalBtnText;
+};
+
+window.clearBulkUpload = function() {
+  csvData = [];
+  csvValidation = [];
+  document.getElementById('csvFileInput').value = '';
+  document.getElementById('csvPreviewSection').style.display = 'none';
+  showMessage('info', 'Upload cleared. Select a team and upload a new CSV file.');
+};
+
+window.downloadTemplate = function() {
+  const template = `Player,GameDate,Opponent,IsHome,AB,H,R,BB,IP,RA
+John Smith,2025-09-15,Blue,true,4,2,1,0,0,0
+Jane Doe,2025-09-15,Blue,true,3,1,0,1,2,1
+Mike Johnson,2025-09-15,Blue,true,4,0,0,0,0,0
+John Smith,2025-09-22,Green,false,3,1,1,1,0,0
+Jane Doe,2025-09-22,Green,false,4,2,1,0,0,0`;
+
+  const blob = new Blob([template], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'stats_template.csv';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  
+  showToast('Template downloaded', 'success');
+};
+
+// Drag and drop support
+const uploadArea = document.getElementById('uploadArea');
+if (uploadArea) {
+  uploadArea.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    uploadArea.classList.add('dragover');
+  });
+  
+  uploadArea.addEventListener('dragleave', () => {
+    uploadArea.classList.remove('dragover');
+  });
+  
+  uploadArea.addEventListener('drop', (e) => {
+    e.preventDefault();
+    uploadArea.classList.remove('dragover');
+    const file = e.dataTransfer.files[0];
+    if (file && file.name.endsWith('.csv')) {
+      document.getElementById('csvFileInput').files = e.dataTransfer.files;
+      handleCSVUpload({ target: { files: [file] } });
+    } else {
+      showMessage('error', 'Please upload a CSV file.');
+    }
+  });
+}
+
+// ============================================
+// UTILITY FUNCTIONS
+// ============================================
+function showMessage(type, text) {
+  ['infoMessage', 'warningMessage', 'errorMessage', 'successMessage'].forEach(id => {
+    document.getElementById(id).classList.add('hidden');
+  });
+
+  const messageMap = {
+    'info': { box: 'infoMessage', text: 'infoMessageText' },
+    'warning': { box: 'warningMessage', text: 'warningMessageText' },
+    'error': { box: 'errorMessage', text: 'errorMessageText' },
+    'success': { box: 'successMessage', text: 'successMessageText' }
+  };
+
+  if (messageMap[type]) {
+    document.getElementById(messageMap[type].text).textContent = text;
+    document.getElementById(messageMap[type].box).classList.remove('hidden');
+  }
+}
+
+function showToast(message, type = 'success') {
+  const container = document.getElementById('toastContainer');
+  const toast = document.createElement('div');
+  toast.className = `toast toast-${type}`;
+  
+  const icon = type === 'success' ? '✓' : type === 'error' ? '✕' : '⚠';
+  toast.innerHTML = `<span>${icon}</span> ${message}`;
+  
+  container.appendChild(toast);
+  
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    setTimeout(() => toast.remove(), 300);
+  }, 4000);
+}
+
+// ============================================
+// AUTH INIT
+// ============================================
+onAuthChange((user) => {
+  if (user) {
+    initializePage(user);
+  } else {
+    document.getElementById('loadingOverlay').classList.add('hidden');
+    document.getElementById('authGate').style.display = 'block';
+  }
+});
+</script>
+
+<script type="module">
+  import { NavigationComponent } from './nav-component.js';
+</script>
+<script src="team-colors.js"></script>
+<script src="mobile-enhancements.js"></script>
+</body>
+</html>
