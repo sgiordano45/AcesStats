@@ -1339,8 +1339,12 @@
       
       if (role === 'admin' || user.isAdmin) stats.admins++;
       else if (role === 'league-staff') stats.leagueStaff++;
-      else if (role === 'captain' || user.isCaptain) stats.captains++;
       else if (role === 'player') stats.players++;
+
+      // Count captains from teamRoles or legacy isCaptain flag
+      const hasCaptainRole = user.isCaptain === true || 
+        (user.teamRoles && Object.values(user.teamRoles).some(tr => tr.status === 'active' && tr.role === 'captain'));
+      if (hasCaptainRole) stats.captains++;
 
       // Count special roles
       if (user.specialRoles && Object.values(user.specialRoles).some(v => v === true)) {
@@ -1378,7 +1382,13 @@
           // Check special roles
           matchesRole = user.specialRoles?.[roleFilter] === true;
         } else if (roleFilter === 'captain') {
-          matchesRole = userRole === 'captain' || user.isCaptain === true;
+          // Check teamRoles for captain, or legacy isCaptain flag
+          matchesRole = user.isCaptain === true ||
+            (user.teamRoles && Object.values(user.teamRoles).some(tr => tr.status === 'active' && tr.role === 'captain'));
+        } else if (roleFilter === 'team-staff') {
+          // Check teamRoles for team-staff
+          matchesRole = user.teamRoles && 
+            Object.values(user.teamRoles).some(tr => tr.status === 'active' && tr.role === 'team-staff');
         } else if (roleFilter === 'admin') {
           matchesRole = userRole === 'admin' || user.isAdmin === true;
         } else {
@@ -1389,8 +1399,21 @@
       // Team filter
       let matchesTeam = true;
       if (teamFilter !== 'all') {
-        matchesTeam = user.linkedTeam === teamFilter || 
-                      (user.teamRoles && user.teamRoles[teamFilter]?.status === 'active');
+        const teamFilterLower = teamFilter.toLowerCase();
+        const linkedTeamLower = (user.linkedTeam || '').toLowerCase();
+        
+        // Check linkedTeam (case-insensitive)
+        const matchesLinkedTeam = linkedTeamLower === teamFilterLower;
+        
+        // Check teamRoles (case-insensitive key lookup)
+        let hasTeamRole = false;
+        if (user.teamRoles) {
+          hasTeamRole = Object.entries(user.teamRoles).some(([teamId, tr]) => 
+            teamId.toLowerCase() === teamFilterLower && tr.status === 'active'
+          );
+        }
+        
+        matchesTeam = matchesLinkedTeam || hasTeamRole;
       }
 
       return matchesSearch && matchesRole && matchesTeam;
@@ -1661,7 +1684,8 @@
     // Linked team options for player role
     const linkedTeamOptions = teams.map(team => {
       const teamDisplayName = capitalize(team.name || team.id);
-      return `<option value="${team.id}" ${linkedTeam === team.id ? 'selected' : ''}>${teamDisplayName}</option>`;
+      const isSelected = linkedTeam && team.id && linkedTeam.toLowerCase() === team.id.toLowerCase();
+      return `<option value="${team.id}" ${isSelected ? 'selected' : ''}>${teamDisplayName}</option>`;
     }).join('');
 
     document.getElementById('editorBody').innerHTML = `
