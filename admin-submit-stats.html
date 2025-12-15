@@ -1929,6 +1929,7 @@ function renderCSVPreview() {
   html += '<th>Opponent</th>';
   html += '<th>Home</th>';
   html += '<th>Type</th>';
+  html += '<th>G#</th>';
   html += '<th>AB</th>';
   html += '<th>H</th>';
   html += '<th>R</th>';
@@ -1959,6 +1960,7 @@ function renderCSVPreview() {
     html += `<td>${row.opponent || '-'}</td>`;
     html += `<td>${row.ishome || '-'}</td>`;
     html += `<td>${row.gametype || 'Regular'}</td>`;
+    html += `<td>${row.gamenum || '1'}</td>`;
     html += `<td>${row.ab || '0'}</td>`;
     html += `<td>${row.h || '0'}</td>`;
     html += `<td>${row.r || '0'}</td>`;
@@ -2005,13 +2007,15 @@ window.submitBulkStats = async function() {
     // Group by game for efficient game ID lookups
     const gameGroups = {};
     csvData.forEach(row => {
-      const gameKey = `${row.gamedate}_${row.opponent}`;
+      const gameNum = parseInt(row.gamenum) || 1;
+      const gameKey = `${row.gamedate}_${row.opponent}_g${gameNum}`;
       if (!gameGroups[gameKey]) {
         gameGroups[gameKey] = {
           date: row.gamedate,
           opponent: row.opponent,
           isHome: row.ishome?.toLowerCase() === 'true',
           isPlayoff: row.gametype?.toLowerCase() === 'playoff',
+          gameNum: gameNum,
           rows: []
         };
       }
@@ -2022,10 +2026,11 @@ window.submitBulkStats = async function() {
     for (const gameKey of Object.keys(gameGroups)) {
       const game = gameGroups[gameKey];
       
-      // Generate game ID
+      // Generate game ID (append _g2 for doubleheader game 2)
       const gameDate = new Date(game.date);
       const dateStr = `${gameDate.getMonth() + 1}-${gameDate.getDate()}-${gameDate.getFullYear()}`;
-      const gameId = `${dateStr}_${teamId.toLowerCase()}_vs_${game.opponent.toLowerCase()}`.replace(/\s+/g, '_');
+      const baseGameId = `${dateStr}_${teamId.toLowerCase()}_vs_${game.opponent.toLowerCase()}`.replace(/\s+/g, '_');
+      const gameId = game.gameNum > 1 ? `${baseGameId}_g${game.gameNum}` : baseGameId;
       const gameDocId = `${seasonId}_${gameId}`;
       
       // Process each player in this game
@@ -2055,6 +2060,8 @@ window.submitBulkStats = async function() {
               isHome: game.isHome,
               gameType: game.isPlayoff ? 'Playoff' : 'Regular',
               isPlayoff: game.isPlayoff,
+              gameNum: game.gameNum,
+              isDoubleheader: game.gameNum > 1,
               atBats: ab,
               hits: h,
               runs: r,
@@ -2095,6 +2102,8 @@ window.submitBulkStats = async function() {
               isHome: game.isHome,
               gameType: game.isPlayoff ? 'Playoff' : 'Regular',
               isPlayoff: game.isPlayoff,
+              gameNum: game.gameNum,
+              isDoubleheader: game.gameNum > 1,
               inningsPitched: ip,
               runsAllowed: ra,
               earnedRuns: 0,
@@ -2172,19 +2181,19 @@ window.downloadTemplate = async function() {
     if (filteredPlayers.length === 0) {
       showMessage('warning', 'No players found for this team. Downloading generic template.');
       // Fall back to generic template
-      const template = `Player,GameDate,Opponent,IsHome,GameType,AB,H,R,BB,IP,RA
-John Smith,2025-09-15,Blue,true,Regular,0,0,0,0,0,0`;
+      const template = `Player,GameDate,Opponent,IsHome,GameType,GameNum,AB,H,R,BB,IP,RA
+John Smith,2025-09-15,Blue,true,Regular,1,0,0,0,0,0,0`;
       downloadCSVBlob(template, 'stats_template.csv');
       return;
     }
     
     // Build CSV with player names pre-filled
-    let csv = 'Player,GameDate,Opponent,IsHome,GameType,AB,H,R,BB,IP,RA\n';
+    let csv = 'Player,GameDate,Opponent,IsHome,GameType,GameNum,AB,H,R,BB,IP,RA\n';
     const sampleDate = new Date().toISOString().split('T')[0];
     
     filteredPlayers.forEach(player => {
       const name = player.name || player.playerName;
-      csv += `${name},${sampleDate},OPPONENT,true,Regular,0,0,0,0,0,0\n`;
+      csv += `${name},${sampleDate},OPPONENT,true,Regular,1,0,0,0,0,0,0\n`;
     });
     
     downloadCSVBlob(csv, `stats_template_${teamId}.csv`);
