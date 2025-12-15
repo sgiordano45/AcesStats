@@ -764,8 +764,36 @@
   
   // Seasons configuration
   const SPLITS_2025_SEASONS = ['2025-summer', '2025-fall'];  // Partial data, separate collection
-  const MIN_GAME_DATA_SEASON = '2025-summer';  // First season with any game data
   const FULL_DATA_START_SEASON = '2026-summer';  // First season with complete data
+  
+  // Helper to check if a season has game-level data (2025+)
+  function hasGameLevelData(seasonId) {
+    if (!seasonId) return false;
+    const year = parseInt(seasonId.split('-')[0]);
+    return year >= 2025;
+  }
+  
+  // Helper to check if a season is 2026+ (full data era)
+  function isFullDataSeason(seasonId) {
+    if (!seasonId) return false;
+    const year = parseInt(seasonId.split('-')[0]);
+    return year >= 2026;
+  }
+  
+  // Helper to sort seasons chronologically (most recent first)
+  function sortSeasonsDesc(a, b) {
+    const [yearA, seasonA] = a.split('-');
+    const [yearB, seasonB] = b.split('-');
+    
+    // Compare years first
+    if (yearA !== yearB) {
+      return parseInt(yearB) - parseInt(yearA);  // Descending
+    }
+    
+    // Same year: fall comes after summer
+    const seasonOrder = { 'summer': 0, 'fall': 1 };
+    return (seasonOrder[seasonB] || 0) - (seasonOrder[seasonA] || 0);  // Descending
+  }
   
   // Show test mode banner if enabled
   if (testMode) {
@@ -1050,7 +1078,7 @@
     // Check main aggregated collection for 2026+ seasons
     if (currentPlayer.seasons) {
       const mainSeasons = Object.keys(currentPlayer.seasons)
-        .filter(s => s >= FULL_DATA_START_SEASON);
+        .filter(s => isFullDataSeason(s));
       
       const hasMainSplits = mainSeasons.some(seasonId => {
         const season = currentPlayer.seasons[seasonId];
@@ -1187,7 +1215,7 @@
       gamesSnap.forEach(docSnap => {
         const data = docSnap.data();
         // Include games from 2025+ (game data era)
-        if (data.seasonId && data.seasonId >= MIN_GAME_DATA_SEASON) {
+        if (hasGameLevelData(data.seasonId)) {
           gameStats.push({
             id: docSnap.id,
             ...data
@@ -1216,7 +1244,7 @@
     // Add 2026+ seasons from main collection that have splits
     if (currentPlayer.seasons) {
       Object.keys(currentPlayer.seasons)
-        .filter(s => s >= FULL_DATA_START_SEASON && currentPlayer.seasons[s].splits)
+        .filter(s => isFullDataSeason(s) && currentPlayer.seasons[s].splits)
         .forEach(s => eligibleSeasons.add(s));
     }
     
@@ -1227,8 +1255,8 @@
         .forEach(s => eligibleSeasons.add(s));
     }
     
-    // Sort and add season options
-    const sortedSeasons = Array.from(eligibleSeasons).sort().reverse();
+    // Sort seasons chronologically (most recent first)
+    const sortedSeasons = Array.from(eligibleSeasons).sort(sortSeasonsDesc);
     
     sortedSeasons.forEach(seasonId => {
       const [year, season] = seasonId.split('-');
