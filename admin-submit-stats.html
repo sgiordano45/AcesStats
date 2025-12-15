@@ -1928,6 +1928,7 @@ function renderCSVPreview() {
   html += '<th>Date</th>';
   html += '<th>Opponent</th>';
   html += '<th>Home</th>';
+  html += '<th>Type</th>';
   html += '<th>AB</th>';
   html += '<th>H</th>';
   html += '<th>R</th>';
@@ -1957,6 +1958,7 @@ function renderCSVPreview() {
     html += `<td>${row.gamedate || '-'}</td>`;
     html += `<td>${row.opponent || '-'}</td>`;
     html += `<td>${row.ishome || '-'}</td>`;
+    html += `<td>${row.gametype || 'Regular'}</td>`;
     html += `<td>${row.ab || '0'}</td>`;
     html += `<td>${row.h || '0'}</td>`;
     html += `<td>${row.r || '0'}</td>`;
@@ -2009,6 +2011,7 @@ window.submitBulkStats = async function() {
           date: row.gamedate,
           opponent: row.opponent,
           isHome: row.ishome?.toLowerCase() === 'true',
+          isPlayoff: row.gametype?.toLowerCase() === 'playoff',
           rows: []
         };
       }
@@ -2046,11 +2049,12 @@ window.submitBulkStats = async function() {
               playerName: row.player,
               seasonId: seasonId,
               teamId: teamId,
+              gameDate: new Date(game.date),
               gameDateFormatted: game.date,
               opponent: game.opponent,
               isHome: game.isHome,
-              gameType: 'Regular',
-              isPlayoff: false,
+              gameType: game.isPlayoff ? 'Playoff' : 'Regular',
+              isPlayoff: game.isPlayoff,
               atBats: ab,
               hits: h,
               runs: r,
@@ -2085,11 +2089,12 @@ window.submitBulkStats = async function() {
               playerName: row.player,
               seasonId: seasonId,
               teamId: teamId,
+              gameDate: new Date(game.date),
               gameDateFormatted: game.date,
               opponent: game.opponent,
               isHome: game.isHome,
-              gameType: 'Regular',
-              isPlayoff: false,
+              gameType: game.isPlayoff ? 'Playoff' : 'Regular',
+              isPlayoff: game.isPlayoff,
               inningsPitched: ip,
               runsAllowed: ra,
               earnedRuns: 0,
@@ -2167,19 +2172,19 @@ window.downloadTemplate = async function() {
     if (filteredPlayers.length === 0) {
       showMessage('warning', 'No players found for this team. Downloading generic template.');
       // Fall back to generic template
-      const template = `Player,GameDate,Opponent,IsHome,AB,H,R,BB,IP,RA
-John Smith,2025-09-15,Blue,true,0,0,0,0,0,0`;
+      const template = `Player,GameDate,Opponent,IsHome,GameType,AB,H,R,BB,IP,RA
+John Smith,2025-09-15,Blue,true,Regular,0,0,0,0,0,0`;
       downloadCSVBlob(template, 'stats_template.csv');
       return;
     }
     
     // Build CSV with player names pre-filled
-    let csv = 'Player,GameDate,Opponent,IsHome,AB,H,R,BB,IP,RA\n';
+    let csv = 'Player,GameDate,Opponent,IsHome,GameType,AB,H,R,BB,IP,RA\n';
     const sampleDate = new Date().toISOString().split('T')[0];
     
     filteredPlayers.forEach(player => {
       const name = player.name || player.playerName;
-      csv += `${name},${sampleDate},OPPONENT,true,0,0,0,0,0,0\n`;
+      csv += `${name},${sampleDate},OPPONENT,true,Regular,0,0,0,0,0,0\n`;
     });
     
     downloadCSVBlob(csv, `stats_template_${teamId}.csv`);
