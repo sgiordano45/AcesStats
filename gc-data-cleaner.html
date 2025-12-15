@@ -310,8 +310,9 @@
                         <th>Player</th>
                         <th>GameDate</th>
                         <th>Opponent</th>
-                        <th>Home/Away</th>
+                        <th>IsHome</th>
                         <th>GameType</th>
+                        <th>GameNum</th>
                         <th>AB</th>
                         <th>H</th>
                         <th>R</th>
@@ -508,7 +509,7 @@
                 if (!gameDate) return;
 
                 const isHome = game.home_team === selectedTeam;
-                const opponent = isHome ? game.away_team : game.home_team;
+                const opponent = stripAcesPrefix(isHome ? game.away_team : game.home_team);
                 const gameType = gameDate >= playoffDate ? 'Playoff' : 'Regular';
 
                 // Get batting stats - from JSON we need to determine which stats belong to selected team
@@ -532,7 +533,7 @@
                                 Player: playerName,
                                 GameDate: formatDate(gameDate),
                                 Opponent: opponent,
-                                IsHome: isHome ? 'Yes' : 'No',
+                                IsHome: isHome,
                                 GameType: gameType,
                                 GameNum: '',
                                 AtBat: stat.AB || 0,
@@ -564,7 +565,7 @@
                 const gameDate = parseGameDate(row.date);
                 if (!gameDate) return;
 
-                const opponent = isHome ? row.away_team : row.home_team;
+                const opponent = stripAcesPrefix(isHome ? row.away_team : row.home_team);
                 const gameType = gameDate >= playoffDate ? 'Playoff' : 'Regular';
 
                 let playerName = row.name;
@@ -576,7 +577,7 @@
                     Player: playerName,
                     GameDate: formatDate(gameDate),
                     Opponent: opponent,
-                    IsHome: isHome ? 'Yes' : 'No',
+                    IsHome: isHome,
                     GameType: gameType,
                     GameNum: '',
                     AtBat: row.AB || 0,
@@ -606,6 +607,11 @@
             return isNaN(d.getTime()) ? null : d;
         }
 
+        function stripAcesPrefix(teamName) {
+            if (!teamName) return teamName;
+            return teamName.replace(/^Aces\s+/i, '');
+        }
+
         function formatDate(date) {
             const month = String(date.getMonth() + 1).padStart(2, '0');
             const day = String(date.getDate()).padStart(2, '0');
@@ -618,8 +624,8 @@
 
             // Calculate stats
             const games = new Set(processedData.map(r => r.GameDate + r.Opponent));
-            const homeGames = new Set(processedData.filter(r => r.IsHome === 'Yes').map(r => r.GameDate + r.Opponent));
-            const awayGames = new Set(processedData.filter(r => r.IsHome === 'No').map(r => r.GameDate + r.Opponent));
+            const homeGames = new Set(processedData.filter(r => r.IsHome === true).map(r => r.GameDate + r.Opponent));
+            const awayGames = new Set(processedData.filter(r => r.IsHome === false).map(r => r.GameDate + r.Opponent));
             const playoffGames = new Set(processedData.filter(r => r.GameType === 'Playoff').map(r => r.GameDate + r.Opponent));
 
             document.getElementById('totalRows').textContent = processedData.length;
@@ -638,8 +644,9 @@
                     <td>${row.Player}</td>
                     <td>${row.GameDate}</td>
                     <td>${row.Opponent}</td>
-                    <td><span class="tag ${row.IsHome === 'Yes' ? 'home' : 'away'}">${row.IsHome === 'Yes' ? 'Home' : 'Away'}</span></td>
+                    <td><span class="tag ${row.IsHome ? 'home' : 'away'}">${row.IsHome ? 'Yes' : 'No'}</span></td>
                     <td><span class="tag ${row.GameType.toLowerCase()}">${row.GameType}</span></td>
+                    <td>${row.GameNum}</td>
                     <td>${row.AtBat}</td>
                     <td>${row.Hits}</td>
                     <td>${row.Runs}</td>
@@ -650,7 +657,7 @@
 
             if (processedData.length > 100) {
                 const tr = document.createElement('tr');
-                tr.innerHTML = `<td colspan="9" style="text-align: center; color: #666;">... and ${processedData.length - 100} more rows</td>`;
+                tr.innerHTML = `<td colspan="10" style="text-align: center; color: #666;">... and ${processedData.length - 100} more rows</td>`;
                 tbody.appendChild(tr);
             }
         }
@@ -661,7 +668,12 @@
 
             processedData.forEach(row => {
                 const values = headers.map(h => {
-                    const val = row[h] || '';
+                    let val = row[h];
+                    // Convert boolean IsHome to Yes/No
+                    if (h === 'IsHome') {
+                        val = val ? 'Yes' : 'No';
+                    }
+                    val = val ?? '';
                     // Quote if contains comma
                     return String(val).includes(',') ? `"${val}"` : val;
                 });
