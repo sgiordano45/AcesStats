@@ -4,6 +4,68 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>GameChanger Data Cleaner</title>
+    <!-- Firebase SDK -->
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+        import { getFirestore, doc, getDoc, setDoc } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+        
+        const firebaseConfig = {
+            apiKey: "AIzaSyCAEWkrTcprzJ2KPPJu-vFJPvYOVU4ky20",
+            authDomain: "acessoftballreference-84791.firebaseapp.com",
+            projectId: "acessoftballreference-84791",
+            storageBucket: "acessoftballreference-84791.firebasestorage.app",
+            messagingSenderId: "777699560175",
+            appId: "1:777699560175:web:4092b422e7d7116352e91a"
+        };
+        
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        
+        // Make Firebase available globally
+        window.firebaseDb = db;
+        window.firebaseDoc = doc;
+        window.firebaseGetDoc = getDoc;
+        window.firebaseSetDoc = setDoc;
+        
+        // Load name mappings from Firebase
+        window.loadNameMappingsFromFirebase = async function() {
+            try {
+                const docRef = doc(db, 'settings', 'nameMappings');
+                const docSnap = await getDoc(docRef);
+                
+                if (docSnap.exists()) {
+                    const data = docSnap.data();
+                    console.log('✅ Loaded name mappings from Firebase:', data.mappings);
+                    return data.mappings || {};
+                } else {
+                    console.log('ℹ️ No name mappings found in Firebase, using defaults');
+                    return null;
+                }
+            } catch (error) {
+                console.error('❌ Error loading name mappings:', error);
+                return null;
+            }
+        };
+        
+        // Save name mappings to Firebase
+        window.saveNameMappingsToFirebase = async function(mappings) {
+            try {
+                const docRef = doc(db, 'settings', 'nameMappings');
+                await setDoc(docRef, { 
+                    mappings: mappings,
+                    updatedAt: new Date().toISOString()
+                });
+                console.log('✅ Saved name mappings to Firebase');
+                return true;
+            } catch (error) {
+                console.error('❌ Error saving name mappings:', error);
+                return false;
+            }
+        };
+        
+        // Signal that Firebase is ready
+        window.dispatchEvent(new Event('firebaseReady'));
+    </script>
     <style>
         * {
             box-sizing: border-box;
@@ -265,10 +327,13 @@
 
         <!-- Name Mappings -->
         <div class="name-mapping">
-            <h4>Player Name Corrections (Optional)</h4>
-            <p style="font-size: 12px; color: #666; margin-bottom: 10px;">Map scraped names to corrected names</p>
+            <h4>Player Name Corrections <span id="mappingStatus" style="font-weight: normal; font-size: 12px;"></span></h4>
+            <p style="font-size: 12px; color: #666; margin-bottom: 10px;">Map scraped names to corrected names. Changes are automatically loaded from Firebase.</p>
             <div id="nameMappings"></div>
-            <button type="button" class="secondary" onclick="addNameMapping()">+ Add Name Mapping</button>
+            <div style="display: flex; gap: 10px; margin-top: 10px;">
+                <button type="button" class="secondary" onclick="addNameMapping()">+ Add Name Mapping</button>
+                <button type="button" class="success" onclick="saveCurrentMappings()">💾 Save to Firebase</button>
+            </div>
         </div>
 
         <div class="button-row">
@@ -704,13 +769,98 @@
             });
         }
 
-        // Add default name mappings for common GameChanger name variations
-        addNameMapping('Stephen Branosky', 'Steve Branosky');
-        addNameMapping('Matthew Leonardelli', 'Matt Leonardelli');
-        addNameMapping('Robert Guarneri', 'Rob Guarneri');
-        addNameMapping('Michael Marcino', 'Mike Marcino');
-        addNameMapping('Donald Steinmetz', 'Don Steinmetz');
-        addNameMapping('Timothy O\'Grady', 'Tim O\'Grady');
+        // Default name mappings (fallback if Firebase unavailable)
+        const defaultNameMappings = {
+            'Stephen Branosky': 'Steve Branosky',
+            'Matthew Leonardelli': 'Matt Leonardelli',
+            'Robert Guarneri': 'Rob Guarneri',
+            'Michael Marcino': 'Mike Marcino',
+            'Donald Steinmetz': 'Don Steinmetz',
+            'Timothy O\'Grady': 'Tim O\'Grady',
+            'Donald Rinaldo': 'Don Rinaldo',
+            'Stephen Giordano': 'Steve Giordano',
+            'Joseph Van Kirk': 'Joe Van Kirk'
+        };
+
+        // Save current mappings to Firebase
+        async function saveCurrentMappings() {
+            const mappings = getNameMappings();
+            const statusEl = document.getElementById('mappingStatus');
+            
+            if (Object.keys(mappings).length === 0) {
+                alert('No mappings to save');
+                return;
+            }
+            
+            statusEl.textContent = '⏳ Saving...';
+            statusEl.style.color = '#666';
+            
+            if (window.saveNameMappingsToFirebase) {
+                const success = await window.saveNameMappingsToFirebase(mappings);
+                if (success) {
+                    statusEl.textContent = '✅ Saved!';
+                    statusEl.style.color = '#28a745';
+                    setTimeout(() => {
+                        statusEl.textContent = '(synced with Firebase)';
+                        statusEl.style.color = '#666';
+                    }, 2000);
+                } else {
+                    statusEl.textContent = '❌ Save failed';
+                    statusEl.style.color = '#dc3545';
+                }
+            } else {
+                statusEl.textContent = '❌ Firebase not ready';
+                statusEl.style.color = '#dc3545';
+            }
+        }
+
+        // Load and display name mappings
+        function loadMappings(mappings) {
+            // Clear existing
+            document.getElementById('nameMappings').innerHTML = '';
+            
+            // Add each mapping
+            Object.entries(mappings).forEach(([from, to]) => {
+                addNameMapping(from, to);
+            });
+        }
+
+        // Initialize name mappings - try Firebase first, fallback to defaults
+        async function initializeNameMappings() {
+            const statusEl = document.getElementById('mappingStatus');
+            statusEl.textContent = '⏳ Loading...';
+            
+            // Wait for Firebase to be ready (with timeout)
+            let firebaseReady = !!window.loadNameMappingsFromFirebase;
+            if (!firebaseReady) {
+                await new Promise(resolve => {
+                    const timeout = setTimeout(() => resolve(), 3000);
+                    window.addEventListener('firebaseReady', () => {
+                        clearTimeout(timeout);
+                        resolve();
+                    }, { once: true });
+                });
+                firebaseReady = !!window.loadNameMappingsFromFirebase;
+            }
+            
+            if (firebaseReady) {
+                const firebaseMappings = await window.loadNameMappingsFromFirebase();
+                if (firebaseMappings && Object.keys(firebaseMappings).length > 0) {
+                    loadMappings(firebaseMappings);
+                    statusEl.textContent = '(synced with Firebase)';
+                    statusEl.style.color = '#28a745';
+                    return;
+                }
+            }
+            
+            // Fallback to defaults
+            loadMappings(defaultNameMappings);
+            statusEl.textContent = '(using defaults)';
+            statusEl.style.color = '#666';
+        }
+
+        // Initialize on page load
+        initializeNameMappings();
     </script>
 </body>
 </html>
