@@ -8,6 +8,7 @@
     <script type="module">
         import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
         import { getFirestore, doc, getDoc, setDoc } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+        import { getAuth, onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
         
         const firebaseConfig = {
             apiKey: "AIzaSyCAEWkrTcprzJ2KPPJu-vFJPvYOVU4ky20",
@@ -20,12 +21,96 @@
         
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
+        const auth = getAuth(app);
+        const googleProvider = new GoogleAuthProvider();
         
         // Make Firebase available globally
         window.firebaseDb = db;
+        window.firebaseAuth = auth;
         window.firebaseDoc = doc;
         window.firebaseGetDoc = getDoc;
         window.firebaseSetDoc = setDoc;
+        
+        // Auth state
+        window.currentUser = null;
+        
+        // Sign in with Google
+        window.signInWithGoogle = async function() {
+            try {
+                const result = await signInWithPopup(auth, googleProvider);
+                console.log('✅ Signed in as:', result.user.email);
+            } catch (error) {
+                console.error('❌ Sign in error:', error);
+                alert('Sign in failed: ' + error.message);
+            }
+        };
+        
+        // Sign out
+        window.signOutUser = async function() {
+            try {
+                await signOut(auth);
+                console.log('✅ Signed out');
+            } catch (error) {
+                console.error('❌ Sign out error:', error);
+            }
+        };
+        
+        // Check if user can manage content (admin/league-staff)
+        window.checkUserPermissions = async function(user) {
+            if (!user) return false;
+            try {
+                const userDoc = await getDoc(doc(db, 'users', user.uid));
+                if (userDoc.exists()) {
+                    const data = userDoc.data();
+                    return data.isAdmin === true || 
+                           data.userType === 'league-staff' ||
+                           ['admin', 'league-staff'].includes(data.userRole) ||
+                           ['admin', 'staff', 'league-staff'].includes(data.role);
+                }
+                return false;
+            } catch (error) {
+                console.error('Error checking permissions:', error);
+                return false;
+            }
+        };
+        
+        // Update auth UI
+        function updateAuthUI(user, canManage) {
+            const authStatus = document.getElementById('authStatus');
+            const saveBtn = document.querySelector('.save-firebase-btn');
+            
+            if (user) {
+                authStatus.innerHTML = `
+                    <span style="color: #28a745;">✓ Signed in as ${user.email}</span>
+                    ${canManage ? '<span class="admin-badge">Admin</span>' : '<span class="viewer-badge">Viewer</span>'}
+                    <button onclick="signOutUser()" class="auth-btn">Sign Out</button>
+                `;
+                if (saveBtn) {
+                    saveBtn.disabled = !canManage;
+                    saveBtn.title = canManage ? 'Save mappings to Firebase' : 'Admin access required to save';
+                }
+            } else {
+                authStatus.innerHTML = `
+                    <span style="color: #666;">Not signed in</span>
+                    <button onclick="signInWithGoogle()" class="auth-btn google-btn">🔐 Sign in with Google</button>
+                `;
+                if (saveBtn) {
+                    saveBtn.disabled = true;
+                    saveBtn.title = 'Sign in as admin to save';
+                }
+            }
+        }
+        
+        // Listen for auth state changes
+        onAuthStateChanged(auth, async (user) => {
+            window.currentUser = user;
+            const canManage = await window.checkUserPermissions(user);
+            window.canManageContent = canManage;
+            updateAuthUI(user, canManage);
+            
+            // Dispatch event for other code to know auth is ready
+            window.dispatchEvent(new CustomEvent('authReady', { detail: { user, canManage } }));
+        });
         
         // Load name mappings from Firebase
         window.loadNameMappingsFromFirebase = async function() {
@@ -49,16 +134,26 @@
         
         // Save name mappings to Firebase
         window.saveNameMappingsToFirebase = async function(mappings) {
+            if (!window.currentUser) {
+                alert('Please sign in first');
+                return false;
+            }
+            if (!window.canManageContent) {
+                alert('You need admin or league-staff permissions to save');
+                return false;
+            }
             try {
                 const docRef = doc(db, 'settings', 'nameMappings');
                 await setDoc(docRef, { 
                     mappings: mappings,
-                    updatedAt: new Date().toISOString()
+                    updatedAt: new Date().toISOString(),
+                    updatedBy: window.currentUser.email
                 });
                 console.log('✅ Saved name mappings to Firebase');
                 return true;
             } catch (error) {
                 console.error('❌ Error saving name mappings:', error);
+                alert('Error saving: ' + error.message);
                 return false;
             }
         };
@@ -291,11 +386,65 @@
         .arrow {
             color: #999;
         }
+        /* Auth styles */
+        .auth-bar {
+            background: white;
+            border-radius: 8px;
+            padding: 12px 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 12px;
+        }
+        .auth-btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+        }
+        .auth-btn.google-btn {
+            background: #4285f4;
+            color: white;
+        }
+        .auth-btn.google-btn:hover {
+            background: #3367d6;
+        }
+        .admin-badge {
+            background: #28a745;
+            color: white;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+        .viewer-badge {
+            background: #6c757d;
+            color: white;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+        .save-firebase-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
     </style>
 </head>
 <body>
     <h1>🧹 GameChanger Data Cleaner</h1>
     <p class="subtitle">Convert scraped GameChanger batting data to the standard import format</p>
+
+    <!-- Auth Bar -->
+    <div class="auth-bar">
+        <div id="authStatus">
+            <span style="color: #666;">Loading...</span>
+        </div>
+    </div>
 
     <!-- Step 1: Upload -->
     <div class="card">
@@ -332,7 +481,7 @@
             <div id="nameMappings"></div>
             <div style="display: flex; gap: 10px; margin-top: 10px;">
                 <button type="button" class="secondary" onclick="addNameMapping()">+ Add Name Mapping</button>
-                <button type="button" class="success" onclick="saveCurrentMappings()">💾 Save to Firebase</button>
+                <button type="button" class="success save-firebase-btn" onclick="saveCurrentMappings()" disabled title="Sign in as admin to save">💾 Save to Firebase</button>
             </div>
         </div>
 
