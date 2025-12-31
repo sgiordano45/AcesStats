@@ -955,6 +955,163 @@ async function getChampionshipInfo(summerTeam, fallTeam) {
   }
 }
 
+// Get 2025 combined league leaders (Summer + Fall)
+async function get2025LeagueLeaders() {
+  console.log('📊 Calculating 2025 combined league leaders...');
+  
+  try {
+    const statsRef = collection(db, 'aggregatedPlayerStats');
+    const snapshot = await getDocs(statsRef);
+    
+    const playerStats = [];
+    
+    snapshot.forEach(doc => {
+      const data = doc.data();
+      if (data.migrated) return; // Skip migrated profiles
+      
+      let combinedStats = {
+        id: doc.id,
+        name: data.name || data.displayName || 'Unknown',
+        hits: 0,
+        walks: 0,
+        atBats: 0,
+        runs: 0
+      };
+      
+      // Combine 2025 Summer and Fall stats
+      if (data.seasons) {
+        Object.keys(data.seasons).forEach(seasonKey => {
+          if (seasonKey.startsWith('2025-summer') || seasonKey.startsWith('2025-fall')) {
+            const season = data.seasons[seasonKey];
+            combinedStats.hits += season.hits || 0;
+            combinedStats.walks += season.walks || 0;
+            combinedStats.atBats += season.atBats || 0;
+            combinedStats.runs += season.runs || 0;
+          }
+        });
+      }
+      
+      // Only include players with at least some activity
+      if (combinedStats.atBats > 0 || combinedStats.walks > 0) {
+        // Calculate derived stats
+        combinedStats.plateAppearances = combinedStats.atBats + combinedStats.walks;
+        combinedStats.battingAverage = combinedStats.atBats > 0 ? combinedStats.hits / combinedStats.atBats : 0;
+        combinedStats.onBasePercentage = combinedStats.plateAppearances > 0 
+          ? (combinedStats.hits + combinedStats.walks) / combinedStats.plateAppearances 
+          : 0;
+        
+        playerStats.push(combinedStats);
+      }
+    });
+    
+    // Calculate top 10 for each category
+    const minPlateAppearances = 40; // Minimum for qualified AVG/OBP
+    
+    // Hits leaders (top 10)
+    const hitsLeaders = [...playerStats]
+      .filter(p => p.hits > 0)
+      .sort((a, b) => b.hits - a.hits)
+      .slice(0, 10);
+    
+    // Walks leaders (top 10)
+    const walksLeaders = [...playerStats]
+      .filter(p => p.walks > 0)
+      .sort((a, b) => b.walks - a.walks)
+      .slice(0, 10);
+    
+    // Batting Average leaders (top 10, min 40 PA)
+    const avgLeaders = [...playerStats]
+      .filter(p => p.plateAppearances >= minPlateAppearances)
+      .sort((a, b) => b.battingAverage - a.battingAverage)
+      .slice(0, 10);
+    
+    // OBP leaders (top 10, min 40 PA)
+    const obpLeaders = [...playerStats]
+      .filter(p => p.plateAppearances >= minPlateAppearances)
+      .sort((a, b) => b.onBasePercentage - a.onBasePercentage)
+      .slice(0, 10);
+    
+    console.log(`✅ 2025 Leaders calculated:`, {
+      totalPlayers: playerStats.length,
+      hitsLeader: hitsLeaders[0]?.name,
+      walksLeader: walksLeaders[0]?.name,
+      avgLeader: avgLeaders[0]?.name,
+      obpLeader: obpLeaders[0]?.name
+    });
+    
+    return {
+      hits: hitsLeaders,
+      walks: walksLeaders,
+      battingAverage: avgLeaders,
+      onBasePercentage: obpLeaders
+    };
+    
+  } catch (error) {
+    console.error('Error calculating 2025 leaders:', error);
+    return {
+      hits: [],
+      walks: [],
+      battingAverage: [],
+      onBasePercentage: []
+    };
+  }
+}
+
+// Check if player is in top 10 for any category
+function checkTop10Status(playerId, leagueLeaders) {
+  const achievements = [];
+  
+  // Check hits
+  const hitsRank = leagueLeaders.hits.findIndex(p => p.id === playerId) + 1;
+  if (hitsRank > 0 && hitsRank <= 10) {
+    const playerData = leagueLeaders.hits[hitsRank - 1];
+    achievements.push({
+      category: 'Hits',
+      rank: hitsRank,
+      value: playerData.hits,
+      icon: '🎯'
+    });
+  }
+  
+  // Check walks
+  const walksRank = leagueLeaders.walks.findIndex(p => p.id === playerId) + 1;
+  if (walksRank > 0 && walksRank <= 10) {
+    const playerData = leagueLeaders.walks[walksRank - 1];
+    achievements.push({
+      category: 'Walks',
+      rank: walksRank,
+      value: playerData.walks,
+      icon: '👁️'
+    });
+  }
+  
+  // Check batting average
+  const avgRank = leagueLeaders.battingAverage.findIndex(p => p.id === playerId) + 1;
+  if (avgRank > 0 && avgRank <= 10) {
+    const playerData = leagueLeaders.battingAverage[avgRank - 1];
+    achievements.push({
+      category: 'Batting Average',
+      rank: avgRank,
+      value: playerData.battingAverage.toFixed(3).replace(/^0/, ''),
+      icon: '🥇'
+    });
+  }
+  
+  // Check OBP
+  const obpRank = leagueLeaders.onBasePercentage.findIndex(p => p.id === playerId) + 1;
+  if (obpRank > 0 && obpRank <= 10) {
+    const playerData = leagueLeaders.onBasePercentage[obpRank - 1];
+    achievements.push({
+      category: 'On-Base %',
+      rank: obpRank,
+      value: playerData.onBasePercentage.toFixed(3).replace(/^0/, ''),
+      icon: '📊'
+    });
+  }
+  
+  return achievements;
+}
+
 // Calculate league-wide stats for comparison
 async function getLeagueStats() {
   try {
@@ -1089,6 +1246,12 @@ async function generateCards(playerData) {
   // Get league stats for comparison
   const leagueStats = await getLeagueStats();
   
+  // Get 2025 combined league leaders
+  const leagueLeaders = await get2025LeagueLeaders();
+  
+  // Check if player is in top 10 for any category
+  const top10Achievements = checkTop10Status(playerData.id, leagueLeaders);
+  
   // Get 2025 season data (Summer + Fall combined)
   const season2025Data = getCombined2025Stats(playerData);
   
@@ -1117,6 +1280,12 @@ async function generateCards(playerData) {
   if (championships.length > 0) {
     console.log(`🎉 Adding championship card with ${championships.length} championship(s):`, championships);
     cardData.push(generateChampionshipCard(championships, teamColors));
+  }
+  
+  // Add league leaders card if player is top 10 in any category
+  if (top10Achievements.length > 0) {
+    console.log(`⭐ Adding league leaders card - top 10 in ${top10Achievements.length} categories:`, top10Achievements);
+    cardData.push(generateLeagueLeadersCard(top10Achievements, teamColor));
   }
   
   // Add team change card if player changed teams
@@ -1440,6 +1609,78 @@ function findMilestones(playerData) {
   else if (careerWalks >= 25) milestones.push({ icon: '👁️', text: 'Reached 25 career walks!' });
 
   return milestones;
+}
+
+function generateLeagueLeadersCard(achievements, teamColor) {
+  console.log(`🏅 Generating league leaders card for ${achievements.length} achievements`);
+  
+  // Sort achievements by rank (best first)
+  const sortedAchievements = [...achievements].sort((a, b) => a.rank - b.rank);
+  
+  // Medal emojis for top 3
+  const getMedal = (rank) => {
+    if (rank === 1) return '🥇';
+    if (rank === 2) return '🥈';
+    if (rank === 3) return '🥉';
+    return `#${rank}`;
+  };
+  
+  return {
+    background: teamColor.gradient,
+    html: `
+      <div style="max-width: 700px; margin: 0 auto;">
+        <div style="font-size: 4rem; margin-bottom: 1rem;">⭐</div>
+        <h2 style="color: ${teamColor.accent}; font-size: clamp(2rem, 5vw, 3rem);">
+          League Leader${achievements.length > 1 ? 's' : ''}
+        </h2>
+        <p class="stat-label" style="margin-bottom: 2rem;">
+          Top 10 in 2025 (Summer + Fall Combined)
+        </p>
+        
+        <div style="display: grid; gap: 1.5rem; margin: 2rem 0;">
+          ${sortedAchievements.map(achievement => `
+            <div style="background: rgba(255,255,255,0.15); backdrop-filter: blur(10px); padding: 1.5rem; border-radius: 16px; border-left: 4px solid ${teamColor.accent};">
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div style="flex: 1;">
+                  <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">
+                    ${achievement.icon}
+                  </div>
+                  <div style="font-size: 1.3rem; font-weight: 700; color: ${teamColor.accent}; margin-bottom: 0.3rem;">
+                    ${achievement.category}
+                  </div>
+                  <div style="font-size: 0.9rem; color: rgba(255,255,255,0.7);">
+                    2025 Combined Stats
+                  </div>
+                </div>
+                <div style="text-align: right;">
+                  <div style="font-size: 2.5rem; font-weight: 800; color: ${teamColor.accent}; margin-bottom: 0.3rem;">
+                    ${getMedal(achievement.rank)}
+                  </div>
+                  <div style="font-size: 1.8rem; font-weight: 700;">
+                    ${achievement.value}
+                  </div>
+                  <div style="font-size: 0.85rem; color: rgba(255,255,255,0.7); margin-top: 0.3rem;">
+                    ${achievement.rank === 1 ? '1st in League!' : 
+                      achievement.rank === 2 ? '2nd in League' :
+                      achievement.rank === 3 ? '3rd in League' :
+                      `${achievement.rank}th in League`}
+                  </div>
+                </div>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+        
+        <p style="font-size: clamp(1.1rem, 2.5vw, 1.4rem); margin-top: 2rem; color: rgba(255,255,255,0.95); font-weight: 600;">
+          ${achievements.length === 1 
+            ? "Elite performance! 🌟" 
+            : achievements.some(a => a.rank === 1)
+              ? "Dominant season! 👑"
+              : "Outstanding across the board! 🔥"}
+        </p>
+      </div>
+    `
+  };
 }
 
 function generateChampionshipCard(championships, teamColors) {
