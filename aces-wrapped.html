@@ -616,19 +616,63 @@
 import { db, collection, doc, getDoc, getDocs } from './firebase-config.js';
 import { getCurrentUser } from './firebase-auth.js';
 
-// Team colors mapping
+// Team colors mapping - using accents instead of full backgrounds for readability
 const teamColors = {
-  'Black': { primary: '#1a1a1a', gradient: 'linear-gradient(135deg, #1a1a1a 0%, #3a3a3a 100%)' },
-  'Green': { primary: '#2d7d32', gradient: 'linear-gradient(135deg, #2d7d32 0%, #1b5e20 100%)' },
-  'Red': { primary: '#d32f2f', gradient: 'linear-gradient(135deg, #d32f2f 0%, #b71c1c 100%)' },
-  'Blue': { primary: '#1976d2', gradient: 'linear-gradient(135deg, #1976d2 0%, #0d47a1 100%)' },
-  'White': { primary: '#f5f5f5', gradient: 'linear-gradient(135deg, #f5f5f5 0%, #e0e0e0 100%)' },
-  'Orange': { primary: '#f57c00', gradient: 'linear-gradient(135deg, #f57c00 0%, #e65100 100%)' },
-  'Silver': { primary: '#757575', gradient: 'linear-gradient(135deg, #757575 0%, #616161 100%)' },
-  'Purple': { primary: '#7b1fa2', gradient: 'linear-gradient(135deg, #7b1fa2 0%, #4a148c 100%)' },
-  'Gold': { primary: '#CFB53B', gradient: 'linear-gradient(135deg, #CFB53B 0%, #b89b2f 100%)' },
-  'Carolina': { primary: '#4b9cd3', gradient: 'linear-gradient(135deg, #4b9cd3 0%, #2980b9 100%)' },
-  'Army': { primary: '#654321', gradient: 'linear-gradient(135deg, #654321 0%, #4a2f17 100%)' }
+  'Black': { 
+    primary: '#1a1a1a', 
+    gradient: 'linear-gradient(135deg, #1a1a3a 0%, #2d2d4d 100%)',
+    accent: '#4a4a6a'
+  },
+  'Green': { 
+    primary: '#2d7d32', 
+    gradient: 'linear-gradient(135deg, #1a2d1e 0%, #2d4d32 100%)',
+    accent: '#2d7d32'
+  },
+  'Red': { 
+    primary: '#d32f2f', 
+    gradient: 'linear-gradient(135deg, #2d1a1a 0%, #4d2d2d 100%)',
+    accent: '#d32f2f'
+  },
+  'Blue': { 
+    primary: '#1976d2', 
+    gradient: 'linear-gradient(135deg, #1a2d3a 0%, #2d3d4d 100%)',
+    accent: '#1976d2'
+  },
+  'White': { 
+    primary: '#f5f5f5', 
+    gradient: 'linear-gradient(135deg, #2d2d3a 0%, #3d3d4d 100%)',
+    accent: '#e0e0e0'
+  },
+  'Orange': { 
+    primary: '#f57c00', 
+    gradient: 'linear-gradient(135deg, #2d1f0a 0%, #4d3520 100%)',
+    accent: '#f57c00'
+  },
+  'Silver': { 
+    primary: '#757575', 
+    gradient: 'linear-gradient(135deg, #2d2d2d 0%, #4d4d4d 100%)',
+    accent: '#9e9e9e'
+  },
+  'Purple': { 
+    primary: '#7b1fa2', 
+    gradient: 'linear-gradient(135deg, #1f0a2d 0%, #35204d 100%)',
+    accent: '#7b1fa2'
+  },
+  'Gold': { 
+    primary: '#CFB53B', 
+    gradient: 'linear-gradient(135deg, #2d2710 0%, #4d4520 100%)',
+    accent: '#CFB53B'
+  },
+  'Carolina': { 
+    primary: '#4b9cd3', 
+    gradient: 'linear-gradient(135deg, #1a2d3a 0%, #2d4d5d 100%)',
+    accent: '#4b9cd3'
+  },
+  'Army': { 
+    primary: '#654321', 
+    gradient: 'linear-gradient(135deg, #1f1510 0%, #352520 100%)',
+    accent: '#654321'
+  }
 };
 
 // State
@@ -701,18 +745,46 @@ async function generateCards(playerData) {
   
   // Get 2025 season data (Summer + Fall combined)
   const season2025Data = getCombined2025Stats(playerData);
-  const teamColor = getPlayerTeamColor(playerData);
+  
+  // Get game-level stats if available
+  const gameStats = await getGameLevelStats(playerData.id);
+  
+  // Determine team color (use fall team if changed, otherwise summer team or current team)
+  const finalTeam = season2025Data.fallTeam || season2025Data.summerTeam || playerData.currentTeam || 'Green';
+  const teamColor = getPlayerTeamColor(finalTeam);
   
   // Generate card data
   const cardData = [
     generateWelcomeCard(playerData, teamColor),
     generateGamesCard(season2025Data, teamColor),
     generateBattingCard(season2025Data, playerData, teamColor),
-    generateStatsCard(season2025Data, teamColor),
-    ...generateMilestoneCards(playerData, teamColor),
-    generateTeamCard(season2025Data, playerData, teamColor),
-    generateSummaryCard(season2025Data, playerData, teamColor)
+    generateStatsCard(season2025Data, teamColor)
   ];
+  
+  // Add team change card if player changed teams
+  if (season2025Data.teamChanged) {
+    cardData.push(generateTeamChangeCard(season2025Data, teamColors));
+  }
+  
+  // Add game highlights if available
+  if (gameStats) {
+    if (gameStats.bestGame) {
+      cardData.push(generateBestGameCard(gameStats.bestGame, teamColor));
+    }
+    if (gameStats.longestStreak > 1 || gameStats.multiHitGames > 0) {
+      cardData.push(generateGameHighlightsCard(gameStats, teamColor));
+    }
+  }
+  
+  // Add milestones
+  const milestoneCards = generateMilestoneCards(playerData, teamColor);
+  cardData.push(...milestoneCards);
+  
+  // Add team card (using final team)
+  cardData.push(generateTeamCard(season2025Data, playerData, teamColor, finalTeam));
+  
+  // Add summary
+  cardData.push(generateSummaryCard(season2025Data, playerData, teamColor));
 
   cards = cardData;
 
@@ -739,34 +811,130 @@ function getCombined2025Stats(playerData) {
     hits: 0,
     walks: 0,
     atBats: 0,
-    team: '',
-    teamRecord: { wins: 0, losses: 0 },
-    bestGame: null
+    runs: 0,
+    summerTeam: null,
+    fallTeam: null,
+    teamChanged: false,
+    bestGame: null,
+    gameStats: []
   };
 
   if (!playerData.seasons) return stats;
 
   // Combine summer and fall 2025
   Object.keys(playerData.seasons).forEach(seasonKey => {
-    if (seasonKey.startsWith('2025-summer') || seasonKey.startsWith('2025-fall')) {
+    if (seasonKey.startsWith('2025-summer')) {
       const season = playerData.seasons[seasonKey];
       stats.games += season.games || 0;
       stats.hits += season.hits || 0;
       stats.walks += season.walks || 0;
       stats.atBats += season.atBats || 0;
+      stats.runs += season.runs || 0;
       
-      if (!stats.team && season.team) {
-        stats.team = season.team;
+      if (season.team) {
+        stats.summerTeam = season.team;
+      }
+    } else if (seasonKey.startsWith('2025-fall')) {
+      const season = playerData.seasons[seasonKey];
+      stats.games += season.games || 0;
+      stats.hits += season.hits || 0;
+      stats.walks += season.walks || 0;
+      stats.atBats += season.atBats || 0;
+      stats.runs += season.runs || 0;
+      
+      if (season.team) {
+        stats.fallTeam = season.team;
       }
     }
   });
 
+  // Detect team change
+  if (stats.summerTeam && stats.fallTeam && stats.summerTeam !== stats.fallTeam) {
+    stats.teamChanged = true;
+  }
+
   return stats;
 }
 
-function getPlayerTeamColor(playerData) {
-  const team = playerData.currentTeam || '';
-  return teamColors[team] || teamColors['Green'];
+// Get game-level stats from splits collection
+async function getGameLevelStats(playerId) {
+  try {
+    const splitsRef = doc(db, 'aggregatedPlayerStats2025Splits', playerId);
+    const splitsSnap = await getDoc(splitsRef);
+    
+    if (!splitsSnap.exists()) {
+      return null;
+    }
+    
+    const splitsData = splitsSnap.data();
+    let allGames = [];
+    
+    // Collect games from both seasons
+    if (splitsData.seasons) {
+      ['2025-summer', '2025-fall'].forEach(seasonId => {
+        if (splitsData.seasons[seasonId] && splitsData.seasons[seasonId].games) {
+          const seasonGames = splitsData.seasons[seasonId].games.map(g => ({
+            ...g,
+            season: seasonId
+          }));
+          allGames = allGames.concat(seasonGames);
+        }
+      });
+    }
+    
+    if (allGames.length === 0) {
+      return null;
+    }
+    
+    // Find best game (most hits)
+    const bestGame = allGames.reduce((best, game) => {
+      const gameHits = game.hits || 0;
+      const bestHits = best.hits || 0;
+      return gameHits > bestHits ? game : best;
+    }, allGames[0]);
+    
+    // Calculate hitting streak
+    let currentStreak = 0;
+    let longestStreak = 0;
+    let streakGames = [];
+    
+    // Sort games by date
+    const sortedGames = [...allGames].sort((a, b) => {
+      const dateA = a.gameDate?.seconds || 0;
+      const dateB = b.gameDate?.seconds || 0;
+      return dateA - dateB;
+    });
+    
+    sortedGames.forEach(game => {
+      if ((game.hits || 0) > 0) {
+        currentStreak++;
+        if (currentStreak > longestStreak) {
+          longestStreak = currentStreak;
+        }
+      } else {
+        currentStreak = 0;
+      }
+    });
+    
+    // Count multi-hit games
+    const multiHitGames = allGames.filter(g => (g.hits || 0) >= 2).length;
+    
+    return {
+      bestGame,
+      longestStreak,
+      multiHitGames,
+      totalGamesWithStats: allGames.length
+    };
+    
+  } catch (error) {
+    console.error('Error loading game-level stats:', error);
+    return null;
+  }
+}
+
+function getPlayerTeamColor(team) {
+  const teamName = team || 'Green';
+  return teamColors[teamName] || teamColors['Green'];
 }
 
 function calculatePercentile(avg, allAverages) {
@@ -781,7 +949,7 @@ function generateWelcomeCard(playerData, teamColor) {
     html: `
       <div style="max-width: 800px;">
         <h1>Mountainside Aces</h1>
-        <h2 style="font-size: clamp(3rem, 10vw, 6rem); color: #14b8a6; margin: 2rem 0;">
+        <h2 style="font-size: clamp(3rem, 10vw, 6rem); color: ${teamColor.accent}; margin: 2rem 0;">
           Wrapped 2025
         </h2>
         <h3>${playerData.name || playerData.displayName}'s Season in Review</h3>
@@ -798,7 +966,7 @@ function generateGamesCard(stats, teamColor) {
     background: teamColor.gradient,
     html: `
       <h2>You showed up</h2>
-      <div class="big-number">${stats.games}</div>
+      <div class="big-number" style="color: ${teamColor.accent};">${stats.games}</div>
       <p class="stat-label">games played</p>
       <p style="margin-top: 2rem; font-size: 1.5rem;">That's dedication! ⚾</p>
     `
@@ -816,7 +984,7 @@ function generateBattingCard(stats, playerData, teamColor) {
     background: teamColor.gradient,
     html: `
       <h2>Your batting average</h2>
-      <div class="big-number">${avgDisplay}</div>
+      <div class="big-number" style="color: ${teamColor.accent};">${avgDisplay}</div>
       <p class="stat-label">${stats.hits} hits in ${stats.games} games</p>
       
       <div class="progress-container">
@@ -825,11 +993,11 @@ function generateBattingCard(stats, playerData, teamColor) {
           <span>You</span>
         </div>
         <div class="progress-bar">
-          <div class="progress-fill" style="width: ${percentile}%"></div>
+          <div class="progress-fill" style="width: ${percentile}%; background: linear-gradient(90deg, ${teamColor.accent} 0%, ${teamColor.primary} 100%);"></div>
         </div>
       </div>
 
-      <h3 style="color: #fbbf24; margin-top: 2rem;">
+      <h3 style="color: ${teamColor.accent}; margin-top: 2rem;">
         Top ${100 - percentile}% in the league
       </h3>
     `
@@ -871,10 +1039,10 @@ function generateMilestoneCards(playerData, teamColor) {
   return [{
     background: teamColor.gradient,
     html: `
-      <h2>🏆 Milestones Unlocked</h2>
+      <h2 style="color: ${teamColor.accent};">🏆 Milestones Unlocked</h2>
       <div class="milestones-list">
         ${milestones.map(m => `
-          <div class="milestone-item">
+          <div class="milestone-item" style="border: 2px solid ${teamColor.accent};">
             <div class="milestone-icon">${m.icon}</div>
             <div class="milestone-text">${m.text}</div>
           </div>
@@ -909,13 +1077,136 @@ function findMilestones(playerData) {
   return milestones;
 }
 
-function generateTeamCard(stats, playerData, teamColor) {
-  const team = stats.team || playerData.currentTeam || 'Your Team';
+function generateTeamChangeCard(stats, teamColors) {
+  const summerColor = teamColors[stats.summerTeam] || teamColors['Green'];
+  const fallColor = teamColors[stats.fallTeam] || teamColors['Green'];
+  
+  return {
+    background: 'linear-gradient(135deg, #1a1a2e 0%, #2d2d3e 100%)',
+    html: `
+      <h2>Your Journey</h2>
+      <div style="max-width: 600px; margin: 2rem auto;">
+        <p style="font-size: clamp(1.2rem, 3vw, 1.8rem); margin-bottom: 3rem; color: rgba(255,255,255,0.9);">
+          You started with one team and finished with another...
+        </p>
+        
+        <div style="display: flex; align-items: center; justify-content: center; gap: 2rem; margin: 3rem 0; flex-wrap: wrap;">
+          <div style="text-align: center;">
+            <div style="width: 100px; height: 100px; background: ${summerColor.accent}; border-radius: 50%; margin: 0 auto 1rem; display: flex; align-items: center; justify-content: center; font-size: 2rem; border: 4px solid rgba(255,255,255,0.3);">
+              🌞
+            </div>
+            <div style="font-size: 1.5rem; font-weight: 700; color: ${summerColor.accent};">
+              ${stats.summerTeam}
+            </div>
+            <div style="color: rgba(255,255,255,0.7); margin-top: 0.5rem;">Summer</div>
+          </div>
+          
+          <div style="font-size: 3rem; color: rgba(255,255,255,0.5);">→</div>
+          
+          <div style="text-align: center;">
+            <div style="width: 100px; height: 100px; background: ${fallColor.accent}; border-radius: 50%; margin: 0 auto 1rem; display: flex; align-items: center; justify-content: center; font-size: 2rem; border: 4px solid rgba(255,255,255,0.3);">
+              🍂
+            </div>
+            <div style="font-size: 1.5rem; font-weight: 700; color: ${fallColor.accent};">
+              ${stats.fallTeam}
+            </div>
+            <div style="color: rgba(255,255,255,0.7); margin-top: 0.5rem;">Fall</div>
+          </div>
+        </div>
+        
+        <p style="font-size: clamp(1rem, 2.5vw, 1.3rem); margin-top: 3rem; color: rgba(255,255,255,0.8);">
+          Two teams, one incredible season 🏆
+        </p>
+      </div>
+    `
+  };
+}
+
+function generateBestGameCard(bestGame, teamColor) {
+  const formatDate = (gameDate) => {
+    if (!gameDate || !gameDate.seconds) return 'Unknown Date';
+    const date = new Date(gameDate.seconds * 1000);
+    return date.toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
+  };
+  
+  const avg = bestGame.atBats > 0 ? (bestGame.hits / bestGame.atBats).toFixed(3).replace(/^0/, '') : '.000';
   
   return {
     background: teamColor.gradient,
     html: `
-      <h2>${team}</h2>
+      <div style="display: flex; align-items: center; justify-content: center; margin-bottom: 2rem;">
+        <span style="font-size: 4rem;">⭐</span>
+      </div>
+      <h2 style="color: ${teamColor.accent};">Your Best Game</h2>
+      <div style="color: rgba(255,255,255,0.8); font-size: 1.2rem; margin-bottom: 2rem;">
+        ${formatDate(bestGame.gameDate)}
+      </div>
+      
+      <div class="best-game-card" style="border: 2px solid ${teamColor.accent};">
+        <div class="best-game-opponent">
+          vs ${bestGame.opponent || 'Unknown'}
+        </div>
+        <div class="best-game-stats" style="color: ${teamColor.accent};">
+          ${bestGame.hits || 0}-${bestGame.atBats || 0}${bestGame.walks > 0 ? `, ${bestGame.walks} BB` : ''}
+        </div>
+        <div style="font-size: clamp(1.5rem, 4vw, 2rem); margin: 1rem 0; color: ${teamColor.accent};">
+          ${avg} AVG
+        </div>
+        ${bestGame.runs > 0 ? `<div class="best-game-result">${bestGame.runs} Runs Scored</div>` : ''}
+      </div>
+    `
+  };
+}
+
+function generateGameHighlightsCard(gameStats, teamColor) {
+  return {
+    background: teamColor.gradient,
+    html: `
+      <h2 style="color: ${teamColor.accent};">Game Highlights</h2>
+      <div style="max-width: 600px; margin: 2rem auto;">
+        
+        ${gameStats.longestStreak > 1 ? `
+          <div style="background: rgba(255,255,255,0.1); border-left: 4px solid ${teamColor.accent}; padding: 1.5rem; margin-bottom: 1.5rem; border-radius: 8px;">
+            <div style="font-size: 3rem; font-weight: 800; color: ${teamColor.accent}; margin-bottom: 0.5rem;">
+              ${gameStats.longestStreak}
+            </div>
+            <div style="font-size: 1.2rem; color: rgba(255,255,255,0.9);">
+              Game Hitting Streak 🔥
+            </div>
+          </div>
+        ` : ''}
+        
+        ${gameStats.multiHitGames > 0 ? `
+          <div style="background: rgba(255,255,255,0.1); border-left: 4px solid ${teamColor.accent}; padding: 1.5rem; margin-bottom: 1.5rem; border-radius: 8px;">
+            <div style="font-size: 3rem; font-weight: 800; color: ${teamColor.accent}; margin-bottom: 0.5rem;">
+              ${gameStats.multiHitGames}
+            </div>
+            <div style="font-size: 1.2rem; color: rgba(255,255,255,0.9);">
+              Multi-Hit Games ⚾⚾
+            </div>
+          </div>
+        ` : ''}
+        
+        <div style="background: rgba(255,255,255,0.1); border-left: 4px solid ${teamColor.accent}; padding: 1.5rem; border-radius: 8px;">
+          <div style="font-size: 3rem; font-weight: 800; color: ${teamColor.accent}; margin-bottom: 0.5rem;">
+            ${gameStats.totalGamesWithStats}
+          </div>
+          <div style="font-size: 1.2rem; color: rgba(255,255,255,0.9);">
+            Games Tracked 📊
+          </div>
+        </div>
+      </div>
+    `
+  };
+}
+
+function generateTeamCard(stats, playerData, teamColor, teamName) {
+  const team = teamName || stats.fallTeam || stats.summerTeam || playerData.currentTeam || 'Your Team';
+  
+  return {
+    background: teamColor.gradient,
+    html: `
+      <h2 style="color: ${teamColor.accent};">${team}</h2>
       <p class="stat-label" style="margin-bottom: 2rem;">had a season to remember</p>
       
       <div class="team-record">
@@ -944,13 +1235,13 @@ function generateSummaryCard(stats, playerData, teamColor) {
     html: `
       <h2 style="font-size: clamp(2.5rem, 8vw, 5rem);">What a season!</h2>
       <p style="max-width: 700px; font-size: clamp(1.2rem, 3vw, 1.8rem); line-height: 1.6; margin: 2rem 0;">
-        You played <strong style="color: #14b8a6;">${stats.games} games</strong>, 
-        collected <strong style="color: #14b8a6;">${stats.hits} hits</strong>, 
-        and batted <strong style="color: #14b8a6;">${avg}</strong>.
+        You played <strong style="color: ${teamColor.accent};">${stats.games} games</strong>, 
+        collected <strong style="color: ${teamColor.accent};">${stats.hits} hits</strong>, 
+        and batted <strong style="color: ${teamColor.accent};">${avg}</strong>.
       </p>
 
-      <div style="background: rgba(255,255,255,0.15); backdrop-filter: blur(10px); padding: 2rem; border-radius: 20px; margin: 2rem 0; border: 2px solid rgba(255,255,255,0.2);">
-        <h3 style="font-size: clamp(1.5rem, 4vw, 2.5rem); margin-bottom: 1rem;">
+      <div style="background: rgba(255,255,255,0.15); backdrop-filter: blur(10px); padding: 2rem; border-radius: 20px; margin: 2rem 0; border: 2px solid ${teamColor.accent};">
+        <h3 style="font-size: clamp(1.5rem, 4vw, 2.5rem); margin-bottom: 1rem; color: ${teamColor.accent};">
           See you in 2026! 🏆
         </h3>
       </div>
