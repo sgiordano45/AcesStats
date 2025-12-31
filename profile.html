@@ -909,6 +909,94 @@ body {
 .modal-footer .btn {
   flex: 1;
 }
+
+/* Aces Wrapped Section */
+.wrapped-promo-card {
+  background: linear-gradient(135deg, #2d5016 0%, #1a6b4a 100%);
+  border-radius: 16px;
+  padding: 2.5rem;
+  margin-bottom: 2rem;
+  box-shadow: 0 12px 32px rgba(0,0,0,0.16);
+  position: relative;
+  overflow: hidden;
+  color: white;
+}
+
+.wrapped-promo-card::before {
+  content: '🏆';
+  position: absolute;
+  top: -30px;
+  right: -30px;
+  font-size: 200px;
+  opacity: 0.1;
+  transform: rotate(15deg);
+}
+
+.wrapped-promo-content {
+  position: relative;
+  z-index: 1;
+  text-align: center;
+}
+
+.wrapped-promo-title {
+  font-size: 2.5rem;
+  font-weight: 800;
+  margin-bottom: 0.5rem;
+  text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+}
+
+.wrapped-promo-subtitle {
+  font-size: 1.2rem;
+  opacity: 0.95;
+  margin-bottom: 2rem;
+}
+
+.wrapped-cta-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem 2rem;
+  background: linear-gradient(135deg, #14b8a6 0%, #0d9488 100%);
+  color: white;
+  border: none;
+  border-radius: 50px;
+  font-size: 1.2rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  text-decoration: none;
+  box-shadow: 0 4px 16px rgba(20, 184, 166, 0.4);
+}
+
+.wrapped-cta-btn:hover {
+  transform: translateY(-2px) scale(1.05);
+  box-shadow: 0 6px 24px rgba(20, 184, 166, 0.6);
+}
+
+.wrapped-icon {
+  font-size: 1.5rem;
+  animation: wrappedBounce 2s infinite;
+}
+
+@keyframes wrappedBounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-5px); }
+}
+
+@media (max-width: 768px) {
+  .wrapped-promo-title {
+    font-size: 2rem;
+  }
+  
+  .wrapped-promo-subtitle {
+    font-size: 1rem;
+  }
+  
+  .wrapped-cta-btn {
+    font-size: 1rem;
+    padding: 0.875rem 1.5rem;
+  }
+}
 </style>
 </head>
 <body>
@@ -1015,6 +1103,21 @@ body {
           </div>
         </div>
       </div>
+
+<!-- Aces Wrapped Promo -->
+<div class="wrapped-promo-card" id="wrappedPromoCard" style="display: none;">
+  <div class="wrapped-promo-content">
+    <div class="wrapped-promo-title">🎉 Aces Wrapped 2025</div>
+    <div class="wrapped-promo-subtitle">
+      Relive your best moments from the 2025 season!
+    </div>
+    <a href="#" id="viewWrappedBtn" class="wrapped-cta-btn">
+      <span class="wrapped-icon">⚾</span>
+      <span>View My Wrapped</span>
+      <span>→</span>
+    </a>
+  </div>
+</div>
 
 <div class="section-card" id="captainToolsSection" style="display: none;">
   <div class="section-header">
@@ -1902,6 +2005,7 @@ async function loadNotificationPreferences() {
 
 		  await loadCaptainTools();
           await loadUserStats(user);
+          await showWrappedPromoIfEligible();
         } catch (error) {
           console.error('❌ Error loading profile data:', error);
           alert('Error loading profile. Check console for details.');
@@ -2547,6 +2651,63 @@ function displayRoleBadges(userProfile) {
     document.getElementById('statHits').textContent = '0';
     document.getElementById('statRuns').textContent = '0';
 	document.getElementById('statBPI').textContent = '-';
+  }
+}
+
+// ========================================
+// ACES WRAPPED PROMO
+// Show Wrapped promo card if player has 2025 stats
+// ========================================
+
+async function showWrappedPromoIfEligible() {
+  console.log('🎉 Checking Aces Wrapped eligibility...');
+  
+  if (!userProfile || !userProfile.linkedPlayer) {
+    console.log('❌ No linked player - hiding wrapped promo');
+    document.getElementById('wrappedPromoCard').style.display = 'none';
+    return;
+  }
+  
+  try {
+    // Try to get player data from the merged profile or fetch fresh
+    let playerData = mergedProfileData;
+    
+    // If no merged profile data, try fetching directly
+    if (!playerData || !playerData.seasons) {
+      console.log('📊 Fetching player data for wrapped check...');
+      const playerRef = doc(db, 'aggregatedPlayerStats', userProfile.linkedPlayer);
+      const playerSnap = await getDoc(playerRef);
+      
+      if (playerSnap.exists() && !playerSnap.data().migrated) {
+        playerData = playerSnap.data();
+      }
+    }
+    
+    if (!playerData || !playerData.seasons) {
+      console.log('❌ No player data found - hiding wrapped promo');
+      document.getElementById('wrappedPromoCard').style.display = 'none';
+      return;
+    }
+    
+    // Check if player has 2025 stats (Summer or Fall)
+    const has2025Stats = Object.keys(playerData.seasons).some(seasonKey => 
+      seasonKey.startsWith('2025-summer') || seasonKey.startsWith('2025-fall')
+    );
+    
+    if (has2025Stats) {
+      console.log('✅ Player has 2025 stats - showing wrapped promo');
+      document.getElementById('wrappedPromoCard').style.display = 'block';
+      
+      // Setup the button link
+      const wrappedBtn = document.getElementById('viewWrappedBtn');
+      wrappedBtn.href = `aces-wrapped.html?id=${userProfile.linkedPlayer}`;
+    } else {
+      console.log('❌ No 2025 stats found - hiding wrapped promo');
+      document.getElementById('wrappedPromoCard').style.display = 'none';
+    }
+  } catch (error) {
+    console.error('❌ Error checking wrapped eligibility:', error);
+    document.getElementById('wrappedPromoCard').style.display = 'none';
   }
 }
 
