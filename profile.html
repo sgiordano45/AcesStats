@@ -2669,24 +2669,24 @@ async function showWrappedPromoIfEligible() {
   }
   
   try {
-    // Try to get player data from the merged profile or fetch fresh
-    let playerData = mergedProfileData;
+    // Convert name to Firebase ID format (lowercase with underscores)
+    const playerId = userProfile.linkedPlayer.toLowerCase().replace(/\s+/g, '_');
+    console.log('📊 Fetching player data for wrapped check...', playerId);
     
-    // If no merged profile data, try fetching directly
-    if (!playerData || !playerData.seasons) {
-      // Convert name to Firebase ID format (lowercase with underscores)
-      const playerId = userProfile.linkedPlayer.toLowerCase().replace(/\s+/g, '_');
-      console.log('📊 Fetching player data for wrapped check...', playerId);
-      const playerRef = doc(db, 'aggregatedPlayerStats', playerId);
-      const playerSnap = await getDoc(playerRef);
-      
-      if (playerSnap.exists() && !playerSnap.data().migrated) {
-        playerData = playerSnap.data();
-      }
+    // Fetch player data from aggregatedPlayerStats
+    const playerRef = doc(db, 'aggregatedPlayerStats', playerId);
+    const playerSnap = await getDoc(playerRef);
+    
+    if (!playerSnap.exists() || playerSnap.data().migrated) {
+      console.log('❌ No player data found - hiding wrapped promo');
+      document.getElementById('wrappedPromoCard').style.display = 'none';
+      return;
     }
     
-    if (!playerData || !playerData.seasons) {
-      console.log('❌ No player data found - hiding wrapped promo');
+    const playerData = playerSnap.data();
+    
+    if (!playerData.seasons) {
+      console.log('❌ No season data found - hiding wrapped promo');
       document.getElementById('wrappedPromoCard').style.display = 'none';
       return;
     }
@@ -2701,7 +2701,6 @@ async function showWrappedPromoIfEligible() {
       document.getElementById('wrappedPromoCard').style.display = 'block';
       
       // Setup the button link (use proper ID format)
-      const playerId = userProfile.linkedPlayer.toLowerCase().replace(/\s+/g, '_');
       const wrappedBtn = document.getElementById('viewWrappedBtn');
       wrappedBtn.href = `aces-wrapped.html?id=${playerId}`;
     } else {
