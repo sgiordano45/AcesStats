@@ -839,11 +839,287 @@ export async function linkPlayerToUser(userId, playerName, teamId, isCaptain = f
       }
     }
     
+    // Aggregate player stats for this newly linked player
+    if (playerName) {
+      console.log('📊 Aggregating player stats...');
+      const aggregateResult = await aggregatePlayerStats(userId, playerName, teamId);
+      if (aggregateResult.success) {
+        console.log(`✅ Aggregated ${aggregateResult.seasons} seasons for ${playerName}`);
+      } else {
+        console.warn('⚠️ Stats aggregation failed:', aggregateResult.error);
+        // Don't fail the link - aggregation can be retried
+      }
+    }
+    
     console.log('✅ Player linked to user:', playerName, 'Team:', teamId);
     return { success: true };
   } catch (error) {
     console.error('❌ Error linking player:', error);
     return { success: false, error: error.code };
+  }
+}
+
+
+// ========================================
+// PLAYER STATS AGGREGATION
+// ========================================
+
+/**
+ * Aggregate player stats when a player links their account
+ * Creates/updates aggregatedPlayerStats document with all season data
+ * @param {string} userId - Auth user's ID (will be the document ID)
+ * @param {string} playerName - The linked player's name
+ * @param {string} teamId - Current team ID
+ * @returns {Promise<Object>} Result with success status and season count
+ */
+export async function aggregatePlayerStats(userId, playerName, teamId) {
+  try {
+    // Convert player name to stats lookup ID (legacy format)
+    // Remove periods (Jr. → Jr) before converting spaces to underscores
+    const statsLookupId = playerName.toLowerCase().replace(/\./g, '').replace(/\s+/g, '_');
+    
+    console.log(`📊 Aggregating stats for ${playerName} (lookup: ${statsLookupId})`);
+    
+    // ========================================
+    // FETCH BATTING SEASONS
+    // ========================================
+    const seasonsRef = collection(db, 'playerStats', statsLookupId, 'seasons');
+    const seasonsSnapshot = await getDocs(seasonsRef);
+    
+    const seasonStatsObject = {};
+    const calculatedCareerStats = {
+      games: 0,
+      atBats: 0,
+      hits: 0,
+      runs: 0,
+      walks: 0,
+      doubles: 0,
+      triples: 0,
+      homeRuns: 0,
+      rbi: 0,
+      acesBPITotal: 0,
+      acesBPICount: 0
+    };
+    
+    seasonsSnapshot.forEach(seasonDoc => {
+      const data = seasonDoc.data();
+      const seasonId = seasonDoc.id;
+      
+      const games = data.games || 0;
+      const atBats = data.atBats || 0;
+      const hits = data.hits || 0;
+      const runs = data.runs || 0;
+      const walks = data.walks || 0;
+      const doubles = data.doubles || data['2B'] || 0;
+      const triples = data.triples || data['3B'] || 0;
+      const homeRuns = data.homeRuns || data.HR || 0;
+      const rbi = data.rbi || data.RBI || 0;
+      const acesBPI = data.acesBPI || data.acesWar || 0;
+      const sub = data.sub || data.Sub || "No";
+      const team = data.team || "";
+      
+      // Add to career totals
+      calculatedCareerStats.games += games;
+      calculatedCareerStats.atBats += atBats;
+      calculatedCareerStats.hits += hits;
+      calculatedCareerStats.runs += runs;
+      calculatedCareerStats.walks += walks;
+      calculatedCareerStats.doubles += doubles;
+      calculatedCareerStats.triples += triples;
+      calculatedCareerStats.homeRuns += homeRuns;
+      calculatedCareerStats.rbi += rbi;
+      
+      if (acesBPI !== 0 && sub.toLowerCase() !== "yes") {
+        calculatedCareerStats.acesBPITotal += acesBPI;
+        calculatedCareerStats.acesBPICount++;
+      }
+      
+      // Store with seasonId as KEY
+      seasonStatsObject[seasonId] = {
+        team: team,
+        games: games,
+        atBats: atBats,
+        hits: hits,
+        runs: runs,
+        walks: walks,
+        doubles: doubles,
+        triples: triples,
+        homeRuns: homeRuns,
+        rbi: rbi,
+        battingAverage: atBats > 0 ? (hits / atBats) : 0,
+        onBasePercentage: (atBats + walks) > 0 ? ((hits + walks) / (atBats + walks)) : 0,
+        acesBPI: acesBPI,
+        sub: sub
+      };
+    });
+    
+    // Calculate career batting stats
+    const careerBattingAverage = calculatedCareerStats.atBats > 0
+      ? (calculatedCareerStats.hits / calculatedCareerStats.atBats) : 0;
+    const careerOnBasePercentage = (calculatedCareerStats.atBats + calculatedCareerStats.walks) > 0
+      ? ((calculatedCareerStats.hits + calculatedCareerStats.walks) / (calculatedCareerStats.atBats + calculatedCareerStats.walks)) : 0;
+    const careerAcesBPI = calculatedCareerStats.acesBPICount > 0
+      ? (calculatedCareerStats.acesBPITotal / calculatedCareerStats.acesBPICount) : 0;
+    
+    // ========================================
+    // FETCH PITCHING SEASONS
+    // ========================================
+    let pitchingSeasonsSnapshot;
+    let hasPitchingData = false;
+    
+    try {
+      const pitchingSeasonsRef = collection(db, 'pitchingStats', statsLookupId, 'seasons');
+      pitchingSeasonsSnapshot = await getDocs(pitchingSeasonsRef);
+      hasPitchingData = !pitchingSeasonsSnapshot.empty;
+    } catch (error) {
+      hasPitchingData = false;
+    }
+    
+    const pitchingSeasonStatsObject = {};
+    const calculatedPitchingCareer = {
+      games: 0,
+      inningsPitched: 0,
+      earnedRuns: 0,
+      strikeouts: 0,
+      walks: 0,
+      wins: 0,
+      losses: 0,
+      saves: 0
+    };
+    
+    if (hasPitchingData) {
+      pitchingSeasonsSnapshot.forEach(seasonDoc => {
+        const data = seasonDoc.data();
+        const seasonId = seasonDoc.id;
+        
+        const games = data.games || 0;
+        const ip = data.inningsPitched || data.IP || data.ip || 0;
+        const era = data.era || data.ERA || data.earnedRunAverage || 0;
+        const runsAllowed = data.runsAllowed || 0;
+        const strikeouts = data.strikeouts || data.K || data.k || data.SO || 0;
+        const walks = data.walks || data.BB || data.bb || 0;
+        const wins = data.wins || data.W || 0;
+        const losses = data.losses || data.L || 0;
+        const saves = data.saves || data.SV || 0;
+        
+        const earnedRuns = runsAllowed > 0 ? runsAllowed : (ip > 0 && era > 0 ? (era * ip) / 7 : 0);
+        
+        calculatedPitchingCareer.games += games;
+        calculatedPitchingCareer.inningsPitched += ip;
+        calculatedPitchingCareer.earnedRuns += earnedRuns;
+        calculatedPitchingCareer.strikeouts += strikeouts;
+        calculatedPitchingCareer.walks += walks;
+        calculatedPitchingCareer.wins += wins;
+        calculatedPitchingCareer.losses += losses;
+        calculatedPitchingCareer.saves += saves;
+        
+        pitchingSeasonStatsObject[seasonId] = {
+          team: data.team || '',
+          games: games,
+          inningsPitched: ip,
+          earnedRunAverage: era,
+          runsAllowed: runsAllowed,
+          strikeouts: strikeouts,
+          walks: walks,
+          wins: wins,
+          losses: losses,
+          saves: saves
+        };
+      });
+    }
+    
+    const careerEarnedRunAverage = calculatedPitchingCareer.inningsPitched > 0
+      ? (calculatedPitchingCareer.earnedRuns * 7) / calculatedPitchingCareer.inningsPitched : 0;
+    
+    // ========================================
+    // CREATE AGGREGATED DOCUMENT
+    // ========================================
+    const aggregatedData = {
+      userId: userId,
+      name: playerName,
+      currentTeam: teamId || '',
+      
+      // Mark as auth user (not legacy)
+      isAuthUser: true,
+      linkedPlayer: playerName,
+      migrated: false,
+      
+      // Career stats
+      career: {
+        games: calculatedCareerStats.games,
+        atBats: calculatedCareerStats.atBats,
+        hits: calculatedCareerStats.hits,
+        runs: calculatedCareerStats.runs,
+        walks: calculatedCareerStats.walks,
+        doubles: calculatedCareerStats.doubles,
+        triples: calculatedCareerStats.triples,
+        homeRuns: calculatedCareerStats.homeRuns,
+        rbi: calculatedCareerStats.rbi,
+        battingAverage: careerBattingAverage,
+        onBasePercentage: careerOnBasePercentage,
+        acesBPI: careerAcesBPI,
+        
+        pitching: {
+          games: calculatedPitchingCareer.games,
+          inningsPitched: calculatedPitchingCareer.inningsPitched,
+          earnedRunAverage: careerEarnedRunAverage,
+          runsAllowed: calculatedPitchingCareer.earnedRuns,
+          strikeouts: calculatedPitchingCareer.strikeouts,
+          walks: calculatedPitchingCareer.walks,
+          wins: calculatedPitchingCareer.wins,
+          losses: calculatedPitchingCareer.losses,
+          saves: calculatedPitchingCareer.saves
+        }
+      },
+      
+      // Store as OBJECT with seasonId keys
+      seasons: seasonStatsObject,
+      pitchingSeasons: pitchingSeasonStatsObject,
+      
+      // Metadata
+      totalSeasons: Object.keys(seasonStatsObject).length,
+      hasPitchingStats: Object.keys(pitchingSeasonStatsObject).length > 0,
+      lastUpdated: serverTimestamp(),
+      aggregatedAt: serverTimestamp()
+    };
+    
+    // Write to aggregatedPlayerStats with auth user's ID
+    const aggregatedRef = doc(db, 'aggregatedPlayerStats', userId);
+    await setDoc(aggregatedRef, aggregatedData, { merge: true });
+    
+    console.log(`✅ Created aggregatedPlayerStats/${userId}`);
+    
+    // ========================================
+    // MARK LEGACY AGGREGATED PROFILE AS MIGRATED
+    // ========================================
+    if (statsLookupId !== userId) {
+      try {
+        const legacyAggregatedRef = doc(db, 'aggregatedPlayerStats', statsLookupId);
+        const legacyAggregatedDoc = await getDoc(legacyAggregatedRef);
+        
+        if (legacyAggregatedDoc.exists()) {
+          await updateDoc(legacyAggregatedRef, {
+            migrated: true,
+            migratedTo: userId,
+            migratedAt: serverTimestamp()
+          });
+          console.log(`✅ Marked legacy aggregated profile ${statsLookupId} as migrated`);
+        }
+      } catch (migrationError) {
+        // Silently continue if legacy aggregated profile doesn't exist
+        console.log(`ℹ️ No legacy aggregated profile to migrate for ${statsLookupId}`);
+      }
+    }
+    
+    return { 
+      success: true, 
+      seasons: Object.keys(seasonStatsObject).length,
+      pitchingSeasons: Object.keys(pitchingSeasonStatsObject).length
+    };
+    
+  } catch (error) {
+    console.error('❌ Error aggregating player stats:', error);
+    return { success: false, error: error.message };
   }
 }
 
