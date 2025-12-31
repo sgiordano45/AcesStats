@@ -819,82 +819,102 @@ async function getChampionshipInfo(summerTeam, fallTeam) {
         
         console.log(`📊 Found ${games.length} games in ${seasonId}`);
         
-        // Find championship game
-        const champGame = games.find(g => {
+        // Find ALL championship games (there may be 2 in double elimination)
+        const champGames = games.filter(g => {
           const gameType = (g.gameType || g.game_type || '').toLowerCase();
           const round = (g.round || g.playoff_round || '').toLowerCase();
-          const isChampGame = gameType === 'playoff' && round.includes('champ');
-          if (isChampGame) {
-            console.log(`🏆 Found championship game:`, {
-              homeTeam: g.homeTeamName,
-              awayTeam: g.awayTeamName,
-              winner: g.winner,
-              gameType,
-              round
-            });
-          }
-          return isChampGame;
+          return gameType === 'playoff' && round.includes('champ');
         });
         
-        if (champGame) {
-          console.log(`✅ Championship game found for ${seasonId}`);
-          const homeTeam = champGame.homeTeamName || champGame["home team"];
-          const awayTeam = champGame.awayTeamName || champGame["away team"];
-          const homeTeamId = champGame.homeTeamId;
-          const awayTeamId = champGame.awayTeamId;
-          const winner = champGame.winner; // lowercase team ID
-          
-          console.log(`Championship details:`, {
-            homeTeam,
-            awayTeam,
-            homeTeamId,
-            awayTeamId,
-            winner,
-            lookingFor: teamName
-          });
-          
-          // Check if this team won (compare winner ID to team's ID)
-          let thisTeamWon = false;
-          if (homeTeam === teamName) {
-            thisTeamWon = (winner === homeTeamId);
-            console.log(`${teamName} was home team. Winner ID: ${winner}, Home ID: ${homeTeamId}, Won: ${thisTeamWon}`);
-          } else if (awayTeam === teamName) {
-            thisTeamWon = (winner === awayTeamId);
-            console.log(`${teamName} was away team. Winner ID: ${winner}, Away ID: ${awayTeamId}, Won: ${thisTeamWon}`);
-          } else {
-            console.log(`❌ ${teamName} was not in this championship game`);
-          }
-          
-          if (thisTeamWon) {
-            console.log(`🏆 ${teamName} won ${seasonId} championship!`);
-            
-            // Determine winner and loser scores
-            let winnerScore, loserScore;
-            if (homeTeam === teamName) {
-              // We're home team and won
-              winnerScore = champGame.homeScore;
-              loserScore = champGame.awayScore;
-            } else {
-              // We're away team and won
-              winnerScore = champGame.awayScore;
-              loserScore = champGame.homeScore;
-            }
-            
-            return {
-              season: seasonId.includes('summer') ? 'Summer' : 'Fall',
-              team: teamName,
-              opponent: homeTeam === teamName ? awayTeam : homeTeam,
-              score: {
-                winner: winnerScore,
-                loser: loserScore
-              }
-            };
-          }
-        } else {
+        if (champGames.length === 0) {
           console.log(`❌ No championship game found in ${seasonId}`);
           console.log(`Checked ${games.length} games for gameType='playoff' and round contains 'champ'`);
+          return null;
         }
         
+        console.log(`🏆 Found ${champGames.length} championship game(s) in ${seasonId}`);
+        
+        // In double elimination, take the LAST championship game (the deciding game)
+        // Sort by date to get the final game
+        const sortedChampGames = champGames.sort((a, b) => {
+          const dateA = a.date?.seconds || 0;
+          const dateB = b.date?.seconds || 0;
+          return dateB - dateA; // Most recent first
+        });
+        
+        const champGame = sortedChampGames[0]; // Take the most recent championship game
+        
+        if (champGames.length > 1) {
+          console.log(`⚠️ Double elimination: ${champGames.length} championship games found - using the most recent (final) game`);
+          champGames.forEach((g, i) => {
+            const gameDate = g.date?.seconds ? new Date(g.date.seconds * 1000).toLocaleDateString() : 'Unknown date';
+            console.log(`  Game ${i + 1} (${gameDate}): ${g.homeTeamName} vs ${g.awayTeamName}, winner: ${g.winner}`);
+          });
+          console.log(`  → Selected: ${champGame.homeTeamName} vs ${champGame.awayTeamName} (most recent)`);
+        }
+        
+        console.log(`✅ Using championship game:`, {
+          homeTeam: champGame.homeTeamName,
+          awayTeam: champGame.awayTeamName,
+          winner: champGame.winner,
+          gameType: champGame.gameType,
+          round: champGame.round
+        });
+        
+        const homeTeam = champGame.homeTeamName || champGame["home team"];
+        const awayTeam = champGame.awayTeamName || champGame["away team"];
+        const homeTeamId = champGame.homeTeamId;
+        const awayTeamId = champGame.awayTeamId;
+        const winner = champGame.winner; // lowercase team ID
+        
+        console.log(`Championship details:`, {
+          homeTeam,
+          awayTeam,
+          homeTeamId,
+          awayTeamId,
+          winner,
+          lookingFor: teamName
+        });
+        
+        // Check if this team won (compare winner ID to team's ID)
+        let thisTeamWon = false;
+        if (homeTeam === teamName) {
+          thisTeamWon = (winner === homeTeamId);
+          console.log(`${teamName} was home team. Winner ID: ${winner}, Home ID: ${homeTeamId}, Won: ${thisTeamWon}`);
+        } else if (awayTeam === teamName) {
+          thisTeamWon = (winner === awayTeamId);
+          console.log(`${teamName} was away team. Winner ID: ${winner}, Away ID: ${awayTeamId}, Won: ${thisTeamWon}`);
+        } else {
+          console.log(`❌ ${teamName} was not in this championship game`);
+        }
+        
+        if (thisTeamWon) {
+          console.log(`🏆 ${teamName} won ${seasonId} championship!`);
+          
+          // Determine winner and loser scores
+          let winnerScore, loserScore;
+          if (homeTeam === teamName) {
+            // We're home team and won
+            winnerScore = champGame.homeScore;
+            loserScore = champGame.awayScore;
+          } else {
+            // We're away team and won
+            winnerScore = champGame.awayScore;
+            loserScore = champGame.homeScore;
+          }
+          
+          return {
+            season: seasonId.includes('summer') ? 'Summer' : 'Fall',
+            team: teamName,
+            opponent: homeTeam === teamName ? awayTeam : homeTeam,
+            score: {
+              winner: winnerScore,
+              loser: loserScore
+            }
+          };
+        }
+        
+        console.log(`❌ ${teamName} did not win the ${seasonId} championship`);
         return null;
       } catch (error) {
         console.error(`Error checking championship for ${teamName} ${seasonId}:`, error);
