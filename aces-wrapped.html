@@ -808,31 +808,61 @@ async function getChampionshipInfo(summerTeam, fallTeam) {
       if (!teamName) return null;
       
       try {
+        console.log(`🔍 Checking ${teamName} for ${seasonId} championship...`);
         const { getSeasonGames } = await import('./firebase-data.js');
         const games = await getSeasonGames(seasonId);
         
-        if (!games || games.length === 0) return null;
+        if (!games || games.length === 0) {
+          console.log(`⚠️ No games found for ${seasonId}`);
+          return null;
+        }
+        
+        console.log(`📊 Found ${games.length} games in ${seasonId}`);
         
         // Find championship game
         const champGame = games.find(g => {
           const gameType = (g.gameType || g.game_type || '').toLowerCase();
           const round = (g.round || g.playoff_round || '').toLowerCase();
-          return gameType === 'playoff' && round.includes('champ');
+          const isChampGame = gameType === 'playoff' && round.includes('champ');
+          if (isChampGame) {
+            console.log(`🏆 Found championship game:`, {
+              homeTeam: g.homeTeamName,
+              awayTeam: g.awayTeamName,
+              winner: g.winner,
+              gameType,
+              round
+            });
+          }
+          return isChampGame;
         });
         
         if (champGame) {
+          console.log(`✅ Championship game found for ${seasonId}`);
           const homeTeam = champGame.homeTeamName || champGame["home team"];
           const awayTeam = champGame.awayTeamName || champGame["away team"];
           const homeTeamId = champGame.homeTeamId;
           const awayTeamId = champGame.awayTeamId;
           const winner = champGame.winner; // lowercase team ID
           
+          console.log(`Championship details:`, {
+            homeTeam,
+            awayTeam,
+            homeTeamId,
+            awayTeamId,
+            winner,
+            lookingFor: teamName
+          });
+          
           // Check if this team won (compare winner ID to team's ID)
           let thisTeamWon = false;
           if (homeTeam === teamName) {
             thisTeamWon = (winner === homeTeamId);
+            console.log(`${teamName} was home team. Winner ID: ${winner}, Home ID: ${homeTeamId}, Won: ${thisTeamWon}`);
           } else if (awayTeam === teamName) {
             thisTeamWon = (winner === awayTeamId);
+            console.log(`${teamName} was away team. Winner ID: ${winner}, Away ID: ${awayTeamId}, Won: ${thisTeamWon}`);
+          } else {
+            console.log(`❌ ${teamName} was not in this championship game`);
           }
           
           if (thisTeamWon) {
@@ -860,6 +890,9 @@ async function getChampionshipInfo(summerTeam, fallTeam) {
               }
             };
           }
+        } else {
+          console.log(`❌ No championship game found in ${seasonId}`);
+          console.log(`Checked ${games.length} games for gameType='playoff' and round contains 'champ'`);
         }
         
         return null;
@@ -871,16 +904,29 @@ async function getChampionshipInfo(summerTeam, fallTeam) {
     
     // Check summer
     if (summerTeam) {
+      console.log(`🌞 Checking Summer championship for ${summerTeam}...`);
       const summerChamp = await checkChampionship(summerTeam, '2025-summer');
-      if (summerChamp) championships.push(summerChamp);
+      if (summerChamp) {
+        console.log(`✅ ${summerTeam} won Summer championship!`, summerChamp);
+        championships.push(summerChamp);
+      } else {
+        console.log(`❌ ${summerTeam} did not win Summer championship`);
+      }
     }
     
-    // Check fall
+    // Check fall - ALWAYS check even if same team as summer
     if (fallTeam) {
+      console.log(`🍂 Checking Fall championship for ${fallTeam}...`);
       const fallChamp = await checkChampionship(fallTeam, '2025-fall');
-      if (fallChamp) championships.push(fallChamp);
+      if (fallChamp) {
+        console.log(`✅ ${fallTeam} won Fall championship!`, fallChamp);
+        championships.push(fallChamp);
+      } else {
+        console.log(`❌ ${fallTeam} did not win Fall championship`);
+      }
     }
     
+    console.log(`🏆 Total championships found: ${championships.length}`, championships);
     return championships;
     
   } catch (error) {
@@ -1049,6 +1095,7 @@ async function generateCards(playerData) {
   
   // Add championship card(s) if player won any titles
   if (championships.length > 0) {
+    console.log(`🎉 Adding championship card with ${championships.length} championship(s):`, championships);
     cardData.push(generateChampionshipCard(championships, teamColors));
   }
   
@@ -1376,10 +1423,15 @@ function findMilestones(playerData) {
 }
 
 function generateChampionshipCard(championships, teamColors) {
+  console.log(`🎨 Generating championship card for ${championships.length} championships`);
+  
   // If multiple championships, show both
   if (championships.length > 1) {
+    console.log(`🏆🏆 Creating DOUBLE CHAMPION card`);
     const summerChamp = championships.find(c => c.season === 'Summer');
     const fallChamp = championships.find(c => c.season === 'Fall');
+    console.log('Summer champ:', summerChamp);
+    console.log('Fall champ:', fallChamp);
     
     return {
       background: 'linear-gradient(135deg, #ffd700 0%, #f0c14b 50%, #daa520 100%)',
@@ -1440,6 +1492,7 @@ function generateChampionshipCard(championships, teamColors) {
   }
   
   // Single championship
+  console.log(`🏆 Creating single championship card for ${championships[0].season}`);
   const champ = championships[0];
   const teamColor = teamColors[champ.team] || teamColors['Green'];
   
