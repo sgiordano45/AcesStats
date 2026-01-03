@@ -1,0 +1,2255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Boxes Pool - Mountainside Aces</title>
+<meta name="theme-color" content="#2d5016">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="stylesheet" href="mobile-enhancements.css">
+<link rel="stylesheet" href="nav-styles.css">
+<style>
+:root {
+  --primary-color: #2d5016;
+  --secondary-color: #1a6b4a;
+  --accent-color: #ffd700;
+  --pool-color: #1e40af;
+  --pool-secondary: #3b82f6;
+  --card-bg: #ffffff;
+  --text-dark: #2d3748;
+  --text-light: #718096;
+  --border-color: #e2e8f0;
+  --shadow-sm: 0 2px 8px rgba(0,0,0,0.08);
+  --shadow-md: 0 4px 16px rgba(0,0,0,0.12);
+  --shadow-lg: 0 12px 32px rgba(0,0,0,0.16);
+  --success-color: #22c55e;
+  --warning-color: #f59e0b;
+  --danger-color: #ef4444;
+  --winner-color: #059669;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  margin: 0;
+  padding: 0;
+  background: linear-gradient(135deg, #f7fafc 0%, #edf2f7 100%);
+  min-height: 100vh;
+  color: var(--text-dark);
+}
+
+/* Loading Overlay */
+.loading-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(255,255,255,0.95);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  transition: opacity 0.5s ease;
+}
+
+.loading-overlay.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.softball-spinner::before {
+  content: '🏈';
+  font-size: 80px;
+  animation: spin 1.5s ease-in-out infinite;
+}
+
+@keyframes spin {
+  0%, 100% { transform: rotate(0deg) scale(1); }
+  50% { transform: rotate(180deg) scale(1.1); }
+}
+
+/* Auth Gate */
+.auth-gate {
+  max-width: 500px;
+  margin: 4rem auto;
+  padding: 3rem;
+  background: var(--card-bg);
+  border-radius: 16px;
+  box-shadow: var(--shadow-lg);
+  text-align: center;
+  display: none;
+}
+
+.auth-gate h2 {
+  color: var(--pool-color);
+  margin-bottom: 1rem;
+}
+
+.auth-gate p {
+  color: var(--text-light);
+  margin-bottom: 2rem;
+}
+
+.auth-gate a {
+  display: inline-block;
+  padding: 0.75rem 2rem;
+  background: var(--primary-color);
+  color: white;
+  text-decoration: none;
+  border-radius: 8px;
+  font-weight: 600;
+}
+
+/* Header */
+.header {
+  background: linear-gradient(135deg, var(--pool-color) 0%, var(--pool-secondary) 100%);
+  color: white;
+  padding: 2rem;
+  box-shadow: var(--shadow-lg);
+  position: relative;
+  overflow: hidden;
+}
+
+.header::before {
+  content: '';
+  position: absolute;
+  top: -100px;
+  right: -100px;
+  width: 300px;
+  height: 300px;
+  background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+  border-radius: 50%;
+}
+
+.header::after {
+  content: '🏈';
+  position: absolute;
+  bottom: -40px;
+  left: -30px;
+  font-size: 180px;
+  opacity: 0.08;
+}
+
+.header-content {
+  max-width: 1400px;
+  margin: 0 auto;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  position: relative;
+  z-index: 1;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.header h1 {
+  margin: 0;
+  font-size: 2rem;
+  font-weight: 800;
+}
+
+.pool-title {
+  font-size: 1.1rem;
+  opacity: 0.9;
+  margin-top: 0.25rem;
+}
+
+.header-badges {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.badge {
+  display: inline-block;
+  padding: 0.25rem 0.75rem;
+  border-radius: 20px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.badge-locked {
+  background: var(--danger-color);
+  color: white;
+}
+
+.badge-open {
+  background: var(--success-color);
+  color: white;
+}
+
+.badge-admin {
+  background: var(--accent-color);
+  color: #1a1a1a;
+}
+
+.header-buttons {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.nav-btn {
+  background: rgba(255,255,255,0.2);
+  color: white;
+  padding: 0.75rem 1.5rem;
+  border-radius: 8px;
+  text-decoration: none;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition: all 0.3s ease;
+  backdrop-filter: blur(10px);
+  border: 2px solid rgba(255,255,255,0.3);
+}
+
+.nav-btn:hover {
+  background: rgba(255,255,255,0.3);
+  transform: translateY(-2px);
+}
+
+/* Container */
+.container {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 2rem;
+}
+
+/* Pool Selector */
+.pool-selector {
+  background: var(--card-bg);
+  border-radius: 12px;
+  padding: 1.5rem;
+  margin-bottom: 2rem;
+  box-shadow: var(--shadow-md);
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.pool-selector label {
+  font-weight: 600;
+}
+
+.pool-selector select {
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  border: 2px solid var(--border-color);
+  font-size: 1rem;
+  min-width: 200px;
+}
+
+.pool-selector select:focus {
+  outline: none;
+  border-color: var(--pool-color);
+}
+
+/* Grid Container */
+.grid-container {
+  background: var(--card-bg);
+  border-radius: 16px;
+  padding: 1.5rem;
+  box-shadow: var(--shadow-lg);
+  overflow-x: auto;
+}
+
+/* Team Labels */
+.grid-wrapper {
+  display: inline-block;
+  min-width: fit-content;
+}
+
+.team-label-top {
+  text-align: center;
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: var(--pool-color);
+  margin-bottom: 0.5rem;
+  padding: 0.75rem;
+  background: linear-gradient(135deg, #dbeafe 0%, #eff6ff 100%);
+  border-radius: 8px;
+  margin-left: 60px;
+}
+
+.team-label-left {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  transform: rotate(180deg);
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: var(--pool-color);
+  padding: 0.75rem;
+  background: linear-gradient(135deg, #dbeafe 0%, #eff6ff 100%);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 0.5rem;
+}
+
+.grid-with-label {
+  display: flex;
+  align-items: stretch;
+}
+
+/* Numbers Row */
+.numbers-container {
+  margin-left: 60px;
+  margin-bottom: 0.5rem;
+}
+
+.numbers-row {
+  display: grid;
+  grid-template-columns: repeat(10, 1fr);
+  gap: 2px;
+  margin-bottom: 2px;
+}
+
+.numbers-row.column-numbers {
+  margin-left: 60px;
+}
+
+.number-cell {
+  background: var(--pool-color);
+  color: white;
+  padding: 0.5rem;
+  text-align: center;
+  font-weight: 700;
+  font-size: 0.9rem;
+  min-width: 50px;
+}
+
+.number-cell.row-number {
+  min-width: 50px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.number-cell.empty {
+  background: transparent;
+}
+
+.number-label {
+  font-size: 0.65rem;
+  opacity: 0.8;
+  display: block;
+  margin-bottom: 2px;
+}
+
+/* The 10x10 Grid */
+.boxes-grid {
+  display: grid;
+  grid-template-columns: repeat(10, 1fr);
+  gap: 2px;
+  background: var(--border-color);
+  border: 2px solid var(--pool-color);
+  border-radius: 4px;
+}
+
+.box {
+  aspect-ratio: 1;
+  min-width: 50px;
+  min-height: 50px;
+  background: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 0.7rem;
+  text-align: center;
+  padding: 4px;
+  word-break: break-word;
+  position: relative;
+}
+
+.box:hover:not(.taken):not(.locked) {
+  background: #dbeafe;
+  transform: scale(1.05);
+  z-index: 1;
+  box-shadow: var(--shadow-md);
+}
+
+.box.taken {
+  background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
+  cursor: default;
+  font-weight: 600;
+  color: var(--text-dark);
+}
+
+.box.my-box {
+  background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
+  border: 2px solid var(--success-color);
+}
+
+.box.winner {
+  background: linear-gradient(135deg, var(--accent-color) 0%, #fbbf24 100%);
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 215, 0, 0.7); }
+  50% { box-shadow: 0 0 0 8px rgba(255, 215, 0, 0); }
+}
+
+.box.locked {
+  cursor: not-allowed;
+  opacity: 0.9;
+}
+
+.box .box-coord {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  font-size: 0.5rem;
+  color: var(--text-light);
+  opacity: 0.5;
+}
+
+/* Row numbers on left */
+.grid-row {
+  display: contents;
+}
+
+.row-numbers-column {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-right: 0.5rem;
+}
+
+/* Admin Panel */
+.admin-panel {
+  background: var(--card-bg);
+  border-radius: 16px;
+  padding: 1.5rem;
+  margin-top: 2rem;
+  box-shadow: var(--shadow-lg);
+  border: 2px solid var(--accent-color);
+  display: none;
+}
+
+.admin-panel.visible {
+  display: block;
+}
+
+.admin-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+  padding-bottom: 1rem;
+  border-bottom: 2px solid var(--border-color);
+}
+
+.admin-header h2 {
+  margin: 0;
+  color: var(--pool-color);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.admin-tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.admin-tab {
+  padding: 0.75rem 1.5rem;
+  background: #f1f5f9;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+.admin-tab:hover {
+  background: #e2e8f0;
+}
+
+.admin-tab.active {
+  background: var(--pool-color);
+  color: white;
+}
+
+.admin-section {
+  display: none;
+}
+
+.admin-section.active {
+  display: block;
+}
+
+/* Form Styles */
+.form-group {
+  margin-bottom: 1.5rem;
+}
+
+.form-group label {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+  color: var(--text-dark);
+}
+
+.form-group input,
+.form-group select,
+.form-group textarea {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border: 2px solid var(--border-color);
+  border-radius: 8px;
+  font-size: 1rem;
+  transition: border-color 0.2s ease;
+}
+
+.form-group input:focus,
+.form-group select:focus,
+.form-group textarea:focus {
+  outline: none;
+  border-color: var(--pool-color);
+}
+
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+@media (max-width: 600px) {
+  .form-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Number Rows Editor */
+.number-rows-editor {
+  background: #f8fafc;
+  border-radius: 12px;
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.number-row-item {
+  background: white;
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+  border: 1px solid var(--border-color);
+}
+
+.number-row-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.number-row-header h4 {
+  margin: 0;
+  color: var(--text-dark);
+}
+
+.number-inputs {
+  display: grid;
+  grid-template-columns: repeat(10, 1fr);
+  gap: 0.5rem;
+}
+
+.number-inputs input {
+  padding: 0.5rem;
+  text-align: center;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+.number-inputs input:focus {
+  outline: none;
+  border-color: var(--pool-color);
+}
+
+/* Buttons */
+.btn {
+  padding: 0.75rem 1.5rem;
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: var(--pool-color);
+  color: white;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: #1e3a8a;
+  transform: translateY(-2px);
+}
+
+.btn-success {
+  background: var(--success-color);
+  color: white;
+}
+
+.btn-success:hover:not(:disabled) {
+  background: #16a34a;
+}
+
+.btn-danger {
+  background: var(--danger-color);
+  color: white;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: #dc2626;
+}
+
+.btn-warning {
+  background: var(--warning-color);
+  color: white;
+}
+
+.btn-warning:hover:not(:disabled) {
+  background: #d97706;
+}
+
+.btn-secondary {
+  background: #64748b;
+  color: white;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: #475569;
+}
+
+.btn-sm {
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+}
+
+/* Entries List */
+.entries-list {
+  max-height: 400px;
+  overflow-y: auto;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+}
+
+.entry-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.entry-item:last-child {
+  border-bottom: none;
+}
+
+.entry-item:hover {
+  background: #f8fafc;
+}
+
+.entry-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.entry-name {
+  font-weight: 600;
+}
+
+.entry-coords {
+  font-size: 0.8rem;
+  color: var(--text-light);
+}
+
+.entry-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+/* Manual Entry Form */
+.manual-entry-form {
+  background: #f8fafc;
+  border-radius: 12px;
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+/* Legend */
+.legend {
+  display: flex;
+  gap: 1.5rem;
+  margin-top: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+}
+
+.legend-box {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  border: 1px solid var(--border-color);
+}
+
+.legend-box.available {
+  background: white;
+}
+
+.legend-box.taken {
+  background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
+}
+
+.legend-box.mine {
+  background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
+  border-color: var(--success-color);
+}
+
+.legend-box.winner {
+  background: linear-gradient(135deg, var(--accent-color) 0%, #fbbf24 100%);
+}
+
+/* Stats */
+.pool-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.stat-card {
+  background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+  border-radius: 12px;
+  padding: 1rem;
+  text-align: center;
+}
+
+.stat-value {
+  font-size: 2rem;
+  font-weight: 800;
+  color: var(--pool-color);
+}
+
+.stat-label {
+  font-size: 0.875rem;
+  color: var(--text-light);
+  margin-top: 0.25rem;
+}
+
+/* Toast */
+.toast-container {
+  position: fixed;
+  bottom: 2rem;
+  right: 2rem;
+  z-index: 9999;
+}
+
+.toast {
+  background: var(--text-dark);
+  color: white;
+  padding: 1rem 1.5rem;
+  border-radius: 8px;
+  margin-top: 0.5rem;
+  box-shadow: var(--shadow-lg);
+  animation: slideIn 0.3s ease;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.toast-success { background: var(--success-color); }
+.toast-error { background: var(--danger-color); }
+.toast-warning { background: var(--warning-color); }
+
+@keyframes slideIn {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+/* Modal */
+.modal-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+}
+
+.modal-overlay.visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.modal {
+  background: white;
+  border-radius: 16px;
+  padding: 2rem;
+  max-width: 500px;
+  width: 90%;
+  max-height: 90vh;
+  overflow-y: auto;
+  transform: scale(0.9);
+  transition: transform 0.3s ease;
+}
+
+.modal-overlay.visible .modal {
+  transform: scale(1);
+}
+
+.modal h3 {
+  margin: 0 0 1.5rem 0;
+  color: var(--text-dark);
+}
+
+.modal-buttons {
+  display: flex;
+  gap: 1rem;
+  justify-content: flex-end;
+  margin-top: 1.5rem;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .header-content {
+    flex-direction: column;
+    text-align: center;
+  }
+  
+  .header h1 {
+    font-size: 1.5rem;
+  }
+  
+  .container {
+    padding: 1rem;
+  }
+  
+  .box {
+    min-width: 35px;
+    min-height: 35px;
+    font-size: 0.6rem;
+  }
+  
+  .number-cell {
+    min-width: 35px;
+    font-size: 0.75rem;
+    padding: 0.35rem;
+  }
+  
+  .team-label-top,
+  .team-label-left {
+    font-size: 1rem;
+  }
+  
+  .admin-tabs {
+    flex-direction: column;
+  }
+  
+  .admin-tab {
+    width: 100%;
+    text-align: center;
+  }
+}
+</style>
+</head>
+<body>
+
+<!-- Loading Overlay -->
+<div class="loading-overlay" id="loadingOverlay">
+  <div class="softball-spinner"></div>
+  <p style="margin-top: 1rem; color: var(--text-light);">Loading pool...</p>
+</div>
+
+<!-- Auth Gate -->
+<div class="auth-gate" id="authGate">
+  <h2>🔒 Sign In Required</h2>
+  <p>You need to sign in to view and participate in the boxes pool.</p>
+  <a href="signin.html">Sign In</a>
+</div>
+
+<!-- Main Content -->
+<div id="mainContent" style="display: none;">
+  <header class="header">
+    <div class="header-content">
+      <div>
+        <h1>🎲 Boxes Pool</h1>
+        <div class="pool-title" id="poolTitle">Select a pool to get started</div>
+        <div class="header-badges">
+          <span class="badge badge-open" id="poolStatusBadge">Open</span>
+          <span class="badge badge-admin" id="adminBadge" style="display: none;">Admin</span>
+        </div>
+      </div>
+      <div class="header-buttons">
+        <a href="index.html" class="nav-btn">← Home</a>
+        <a href="profile.html" class="nav-btn">👤 Profile</a>
+      </div>
+    </div>
+  </header>
+
+  <div class="container">
+    <!-- Pool Selector -->
+    <div class="pool-selector">
+      <label for="poolSelect">Select Pool:</label>
+      <select id="poolSelect">
+        <option value="">Loading pools...</option>
+      </select>
+      <button class="btn btn-primary" onclick="loadPool()" id="loadPoolBtn">
+        🔄 Refresh
+      </button>
+      <button class="btn btn-success" onclick="showCreatePoolModal()" id="createPoolBtn" style="display: none;">
+        ➕ Create Pool
+      </button>
+    </div>
+
+    <!-- Pool Stats -->
+    <div class="pool-stats" id="poolStats" style="display: none;">
+      <div class="stat-card">
+        <div class="stat-value" id="statClaimed">0</div>
+        <div class="stat-label">Boxes Claimed</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="statAvailable">100</div>
+        <div class="stat-label">Available</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="statMyBoxes">0</div>
+        <div class="stat-label">My Boxes</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="statPrizePool">$0</div>
+        <div class="stat-label">Prize Pool</div>
+      </div>
+    </div>
+
+    <!-- Grid Container -->
+    <div class="grid-container" id="gridContainer" style="display: none;">
+      <div class="grid-wrapper">
+        <!-- Top Team Label -->
+        <div class="team-label-top" id="topTeamLabel">TEAM 1</div>
+        
+        <!-- Numbers for columns (can have multiple rows) -->
+        <div class="numbers-container" id="columnNumbersContainer">
+          <!-- Number rows will be inserted here -->
+        </div>
+        
+        <!-- Grid with left label and row numbers -->
+        <div class="grid-with-label">
+          <!-- Left Team Label -->
+          <div class="team-label-left" id="leftTeamLabel">TEAM 2</div>
+          
+          <!-- Row Numbers Column (can have multiple) -->
+          <div id="rowNumbersContainer" style="display: flex; gap: 2px;">
+            <!-- Row number columns will be inserted here -->
+          </div>
+          
+          <!-- The 10x10 Grid -->
+          <div class="boxes-grid" id="boxesGrid">
+            <!-- Boxes will be generated by JavaScript -->
+          </div>
+        </div>
+      </div>
+      
+      <!-- Legend -->
+      <div class="legend">
+        <div class="legend-item">
+          <div class="legend-box available"></div>
+          <span>Available</span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-box taken"></div>
+          <span>Taken</span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-box mine"></div>
+          <span>My Boxes</span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-box winner"></div>
+          <span>Winner</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Admin Panel -->
+    <div class="admin-panel" id="adminPanel">
+      <div class="admin-header">
+        <h2>⚙️ Pool Management</h2>
+      </div>
+      
+      <div class="admin-tabs">
+        <button class="admin-tab active" data-tab="settings">Pool Settings</button>
+        <button class="admin-tab" data-tab="numbers">Numbers</button>
+        <button class="admin-tab" data-tab="entries">Manage Entries</button>
+        <button class="admin-tab" data-tab="manual">Manual Entry</button>
+        <button class="admin-tab" data-tab="winners">Winners</button>
+      </div>
+
+      <!-- Settings Tab -->
+      <div class="admin-section active" id="tab-settings">
+        <div class="form-row">
+          <div class="form-group">
+            <label>Pool Name</label>
+            <input type="text" id="adminPoolName" placeholder="e.g., Super Bowl LVIII">
+          </div>
+          <div class="form-group">
+            <label>Cost Per Box</label>
+            <input type="number" id="adminCostPerBox" placeholder="e.g., 10" min="0">
+          </div>
+        </div>
+        
+        <div class="form-row">
+          <div class="form-group">
+            <label>Team 1 (Top)</label>
+            <input type="text" id="adminTeam1" placeholder="e.g., Chiefs">
+          </div>
+          <div class="form-group">
+            <label>Team 2 (Left)</label>
+            <input type="text" id="adminTeam2" placeholder="e.g., 49ers">
+          </div>
+        </div>
+        
+        <div class="form-group">
+          <label>Description</label>
+          <textarea id="adminDescription" rows="3" placeholder="Pool rules and details..."></textarea>
+        </div>
+
+        <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
+          <button class="btn btn-primary" onclick="savePoolSettings()">
+            💾 Save Settings
+          </button>
+          <button class="btn btn-warning" id="toggleLockBtn" onclick="togglePoolLock()">
+            🔒 Lock Pool
+          </button>
+          <button class="btn btn-danger" onclick="confirmDeletePool()">
+            🗑️ Delete Pool
+          </button>
+        </div>
+      </div>
+
+      <!-- Numbers Tab -->
+      <div class="admin-section" id="tab-numbers">
+        <p style="color: var(--text-light); margin-bottom: 1rem;">
+          Configure the numbers on the outside of the grid. You can have multiple rows of numbers for different games or quarters.
+        </p>
+        
+        <div class="number-rows-editor" id="numberRowsEditor">
+          <!-- Number row items will be generated here -->
+        </div>
+        
+        <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
+          <button class="btn btn-secondary" onclick="addNumberRow()">
+            ➕ Add Number Row
+          </button>
+          <button class="btn btn-warning" onclick="randomizeNumbers()">
+            🎲 Randomize All Numbers
+          </button>
+          <button class="btn btn-primary" onclick="saveNumbers()">
+            💾 Save Numbers
+          </button>
+        </div>
+      </div>
+
+      <!-- Entries Tab -->
+      <div class="admin-section" id="tab-entries">
+        <p style="color: var(--text-light); margin-bottom: 1rem;">
+          Manage pool entries. Remove unpaid entries or edit participant information.
+        </p>
+        
+        <div class="form-group">
+          <label>Filter Entries</label>
+          <input type="text" id="entryFilter" placeholder="Search by name..." oninput="filterEntries()">
+        </div>
+        
+        <div class="entries-list" id="entriesList">
+          <div style="padding: 2rem; text-align: center; color: var(--text-light);">
+            No entries yet
+          </div>
+        </div>
+        
+        <div style="margin-top: 1rem;">
+          <button class="btn btn-danger" onclick="removeAllUnpaid()">
+            🗑️ Remove All Unpaid
+          </button>
+        </div>
+      </div>
+
+      <!-- Manual Entry Tab -->
+      <div class="admin-section" id="tab-manual">
+        <p style="color: var(--text-light); margin-bottom: 1rem;">
+          Manually add entries for people who haven't joined the site.
+        </p>
+        
+        <div class="manual-entry-form">
+          <div class="form-row">
+            <div class="form-group">
+              <label>Participant Name</label>
+              <input type="text" id="manualName" placeholder="Enter name...">
+            </div>
+            <div class="form-group">
+              <label>Paid?</label>
+              <select id="manualPaid">
+                <option value="true">Yes - Paid</option>
+                <option value="false">No - Not Paid</option>
+              </select>
+            </div>
+          </div>
+          
+          <div class="form-group">
+            <label>Select Boxes (click on the grid above, or enter coordinates)</label>
+            <input type="text" id="manualCoords" placeholder="e.g., 0-0, 3-5, 7-2 (row-col)">
+          </div>
+          
+          <button class="btn btn-success" onclick="addManualEntry()">
+            ➕ Add Entry
+          </button>
+        </div>
+      </div>
+
+      <!-- Winners Tab -->
+      <div class="admin-section" id="tab-winners">
+        <p style="color: var(--text-light); margin-bottom: 1rem;">
+          Mark winners for each quarter/game. Winners are determined by the last digit of each team's score.
+        </p>
+        
+        <div id="winnersEditor">
+          <!-- Winner inputs will be generated here -->
+        </div>
+        
+        <button class="btn btn-primary" onclick="saveWinners()" style="margin-top: 1rem;">
+          💾 Save Winners
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Create Pool Modal -->
+<div class="modal-overlay" id="createPoolModal">
+  <div class="modal">
+    <h3>➕ Create New Pool</h3>
+    
+    <div class="form-group">
+      <label>Pool Name</label>
+      <input type="text" id="newPoolName" placeholder="e.g., Super Bowl LVIII">
+    </div>
+    
+    <div class="form-row">
+      <div class="form-group">
+        <label>Team 1 (Top)</label>
+        <input type="text" id="newTeam1" placeholder="e.g., Chiefs">
+      </div>
+      <div class="form-group">
+        <label>Team 2 (Left)</label>
+        <input type="text" id="newTeam2" placeholder="e.g., 49ers">
+      </div>
+    </div>
+    
+    <div class="form-row">
+      <div class="form-group">
+        <label>Cost Per Box</label>
+        <input type="number" id="newCostPerBox" placeholder="10" min="0" value="10">
+      </div>
+      <div class="form-group">
+        <label>Number Rows</label>
+        <select id="newNumberRows">
+          <option value="1">1 (Same numbers all game)</option>
+          <option value="4" selected>4 (Different per quarter)</option>
+          <option value="2">2 (Halftime numbers)</option>
+        </select>
+      </div>
+    </div>
+    
+    <div class="form-group">
+      <label>Description (optional)</label>
+      <textarea id="newDescription" rows="2" placeholder="Pool rules..."></textarea>
+    </div>
+    
+    <div class="modal-buttons">
+      <button class="btn btn-secondary" onclick="hideCreatePoolModal()">Cancel</button>
+      <button class="btn btn-success" onclick="createPool()">Create Pool</button>
+    </div>
+  </div>
+</div>
+
+<!-- Confirm Box Modal -->
+<div class="modal-overlay" id="confirmBoxModal">
+  <div class="modal">
+    <h3>Claim This Box?</h3>
+    <p id="confirmBoxText">Are you sure you want to claim box (0, 0)?</p>
+    <p style="color: var(--text-light); font-size: 0.9rem;">
+      Cost: <strong id="confirmBoxCost">$10</strong>
+    </p>
+    <div class="modal-buttons">
+      <button class="btn btn-secondary" onclick="hideConfirmBoxModal()">Cancel</button>
+      <button class="btn btn-success" onclick="confirmClaimBox()">Claim Box</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast Container -->
+<div class="toast-container" id="toastContainer"></div>
+
+<script type="module">
+  import { auth, getUserProfile, USER_ROLES } from './firebase-auth.js';
+  import { db } from './firebase-config.js';
+  import { onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
+  import { 
+    collection, 
+    getDocs, 
+    doc, 
+    getDoc,
+    setDoc,
+    updateDoc,
+    deleteDoc,
+    addDoc,
+    query,
+    where,
+    orderBy,
+    Timestamp,
+    serverTimestamp,
+    arrayUnion,
+    arrayRemove
+  } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+
+  // ========================================
+  // GLOBAL STATE
+  // ========================================
+  let currentUser = null;
+  let userProfile = null;
+  let isAdmin = false;
+  let currentPool = null;
+  let selectedBoxForManual = null;
+  let pendingBoxClaim = null;
+
+  // ========================================
+  // INITIALIZATION
+  // ========================================
+  
+  onAuthStateChanged(auth, async (user) => {
+    if (user) {
+      currentUser = user;
+      await initializePage();
+    } else {
+      showAuthGate();
+    }
+  });
+
+  async function initializePage() {
+    try {
+      // Get user profile and check role
+      const profileResult = await getUserProfile(currentUser.uid);
+      if (profileResult.success) {
+        userProfile = profileResult.data;
+      }
+      
+      // Check if admin or oddsmaker
+      checkAdminStatus();
+      
+      // Load available pools
+      await loadPoolsList();
+      
+      // Show main content
+      document.getElementById('loadingOverlay').classList.add('hidden');
+      document.getElementById('authGate').style.display = 'none';
+      document.getElementById('mainContent').style.display = 'block';
+      
+      // Setup admin tabs
+      setupAdminTabs();
+      
+    } catch (error) {
+      console.error('Error initializing:', error);
+      showToast('Error loading page', 'error');
+      document.getElementById('loadingOverlay').classList.add('hidden');
+    }
+  }
+
+  function checkAdminStatus() {
+    if (!userProfile) {
+      isAdmin = false;
+      return;
+    }
+    
+    const userRole = (userProfile.userRole || '').toLowerCase();
+    
+    // Check for admin or oddsmaker special role
+    isAdmin = 
+      userProfile.isAdmin === true ||
+      userRole === 'admin' ||
+      (userProfile.specialRoles && userProfile.specialRoles.oddsmaker === true);
+    
+    if (isAdmin) {
+      document.getElementById('adminBadge').style.display = 'inline-block';
+      document.getElementById('adminBadge').textContent = userProfile.specialRoles?.oddsmaker ? 'Oddsmaker' : 'Admin';
+      document.getElementById('createPoolBtn').style.display = 'inline-flex';
+    }
+  }
+
+  function showAuthGate() {
+    document.getElementById('loadingOverlay').classList.add('hidden');
+    document.getElementById('authGate').style.display = 'block';
+    document.getElementById('mainContent').style.display = 'none';
+  }
+
+  // ========================================
+  // POOL MANAGEMENT
+  // ========================================
+
+  async function loadPoolsList() {
+    const poolSelect = document.getElementById('poolSelect');
+    
+    try {
+      const poolsSnap = await getDocs(
+        query(collection(db, 'boxesPools'), orderBy('createdAt', 'desc'))
+      );
+      
+      if (poolsSnap.empty) {
+        poolSelect.innerHTML = '<option value="">No pools available</option>';
+        return;
+      }
+      
+      let options = '<option value="">Select a pool...</option>';
+      poolsSnap.docs.forEach(doc => {
+        const pool = doc.data();
+        const status = pool.locked ? '🔒' : '🟢';
+        options += `<option value="${doc.id}">${status} ${pool.name}</option>`;
+      });
+      
+      poolSelect.innerHTML = options;
+      
+      // Auto-select if only one pool or URL param
+      const urlParams = new URLSearchParams(window.location.search);
+      const poolId = urlParams.get('pool');
+      if (poolId) {
+        poolSelect.value = poolId;
+        await loadPool();
+      }
+      
+    } catch (error) {
+      console.error('Error loading pools:', error);
+      poolSelect.innerHTML = '<option value="">Error loading pools</option>';
+    }
+  }
+
+  window.loadPool = async function() {
+    const poolId = document.getElementById('poolSelect').value;
+    if (!poolId) {
+      document.getElementById('gridContainer').style.display = 'none';
+      document.getElementById('poolStats').style.display = 'none';
+      document.getElementById('adminPanel').classList.remove('visible');
+      return;
+    }
+    
+    try {
+      const poolDoc = await getDoc(doc(db, 'boxesPools', poolId));
+      
+      if (!poolDoc.exists()) {
+        showToast('Pool not found', 'error');
+        return;
+      }
+      
+      currentPool = { id: poolDoc.id, ...poolDoc.data() };
+      
+      // Update UI
+      updatePoolDisplay();
+      renderGrid();
+      updateStats();
+      
+      // Show grid
+      document.getElementById('gridContainer').style.display = 'block';
+      document.getElementById('poolStats').style.display = 'grid';
+      
+      // Show admin panel if admin
+      if (isAdmin) {
+        document.getElementById('adminPanel').classList.add('visible');
+        populateAdminFields();
+      }
+      
+    } catch (error) {
+      console.error('Error loading pool:', error);
+      showToast('Error loading pool', 'error');
+    }
+  };
+
+  function updatePoolDisplay() {
+    document.getElementById('poolTitle').textContent = currentPool.name || 'Boxes Pool';
+    document.getElementById('topTeamLabel').textContent = currentPool.team1 || 'TEAM 1';
+    document.getElementById('leftTeamLabel').textContent = currentPool.team2 || 'TEAM 2';
+    
+    const statusBadge = document.getElementById('poolStatusBadge');
+    if (currentPool.locked) {
+      statusBadge.textContent = 'Locked';
+      statusBadge.className = 'badge badge-locked';
+    } else {
+      statusBadge.textContent = 'Open';
+      statusBadge.className = 'badge badge-open';
+    }
+  }
+
+  function renderGrid() {
+    const grid = document.getElementById('boxesGrid');
+    const entries = currentPool.entries || {};
+    const winners = currentPool.winners || [];
+    
+    grid.innerHTML = '';
+    
+    for (let row = 0; row < 10; row++) {
+      for (let col = 0; col < 10; col++) {
+        const box = document.createElement('div');
+        box.className = 'box';
+        box.dataset.row = row;
+        box.dataset.col = col;
+        
+        const key = `${row}-${col}`;
+        const entry = entries[key];
+        
+        if (entry) {
+          box.classList.add('taken');
+          box.textContent = entry.name || 'Taken';
+          
+          // Check if it's my box
+          if (entry.userId === currentUser.uid) {
+            box.classList.add('my-box');
+          }
+          
+          // Check if winner
+          if (winners.includes(key)) {
+            box.classList.add('winner');
+          }
+        }
+        
+        if (currentPool.locked) {
+          box.classList.add('locked');
+        }
+        
+        // Click handler
+        if (!entry && !currentPool.locked) {
+          box.onclick = () => handleBoxClick(row, col);
+        }
+        
+        grid.appendChild(box);
+      }
+    }
+    
+    // Render number rows
+    renderNumberRows();
+  }
+
+  function renderNumberRows() {
+    const colContainer = document.getElementById('columnNumbersContainer');
+    const rowContainer = document.getElementById('rowNumbersContainer');
+    
+    const numberRows = currentPool.numberRows || [{ label: 'Final', numbers: [0,1,2,3,4,5,6,7,8,9] }];
+    
+    // Column numbers
+    colContainer.innerHTML = '';
+    numberRows.forEach((nr, idx) => {
+      const row = document.createElement('div');
+      row.className = 'numbers-row';
+      
+      // Add label cell
+      if (numberRows.length > 1) {
+        const labelHtml = `<span class="number-label">${nr.label || `Q${idx + 1}`}</span>`;
+      }
+      
+      for (let i = 0; i < 10; i++) {
+        const cell = document.createElement('div');
+        cell.className = 'number-cell';
+        if (numberRows.length > 1) {
+          cell.innerHTML = `<span class="number-label">${nr.label || `Q${idx + 1}`}</span>${nr.numbers ? nr.numbers[i] : '?'}`;
+        } else {
+          cell.textContent = nr.numbers ? nr.numbers[i] : '?';
+        }
+        row.appendChild(cell);
+      }
+      colContainer.appendChild(row);
+    });
+    
+    // Row numbers
+    rowContainer.innerHTML = '';
+    numberRows.forEach((nr, idx) => {
+      const col = document.createElement('div');
+      col.className = 'row-numbers-column';
+      col.style.display = 'flex';
+      col.style.flexDirection = 'column';
+      col.style.gap = '2px';
+      
+      for (let i = 0; i < 10; i++) {
+        const cell = document.createElement('div');
+        cell.className = 'number-cell row-number';
+        cell.style.minHeight = '50px';
+        if (numberRows.length > 1) {
+          cell.innerHTML = `<span class="number-label">${nr.label || `Q${idx + 1}`}</span>${nr.rowNumbers ? nr.rowNumbers[i] : (nr.numbers ? nr.numbers[i] : '?')}`;
+        } else {
+          cell.textContent = nr.rowNumbers ? nr.rowNumbers[i] : (nr.numbers ? nr.numbers[i] : '?');
+        }
+        col.appendChild(cell);
+      }
+      rowContainer.appendChild(col);
+    });
+  }
+
+  function updateStats() {
+    const entries = currentPool.entries || {};
+    const entryCount = Object.keys(entries).length;
+    const myBoxes = Object.values(entries).filter(e => e.userId === currentUser.uid).length;
+    const costPerBox = currentPool.costPerBox || 0;
+    
+    document.getElementById('statClaimed').textContent = entryCount;
+    document.getElementById('statAvailable').textContent = 100 - entryCount;
+    document.getElementById('statMyBoxes').textContent = myBoxes;
+    document.getElementById('statPrizePool').textContent = '$' + (entryCount * costPerBox);
+  }
+
+  // ========================================
+  // BOX CLAIMING
+  // ========================================
+
+  function handleBoxClick(row, col) {
+    if (currentPool.locked) {
+      showToast('Pool is locked', 'warning');
+      return;
+    }
+    
+    // Check if already taken
+    const key = `${row}-${col}`;
+    if (currentPool.entries && currentPool.entries[key]) {
+      showToast('This box is already taken', 'warning');
+      return;
+    }
+    
+    // If in manual entry mode for admin
+    if (isAdmin && document.getElementById('tab-manual').classList.contains('active')) {
+      const coordsInput = document.getElementById('manualCoords');
+      const current = coordsInput.value ? coordsInput.value + ', ' : '';
+      coordsInput.value = current + key;
+      return;
+    }
+    
+    // Show confirmation modal
+    pendingBoxClaim = { row, col };
+    document.getElementById('confirmBoxText').textContent = 
+      `Are you sure you want to claim box at row ${row}, column ${col}?`;
+    document.getElementById('confirmBoxCost').textContent = 
+      '$' + (currentPool.costPerBox || 0);
+    document.getElementById('confirmBoxModal').classList.add('visible');
+  }
+
+  window.hideConfirmBoxModal = function() {
+    document.getElementById('confirmBoxModal').classList.remove('visible');
+    pendingBoxClaim = null;
+  };
+
+  window.confirmClaimBox = async function() {
+    if (!pendingBoxClaim) return;
+    
+    const { row, col } = pendingBoxClaim;
+    const key = `${row}-${col}`;
+    
+    try {
+      // Update in Firestore
+      const poolRef = doc(db, 'boxesPools', currentPool.id);
+      
+      await updateDoc(poolRef, {
+        [`entries.${key}`]: {
+          userId: currentUser.uid,
+          name: userProfile?.displayName || currentUser.displayName || currentUser.email.split('@')[0],
+          email: currentUser.email,
+          claimedAt: serverTimestamp(),
+          paid: false
+        }
+      });
+      
+      // Update local state
+      if (!currentPool.entries) currentPool.entries = {};
+      currentPool.entries[key] = {
+        userId: currentUser.uid,
+        name: userProfile?.displayName || currentUser.displayName || currentUser.email.split('@')[0]
+      };
+      
+      // Refresh display
+      renderGrid();
+      updateStats();
+      hideConfirmBoxModal();
+      
+      showToast('Box claimed successfully!', 'success');
+      
+    } catch (error) {
+      console.error('Error claiming box:', error);
+      showToast('Error claiming box', 'error');
+    }
+  };
+
+  // ========================================
+  // ADMIN FUNCTIONS
+  // ========================================
+
+  function setupAdminTabs() {
+    document.querySelectorAll('.admin-tab').forEach(tab => {
+      tab.onclick = () => {
+        document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.admin-section').forEach(s => s.classList.remove('active'));
+        
+        tab.classList.add('active');
+        document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
+      };
+    });
+  }
+
+  function populateAdminFields() {
+    if (!currentPool) return;
+    
+    // Settings
+    document.getElementById('adminPoolName').value = currentPool.name || '';
+    document.getElementById('adminCostPerBox').value = currentPool.costPerBox || 0;
+    document.getElementById('adminTeam1').value = currentPool.team1 || '';
+    document.getElementById('adminTeam2').value = currentPool.team2 || '';
+    document.getElementById('adminDescription').value = currentPool.description || '';
+    
+    // Lock button
+    const lockBtn = document.getElementById('toggleLockBtn');
+    if (currentPool.locked) {
+      lockBtn.textContent = '🔓 Unlock Pool';
+      lockBtn.className = 'btn btn-success';
+    } else {
+      lockBtn.textContent = '🔒 Lock Pool';
+      lockBtn.className = 'btn btn-warning';
+    }
+    
+    // Number rows editor
+    renderNumberRowsEditor();
+    
+    // Entries list
+    renderEntriesList();
+    
+    // Winners editor
+    renderWinnersEditor();
+  }
+
+  window.savePoolSettings = async function() {
+    if (!currentPool || !isAdmin) return;
+    
+    try {
+      await updateDoc(doc(db, 'boxesPools', currentPool.id), {
+        name: document.getElementById('adminPoolName').value,
+        costPerBox: parseFloat(document.getElementById('adminCostPerBox').value) || 0,
+        team1: document.getElementById('adminTeam1').value,
+        team2: document.getElementById('adminTeam2').value,
+        description: document.getElementById('adminDescription').value,
+        updatedAt: serverTimestamp()
+      });
+      
+      // Reload
+      await loadPool();
+      showToast('Settings saved!', 'success');
+      
+    } catch (error) {
+      console.error('Error saving settings:', error);
+      showToast('Error saving settings', 'error');
+    }
+  };
+
+  window.togglePoolLock = async function() {
+    if (!currentPool || !isAdmin) return;
+    
+    try {
+      await updateDoc(doc(db, 'boxesPools', currentPool.id), {
+        locked: !currentPool.locked,
+        updatedAt: serverTimestamp()
+      });
+      
+      await loadPool();
+      showToast(currentPool.locked ? 'Pool unlocked' : 'Pool locked', 'success');
+      
+    } catch (error) {
+      console.error('Error toggling lock:', error);
+      showToast('Error updating pool', 'error');
+    }
+  };
+
+  window.confirmDeletePool = function() {
+    if (!confirm('Are you sure you want to delete this pool? This cannot be undone!')) return;
+    if (!confirm('Really delete? All entries will be lost!')) return;
+    
+    deletePool();
+  };
+
+  async function deletePool() {
+    if (!currentPool || !isAdmin) return;
+    
+    try {
+      await deleteDoc(doc(db, 'boxesPools', currentPool.id));
+      currentPool = null;
+      
+      await loadPoolsList();
+      document.getElementById('gridContainer').style.display = 'none';
+      document.getElementById('poolStats').style.display = 'none';
+      document.getElementById('adminPanel').classList.remove('visible');
+      
+      showToast('Pool deleted', 'success');
+      
+    } catch (error) {
+      console.error('Error deleting pool:', error);
+      showToast('Error deleting pool', 'error');
+    }
+  }
+
+  // ========================================
+  // NUMBER ROWS MANAGEMENT
+  // ========================================
+
+  function renderNumberRowsEditor() {
+    const container = document.getElementById('numberRowsEditor');
+    const numberRows = currentPool.numberRows || [{ label: 'Final', numbers: [0,1,2,3,4,5,6,7,8,9], rowNumbers: [0,1,2,3,4,5,6,7,8,9] }];
+    
+    container.innerHTML = numberRows.map((nr, idx) => `
+      <div class="number-row-item" data-idx="${idx}">
+        <div class="number-row-header">
+          <h4>
+            <input type="text" value="${nr.label || `Quarter ${idx + 1}`}" 
+                   class="row-label-input" style="width: 150px; font-weight: 600;">
+          </h4>
+          ${numberRows.length > 1 ? `
+            <button class="btn btn-sm btn-danger" onclick="removeNumberRow(${idx})">
+              🗑️ Remove
+            </button>
+          ` : ''}
+        </div>
+        
+        <div style="margin-bottom: 1rem;">
+          <label style="font-size: 0.875rem; color: var(--text-light);">
+            ${currentPool.team1 || 'Team 1'} Numbers (columns):
+          </label>
+          <div class="number-inputs">
+            ${[0,1,2,3,4,5,6,7,8,9].map(i => `
+              <input type="number" min="0" max="9" 
+                     value="${nr.numbers ? nr.numbers[i] : i}" 
+                     class="col-number-input" data-row="${idx}" data-col="${i}">
+            `).join('')}
+          </div>
+        </div>
+        
+        <div>
+          <label style="font-size: 0.875rem; color: var(--text-light);">
+            ${currentPool.team2 || 'Team 2'} Numbers (rows):
+          </label>
+          <div class="number-inputs">
+            ${[0,1,2,3,4,5,6,7,8,9].map(i => `
+              <input type="number" min="0" max="9" 
+                     value="${nr.rowNumbers ? nr.rowNumbers[i] : (nr.numbers ? nr.numbers[i] : i)}" 
+                     class="row-number-input" data-row="${idx}" data-col="${i}">
+            `).join('')}
+          </div>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  window.addNumberRow = function() {
+    if (!currentPool) return;
+    
+    const numberRows = currentPool.numberRows || [];
+    numberRows.push({
+      label: `Quarter ${numberRows.length + 1}`,
+      numbers: [0,1,2,3,4,5,6,7,8,9],
+      rowNumbers: [0,1,2,3,4,5,6,7,8,9]
+    });
+    currentPool.numberRows = numberRows;
+    
+    renderNumberRowsEditor();
+  };
+
+  window.removeNumberRow = function(idx) {
+    if (!currentPool || !currentPool.numberRows) return;
+    
+    currentPool.numberRows.splice(idx, 1);
+    renderNumberRowsEditor();
+  };
+
+  window.randomizeNumbers = function() {
+    const container = document.getElementById('numberRowsEditor');
+    const items = container.querySelectorAll('.number-row-item');
+    
+    items.forEach(item => {
+      // Randomize column numbers
+      const colNums = shuffle([0,1,2,3,4,5,6,7,8,9]);
+      item.querySelectorAll('.col-number-input').forEach((input, i) => {
+        input.value = colNums[i];
+      });
+      
+      // Randomize row numbers
+      const rowNums = shuffle([0,1,2,3,4,5,6,7,8,9]);
+      item.querySelectorAll('.row-number-input').forEach((input, i) => {
+        input.value = rowNums[i];
+      });
+    });
+    
+    showToast('Numbers randomized! Click Save to apply.', 'success');
+  };
+
+  function shuffle(array) {
+    const arr = [...array];
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  }
+
+  window.saveNumbers = async function() {
+    if (!currentPool || !isAdmin) return;
+    
+    const container = document.getElementById('numberRowsEditor');
+    const items = container.querySelectorAll('.number-row-item');
+    
+    const numberRows = [];
+    
+    items.forEach((item, idx) => {
+      const label = item.querySelector('.row-label-input').value;
+      const colNumbers = Array.from(item.querySelectorAll('.col-number-input')).map(i => parseInt(i.value));
+      const rowNumbers = Array.from(item.querySelectorAll('.row-number-input')).map(i => parseInt(i.value));
+      
+      numberRows.push({
+        label,
+        numbers: colNumbers,
+        rowNumbers: rowNumbers
+      });
+    });
+    
+    try {
+      await updateDoc(doc(db, 'boxesPools', currentPool.id), {
+        numberRows,
+        updatedAt: serverTimestamp()
+      });
+      
+      currentPool.numberRows = numberRows;
+      renderGrid();
+      
+      showToast('Numbers saved!', 'success');
+      
+    } catch (error) {
+      console.error('Error saving numbers:', error);
+      showToast('Error saving numbers', 'error');
+    }
+  };
+
+  // ========================================
+  // ENTRIES MANAGEMENT
+  // ========================================
+
+  function renderEntriesList() {
+    const container = document.getElementById('entriesList');
+    const entries = currentPool.entries || {};
+    const filter = (document.getElementById('entryFilter')?.value || '').toLowerCase();
+    
+    const entryList = Object.entries(entries)
+      .map(([key, entry]) => ({ key, ...entry }))
+      .filter(e => !filter || (e.name && e.name.toLowerCase().includes(filter)))
+      .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    
+    if (entryList.length === 0) {
+      container.innerHTML = '<div style="padding: 2rem; text-align: center; color: var(--text-light);">No entries found</div>';
+      return;
+    }
+    
+    container.innerHTML = entryList.map(entry => `
+      <div class="entry-item">
+        <div class="entry-info">
+          <span class="entry-name">
+            ${entry.name || 'Unknown'}
+            ${entry.paid ? '✅' : '⚠️'}
+          </span>
+          <span class="entry-coords">Box: ${entry.key}</span>
+        </div>
+        <div class="entry-actions">
+          <button class="btn btn-sm ${entry.paid ? 'btn-secondary' : 'btn-success'}" 
+                  onclick="togglePaid('${entry.key}')">
+            ${entry.paid ? 'Mark Unpaid' : 'Mark Paid'}
+          </button>
+          <button class="btn btn-sm btn-danger" onclick="removeEntry('${entry.key}')">
+            🗑️
+          </button>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  window.filterEntries = function() {
+    renderEntriesList();
+  };
+
+  window.togglePaid = async function(key) {
+    if (!currentPool || !isAdmin) return;
+    
+    const entry = currentPool.entries[key];
+    if (!entry) return;
+    
+    try {
+      await updateDoc(doc(db, 'boxesPools', currentPool.id), {
+        [`entries.${key}.paid`]: !entry.paid
+      });
+      
+      currentPool.entries[key].paid = !entry.paid;
+      renderEntriesList();
+      showToast('Entry updated', 'success');
+      
+    } catch (error) {
+      console.error('Error updating entry:', error);
+      showToast('Error updating entry', 'error');
+    }
+  };
+
+  window.removeEntry = async function(key) {
+    if (!currentPool || !isAdmin) return;
+    if (!confirm(`Remove entry at ${key}?`)) return;
+    
+    try {
+      // Need to delete the specific field
+      const poolRef = doc(db, 'boxesPools', currentPool.id);
+      const poolDoc = await getDoc(poolRef);
+      const entries = poolDoc.data().entries || {};
+      delete entries[key];
+      
+      await updateDoc(poolRef, { entries });
+      
+      delete currentPool.entries[key];
+      renderGrid();
+      updateStats();
+      renderEntriesList();
+      
+      showToast('Entry removed', 'success');
+      
+    } catch (error) {
+      console.error('Error removing entry:', error);
+      showToast('Error removing entry', 'error');
+    }
+  };
+
+  window.removeAllUnpaid = async function() {
+    if (!currentPool || !isAdmin) return;
+    if (!confirm('Remove ALL unpaid entries?')) return;
+    
+    try {
+      const poolRef = doc(db, 'boxesPools', currentPool.id);
+      const poolDoc = await getDoc(poolRef);
+      const entries = poolDoc.data().entries || {};
+      
+      const paidEntries = {};
+      Object.entries(entries).forEach(([key, entry]) => {
+        if (entry.paid) {
+          paidEntries[key] = entry;
+        }
+      });
+      
+      await updateDoc(poolRef, { entries: paidEntries });
+      
+      currentPool.entries = paidEntries;
+      renderGrid();
+      updateStats();
+      renderEntriesList();
+      
+      showToast('Unpaid entries removed', 'success');
+      
+    } catch (error) {
+      console.error('Error removing unpaid:', error);
+      showToast('Error removing entries', 'error');
+    }
+  };
+
+  // ========================================
+  // MANUAL ENTRY
+  // ========================================
+
+  window.addManualEntry = async function() {
+    if (!currentPool || !isAdmin) return;
+    
+    const name = document.getElementById('manualName').value.trim();
+    const paid = document.getElementById('manualPaid').value === 'true';
+    const coordsStr = document.getElementById('manualCoords').value.trim();
+    
+    if (!name) {
+      showToast('Please enter a name', 'warning');
+      return;
+    }
+    
+    if (!coordsStr) {
+      showToast('Please select at least one box', 'warning');
+      return;
+    }
+    
+    // Parse coordinates
+    const coords = coordsStr.split(',').map(c => c.trim()).filter(c => c);
+    const validCoords = [];
+    
+    for (const coord of coords) {
+      const match = coord.match(/^(\d+)-(\d+)$/);
+      if (!match) {
+        showToast(`Invalid coordinate: ${coord}`, 'warning');
+        return;
+      }
+      const row = parseInt(match[1]);
+      const col = parseInt(match[2]);
+      if (row < 0 || row > 9 || col < 0 || col > 9) {
+        showToast(`Coordinate out of range: ${coord}`, 'warning');
+        return;
+      }
+      if (currentPool.entries && currentPool.entries[coord]) {
+        showToast(`Box ${coord} is already taken`, 'warning');
+        return;
+      }
+      validCoords.push(coord);
+    }
+    
+    try {
+      const updates = {};
+      validCoords.forEach(key => {
+        updates[`entries.${key}`] = {
+          userId: null,
+          name: name,
+          manual: true,
+          paid: paid,
+          claimedAt: serverTimestamp()
+        };
+      });
+      
+      await updateDoc(doc(db, 'boxesPools', currentPool.id), updates);
+      
+      // Update local state
+      if (!currentPool.entries) currentPool.entries = {};
+      validCoords.forEach(key => {
+        currentPool.entries[key] = { name, paid, manual: true };
+      });
+      
+      // Clear form
+      document.getElementById('manualName').value = '';
+      document.getElementById('manualCoords').value = '';
+      
+      renderGrid();
+      updateStats();
+      renderEntriesList();
+      
+      showToast(`Added ${validCoords.length} box(es) for ${name}`, 'success');
+      
+    } catch (error) {
+      console.error('Error adding manual entry:', error);
+      showToast('Error adding entry', 'error');
+    }
+  };
+
+  // ========================================
+  // WINNERS
+  // ========================================
+
+  function renderWinnersEditor() {
+    const container = document.getElementById('winnersEditor');
+    const numberRows = currentPool.numberRows || [{ label: 'Final' }];
+    const winners = currentPool.winners || [];
+    const winnerData = currentPool.winnerData || {};
+    
+    container.innerHTML = numberRows.map((nr, idx) => {
+      const winnerKey = winnerData[nr.label || `Q${idx + 1}`];
+      
+      return `
+        <div style="background: #f8fafc; padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">
+          <h4 style="margin: 0 0 1rem 0;">${nr.label || `Quarter ${idx + 1}`}</h4>
+          <div class="form-row">
+            <div class="form-group">
+              <label>${currentPool.team1 || 'Team 1'} Score (last digit)</label>
+              <input type="number" min="0" max="9" class="winner-score1" data-label="${nr.label || `Q${idx + 1}`}"
+                     value="${winnerData[`${nr.label || `Q${idx + 1}`}_score1`] || ''}">
+            </div>
+            <div class="form-group">
+              <label>${currentPool.team2 || 'Team 2'} Score (last digit)</label>
+              <input type="number" min="0" max="9" class="winner-score2" data-label="${nr.label || `Q${idx + 1}`}"
+                     value="${winnerData[`${nr.label || `Q${idx + 1}`}_score2`] || ''}">
+            </div>
+          </div>
+          ${winnerKey ? `
+            <div style="margin-top: 0.5rem; padding: 0.5rem; background: var(--accent-color); border-radius: 4px;">
+              🏆 Winner: ${currentPool.entries?.[winnerKey]?.name || 'Unknown'} (${winnerKey})
+            </div>
+          ` : ''}
+        </div>
+      `;
+    }).join('');
+  }
+
+  window.saveWinners = async function() {
+    if (!currentPool || !isAdmin) return;
+    
+    const winnerData = {};
+    const winners = [];
+    
+    document.querySelectorAll('.winner-score1').forEach(input => {
+      const label = input.dataset.label;
+      const score1 = input.value ? parseInt(input.value) : null;
+      const score2Input = document.querySelector(`.winner-score2[data-label="${label}"]`);
+      const score2 = score2Input?.value ? parseInt(score2Input.value) : null;
+      
+      winnerData[`${label}_score1`] = score1;
+      winnerData[`${label}_score2`] = score2;
+      
+      if (score1 !== null && score2 !== null) {
+        // Find the winning box
+        const numberRows = currentPool.numberRows || [{ numbers: [0,1,2,3,4,5,6,7,8,9], rowNumbers: [0,1,2,3,4,5,6,7,8,9] }];
+        const rowIdx = numberRows.findIndex(nr => (nr.label || `Q${numberRows.indexOf(nr) + 1}`) === label);
+        const nr = numberRows[rowIdx] || numberRows[0];
+        
+        const colIdx = nr.numbers ? nr.numbers.indexOf(score1) : score1;
+        const rowIdx2 = nr.rowNumbers ? nr.rowNumbers.indexOf(score2) : score2;
+        
+        if (colIdx !== -1 && rowIdx2 !== -1) {
+          const key = `${rowIdx2}-${colIdx}`;
+          winners.push(key);
+          winnerData[label] = key;
+        }
+      }
+    });
+    
+    try {
+      await updateDoc(doc(db, 'boxesPools', currentPool.id), {
+        winnerData,
+        winners,
+        updatedAt: serverTimestamp()
+      });
+      
+      currentPool.winnerData = winnerData;
+      currentPool.winners = winners;
+      
+      renderGrid();
+      renderWinnersEditor();
+      
+      showToast('Winners saved!', 'success');
+      
+    } catch (error) {
+      console.error('Error saving winners:', error);
+      showToast('Error saving winners', 'error');
+    }
+  };
+
+  // ========================================
+  // CREATE POOL
+  // ========================================
+
+  window.showCreatePoolModal = function() {
+    document.getElementById('createPoolModal').classList.add('visible');
+  };
+
+  window.hideCreatePoolModal = function() {
+    document.getElementById('createPoolModal').classList.remove('visible');
+  };
+
+  window.createPool = async function() {
+    const name = document.getElementById('newPoolName').value.trim();
+    const team1 = document.getElementById('newTeam1').value.trim();
+    const team2 = document.getElementById('newTeam2').value.trim();
+    const costPerBox = parseFloat(document.getElementById('newCostPerBox').value) || 0;
+    const numRows = parseInt(document.getElementById('newNumberRows').value) || 1;
+    const description = document.getElementById('newDescription').value.trim();
+    
+    if (!name) {
+      showToast('Please enter a pool name', 'warning');
+      return;
+    }
+    
+    // Generate number rows
+    const numberRows = [];
+    const labels = numRows === 4 ? ['Q1', 'Q2', 'Q3', 'Q4'] : 
+                   numRows === 2 ? ['1st Half', '2nd Half'] : ['Final'];
+    
+    for (let i = 0; i < numRows; i++) {
+      numberRows.push({
+        label: labels[i] || `Row ${i + 1}`,
+        numbers: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+        rowNumbers: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+      });
+    }
+    
+    try {
+      const docRef = await addDoc(collection(db, 'boxesPools'), {
+        name,
+        team1: team1 || 'TEAM 1',
+        team2: team2 || 'TEAM 2',
+        costPerBox,
+        description,
+        numberRows,
+        entries: {},
+        winners: [],
+        winnerData: {},
+        locked: false,
+        createdBy: currentUser.uid,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+      
+      hideCreatePoolModal();
+      
+      // Clear form
+      document.getElementById('newPoolName').value = '';
+      document.getElementById('newTeam1').value = '';
+      document.getElementById('newTeam2').value = '';
+      document.getElementById('newDescription').value = '';
+      
+      // Reload pools and select the new one
+      await loadPoolsList();
+      document.getElementById('poolSelect').value = docRef.id;
+      await loadPool();
+      
+      showToast('Pool created!', 'success');
+      
+    } catch (error) {
+      console.error('Error creating pool:', error);
+      showToast('Error creating pool', 'error');
+    }
+  };
+
+  // ========================================
+  // UTILITY FUNCTIONS
+  // ========================================
+
+  function showToast(message, type = 'info') {
+    const container = document.getElementById('toastContainer');
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+    toast.textContent = message;
+    container.appendChild(toast);
+    
+    setTimeout(() => {
+      toast.style.opacity = '0';
+      setTimeout(() => toast.remove(), 300);
+    }, 3000);
+  }
+</script>
+
+</body>
+</html>
