@@ -1989,17 +1989,24 @@ body {
   };
 
   // Auto-claim entries that have pendingEmail matching current user's email
+  // OR entries linked to user's mergedFromProfile (legacy profile)
   async function claimPendingEntries() {
     if (!currentPool || !currentUser.email) return;
     
     const userEmail = currentUser.email.toLowerCase();
+    const mergedFrom = userProfile?.mergedFromProfile;
     const entries = currentPool.entries || {};
     const pendingMatches = [];
     
-    // Find entries with matching pendingEmail
+    // Find entries with matching pendingEmail OR mergedFromProfile
     for (const [key, entry] of Object.entries(entries)) {
+      // Pending email match (not yet claimed)
       if (entry.pendingEmail && entry.pendingEmail.toLowerCase() === userEmail && !entry.userId) {
-        pendingMatches.push(key);
+        pendingMatches.push({ key, reason: 'email' });
+      }
+      // Legacy profile match (entry linked to old profile ID)
+      else if (mergedFrom && entry.userId === mergedFrom) {
+        pendingMatches.push({ key, reason: 'migration' });
       }
     }
     
@@ -2010,23 +2017,31 @@ body {
       const updates = {};
       const userName = userProfile?.displayName || currentUser.displayName || currentUser.email.split('@')[0];
       
-      pendingMatches.forEach(key => {
+      pendingMatches.forEach(({ key }) => {
         updates[`entries.${key}.userId`] = currentUser.uid;
         updates[`entries.${key}.name`] = userName; // Update name to their actual profile name
         updates[`entries.${key}.email`] = currentUser.email;
         updates[`entries.${key}.claimedByUserAt`] = serverTimestamp();
-        // Keep pendingEmail for record but it's now claimed
       });
       
       await updateDoc(doc(db, 'boxesPools', currentPool.id), updates);
       
       // Update local state
-      pendingMatches.forEach(key => {
+      pendingMatches.forEach(({ key }) => {
         currentPool.entries[key].userId = currentUser.uid;
         currentPool.entries[key].name = userName;
       });
       
-      showToast(`🎉 ${pendingMatches.length} box(es) have been linked to your account!`, 'success');
+      const emailMatches = pendingMatches.filter(m => m.reason === 'email').length;
+      const migrationMatches = pendingMatches.filter(m => m.reason === 'migration').length;
+      
+      if (emailMatches > 0 && migrationMatches > 0) {
+        showToast(`🎉 ${pendingMatches.length} box(es) have been linked to your account!`, 'success');
+      } else if (emailMatches > 0) {
+        showToast(`🎉 ${emailMatches} box(es) have been linked to your account!`, 'success');
+      } else if (migrationMatches > 0) {
+        showToast(`🎉 ${migrationMatches} box(es) transferred from your old profile!`, 'success');
+      }
       
     } catch (error) {
       console.error('Error claiming pending entries:', error);
@@ -2200,9 +2215,13 @@ body {
           // Add tooltip data attribute for hover
           box.dataset.fullname = fullName;
           
-          // Check if it's my box (either by userId OR pendingEmail match)
+          // Check if it's my box:
+          // 1. Direct userId match
+          // 2. pendingEmail match
+          // 3. Entry's userId matches my mergedFromProfile (legacy profile I migrated from)
           const isMyBox = entry.userId === currentUser.uid || 
-                          (entry.pendingEmail && entry.pendingEmail.toLowerCase() === currentUser.email?.toLowerCase());
+                          (entry.pendingEmail && entry.pendingEmail.toLowerCase() === currentUser.email?.toLowerCase()) ||
+                          (userProfile?.mergedFromProfile && entry.userId === userProfile.mergedFromProfile);
           
           if (isMyBox) {
             box.classList.add('my-box');
@@ -2337,9 +2356,12 @@ body {
     const entries = currentPool.entries || {};
     const entryCount = Object.keys(entries).length;
     const userEmail = currentUser.email?.toLowerCase();
+    const mergedFrom = userProfile?.mergedFromProfile;
+    
     const myBoxes = Object.values(entries).filter(e => 
       e.userId === currentUser.uid || 
-      (e.pendingEmail && e.pendingEmail.toLowerCase() === userEmail)
+      (e.pendingEmail && e.pendingEmail.toLowerCase() === userEmail) ||
+      (mergedFrom && e.userId === mergedFrom)
     ).length;
     const costPerBox = currentPool.costPerBox || 0;
     
