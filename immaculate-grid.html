@@ -633,7 +633,7 @@ body {
   <div class="page-header">
     <h1>⚾ Aces Grid</h1>
     <p>Find players who match both criteria</p>
-    <div class="puzzle-date" id="puzzleDate"></div>
+    <div class="puzzle-date" id="puzzleDate">Puzzle #1</div>
   </div>
 
   <div class="game-stats-bar">
@@ -672,6 +672,7 @@ body {
   </div>
 
   <div class="action-buttons">
+    <button class="action-btn" onclick="giveUp()" id="giveUpBtn">🏳️ Give Up</button>
     <button class="action-btn" onclick="shareResults()" id="shareBtn" style="display:none;">📤 Share Results</button>
     <button class="action-btn" onclick="showAnswers()" id="answersBtn" style="display:none;">👀 Show Answers</button>
   </div>
@@ -745,6 +746,13 @@ import {
 } from './firebase-data.js';
 
 // ============================================
+// CONFIGURATION
+// ============================================
+// Set this to the date you want Puzzle #1 to be
+// Format: 'YYYY-MM-DD' (e.g., '2025-01-06' for January 6, 2025)
+const LAUNCH_DATE = '2025-01-06';
+
+// ============================================
 // GAME STATE
 // ============================================
 let allPlayers = [];
@@ -807,9 +815,11 @@ function seededRandom(seed) {
 }
 
 function getDayNumber() {
-  const start = new Date('2024-01-01').getTime();
+  const start = new Date(LAUNCH_DATE).setHours(0, 0, 0, 0);
   const now = new Date().setHours(0, 0, 0, 0);
-  return Math.floor((now - start) / (1000 * 60 * 60 * 24));
+  const daysSinceLaunch = Math.floor((now - start) / (1000 * 60 * 60 * 24));
+  // Puzzle #1 starts on launch date (day 0 = puzzle 1)
+  return Math.max(1, daysSinceLaunch + 1);
 }
 
 function shuffleWithSeed(array, seed) {
@@ -1150,11 +1160,27 @@ function showGameOver() {
   updateSharePreview();
   
   document.getElementById('gameOverModal').classList.add('active');
+  document.getElementById('giveUpBtn').style.display = 'none';
   document.getElementById('shareBtn').style.display = 'inline-block';
   document.getElementById('answersBtn').style.display = 'inline-block';
   
   renderGrid();
 }
+
+// ============================================
+// GIVE UP
+// ============================================
+window.giveUp = function() {
+  if (gameState.gameOver) return;
+  
+  if (!confirm('Are you sure you want to give up? This will end the game and show all answers.')) {
+    return;
+  }
+  
+  gameState.gameOver = true;
+  saveGameState();
+  showGameOver();
+};
 
 // ============================================
 // SHARING
@@ -1244,14 +1270,22 @@ window.showAnswers = function() {
 function saveGameState() {
   const saveData = {
     dayNum: todaysPuzzle.dayNum,
-    ...gameState
+    guessesRemaining: gameState.guessesRemaining,
+    score: gameState.score,
+    rarityScore: gameState.rarityScore,
+    cellStates: gameState.cellStates,
+    gameOver: gameState.gameOver,
+    usedPlayers: Array.from(gameState.usedPlayers) // Convert Set to Array for JSON
   };
   localStorage.setItem('acesGrid', JSON.stringify(saveData));
+  console.log('Game state saved:', saveData);
 }
 
 function loadGameState() {
   try {
     const saved = JSON.parse(localStorage.getItem('acesGrid'));
+    console.log('Loading saved state:', saved);
+    
     if (saved && saved.dayNum === todaysPuzzle.dayNum) {
       gameState = {
         ...gameState,
@@ -1264,14 +1298,16 @@ function loadGameState() {
       };
       
       if (gameState.gameOver) {
+        document.getElementById('giveUpBtn').style.display = 'none';
         document.getElementById('shareBtn').style.display = 'inline-block';
         document.getElementById('answersBtn').style.display = 'inline-block';
       }
       
+      console.log('Game state restored successfully');
       return true;
     }
   } catch (e) {
-    console.log('No saved state');
+    console.log('No saved state or error loading:', e);
   }
   return false;
 }
@@ -1291,9 +1327,29 @@ window.toggleHowToPlay = function() {
 // ============================================
 async function init() {
   try {
+    // Check if we're before launch date
+    const launchDate = new Date(LAUNCH_DATE).setHours(0, 0, 0, 0);
+    const now = new Date().setHours(0, 0, 0, 0);
+    
+    if (now < launchDate) {
+      document.getElementById('loadingOverlay').classList.add('hidden');
+      document.getElementById('puzzleDate').textContent = `Launching ${new Date(LAUNCH_DATE).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}`;
+      document.getElementById('gameGrid').innerHTML = `
+        <div style="grid-column: 1 / -1; text-align: center; padding: 3rem;">
+          <div style="font-size: 4rem; margin-bottom: 1rem;">🎯</div>
+          <h2 style="margin: 0 0 0.5rem 0;">Coming Soon!</h2>
+          <p style="color: var(--text-light); margin: 0;">The first Aces Grid puzzle will be available on launch day.</p>
+        </div>
+      `;
+      return;
+    }
+    
     console.log('Loading player data...');
-    allPlayers = await getAllPlayerStatsOptimized();
-    console.log(`Loaded ${allPlayers.length} players`);
+    const rawPlayers = await getAllPlayerStatsOptimized();
+    
+    // Filter out migrated profiles to prevent duplicates
+    allPlayers = rawPlayers.filter(p => p.migrated !== true);
+    console.log(`Loaded ${allPlayers.length} players (filtered ${rawPlayers.length - allPlayers.length} migrated profiles)`);
     
     // Generate today's puzzle
     todaysPuzzle = generateDailyPuzzle();
@@ -1301,8 +1357,9 @@ async function init() {
     
     // Display date
     const today = new Date();
+    const puzzleNum = todaysPuzzle.dayNum;
     document.getElementById('puzzleDate').textContent = 
-      `Puzzle #${todaysPuzzle.dayNum} • ${today.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}`;
+      `Puzzle #${puzzleNum} • ${today.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}`;
     
     // Load saved state
     loadGameState();
