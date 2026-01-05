@@ -1,0 +1,1340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aces Grid - Mountainside Aces</title>
+<meta name="theme-color" content="#2d5016">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="stylesheet" href="mobile-enhancements.css">
+<link rel="stylesheet" href="nav-styles.css">
+<style>
+:root {
+  --primary-color: #2d5016;
+  --secondary-color: #1a6b4a;
+  --accent-color: #ffd700;
+  --card-bg: #ffffff;
+  --text-dark: #2d3748;
+  --text-light: #718096;
+  --border-color: #e2e8f0;
+  --shadow-sm: 0 2px 8px rgba(0,0,0,0.08);
+  --shadow-md: 0 4px 16px rgba(0,0,0,0.12);
+  --shadow-lg: 0 12px 32px rgba(0,0,0,0.16);
+  --correct-color: #48bb78;
+  --incorrect-color: #f56565;
+  --team-black: #1a1a1a; --team-green: #2d7d32; --team-red: #d32f2f;
+  --team-blue: #1976d2; --team-white: #343a40; --team-orange: #f57c00;
+  --team-silver: #757575; --team-purple: #7b1fa2; --team-gold: #CFB53B;
+  --team-carolina: #4b9cd3; --team-army: #654321;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  margin: 0;
+  padding: 0;
+  background: linear-gradient(135deg, #f7fafc 0%, #edf2f7 100%);
+  min-height: 100vh;
+  color: var(--text-dark);
+}
+
+/* Loading Overlay */
+.loading-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(255,255,255,0.95);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  transition: opacity 0.5s ease, visibility 0.5s ease;
+}
+
+.loading-overlay.hidden {
+  opacity: 0;
+  visibility: hidden;
+}
+
+.softball-spinner::before {
+  content: '⚾';
+  font-size: 80px;
+  animation: spin 1.5s ease-in-out infinite;
+  display: block;
+}
+
+@keyframes spin {
+  0%, 100% { transform: rotate(0deg) scale(1); }
+  50% { transform: rotate(180deg) scale(1.1); }
+}
+
+/* Page Container */
+.page-container {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 1.5rem;
+}
+
+/* Page Header */
+.page-header {
+  background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+  color: white;
+  text-align: center;
+  padding: 2.5rem 1.5rem;
+  border-radius: 16px;
+  margin-bottom: 1.5rem;
+  box-shadow: var(--shadow-lg);
+  position: relative;
+  overflow: hidden;
+}
+
+.page-header::before {
+  content: '';
+  position: absolute;
+  top: -100px;
+  right: -100px;
+  width: 300px;
+  height: 300px;
+  background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+  border-radius: 50%;
+}
+
+.page-header::after {
+  content: '⚾';
+  position: absolute;
+  bottom: -40px;
+  left: -40px;
+  font-size: 150px;
+  opacity: 0.05;
+}
+
+.page-header h1 {
+  margin: 0;
+  font-size: 2.5rem;
+  font-weight: 800;
+  text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+  position: relative;
+  z-index: 1;
+}
+
+.page-header p {
+  margin: 0.75rem 0 0 0;
+  font-size: 1.1rem;
+  opacity: 0.95;
+  position: relative;
+  z-index: 1;
+}
+
+.puzzle-date {
+  font-size: 1rem;
+  opacity: 0.85;
+  margin-top: 0.5rem;
+}
+
+/* Game Stats Bar */
+.game-stats-bar {
+  display: flex;
+  justify-content: center;
+  gap: 2rem;
+  background: var(--card-bg);
+  padding: 1rem;
+  border-radius: 12px;
+  margin-bottom: 1.5rem;
+  box-shadow: var(--shadow-sm);
+  flex-wrap: wrap;
+}
+
+.stat-item {
+  text-align: center;
+}
+
+.stat-value {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: var(--primary-color);
+}
+
+.stat-label {
+  font-size: 0.85rem;
+  color: var(--text-light);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Grid Container */
+.grid-container {
+  background: var(--card-bg);
+  border-radius: 16px;
+  padding: 1.5rem;
+  box-shadow: var(--shadow-md);
+  margin-bottom: 1.5rem;
+}
+
+/* The Grid */
+.game-grid {
+  display: grid;
+  grid-template-columns: 120px repeat(3, 1fr);
+  grid-template-rows: 80px repeat(3, 1fr);
+  gap: 4px;
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+/* Header Cells */
+.grid-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.5rem;
+  font-weight: 600;
+  font-size: 0.85rem;
+  text-align: center;
+  border-radius: 8px;
+  color: white;
+}
+
+.grid-header.column-header {
+  background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+}
+
+.grid-header.row-header {
+  background: linear-gradient(135deg, #667eea, #764ba2);
+}
+
+.grid-header.corner {
+  background: transparent;
+}
+
+.grid-header .team-logo {
+  width: 40px;
+  height: 40px;
+  margin-bottom: 4px;
+}
+
+.grid-header .header-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.grid-header .header-text {
+  font-size: 0.75rem;
+  line-height: 1.2;
+}
+
+/* Grid Cells */
+.grid-cell {
+  aspect-ratio: 1;
+  background: #f8fafc;
+  border: 2px solid var(--border-color);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  padding: 0.5rem;
+  min-height: 90px;
+}
+
+.grid-cell:hover:not(.filled):not(.game-over) {
+  background: #edf2f7;
+  border-color: var(--primary-color);
+  transform: scale(1.02);
+}
+
+.grid-cell.selected {
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(45, 80, 22, 0.3);
+}
+
+.grid-cell.correct {
+  background: linear-gradient(135deg, #c6f6d5, #9ae6b4);
+  border-color: var(--correct-color);
+}
+
+.grid-cell.incorrect {
+  background: linear-gradient(135deg, #fed7d7, #feb2b2);
+  border-color: var(--incorrect-color);
+}
+
+.grid-cell.filled {
+  cursor: default;
+}
+
+.grid-cell .player-name {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-align: center;
+  line-height: 1.2;
+  word-break: break-word;
+}
+
+.grid-cell .rarity-badge {
+  font-size: 0.6rem;
+  background: rgba(0,0,0,0.1);
+  padding: 2px 6px;
+  border-radius: 10px;
+  margin-top: 4px;
+}
+
+/* Search Modal */
+.modal-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  opacity: 0;
+  visibility: hidden;
+  transition: all 0.3s ease;
+  padding: 1rem;
+}
+
+.modal-overlay.active {
+  opacity: 1;
+  visibility: visible;
+}
+
+.modal-content {
+  background: white;
+  border-radius: 16px;
+  width: 100%;
+  max-width: 450px;
+  max-height: 80vh;
+  overflow: hidden;
+  box-shadow: var(--shadow-lg);
+  transform: translateY(20px);
+  transition: transform 0.3s ease;
+}
+
+.modal-overlay.active .modal-content {
+  transform: translateY(0);
+}
+
+.modal-header {
+  background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+  color: white;
+  padding: 1.25rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.modal-header h3 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.modal-close {
+  background: rgba(255,255,255,0.2);
+  border: none;
+  color: white;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s;
+}
+
+.modal-close:hover {
+  background: rgba(255,255,255,0.3);
+}
+
+.modal-body {
+  padding: 1.25rem;
+}
+
+.search-criteria {
+  background: #f7fafc;
+  padding: 1rem;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+  font-size: 0.9rem;
+  text-align: center;
+}
+
+.search-criteria .criteria-label {
+  color: var(--text-light);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.search-criteria .criteria-values {
+  font-weight: 600;
+  color: var(--text-dark);
+  margin-top: 0.25rem;
+}
+
+.search-input-container {
+  position: relative;
+}
+
+.search-input {
+  width: 100%;
+  padding: 1rem;
+  font-size: 1rem;
+  border: 2px solid var(--border-color);
+  border-radius: 8px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.search-input:focus {
+  border-color: var(--primary-color);
+}
+
+.search-results {
+  max-height: 250px;
+  overflow-y: auto;
+  margin-top: 0.5rem;
+}
+
+.search-result-item {
+  padding: 0.75rem 1rem;
+  cursor: pointer;
+  border-radius: 8px;
+  transition: background 0.2s;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.search-result-item:hover {
+  background: #f7fafc;
+}
+
+.search-result-item.selected {
+  background: #e8f5e8;
+}
+
+.result-name {
+  font-weight: 600;
+}
+
+.result-info {
+  font-size: 0.8rem;
+  color: var(--text-light);
+}
+
+.guesses-remaining {
+  text-align: center;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border-color);
+  color: var(--text-light);
+  font-size: 0.9rem;
+}
+
+/* Game Over Modal */
+.game-over-content {
+  text-align: center;
+  padding: 2rem;
+}
+
+.game-over-content h2 {
+  margin: 0 0 1rem 0;
+  font-size: 1.75rem;
+}
+
+.final-score {
+  font-size: 3rem;
+  font-weight: 800;
+  color: var(--primary-color);
+  margin: 1rem 0;
+}
+
+.score-breakdown {
+  display: flex;
+  justify-content: center;
+  gap: 2rem;
+  margin: 1.5rem 0;
+}
+
+.breakdown-item {
+  text-align: center;
+}
+
+.breakdown-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+.breakdown-label {
+  font-size: 0.8rem;
+  color: var(--text-light);
+}
+
+.share-section {
+  margin-top: 1.5rem;
+}
+
+.share-btn {
+  background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+  color: white;
+  border: none;
+  padding: 1rem 2rem;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.share-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.share-preview {
+  background: #f7fafc;
+  padding: 1rem;
+  border-radius: 8px;
+  margin-top: 1rem;
+  font-family: monospace;
+  font-size: 0.85rem;
+  white-space: pre-line;
+  text-align: left;
+}
+
+/* How to Play */
+.how-to-play {
+  background: var(--card-bg);
+  border-radius: 16px;
+  padding: 1.5rem;
+  box-shadow: var(--shadow-sm);
+  margin-bottom: 1.5rem;
+}
+
+.how-to-play h3 {
+  margin: 0 0 1rem 0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+}
+
+.how-to-play-content {
+  display: none;
+}
+
+.how-to-play.expanded .how-to-play-content {
+  display: block;
+}
+
+.how-to-play ul {
+  margin: 0;
+  padding-left: 1.5rem;
+}
+
+.how-to-play li {
+  margin-bottom: 0.5rem;
+  line-height: 1.5;
+}
+
+/* Team color badges for headers */
+.team-badge {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-weight: 600;
+  font-size: 0.8rem;
+}
+
+.team-badge.black { background: var(--team-black); color: white; }
+.team-badge.blue { background: var(--team-blue); color: white; }
+.team-badge.green { background: var(--team-green); color: white; }
+.team-badge.red { background: var(--team-red); color: white; }
+.team-badge.orange { background: var(--team-orange); color: white; }
+.team-badge.purple { background: var(--team-purple); color: white; }
+.team-badge.gold { background: var(--team-gold); color: white; }
+.team-badge.silver { background: var(--team-silver); color: white; }
+.team-badge.white { background: white; color: var(--team-white); border: 2px solid var(--team-white); }
+.team-badge.carolina { background: var(--team-carolina); color: white; }
+.team-badge.army { background: var(--team-army); color: white; }
+
+/* Action Buttons */
+.action-buttons {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-top: 1.5rem;
+}
+
+.action-btn {
+  padding: 0.75rem 1.5rem;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: 2px solid var(--primary-color);
+  background: white;
+  color: var(--primary-color);
+}
+
+.action-btn:hover {
+  background: var(--primary-color);
+  color: white;
+}
+
+.action-btn.primary {
+  background: var(--primary-color);
+  color: white;
+}
+
+.action-btn.primary:hover {
+  background: var(--secondary-color);
+}
+
+/* Responsive */
+@media (max-width: 600px) {
+  .page-header h1 { font-size: 2rem; }
+  
+  .game-grid {
+    grid-template-columns: 80px repeat(3, 1fr);
+    grid-template-rows: 60px repeat(3, 1fr);
+    gap: 3px;
+  }
+  
+  .grid-header { font-size: 0.7rem; padding: 0.25rem; }
+  .grid-header .team-logo { width: 28px; height: 28px; }
+  .grid-header .header-text { font-size: 0.65rem; }
+  
+  .grid-cell { min-height: 70px; padding: 0.25rem; }
+  .grid-cell .player-name { font-size: 0.6rem; }
+  
+  .game-stats-bar { gap: 1rem; }
+  .stat-value { font-size: 1.4rem; }
+  
+  .score-breakdown { gap: 1rem; }
+}
+</style>
+</head>
+<body>
+
+<div class="loading-overlay" id="loadingOverlay">
+  <div class="softball-spinner"></div>
+</div>
+
+<!-- Navigation placeholder -->
+<nav id="main-nav"></nav>
+
+<div class="page-container">
+  <div class="page-header">
+    <h1>⚾ Aces Grid</h1>
+    <p>Find players who match both criteria</p>
+    <div class="puzzle-date" id="puzzleDate"></div>
+  </div>
+
+  <div class="game-stats-bar">
+    <div class="stat-item">
+      <div class="stat-value" id="scoreDisplay">0/9</div>
+      <div class="stat-label">Score</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-value" id="guessesDisplay">9</div>
+      <div class="stat-label">Guesses Left</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-value" id="rarityDisplay">0</div>
+      <div class="stat-label">Rarity Score</div>
+    </div>
+  </div>
+
+  <div class="grid-container">
+    <div class="game-grid" id="gameGrid">
+      <!-- Grid will be generated by JavaScript -->
+    </div>
+  </div>
+
+  <div class="how-to-play" id="howToPlay">
+    <h3 onclick="toggleHowToPlay()">📖 How to Play <span id="howToPlayToggle">▼</span></h3>
+    <div class="how-to-play-content">
+      <ul>
+        <li><strong>Select a cell</strong> and guess a player who matches BOTH the row and column criteria.</li>
+        <li><strong>Team criteria:</strong> The player must have played at least one game for that team.</li>
+        <li><strong>Stat criteria:</strong> The player must have achieved that stat in any single season.</li>
+        <li>You have <strong>9 guesses</strong> to complete the grid.</li>
+        <li><strong>Rarity score:</strong> The fewer people who could fill a cell, the more points you earn!</li>
+        <li>A new puzzle is available each day at midnight.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="action-buttons">
+    <button class="action-btn" onclick="shareResults()" id="shareBtn" style="display:none;">📤 Share Results</button>
+    <button class="action-btn" onclick="showAnswers()" id="answersBtn" style="display:none;">👀 Show Answers</button>
+  </div>
+</div>
+
+<!-- Search Modal -->
+<div class="modal-overlay" id="searchModal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h3>🔍 Select a Player</h3>
+      <button class="modal-close" onclick="closeModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="search-criteria">
+        <div class="criteria-label">Must match both:</div>
+        <div class="criteria-values" id="modalCriteria"></div>
+      </div>
+      <div class="search-input-container">
+        <input type="text" class="search-input" id="playerSearch" placeholder="Type a player name..." autocomplete="off">
+      </div>
+      <div class="search-results" id="searchResults"></div>
+      <div class="guesses-remaining">
+        <span id="modalGuesses">9</span> guesses remaining
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Game Over Modal -->
+<div class="modal-overlay" id="gameOverModal">
+  <div class="modal-content">
+    <div class="game-over-content">
+      <h2 id="gameOverTitle">🎉 Game Complete!</h2>
+      <div class="final-score" id="finalScore">5/9</div>
+      <div class="score-breakdown">
+        <div class="breakdown-item">
+          <div class="breakdown-value correct-count" id="correctCount">5</div>
+          <div class="breakdown-label">Correct</div>
+        </div>
+        <div class="breakdown-item">
+          <div class="breakdown-value" id="rarityTotal">42</div>
+          <div class="breakdown-label">Rarity</div>
+        </div>
+        <div class="breakdown-item">
+          <div class="breakdown-value" id="guessesUsed">7</div>
+          <div class="breakdown-label">Guesses</div>
+        </div>
+      </div>
+      <div class="share-section">
+        <button class="share-btn" onclick="shareResults()">📤 Share Results</button>
+        <div class="share-preview" id="sharePreview"></div>
+      </div>
+      <div class="action-buttons" style="margin-top:1rem;">
+        <button class="action-btn" onclick="closeGameOverModal()">Close</button>
+        <button class="action-btn" onclick="showAnswers()">👀 Show All Answers</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { 
+  db, 
+  collection, 
+  getDocs 
+} from './firebase-config.js';
+
+import { 
+  getAllPlayerStatsOptimized,
+  seasonsObjectToArray
+} from './firebase-data.js';
+
+// ============================================
+// GAME STATE
+// ============================================
+let allPlayers = [];
+let playerIndex = {}; // Fast lookup by criteria
+let todaysPuzzle = null;
+let gameState = {
+  guessesRemaining: 9,
+  score: 0,
+  rarityScore: 0,
+  cellStates: Array(9).fill(null), // null, { correct: true/false, player: name, rarity: number }
+  selectedCell: null,
+  gameOver: false,
+  usedPlayers: new Set()
+};
+
+// ============================================
+// CATEGORY DEFINITIONS
+// ============================================
+const TEAM_CATEGORIES = [
+  { id: 'team_black', label: 'Black', type: 'team', team: 'Black' },
+  { id: 'team_blue', label: 'Blue', type: 'team', team: 'Blue' },
+  { id: 'team_green', label: 'Green', type: 'team', team: 'Green' },
+  { id: 'team_red', label: 'Red', type: 'team', team: 'Red' },
+  { id: 'team_orange', label: 'Orange', type: 'team', team: 'Orange' },
+  { id: 'team_purple', label: 'Purple', type: 'team', team: 'Purple' },
+  { id: 'team_gold', label: 'Gold', type: 'team', team: 'Gold' },
+  { id: 'team_silver', label: 'Silver', type: 'team', team: 'Silver' },
+  { id: 'team_white', label: 'White', type: 'team', team: 'White' },
+  { id: 'team_carolina', label: 'Carolina', type: 'team', team: 'Carolina' },
+];
+
+const STAT_CATEGORIES = [
+  { id: 'hits_15', label: '15+ Hits (Season)', type: 'stat', check: (s) => s.hits >= 15 },
+  { id: 'hits_20', label: '20+ Hits (Season)', type: 'stat', check: (s) => s.hits >= 20 },
+  { id: 'runs_10', label: '10+ Runs (Season)', type: 'stat', check: (s) => s.runs >= 10 },
+  { id: 'runs_15', label: '15+ Runs (Season)', type: 'stat', check: (s) => s.runs >= 15 },
+  { id: 'walks_8', label: '8+ Walks (Season)', type: 'stat', check: (s) => s.walks >= 8 },
+  { id: 'walks_12', label: '12+ Walks (Season)', type: 'stat', check: (s) => s.walks >= 12 },
+  { id: 'games_12', label: '12+ Games (Season)', type: 'stat', check: (s) => s.games >= 12 },
+  { id: 'games_18', label: '18+ Games (Season)', type: 'stat', check: (s) => s.games >= 18 },
+  { id: 'ba_400', label: '.400+ BA (Season)', type: 'stat', check: (s) => s.atBats >= 20 && (s.hits / s.atBats) >= 0.400 },
+  { id: 'ba_450', label: '.450+ BA (Season)', type: 'stat', check: (s) => s.atBats >= 20 && (s.hits / s.atBats) >= 0.450 },
+  { id: 'seasons_5', label: '5+ Seasons Played', type: 'career', check: (p) => Object.keys(p.seasons || {}).length >= 5 },
+  { id: 'seasons_8', label: '8+ Seasons Played', type: 'career', check: (p) => Object.keys(p.seasons || {}).length >= 8 },
+  { id: 'career_hits_100', label: '100+ Career Hits', type: 'career', check: (p) => (p.career?.hits || 0) >= 100 },
+  { id: 'career_runs_50', label: '50+ Career Runs', type: 'career', check: (p) => (p.career?.runs || 0) >= 50 },
+  { id: 'multi_team', label: 'Played for 3+ Teams', type: 'career', check: (p) => {
+    const teams = new Set();
+    Object.values(p.seasons || {}).forEach(s => { if (s.team) teams.add(s.team.toLowerCase()); });
+    return teams.size >= 3;
+  }},
+];
+
+// ============================================
+// SEEDED RANDOM FOR DAILY PUZZLES
+// ============================================
+function seededRandom(seed) {
+  const x = Math.sin(seed) * 10000;
+  return x - Math.floor(x);
+}
+
+function getDayNumber() {
+  const start = new Date('2024-01-01').getTime();
+  const now = new Date().setHours(0, 0, 0, 0);
+  return Math.floor((now - start) / (1000 * 60 * 60 * 24));
+}
+
+function shuffleWithSeed(array, seed) {
+  const result = [...array];
+  for (let i = result.length - 1; i > 0; i--) {
+    seed++;
+    const j = Math.floor(seededRandom(seed) * (i + 1));
+    [result[i], result[j]] = [result[j], result[i]];
+  }
+  return result;
+}
+
+// ============================================
+// PUZZLE GENERATION
+// ============================================
+function generateDailyPuzzle() {
+  const dayNum = getDayNumber();
+  const seed = dayNum * 12345;
+  
+  // Shuffle categories
+  const shuffledTeams = shuffleWithSeed(TEAM_CATEGORIES, seed);
+  const shuffledStats = shuffleWithSeed(STAT_CATEGORIES, seed + 1000);
+  
+  // Pick 3 columns (teams) and 3 rows (mix of teams and stats)
+  const columns = shuffledTeams.slice(0, 3);
+  
+  // For rows, mix teams and stats (prefer stats to make it interesting)
+  const remainingTeams = shuffledTeams.slice(3);
+  const rowCandidates = [...shuffledStats, ...remainingTeams.slice(0, 3)];
+  const shuffledRows = shuffleWithSeed(rowCandidates, seed + 2000);
+  const rows = shuffledRows.slice(0, 3);
+  
+  // Validate that each cell has at least one valid answer
+  const puzzle = { columns, rows, dayNum };
+  
+  // Check validity
+  let valid = true;
+  for (let row = 0; row < 3; row++) {
+    for (let col = 0; col < 3; col++) {
+      const validPlayers = findValidPlayers(columns[col], rows[row]);
+      if (validPlayers.length === 0) {
+        valid = false;
+        break;
+      }
+    }
+    if (!valid) break;
+  }
+  
+  // If invalid, try alternative combinations
+  if (!valid) {
+    console.log('Regenerating puzzle due to invalid cell...');
+    // Fallback: use more common categories
+    puzzle.columns = TEAM_CATEGORIES.slice(0, 3);
+    puzzle.rows = STAT_CATEGORIES.slice(0, 3);
+  }
+  
+  return puzzle;
+}
+
+function findValidPlayers(colCategory, rowCategory) {
+  return allPlayers.filter(player => {
+    return matchesCategory(player, colCategory) && matchesCategory(player, rowCategory);
+  });
+}
+
+function matchesCategory(player, category) {
+  if (category.type === 'team') {
+    // Check if player ever played for this team
+    const seasons = Object.values(player.seasons || {});
+    return seasons.some(s => s.team && s.team.toLowerCase() === category.team.toLowerCase());
+  } else if (category.type === 'stat') {
+    // Check if player achieved this stat in any season
+    const seasons = Object.values(player.seasons || {});
+    return seasons.some(s => category.check(s));
+  } else if (category.type === 'career') {
+    // Check career stat
+    return category.check(player);
+  }
+  return false;
+}
+
+// ============================================
+// UI RENDERING
+// ============================================
+function renderGrid() {
+  const grid = document.getElementById('gameGrid');
+  grid.innerHTML = '';
+  
+  // Corner cell
+  const corner = document.createElement('div');
+  corner.className = 'grid-header corner';
+  grid.appendChild(corner);
+  
+  // Column headers
+  todaysPuzzle.columns.forEach(col => {
+    const header = document.createElement('div');
+    header.className = 'grid-header column-header';
+    header.innerHTML = `
+      <div class="header-content">
+        ${col.type === 'team' ? `<img src="logos/${col.team.toLowerCase()}.png" class="team-logo" onerror="this.style.display='none'">` : ''}
+        <span class="header-text">${col.label}</span>
+      </div>
+    `;
+    grid.appendChild(header);
+  });
+  
+  // Rows
+  todaysPuzzle.rows.forEach((row, rowIdx) => {
+    // Row header
+    const rowHeader = document.createElement('div');
+    rowHeader.className = 'grid-header row-header';
+    rowHeader.innerHTML = `
+      <div class="header-content">
+        ${row.type === 'team' ? `<img src="logos/${row.team.toLowerCase()}.png" class="team-logo" onerror="this.style.display='none'">` : ''}
+        <span class="header-text">${row.label}</span>
+      </div>
+    `;
+    grid.appendChild(rowHeader);
+    
+    // Cells
+    todaysPuzzle.columns.forEach((col, colIdx) => {
+      const cellIdx = rowIdx * 3 + colIdx;
+      const cell = document.createElement('div');
+      cell.className = 'grid-cell';
+      cell.dataset.cellIndex = cellIdx;
+      cell.dataset.row = rowIdx;
+      cell.dataset.col = colIdx;
+      
+      const state = gameState.cellStates[cellIdx];
+      if (state) {
+        cell.classList.add('filled');
+        cell.classList.add(state.correct ? 'correct' : 'incorrect');
+        cell.innerHTML = `
+          <div>
+            <div class="player-name">${state.player}</div>
+            ${state.correct ? `<div class="rarity-badge">${state.rarity}pts</div>` : ''}
+          </div>
+        `;
+      } else if (!gameState.gameOver) {
+        cell.onclick = () => selectCell(cellIdx);
+      }
+      
+      if (gameState.gameOver) {
+        cell.classList.add('game-over');
+      }
+      
+      grid.appendChild(cell);
+    });
+  });
+}
+
+function updateStats() {
+  const correct = gameState.cellStates.filter(s => s && s.correct).length;
+  document.getElementById('scoreDisplay').textContent = `${correct}/9`;
+  document.getElementById('guessesDisplay').textContent = gameState.guessesRemaining;
+  document.getElementById('rarityDisplay').textContent = gameState.rarityScore;
+  document.getElementById('modalGuesses').textContent = gameState.guessesRemaining;
+}
+
+function selectCell(cellIdx) {
+  if (gameState.gameOver || gameState.cellStates[cellIdx]) return;
+  
+  gameState.selectedCell = cellIdx;
+  
+  const row = Math.floor(cellIdx / 3);
+  const col = cellIdx % 3;
+  
+  const rowCat = todaysPuzzle.rows[row];
+  const colCat = todaysPuzzle.columns[col];
+  
+  document.getElementById('modalCriteria').innerHTML = `
+    <span class="team-badge ${colCat.team ? colCat.team.toLowerCase() : ''}">${colCat.label}</span>
+    <span style="margin: 0 0.5rem;">+</span>
+    <span class="team-badge ${rowCat.team ? rowCat.team.toLowerCase() : ''}" style="background: #667eea;">${rowCat.label}</span>
+  `;
+  
+  document.getElementById('playerSearch').value = '';
+  document.getElementById('searchResults').innerHTML = '';
+  document.getElementById('searchModal').classList.add('active');
+  
+  setTimeout(() => document.getElementById('playerSearch').focus(), 100);
+  
+  renderGrid();
+}
+
+function closeModal() {
+  document.getElementById('searchModal').classList.remove('active');
+  gameState.selectedCell = null;
+  renderGrid();
+}
+
+function closeGameOverModal() {
+  document.getElementById('gameOverModal').classList.remove('active');
+}
+
+// ============================================
+// PLAYER SEARCH
+// ============================================
+function setupSearch() {
+  const input = document.getElementById('playerSearch');
+  input.addEventListener('input', (e) => {
+    const query = e.target.value.toLowerCase().trim();
+    renderSearchResults(query);
+  });
+  
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      const firstResult = document.querySelector('.search-result-item');
+      if (firstResult) {
+        firstResult.click();
+      }
+    }
+    if (e.key === 'Escape') {
+      closeModal();
+    }
+  });
+}
+
+function renderSearchResults(query) {
+  const resultsContainer = document.getElementById('searchResults');
+  
+  if (query.length < 2) {
+    resultsContainer.innerHTML = '<div style="color: var(--text-light); padding: 1rem; text-align: center;">Type at least 2 characters...</div>';
+    return;
+  }
+  
+  const matches = allPlayers.filter(p => {
+    const name = (p.name || p.displayName || '').toLowerCase();
+    return name.includes(query) && !gameState.usedPlayers.has(name);
+  }).slice(0, 10);
+  
+  if (matches.length === 0) {
+    resultsContainer.innerHTML = '<div style="color: var(--text-light); padding: 1rem; text-align: center;">No players found</div>';
+    return;
+  }
+  
+  resultsContainer.innerHTML = matches.map(player => {
+    const name = player.name || player.displayName;
+    const seasons = Object.keys(player.seasons || {}).length;
+    const career = player.career || {};
+    
+    return `
+      <div class="search-result-item" onclick="window.submitGuess('${name.replace(/'/g, "\\'")}')">
+        <div>
+          <div class="result-name">${name}</div>
+          <div class="result-info">${seasons} seasons • ${career.hits || 0} hits • ${career.runs || 0} runs</div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+// ============================================
+// GAME LOGIC
+// ============================================
+window.submitGuess = function(playerName) {
+  if (gameState.selectedCell === null || gameState.gameOver) return;
+  
+  const cellIdx = gameState.selectedCell;
+  const row = Math.floor(cellIdx / 3);
+  const col = cellIdx % 3;
+  
+  const rowCat = todaysPuzzle.rows[row];
+  const colCat = todaysPuzzle.columns[col];
+  
+  // Find player
+  const player = allPlayers.find(p => 
+    (p.name || p.displayName || '').toLowerCase() === playerName.toLowerCase()
+  );
+  
+  if (!player) {
+    alert('Player not found');
+    return;
+  }
+  
+  // Check if correct
+  const matchesRow = matchesCategory(player, rowCat);
+  const matchesCol = matchesCategory(player, colCat);
+  const isCorrect = matchesRow && matchesCol;
+  
+  // Calculate rarity
+  let rarity = 0;
+  if (isCorrect) {
+    const validCount = findValidPlayers(colCat, rowCat).length;
+    rarity = Math.max(1, Math.round(100 / validCount));
+    gameState.rarityScore += rarity;
+    gameState.score++;
+  }
+  
+  // Update state
+  gameState.cellStates[cellIdx] = {
+    correct: isCorrect,
+    player: player.name || player.displayName,
+    rarity: rarity
+  };
+  
+  gameState.usedPlayers.add(playerName.toLowerCase());
+  gameState.guessesRemaining--;
+  
+  closeModal();
+  renderGrid();
+  updateStats();
+  saveGameState();
+  
+  // Check game over
+  checkGameOver();
+};
+
+function checkGameOver() {
+  const allFilled = gameState.cellStates.every(s => s !== null);
+  const noGuesses = gameState.guessesRemaining <= 0;
+  
+  if (allFilled || noGuesses) {
+    gameState.gameOver = true;
+    showGameOver();
+  }
+}
+
+function showGameOver() {
+  const correct = gameState.cellStates.filter(s => s && s.correct).length;
+  const guessesUsed = 9 - gameState.guessesRemaining;
+  
+  document.getElementById('finalScore').textContent = `${correct}/9`;
+  document.getElementById('correctCount').textContent = correct;
+  document.getElementById('rarityTotal').textContent = gameState.rarityScore;
+  document.getElementById('guessesUsed').textContent = guessesUsed;
+  
+  if (correct === 9) {
+    document.getElementById('gameOverTitle').textContent = '🎉 Perfect Score!';
+  } else if (correct >= 7) {
+    document.getElementById('gameOverTitle').textContent = '⭐ Great Job!';
+  } else if (correct >= 5) {
+    document.getElementById('gameOverTitle').textContent = '👍 Nice Try!';
+  } else {
+    document.getElementById('gameOverTitle').textContent = '💪 Keep Practicing!';
+  }
+  
+  updateSharePreview();
+  
+  document.getElementById('gameOverModal').classList.add('active');
+  document.getElementById('shareBtn').style.display = 'inline-block';
+  document.getElementById('answersBtn').style.display = 'inline-block';
+  
+  renderGrid();
+}
+
+// ============================================
+// SHARING
+// ============================================
+function updateSharePreview() {
+  const correct = gameState.cellStates.filter(s => s && s.correct).length;
+  const grid = gameState.cellStates.map(s => {
+    if (!s) return '⬜';
+    return s.correct ? '🟩' : '🟥';
+  });
+  
+  const gridStr = `${grid[0]}${grid[1]}${grid[2]}\n${grid[3]}${grid[4]}${grid[5]}\n${grid[6]}${grid[7]}${grid[8]}`;
+  
+  const shareText = `⚾ Aces Grid #${todaysPuzzle.dayNum}\n${correct}/9 • Rarity: ${gameState.rarityScore}\n\n${gridStr}\n\nacessoftballreference.com/immaculate-grid.html`;
+  
+  document.getElementById('sharePreview').textContent = shareText;
+}
+
+window.shareResults = function() {
+  const shareText = document.getElementById('sharePreview').textContent;
+  
+  if (navigator.share) {
+    navigator.share({
+      text: shareText
+    }).catch(() => {
+      copyToClipboard(shareText);
+    });
+  } else {
+    copyToClipboard(shareText);
+  }
+};
+
+function copyToClipboard(text) {
+  navigator.clipboard.writeText(text).then(() => {
+    alert('Results copied to clipboard!');
+  }).catch(() => {
+    // Fallback
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    document.body.appendChild(textarea);
+    textarea.select();
+    document.execCommand('copy');
+    document.body.removeChild(textarea);
+    alert('Results copied to clipboard!');
+  });
+}
+
+// ============================================
+// SHOW ANSWERS
+// ============================================
+window.showAnswers = function() {
+  closeGameOverModal();
+  
+  let answerHtml = '<div style="padding: 1rem;">';
+  answerHtml += '<h3 style="margin-top:0;">All Valid Answers:</h3>';
+  
+  for (let row = 0; row < 3; row++) {
+    for (let col = 0; col < 3; col++) {
+      const rowCat = todaysPuzzle.rows[row];
+      const colCat = todaysPuzzle.columns[col];
+      const validPlayers = findValidPlayers(colCat, rowCat);
+      
+      answerHtml += `
+        <div style="margin-bottom: 1rem; padding: 0.75rem; background: #f7fafc; border-radius: 8px;">
+          <strong>${colCat.label} + ${rowCat.label}</strong><br>
+          <span style="font-size: 0.85rem; color: var(--text-light);">
+            ${validPlayers.slice(0, 5).map(p => p.name).join(', ')}
+            ${validPlayers.length > 5 ? ` +${validPlayers.length - 5} more` : ''}
+          </span>
+        </div>
+      `;
+    }
+  }
+  
+  answerHtml += '</div>';
+  
+  // Show in modal
+  const modal = document.getElementById('searchModal');
+  document.querySelector('#searchModal .modal-header h3').textContent = '📊 All Answers';
+  document.querySelector('#searchModal .modal-body').innerHTML = answerHtml;
+  modal.classList.add('active');
+};
+
+// ============================================
+// PERSISTENCE
+// ============================================
+function saveGameState() {
+  const saveData = {
+    dayNum: todaysPuzzle.dayNum,
+    ...gameState
+  };
+  localStorage.setItem('acesGrid', JSON.stringify(saveData));
+}
+
+function loadGameState() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('acesGrid'));
+    if (saved && saved.dayNum === todaysPuzzle.dayNum) {
+      gameState = {
+        ...gameState,
+        guessesRemaining: saved.guessesRemaining,
+        score: saved.score,
+        rarityScore: saved.rarityScore,
+        cellStates: saved.cellStates,
+        gameOver: saved.gameOver,
+        usedPlayers: new Set(saved.usedPlayers || [])
+      };
+      
+      if (gameState.gameOver) {
+        document.getElementById('shareBtn').style.display = 'inline-block';
+        document.getElementById('answersBtn').style.display = 'inline-block';
+      }
+      
+      return true;
+    }
+  } catch (e) {
+    console.log('No saved state');
+  }
+  return false;
+}
+
+// ============================================
+// HOW TO PLAY TOGGLE
+// ============================================
+window.toggleHowToPlay = function() {
+  const section = document.getElementById('howToPlay');
+  const toggle = document.getElementById('howToPlayToggle');
+  section.classList.toggle('expanded');
+  toggle.textContent = section.classList.contains('expanded') ? '▲' : '▼';
+};
+
+// ============================================
+// INITIALIZATION
+// ============================================
+async function init() {
+  try {
+    console.log('Loading player data...');
+    allPlayers = await getAllPlayerStatsOptimized();
+    console.log(`Loaded ${allPlayers.length} players`);
+    
+    // Generate today's puzzle
+    todaysPuzzle = generateDailyPuzzle();
+    console.log('Generated puzzle:', todaysPuzzle);
+    
+    // Display date
+    const today = new Date();
+    document.getElementById('puzzleDate').textContent = 
+      `Puzzle #${todaysPuzzle.dayNum} • ${today.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}`;
+    
+    // Load saved state
+    loadGameState();
+    
+    // Render
+    renderGrid();
+    updateStats();
+    setupSearch();
+    
+    // Hide loading
+    document.getElementById('loadingOverlay').classList.add('hidden');
+    
+  } catch (error) {
+    console.error('Error initializing game:', error);
+    document.getElementById('loadingOverlay').innerHTML = `
+      <div style="text-align: center; padding: 2rem;">
+        <p>Error loading game data</p>
+        <p style="color: var(--text-light); font-size: 0.9rem;">${error.message}</p>
+        <button onclick="location.reload()" style="margin-top: 1rem; padding: 0.75rem 1.5rem; cursor: pointer;">Retry</button>
+      </div>
+    `;
+  }
+}
+
+// Start
+init();
+</script>
+
+<script type="module">
+  import { NavigationComponent } from './nav-component.js';
+</script>
+<script src="team-colors.js"></script>
+<script src="mobile-enhancements.js"></script>
+</body>
+</html>
