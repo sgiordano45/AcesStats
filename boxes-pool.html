@@ -1026,6 +1026,104 @@ body {
   margin-bottom: 1.5rem;
 }
 
+/* Link Type Tabs */
+.link-type-tabs {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.link-type-tab {
+  padding: 0.5rem 1rem;
+  border: 2px solid var(--border-color);
+  background: white;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.link-type-tab:hover {
+  border-color: var(--pool-color);
+  background: #eff6ff;
+}
+
+.link-type-tab.active {
+  background: var(--pool-color);
+  color: white;
+  border-color: var(--pool-color);
+}
+
+/* User Search Results */
+.user-search-results {
+  max-height: 200px;
+  overflow-y: auto;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  margin-top: 0.5rem;
+  background: white;
+  display: none;
+}
+
+.user-search-results.visible {
+  display: block;
+}
+
+.user-search-result {
+  padding: 0.75rem 1rem;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.user-search-result:last-child {
+  border-bottom: none;
+}
+
+.user-search-result:hover {
+  background: #f1f5f9;
+}
+
+.user-search-result.selected {
+  background: #dbeafe;
+  border-color: var(--pool-color);
+}
+
+.user-search-result .user-name {
+  font-weight: 600;
+}
+
+.user-search-result .user-email {
+  font-size: 0.8rem;
+  color: var(--text-light);
+}
+
+.selected-user-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: #d1fae5;
+  border: 1px solid var(--success-color);
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  margin-top: 0.5rem;
+}
+
+.selected-user-badge .remove-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 1rem;
+  opacity: 0.6;
+}
+
+.selected-user-badge .remove-btn:hover {
+  opacity: 1;
+}
+
 /* Legend */
 .legend {
   display: flex;
@@ -1580,15 +1678,59 @@ body {
       <!-- Manual Entry Tab -->
       <div class="admin-section" id="tab-manual">
         <p style="color: var(--text-light); margin-bottom: 1rem;">
-          Manually add entries for people who haven't joined the site.
+          Add entries for others. Link to existing users or enter an email for future matching.
         </p>
         
         <div class="manual-entry-form">
-          <div class="form-row">
-            <div class="form-group">
-              <label>Participant Name</label>
-              <input type="text" id="manualName" placeholder="Enter name...">
+          <!-- Link Type Selection -->
+          <div class="form-group">
+            <label>Entry Type</label>
+            <div class="link-type-tabs">
+              <button type="button" class="link-type-tab active" data-type="search" onclick="setLinkType('search')">
+                🔍 Search Existing User
+              </button>
+              <button type="button" class="link-type-tab" data-type="email" onclick="setLinkType('email')">
+                ✉️ Enter Email (Future User)
+              </button>
+              <button type="button" class="link-type-tab" data-type="name" onclick="setLinkType('name')">
+                📝 Name Only
+              </button>
             </div>
+          </div>
+          
+          <!-- Search Existing User -->
+          <div class="form-group link-type-section" id="linkTypeSearch">
+            <label>Search Users</label>
+            <input type="text" id="userSearchInput" placeholder="Type to search users..." oninput="searchUsers()">
+            <div class="user-search-results" id="userSearchResults"></div>
+            <input type="hidden" id="selectedUserId">
+            <input type="hidden" id="selectedUserName">
+            <input type="hidden" id="selectedUserEmail">
+          </div>
+          
+          <!-- Email for Future User -->
+          <div class="form-group link-type-section" id="linkTypeEmail" style="display: none;">
+            <label>Email Address</label>
+            <input type="email" id="manualEmail" placeholder="person@example.com">
+            <div class="form-group" style="margin-top: 0.75rem;">
+              <label>Display Name</label>
+              <input type="text" id="manualNameEmail" placeholder="Enter name...">
+            </div>
+            <p style="font-size: 0.8rem; color: var(--text-light); margin-top: 0.5rem;">
+              💡 When this person creates an account with this email, the box will automatically link to them.
+            </p>
+          </div>
+          
+          <!-- Name Only (no linking) -->
+          <div class="form-group link-type-section" id="linkTypeName" style="display: none;">
+            <label>Participant Name</label>
+            <input type="text" id="manualName" placeholder="Enter name...">
+            <p style="font-size: 0.8rem; color: var(--text-light); margin-top: 0.5rem;">
+              ⚠️ This entry won't be linked to any user account.
+            </p>
+          </div>
+          
+          <div class="form-row">
             <div class="form-group">
               <label>Paid?</label>
               <select id="manualPaid">
@@ -1596,11 +1738,10 @@ body {
                 <option value="false">No - Not Paid</option>
               </select>
             </div>
-          </div>
-          
-          <div class="form-group">
-            <label>Select Boxes (click on the grid above, or enter coordinates)</label>
-            <input type="text" id="manualCoords" placeholder="e.g., 0-0, 3-5, 7-2 (row-col)">
+            <div class="form-group">
+              <label>Select Boxes</label>
+              <input type="text" id="manualCoords" placeholder="e.g., 0-0, 3-5 (or click grid)">
+            </div>
           </div>
           
           <button class="btn btn-success" onclick="addManualEntry()">
@@ -1823,6 +1964,9 @@ body {
       
       currentPool = { id: poolDoc.id, ...poolDoc.data() };
       
+      // Auto-claim any pending entries for current user
+      await claimPendingEntries();
+      
       // Update UI
       updatePoolDisplay();
       renderGrid();
@@ -1843,6 +1987,52 @@ body {
       showToast('Error loading pool', 'error');
     }
   };
+
+  // Auto-claim entries that have pendingEmail matching current user's email
+  async function claimPendingEntries() {
+    if (!currentPool || !currentUser.email) return;
+    
+    const userEmail = currentUser.email.toLowerCase();
+    const entries = currentPool.entries || {};
+    const pendingMatches = [];
+    
+    // Find entries with matching pendingEmail
+    for (const [key, entry] of Object.entries(entries)) {
+      if (entry.pendingEmail && entry.pendingEmail.toLowerCase() === userEmail && !entry.userId) {
+        pendingMatches.push(key);
+      }
+    }
+    
+    if (pendingMatches.length === 0) return;
+    
+    try {
+      // Update all matching entries with user's ID
+      const updates = {};
+      const userName = userProfile?.displayName || currentUser.displayName || currentUser.email.split('@')[0];
+      
+      pendingMatches.forEach(key => {
+        updates[`entries.${key}.userId`] = currentUser.uid;
+        updates[`entries.${key}.name`] = userName; // Update name to their actual profile name
+        updates[`entries.${key}.email`] = currentUser.email;
+        updates[`entries.${key}.claimedByUserAt`] = serverTimestamp();
+        // Keep pendingEmail for record but it's now claimed
+      });
+      
+      await updateDoc(doc(db, 'boxesPools', currentPool.id), updates);
+      
+      // Update local state
+      pendingMatches.forEach(key => {
+        currentPool.entries[key].userId = currentUser.uid;
+        currentPool.entries[key].name = userName;
+      });
+      
+      showToast(`🎉 ${pendingMatches.length} box(es) have been linked to your account!`, 'success');
+      
+    } catch (error) {
+      console.error('Error claiming pending entries:', error);
+      // Don't show error to user - not critical
+    }
+  }
 
   function updatePoolDisplay() {
     document.getElementById('poolTitle').textContent = currentPool.name || 'Boxes Pool';
@@ -2010,8 +2200,11 @@ body {
           // Add tooltip data attribute for hover
           box.dataset.fullname = fullName;
           
-          // Check if it's my box
-          if (entry.userId === currentUser.uid) {
+          // Check if it's my box (either by userId OR pendingEmail match)
+          const isMyBox = entry.userId === currentUser.uid || 
+                          (entry.pendingEmail && entry.pendingEmail.toLowerCase() === currentUser.email?.toLowerCase());
+          
+          if (isMyBox) {
             box.classList.add('my-box');
           }
           
@@ -2143,7 +2336,11 @@ body {
   function updateStats() {
     const entries = currentPool.entries || {};
     const entryCount = Object.keys(entries).length;
-    const myBoxes = Object.values(entries).filter(e => e.userId === currentUser.uid).length;
+    const userEmail = currentUser.email?.toLowerCase();
+    const myBoxes = Object.values(entries).filter(e => 
+      e.userId === currentUser.uid || 
+      (e.pendingEmail && e.pendingEmail.toLowerCase() === userEmail)
+    ).length;
     const costPerBox = currentPool.costPerBox || 0;
     
     document.getElementById('statClaimed').textContent = entryCount;
@@ -2264,6 +2461,12 @@ body {
       lockBtn.textContent = '🔒 Lock Pool';
       lockBtn.className = 'btn btn-warning';
     }
+    
+    // Load users for manual entry search
+    loadUsersForSearch();
+    
+    // Reset manual entry form to default state
+    setLinkType('search');
     
     // Games editor
     renderGamesEditor();
@@ -2739,17 +2942,144 @@ body {
   // MANUAL ENTRY
   // ========================================
 
+  // Track current link type for manual entry
+  let currentLinkType = 'search';
+  let allUsers = []; // Cache of users for search
+  
+  window.setLinkType = function(type) {
+    currentLinkType = type;
+    
+    // Update tab styling
+    document.querySelectorAll('.link-type-tab').forEach(tab => {
+      tab.classList.toggle('active', tab.dataset.type === type);
+    });
+    
+    // Show/hide sections
+    document.getElementById('linkTypeSearch').style.display = type === 'search' ? 'block' : 'none';
+    document.getElementById('linkTypeEmail').style.display = type === 'email' ? 'block' : 'none';
+    document.getElementById('linkTypeName').style.display = type === 'name' ? 'block' : 'none';
+    
+    // Clear selections
+    clearUserSelection();
+  };
+  
+  function clearUserSelection() {
+    document.getElementById('selectedUserId').value = '';
+    document.getElementById('selectedUserName').value = '';
+    document.getElementById('selectedUserEmail').value = '';
+    document.getElementById('userSearchInput').value = '';
+    document.getElementById('userSearchResults').innerHTML = '';
+    document.getElementById('userSearchResults').classList.remove('visible');
+  }
+  
+  // Load all users for search (called once when admin panel opens)
+  async function loadUsersForSearch() {
+    if (allUsers.length > 0) return; // Already loaded
+    
+    try {
+      const usersSnapshot = await getDocs(collection(db, 'users'));
+      allUsers = [];
+      usersSnapshot.forEach(doc => {
+        const data = doc.data();
+        allUsers.push({
+          id: doc.id,
+          name: data.displayName || data.name || 'Unknown',
+          email: data.email || ''
+        });
+      });
+      // Sort alphabetically
+      allUsers.sort((a, b) => a.name.localeCompare(b.name));
+    } catch (error) {
+      console.error('Error loading users:', error);
+    }
+  }
+  
+  window.searchUsers = function() {
+    const query = document.getElementById('userSearchInput').value.toLowerCase().trim();
+    const resultsContainer = document.getElementById('userSearchResults');
+    
+    if (query.length < 2) {
+      resultsContainer.classList.remove('visible');
+      return;
+    }
+    
+    const matches = allUsers.filter(u => 
+      u.name.toLowerCase().includes(query) || 
+      u.email.toLowerCase().includes(query)
+    ).slice(0, 10); // Limit to 10 results
+    
+    if (matches.length === 0) {
+      resultsContainer.innerHTML = '<div style="padding: 1rem; color: var(--text-light); text-align: center;">No users found</div>';
+    } else {
+      resultsContainer.innerHTML = matches.map(u => `
+        <div class="user-search-result" onclick="selectUser('${u.id}', '${u.name.replace(/'/g, "\\'")}', '${u.email.replace(/'/g, "\\'")}')">
+          <div>
+            <div class="user-name">${u.name}</div>
+            <div class="user-email">${u.email}</div>
+          </div>
+        </div>
+      `).join('');
+    }
+    
+    resultsContainer.classList.add('visible');
+  };
+  
+  window.selectUser = function(userId, name, email) {
+    document.getElementById('selectedUserId').value = userId;
+    document.getElementById('selectedUserName').value = name;
+    document.getElementById('selectedUserEmail').value = email;
+    
+    // Show selection and hide search results
+    document.getElementById('userSearchInput').value = '';
+    document.getElementById('userSearchResults').innerHTML = `
+      <div class="selected-user-badge">
+        <span>✅ <strong>${name}</strong> (${email})</span>
+        <button class="remove-btn" onclick="clearUserSelection()">✕</button>
+      </div>
+    `;
+  };
+
   window.addManualEntry = async function() {
     if (!currentPool || !isAdmin) return;
     
-    const name = document.getElementById('manualName').value.trim();
+    let name = '';
+    let userId = null;
+    let email = null;
+    let pendingEmail = null;
+    
+    // Get data based on link type
+    if (currentLinkType === 'search') {
+      userId = document.getElementById('selectedUserId').value;
+      name = document.getElementById('selectedUserName').value;
+      email = document.getElementById('selectedUserEmail').value;
+      
+      if (!userId) {
+        showToast('Please select a user from the search', 'warning');
+        return;
+      }
+    } else if (currentLinkType === 'email') {
+      pendingEmail = document.getElementById('manualEmail').value.trim().toLowerCase();
+      name = document.getElementById('manualNameEmail').value.trim();
+      
+      if (!pendingEmail || !pendingEmail.includes('@')) {
+        showToast('Please enter a valid email address', 'warning');
+        return;
+      }
+      if (!name) {
+        showToast('Please enter a display name', 'warning');
+        return;
+      }
+    } else {
+      // Name only
+      name = document.getElementById('manualName').value.trim();
+      if (!name) {
+        showToast('Please enter a name', 'warning');
+        return;
+      }
+    }
+    
     const paid = document.getElementById('manualPaid').value === 'true';
     const coordsStr = document.getElementById('manualCoords').value.trim();
-    
-    if (!name) {
-      showToast('Please enter a name', 'warning');
-      return;
-    }
     
     if (!coordsStr) {
       showToast('Please select at least one box', 'warning');
@@ -2782,13 +3112,26 @@ body {
     try {
       const updates = {};
       validCoords.forEach(key => {
-        updates[`entries.${key}`] = {
-          userId: null,
+        const entryData = {
           name: name,
           manual: true,
           paid: paid,
-          claimedAt: serverTimestamp()
+          claimedAt: serverTimestamp(),
+          addedBy: currentUser.uid
         };
+        
+        // Add linking info based on type
+        if (userId) {
+          entryData.userId = userId;
+          entryData.email = email;
+        } else if (pendingEmail) {
+          entryData.userId = null;
+          entryData.pendingEmail = pendingEmail;
+        } else {
+          entryData.userId = null;
+        }
+        
+        updates[`entries.${key}`] = entryData;
       });
       
       await updateDoc(doc(db, 'boxesPools', currentPool.id), updates);
@@ -2796,18 +3139,38 @@ body {
       // Update local state
       if (!currentPool.entries) currentPool.entries = {};
       validCoords.forEach(key => {
-        currentPool.entries[key] = { name, paid, manual: true };
+        currentPool.entries[key] = { 
+          name, 
+          paid, 
+          manual: true,
+          userId: userId || null,
+          pendingEmail: pendingEmail || null
+        };
       });
       
       // Clear form
-      document.getElementById('manualName').value = '';
       document.getElementById('manualCoords').value = '';
+      if (currentLinkType === 'search') {
+        clearUserSelection();
+      } else if (currentLinkType === 'email') {
+        document.getElementById('manualEmail').value = '';
+        document.getElementById('manualNameEmail').value = '';
+      } else {
+        document.getElementById('manualName').value = '';
+      }
       
       renderGrid();
       updateStats();
       renderEntriesList();
       
-      showToast(`Added ${validCoords.length} box(es) for ${name}`, 'success');
+      const linkInfo = userId ? ' (linked to user)' : pendingEmail ? ' (will link when they sign up)' : '';
+      showToast(`Added ${validCoords.length} box(es) for ${name}${linkInfo}`, 'success');
+      
+    } catch (error) {
+      console.error('Error adding manual entry:', error);
+      showToast('Error adding entry', 'error');
+    }
+  };
       
     } catch (error) {
       console.error('Error adding manual entry:', error);
