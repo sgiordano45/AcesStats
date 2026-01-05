@@ -1234,6 +1234,9 @@ function showSuggestedPlayerBox(player) {
 function selectSuggestedPlayer() {
   if (!suggestedPlayer) return;
   
+  // Calculate similarity to determine flow
+  const similarity = calculateNameSimilarity(currentUser.displayName, suggestedPlayer.name);
+  
   // Hide the suggestion box
   document.getElementById('suggestedPlayerBox').style.display = 'none';
   
@@ -1241,16 +1244,26 @@ function selectSuggestedPlayer() {
   const playerItem = document.querySelector(`[data-player-id="${suggestedPlayer.id}"]`);
   if (playerItem) {
     selectPlayer(playerItem, suggestedPlayer);
-    
-    // Scroll to the selected item
-    playerItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    
-    // Flash animation
-    playerItem.style.animation = 'flash 0.5s ease';
-    setTimeout(() => {
-      playerItem.style.animation = '';
-    }, 500);
   }
+  
+  // High-confidence match (90%+): Auto-submit immediately
+  if (similarity >= 0.9) {
+    // Small delay for UI feedback, then auto-submit
+    setTimeout(() => {
+      confirmLink();
+    }, 300);
+    return;
+  }
+  
+  // Lower confidence: Scroll to confirm button and highlight it
+  const confirmBtn = document.getElementById('confirmBtn');
+  confirmBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  
+  // Pulse animation on the button to draw attention
+  confirmBtn.style.animation = 'buttonPulse 0.6s ease 2';
+  setTimeout(() => {
+    confirmBtn.style.animation = '';
+  }, 1200);
   
   // Show approval info
   showApprovalInfo(suggestedPlayer);
@@ -1649,6 +1662,10 @@ style.textContent = `
   @keyframes flash {
     0%, 100% { background: white; }
     50% { background: rgba(255, 215, 0, 0.3); }
+  }
+  @keyframes buttonPulse {
+    0%, 100% { transform: scale(1); box-shadow: 0 4px 16px rgba(0,0,0,0.12); }
+    50% { transform: scale(1.05); box-shadow: 0 8px 24px rgba(45, 80, 22, 0.4); }
   }
 `;
 document.head.appendChild(style);
