@@ -733,6 +733,19 @@ body {
   </div>
 </div>
 
+<!-- Answers Modal -->
+<div class="modal-overlay" id="answersModal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h3>📊 All Valid Answers</h3>
+      <button class="modal-close" onclick="closeAnswersModal()">×</button>
+    </div>
+    <div class="modal-body" id="answersModalBody" style="max-height: 60vh; overflow-y: auto;">
+      <!-- Answers will be inserted here -->
+    </div>
+  </div>
+</div>
+
 <script type="module">
 import { 
   db, 
@@ -1234,8 +1247,7 @@ function copyToClipboard(text) {
 window.showAnswers = function() {
   closeGameOverModal();
   
-  let answerHtml = '<div style="padding: 1rem;">';
-  answerHtml += '<h3 style="margin-top:0;">All Valid Answers:</h3>';
+  let answerHtml = '<div style="padding: 0.5rem;">';
   
   for (let row = 0; row < 3; row++) {
     for (let col = 0; col < 3; col++) {
@@ -1243,13 +1255,23 @@ window.showAnswers = function() {
       const colCat = todaysPuzzle.columns[col];
       const validPlayers = findValidPlayers(colCat, rowCat);
       
+      // Check if user got this cell correct
+      const cellIdx = row * 3 + col;
+      const cellState = gameState.cellStates[cellIdx];
+      const gotIt = cellState && cellState.correct;
+      
       answerHtml += `
-        <div style="margin-bottom: 1rem; padding: 0.75rem; background: #f7fafc; border-radius: 8px;">
-          <strong>${colCat.label} + ${rowCat.label}</strong><br>
+        <div style="margin-bottom: 0.75rem; padding: 0.75rem; background: ${gotIt ? '#e8f5e8' : '#f7fafc'}; border-radius: 8px; border-left: 4px solid ${gotIt ? 'var(--correct-color)' : 'var(--border-color)'};">
+          <strong>${colCat.label} + ${rowCat.label}</strong>
+          ${gotIt ? '<span style="color: var(--correct-color); margin-left: 0.5rem;">✓</span>' : ''}
+          <br>
           <span style="font-size: 0.85rem; color: var(--text-light);">
-            ${validPlayers.slice(0, 5).map(p => p.name).join(', ')}
-            ${validPlayers.length > 5 ? ` +${validPlayers.length - 5} more` : ''}
+            ${validPlayers.slice(0, 8).map(p => p.name).join(', ')}
+            ${validPlayers.length > 8 ? `<br><em>+${validPlayers.length - 8} more</em>` : ''}
           </span>
+          <div style="font-size: 0.75rem; color: var(--text-light); margin-top: 0.25rem;">
+            ${validPlayers.length} valid answer${validPlayers.length !== 1 ? 's' : ''}
+          </div>
         </div>
       `;
     }
@@ -1257,11 +1279,13 @@ window.showAnswers = function() {
   
   answerHtml += '</div>';
   
-  // Show in modal
-  const modal = document.getElementById('searchModal');
-  document.querySelector('#searchModal .modal-header h3').textContent = '📊 All Answers';
-  document.querySelector('#searchModal .modal-body').innerHTML = answerHtml;
-  modal.classList.add('active');
+  // Show in dedicated answers modal
+  document.getElementById('answersModalBody').innerHTML = answerHtml;
+  document.getElementById('answersModal').classList.add('active');
+};
+
+window.closeAnswersModal = function() {
+  document.getElementById('answersModal').classList.remove('active');
 };
 
 // ============================================
@@ -1368,6 +1392,17 @@ async function init() {
     renderGrid();
     updateStats();
     setupSearch();
+    
+    // Click outside modal to close
+    document.getElementById('searchModal').addEventListener('click', (e) => {
+      if (e.target.id === 'searchModal') closeModal();
+    });
+    document.getElementById('answersModal').addEventListener('click', (e) => {
+      if (e.target.id === 'answersModal') closeAnswersModal();
+    });
+    document.getElementById('gameOverModal').addEventListener('click', (e) => {
+      if (e.target.id === 'gameOverModal') closeGameOverModal();
+    });
     
     // Hide loading
     document.getElementById('loadingOverlay').classList.add('hidden');
