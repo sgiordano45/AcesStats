@@ -685,9 +685,54 @@ body {
     font-size: 2rem;
   }
 
+  /* Improved mobile tab navigation */
+  .nav-tabs {
+    position: relative;
+  }
+  
+  .nav-tabs::before,
+  .nav-tabs::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 20px;
+    pointer-events: none;
+    z-index: 10;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+  }
+  
+  .nav-tabs::before {
+    left: 0;
+    background: linear-gradient(to right, white 0%, transparent 100%);
+  }
+  
+  .nav-tabs::after {
+    right: 0;
+    background: linear-gradient(to left, white 0%, transparent 100%);
+  }
+  
+  .nav-tabs.scroll-left::before,
+  .nav-tabs.scroll-right::after {
+    opacity: 1;
+  }
+  
+  .nav-tabs-container {
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+    padding: 0 0.5rem;
+  }
+
   .nav-tab {
-    padding: 1rem 1.5rem;
-    font-size: 0.9rem;
+    padding: 0.85rem 1rem;
+    font-size: 0.85rem;
+    scroll-snap-align: start;
+    flex-shrink: 0;
+  }
+  
+  .nav-tab .tab-icon {
+    font-size: 1.1rem;
   }
 
   .main-content {
@@ -704,6 +749,23 @@ body {
 
   .quick-links {
     grid-template-columns: 1fr;
+  }
+}
+
+/* Even smaller screens - icon-only tabs */
+@media (max-width: 480px) {
+  .nav-tab {
+    padding: 0.85rem 1rem;
+    gap: 0;
+  }
+  
+  .nav-tab .tab-icon {
+    font-size: 1.2rem;
+  }
+  
+  /* Hide text on very small screens, show icons only */
+  .nav-tab .tab-text {
+    display: none;
   }
 }
 
@@ -1052,25 +1114,25 @@ body {
   <nav class="nav-tabs">
     <div class="nav-tabs-container">
       <button class="nav-tab active" data-tab="overview">
-        <span>📊</span> Overview
+        <span class="tab-icon">📊</span><span class="tab-text">Overview</span>
       </button>
       <button class="nav-tab" data-tab="player-info">
-        <span>⚾</span> Player Info
+        <span class="tab-icon">⚾</span><span class="tab-text">Player Info</span>
       </button>
       <button class="nav-tab" data-tab="favorites">
-        <span>⭐</span> Favorites
+        <span class="tab-icon">⭐</span><span class="tab-text">Favorites</span>
       </button>
       <button class="nav-tab" data-tab="preferences">
-        <span>⚙️</span> Preferences
+        <span class="tab-icon">⚙️</span><span class="tab-text">Preferences</span>
       </button>
       <button class="nav-tab" data-tab="directory">
-        <span>📇</span> Directory
+        <span class="tab-icon">📇</span><span class="tab-text">Directory</span>
       </button>
       <button class="nav-tab" data-tab="security">
-        <span>🔒</span> Security
+        <span class="tab-icon">🔒</span><span class="tab-text">Security</span>
       </button>
       <button class="nav-tab" data-tab="games">
-        <span>🎮</span> Games
+        <span class="tab-icon">🎮</span><span class="tab-text">Games</span>
       </button>
     </div>
   </nav>
@@ -2231,6 +2293,28 @@ async function loadNotificationPreferences() {
         document.getElementById(`tab-${targetTab}`).classList.add('active');
       });
     });
+
+    // Mobile tab scroll indicators
+    const navTabs = document.querySelector('.nav-tabs');
+    const tabsContainer = document.querySelector('.nav-tabs-container');
+    
+    function updateScrollIndicators() {
+      if (!tabsContainer || !navTabs) return;
+      const scrollLeft = tabsContainer.scrollLeft;
+      const maxScroll = tabsContainer.scrollWidth - tabsContainer.clientWidth;
+      
+      // Show left fade if scrolled right
+      navTabs.classList.toggle('scroll-left', scrollLeft > 10);
+      // Show right fade if more content to scroll
+      navTabs.classList.toggle('scroll-right', scrollLeft < maxScroll - 10);
+    }
+    
+    if (tabsContainer) {
+      tabsContainer.addEventListener('scroll', updateScrollIndicators);
+      window.addEventListener('resize', updateScrollIndicators);
+      // Initial check
+      setTimeout(updateScrollIndicators, 100);
+    }
 
     // Initialize auth state
     onAuthChange(async (user) => {
