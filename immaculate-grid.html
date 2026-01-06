@@ -924,13 +924,13 @@ const STAT_CATEGORIES = [
   { id: 'games_18', label: '18+ Games (Season)', type: 'stat', check: (s) => s.games >= 18 },
   { id: 'ba_400', label: '.400+ BA (Season)', type: 'stat', check: (s) => s.atBats >= 20 && (s.hits / s.atBats) >= 0.400 },
   { id: 'ba_450', label: '.450+ BA (Season)', type: 'stat', check: (s) => s.atBats >= 20 && (s.hits / s.atBats) >= 0.450 },
-  { id: 'seasons_5', label: '5+ Seasons Played', type: 'career', check: (p) => Object.keys(p.seasons || {}).length >= 5 },
-  { id: 'seasons_8', label: '8+ Seasons Played', type: 'career', check: (p) => Object.keys(p.seasons || {}).length >= 8 },
+  { id: 'seasons_5', label: '5+ Seasons Played', type: 'career', check: (p, nonSubSeasons) => nonSubSeasons.length >= 5 },
+  { id: 'seasons_8', label: '8+ Seasons Played', type: 'career', check: (p, nonSubSeasons) => nonSubSeasons.length >= 8 },
   { id: 'career_hits_100', label: '100+ Career Hits', type: 'career', check: (p) => (p.career?.hits || 0) >= 100 },
   { id: 'career_runs_50', label: '50+ Career Runs', type: 'career', check: (p) => (p.career?.runs || 0) >= 50 },
-  { id: 'multi_team', label: 'Played for 3+ Teams', type: 'career', check: (p) => {
+  { id: 'multi_team', label: 'Played for 3+ Teams', type: 'career', check: (p, nonSubSeasons) => {
     const teams = new Set();
-    Object.values(p.seasons || {}).forEach(s => { if (s.team) teams.add(s.team.toLowerCase()); });
+    nonSubSeasons.forEach(s => { if (s.team) teams.add(s.team.toLowerCase()); });
     return teams.size >= 3;
   }},
 ];
@@ -1016,18 +1016,28 @@ function findValidPlayers(colCategory, rowCategory) {
   });
 }
 
+// Helper to check if a season is a substitute season
+function isSubstituteSeason(season) {
+  return season.sub === 'Yes' || season.sub === 'yes' || season.sub === true;
+}
+
+// Get only non-substitute seasons for a player
+function getNonSubSeasons(player) {
+  return Object.values(player.seasons || {}).filter(s => !isSubstituteSeason(s));
+}
+
 function matchesCategory(player, category) {
   if (category.type === 'team') {
-    // Check if player ever played for this team
-    const seasons = Object.values(player.seasons || {});
+    // Check if player ever played for this team (non-sub seasons only)
+    const seasons = getNonSubSeasons(player);
     return seasons.some(s => s.team && s.team.toLowerCase() === category.team.toLowerCase());
   } else if (category.type === 'stat') {
-    // Check if player achieved this stat in any season
-    const seasons = Object.values(player.seasons || {});
+    // Check if player achieved this stat in any non-sub season
+    const seasons = getNonSubSeasons(player);
     return seasons.some(s => category.check(s));
   } else if (category.type === 'career') {
-    // Check career stat
-    return category.check(player);
+    // Check career stat (pass non-sub seasons for season-counting checks)
+    return category.check(player, getNonSubSeasons(player));
   }
   return false;
 }
