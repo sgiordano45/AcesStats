@@ -618,6 +618,90 @@ body {
   
   .score-breakdown { gap: 1rem; }
 }
+
+/* User Stats Section */
+.user-stats-container {
+  background: var(--card-bg);
+  border-radius: 12px;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1.5rem;
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--border-color);
+}
+
+.user-stats-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.user-greeting {
+  font-weight: 600;
+  color: var(--text-dark);
+}
+
+.sign-in-prompt {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--text-light);
+  font-size: 0.9rem;
+}
+
+.sign-in-prompt a {
+  color: var(--primary-color);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.sign-in-prompt a:hover {
+  text-decoration: underline;
+}
+
+.stats-note {
+  font-size: 0.85rem;
+  color: var(--text-light);
+}
+
+.lifetime-stats {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.lifetime-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 50px;
+}
+
+.lifetime-value {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--primary-color);
+}
+
+.lifetime-label {
+  font-size: 0.7rem;
+  color: var(--text-light);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+@media (max-width: 600px) {
+  .lifetime-stats {
+    justify-content: space-between;
+  }
+  
+  .lifetime-stat {
+    min-width: 45px;
+  }
+  
+  .lifetime-value {
+    font-size: 1.1rem;
+  }
+}
 </style>
 </head>
 <body>
@@ -648,6 +732,16 @@ body {
     <div class="stat-item">
       <div class="stat-value" id="rarityDisplay">0</div>
       <div class="stat-label">Rarity Score</div>
+    </div>
+  </div>
+
+  <!-- User Stats Section -->
+  <div class="user-stats-container" id="userStatsContainer">
+    <div class="user-stats-content">
+      <div class="sign-in-prompt">
+        <span>🔒</span>
+        <a href="signin.html">Sign in</a> to track your stats across devices
+      </div>
     </div>
   </div>
 
@@ -751,13 +845,27 @@ body {
 import { 
   db, 
   collection, 
-  getDocs 
+  getDocs,
+  doc,
+  getDoc
 } from './firebase-config.js';
+
+import {
+  setDoc,
+  updateDoc,
+  serverTimestamp
+} from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
 
 import { 
   getAllPlayerStatsOptimized,
   seasonsObjectToArray
 } from './firebase-data.js';
+
+import {
+  getCurrentUser,
+  onAuthChange,
+  getUserProfile
+} from './firebase-auth.js';
 
 // ============================================
 // CONFIGURATION
@@ -765,6 +873,12 @@ import {
 // Set this to the date you want Puzzle #1 to be
 // Format: 'YYYY-MM-DD' (e.g., '2026-01-06' for January 6, 2026)
 const LAUNCH_DATE = '2026-01-06';
+
+// ============================================
+// AUTH STATE
+// ============================================
+let currentUser = null;
+let userStats = null; // Lifetime stats from Firebase
 
 // ============================================
 // GAME STATE
@@ -1318,9 +1432,9 @@ window.closeAnswersModal = function() {
 };
 
 // ============================================
-// PERSISTENCE
+// PERSISTENCE - LOCAL STORAGE (fallback for non-auth users)
 // ============================================
-function saveGameState() {
+function saveGameStateLocal() {
   const saveData = {
     dayNum: todaysPuzzle.dayNum,
     guessesRemaining: gameState.guessesRemaining,
@@ -1328,42 +1442,284 @@ function saveGameState() {
     rarityScore: gameState.rarityScore,
     cellStates: gameState.cellStates,
     gameOver: gameState.gameOver,
-    usedPlayers: Array.from(gameState.usedPlayers) // Convert Set to Array for JSON
+    usedPlayers: Array.from(gameState.usedPlayers)
   };
   localStorage.setItem('acesGrid', JSON.stringify(saveData));
-  console.log('Game state saved:', saveData);
+  console.log('💾 Game state saved to localStorage');
 }
 
-function loadGameState() {
+function loadGameStateLocal() {
   try {
     const saved = JSON.parse(localStorage.getItem('acesGrid'));
-    console.log('Loading saved state:', saved);
     
     if (saved && saved.dayNum === todaysPuzzle.dayNum) {
-      gameState = {
-        ...gameState,
-        guessesRemaining: saved.guessesRemaining,
-        score: saved.score,
-        rarityScore: saved.rarityScore,
-        cellStates: saved.cellStates,
-        gameOver: saved.gameOver,
-        usedPlayers: new Set(saved.usedPlayers || [])
-      };
-      
-      if (gameState.gameOver) {
-        document.getElementById('giveUpBtn').style.display = 'none';
-        document.getElementById('resultsBtn').style.display = 'inline-block';
-        document.getElementById('shareBtn').style.display = 'inline-block';
-        document.getElementById('answersBtn').style.display = 'inline-block';
-      }
-      
-      console.log('Game state restored successfully');
+      applyLoadedGameState(saved);
+      console.log('✅ Game state restored from localStorage');
       return true;
     }
   } catch (e) {
-    console.log('No saved state or error loading:', e);
+    console.log('No local saved state:', e);
   }
   return false;
+}
+
+// ============================================
+// PERSISTENCE - FIREBASE (for authenticated users)
+// ============================================
+async function saveGameStateFirebase() {
+  if (!currentUser) return;
+  
+  try {
+    const puzzleDocId = `puzzle_${todaysPuzzle.dayNum}`;
+    const puzzleRef = doc(db, 'acesGridGames', currentUser.uid, 'puzzles', puzzleDocId);
+    
+    await setDoc(puzzleRef, {
+      puzzleNum: todaysPuzzle.dayNum,
+      guessesRemaining: gameState.guessesRemaining,
+      score: gameState.score,
+      rarityScore: gameState.rarityScore,
+      cellStates: gameState.cellStates,
+      gameOver: gameState.gameOver,
+      usedPlayers: Array.from(gameState.usedPlayers),
+      lastUpdated: serverTimestamp()
+    }, { merge: true });
+    
+    console.log('☁️ Game state saved to Firebase');
+    
+    // If game is over, update lifetime stats
+    if (gameState.gameOver) {
+      await updateLifetimeStats();
+    }
+  } catch (error) {
+    console.error('❌ Error saving to Firebase:', error);
+  }
+}
+
+async function loadGameStateFirebase() {
+  if (!currentUser) return false;
+  
+  try {
+    const puzzleDocId = `puzzle_${todaysPuzzle.dayNum}`;
+    const puzzleRef = doc(db, 'acesGridGames', currentUser.uid, 'puzzles', puzzleDocId);
+    const puzzleDoc = await getDoc(puzzleRef);
+    
+    if (puzzleDoc.exists()) {
+      const saved = puzzleDoc.data();
+      applyLoadedGameState(saved);
+      console.log('☁️ Game state restored from Firebase');
+      return true;
+    }
+  } catch (error) {
+    console.error('❌ Error loading from Firebase:', error);
+  }
+  return false;
+}
+
+async function updateLifetimeStats() {
+  if (!currentUser) return;
+  
+  try {
+    const statsRef = doc(db, 'acesGridGames', currentUser.uid);
+    const statsDoc = await getDoc(statsRef);
+    
+    const correct = gameState.cellStates.filter(s => s && s.correct).length;
+    const isPerfect = correct === 9;
+    const guessesUsed = 9 - gameState.guessesRemaining;
+    
+    let stats = statsDoc.exists() ? statsDoc.data() : {
+      gamesPlayed: 0,
+      perfectGames: 0,
+      totalCorrect: 0,
+      totalRarity: 0,
+      highestRarity: 0,
+      highestScore: 0,
+      totalGuessesUsed: 0,
+      currentStreak: 0,
+      longestStreak: 0,
+      lastPlayedPuzzle: 0
+    };
+    
+    // Check if we already recorded this puzzle
+    if (stats.lastPlayedPuzzle === todaysPuzzle.dayNum) {
+      console.log('ℹ️ Stats already recorded for this puzzle');
+      return;
+    }
+    
+    // Calculate streak
+    const isConsecutive = stats.lastPlayedPuzzle === todaysPuzzle.dayNum - 1;
+    const newStreak = isConsecutive ? stats.currentStreak + 1 : 1;
+    
+    // Update stats
+    const updatedStats = {
+      gamesPlayed: stats.gamesPlayed + 1,
+      perfectGames: stats.perfectGames + (isPerfect ? 1 : 0),
+      totalCorrect: stats.totalCorrect + correct,
+      totalRarity: stats.totalRarity + gameState.rarityScore,
+      highestRarity: Math.max(stats.highestRarity, gameState.rarityScore),
+      highestScore: Math.max(stats.highestScore, correct),
+      totalGuessesUsed: stats.totalGuessesUsed + guessesUsed,
+      currentStreak: newStreak,
+      longestStreak: Math.max(stats.longestStreak, newStreak),
+      lastPlayedPuzzle: todaysPuzzle.dayNum,
+      lastPlayedAt: serverTimestamp(),
+      displayName: currentUser.displayName || 'Anonymous'
+    };
+    
+    await setDoc(statsRef, updatedStats, { merge: true });
+    userStats = updatedStats;
+    updateUserStatsDisplay();
+    
+    console.log('📊 Lifetime stats updated:', updatedStats);
+  } catch (error) {
+    console.error('❌ Error updating lifetime stats:', error);
+  }
+}
+
+async function loadLifetimeStats() {
+  if (!currentUser) return null;
+  
+  try {
+    const statsRef = doc(db, 'acesGridGames', currentUser.uid);
+    const statsDoc = await getDoc(statsRef);
+    
+    if (statsDoc.exists()) {
+      userStats = statsDoc.data();
+      console.log('📊 Lifetime stats loaded:', userStats);
+      return userStats;
+    }
+  } catch (error) {
+    console.error('❌ Error loading lifetime stats:', error);
+  }
+  return null;
+}
+
+// ============================================
+// UNIFIED SAVE/LOAD FUNCTIONS
+// ============================================
+function saveGameState() {
+  // Always save to localStorage as backup
+  saveGameStateLocal();
+  
+  // Also save to Firebase if authenticated
+  if (currentUser) {
+    saveGameStateFirebase();
+  }
+}
+
+async function loadGameState() {
+  // Try Firebase first if authenticated
+  if (currentUser) {
+    const loaded = await loadGameStateFirebase();
+    if (loaded) return true;
+  }
+  
+  // Fall back to localStorage
+  return loadGameStateLocal();
+}
+
+function applyLoadedGameState(saved) {
+  gameState = {
+    ...gameState,
+    guessesRemaining: saved.guessesRemaining,
+    score: saved.score,
+    rarityScore: saved.rarityScore,
+    cellStates: saved.cellStates,
+    gameOver: saved.gameOver,
+    usedPlayers: new Set(saved.usedPlayers || [])
+  };
+  
+  if (gameState.gameOver) {
+    document.getElementById('giveUpBtn').style.display = 'none';
+    document.getElementById('resultsBtn').style.display = 'inline-block';
+    document.getElementById('shareBtn').style.display = 'inline-block';
+    document.getElementById('answersBtn').style.display = 'inline-block';
+  }
+}
+
+// ============================================
+// USER STATS DISPLAY
+// ============================================
+function updateUserStatsDisplay() {
+  const container = document.getElementById('userStatsContainer');
+  if (!container) return;
+  
+  if (!currentUser) {
+    container.innerHTML = `
+      <div class="user-stats-content">
+        <div class="sign-in-prompt">
+          <span>🔒</span>
+          <a href="signin.html">Sign in</a> to track your stats across devices
+        </div>
+      </div>
+    `;
+    return;
+  }
+  
+  if (!userStats) {
+    container.innerHTML = `
+      <div class="user-stats-content">
+        <div class="user-greeting">👋 Welcome, ${currentUser.displayName || 'Player'}!</div>
+        <div class="stats-note">Complete a puzzle to start tracking your stats.</div>
+      </div>
+    `;
+    return;
+  }
+  
+  const avgScore = userStats.gamesPlayed > 0 
+    ? (userStats.totalCorrect / userStats.gamesPlayed).toFixed(1) 
+    : '0';
+  
+  container.innerHTML = `
+    <div class="user-stats-content">
+      <div class="user-greeting">👋 ${currentUser.displayName || 'Player'}</div>
+      <div class="lifetime-stats">
+        <div class="lifetime-stat">
+          <span class="lifetime-value">${userStats.gamesPlayed}</span>
+          <span class="lifetime-label">Played</span>
+        </div>
+        <div class="lifetime-stat">
+          <span class="lifetime-value">${userStats.perfectGames}</span>
+          <span class="lifetime-label">Perfect</span>
+        </div>
+        <div class="lifetime-stat">
+          <span class="lifetime-value">${avgScore}</span>
+          <span class="lifetime-label">Avg Score</span>
+        </div>
+        <div class="lifetime-stat">
+          <span class="lifetime-value">${userStats.currentStreak}</span>
+          <span class="lifetime-label">Streak</span>
+        </div>
+        <div class="lifetime-stat">
+          <span class="lifetime-value">${userStats.highestRarity}</span>
+          <span class="lifetime-label">Best Rarity</span>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// ============================================
+// AUTH STATE HANDLING
+// ============================================
+function setupAuthListener() {
+  onAuthChange(async (user) => {
+    currentUser = user;
+    console.log(user ? `✅ User signed in: ${user.displayName}` : '👤 No user signed in');
+    
+    if (user && todaysPuzzle) {
+      // Load stats and sync game state
+      await loadLifetimeStats();
+      const firebaseHasState = await loadGameStateFirebase();
+      
+      if (firebaseHasState) {
+        // Firebase had newer state, update UI
+        renderGrid();
+        updateStats();
+      }
+    }
+    
+    updateUserStatsDisplay();
+  });
 }
 
 // ============================================
@@ -1398,6 +1754,12 @@ async function init() {
       return;
     }
     
+    // Check for existing auth user
+    currentUser = getCurrentUser();
+    if (currentUser) {
+      console.log(`✅ User already signed in: ${currentUser.displayName}`);
+    }
+    
     console.log('Loading player data...');
     const rawPlayers = await getAllPlayerStatsOptimized();
     
@@ -1415,8 +1777,19 @@ async function init() {
     document.getElementById('puzzleDate').textContent = 
       `Puzzle #${puzzleNum} • ${today.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}`;
     
-    // Load saved state
-    loadGameState();
+    // Load lifetime stats if user is logged in
+    if (currentUser) {
+      await loadLifetimeStats();
+    }
+    
+    // Load saved state (will use Firebase if logged in, localStorage otherwise)
+    await loadGameState();
+    
+    // Update user stats display
+    updateUserStatsDisplay();
+    
+    // Set up auth state listener for future changes
+    setupAuthListener();
     
     // Render
     renderGrid();
