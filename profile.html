@@ -2064,6 +2064,20 @@ body {
         </div>
       </div>
 
+      <!-- Badges Section -->
+      <div class="section-card" style="margin-top: 1.5rem;">
+        <div class="section-header">
+          <h2><span class="section-icon">🏅</span> Badges & Achievements</h2>
+        </div>
+        <p style="color: var(--text-light); margin-bottom: 1rem; font-size: 0.9rem;">
+          Earn badges by playing games and hitting milestones. <span id="badgeCount" style="font-weight: 600;">0/37</span> unlocked.
+        </p>
+        <div id="badgesContainer" style="display: flex; flex-wrap: wrap; gap: 0.75rem;">
+          <!-- Badges will be rendered by JavaScript -->
+          <div style="color: var(--text-light); font-style: italic;">Loading badges...</div>
+        </div>
+      </div>
+
       <!-- Quick Links -->
       <div class="section-card" style="margin-top: 1.5rem;">
         <div class="section-header">
@@ -4213,6 +4227,20 @@ document.getElementById('disable-notifications-btn')?.addEventListener('click', 
       
       const todayDayNum = getDayNumber();
       
+      // Initialize stats object for badge calculation
+      const allStats = {
+        grid: { gamesPlayed: 0, perfectGames: 0, longestStreak: 0 },
+        connections: { gamesPlayed: 0, perfectGames: 0, longestStreak: 0 },
+        wordle: { gamesPlayed: 0, wins: 0, maxStreak: 0 },
+        higherLower: { gamesPlayed: 0, perfectGames: 0, longestStreak: 0 },
+        whoAmI: { gamesPlayed: 0, wins: 0, maxStreak: 0, hasLuckyGuess: false },
+        recall: { gamesPlayed: 0, perfectGames: 0, bestScore: 0, hasSpeedDemon: false },
+        dailySweep: false,
+        weekWarrior: false,
+        earlyBird: false,
+        nightOwl: false
+      };
+      
       try {
         // Aces Grid Stats
         const gridRef = doc(db, 'acesGridGames', userId);
@@ -4226,6 +4254,12 @@ document.getElementById('disable-notifications-btn')?.addEventListener('click', 
           totalPerfects += gridStats.perfectGames || 0;
           longestStreak = Math.max(longestStreak, gridStats.longestStreak || 0);
           if (gridStats.lastPlayedPuzzle === todayDayNum) playedToday++;
+          // Store for badges
+          allStats.grid = {
+            gamesPlayed: gridStats.gamesPlayed || 0,
+            perfectGames: gridStats.perfectGames || 0,
+            longestStreak: gridStats.longestStreak || 0
+          };
         }
       } catch (e) { console.log('Could not load grid stats:', e); }
       
@@ -4242,6 +4276,12 @@ document.getElementById('disable-notifications-btn')?.addEventListener('click', 
           totalPerfects += connectionsStats.perfectGames || 0;
           longestStreak = Math.max(longestStreak, connectionsStats.longestStreak || 0);
           if (connectionsStats.lastPlayedPuzzle === todayDayNum) playedToday++;
+          // Store for badges
+          allStats.connections = {
+            gamesPlayed: connectionsStats.gamesPlayed || 0,
+            perfectGames: connectionsStats.perfectGames || 0,
+            longestStreak: connectionsStats.longestStreak || 0
+          };
         }
       } catch (e) { console.log('Could not load connections stats:', e); }
       
@@ -4260,6 +4300,12 @@ document.getElementById('disable-notifications-btn')?.addEventListener('click', 
           totalPlayed += wordleStats.gamesPlayed || 0;
           longestStreak = Math.max(longestStreak, wordleStats.maxStreak || 0);
           if (wordleStats.lastPlayedPuzzle === todayDayNum) playedToday++;
+          // Store for badges
+          allStats.wordle = {
+            gamesPlayed: wordleStats.gamesPlayed || 0,
+            wins: wordleStats.wins || 0,
+            maxStreak: wordleStats.maxStreak || 0
+          };
         }
       } catch (e) { console.log('Could not load wordle stats:', e); }
       
@@ -4279,6 +4325,12 @@ document.getElementById('disable-notifications-btn')?.addEventListener('click', 
           totalPerfects += hlStats.perfectGames || 0;
           longestStreak = Math.max(longestStreak, hlStats.longestStreak || 0);
           if (hlStats.lastPlayedPuzzle === todayDayNum) playedToday++;
+          // Store for badges
+          allStats.higherLower = {
+            gamesPlayed: hlStats.gamesPlayed || 0,
+            perfectGames: hlStats.perfectGames || 0,
+            longestStreak: hlStats.longestStreak || 0
+          };
         }
       } catch (e) { console.log('Could not load higher-lower stats:', e); }
       
@@ -4297,6 +4349,13 @@ document.getElementById('disable-notifications-btn')?.addEventListener('click', 
           totalPlayed += whoAmIStats.gamesPlayed || 0;
           longestStreak = Math.max(longestStreak, whoAmIStats.maxStreak || 0);
           if (whoAmIStats.lastPlayedPuzzle === todayDayNum) playedToday++;
+          // Store for badges
+          allStats.whoAmI = {
+            gamesPlayed: whoAmIStats.gamesPlayed || 0,
+            wins: whoAmIStats.wins || 0,
+            maxStreak: whoAmIStats.maxStreak || 0,
+            hasLuckyGuess: whoAmIStats.hasLuckyGuess || false
+          };
         }
       } catch (e) { console.log('Could not load who-am-i stats:', e); }
       
@@ -4312,6 +4371,13 @@ document.getElementById('disable-notifications-btn')?.addEventListener('click', 
           totalPlayed += recallStats.gamesPlayed || 0;
           totalPerfects += recallStats.perfectGames || 0;
           if (recallStats.lastPlayedPuzzle === todayDayNum) playedToday++;
+          // Store for badges
+          allStats.recall = {
+            gamesPlayed: recallStats.gamesPlayed || 0,
+            perfectGames: recallStats.perfectGames || 0,
+            bestScore: recallStats.bestScore || 0,
+            hasSpeedDemon: recallStats.hasSpeedDemon || false
+          };
         }
       } catch (e) { console.log('Could not load recall stats:', e); }
       
@@ -4321,7 +4387,180 @@ document.getElementById('disable-notifications-btn')?.addEventListener('click', 
       document.getElementById('longestStreak').textContent = longestStreak;
       document.getElementById('gamesPlayedToday').textContent = playedToday;
       
+      // Check for daily sweep (all 6 games played today)
+      if (playedToday === 6) {
+        allStats.dailySweep = true;
+      }
+      
+      // Calculate and render badges
+      renderBadges(allStats);
+      
       console.log('✅ Games stats loaded from Firebase');
+    }
+    
+    // ========================================
+    // BADGE SYSTEM
+    // ========================================
+    const BADGES = [
+      // General badges
+      { id: 'first-timer', name: 'First Timer', icon: '🌟', description: 'Play your first game', category: 'general',
+        check: (s) => (s.grid.gamesPlayed + s.connections.gamesPlayed + s.wordle.gamesPlayed + s.higherLower.gamesPlayed + s.whoAmI.gamesPlayed + s.recall.gamesPlayed) >= 1 },
+      { id: 'dedicated', name: 'Dedicated', icon: '🎯', description: 'Play 25 total games', category: 'general',
+        check: (s) => (s.grid.gamesPlayed + s.connections.gamesPlayed + s.wordle.gamesPlayed + s.higherLower.gamesPlayed + s.whoAmI.gamesPlayed + s.recall.gamesPlayed) >= 25 },
+      { id: 'enthusiast', name: 'Enthusiast', icon: '🏅', description: 'Play 50 total games', category: 'general',
+        check: (s) => (s.grid.gamesPlayed + s.connections.gamesPlayed + s.wordle.gamesPlayed + s.higherLower.gamesPlayed + s.whoAmI.gamesPlayed + s.recall.gamesPlayed) >= 50 },
+      { id: 'game-master', name: 'Game Master', icon: '👑', description: 'Play 100 total games', category: 'general',
+        check: (s) => (s.grid.gamesPlayed + s.connections.gamesPlayed + s.wordle.gamesPlayed + s.higherLower.gamesPlayed + s.whoAmI.gamesPlayed + s.recall.gamesPlayed) >= 100 },
+      
+      // Aces Grid badges
+      { id: 'grid-rookie', name: 'Grid Rookie', icon: '🔲', description: 'Complete your first grid', category: 'grid',
+        check: (s) => s.grid.gamesPlayed >= 1 },
+      { id: 'perfectionist', name: 'Perfectionist', icon: '✨', description: 'Get your first 9/9', category: 'grid',
+        check: (s) => s.grid.perfectGames >= 1 },
+      { id: 'grid-expert', name: 'Grid Expert', icon: '💎', description: '5 perfect grids', category: 'grid',
+        check: (s) => s.grid.perfectGames >= 5 },
+      { id: 'grid-legend', name: 'Grid Legend', icon: '🏆', description: '10 perfect grids', category: 'grid',
+        check: (s) => s.grid.perfectGames >= 10 },
+      { id: 'grid-streak', name: 'Grid Streak', icon: '🔥', description: '7-day grid streak', category: 'grid',
+        check: (s) => s.grid.longestStreak >= 7 },
+      
+      // Connections badges
+      { id: 'connected', name: 'Connected', icon: '🔗', description: 'Complete first connections', category: 'connections',
+        check: (s) => s.connections.gamesPlayed >= 1 },
+      { id: 'pattern-spotter', name: 'Pattern Spotter', icon: '🧩', description: 'First perfect (no mistakes)', category: 'connections',
+        check: (s) => s.connections.perfectGames >= 1 },
+      { id: 'mind-reader', name: 'Mind Reader', icon: '🧠', description: '5 perfect connections', category: 'connections',
+        check: (s) => s.connections.perfectGames >= 5 },
+      { id: 'connection-master', name: 'Connection Master', icon: '👁️', description: '10 perfect connections', category: 'connections',
+        check: (s) => s.connections.perfectGames >= 10 },
+      { id: 'link-streak', name: 'Link Streak', icon: '⛓️', description: '7-day connections streak', category: 'connections',
+        check: (s) => s.connections.longestStreak >= 7 },
+      
+      // Wordle badges
+      { id: 'word-rookie', name: 'Word Rookie', icon: '📝', description: 'Win your first wordle', category: 'wordle',
+        check: (s) => s.wordle.wins >= 1 },
+      { id: 'wordsmith', name: 'Wordsmith', icon: '📚', description: '10 wordle wins', category: 'wordle',
+        check: (s) => s.wordle.wins >= 10 },
+      { id: 'word-master', name: 'Word Master', icon: '🎓', description: '25 wordle wins', category: 'wordle',
+        check: (s) => s.wordle.wins >= 25 },
+      { id: 'word-streak', name: 'Word Streak', icon: '🔥', description: '7-day wordle streak', category: 'wordle',
+        check: (s) => s.wordle.maxStreak >= 7 },
+      
+      // Higher or Lower badges
+      { id: 'stat-watcher', name: 'Stat Watcher', icon: '📈', description: 'Complete first higher/lower', category: 'higherLower',
+        check: (s) => s.higherLower.gamesPlayed >= 1 },
+      { id: 'perfect-read', name: 'Perfect Read', icon: '💯', description: 'Get 5/5 correct', category: 'higherLower',
+        check: (s) => s.higherLower.perfectGames >= 1 },
+      { id: 'numbers-whiz', name: 'Numbers Whiz', icon: '🔢', description: '5 perfect games', category: 'higherLower',
+        check: (s) => s.higherLower.perfectGames >= 5 },
+      { id: 'stat-savant', name: 'Stat Savant', icon: '📊', description: '10 perfect games', category: 'higherLower',
+        check: (s) => s.higherLower.perfectGames >= 10 },
+      { id: 'stat-streak', name: 'Stat Streak', icon: '🔥', description: '7-day streak', category: 'higherLower',
+        check: (s) => s.higherLower.longestStreak >= 7 },
+      
+      // Who Am I badges
+      { id: 'detective', name: 'Detective', icon: '🕵️', description: 'Win your first Who Am I', category: 'whoAmI',
+        check: (s) => s.whoAmI.wins >= 1 },
+      { id: 'quick-solver', name: 'Quick Solver', icon: '🔎', description: '5 Who Am I wins', category: 'whoAmI',
+        check: (s) => s.whoAmI.wins >= 5 },
+      { id: 'identity-expert', name: 'Identity Expert', icon: '🎭', description: '10 Who Am I wins', category: 'whoAmI',
+        check: (s) => s.whoAmI.wins >= 10 },
+      { id: 'mystery-streak', name: 'Mystery Streak', icon: '🔥', description: '7-day streak', category: 'whoAmI',
+        check: (s) => s.whoAmI.maxStreak >= 7 },
+      
+      // Player Recall badges
+      { id: 'memory-start', name: 'Memory Start', icon: '🧠', description: 'Complete first recall', category: 'recall',
+        check: (s) => s.recall.gamesPlayed >= 1 },
+      { id: 'total-recall', name: 'Total Recall', icon: '💯', description: 'First perfect recall', category: 'recall',
+        check: (s) => s.recall.perfectGames >= 1 },
+      { id: 'recall-pro', name: 'Recall Pro', icon: '⚡', description: '5 perfect recalls', category: 'recall',
+        check: (s) => s.recall.perfectGames >= 5 },
+      { id: 'memory-master', name: 'Memory Master', icon: '🏆', description: '10 perfect recalls', category: 'recall',
+        check: (s) => s.recall.perfectGames >= 10 },
+      
+      // Hidden/Secret badges
+      { id: 'daily-sweep', name: 'Daily Sweep', icon: '🧹', description: 'Complete all 6 games in one day', category: 'hidden',
+        check: (s) => s.dailySweep === true, hidden: true },
+      { id: 'speed-demon', name: 'Speed Demon', icon: '⚡', description: 'Perfect recall in under 50% of time', category: 'hidden',
+        check: (s) => s.recall.hasSpeedDemon === true, hidden: true },
+      { id: 'lucky-guess', name: 'Lucky Guess', icon: '🍀', description: 'Win Who Am I with ≤2 clues', category: 'hidden',
+        check: (s) => s.whoAmI.hasLuckyGuess === true, hidden: true },
+      { id: 'week-warrior', name: 'Week Warrior', icon: '⚔️', description: 'Complete all 6 games for 7 days straight', category: 'hidden',
+        check: (s) => s.weekWarrior === true, hidden: true },
+      { id: 'early-bird', name: 'Early Bird', icon: '🐦', description: 'Play a game before 7 AM', category: 'hidden',
+        check: (s) => s.earlyBird === true, hidden: true },
+      { id: 'night-owl', name: 'Night Owl', icon: '🦉', description: 'Play a game after 11 PM', category: 'hidden',
+        check: (s) => s.nightOwl === true, hidden: true },
+    ];
+    
+    function renderBadges(stats) {
+      const container = document.getElementById('badgesContainer');
+      if (!container) return;
+      
+      let earnedCount = 0;
+      const badgeHtml = BADGES.map(badge => {
+        const earned = badge.check(stats);
+        if (earned) earnedCount++;
+        
+        const categoryColors = {
+          general: { bg: '#f3f4f6', border: '#d1d5db', color: '#374151' },
+          grid: { bg: '#f0fdf4', border: '#bbf7d0', color: '#166534' },
+          connections: { bg: '#faf5ff', border: '#e9d5ff', color: '#7c3aed' },
+          wordle: { bg: '#ecfdf5', border: '#6ee7b7', color: '#047857' },
+          higherLower: { bg: '#fff7ed', border: '#fed7aa', color: '#c2410c' },
+          whoAmI: { bg: '#f0fdfa', border: '#99f6e4', color: '#0f766e' },
+          recall: { bg: '#fef2f2', border: '#fecaca', color: '#b91c1c' },
+          hidden: { bg: '#fef3c7', border: '#fcd34d', color: '#92400e' }
+        };
+        
+        const colors = categoryColors[badge.category] || categoryColors.general;
+        
+        // Hidden badges show ??? until earned
+        const isHidden = badge.hidden && !earned;
+        const displayName = isHidden ? '???' : badge.name;
+        const displayIcon = isHidden ? '❓' : badge.icon;
+        const displayDesc = isHidden ? 'Secret badge - keep playing to discover!' : badge.description;
+        
+        return `
+          <div class="badge-item" title="${displayDesc}" style="
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            padding: 0.5rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 500;
+            transition: all 0.2s ease;
+            cursor: default;
+            ${earned ? `
+              background: ${colors.bg};
+              border: 1px solid ${colors.border};
+              color: ${colors.color};
+            ` : isHidden ? `
+              background: linear-gradient(135deg, #1f2937 0%, #374151 100%);
+              border: 1px dashed #6b7280;
+              color: #9ca3af;
+            ` : `
+              background: #f9fafb;
+              border: 1px solid #e5e7eb;
+              color: #9ca3af;
+              opacity: 0.6;
+            `}
+          ">
+            <span style="font-size: 1rem; ${earned ? '' : 'filter: grayscale(100%);'}">${displayIcon}</span>
+            <span>${displayName}</span>
+            ${earned ? (badge.hidden ? '<span style="font-size: 0.7rem;">✨</span>' : '') : (isHidden ? '' : '<span style="font-size: 0.7rem;">🔒</span>')}
+          </div>
+        `;
+      }).join('');
+      
+      container.innerHTML = badgeHtml;
+      
+      // Update badge count
+      const countEl = document.getElementById('badgeCount');
+      if (countEl) {
+        countEl.textContent = `${earnedCount}/${BADGES.length}`;
+      }
     }
     
     // Helper to calculate day number for each game
