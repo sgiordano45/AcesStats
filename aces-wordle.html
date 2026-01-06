@@ -932,12 +932,15 @@ function shuffleWithSeed(array, seed) {
 // PUZZLE GENERATION
 // ============================================
 function buildLastNameData() {
-  const lastNameCount = {};
   const lastNamePlayers = {};
   
   allPlayers.forEach(p => {
     // Only include players with at least one non-sub season
     if (!hasNonSubSeason(p)) return;
+    
+    // Only include players with 10+ career games
+    const careerGames = p.careerGames || p.career?.games || 0;
+    if (careerGames < 10) return;
     
     const fullName = p.name || p.playerName || '';
     const parts = fullName.trim().split(/\s+/);
@@ -946,8 +949,6 @@ function buildLastNameData() {
     const lastName = parts[parts.length - 1].toUpperCase();
     // Only letters
     if (!/^[A-Z]+$/.test(lastName)) return;
-    
-    lastNameCount[lastName] = (lastNameCount[lastName] || 0) + 1;
     
     if (!lastNamePlayers[lastName]) {
       lastNamePlayers[lastName] = [];
@@ -958,15 +959,15 @@ function buildLastNameData() {
     });
   });
   
-  // Only use unique last names (no duplicates)
-  validLastNames = Object.keys(lastNameCount).filter(ln => lastNameCount[ln] === 1);
+  // Include all last names (duplicates allowed)
+  validLastNames = Object.keys(lastNamePlayers);
   
-  // Build lookup
+  // Build lookup (for duplicates, store all players)
   validLastNames.forEach(ln => {
-    lastNameToPlayer[ln] = lastNamePlayers[ln][0];
+    lastNameToPlayer[ln] = lastNamePlayers[ln];
   });
   
-  console.log(`Built ${validLastNames.length} unique last names for puzzles`);
+  console.log(`Built ${validLastNames.length} last names for puzzles`);
 }
 
 function generateDailyPuzzle() {
@@ -975,13 +976,17 @@ function generateDailyPuzzle() {
   
   const shuffled = shuffleWithSeed(validLastNames, seed);
   const answer = shuffled[0];
-  const player = lastNameToPlayer[answer];
+  const players = lastNameToPlayer[answer];
+  
+  // For display, show all matching players
+  const playerNames = players.map(p => p.fullName);
   
   return {
     dayNum,
     answer,
-    playerName: player.fullName,
-    firstName: player.firstName
+    playerName: playerNames.join(' / '), // Show all if multiple
+    playerNames,
+    firstName: players[0].firstName
   };
 }
 
@@ -1069,20 +1074,26 @@ function showHint() {
   // Show hint after 4 guesses
   let hint = '';
   if (guessCount >= 4) {
-    // Find a team they played for
-    const player = allPlayers.find(p => {
+    // Find players with this last name and get a team they played for
+    const players = allPlayers.filter(p => {
       const name = (p.name || p.playerName || '').toUpperCase();
-      return name.endsWith(todaysPuzzle.answer);
+      return name.endsWith(' ' + todaysPuzzle.answer) || name.endsWith(todaysPuzzle.answer);
     });
     
-    if (player && player.seasons) {
-      const seasons = Object.values(player.seasons).filter(s => !isSubstituteSeason(s));
-      if (seasons.length > 0) {
-        const teams = [...new Set(seasons.map(s => s.team).filter(Boolean))];
-        if (teams.length > 0) {
-          hint = `Hint: Played for <strong>${teams[0]}</strong>`;
-        }
+    const allTeams = new Set();
+    players.forEach(player => {
+      if (player.seasons) {
+        Object.values(player.seasons).forEach(s => {
+          if (!isSubstituteSeason(s) && s.team) {
+            allTeams.add(s.team);
+          }
+        });
       }
+    });
+    
+    const teams = [...allTeams];
+    if (teams.length > 0) {
+      hint = `Hint: Played for <strong>${teams[0]}</strong>`;
     }
   }
   
