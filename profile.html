@@ -2233,7 +2233,7 @@ async function loadNotificationPreferences() {
 		  await loadCaptainTools();
           await loadUserStats(user);
           await showWrappedPromoIfEligible();
-          loadGamesStats(); // Load games tab stats
+          await loadGamesStats(); // Load games tab stats from Firebase
         } catch (error) {
           console.error('❌ Error loading profile data:', error);
           alert('Error loading profile. Check console for details.');
@@ -4195,109 +4195,123 @@ document.getElementById('disable-notifications-btn')?.addEventListener('click', 
     window.confirmAddPlayer = confirmAddPlayer;
 
     // ========================================
-    // GAMES TAB STATS
+    // GAMES TAB STATS (Firebase)
     // ========================================
-    function loadGamesStats() {
-      console.log('🎮 Loading games stats...');
+    async function loadGamesStats() {
+      console.log('🎮 Loading games stats from Firebase...');
       
+      if (!currentUser) {
+        console.log('⚠️ No user logged in, cannot load games stats');
+        return;
+      }
+      
+      const userId = currentUser.uid;
       let totalPlayed = 0;
       let totalPerfects = 0;
       let longestStreak = 0;
       let playedToday = 0;
       
-      const today = new Date().toDateString();
+      const todayDayNum = getDayNumber();
       
       try {
         // Aces Grid Stats
-        const gridStats = JSON.parse(localStorage.getItem('acesGridStats') || '{}');
-        document.getElementById('gridPlayed').textContent = gridStats.gamesPlayed || 0;
-        document.getElementById('gridPerfect').textContent = gridStats.perfectGames || 0;
-        document.getElementById('gridStreak').textContent = gridStats.currentStreak || 0;
-        totalPlayed += gridStats.gamesPlayed || 0;
-        totalPerfects += gridStats.perfectGames || 0;
-        longestStreak = Math.max(longestStreak, gridStats.maxStreak || 0);
-        if (gridStats.lastPlayedDate && new Date(gridStats.lastPlayedDate).toDateString() === today) playedToday++;
-      } catch (e) { console.log('Could not load grid stats'); }
+        const gridRef = doc(db, 'acesGridGames', userId);
+        const gridDoc = await getDoc(gridRef);
+        if (gridDoc.exists()) {
+          const gridStats = gridDoc.data();
+          document.getElementById('gridPlayed').textContent = gridStats.gamesPlayed || 0;
+          document.getElementById('gridPerfect').textContent = gridStats.perfectGames || 0;
+          document.getElementById('gridStreak').textContent = gridStats.currentStreak || 0;
+          totalPlayed += gridStats.gamesPlayed || 0;
+          totalPerfects += gridStats.perfectGames || 0;
+          longestStreak = Math.max(longestStreak, gridStats.maxStreak || 0);
+          if (gridStats.lastPlayedPuzzle === todayDayNum) playedToday++;
+        }
+      } catch (e) { console.log('Could not load grid stats:', e); }
       
       try {
         // Aces Connections Stats
-        const connectionsStats = JSON.parse(localStorage.getItem('acesConnections_stats') || '{}');
-        document.getElementById('connectionsPlayed').textContent = connectionsStats.gamesPlayed || 0;
-        document.getElementById('connectionsWins').textContent = connectionsStats.wins || 0;
-        document.getElementById('connectionsStreak').textContent = connectionsStats.currentStreak || 0;
-        totalPlayed += connectionsStats.gamesPlayed || 0;
-        totalPerfects += connectionsStats.perfectGames || 0;
-        longestStreak = Math.max(longestStreak, connectionsStats.maxStreak || 0);
-        if (connectionsStats.lastPlayedPuzzle) {
-          // Check if puzzle number matches today's puzzle
-          const dayNum = getDayNumber('connections');
-          if (connectionsStats.lastPlayedPuzzle === dayNum) playedToday++;
+        const connectionsRef = doc(db, 'acesConnectionsGames', userId);
+        const connectionsDoc = await getDoc(connectionsRef);
+        if (connectionsDoc.exists()) {
+          const connectionsStats = connectionsDoc.data();
+          document.getElementById('connectionsPlayed').textContent = connectionsStats.gamesPlayed || 0;
+          document.getElementById('connectionsWins').textContent = connectionsStats.wins || 0;
+          document.getElementById('connectionsStreak').textContent = connectionsStats.currentStreak || 0;
+          totalPlayed += connectionsStats.gamesPlayed || 0;
+          totalPerfects += connectionsStats.perfectGames || 0;
+          longestStreak = Math.max(longestStreak, connectionsStats.maxStreak || 0);
+          if (connectionsStats.lastPlayedPuzzle === todayDayNum) playedToday++;
         }
-      } catch (e) { console.log('Could not load connections stats'); }
+      } catch (e) { console.log('Could not load connections stats:', e); }
       
       try {
         // Aces Wordle Stats
-        const wordleStats = JSON.parse(localStorage.getItem('acesWordle_stats') || '{}');
-        document.getElementById('wordlePlayed').textContent = wordleStats.gamesPlayed || 0;
-        const winPct = wordleStats.gamesPlayed > 0 
-          ? Math.round((wordleStats.wins / wordleStats.gamesPlayed) * 100) 
-          : 0;
-        document.getElementById('wordleWinPct').textContent = winPct + '%';
-        document.getElementById('wordleStreak').textContent = wordleStats.currentStreak || 0;
-        totalPlayed += wordleStats.gamesPlayed || 0;
-        longestStreak = Math.max(longestStreak, wordleStats.maxStreak || 0);
-        if (wordleStats.lastPlayedPuzzle) {
-          const dayNum = getDayNumber('wordle');
-          if (wordleStats.lastPlayedPuzzle === dayNum) playedToday++;
+        const wordleRef = doc(db, 'acesWordleGames', userId);
+        const wordleDoc = await getDoc(wordleRef);
+        if (wordleDoc.exists()) {
+          const wordleStats = wordleDoc.data();
+          document.getElementById('wordlePlayed').textContent = wordleStats.gamesPlayed || 0;
+          const winPct = wordleStats.gamesPlayed > 0 
+            ? Math.round((wordleStats.wins / wordleStats.gamesPlayed) * 100) 
+            : 0;
+          document.getElementById('wordleWinPct').textContent = winPct + '%';
+          document.getElementById('wordleStreak').textContent = wordleStats.currentStreak || 0;
+          totalPlayed += wordleStats.gamesPlayed || 0;
+          longestStreak = Math.max(longestStreak, wordleStats.maxStreak || 0);
+          if (wordleStats.lastPlayedPuzzle === todayDayNum) playedToday++;
         }
-      } catch (e) { console.log('Could not load wordle stats'); }
+      } catch (e) { console.log('Could not load wordle stats:', e); }
       
       try {
         // Higher or Lower Stats
-        const hlStats = JSON.parse(localStorage.getItem('acesHigherLower_stats') || '{}');
-        document.getElementById('higherLowerPlayed').textContent = hlStats.gamesPlayed || 0;
-        document.getElementById('higherLowerBest').textContent = hlStats.bestScore || 0;
-        const avgScore = hlStats.gamesPlayed > 0 
-          ? Math.round(hlStats.totalScore / hlStats.gamesPlayed) 
-          : 0;
-        document.getElementById('higherLowerAvg').textContent = avgScore;
-        totalPlayed += hlStats.gamesPlayed || 0;
-        if (hlStats.lastPlayedPuzzle) {
-          const dayNum = getDayNumber('higherLower');
-          if (hlStats.lastPlayedPuzzle === dayNum) playedToday++;
+        const hlRef = doc(db, 'acesHigherLowerGames', userId);
+        const hlDoc = await getDoc(hlRef);
+        if (hlDoc.exists()) {
+          const hlStats = hlDoc.data();
+          document.getElementById('higherLowerPlayed').textContent = hlStats.gamesPlayed || 0;
+          document.getElementById('higherLowerBest').textContent = hlStats.bestScore || 0;
+          const avgScore = hlStats.gamesPlayed > 0 
+            ? Math.round(hlStats.totalScore / hlStats.gamesPlayed) 
+            : 0;
+          document.getElementById('higherLowerAvg').textContent = avgScore;
+          totalPlayed += hlStats.gamesPlayed || 0;
+          if (hlStats.lastPlayedPuzzle === todayDayNum) playedToday++;
         }
-      } catch (e) { console.log('Could not load higher-lower stats'); }
+      } catch (e) { console.log('Could not load higher-lower stats:', e); }
       
       try {
         // Who Am I Stats
-        const whoAmIStats = JSON.parse(localStorage.getItem('acesWhoAmI_stats') || '{}');
-        document.getElementById('whoAmIPlayed').textContent = whoAmIStats.gamesPlayed || 0;
-        document.getElementById('whoAmIWins').textContent = whoAmIStats.wins || 0;
-        const avgWhoAmI = whoAmIStats.gamesPlayed > 0 
-          ? (whoAmIStats.totalScore / whoAmIStats.gamesPlayed).toFixed(1) 
-          : 0;
-        document.getElementById('whoAmIAvgScore').textContent = avgWhoAmI;
-        totalPlayed += whoAmIStats.gamesPlayed || 0;
-        longestStreak = Math.max(longestStreak, whoAmIStats.maxStreak || 0);
-        if (whoAmIStats.lastPlayedPuzzle) {
-          const dayNum = getDayNumber('whoAmI');
-          if (whoAmIStats.lastPlayedPuzzle === dayNum) playedToday++;
+        const whoAmIRef = doc(db, 'acesWhoAmIGames', userId);
+        const whoAmIDoc = await getDoc(whoAmIRef);
+        if (whoAmIDoc.exists()) {
+          const whoAmIStats = whoAmIDoc.data();
+          document.getElementById('whoAmIPlayed').textContent = whoAmIStats.gamesPlayed || 0;
+          document.getElementById('whoAmIWins').textContent = whoAmIStats.wins || 0;
+          const avgWhoAmI = whoAmIStats.gamesPlayed > 0 
+            ? (whoAmIStats.totalScore / whoAmIStats.gamesPlayed).toFixed(1) 
+            : 0;
+          document.getElementById('whoAmIAvgScore').textContent = avgWhoAmI;
+          totalPlayed += whoAmIStats.gamesPlayed || 0;
+          longestStreak = Math.max(longestStreak, whoAmIStats.maxStreak || 0);
+          if (whoAmIStats.lastPlayedPuzzle === todayDayNum) playedToday++;
         }
-      } catch (e) { console.log('Could not load who-am-i stats'); }
+      } catch (e) { console.log('Could not load who-am-i stats:', e); }
       
       try {
         // Player Recall Stats
-        const recallStats = JSON.parse(localStorage.getItem('acesRosterRecall_stats') || '{}');
-        document.getElementById('recallPlayed').textContent = recallStats.gamesPlayed || 0;
-        document.getElementById('recallPerfect').textContent = recallStats.perfectGames || 0;
-        document.getElementById('recallBest').textContent = recallStats.bestScore || 0;
-        totalPlayed += recallStats.gamesPlayed || 0;
-        totalPerfects += recallStats.perfectGames || 0;
-        if (recallStats.lastPlayedPuzzle) {
-          const dayNum = getDayNumber('recall');
-          if (recallStats.lastPlayedPuzzle === dayNum) playedToday++;
+        const recallRef = doc(db, 'acesRosterRecallGames', userId);
+        const recallDoc = await getDoc(recallRef);
+        if (recallDoc.exists()) {
+          const recallStats = recallDoc.data();
+          document.getElementById('recallPlayed').textContent = recallStats.gamesPlayed || 0;
+          document.getElementById('recallPerfect').textContent = recallStats.perfectGames || 0;
+          document.getElementById('recallBest').textContent = recallStats.bestScore || 0;
+          totalPlayed += recallStats.gamesPlayed || 0;
+          totalPerfects += recallStats.perfectGames || 0;
+          if (recallStats.lastPlayedPuzzle === todayDayNum) playedToday++;
         }
-      } catch (e) { console.log('Could not load recall stats'); }
+      } catch (e) { console.log('Could not load recall stats:', e); }
       
       // Update summary
       document.getElementById('totalGamesPlayed').textContent = totalPlayed;
@@ -4305,11 +4319,11 @@ document.getElementById('disable-notifications-btn')?.addEventListener('click', 
       document.getElementById('longestStreak').textContent = longestStreak;
       document.getElementById('gamesPlayedToday').textContent = playedToday;
       
-      console.log('✅ Games stats loaded');
+      console.log('✅ Games stats loaded from Firebase');
     }
     
     // Helper to calculate day number for each game
-    function getDayNumber(game) {
+    function getDayNumber() {
       const LAUNCH_YEAR = 2026;
       const LAUNCH_MONTH = 0; // January
       const LAUNCH_DAY = 5;

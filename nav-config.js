@@ -88,6 +88,7 @@ export const NAV_STRUCTURE = {
     { id: 'recap', href: 'recap.html', label: 'Year in Review', icon: '📖', priority: 2 },
     { id: 'leaders', href: 'leaders.html', label: 'Career Leaders', icon: '👑', priority: 2 },
     { id: 'awards', href: 'awards.html', label: 'Awards', icon: '🏅', priority: 2 },
+    { id: 'games', href: 'games.html', label: 'Daily Games', icon: '🎮', priority: 2 },
 
   ],
   
@@ -235,6 +236,10 @@ export const PAGE_CONFIGS = {
   
   'pictures.html': {
     desktop: ['home', 'current-season', 'teams', 'players', 'pictures']
+  },
+  
+  'games.html': {
+    desktop: ['home', 'current-season', 'players', 'teams']
   },
   
   // Game preview page - no nav needed (accessed via weekend-preview game cards)
