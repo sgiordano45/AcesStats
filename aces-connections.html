@@ -867,6 +867,26 @@ const TEAMS = ['Black', 'Blue', 'Green', 'Red', 'Orange', 'Purple', 'Gold', 'Sil
 const DIFFICULTIES = ['yellow', 'green', 'blue', 'purple'];
 
 // ============================================
+// SUBSTITUTE SEASON HELPERS
+// ============================================
+// Helper to check if a season is a substitute season
+function isSubstituteSeason(season) {
+  return season.sub === 'Yes' || season.sub === 'yes' || season.sub === true;
+}
+
+// Get only non-substitute seasons for a player (as object entries)
+function getNonSubSeasonEntries(player) {
+  if (!player.seasons) return [];
+  return Object.entries(player.seasons).filter(([, season]) => !isSubstituteSeason(season));
+}
+
+// Get only non-substitute seasons for a player (as values array)
+function getNonSubSeasons(player) {
+  if (!player.seasons) return [];
+  return Object.values(player.seasons).filter(s => !isSubstituteSeason(s));
+}
+
+// ============================================
 // AUTH STATE
 // ============================================
 let currentUser = null;
@@ -921,7 +941,10 @@ function getTeamRoster(team, seasonId) {
   const players = [];
   allPlayers.forEach(p => {
     if (p.seasons && p.seasons[seasonId] && p.seasons[seasonId].team) {
-      if (p.seasons[seasonId].team.toLowerCase() === team.toLowerCase()) {
+      const season = p.seasons[seasonId];
+      // Skip substitute seasons
+      if (isSubstituteSeason(season)) return;
+      if (season.team.toLowerCase() === team.toLowerCase()) {
         players.push(p.name || p.playerName);
       }
     }
@@ -937,7 +960,7 @@ function getCareerStatPlayers(stat, threshold) {
     else if (stat === 'runs') value = p.careerRuns || p.career?.runs || 0;
     else if (stat === 'walks') value = p.careerWalks || p.career?.walks || 0;
     else if (stat === 'games') value = p.careerGames || p.career?.games || 0;
-    else if (stat === 'seasons') value = p.seasons ? Object.keys(p.seasons).length : 0;
+    else if (stat === 'seasons') value = getNonSubSeasons(p).length; // Count only non-sub seasons
     
     if (value >= threshold) {
       players.push(p.name || p.playerName);
@@ -949,8 +972,8 @@ function getCareerStatPlayers(stat, threshold) {
 function getSeasonStatPlayers(stat, threshold) {
   const players = [];
   allPlayers.forEach(p => {
-    if (!p.seasons) return;
-    Object.values(p.seasons).forEach(season => {
+    // Only check non-substitute seasons
+    getNonSubSeasons(p).forEach(season => {
       let value = 0;
       if (stat === 'hits') value = season.hits || 0;
       else if (stat === 'runs') value = season.runs || 0;
@@ -972,9 +995,9 @@ function getSeasonStatPlayers(stat, threshold) {
 function getTeamCountPlayers(count, exact = true) {
   const players = [];
   allPlayers.forEach(p => {
-    if (!p.seasons) return;
     const teams = new Set();
-    Object.values(p.seasons).forEach(s => {
+    // Only count teams from non-substitute seasons
+    getNonSubSeasons(p).forEach(s => {
       if (s.team) teams.add(s.team.toLowerCase());
     });
     if (exact ? teams.size === count : teams.size >= count) {
@@ -1008,7 +1031,8 @@ function getNameStartsWith(letter) {
 function getSeasonsPlayed(count, exact = false) {
   const players = [];
   allPlayers.forEach(p => {
-    const numSeasons = p.seasons ? Object.keys(p.seasons).length : 0;
+    // Only count non-substitute seasons
+    const numSeasons = getNonSubSeasons(p).length;
     if (exact ? numSeasons === count : numSeasons >= count) {
       players.push(p.name || p.playerName);
     }
@@ -1022,12 +1046,11 @@ function getSeasonsPlayed(count, exact = false) {
 function generateCategoryPool(seed) {
   const seasonIds = [];
   
+  // Only collect season IDs from non-substitute seasons
   allPlayers.forEach(p => {
-    if (p.seasons) {
-      Object.keys(p.seasons).forEach(sid => {
-        if (!seasonIds.includes(sid)) seasonIds.push(sid);
-      });
-    }
+    getNonSubSeasonEntries(p).forEach(([sid]) => {
+      if (!seasonIds.includes(sid)) seasonIds.push(sid);
+    });
   });
   seasonIds.sort().reverse();
   
