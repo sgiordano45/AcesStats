@@ -1221,7 +1221,7 @@
       collection: 'acesConnectionsGames',
       subcollection: 'dailyGames',
       docIdFormat: (dayNum) => String(dayNum),
-      checkCompletion: (data) => data.gameOver === true
+      checkCompletion: (data) => data.isComplete === true || data.gameOver === true
     },
     wordle: {
       collection: 'acesWordleGames',
@@ -1254,6 +1254,7 @@
     if (!config) return false;
     
     try {
+      // First check the daily game document
       const docId = config.docIdFormat(dayNum);
       const gameRef = doc(db, config.collection, userId, config.subcollection, docId);
       const gameDoc = await getDoc(gameRef);
@@ -1261,10 +1262,25 @@
       if (gameDoc.exists()) {
         const data = gameDoc.data();
         const isComplete = config.checkCompletion(data);
-        console.log(`🔍 ${gameKey}: ${isComplete ? '✅ complete' : '⏳ in progress'}`);
-        return isComplete;
+        if (isComplete) {
+          console.log(`🔍 ${gameKey}: ✅ complete`);
+          return true;
+        }
       }
-      console.log(`🔍 ${gameKey}: not started`);
+      
+      // Fallback: check stats doc for lastPlayedPuzzle
+      const statsRef = doc(db, config.collection, userId);
+      const statsDoc = await getDoc(statsRef);
+      
+      if (statsDoc.exists()) {
+        const stats = statsDoc.data();
+        if (stats.lastPlayedPuzzle === dayNum || stats.lastPuzzle === dayNum) {
+          console.log(`🔍 ${gameKey}: ✅ complete (from stats)`);
+          return true;
+        }
+      }
+      
+      console.log(`🔍 ${gameKey}: ⏳ not complete`);
       return false;
     } catch (error) {
       console.error(`Error checking ${gameKey} completion:`, error);
