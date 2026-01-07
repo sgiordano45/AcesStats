@@ -458,7 +458,9 @@ import {
   serverTimestamp
 } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
 
-import { onAuthChange, getUserProfile, isAdmin as checkIsAdmin, isLeagueStaff } from './firebase-auth.js';
+import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
+
+const auth = getAuth();
 
 // Make functions available globally
 window.db = db;
@@ -481,31 +483,68 @@ const GAME_SUBCOLLECTIONS = {
 };
 
 let currentUser = null;
-let isAdmin = false;
+let userProfile = null;
 
-// Auth check
-onAuthChange(async (user) => {
-  currentUser = user;
+// Auth check - matching pattern from other admin pages
+onAuthStateChanged(auth, async (user) => {
   if (user) {
-    const profile = await getUserProfile(user.uid);
-    console.log('User profile:', profile);
-    
-    // Check using helper functions or direct field check
-    isAdmin = checkIsAdmin(profile) || isLeagueStaff(profile) || 
-              profile?.isAdmin === true || 
-              profile?.userRole === 'admin' || 
-              profile?.userRole === 'league-staff';
-    
-    if (isAdmin) {
-      document.getElementById('authWarning').classList.add('hidden');
-      document.getElementById('adminContent').classList.remove('hidden');
-      log('✅ Signed in as admin: ' + user.displayName, 'success');
-      loadQuickStats();
-    } else {
-      document.getElementById('authWarning').innerHTML = `⚠️ You do not have admin permissions.<br>Your role: ${profile?.userRole || 'unknown'}<br>isAdmin: ${profile?.isAdmin || false}`;
-    }
+    currentUser = user;
+    await checkAuthorization();
+  } else {
+    document.getElementById('authWarning').innerHTML = '⚠️ Please sign in to access this page.<br><br><a href="signin.html" style="color: var(--accent-cyan);">Sign In</a>';
   }
 });
+
+async function checkAuthorization() {
+  try {
+    console.log('🔐 Checking authorization for UID:', currentUser.uid);
+    
+    const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+    
+    if (!userDoc.exists()) {
+      console.log('❌ No user document found');
+      document.getElementById('authWarning').innerHTML = '⚠️ User profile not found.';
+      return;
+    }
+
+    userProfile = userDoc.data();
+    console.log('📋 User profile:', userProfile);
+
+    // Normalize values for comparison
+    const userRole = (userProfile.userRole || '').toLowerCase();
+    const userType = (userProfile.userType || '').toLowerCase();
+    const role = (userProfile.role || '').toLowerCase();
+    
+    // Check if user is admin or league-staff
+    const isAuthorized = 
+      userProfile.isAdmin === true || 
+      userType === 'league-staff' ||
+      userType === 'admin' ||
+      userRole === 'admin' ||
+      userRole === 'league-staff' ||
+      role === 'admin' ||
+      role === 'league-staff';
+
+    console.log('✅ Authorization result:', isAuthorized);
+
+    if (isAuthorized) {
+      document.getElementById('authWarning').classList.add('hidden');
+      document.getElementById('adminContent').classList.remove('hidden');
+      log('✅ Signed in as admin: ' + currentUser.displayName, 'success');
+      loadQuickStats();
+    } else {
+      console.log('❌ User not authorized. Fields:', Object.keys(userProfile));
+      document.getElementById('authWarning').innerHTML = `⚠️ You do not have admin permissions.<br><br>
+        isAdmin: ${userProfile.isAdmin}<br>
+        userRole: ${userProfile.userRole}<br>
+        userType: ${userProfile.userType}<br>
+        role: ${userProfile.role}`;
+    }
+  } catch (error) {
+    console.error('Auth error:', error);
+    document.getElementById('authWarning').innerHTML = '⚠️ Error checking authorization: ' + error.message;
+  }
+}
 
 // Logging
 window.log = function(message, type = 'info') {
