@@ -1214,7 +1214,7 @@ function generateCategoryPool(seed) {
     purpleOptions.push({ title: 'Played for 4+ Teams', players: manyTeams, difficulty: 'purple' });
   }
   
-  ['M', 'J', 'S', 'D', 'C'].forEach(letter => {
+  ['M', 'J', 'S', 'D', 'C', 'A', 'B', 'R', 'T', 'K', 'N', 'P', 'L', 'E'].forEach(letter => {
     const players = getNameStartsWith(letter);
     if (players.length >= 4 && players.length <= 10) {
       purpleOptions.push({
@@ -1222,6 +1222,20 @@ function generateCategoryPool(seed) {
         players,
         difficulty: 'purple'
       });
+    }
+  });
+  
+  // Add more career milestone categories
+  [
+    { stat: 'runs', threshold: 75, title: '75+ Career Runs' },
+    { stat: 'walks', threshold: 40, title: '40+ Career Walks' },
+    { stat: 'games', threshold: 60, title: '60+ Career Games' },
+    { stat: 'seasons', threshold: 8, title: '8+ Seasons Played' },
+    { stat: 'seasons', threshold: 10, title: '10+ Seasons Played' },
+  ].forEach(m => {
+    const players = getCareerStatPlayers(m.stat, m.threshold);
+    if (players.length >= 4 && players.length <= 10) {
+      purpleOptions.push({ title: m.title, players, difficulty: 'purple' });
     }
   });
   
@@ -1238,23 +1252,77 @@ function generateCategoryPool(seed) {
 // ============================================
 function generateDailyPuzzle() {
   const dayNum = getDayNumber();
-  const seed = dayNum * 12345;
+  const baseSeed = dayNum * 12345;
   
+  // Try multiple attempts to get varied puzzles
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const seed = baseSeed + (attempt * 500);
+    const pool = generateCategoryPool(seed);
+    const categories = [];
+    const usedPlayers = new Set();
+    
+    for (const difficulty of DIFFICULTIES) {
+      const options = pool[difficulty];
+      
+      // Try different starting points in the options based on attempt
+      const startOffset = attempt % Math.max(1, options.length);
+      
+      for (let i = 0; i < options.length; i++) {
+        const idx = (startOffset + i) % options.length;
+        const cat = options[idx];
+        const available = cat.players.filter(p => !usedPlayers.has(p));
+        
+        if (available.length >= 4) {
+          const selected = shuffleWithSeed(available, seed + categories.length * 100).slice(0, 4);
+          selected.forEach(p => usedPlayers.add(p));
+          
+          categories.push({
+            title: cat.title,
+            players: selected,
+            difficulty: cat.difficulty
+          });
+          break;
+        }
+      }
+    }
+    
+    // If we got all 4 categories, use this puzzle
+    if (categories.length === 4) {
+      console.log(`✅ Valid puzzle found on attempt ${attempt + 1}`);
+      console.log('Categories:', categories.map(c => c.title).join(', '));
+      
+      const allTiles = [];
+      categories.forEach(cat => {
+        cat.players.forEach(p => allTiles.push(p));
+      });
+      
+      return {
+        dayNum: dayNum,
+        categories: categories,
+        tiles: shuffleWithSeed(allTiles, seed + 999)
+      };
+    }
+  }
+  
+  // Fallback - use day-based offset to at least vary the fallback
+  console.warn('⚠️ Using fallback puzzle generation');
+  const seed = baseSeed;
   const pool = generateCategoryPool(seed);
   const categories = [];
   const usedPlayers = new Set();
   
-  for (const difficulty of DIFFICULTIES) {
+  // Pick from each difficulty with day-based offset
+  DIFFICULTIES.forEach((difficulty, idx) => {
     const options = pool[difficulty];
+    const offset = (dayNum + idx) % Math.max(1, options.length);
     
     for (let i = 0; i < options.length; i++) {
-      const cat = options[i];
+      const cat = options[(offset + i) % options.length];
       const available = cat.players.filter(p => !usedPlayers.has(p));
       
       if (available.length >= 4) {
-        const selected = shuffleWithSeed(available, seed + categories.length).slice(0, 4);
+        const selected = shuffleWithSeed(available, seed + categories.length * 100).slice(0, 4);
         selected.forEach(p => usedPlayers.add(p));
-        
         categories.push({
           title: cat.title,
           players: selected,
@@ -1263,9 +1331,11 @@ function generateDailyPuzzle() {
         break;
       }
     }
-  }
+  });
   
+  // Ultimate fallback
   while (categories.length < 4) {
+    console.error('❌ Could not generate category for difficulty:', DIFFICULTIES[categories.length]);
     categories.push({
       title: 'Mystery Category',
       players: ['Player A', 'Player B', 'Player C', 'Player D'],
