@@ -1036,40 +1036,69 @@ function generateDailyPuzzle() {
   const shuffledTeams = shuffleWithSeed(TEAM_CATEGORIES, seed);
   const shuffledStats = shuffleWithSeed(STAT_CATEGORIES, seed + 1000);
   
-  // Pick 3 columns (teams) and 3 rows (mix of teams and stats)
-  const columns = shuffledTeams.slice(0, 3);
-  
-  // For rows, mix teams and stats (prefer stats to make it interesting)
-  const remainingTeams = shuffledTeams.slice(3);
-  const rowCandidates = [...shuffledStats, ...remainingTeams.slice(0, 3)];
-  const shuffledRows = shuffleWithSeed(rowCandidates, seed + 2000);
-  const rows = shuffledRows.slice(0, 3);
-  
-  // Validate that each cell has at least one valid answer
-  const puzzle = { columns, rows, dayNum };
-  
-  // Check validity
-  let valid = true;
-  for (let row = 0; row < 3; row++) {
-    for (let col = 0; col < 3; col++) {
-      const validPlayers = findValidPlayers(columns[col], rows[row]);
-      if (validPlayers.length === 0) {
-        valid = false;
-        break;
-      }
+  // Try multiple combinations to find valid puzzle
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const attemptSeed = seed + (attempt * 100);
+    
+    // Pick 3 columns (teams)
+    const teamOffset = attempt % 7; // Try different starting positions
+    const columns = [];
+    for (let i = 0; i < 3; i++) {
+      columns.push(shuffledTeams[(teamOffset + i) % shuffledTeams.length]);
     }
-    if (!valid) break;
+    
+    // For rows, mix stats and remaining teams
+    const usedTeamIds = new Set(columns.map(c => c.id));
+    const remainingTeams = shuffledTeams.filter(t => !usedTeamIds.has(t.id));
+    const rowCandidates = [...shuffledStats, ...remainingTeams.slice(0, 3)];
+    const shuffledRows = shuffleWithSeed(rowCandidates, attemptSeed + 2000);
+    
+    // Try different row offsets
+    const rowOffset = Math.floor(attempt / 2) % (shuffledRows.length - 2);
+    const rows = shuffledRows.slice(rowOffset, rowOffset + 3);
+    
+    // Validate that each cell has at least one valid answer
+    const puzzle = { columns, rows, dayNum };
+    let valid = true;
+    
+    for (let row = 0; row < 3; row++) {
+      for (let col = 0; col < 3; col++) {
+        const validPlayers = findValidPlayers(columns[col], rows[row]);
+        if (validPlayers.length === 0) {
+          valid = false;
+          console.log(`Invalid cell [${col},${row}]: ${columns[col].label} + ${rows[row].label}`);
+          break;
+        }
+      }
+      if (!valid) break;
+    }
+    
+    if (valid) {
+      console.log(`✅ Valid puzzle found on attempt ${attempt + 1}`);
+      console.log('Columns:', columns.map(c => c.label).join(', '));
+      console.log('Rows:', rows.map(r => r.label).join(', '));
+      return puzzle;
+    }
   }
   
-  // If invalid, try alternative combinations
-  if (!valid) {
-    console.log('Regenerating puzzle due to invalid cell...');
-    // Fallback: use more common categories
-    puzzle.columns = TEAM_CATEGORIES.slice(0, 3);
-    puzzle.rows = STAT_CATEGORIES.slice(0, 3);
-  }
+  // Final fallback: use most common categories but with day-based offset
+  console.warn('⚠️ Using fallback puzzle after 10 attempts');
+  const fallbackTeamOffset = dayNum % 7;
+  const fallbackStatOffset = dayNum % 5;
   
-  return puzzle;
+  return {
+    columns: [
+      TEAM_CATEGORIES[fallbackTeamOffset % TEAM_CATEGORIES.length],
+      TEAM_CATEGORIES[(fallbackTeamOffset + 1) % TEAM_CATEGORIES.length],
+      TEAM_CATEGORIES[(fallbackTeamOffset + 2) % TEAM_CATEGORIES.length]
+    ],
+    rows: [
+      STAT_CATEGORIES[fallbackStatOffset % STAT_CATEGORIES.length],
+      STAT_CATEGORIES[(fallbackStatOffset + 1) % STAT_CATEGORIES.length],
+      STAT_CATEGORIES[(fallbackStatOffset + 2) % STAT_CATEGORIES.length]
+    ],
+    dayNum
+  };
 }
 
 function findValidPlayers(colCategory, rowCategory) {
