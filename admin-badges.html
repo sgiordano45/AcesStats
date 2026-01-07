@@ -665,15 +665,37 @@
     onAuthChange(async (user) => {
       if (user) {
         currentUser = user;
-        userProfile = await getUserProfile(user.uid);
         
-        // Check if user has admin/league-staff access
-        if (isAdmin(userProfile) || hasLeagueRole(userProfile)) {
+        // getUserProfile returns { success, data } format
+        const profileResult = await getUserProfile(user.uid);
+        
+        if (!profileResult.success) {
+          authGate.style.display = 'block';
+          authGate.querySelector('p').textContent = 'Could not load user profile. Please try again.';
+          loadingOverlay.classList.add('hidden');
+          return;
+        }
+        
+        userProfile = profileResult.data;
+        
+        // Check multiple possible admin/staff indicators
+        const hasAccess = 
+          userProfile.isAdmin === true ||
+          userProfile.role === 'admin' ||
+          userProfile.userRole === 'admin' ||
+          userProfile.userRole === 'league-staff' ||
+          userProfile.role === 'league-staff' ||
+          userProfile.userType === 'league-staff' ||
+          isAdmin(userProfile) || 
+          hasLeagueRole(userProfile);
+        
+        if (hasAccess) {
           await initializePage();
           mainContent.style.display = 'block';
         } else {
           authGate.style.display = 'block';
           authGate.querySelector('p').textContent = 'You do not have permission to access this page. Admin or League Staff role required.';
+          console.log('Access denied. User profile:', userProfile);
         }
       } else {
         authGate.style.display = 'block';
