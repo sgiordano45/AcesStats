@@ -243,8 +243,8 @@ export const BADGE_DEFINITIONS = {
     type: 'single',
     icon: '📅',
     iconPath: '/assets/badges/milestone/opening-day-hero',
-    description: 'Get a hit in the first game of the season',
-    requirement: 'Hit in season opener'
+    description: 'Get a hit on the league\'s Opening Day',
+    requirement: 'Hit in the season\'s first game day'
   },
   
   // ----------------------------------------
@@ -281,7 +281,7 @@ export const BADGE_DEFINITIONS = {
     type: 'single',
     icon: '🔄',
     iconPath: '/assets/badges/hidden/deja-vu',
-    description: 'Same stat line (hits/walks/runs) in 3 different games',
+    description: 'Same stat line (H/BB/R) in 3 different games (min 1 H, BB, or R)',
     revealText: '"Haven\'t we been here before?"',
     hidden: true
   },
@@ -350,6 +350,18 @@ export class BadgeCalculator {
     
     console.log(`👥 Processing ${allPlayerIds.size} unique players`);
     
+    // Find the actual Opening Day (earliest game date in the season)
+    let openingDay = null;
+    Object.values(battingData).forEach(player => {
+      player.games.forEach(game => {
+        const gameDate = game.gameDate instanceof Date ? game.gameDate : new Date(game.gameDate);
+        if (!openingDay || gameDate < openingDay) {
+          openingDay = gameDate;
+        }
+      });
+    });
+    console.log(`📅 Opening Day detected: ${openingDay ? openingDay.toDateString() : 'N/A'}`);
+    
     const results = {
       seasonId,
       calculatedAt: new Date().toISOString(),
@@ -370,7 +382,7 @@ export class BadgeCalculator {
       const playerBatting = battingData[playerId] || { games: [], totals: {} };
       const playerPitching = pitchingData[playerId] || { games: [], totals: {} };
       
-      const badges = this.calculatePlayerBadges(playerId, playerBatting, playerPitching, battingData, pitchingData);
+      const badges = this.calculatePlayerBadges(playerId, playerBatting, playerPitching, battingData, pitchingData, openingDay);
       
       if (Object.keys(badges.earned).length > 0) {
         results.playerBadges[playerId] = badges;
@@ -600,7 +612,7 @@ export class BadgeCalculator {
   /**
    * Calculate all badges for a single player
    */
-  calculatePlayerBadges(playerId, battingData, pitchingData, allBattingData, allPitchingData) {
+  calculatePlayerBadges(playerId, battingData, pitchingData, allBattingData, allPitchingData, openingDay) {
     const earned = {};
     const progress = {};
     
@@ -670,15 +682,21 @@ export class BadgeCalculator {
         };
       }
       
-      // Opening Day Hero
-      const firstGame = battingData.games[0];
-      if (firstGame && (firstGame.hits || 0) >= 1) {
-        // Check if this was actually the first game of the season
-        earned.openingDayHero = {
-          badgeId: 'openingDayHero',
-          ...BADGE_DEFINITIONS.openingDayHero,
-          gameDate: firstGame.gameDate
-        };
+      // Opening Day Hero - must get a hit in a game on the actual opening day
+      if (openingDay) {
+        const openingDayGame = battingData.games.find(g => {
+          const gameDate = g.gameDate instanceof Date ? g.gameDate : new Date(g.gameDate);
+          // Compare dates (ignoring time)
+          return gameDate.toDateString() === openingDay.toDateString();
+        });
+        
+        if (openingDayGame && (openingDayGame.hits || 0) >= 1) {
+          earned.openingDayHero = {
+            badgeId: 'openingDayHero',
+            ...BADGE_DEFINITIONS.openingDayHero,
+            gameDate: openingDayGame.gameDate
+          };
+        }
       }
       
       // ===== HIDDEN BADGES (HITTING) =====
@@ -705,18 +723,29 @@ export class BadgeCalculator {
         };
       }
       
-      // Déjà Vu - same stat line 3x
+      // Déjà Vu - same stat line 3x (must have at least 1 hit, run, or walk)
       const statLines = {};
       battingData.games.forEach(g => {
-        const key = `${g.hits || 0}-${g.walks || 0}-${g.runs || 0}`;
-        statLines[key] = (statLines[key] || 0) + 1;
+        const hits = g.hits || 0;
+        const walks = g.walks || 0;
+        const runs = g.runs || 0;
+        
+        // Only count meaningful stat lines (at least 1 hit, walk, or run)
+        if (hits >= 1 || walks >= 1 || runs >= 1) {
+          const key = `${hits}-${walks}-${runs}`;
+          statLines[key] = (statLines[key] || 0) + 1;
+        }
       });
-      const maxSameStatLine = Math.max(...Object.values(statLines));
+      const statLineValues = Object.values(statLines);
+      const maxSameStatLine = statLineValues.length > 0 ? Math.max(...statLineValues) : 0;
       if (maxSameStatLine >= 3) {
+        // Find which stat line it was
+        const winningStatLine = Object.entries(statLines).find(([k, v]) => v === maxSameStatLine)?.[0];
         earned.dejaVu = {
           badgeId: 'dejaVu',
           ...BADGE_DEFINITIONS.dejaVu,
           value: maxSameStatLine,
+          statLine: winningStatLine,
           hidden: true
         };
       }

@@ -538,6 +538,14 @@
             <p class="form-hint">Use test mode to preview results without overwriting production data</p>
           </div>
 
+          <div class="form-group">
+            <label>
+              <input type="checkbox" id="cleanSlateCheckbox" checked> 
+              Clean Slate (delete existing badges before saving)
+            </label>
+            <p class="form-hint">Recommended when badge logic changes. Removes orphaned badges from previous calculations.</p>
+          </div>
+
           <button class="btn btn-primary" id="calculateBtn" disabled>
             <span>🧮</span> Calculate Badges
           </button>
@@ -633,6 +641,7 @@
     } from './firebase-config.js';
     import { 
       setDoc,
+      deleteDoc,
       serverTimestamp 
     } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
     import { onAuthChange, getUserProfile, hasLeagueRole, isAdmin } from './firebase-auth.js';
@@ -651,6 +660,7 @@
     const mainContent = document.getElementById('mainContent');
     const seasonSelect = document.getElementById('seasonSelect');
     const testModeCheckbox = document.getElementById('testModeCheckbox');
+    const cleanSlateCheckbox = document.getElementById('cleanSlateCheckbox');
     const calculateBtn = document.getElementById('calculateBtn');
     const progressContainer = document.getElementById('progressContainer');
     const progressFill = document.getElementById('progressFill');
@@ -751,6 +761,7 @@
     calculateBtn.addEventListener('click', async () => {
       const seasonId = seasonSelect.value;
       const testMode = testModeCheckbox.checked;
+      const cleanSlate = cleanSlateCheckbox.checked;
       
       if (!seasonId) {
         log('Please select a season', 'error');
@@ -764,6 +775,7 @@
       
       log(`Starting badge calculation for ${seasonId}...`, 'info');
       log(`Test mode: ${testMode ? 'ON' : 'OFF'}`, 'info');
+      log(`Clean slate: ${cleanSlate ? 'ON' : 'OFF'}`, 'info');
       
       updateProgress(10, 'Loading batting data...');
 
@@ -799,8 +811,16 @@
         // Run calculation
         const results = await calculator.calculateAllBadges(seasonId);
         
-        updateProgress(80, 'Saving results to Firestore...');
+        updateProgress(70, cleanSlate ? 'Cleaning existing badges...' : 'Saving results to Firestore...');
         log(`Calculated ${results.badgeSummary.total} badges for ${results.leaderboard.length} players`, 'success');
+
+        // Clean slate: delete existing badges for this season before saving
+        if (cleanSlate) {
+          const collectionName = testMode ? 'playerBadges_test' : 'playerBadges';
+          const deletedCount = await deleteExistingBadges(collectionName, seasonId);
+          log(`Deleted ${deletedCount} existing badge documents`, 'warning');
+          updateProgress(85, 'Saving new results...');
+        }
 
         // Save results
         await calculator.saveBadgeResults(results);
@@ -825,6 +845,30 @@
     // ============================================
     // UI HELPERS
     // ============================================
+
+    async function deleteExistingBadges(collectionName, seasonId) {
+      let deletedCount = 0;
+      
+      try {
+        const badgesRef = collection(db, collectionName);
+        const snapshot = await getDocs(badgesRef);
+        
+        for (const docSnap of snapshot.docs) {
+          // Delete docs that match this season:
+          // - season_2025-fall (summary doc)
+          // - 2025-fall_player_name (player docs)
+          if (docSnap.id === `season_${seasonId}` || docSnap.id.startsWith(`${seasonId}_`)) {
+            await deleteDoc(doc(db, collectionName, docSnap.id));
+            deletedCount++;
+          }
+        }
+      } catch (error) {
+        console.error('Error deleting existing badges:', error);
+        log(`Warning: Could not delete some existing badges: ${error.message}`, 'warning');
+      }
+      
+      return deletedCount;
+    }
 
     function updateProgress(percent, text) {
       progressFill.style.width = `${percent}%`;
