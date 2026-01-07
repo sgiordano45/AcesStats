@@ -1194,6 +1194,7 @@
 <!-- Check game completion status -->
 <script type="module">
   import { db, doc, getDoc } from './firebase-config.js';
+  import { onAuthChange } from './firebase-auth.js';
   
   // Calculate today's day number (same logic as the games use)
   function getDayNumber() {
@@ -1257,14 +1258,13 @@
       const gameRef = doc(db, config.collection, userId, config.subcollection, docId);
       const gameDoc = await getDoc(gameRef);
       
-      console.log(`🔍 Checking ${gameKey} (${config.subcollection}/${docId}):`, gameDoc.exists() ? gameDoc.data() : 'not found');
-      
       if (gameDoc.exists()) {
         const data = gameDoc.data();
         const isComplete = config.checkCompletion(data);
-        console.log(`   -> ${gameKey} complete: ${isComplete}`);
+        console.log(`🔍 ${gameKey}: ${isComplete ? '✅ complete' : '⏳ in progress'}`);
         return isComplete;
       }
+      console.log(`🔍 ${gameKey}: not started`);
       return false;
     } catch (error) {
       console.error(`Error checking ${gameKey} completion:`, error);
@@ -1274,10 +1274,9 @@
   
   async function updateCompletionIndicators(userId) {
     const dayNum = getDayNumber();
-    console.log(`🎮 Checking completion status for user ${userId}, day ${dayNum}...`);
+    console.log(`🎮 Checking completion for day ${dayNum}...`);
     
     const cards = document.querySelectorAll('[data-game]');
-    console.log(`Found ${cards.length} game cards`);
     
     for (const card of cards) {
       const gameKey = card.dataset.game;
@@ -1285,24 +1284,15 @@
       
       if (isComplete) {
         card.classList.add('completed');
-        console.log(`✅ ${gameKey} marked complete`);
       }
     }
   }
   
-  // Wait for auth and check completion status
-  document.addEventListener('DOMContentLoaded', () => {
-    console.log('🎮 Completion checker loaded');
-    if (typeof onAuthReady === 'function') {
-      onAuthReady(async (user) => {
-        console.log('🔐 Auth ready, user:', user ? user.uid : 'none');
-        if (user) {
-          // Small delay to ensure DOM is ready
-          setTimeout(() => updateCompletionIndicators(user.uid), 300);
-        }
-      });
-    } else {
-      console.log('⚠️ onAuthReady not available');
+  // Use onAuthChange to detect signed-in user
+  onAuthChange((user) => {
+    if (user) {
+      console.log('🔐 User signed in:', user.displayName || user.uid);
+      updateCompletionIndicators(user.uid);
     }
   });
 </script>
