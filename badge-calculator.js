@@ -396,60 +396,91 @@ export class BadgeCalculator {
 
   /**
    * Load batting game data for a season
+   * Gets player list from aggregatedPlayerStats, converts names to legacy IDs,
+   * then checks playerStats subcollections for game data
    */
   async loadBattingData(seasonId) {
     const playerData = {};
     
     try {
-      // Query all players who have game data
-      // Structure: playerStats/{playerId}/games/{gameDocId}
-      const playersRef = this.collection(this.db, 'playerStats');
-      const playersSnap = await this.getDocs(playersRef);
+      // First, get all players from aggregatedPlayerStats
+      const allPlayersRef = this.collection(this.db, 'aggregatedPlayerStats');
+      const allPlayersSnap = await this.getDocs(allPlayersRef);
       
-      for (const playerDoc of playersSnap.docs) {
-        const playerId = playerDoc.id;
-        const gamesRef = this.collection(this.db, 'playerStats', playerId, 'games');
-        const gamesSnap = await this.getDocs(gamesRef);
+      console.log(`📊 Found ${allPlayersSnap.size} players in aggregatedPlayerStats`);
+      
+      // Track which legacy IDs we've already processed to avoid duplicates
+      const processedLegacyIds = new Set();
+      
+      // For each player, check if they have game-level data
+      for (const playerDoc of allPlayersSnap.docs) {
+        const playerInfo = playerDoc.data();
         
-        const games = [];
-        let playerName = '';
-        let teamId = '';
+        // Skip migrated legacy profiles
+        if (playerInfo.migrated === true) continue;
         
-        gamesSnap.forEach(gameDoc => {
-          const data = gameDoc.data();
-          if (data.seasonId === seasonId) {
-            games.push({
-              id: gameDoc.id,
-              ...data,
-              gameDate: data.gameDate?.toDate ? data.gameDate.toDate() : new Date(data.gameDate)
-            });
-            if (!playerName) playerName = data.playerName || playerId;
-            if (!teamId) teamId = data.teamId || '';
+        // Get the player name to convert to legacy ID
+        const playerName = playerInfo.linkedPlayer || playerInfo.name || playerInfo.displayName;
+        if (!playerName) continue;
+        
+        // Convert player name to legacy ID format: "Steve Giordano" → "steve_giordano"
+        const legacyId = playerName.toLowerCase().replace(/\./g, '').replace(/\s+/g, '_');
+        
+        // Skip if we've already processed this legacy ID
+        if (processedLegacyIds.has(legacyId)) continue;
+        processedLegacyIds.add(legacyId);
+        
+        try {
+          const gamesRef = this.collection(this.db, 'playerStats', legacyId, 'games');
+          const gamesSnap = await this.getDocs(gamesRef);
+          
+          const games = [];
+          let teamId = playerInfo.currentTeam || '';
+          
+          gamesSnap.forEach(gameDoc => {
+            const data = gameDoc.data();
+            // Filter by season
+            if (data.seasonId === seasonId) {
+              games.push({
+                id: gameDoc.id,
+                ...data,
+                gameDate: data.gameDate?.seconds 
+                  ? new Date(data.gameDate.seconds * 1000) 
+                  : (data.gameDate?.toDate ? data.gameDate.toDate() : new Date(data.gameDateFormatted || data.gameDate))
+              });
+              // Get team from game data if available
+              if (data.teamId) teamId = data.teamId;
+            }
+          });
+          
+          if (games.length > 0) {
+            // Sort games by date
+            games.sort((a, b) => a.gameDate - b.gameDate);
+            
+            // Calculate totals
+            const totals = {
+              games: games.length,
+              atBats: games.reduce((sum, g) => sum + (g.atBats || 0), 0),
+              hits: games.reduce((sum, g) => sum + (g.hits || 0), 0),
+              runs: games.reduce((sum, g) => sum + (g.runs || 0), 0),
+              walks: games.reduce((sum, g) => sum + (g.walks || 0), 0)
+            };
+            
+            playerData[legacyId] = {
+              playerId: legacyId,
+              playerName,
+              teamId,
+              games,
+              totals
+            };
           }
-        });
-        
-        if (games.length > 0) {
-          // Sort games by date
-          games.sort((a, b) => a.gameDate - b.gameDate);
-          
-          // Calculate totals
-          const totals = {
-            games: games.length,
-            atBats: games.reduce((sum, g) => sum + (g.atBats || 0), 0),
-            hits: games.reduce((sum, g) => sum + (g.hits || 0), 0),
-            runs: games.reduce((sum, g) => sum + (g.runs || 0), 0),
-            walks: games.reduce((sum, g) => sum + (g.walks || 0), 0)
-          };
-          
-          playerData[playerId] = {
-            playerId,
-            playerName,
-            teamId,
-            games,
-            totals
-          };
+        } catch (gameError) {
+          // No game data for this player, skip silently
         }
       }
+      
+      console.log(`✅ Found ${Object.keys(playerData).length} players with batting game data for ${seasonId}`);
+      
     } catch (error) {
       console.error('Error loading batting data:', error);
     }
@@ -459,54 +490,84 @@ export class BadgeCalculator {
 
   /**
    * Load pitching game data for a season
+   * Gets player list from aggregatedPlayerStats, converts names to legacy IDs,
+   * then checks pitchingStats subcollections for game data
    */
   async loadPitchingData(seasonId) {
     const playerData = {};
     
     try {
-      const playersRef = this.collection(this.db, 'pitchingStats');
-      const playersSnap = await this.getDocs(playersRef);
+      // First, get all players from aggregatedPlayerStats
+      const allPlayersRef = this.collection(this.db, 'aggregatedPlayerStats');
+      const allPlayersSnap = await this.getDocs(allPlayersRef);
       
-      for (const playerDoc of playersSnap.docs) {
-        const playerId = playerDoc.id;
-        const gamesRef = this.collection(this.db, 'pitchingStats', playerId, 'games');
-        const gamesSnap = await this.getDocs(gamesRef);
+      // Track which legacy IDs we've already processed to avoid duplicates
+      const processedLegacyIds = new Set();
+      
+      // For each player, check if they have pitching game-level data
+      for (const playerDoc of allPlayersSnap.docs) {
+        const playerInfo = playerDoc.data();
         
-        const games = [];
-        let playerName = '';
-        let teamId = '';
+        // Skip migrated legacy profiles
+        if (playerInfo.migrated === true) continue;
         
-        gamesSnap.forEach(gameDoc => {
-          const data = gameDoc.data();
-          if (data.seasonId === seasonId) {
-            games.push({
-              id: gameDoc.id,
-              ...data,
-              gameDate: data.gameDate?.toDate ? data.gameDate.toDate() : new Date(data.gameDate)
-            });
-            if (!playerName) playerName = data.playerName || playerId;
-            if (!teamId) teamId = data.teamId || '';
+        // Get the player name to convert to legacy ID
+        const playerName = playerInfo.linkedPlayer || playerInfo.name || playerInfo.displayName;
+        if (!playerName) continue;
+        
+        // Convert player name to legacy ID format: "Steve Giordano" → "steve_giordano"
+        const legacyId = playerName.toLowerCase().replace(/\./g, '').replace(/\s+/g, '_');
+        
+        // Skip if we've already processed this legacy ID
+        if (processedLegacyIds.has(legacyId)) continue;
+        processedLegacyIds.add(legacyId);
+        
+        try {
+          const gamesRef = this.collection(this.db, 'pitchingStats', legacyId, 'games');
+          const gamesSnap = await this.getDocs(gamesRef);
+          
+          const games = [];
+          let teamId = playerInfo.currentTeam || '';
+          
+          gamesSnap.forEach(gameDoc => {
+            const data = gameDoc.data();
+            // Filter by season
+            if (data.seasonId === seasonId) {
+              games.push({
+                id: gameDoc.id,
+                ...data,
+                gameDate: data.gameDate?.seconds 
+                  ? new Date(data.gameDate.seconds * 1000) 
+                  : (data.gameDate?.toDate ? data.gameDate.toDate() : new Date(data.gameDateFormatted || data.gameDate))
+              });
+              if (data.teamId) teamId = data.teamId;
+            }
+          });
+          
+          if (games.length > 0) {
+            games.sort((a, b) => a.gameDate - b.gameDate);
+            
+            const totals = {
+              games: games.length,
+              inningsPitched: games.reduce((sum, g) => sum + (g.inningsPitched || 0), 0),
+              runsAllowed: games.reduce((sum, g) => sum + (g.runsAllowed || 0), 0)
+            };
+            
+            playerData[legacyId] = {
+              playerId: legacyId,
+              playerName,
+              teamId,
+              games,
+              totals
+            };
           }
-        });
-        
-        if (games.length > 0) {
-          games.sort((a, b) => a.gameDate - b.gameDate);
-          
-          const totals = {
-            games: games.length,
-            inningsPitched: games.reduce((sum, g) => sum + (g.inningsPitched || 0), 0),
-            runsAllowed: games.reduce((sum, g) => sum + (g.runsAllowed || 0), 0)
-          };
-          
-          playerData[playerId] = {
-            playerId,
-            playerName,
-            teamId,
-            games,
-            totals
-          };
+        } catch (gameError) {
+          // No pitching game data for this player, skip silently
         }
       }
+      
+      console.log(`✅ Found ${Object.keys(playerData).length} players with pitching game data for ${seasonId}`);
+      
     } catch (error) {
       console.error('Error loading pitching data:', error);
     }
