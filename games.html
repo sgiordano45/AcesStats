@@ -1207,30 +1207,43 @@
     return Math.max(1, daysSinceLaunch + 1);
   }
   
-  // Game configs: data-game attribute -> Firebase collection and completion check
+  // Game configs: data-game attribute -> Firebase path and completion check
+  // Some games use 'puzzles/puzzle_X', others use 'dailyGames/X'
   const GAME_CONFIGS = {
     grid: {
       collection: 'acesGridGames',
+      subcollection: 'puzzles',
+      docIdFormat: (dayNum) => `puzzle_${dayNum}`,
       checkCompletion: (data) => data.gameOver === true
     },
     connections: {
       collection: 'acesConnectionsGames',
+      subcollection: 'dailyGames',
+      docIdFormat: (dayNum) => String(dayNum),
       checkCompletion: (data) => data.gameOver === true
     },
     wordle: {
       collection: 'acesWordleGames',
+      subcollection: 'dailyGames',
+      docIdFormat: (dayNum) => String(dayNum),
       checkCompletion: (data) => data.gameOver === true
     },
     higherLower: {
       collection: 'acesHigherLowerGames',
+      subcollection: 'puzzles',
+      docIdFormat: (dayNum) => `puzzle_${dayNum}`,
       checkCompletion: (data) => data.gameOver === true
     },
     whoAmI: {
       collection: 'acesWhoAmIGames',
+      subcollection: 'dailyGames',
+      docIdFormat: (dayNum) => String(dayNum),
       checkCompletion: (data) => data.gameOver === true
     },
     recall: {
       collection: 'acesRosterRecallGames',
+      subcollection: 'dailyGames',
+      docIdFormat: (dayNum) => String(dayNum),
       checkCompletion: (data) => data.phase === 'finished'
     }
   };
@@ -1240,11 +1253,17 @@
     if (!config) return false;
     
     try {
-      const gameRef = doc(db, config.collection, userId, 'dailyGames', String(dayNum));
+      const docId = config.docIdFormat(dayNum);
+      const gameRef = doc(db, config.collection, userId, config.subcollection, docId);
       const gameDoc = await getDoc(gameRef);
       
+      console.log(`🔍 Checking ${gameKey} (${config.subcollection}/${docId}):`, gameDoc.exists() ? gameDoc.data() : 'not found');
+      
       if (gameDoc.exists()) {
-        return config.checkCompletion(gameDoc.data());
+        const data = gameDoc.data();
+        const isComplete = config.checkCompletion(data);
+        console.log(`   -> ${gameKey} complete: ${isComplete}`);
+        return isComplete;
       }
       return false;
     } catch (error) {
@@ -1255,9 +1274,10 @@
   
   async function updateCompletionIndicators(userId) {
     const dayNum = getDayNumber();
-    console.log(`🎮 Checking completion status for day ${dayNum}...`);
+    console.log(`🎮 Checking completion status for user ${userId}, day ${dayNum}...`);
     
     const cards = document.querySelectorAll('[data-game]');
+    console.log(`Found ${cards.length} game cards`);
     
     for (const card of cards) {
       const gameKey = card.dataset.game;
@@ -1265,20 +1285,24 @@
       
       if (isComplete) {
         card.classList.add('completed');
-        console.log(`✅ ${gameKey} completed`);
+        console.log(`✅ ${gameKey} marked complete`);
       }
     }
   }
   
   // Wait for auth and check completion status
   document.addEventListener('DOMContentLoaded', () => {
+    console.log('🎮 Completion checker loaded');
     if (typeof onAuthReady === 'function') {
       onAuthReady(async (user) => {
+        console.log('🔐 Auth ready, user:', user ? user.uid : 'none');
         if (user) {
           // Small delay to ensure DOM is ready
           setTimeout(() => updateCompletionIndicators(user.uid), 300);
         }
       });
+    } else {
+      console.log('⚠️ onAuthReady not available');
     }
   });
 </script>
