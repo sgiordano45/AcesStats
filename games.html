@@ -248,6 +248,46 @@
 
   .card:hover::before { opacity: 1; }
 
+  /* Completed indicator */
+  .completed-indicator {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    width: 28px;
+    height: 28px;
+    background: rgba(0, 255, 136, 0.2);
+    border: 2px solid var(--accent-green);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    color: var(--accent-green);
+    opacity: 0;
+    transform: scale(0.8);
+    transition: all 0.3s ease;
+    z-index: 5;
+  }
+
+  .card.completed .completed-indicator {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  .card.completed {
+    border-color: rgba(0, 255, 136, 0.3);
+  }
+
+  .card.completed::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, var(--accent-green), transparent);
+  }
+
   .card-link {
     text-decoration: none;
     color: inherit;
@@ -702,7 +742,8 @@
       
       <!-- Aces Grid - Featured -->
       <a href="immaculate-grid.html" class="card-link">
-        <div class="card featured-card">
+        <div class="card featured-card" data-game="grid">
+          <span class="completed-indicator">✓</span>
           <span class="game-badge badge-daily">Daily Puzzle</span>
           <div class="card-icon">🎯</div>
           <h3 class="card-title">Aces Grid</h3>
@@ -717,7 +758,8 @@
 
       <!-- Aces Connections -->
       <a href="aces-connections.html" class="card-link">
-        <div class="card connections-card">
+        <div class="card connections-card" data-game="connections">
+          <span class="completed-indicator">✓</span>
           <span class="game-badge badge-daily">Daily Puzzle</span>
           <div class="card-icon">🔗</div>
           <h3 class="card-title">Aces Connections</h3>
@@ -732,7 +774,8 @@
 
       <!-- Aces Wordle -->
       <a href="aces-wordle.html" class="card-link">
-        <div class="card wordle-card">
+        <div class="card wordle-card" data-game="wordle">
+          <span class="completed-indicator">✓</span>
           <span class="game-badge badge-daily">Daily Puzzle</span>
           <div class="card-icon">🔤</div>
           <h3 class="card-title">Aces Wordle</h3>
@@ -747,7 +790,8 @@
 
       <!-- Higher or Lower -->
       <a href="higher-lower.html" class="card-link">
-        <div class="card higher-lower-card">
+        <div class="card higher-lower-card" data-game="higherLower">
+          <span class="completed-indicator">✓</span>
           <span class="game-badge badge-daily">Daily Puzzle</span>
           <div class="card-icon">⬆️⬇️</div>
           <h3 class="card-title">Higher or Lower</h3>
@@ -762,7 +806,8 @@
 
       <!-- Who Am I -->
       <a href="who-am-i.html" class="card-link">
-        <div class="card who-am-i-card">
+        <div class="card who-am-i-card" data-game="whoAmI">
+          <span class="completed-indicator">✓</span>
           <span class="game-badge badge-daily">Daily Puzzle</span>
           <div class="card-icon">🎭</div>
           <h3 class="card-title">Who Am I?</h3>
@@ -777,7 +822,8 @@
 
       <!-- Player Recall -->
       <a href="roster-recall.html" class="card-link">
-        <div class="card roster-recall-card">
+        <div class="card roster-recall-card" data-game="recall">
+          <span class="completed-indicator">✓</span>
           <span class="game-badge badge-daily">Daily Puzzle</span>
           <div class="card-icon">⏱️</div>
           <h3 class="card-title">Player Recall</h3>
@@ -1142,6 +1188,98 @@
   document.addEventListener('DOMContentLoaded', () => {
     // Small delay to ensure Firebase is initialized
     setTimeout(loadAllLeaderboards, 500);
+  });
+</script>
+
+<!-- Check game completion status -->
+<script type="module">
+  import { db, doc, getDoc } from './firebase-config.js';
+  
+  // Calculate today's day number (same logic as the games use)
+  function getDayNumber() {
+    const LAUNCH_DATE = '2026-01-06';
+    const [launchYear, launchMonth, launchDay] = LAUNCH_DATE.split('-').map(Number);
+    const start = new Date(launchYear, launchMonth - 1, launchDay);
+    start.setHours(0, 0, 0, 0);
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+    const daysSinceLaunch = Math.floor((now - start) / (1000 * 60 * 60 * 24));
+    return Math.max(1, daysSinceLaunch + 1);
+  }
+  
+  // Game configs: data-game attribute -> Firebase collection and completion check
+  const GAME_CONFIGS = {
+    grid: {
+      collection: 'acesGridGames',
+      checkCompletion: (data) => data.gameOver === true
+    },
+    connections: {
+      collection: 'acesConnectionsGames',
+      checkCompletion: (data) => data.gameOver === true
+    },
+    wordle: {
+      collection: 'acesWordleGames',
+      checkCompletion: (data) => data.gameOver === true
+    },
+    higherLower: {
+      collection: 'acesHigherLowerGames',
+      checkCompletion: (data) => data.gameOver === true
+    },
+    whoAmI: {
+      collection: 'acesWhoAmIGames',
+      checkCompletion: (data) => data.gameOver === true
+    },
+    recall: {
+      collection: 'acesRosterRecallGames',
+      checkCompletion: (data) => data.phase === 'finished'
+    }
+  };
+  
+  async function checkGameCompletion(userId, gameKey, dayNum) {
+    const config = GAME_CONFIGS[gameKey];
+    if (!config) return false;
+    
+    try {
+      const gameRef = doc(db, config.collection, userId, 'dailyGames', String(dayNum));
+      const gameDoc = await getDoc(gameRef);
+      
+      if (gameDoc.exists()) {
+        return config.checkCompletion(gameDoc.data());
+      }
+      return false;
+    } catch (error) {
+      console.error(`Error checking ${gameKey} completion:`, error);
+      return false;
+    }
+  }
+  
+  async function updateCompletionIndicators(userId) {
+    const dayNum = getDayNumber();
+    console.log(`🎮 Checking completion status for day ${dayNum}...`);
+    
+    const cards = document.querySelectorAll('[data-game]');
+    
+    for (const card of cards) {
+      const gameKey = card.dataset.game;
+      const isComplete = await checkGameCompletion(userId, gameKey, dayNum);
+      
+      if (isComplete) {
+        card.classList.add('completed');
+        console.log(`✅ ${gameKey} completed`);
+      }
+    }
+  }
+  
+  // Wait for auth and check completion status
+  document.addEventListener('DOMContentLoaded', () => {
+    if (typeof onAuthReady === 'function') {
+      onAuthReady(async (user) => {
+        if (user) {
+          // Small delay to ensure DOM is ready
+          setTimeout(() => updateCompletionIndicators(user.uid), 300);
+        }
+      });
+    }
   });
 </script>
 
