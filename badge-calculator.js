@@ -308,6 +308,78 @@ export const BADGE_DEFINITIONS = {
     description: '5+ walks with 0 hits in a game',
     revealText: '"They couldn\'t find the zone"',
     hidden: true
+  },
+  
+  luckySeven: {
+    id: 'luckySeven',
+    name: 'Lucky 7',
+    category: 'hidden',
+    type: 'single',
+    icon: '🍀',
+    iconPath: '/assets/badges/hidden/lucky-seven',
+    description: 'Exactly 7 hits against the same opponent across all matchups',
+    revealText: '"They just can\'t figure you out"',
+    hidden: true
+  },
+  
+  theStreakLives: {
+    id: 'theStreakLives',
+    name: 'The Streak Lives',
+    category: 'hidden',
+    type: 'single',
+    icon: '⚡',
+    iconPath: '/assets/badges/hidden/the-streak-lives',
+    description: 'Get a hit in the final game to extend a hit streak to 6+',
+    revealText: '"Kept it alive when it mattered most"',
+    hidden: true
+  },
+  
+  zeroToHero: {
+    id: 'zeroToHero',
+    name: 'Zero to Hero',
+    category: 'hidden',
+    type: 'single',
+    icon: '🦸',
+    iconPath: '/assets/badges/hidden/zero-to-hero',
+    description: 'Score 3+ runs after being hitless through half the season',
+    revealText: '"A tale of redemption"',
+    hidden: true
+  },
+  
+  // ----------------------------------------
+  // PLAYOFF BADGES
+  // ----------------------------------------
+  playoffPerformer: {
+    id: 'playoffPerformer',
+    name: 'Playoff Performer',
+    category: 'milestone',
+    type: 'single',
+    icon: '🏆',
+    iconPath: '/assets/badges/milestone/playoff-performer',
+    description: 'Get a hit in every playoff game played',
+    requirement: 'Hit in all playoff games (min 2 games)'
+  },
+  
+  postseasonAce: {
+    id: 'postseasonAce',
+    name: 'Postseason Ace',
+    category: 'milestone',
+    type: 'single',
+    icon: '🎖️',
+    iconPath: '/assets/badges/milestone/postseason-ace',
+    description: 'Pitch a scoreless outing in the playoffs',
+    requirement: 'Scoreless playoff appearance (min 1 IP)'
+  },
+  
+  giantSlayer: {
+    id: 'giantSlayer',
+    name: 'Giant Slayer',
+    category: 'pitching',
+    type: 'single',
+    icon: '⚔️',
+    iconPath: '/assets/badges/pitching/giant-slayer',
+    description: 'Hold a top-3 team to their lowest run total of the season',
+    requirement: 'Pitch when top team scores season-low'
   }
 };
 
@@ -760,6 +832,95 @@ export class BadgeCalculator {
           hidden: true
         };
       }
+      
+      // Lucky 7 - exactly 7 hits against the same opponent
+      const hitsVsOpponent = {};
+      battingData.games.forEach(g => {
+        const opp = (g.opponent || '').toLowerCase();
+        if (opp) {
+          hitsVsOpponent[opp] = (hitsVsOpponent[opp] || 0) + (g.hits || 0);
+        }
+      });
+      const luckySevenOpponent = Object.entries(hitsVsOpponent).find(([opp, hits]) => hits === 7);
+      if (luckySevenOpponent) {
+        earned.luckySeven = {
+          badgeId: 'luckySeven',
+          ...BADGE_DEFINITIONS.luckySeven,
+          opponent: luckySevenOpponent[0],
+          value: 7,
+          hidden: true
+        };
+      }
+      
+      // The Streak Lives - hit in final game to extend streak to 6+
+      // Sort games by date to find the final game
+      const sortedGames = [...battingData.games].sort((a, b) => {
+        const dateA = a.gameDate instanceof Date ? a.gameDate : new Date(a.gameDate);
+        const dateB = b.gameDate instanceof Date ? b.gameDate : new Date(b.gameDate);
+        return dateB - dateA; // Most recent first
+      });
+      
+      if (sortedGames.length > 0) {
+        const finalGame = sortedGames[0];
+        const finalGameHadHit = (finalGame.hits || 0) >= 1;
+        
+        if (finalGameHadHit) {
+          // Check if this extended a streak to 6+
+          // Count consecutive games with hits ending at the final game
+          let streakAtEnd = 0;
+          for (const game of sortedGames) {
+            if ((game.hits || 0) >= 1) {
+              streakAtEnd++;
+            } else {
+              break;
+            }
+          }
+          
+          if (streakAtEnd >= 6) {
+            earned.theStreakLives = {
+              badgeId: 'theStreakLives',
+              ...BADGE_DEFINITIONS.theStreakLives,
+              value: streakAtEnd,
+              hidden: true
+            };
+          }
+        }
+      }
+      
+      // Zero to Hero - 3+ runs after being hitless through half the season
+      const regularSeasonGames = battingData.games.filter(g => !g.isPlayoff);
+      if (regularSeasonGames.length >= 4) { // Need at least 4 games for "half season" to make sense
+        const halfPoint = Math.floor(regularSeasonGames.length / 2);
+        const firstHalfGames = regularSeasonGames.slice(0, halfPoint);
+        const secondHalfGames = regularSeasonGames.slice(halfPoint);
+        
+        const firstHalfHits = firstHalfGames.reduce((sum, g) => sum + (g.hits || 0), 0);
+        const secondHalfRuns = secondHalfGames.reduce((sum, g) => sum + (g.runs || 0), 0);
+        
+        if (firstHalfHits === 0 && secondHalfRuns >= 3) {
+          earned.zeroToHero = {
+            badgeId: 'zeroToHero',
+            ...BADGE_DEFINITIONS.zeroToHero,
+            value: secondHalfRuns,
+            firstHalfGames: halfPoint,
+            hidden: true
+          };
+        }
+      }
+      
+      // ===== PLAYOFF HITTING BADGES =====
+      const playoffBattingGames = battingData.games.filter(g => g.isPlayoff === true);
+      if (playoffBattingGames.length >= 2) {
+        // Playoff Performer - hit in every playoff game
+        const playoffGamesWithHit = playoffBattingGames.filter(g => (g.hits || 0) >= 1).length;
+        if (playoffGamesWithHit === playoffBattingGames.length) {
+          earned.playoffPerformer = {
+            badgeId: 'playoffPerformer',
+            ...BADGE_DEFINITIONS.playoffPerformer,
+            value: playoffBattingGames.length
+          };
+        }
+      }
     }
     
     // ===== PITCHING BADGES =====
@@ -833,6 +994,70 @@ export class BadgeCalculator {
           opponent: nemesisOpponent[0],
           value: nemesisOpponent[1]
         };
+      }
+      
+      // ===== PLAYOFF PITCHING BADGES =====
+      const playoffPitchingGames = pitchingData.games.filter(g => g.isPlayoff === true);
+      
+      // Postseason Ace - scoreless outing in playoffs (min 1 IP)
+      const scorelessPlayoffGame = playoffPitchingGames.find(
+        g => (g.runsAllowed || 0) === 0 && (g.inningsPitched || 0) >= 1
+      );
+      if (scorelessPlayoffGame) {
+        earned.postseasonAce = {
+          badgeId: 'postseasonAce',
+          ...BADGE_DEFINITIONS.postseasonAce,
+          value: scorelessPlayoffGame.inningsPitched,
+          opponent: scorelessPlayoffGame.opponent
+        };
+      }
+      
+      // Giant Slayer - hold a top-3 team to their lowest run total
+      // Build opponent run totals from all pitching data to find top teams
+      const teamRunsAllowed = {}; // Runs scored BY each opponent (against all pitchers)
+      Object.values(allPitchingData).forEach(pitcher => {
+        (pitcher.games || []).forEach(g => {
+          if (!g.isPlayoff) {
+            const opp = (g.opponent || '').toLowerCase();
+            if (opp) {
+              if (!teamRunsAllowed[opp]) {
+                teamRunsAllowed[opp] = { totalRuns: 0, games: [], minRuns: Infinity };
+              }
+              const runs = g.runsAllowed || 0;
+              teamRunsAllowed[opp].totalRuns += runs;
+              teamRunsAllowed[opp].games.push({ runs, pitcher: pitcher.playerId });
+              if (runs < teamRunsAllowed[opp].minRuns) {
+                teamRunsAllowed[opp].minRuns = runs;
+              }
+            }
+          }
+        });
+      });
+      
+      // Find top 3 teams by total runs scored (against our pitchers)
+      const sortedTeams = Object.entries(teamRunsAllowed)
+        .sort((a, b) => b[1].totalRuns - a[1].totalRuns)
+        .slice(0, 3)
+        .map(([team]) => team);
+      
+      // Check if this pitcher held a top-3 team to their season low
+      for (const game of pitchingData.games) {
+        if (game.isPlayoff) continue;
+        const opp = (game.opponent || '').toLowerCase();
+        if (sortedTeams.includes(opp)) {
+          const oppData = teamRunsAllowed[opp];
+          const gameRuns = game.runsAllowed || 0;
+          // Check if this game was the minimum for that opponent
+          if (gameRuns === oppData.minRuns && gameRuns <= 2) {
+            earned.giantSlayer = {
+              badgeId: 'giantSlayer',
+              ...BADGE_DEFINITIONS.giantSlayer,
+              opponent: opp,
+              value: gameRuns
+            };
+            break; // Only need one
+          }
+        }
       }
     }
     
