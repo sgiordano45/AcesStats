@@ -1698,6 +1698,29 @@ async function saveStatsToFirebase(stats) {
   }
 }
 
+async function loadStatsFromFirebase() {
+  if (!currentUser) return null;
+  
+  try {
+    const statsRef = doc(db, 'acesRosterRecallGames', currentUser.uid);
+    const statsDoc = await getDoc(statsRef);
+    
+    if (statsDoc.exists()) {
+      const data = statsDoc.data();
+      return {
+        gamesPlayed: data.gamesPlayed || 0,
+        perfectGames: data.perfectGames || 0,
+        totalScore: data.totalScore || 0,
+        bestScore: data.bestScore || 0,
+        lastPlayedPuzzle: data.lastPlayedPuzzle || 0
+      };
+    }
+  } catch (error) {
+    console.error('Error loading stats from Firebase:', error);
+  }
+  return null;
+}
+
 function saveGameStateLocal() {
   try {
     localStorage.setItem('acesRosterRecall_game', JSON.stringify({
@@ -1790,7 +1813,7 @@ async function loadGameState() {
 // ============================================
 // USER STATS DISPLAY
 // ============================================
-function updateUserStatsDisplay() {
+async function updateUserStatsDisplay() {
   const container = document.getElementById('userStatsContainer');
   if (!container) return;
   
@@ -1806,7 +1829,12 @@ function updateUserStatsDisplay() {
     return;
   }
   
-  const stats = getLocalStats();
+  // Load from Firebase first, fall back to localStorage
+  let stats = await loadStatsFromFirebase();
+  if (!stats) {
+    stats = getLocalStats();
+  }
+  
   const avgScore = stats.gamesPlayed > 0 ? Math.round(stats.totalScore / stats.gamesPlayed) : 0;
   
   container.innerHTML = `
@@ -1848,7 +1876,7 @@ function setupAuthListener() {
       }
     }
     
-    updateUserStatsDisplay();
+    await updateUserStatsDisplay();
   });
 }
 
@@ -1920,7 +1948,7 @@ async function init() {
     
     // Setup
     setupAuthListener();
-    updateUserStatsDisplay();
+    await updateUserStatsDisplay();
     
     // Render based on state
     renderBasedOnPhase();
