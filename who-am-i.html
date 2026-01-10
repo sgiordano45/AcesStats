@@ -1157,7 +1157,7 @@ window.revealNextClue = function() {
   }
 };
 
-window.submitGuess = function() {
+window.submitGuess = async function() {
   if (gameState.gameOver) return;
   
   const input = document.getElementById('guessInput');
@@ -1185,7 +1185,7 @@ window.submitGuess = function() {
     gameState.score = Math.max(1, MAX_POINTS - gameState.cluesRevealed);
     
     showResult(true, gameState.score);
-    updateLifetimeStats();
+    await updateLifetimeStats();
     saveGameState();
     
     setTimeout(() => showStats(), 1500);
@@ -1210,7 +1210,7 @@ window.submitGuess = function() {
       gameState.gameOver = true;
       gameState.score = 0;
       showResult(false, 0);
-      updateLifetimeStats();
+      await updateLifetimeStats();
       saveGameState();
     }
   }
@@ -1320,8 +1320,16 @@ function saveLocalStats(stats) {
   } catch (e) {}
 }
 
-function updateLifetimeStats() {
-  const stats = getLocalStats();
+async function updateLifetimeStats() {
+  // For logged-in users, load from Firebase first to prevent version-clear overwrites
+  let stats;
+  if (currentUser) {
+    stats = await loadStatsFromFirebase();
+  }
+  // Fall back to localStorage if not logged in or Firebase failed
+  if (!stats) {
+    stats = getLocalStats();
+  }
   
   if (stats.lastPlayedPuzzle === todaysPuzzle.dayNum) {
     return;
