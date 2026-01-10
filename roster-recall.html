@@ -917,7 +917,7 @@ import {
 // ============================================
 // VERSION CHECK - Increment to clear old localStorage data
 // ============================================
-const DATA_VERSION = 2;
+const DATA_VERSION = 3;
 const VERSION_KEY = 'acesRosterRecall_dataVersion';
 
 (function checkDataVersion() {
@@ -1175,15 +1175,57 @@ function generateDailyPuzzle() {
   const dayNum = getDayNumber();
   const seed = dayNum * 13583;
   
-  const categories = generateCategoryPool();
-  const shuffled = shuffleWithSeed(categories, seed);
-  const category = shuffled[0];
+  const allCategories = generateCategoryPool();
+  
+  // Group categories by type for variety rotation
+  const categoryTypes = ['roster', 'career', 'season', 'multi', 'veteran'];
+  const byType = {};
+  categoryTypes.forEach(t => byType[t] = []);
+  
+  allCategories.forEach(cat => {
+    if (byType[cat.type]) {
+      byType[cat.type].push(cat);
+    }
+  });
+  
+  // Sort each type's categories alphabetically for deterministic ordering
+  categoryTypes.forEach(t => {
+    byType[t].sort((a, b) => a.name.localeCompare(b.name));
+  });
+  
+  // Filter to types that have valid categories
+  const availableTypes = categoryTypes.filter(t => byType[t].length > 0);
+  
+  if (availableTypes.length === 0) {
+    throw new Error('No valid categories available');
+  }
+  
+  // Cycle through category types based on day number
+  // This ensures variety: Day 1 roster, Day 2 career, Day 3 season, etc.
+  const typeIndex = (dayNum - 1) % availableTypes.length;
+  const selectedType = availableTypes[typeIndex];
+  const typeCategories = byType[selectedType];
+  
+  // Within the type, rotate through categories deterministically
+  // Count how many times we've been on this type
+  const typeOccurrence = Math.floor((dayNum - 1) / availableTypes.length);
+  
+  // Shuffle the type's categories with a seed based on type occurrence
+  // This adds variety while still being deterministic
+  const shuffledTypeCategories = shuffleWithSeed([...typeCategories], seed + typeOccurrence);
+  
+  // Pick category using modulo to ensure we cycle through all before repeating
+  const categoryIndex = typeOccurrence % shuffledTypeCategories.length;
+  const category = shuffledTypeCategories[categoryIndex];
+  
+  console.log(`📅 Day ${dayNum}: Type "${selectedType}" (occurrence #${typeOccurrence + 1}), Category: "${category.name}"`);
   
   const totalTime = BASE_TIME + (category.players.length * TIME_PER_PLAYER);
   
   return {
     dayNum,
     categoryName: category.name,
+    categoryType: category.type,
     players: category.players,
     totalTime
   };
