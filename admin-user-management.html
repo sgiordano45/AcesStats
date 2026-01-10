@@ -715,6 +715,8 @@
   .issue-type.duplicate { background: #fee2e2; color: #dc2626; }
   .issue-type.unlinked { background: #fef3c7; color: #d97706; }
   .issue-type.orphan { background: #e0e7ff; color: #4f46e5; }
+  .issue-type.needs-migration { background: #fce7f3; color: #be185d; }
+  .issue-type.missing-stats-doc { background: #fef2f2; color: #991b1b; }
 
   /* Badge styles for player items */
   .player-badge {
@@ -820,7 +822,7 @@
       </div>
       <div class="overview-card linked">
         <div class="overview-value" id="linkedUsers">-</div>
-        <div class="overview-label">Linked Players</div>
+        <div class="overview-label">Linked (users coll)</div>
       </div>
       <div class="overview-card legacy">
         <div class="overview-value" id="legacyProfiles">-</div>
@@ -1058,6 +1060,7 @@
   async function loadAllPlayers() {
     log('Loading all player records...', 'info');
     
+    // Load aggregatedPlayerStats
     const statsRef = collection(db, 'aggregatedPlayerStats');
     const snapshot = await getDocs(statsRef);
     
@@ -1078,9 +1081,36 @@
         _isAuthUser: isAuthUser,
         _isLinked: isLinked,
         _isMigrated: isMigrated,
-        _isLegacy: isLegacy
+        _isLegacy: isLegacy,
+        _source: 'aggregatedPlayerStats'
       });
     });
+    
+    // ALSO load users collection to find linked accounts
+    log('Loading users collection for linked accounts...', 'info');
+    const usersRef = collection(db, 'users');
+    const usersSnapshot = await getDocs(usersRef);
+    
+    const linkedUsers = [];
+    usersSnapshot.forEach(docSnap => {
+      const data = docSnap.data();
+      const id = docSnap.id;
+      
+      // Only care about authenticated users with linkedPlayer
+      const isFirebaseUID = id.length > 20 && !id.includes('_');
+      if (isFirebaseUID && data.linkedPlayer) {
+        linkedUsers.push({
+          odoc: id,
+          ...data,
+          _userId: id
+        });
+      }
+    });
+    
+    log(`Found ${linkedUsers.length} linked user accounts in users collection`, 'info');
+    
+    // Store for cross-referencing
+    window.linkedUsersFromUsersCollection = linkedUsers;
     
     // Sort by name
     allPlayers.sort((a, b) => {
@@ -1116,21 +1146,30 @@
     
     allPlayers.forEach(player => {
       if (player._isAuthUser) stats.authUsers++;
-      if (player._isLinked) stats.linkedUsers++;
       if (player._isLegacy) stats.legacyProfiles++;
       if (player._isMigrated) stats.migratedProfiles++;
     });
+    
+    // Count linked users from users collection (more accurate)
+    const linkedUsers = window.linkedUsersFromUsersCollection || [];
+    stats.linkedUsers = linkedUsers.length;
   }
 
   function detectIssues() {
     detectedIssues = [];
     
-    // Build a map of linked player names
+    // Build a map of linked player names from aggregatedPlayerStats
     const linkedNames = new Map();
     allPlayers.forEach(player => {
       if (player._isAuthUser && player.linkedPlayer) {
         linkedNames.set(player.linkedPlayer.toLowerCase(), player);
       }
+    });
+    
+    // Build a map of all player IDs for quick lookup
+    const playerIdMap = new Map();
+    allPlayers.forEach(player => {
+      playerIdMap.set(player.id, player);
     });
     
     // Find issues
@@ -1199,6 +1238,77 @@
       }
     });
     
+    // NEW Issue 4: Users in users collection with linkedPlayer but no aggregatedPlayerStats entry
+    // OR their aggregatedPlayerStats entry has no seasons/stats
+    const linkedUsers = window.linkedUsersFromUsersCollection || [];
+    linkedUsers.forEach(user => {
+      const legacyId = user.linkedPlayer.toLowerCase().replace(/\s+/g, '_');
+      
+      // Check if auth user has aggregatedPlayerStats document
+      const authStatsDoc = playerIdMap.get(user._userId);
+      const legacyStatsDoc = playerIdMap.get(legacyId);
+      
+      // Check if legacy profile exists and is not migrated
+      const legacyExists = legacyStatsDoc && !legacyStatsDoc._isMigrated;
+      const legacyHasStats = legacyStatsDoc?.seasons && Object.keys(legacyStatsDoc.seasons).length > 0;
+      
+      // Check if auth user's stats doc exists and has the stats
+      const authHasStatsDoc = !!authStatsDoc;
+      const authHasStats = authStatsDoc?.seasons && Object.keys(authStatsDoc.seasons).length > 0;
+      
+      // Issue: Linked in users collection but legacy stats not migrated
+      if (legacyExists && legacyHasStats && !authHasStats) {
+        // Check if we already reported this
+        const alreadyReported = detectedIssues.find(i => 
+          (i.authUser?.id === user._userId || i.legacyProfile?.id === legacyId)
+        );
+        
+        if (!alreadyReported) {
+          detectedIssues.push({
+            type: 'needs-migration',
+            title: `Needs Migration: ${user.linkedPlayer}`,
+            description: `User "${user.displayName || user.email}" linked to "${user.linkedPlayer}" but stats not migrated. Legacy has ${Object.keys(legacyStatsDoc.seasons).length} seasons.`,
+            authUser: authStatsDoc || { 
+              id: user._userId, 
+              displayName: user.displayName, 
+              email: user.email,
+              linkedPlayer: user.linkedPlayer,
+              _isAuthUser: true,
+              _fromUsersCollection: true
+            },
+            legacyProfile: legacyStatsDoc,
+            suggestion: 'Merge legacy stats into auth user document'
+          });
+        }
+      }
+      
+      // Issue: User linked but NO aggregatedPlayerStats doc for auth user at all
+      if (!authHasStatsDoc && legacyExists) {
+        const alreadyReported = detectedIssues.find(i => 
+          i.authUser?.id === user._userId || i.authUser?._userId === user._userId
+        );
+        
+        if (!alreadyReported) {
+          detectedIssues.push({
+            type: 'missing-stats-doc',
+            title: `Missing Stats Doc: ${user.linkedPlayer}`,
+            description: `User "${user.displayName || user.email}" has no aggregatedPlayerStats document. Legacy profile "${legacyId}" exists with stats.`,
+            authUser: { 
+              id: user._userId, 
+              displayName: user.displayName, 
+              email: user.email,
+              linkedPlayer: user.linkedPlayer,
+              _isAuthUser: true,
+              _fromUsersCollection: true,
+              _noStatsDoc: true
+            },
+            legacyProfile: legacyStatsDoc,
+            suggestion: 'Create aggregatedPlayerStats doc for auth user and merge legacy stats'
+          });
+        }
+      }
+    });
+    
     stats.issues = detectedIssues.length;
     
     // Show/hide issues section
@@ -1235,24 +1345,60 @@
 
   window.quickSelectForMerge = function(issueIndex) {
     const issue = detectedIssues[issueIndex];
-    if (!issue || !issue.authUser || !issue.legacyProfile) return;
+    if (!issue || !issue.legacyProfile) return;
     
     // Clear current selection
     clearSelection();
     
-    // Search for both players
-    const results = [issue.legacyProfile, issue.authUser];
-    displayResults(results);
-    
-    // Set legacy as source, auth as target
-    selectedSources = [issue.legacyProfile];
-    selectedTarget = issue.authUser;
-    
-    updateSelectionDisplay();
-    updateMergePanel();
-    
-    log(`Quick setup: Merge "${issue.legacyProfile.id}" → "${issue.authUser.id}"`, 'success');
-    showToast('Merge setup complete - review and execute', 'success');
+    // For missing-stats-doc or needs-migration, we need special handling
+    if (issue.type === 'missing-stats-doc' || issue.type === 'needs-migration') {
+      // The auth user might not be in allPlayers, so we need to add them temporarily
+      let authUser = issue.authUser;
+      
+      if (authUser._fromUsersCollection || authUser._noStatsDoc) {
+        // Create a temporary entry for display
+        log(`Auth user ${authUser.id} not in aggregatedPlayerStats - will create on merge`, 'warning');
+      }
+      
+      // Display both records
+      const results = [issue.legacyProfile];
+      
+      // Add auth user to results if it exists in allPlayers
+      const existingAuth = allPlayers.find(p => p.id === authUser.id);
+      if (existingAuth) {
+        results.push(existingAuth);
+        authUser = existingAuth;
+      }
+      
+      displayResults(results);
+      
+      // Set legacy as source, auth as target
+      selectedSources = [issue.legacyProfile];
+      selectedTarget = authUser;
+      
+      updateSelectionDisplay();
+      updateMergePanel();
+      
+      log(`Quick setup: Merge "${issue.legacyProfile.id}" → "${authUser.id}"`, 'success');
+      if (authUser._noStatsDoc || authUser._fromUsersCollection) {
+        log(`Note: Will CREATE aggregatedPlayerStats/${authUser.id} on merge`, 'warning');
+      }
+      showToast('Merge setup complete - review and execute', 'success');
+    } else {
+      // Standard case - both records exist
+      const results = [issue.legacyProfile, issue.authUser];
+      displayResults(results);
+      
+      // Set legacy as source, auth as target
+      selectedSources = [issue.legacyProfile];
+      selectedTarget = issue.authUser;
+      
+      updateSelectionDisplay();
+      updateMergePanel();
+      
+      log(`Quick setup: Merge "${issue.legacyProfile.id}" → "${issue.authUser.id}"`, 'success');
+      showToast('Merge setup complete - review and execute', 'success');
+    }
     
     // Scroll to merge panel
     document.getElementById('mergePanel').scrollIntoView({ behavior: 'smooth' });
@@ -1689,9 +1835,9 @@
   }
 
   function calculateCombinedStats() {
-    // Start with target's data
+    // Start with target's data (might be empty if no aggregatedPlayerStats doc)
     const combined = {
-      seasons: { ...selectedTarget.seasons },
+      seasons: { ...(selectedTarget.seasons || {}) },
       pitchingSeasons: { ...(selectedTarget.pitchingSeasons || {}) },
       career: {
         games: 0,
@@ -1770,9 +1916,11 @@
       return;
     }
     
+    const isNewDoc = selectedTarget._noStatsDoc || selectedTarget._fromUsersCollection;
+    
     const confirmMsg = testMode 
       ? 'Run merge in TEST MODE? (No changes will be saved)'
-      : `Merge ${selectedSources.length} source record(s) into "${selectedTarget.name || selectedTarget.displayName}"?\n\nThis will:\n- Add all seasons to target\n- Recalculate career stats\n- Mark source records as "migrated"`;
+      : `Merge ${selectedSources.length} source record(s) into "${selectedTarget.linkedPlayer || selectedTarget.name || selectedTarget.displayName}"?\n\nThis will:\n${isNewDoc ? '- CREATE aggregatedPlayerStats document for auth user\n' : ''}- Add all seasons to target\n- Recalculate career stats\n- Mark source records as "migrated"`;
     
     if (!confirm(confirmMsg)) return;
     
@@ -1795,16 +1943,19 @@
         cleanSeasons[key] = cleanStats;
       });
       
-      log(`\nTarget: ${selectedTarget.name || selectedTarget.displayName} (${selectedTarget.id})`, 'info');
+      const targetName = selectedTarget.linkedPlayer || selectedTarget.name || selectedTarget.displayName;
+      log(`\nTarget: ${targetName} (${selectedTarget.id})`, 'info');
       log(`Sources: ${selectedSources.map(s => s.name || s.displayName).join(', ')}`, 'info');
       log(`\nCombined seasons: ${Object.keys(cleanSeasons).length}`, 'success');
       log(`Combined career games: ${combined.career.games}`, 'success');
       log(`Combined career hits: ${combined.career.hits}`, 'success');
       
+      if (isNewDoc) {
+        log(`\n⚠️ Target has no aggregatedPlayerStats doc - will CREATE`, 'warning');
+      }
+      
       if (!testMode) {
-        // Update target document
-        log('\n📝 Updating target document...', 'info');
-        
+        // Build the document data
         const updateData = {
           seasons: cleanSeasons,
           career: combined.career,
@@ -1813,9 +1964,27 @@
           mergedAt: serverTimestamp()
         };
         
+        // If creating new doc, add required fields
+        if (isNewDoc) {
+          updateData.name = targetName;
+          updateData.displayName = selectedTarget.displayName || targetName;
+          updateData.isAuthUser = true;
+          updateData.linkedPlayer = selectedTarget.linkedPlayer || targetName;
+          if (selectedTarget.email) updateData.email = selectedTarget.email;
+          if (selectedTarget.currentTeam) updateData.currentTeam = selectedTarget.currentTeam;
+          
+          // Get team from first source if not set
+          if (!updateData.currentTeam && selectedSources[0]?.currentTeam) {
+            updateData.currentTeam = selectedSources[0].currentTeam;
+          }
+        }
+        
         if (Object.keys(combined.pitchingSeasons).length > 0) {
           updateData.pitchingSeasons = combined.pitchingSeasons;
         }
+        
+        // Update/create target document
+        log('\n📝 Updating target document...', 'info');
         
         await setDoc(
           doc(db, 'aggregatedPlayerStats', selectedTarget.id),
@@ -1823,7 +1992,7 @@
           { merge: true }
         );
         
-        log('✅ Target document updated', 'success');
+        log(`✅ Target document ${isNewDoc ? 'created' : 'updated'}`, 'success');
         
         // Mark source documents as migrated
         for (const source of selectedSources) {
