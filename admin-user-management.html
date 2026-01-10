@@ -1,0 +1,1411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<link rel="manifest" href="/manifest.json">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>User Management - Mountainside Aces Admin</title>
+<meta name="theme-color" content="#6b21a8">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="stylesheet" href="mobile-enhancements.css">
+<link rel="stylesheet" href="nav-styles.css">
+<style>
+  :root {
+    --primary-color: #2d5016;
+    --secondary-color: #1a6b4a;
+    --accent-color: #ffd700;
+    --admin-color: #6b21a8;
+    --admin-secondary: #7c3aed;
+    --card-bg: #ffffff;
+    --text-dark: #2d3748;
+    --text-light: #718096;
+    --border-color: #e2e8f0;
+    --shadow-sm: 0 2px 8px rgba(0,0,0,0.08);
+    --shadow-md: 0 4px 16px rgba(0,0,0,0.12);
+    --shadow-lg: 0 12px 32px rgba(0,0,0,0.16);
+    --success-color: #22c55e;
+    --warning-color: #f59e0b;
+    --danger-color: #ef4444;
+    --info-color: #3b82f6;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    margin: 0;
+    padding: 0;
+    background: linear-gradient(135deg, #f7fafc 0%, #edf2f7 100%);
+    min-height: 100vh;
+    color: var(--text-dark);
+  }
+
+  /* Loading Overlay */
+  .loading-overlay {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(255,255,255,0.95);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    transition: opacity 0.5s ease;
+  }
+
+  .loading-overlay.hidden {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .loading-spinner::before {
+    content: '👥';
+    font-size: 80px;
+    animation: pulse 1.5s ease-in-out infinite;
+  }
+
+  .loading-text {
+    margin-top: 1rem;
+    color: var(--text-light);
+    font-size: 1.1rem;
+  }
+
+  @keyframes pulse {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.1); opacity: 0.8; }
+  }
+
+  /* Auth Gate */
+  .auth-gate {
+    display: none;
+    max-width: 500px;
+    margin: 4rem auto;
+    padding: 3rem;
+    background: var(--card-bg);
+    border-radius: 16px;
+    box-shadow: var(--shadow-lg);
+    text-align: center;
+  }
+
+  .auth-gate.visible { display: block; }
+
+  .auth-gate h2 {
+    color: var(--danger-color);
+    margin-bottom: 1rem;
+  }
+
+  .auth-gate p {
+    color: var(--text-light);
+    margin-bottom: 2rem;
+  }
+
+  .auth-gate a {
+    display: inline-block;
+    padding: 0.75rem 2rem;
+    background: var(--admin-color);
+    color: white;
+    text-decoration: none;
+    border-radius: 8px;
+    font-weight: 600;
+    margin: 0.5rem;
+  }
+
+  /* Header */
+  .header {
+    background: linear-gradient(135deg, var(--admin-color) 0%, var(--admin-secondary) 100%);
+    color: white;
+    padding: 2rem;
+    box-shadow: var(--shadow-lg);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .header::before {
+    content: '';
+    position: absolute;
+    top: -100px;
+    right: -100px;
+    width: 300px;
+    height: 300px;
+    background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+    border-radius: 50%;
+  }
+
+  .header::after {
+    content: '👥';
+    position: absolute;
+    bottom: -40px;
+    left: -30px;
+    font-size: 180px;
+    opacity: 0.08;
+  }
+
+  .header-content {
+    max-width: 1400px;
+    margin: 0 auto;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    position: relative;
+    z-index: 1;
+  }
+
+  .header h1 {
+    margin: 0;
+    font-size: 1.75rem;
+    font-weight: 800;
+    margin-bottom: 0.25rem;
+  }
+
+  .header p {
+    margin: 0;
+    opacity: 0.9;
+    font-size: 0.95rem;
+  }
+
+  .admin-badge {
+    display: inline-block;
+    background: rgba(255,255,255,0.2);
+    padding: 0.25rem 0.75rem;
+    border-radius: 20px;
+    font-size: 0.85rem;
+    margin-top: 0.5rem;
+  }
+
+  .header-buttons {
+    display: flex;
+    gap: 0.75rem;
+  }
+
+  .nav-btn {
+    padding: 0.75rem 1.25rem;
+    border: 2px solid white;
+    background: white;
+    color: var(--admin-color);
+    border-radius: 10px;
+    font-weight: 600;
+    font-size: 0.9rem;
+    cursor: pointer;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    transition: all 0.3s ease;
+  }
+
+  .nav-btn:hover {
+    background: var(--accent-color);
+    transform: translateY(-2px);
+  }
+
+  /* Main Container */
+  .main-content {
+    display: none;
+  }
+
+  .main-content.visible { display: block; }
+
+  .container {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 2rem;
+  }
+
+  /* Section Cards */
+  .section {
+    background: var(--card-bg);
+    border-radius: 16px;
+    box-shadow: var(--shadow-md);
+    margin-bottom: 2rem;
+    overflow: hidden;
+    border: 1px solid var(--border-color);
+  }
+
+  .section-header {
+    background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+    padding: 1.25rem 1.5rem;
+    font-size: 1.15rem;
+    font-weight: 700;
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .section-content {
+    padding: 1.5rem;
+  }
+
+  /* Info Boxes */
+  .info-box, .warning-box, .success-box {
+    padding: 1.25rem;
+    border-radius: 12px;
+    margin-bottom: 1.5rem;
+  }
+
+  .info-box {
+    background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
+    border: 2px solid var(--info-color);
+  }
+
+  .warning-box {
+    background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+    border: 2px solid var(--warning-color);
+  }
+
+  .success-box {
+    background: linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%);
+    border: 2px solid var(--success-color);
+  }
+
+  /* Search and Filters */
+  .search-row {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  .search-input {
+    flex: 1;
+    min-width: 250px;
+    padding: 0.75rem 1rem;
+    font-size: 1rem;
+    border: 2px solid var(--border-color);
+    border-radius: 8px;
+    transition: border-color 0.2s;
+  }
+
+  .search-input:focus {
+    outline: none;
+    border-color: var(--admin-color);
+  }
+
+  /* Buttons */
+  button {
+    padding: 0.75rem 1.5rem;
+    border: none;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 0.95rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  .btn-primary {
+    background: var(--admin-color);
+    color: white;
+  }
+
+  .btn-primary:hover:not(:disabled) {
+    background: var(--admin-secondary);
+    transform: translateY(-1px);
+  }
+
+  .btn-success {
+    background: var(--success-color);
+    color: white;
+  }
+
+  .btn-success:hover:not(:disabled) {
+    background: #16a34a;
+  }
+
+  .btn-danger {
+    background: var(--danger-color);
+    color: white;
+  }
+
+  .btn-danger:hover:not(:disabled) {
+    background: #dc2626;
+  }
+
+  .btn-secondary {
+    background: #64748b;
+    color: white;
+  }
+
+  .btn-secondary:hover:not(:disabled) {
+    background: #475569;
+  }
+
+  .btn-info {
+    background: var(--info-color);
+    color: white;
+  }
+
+  .btn-info:hover:not(:disabled) {
+    background: #2563eb;
+  }
+
+  .btn-sm {
+    padding: 0.5rem 1rem;
+    font-size: 0.85rem;
+  }
+
+  /* Player List */
+  .player-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    max-height: 400px;
+    overflow-y: auto;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 0.5rem;
+  }
+
+  .player-item {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.75rem 1rem;
+    background: #f8fafc;
+    border-radius: 8px;
+    transition: all 0.2s;
+    cursor: pointer;
+  }
+
+  .player-item:hover {
+    background: #e2e8f0;
+  }
+
+  .player-item.selected {
+    background: #dbeafe;
+    border: 2px solid var(--info-color);
+  }
+
+  .player-item.selected-target {
+    background: #dcfce7;
+    border: 2px solid var(--success-color);
+  }
+
+  .player-item input[type="checkbox"] {
+    width: 20px;
+    height: 20px;
+    cursor: pointer;
+  }
+
+  .player-info {
+    flex: 1;
+  }
+
+  .player-name {
+    font-weight: 600;
+    color: var(--text-dark);
+  }
+
+  .player-meta {
+    font-size: 0.85rem;
+    color: var(--text-light);
+    margin-top: 0.25rem;
+  }
+
+  .player-stats-mini {
+    font-size: 0.8rem;
+    color: var(--admin-color);
+    background: #f1f5f9;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+  }
+
+  /* Merge Panel */
+  .merge-panel {
+    background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+    border: 2px solid var(--warning-color);
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin-top: 1.5rem;
+    display: none;
+  }
+
+  .merge-panel.visible {
+    display: block;
+  }
+
+  .merge-panel h3 {
+    margin: 0 0 1rem 0;
+    color: var(--text-dark);
+  }
+
+  .merge-summary {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    gap: 1rem;
+    align-items: center;
+    margin-bottom: 1.5rem;
+  }
+
+  .merge-arrow {
+    font-size: 2rem;
+    color: var(--warning-color);
+  }
+
+  .merge-box {
+    background: white;
+    padding: 1rem;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+  }
+
+  .merge-box h4 {
+    margin: 0 0 0.5rem 0;
+    font-size: 0.9rem;
+    color: var(--text-light);
+    text-transform: uppercase;
+  }
+
+  .merge-box .player-name {
+    font-size: 1.1rem;
+  }
+
+  /* Stats Preview */
+  .stats-preview {
+    background: #f8fafc;
+    border-radius: 8px;
+    padding: 1rem;
+    margin-top: 1rem;
+  }
+
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+    gap: 0.75rem;
+    margin-top: 0.75rem;
+  }
+
+  .stat-item {
+    text-align: center;
+    padding: 0.5rem;
+    background: white;
+    border-radius: 6px;
+  }
+
+  .stat-value {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--admin-color);
+  }
+
+  .stat-label {
+    font-size: 0.75rem;
+    color: var(--text-light);
+    text-transform: uppercase;
+  }
+
+  /* Console Output */
+  #output {
+    background: #1e293b;
+    color: #a5f3fc;
+    padding: 1.5rem;
+    border-radius: 12px;
+    max-height: 400px;
+    overflow-y: auto;
+    font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
+    font-size: 13px;
+    line-height: 1.7;
+    white-space: pre-wrap;
+    margin-top: 1.5rem;
+    border: 1px solid #334155;
+  }
+
+  .log-success { color: #4ade80; }
+  .log-error { color: #f87171; }
+  .log-warning { color: #fbbf24; }
+  .log-header { color: #818cf8; font-weight: bold; }
+  .log-info { color: #38bdf8; }
+
+  /* Seasons Table */
+  .seasons-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+    margin-top: 1rem;
+  }
+
+  .seasons-table th,
+  .seasons-table td {
+    padding: 0.5rem;
+    text-align: left;
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  .seasons-table th {
+    background: #f1f5f9;
+    font-weight: 600;
+    color: var(--text-light);
+    font-size: 0.8rem;
+    text-transform: uppercase;
+  }
+
+  .seasons-table tr:hover td {
+    background: #f8fafc;
+  }
+
+  /* Toast Notifications */
+  .toast-container {
+    position: fixed;
+    bottom: 2rem;
+    right: 2rem;
+    z-index: 10000;
+  }
+
+  .toast {
+    padding: 1rem 1.5rem;
+    border-radius: 8px;
+    color: white;
+    font-weight: 500;
+    margin-top: 0.5rem;
+    box-shadow: var(--shadow-lg);
+    animation: slideIn 0.3s ease;
+  }
+
+  .toast-success { background: var(--success-color); }
+  .toast-error { background: var(--danger-color); }
+  .toast-warning { background: var(--warning-color); }
+
+  @keyframes slideIn {
+    from { transform: translateX(100%); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+  }
+
+  /* Responsive */
+  @media (max-width: 768px) {
+    .header-content {
+      flex-direction: column;
+      text-align: center;
+      gap: 1rem;
+    }
+
+    .search-row {
+      flex-direction: column;
+    }
+
+    .search-input {
+      width: 100%;
+    }
+
+    .merge-summary {
+      grid-template-columns: 1fr;
+    }
+
+    .merge-arrow {
+      transform: rotate(90deg);
+    }
+  }
+</style>
+</head>
+<body>
+
+<!-- Loading Overlay -->
+<div class="loading-overlay" id="loadingOverlay">
+  <div class="loading-spinner"></div>
+  <div class="loading-text">Loading user data...</div>
+</div>
+
+<!-- Auth Gate -->
+<div class="auth-gate" id="authGate">
+  <h2>🔒 Admin Access Required</h2>
+  <p>You need admin or league staff permissions to access User Management.</p>
+  <a href="signin.html">Sign In</a>
+  <a href="index.html" style="background: var(--primary-color);">Back to Home</a>
+</div>
+
+<!-- Main Content -->
+<div class="main-content" id="mainContent">
+  
+  <!-- Header -->
+  <header class="header">
+    <div class="header-content">
+      <div>
+        <h1>👥 User Management</h1>
+        <p>Combine duplicate player records and re-aggregate stats</p>
+        <span class="admin-badge">🔒 Admin Tool</span>
+      </div>
+      <div class="header-buttons">
+        <a href="admin-content.html" class="nav-btn">← Back to Admin</a>
+        <a href="aggregate-stats.html" class="nav-btn">📊 Aggregator</a>
+      </div>
+    </div>
+  </header>
+
+  <div class="container">
+    
+    <!-- Info Box -->
+    <div class="info-box">
+      <strong>ℹ️ How to Combine Player Records (e.g., Joe/Joseph)</strong>
+      <ol style="margin: 0.75rem 0 0 1.5rem; padding: 0;">
+        <li>Search for player name variants (e.g., "Joe Smith" and "Joseph Smith")</li>
+        <li>Select the records to merge as <strong>Source</strong> (stats will be taken from these)</li>
+        <li>Select ONE record as the <strong>Target</strong> (all stats merge into this)</li>
+        <li>Preview the combined stats, then execute the merge</li>
+        <li>Source records will be marked as "migrated" to prevent duplicates</li>
+      </ol>
+    </div>
+
+    <!-- Player Search Section -->
+    <div class="section">
+      <div class="section-header">🔍 Find Player Records</div>
+      <div class="section-content">
+        
+        <div class="search-row">
+          <input type="text" id="playerSearch" class="search-input" placeholder="Search by name (e.g., 'Joe Smith' or 'Joseph')...">
+          <button onclick="searchPlayers()" class="btn-primary">🔍 Search</button>
+          <button onclick="findPotentialDuplicates()" class="btn-info">🔄 Find Duplicates</button>
+          <button onclick="clearSelection()" class="btn-secondary">✕ Clear</button>
+        </div>
+
+        <div id="searchResults" class="player-list" style="display: none;">
+          <!-- Player items will be inserted here -->
+        </div>
+
+        <p id="resultCount" style="margin-top: 1rem; color: var(--text-light);"></p>
+
+      </div>
+    </div>
+
+    <!-- Merge Panel -->
+    <div class="merge-panel" id="mergePanel">
+      <h3>⚡ Merge Preview</h3>
+      
+      <div class="merge-summary">
+        <div class="merge-box">
+          <h4>📥 Source Records (will be merged)</h4>
+          <div id="sourceList">
+            <!-- Source players listed here -->
+          </div>
+        </div>
+        
+        <div class="merge-arrow">→</div>
+        
+        <div class="merge-box">
+          <h4>📤 Target Record (receives all stats)</h4>
+          <div id="targetInfo">
+            <!-- Target player info here -->
+          </div>
+        </div>
+      </div>
+
+      <!-- Combined Stats Preview -->
+      <div class="stats-preview">
+        <strong>📊 Combined Career Stats Preview</strong>
+        <div class="stats-grid" id="combinedStatsPreview">
+          <!-- Stats will be shown here -->
+        </div>
+      </div>
+
+      <!-- Seasons Preview -->
+      <div class="stats-preview" style="margin-top: 1rem;">
+        <strong>📅 Seasons to Merge</strong>
+        <table class="seasons-table" id="seasonsTable">
+          <thead>
+            <tr>
+              <th>Season</th>
+              <th>Team</th>
+              <th>G</th>
+              <th>AB</th>
+              <th>H</th>
+              <th>R</th>
+              <th>AVG</th>
+              <th>Source</th>
+            </tr>
+          </thead>
+          <tbody id="seasonsList">
+            <!-- Seasons listed here -->
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Merge Actions -->
+      <div style="margin-top: 1.5rem; display: flex; gap: 1rem; flex-wrap: wrap;">
+        <button onclick="executeMerge()" class="btn-success" id="mergeBtn">
+          ✅ Execute Merge
+        </button>
+        <button onclick="executeMerge(true)" class="btn-warning" id="mergeTestBtn">
+          🧪 Test Mode (Preview Only)
+        </button>
+        <button onclick="clearSelection()" class="btn-secondary">
+          ✕ Cancel
+        </button>
+      </div>
+    </div>
+
+    <!-- Output Console -->
+    <div class="section">
+      <div class="section-header">📋 Operation Log</div>
+      <div class="section-content">
+        <div id="output">Ready. Search for players to begin...</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Toast Container -->
+<div class="toast-container" id="toastContainer"></div>
+
+<script type="module">
+  import { db, app } from './firebase-config.js';
+  import { 
+    collection, 
+    getDocs, 
+    doc, 
+    getDoc, 
+    setDoc,
+    updateDoc,
+    serverTimestamp 
+  } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+  import { 
+    getAuth, 
+    onAuthStateChanged 
+  } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
+  
+  // Make Firebase available globally
+  window.db = db;
+  window.collection = collection;
+  window.getDocs = getDocs;
+  window.doc = doc;
+  window.getDoc = getDoc;
+  window.setDoc = setDoc;
+  window.updateDoc = updateDoc;
+  window.serverTimestamp = serverTimestamp;
+
+  const auth = getAuth(app);
+  
+  let currentUser = null;
+  let allPlayers = [];
+  let selectedSources = [];
+  let selectedTarget = null;
+
+  // Initialize
+  onAuthStateChanged(auth, async (user) => {
+    if (user) {
+      currentUser = user;
+      await checkAdminAccess();
+    } else {
+      hideLoading();
+      showAuthGate();
+    }
+  });
+
+  async function checkAdminAccess() {
+    try {
+      const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+      if (!userDoc.exists()) {
+        hideLoading();
+        showAuthGate();
+        return;
+      }
+      
+      const userData = userDoc.data();
+      if (userData.userRole !== 'admin' && userData.userRole !== 'league-staff') {
+        hideLoading();
+        showAuthGate();
+        return;
+      }
+      
+      // Load all players
+      await loadAllPlayers();
+      hideLoading();
+      showMainContent();
+      
+    } catch (error) {
+      console.error('Error checking admin access:', error);
+      hideLoading();
+      showAuthGate();
+    }
+  }
+
+  async function loadAllPlayers() {
+    log('Loading all player records...', 'info');
+    
+    const statsRef = collection(db, 'aggregatedPlayerStats');
+    const snapshot = await getDocs(statsRef);
+    
+    allPlayers = [];
+    snapshot.forEach(docSnap => {
+      const data = docSnap.data();
+      allPlayers.push({
+        id: docSnap.id,
+        ...data
+      });
+    });
+    
+    // Sort by name
+    allPlayers.sort((a, b) => {
+      const nameA = (a.name || a.displayName || '').toLowerCase();
+      const nameB = (b.name || b.displayName || '').toLowerCase();
+      return nameA.localeCompare(nameB);
+    });
+    
+    log(`Loaded ${allPlayers.length} player records`, 'success');
+  }
+
+  // ============================================
+  // SEARCH FUNCTIONS
+  // ============================================
+
+  window.searchPlayers = function() {
+    const searchTerm = document.getElementById('playerSearch').value.trim().toLowerCase();
+    
+    if (!searchTerm) {
+      showToast('Please enter a search term', 'warning');
+      return;
+    }
+    
+    log(`Searching for: "${searchTerm}"`, 'info');
+    
+    const results = allPlayers.filter(player => {
+      const name = (player.name || player.displayName || '').toLowerCase();
+      const id = player.id.toLowerCase();
+      
+      // Check if search term matches name or ID
+      return name.includes(searchTerm) || id.includes(searchTerm);
+    });
+    
+    displayResults(results);
+    log(`Found ${results.length} matching records`, 'success');
+  };
+
+  window.findPotentialDuplicates = function() {
+    log('Scanning for potential duplicate records...', 'info');
+    
+    const duplicates = [];
+    const processedNames = new Set();
+    
+    allPlayers.forEach(player => {
+      if (player.migrated) return;
+      
+      const lastName = extractLastName(player.name || player.displayName || '');
+      if (!lastName || processedNames.has(lastName)) return;
+      
+      // Find all players with same last name
+      const sameLastName = allPlayers.filter(p => {
+        if (p.migrated) return false;
+        const pLastName = extractLastName(p.name || p.displayName || '');
+        return pLastName === lastName;
+      });
+      
+      if (sameLastName.length > 1) {
+        sameLastName.forEach(p => {
+          if (!duplicates.find(d => d.id === p.id)) {
+            duplicates.push(p);
+          }
+        });
+        processedNames.add(lastName);
+      }
+    });
+    
+    // Sort by last name for easier review
+    duplicates.sort((a, b) => {
+      const lastA = extractLastName(a.name || a.displayName || '');
+      const lastB = extractLastName(b.name || b.displayName || '');
+      return lastA.localeCompare(lastB);
+    });
+    
+    displayResults(duplicates);
+    log(`Found ${duplicates.length} potential duplicate records`, 'success');
+  };
+
+  function extractLastName(fullName) {
+    if (!fullName) return '';
+    const parts = fullName.trim().split(/\s+/);
+    return parts[parts.length - 1].toLowerCase();
+  }
+
+  function displayResults(players) {
+    const container = document.getElementById('searchResults');
+    const countEl = document.getElementById('resultCount');
+    
+    if (players.length === 0) {
+      container.innerHTML = '<div style="padding: 2rem; text-align: center; color: var(--text-light);">No players found</div>';
+      container.style.display = 'block';
+      countEl.textContent = '';
+      return;
+    }
+    
+    container.innerHTML = players.map(player => {
+      const name = player.name || player.displayName || 'Unknown';
+      const seasons = player.seasons ? Object.keys(player.seasons).length : 0;
+      const games = player.career?.games || 0;
+      const hits = player.career?.hits || 0;
+      const isMigrated = player.migrated === true;
+      const isAuth = player.isAuthUser === true;
+      
+      return `
+        <div class="player-item ${isMigrated ? 'migrated' : ''}" 
+             data-id="${player.id}"
+             onclick="togglePlayerSelection('${player.id}')">
+          <input type="checkbox" 
+                 id="chk_${player.id}" 
+                 onclick="event.stopPropagation()"
+                 onchange="togglePlayerSelection('${player.id}')">
+          <div class="player-info">
+            <div class="player-name">
+              ${name}
+              ${isMigrated ? '<span style="color: var(--warning-color);">(migrated)</span>' : ''}
+              ${isAuth ? '<span style="color: var(--success-color);">🔐</span>' : ''}
+            </div>
+            <div class="player-meta">
+              ID: <code>${player.id}</code>
+              ${player.linkedPlayer ? ` • Linked: ${player.linkedPlayer}` : ''}
+            </div>
+          </div>
+          <div class="player-stats-mini">
+            ${seasons} seasons • ${games} G • ${hits} H
+          </div>
+          <button class="btn-sm btn-info" onclick="event.stopPropagation(); setAsTarget('${player.id}')">
+            Set Target
+          </button>
+        </div>
+      `;
+    }).join('');
+    
+    container.style.display = 'block';
+    countEl.textContent = `Showing ${players.length} records`;
+    
+    // Update checkboxes for already selected items
+    updateSelectionDisplay();
+  }
+
+  // ============================================
+  // SELECTION FUNCTIONS
+  // ============================================
+
+  window.togglePlayerSelection = function(playerId) {
+    const checkbox = document.getElementById(`chk_${playerId}`);
+    const item = document.querySelector(`.player-item[data-id="${playerId}"]`);
+    
+    // Don't allow selecting target as source
+    if (selectedTarget && selectedTarget.id === playerId) {
+      showToast('Cannot select target as source', 'warning');
+      checkbox.checked = false;
+      return;
+    }
+    
+    if (checkbox.checked) {
+      // Add to sources
+      const player = allPlayers.find(p => p.id === playerId);
+      if (player && !selectedSources.find(s => s.id === playerId)) {
+        selectedSources.push(player);
+        item.classList.add('selected');
+      }
+    } else {
+      // Remove from sources
+      selectedSources = selectedSources.filter(s => s.id !== playerId);
+      item.classList.remove('selected');
+    }
+    
+    updateMergePanel();
+  };
+
+  window.setAsTarget = function(playerId) {
+    // Remove previous target styling
+    document.querySelectorAll('.player-item.selected-target').forEach(el => {
+      el.classList.remove('selected-target');
+    });
+    
+    // Remove from sources if it was there
+    selectedSources = selectedSources.filter(s => s.id !== playerId);
+    
+    // Set new target
+    const player = allPlayers.find(p => p.id === playerId);
+    if (player) {
+      selectedTarget = player;
+      
+      // Update checkbox
+      const checkbox = document.getElementById(`chk_${playerId}`);
+      if (checkbox) {
+        checkbox.checked = false;
+      }
+      
+      // Add target styling
+      const item = document.querySelector(`.player-item[data-id="${playerId}"]`);
+      if (item) {
+        item.classList.remove('selected');
+        item.classList.add('selected-target');
+      }
+      
+      log(`Set target: ${player.name || player.displayName}`, 'success');
+    }
+    
+    updateMergePanel();
+  };
+
+  window.clearSelection = function() {
+    selectedSources = [];
+    selectedTarget = null;
+    
+    // Clear all checkboxes and styling
+    document.querySelectorAll('.player-item').forEach(el => {
+      el.classList.remove('selected', 'selected-target');
+    });
+    document.querySelectorAll('.player-item input[type="checkbox"]').forEach(cb => {
+      cb.checked = false;
+    });
+    
+    document.getElementById('mergePanel').classList.remove('visible');
+    log('Selection cleared', 'info');
+  };
+
+  function updateSelectionDisplay() {
+    selectedSources.forEach(source => {
+      const checkbox = document.getElementById(`chk_${source.id}`);
+      const item = document.querySelector(`.player-item[data-id="${source.id}"]`);
+      if (checkbox) checkbox.checked = true;
+      if (item) item.classList.add('selected');
+    });
+    
+    if (selectedTarget) {
+      const item = document.querySelector(`.player-item[data-id="${selectedTarget.id}"]`);
+      if (item) item.classList.add('selected-target');
+    }
+  }
+
+  // ============================================
+  // MERGE PREVIEW
+  // ============================================
+
+  function updateMergePanel() {
+    const panel = document.getElementById('mergePanel');
+    
+    if (selectedSources.length === 0 || !selectedTarget) {
+      panel.classList.remove('visible');
+      return;
+    }
+    
+    panel.classList.add('visible');
+    
+    // Update source list
+    document.getElementById('sourceList').innerHTML = selectedSources.map(p => `
+      <div class="player-name" style="margin-bottom: 0.5rem;">
+        ${p.name || p.displayName} 
+        <span style="color: var(--text-light); font-weight: normal;">(${p.id})</span>
+      </div>
+    `).join('');
+    
+    // Update target info
+    document.getElementById('targetInfo').innerHTML = `
+      <div class="player-name" style="color: var(--success-color);">
+        ${selectedTarget.name || selectedTarget.displayName}
+        <span style="color: var(--text-light); font-weight: normal;">(${selectedTarget.id})</span>
+      </div>
+    `;
+    
+    // Calculate combined stats
+    const combined = calculateCombinedStats();
+    
+    // Update stats preview
+    document.getElementById('combinedStatsPreview').innerHTML = `
+      <div class="stat-item">
+        <div class="stat-value">${combined.career.games}</div>
+        <div class="stat-label">Games</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-value">${combined.career.atBats}</div>
+        <div class="stat-label">At Bats</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-value">${combined.career.hits}</div>
+        <div class="stat-label">Hits</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-value">${combined.career.runs}</div>
+        <div class="stat-label">Runs</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-value">${combined.career.walks}</div>
+        <div class="stat-label">Walks</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-value">${combined.career.battingAverage.toFixed(3)}</div>
+        <div class="stat-label">AVG</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-value">${combined.career.onBasePercentage.toFixed(3)}</div>
+        <div class="stat-label">OBP</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-value">${Object.keys(combined.seasons).length}</div>
+        <div class="stat-label">Seasons</div>
+      </div>
+    `;
+    
+    // Update seasons table
+    const seasonsList = [];
+    Object.entries(combined.seasons).forEach(([seasonId, stats]) => {
+      seasonsList.push({
+        seasonId,
+        ...stats,
+        source: stats._source || 'Unknown'
+      });
+    });
+    
+    // Sort by season
+    seasonsList.sort((a, b) => b.seasonId.localeCompare(a.seasonId));
+    
+    document.getElementById('seasonsList').innerHTML = seasonsList.map(s => `
+      <tr>
+        <td><strong>${s.seasonId}</strong></td>
+        <td>${s.team || '-'}</td>
+        <td>${s.games || 0}</td>
+        <td>${s.atBats || 0}</td>
+        <td>${s.hits || 0}</td>
+        <td>${s.runs || 0}</td>
+        <td>${s.battingAverage ? s.battingAverage.toFixed(3) : '.000'}</td>
+        <td><code style="font-size: 0.75rem;">${s.source}</code></td>
+      </tr>
+    `).join('');
+  }
+
+  function calculateCombinedStats() {
+    // Start with target's data
+    const combined = {
+      seasons: { ...selectedTarget.seasons },
+      pitchingSeasons: { ...(selectedTarget.pitchingSeasons || {}) },
+      career: {
+        games: 0,
+        atBats: 0,
+        hits: 0,
+        runs: 0,
+        walks: 0,
+        doubles: 0,
+        triples: 0,
+        homeRuns: 0,
+        rbi: 0,
+        strikeouts: 0,
+        stolenBases: 0
+      }
+    };
+    
+    // Mark target seasons
+    Object.keys(combined.seasons).forEach(key => {
+      combined.seasons[key]._source = selectedTarget.id;
+    });
+    
+    // Add seasons from sources (only if not already present)
+    selectedSources.forEach(source => {
+      if (source.seasons) {
+        Object.entries(source.seasons).forEach(([seasonId, stats]) => {
+          if (!combined.seasons[seasonId]) {
+            combined.seasons[seasonId] = { ...stats, _source: source.id };
+          } else {
+            // Season exists - log conflict
+            log(`Season ${seasonId} exists in multiple records - keeping target's version`, 'warning');
+          }
+        });
+      }
+      
+      // Merge pitching seasons
+      if (source.pitchingSeasons) {
+        Object.entries(source.pitchingSeasons).forEach(([seasonId, stats]) => {
+          if (!combined.pitchingSeasons[seasonId]) {
+            combined.pitchingSeasons[seasonId] = { ...stats };
+          }
+        });
+      }
+    });
+    
+    // Recalculate career totals
+    Object.values(combined.seasons).forEach(season => {
+      combined.career.games += season.games || 0;
+      combined.career.atBats += season.atBats || 0;
+      combined.career.hits += season.hits || 0;
+      combined.career.runs += season.runs || 0;
+      combined.career.walks += season.walks || 0;
+      combined.career.doubles += season.doubles || 0;
+      combined.career.triples += season.triples || 0;
+      combined.career.homeRuns += season.homeRuns || 0;
+      combined.career.rbi += season.rbi || 0;
+      combined.career.strikeouts += season.strikeouts || 0;
+      combined.career.stolenBases += season.stolenBases || 0;
+    });
+    
+    // Calculate rate stats
+    combined.career.battingAverage = combined.career.atBats > 0 
+      ? combined.career.hits / combined.career.atBats : 0;
+    combined.career.onBasePercentage = (combined.career.atBats + combined.career.walks) > 0
+      ? (combined.career.hits + combined.career.walks) / (combined.career.atBats + combined.career.walks) : 0;
+    
+    return combined;
+  }
+
+  // ============================================
+  // EXECUTE MERGE
+  // ============================================
+
+  window.executeMerge = async function(testMode = false) {
+    if (selectedSources.length === 0 || !selectedTarget) {
+      showToast('Please select source and target records', 'warning');
+      return;
+    }
+    
+    const confirmMsg = testMode 
+      ? 'Run merge in TEST MODE? (No changes will be saved)'
+      : `Merge ${selectedSources.length} source record(s) into "${selectedTarget.name || selectedTarget.displayName}"?\n\nThis will:\n- Add all seasons to target\n- Recalculate career stats\n- Mark source records as "migrated"`;
+    
+    if (!confirm(confirmMsg)) return;
+    
+    const btn = document.getElementById(testMode ? 'mergeTestBtn' : 'mergeBtn');
+    btn.disabled = true;
+    btn.textContent = testMode ? '🧪 Testing...' : '⏳ Merging...';
+    
+    log('═══════════════════════════════════════', 'header');
+    log(testMode ? '🧪 TEST MODE - Preview Only' : '⚡ EXECUTING MERGE', 'header');
+    log('═══════════════════════════════════════', 'header');
+    
+    try {
+      // Calculate combined data
+      const combined = calculateCombinedStats();
+      
+      // Clean up _source markers
+      const cleanSeasons = {};
+      Object.entries(combined.seasons).forEach(([key, value]) => {
+        const { _source, ...cleanStats } = value;
+        cleanSeasons[key] = cleanStats;
+      });
+      
+      log(`\nTarget: ${selectedTarget.name || selectedTarget.displayName} (${selectedTarget.id})`, 'info');
+      log(`Sources: ${selectedSources.map(s => s.name || s.displayName).join(', ')}`, 'info');
+      log(`\nCombined seasons: ${Object.keys(cleanSeasons).length}`, 'success');
+      log(`Combined career games: ${combined.career.games}`, 'success');
+      log(`Combined career hits: ${combined.career.hits}`, 'success');
+      
+      if (!testMode) {
+        // Update target document
+        log('\n📝 Updating target document...', 'info');
+        
+        const updateData = {
+          seasons: cleanSeasons,
+          career: combined.career,
+          lastUpdated: serverTimestamp(),
+          mergedFrom: selectedSources.map(s => s.id),
+          mergedAt: serverTimestamp()
+        };
+        
+        if (Object.keys(combined.pitchingSeasons).length > 0) {
+          updateData.pitchingSeasons = combined.pitchingSeasons;
+        }
+        
+        await setDoc(
+          doc(db, 'aggregatedPlayerStats', selectedTarget.id),
+          updateData,
+          { merge: true }
+        );
+        
+        log('✅ Target document updated', 'success');
+        
+        // Mark source documents as migrated
+        for (const source of selectedSources) {
+          log(`\n📝 Marking ${source.id} as migrated...`, 'info');
+          
+          await updateDoc(
+            doc(db, 'aggregatedPlayerStats', source.id),
+            {
+              migrated: true,
+              migratedTo: selectedTarget.id,
+              migratedAt: serverTimestamp()
+            }
+          );
+          
+          log(`✅ ${source.id} marked as migrated`, 'success');
+        }
+        
+        log('\n═══════════════════════════════════════', 'header');
+        log('✅ MERGE COMPLETE', 'header');
+        log('═══════════════════════════════════════', 'header');
+        
+        showToast('Merge completed successfully!', 'success');
+        
+        // Refresh data
+        await loadAllPlayers();
+        clearSelection();
+        
+      } else {
+        log('\n═══════════════════════════════════════', 'header');
+        log('🧪 TEST COMPLETE - No changes made', 'header');
+        log('═══════════════════════════════════════', 'header');
+        
+        showToast('Test complete - no changes made', 'warning');
+      }
+      
+    } catch (error) {
+      log(`\n❌ Error: ${error.message}`, 'error');
+      console.error(error);
+      showToast('Error during merge - check console', 'error');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = testMode ? '🧪 Test Mode (Preview Only)' : '✅ Execute Merge';
+    }
+  };
+
+  // ============================================
+  // UTILITY FUNCTIONS
+  // ============================================
+
+  function log(message, type = '') {
+    const output = document.getElementById('output');
+    const timestamp = new Date().toLocaleTimeString();
+    
+    let className = '';
+    if (type === 'success') className = 'log-success';
+    else if (type === 'error') className = 'log-error';
+    else if (type === 'warning') className = 'log-warning';
+    else if (type === 'header') className = 'log-header';
+    else if (type === 'info') className = 'log-info';
+    
+    output.innerHTML += `<span class="${className}">[${timestamp}] ${message}</span>\n`;
+    output.scrollTop = output.scrollHeight;
+  }
+
+  function hideLoading() {
+    document.getElementById('loadingOverlay').classList.add('hidden');
+  }
+
+  function showAuthGate() {
+    document.getElementById('authGate').classList.add('visible');
+    document.getElementById('mainContent').classList.remove('visible');
+  }
+
+  function showMainContent() {
+    document.getElementById('authGate').classList.remove('visible');
+    document.getElementById('mainContent').classList.add('visible');
+  }
+
+  function showToast(message, type = 'success') {
+    const container = document.getElementById('toastContainer');
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+    toast.textContent = message;
+    container.appendChild(toast);
+    
+    setTimeout(() => {
+      toast.style.opacity = '0';
+      setTimeout(() => toast.remove(), 300);
+    }, 4000);
+  }
+
+  // Enter key triggers search
+  document.getElementById('playerSearch').addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+      searchPlayers();
+    }
+  });
+</script>
+
+<script type="module">
+  import { NavigationComponent } from './nav-component.js';
+</script>
+<script src="mobile-enhancements.js"></script>
+</body>
+</html>
