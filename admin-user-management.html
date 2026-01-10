@@ -885,6 +885,7 @@
           <button class="filter-btn auth" data-filter="auth" onclick="applyFilter('auth')">🔐 Auth Users</button>
           <button class="filter-btn" data-filter="linked" onclick="applyFilter('linked')">🔗 Linked</button>
           <button class="filter-btn" data-filter="legacy" onclick="applyFilter('legacy')">📁 Legacy Only</button>
+          <button class="filter-btn" data-filter="unaggregated" onclick="applyFilter('unaggregated')">⚠️ No Agg Doc</button>
           <button class="filter-btn" data-filter="migrated" onclick="applyFilter('migrated')">➡️ Migrated</button>
           <button class="filter-btn issues" data-filter="issues" onclick="applyFilter('issues')">⚠️ Issues</button>
         </div>
@@ -988,7 +989,8 @@
 <script type="module">
   import { db, app } from './firebase-config.js';
   import { 
-    collection, 
+    collection,
+    collectionGroup,
     getDocs, 
     doc, 
     getDoc, 
@@ -1005,6 +1007,7 @@
   // Make Firebase available globally
   window.db = db;
   window.collection = collection;
+  window.collectionGroup = collectionGroup;
   window.getDocs = getDocs;
   window.doc = doc;
   window.getDoc = getDoc;
@@ -1079,9 +1082,12 @@
     const snapshot = await getDocs(statsRef);
     
     allPlayers = [];
+    const playerIdsFound = new Set();
+    
     snapshot.forEach(docSnap => {
       const data = docSnap.data();
       const id = docSnap.id;
+      playerIdsFound.add(id);
       
       // Determine player type
       const isAuthUser = data.isAuthUser === true || (id.length > 20 && !id.includes('_'));
@@ -1096,9 +1102,78 @@
         _isLinked: isLinked,
         _isMigrated: isMigrated,
         _isLegacy: isLegacy,
-        _source: 'aggregatedPlayerStats'
+        _source: 'aggregatedPlayerStats',
+        _hasAggregatedDoc: true
       });
     });
+    
+    log(`Found ${allPlayers.length} records in aggregatedPlayerStats`, 'info');
+    
+    // ALSO scan playerStats collection to find players that haven't been aggregated yet
+    log('Scanning playerStats for unaggregated players...', 'info');
+    
+    try {
+      // We can't list subcollections directly, but we can check known patterns
+      // Get all documents that are parent docs in playerStats (the player ID level)
+      // Unfortunately Firestore doesn't let us list collection IDs easily from client
+      // But we can use a collection group query on 'seasons' and 'games' to find player IDs
+      
+      // Try to get all 'games' subcollection docs to find player IDs
+      const gamesQuery = await getDocs(window.collectionGroup(db, 'games'));
+      const playerStatsIds = new Set();
+      
+      gamesQuery.forEach(gameDoc => {
+        // Path is: playerStats/{playerId}/games/{gameId}
+        const pathParts = gameDoc.ref.path.split('/');
+        if (pathParts[0] === 'playerStats' && pathParts.length >= 2) {
+          playerStatsIds.add(pathParts[1]);
+        }
+      });
+      
+      // Also check 'seasons' subcollection
+      const seasonsQuery = await getDocs(window.collectionGroup(db, 'seasons'));
+      seasonsQuery.forEach(seasonDoc => {
+        const pathParts = seasonDoc.ref.path.split('/');
+        if (pathParts[0] === 'playerStats' && pathParts.length >= 2) {
+          playerStatsIds.add(pathParts[1]);
+        }
+      });
+      
+      // Find players in playerStats but NOT in aggregatedPlayerStats
+      let unaggregatedCount = 0;
+      for (const playerId of playerStatsIds) {
+        if (!playerIdsFound.has(playerId)) {
+          // This player exists in playerStats but not aggregatedPlayerStats
+          unaggregatedCount++;
+          
+          // Create a placeholder entry
+          const displayName = playerId.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+          
+          allPlayers.push({
+            id: playerId,
+            name: displayName,
+            displayName: displayName,
+            _isAuthUser: false,
+            _isLinked: false,
+            _isMigrated: false,
+            _isLegacy: true,
+            _source: 'playerStats',
+            _hasAggregatedDoc: false,
+            _unaggregated: true
+          });
+          
+          playerIdsFound.add(playerId);
+        }
+      }
+      
+      if (unaggregatedCount > 0) {
+        log(`Found ${unaggregatedCount} players in playerStats without aggregatedPlayerStats doc`, 'warning');
+      }
+      
+    } catch (err) {
+      log(`Could not scan playerStats: ${err.message}`, 'warning');
+      log('Collection group queries may need index creation', 'info');
+    }
     
     // ALSO load users collection to find linked accounts
     log('Loading users collection for linked accounts...', 'info');
@@ -1138,7 +1213,7 @@
     detectIssues();
     updateStatsDisplay();
     
-    log(`Loaded ${allPlayers.length} player records`, 'success');
+    log(`Loaded ${allPlayers.length} total player records`, 'success');
     log(`  - Auth users: ${stats.authUsers}`, 'info');
     log(`  - Linked: ${stats.linkedUsers}`, 'info');
     log(`  - Legacy profiles: ${stats.legacyProfiles}`, 'info');
@@ -1465,7 +1540,10 @@
         filtered = allPlayers.filter(p => p._isLinked && !p._isMigrated);
         break;
       case 'legacy':
-        filtered = allPlayers.filter(p => p._isLegacy);
+        filtered = allPlayers.filter(p => p._isLegacy && !p._unaggregated);
+        break;
+      case 'unaggregated':
+        filtered = allPlayers.filter(p => p._unaggregated);
         break;
       case 'migrated':
         filtered = allPlayers.filter(p => p._isMigrated);
@@ -1587,8 +1665,11 @@
       if (player._isMigrated) {
         badges += `<span class="player-badge badge-migrated">➡️ → ${player.migratedTo || '?'}</span>`;
       }
-      if (player._isLegacy) {
+      if (player._isLegacy && !player._unaggregated) {
         badges += '<span class="player-badge badge-legacy">📁 LEGACY</span>';
+      }
+      if (player._unaggregated) {
+        badges += '<span class="player-badge" style="background: #fef3c7; color: #d97706;">⚠️ NO AGG DOC</span>';
       }
       
       // Check if this player is involved in an issue
