@@ -843,11 +843,23 @@
       <strong>ℹ️ How to Combine Player Records (e.g., Joe/Joseph)</strong>
       <ol style="margin: 0.75rem 0 0 1.5rem; padding: 0;">
         <li>Search for player name variants (e.g., "Joe Smith" and "Joseph Smith")</li>
-        <li>Select the records to merge as <strong>Source</strong> (stats will be taken from these)</li>
-        <li>Select ONE record as the <strong>Target</strong> (all stats merge into this)</li>
-        <li>Preview the combined stats, then execute the merge</li>
-        <li>Source records will be marked as "migrated" to prevent duplicates</li>
+        <li>Select the records to merge as <strong>Source</strong> (data moves FROM these)</li>
+        <li>Select ONE record as the <strong>Target</strong> (data moves TO this)</li>
+        <li>Preview shows actual <code>playerStats</code> and <code>pitchingStats</code> data</li>
+        <li>Execute merge moves all season/game docs and deletes source docs</li>
+        <li><strong>Run the Aggregator</strong> afterward to rebuild career totals!</li>
       </ol>
+    </div>
+
+    <div class="warning-box">
+      <strong>⚠️ This tool merges at the source level:</strong>
+      <ul style="margin: 0.5rem 0 0 1.5rem; padding: 0;">
+        <li><code>playerStats/{source}/seasons/*</code> → <code>playerStats/{target}/seasons/*</code></li>
+        <li><code>playerStats/{source}/games/*</code> → <code>playerStats/{target}/games/*</code></li>
+        <li><code>pitchingStats</code> subcollections are also moved</li>
+        <li>Source documents are <strong>deleted</strong> after copying</li>
+        <li><code>aggregatedPlayerStats/{source}</code> is marked as migrated</li>
+      </ul>
     </div>
 
     <!-- Auth User Issues Section -->
@@ -982,6 +994,7 @@
     getDoc, 
     setDoc,
     updateDoc,
+    deleteDoc,
     serverTimestamp 
   } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
   import { 
@@ -997,6 +1010,7 @@
   window.getDoc = getDoc;
   window.setDoc = setDoc;
   window.updateDoc = updateDoc;
+  window.deleteDoc = deleteDoc;
   window.serverTimestamp = serverTimestamp;
 
   const auth = getAuth(app);
@@ -1343,7 +1357,7 @@
     `).join('');
   }
 
-  window.quickSelectForMerge = function(issueIndex) {
+  window.quickSelectForMerge = async function(issueIndex) {
     const issue = detectedIssues[issueIndex];
     if (!issue || !issue.legacyProfile) return;
     
@@ -1377,7 +1391,7 @@
       selectedTarget = authUser;
       
       updateSelectionDisplay();
-      updateMergePanel();
+      await updateMergePanel();
       
       log(`Quick setup: Merge "${issue.legacyProfile.id}" → "${authUser.id}"`, 'success');
       if (authUser._noStatsDoc || authUser._fromUsersCollection) {
@@ -1394,7 +1408,7 @@
       selectedTarget = issue.authUser;
       
       updateSelectionDisplay();
-      updateMergePanel();
+      await updateMergePanel();
       
       log(`Quick setup: Merge "${issue.legacyProfile.id}" → "${issue.authUser.id}"`, 'success');
       showToast('Merge setup complete - review and execute', 'success');
@@ -1625,7 +1639,7 @@
   // SELECTION FUNCTIONS
   // ============================================
 
-  window.togglePlayerSelection = function(playerId) {
+  window.togglePlayerSelection = async function(playerId) {
     const checkbox = document.getElementById(`chk_${playerId}`);
     const item = document.querySelector(`.player-item[data-id="${playerId}"]`);
     const player = allPlayers.find(p => p.id === playerId);
@@ -1656,10 +1670,10 @@
       if (item) item.classList.remove('selected');
     }
     
-    updateMergePanel();
+    await updateMergePanel();
   };
 
-  window.setAsTarget = function(playerId) {
+  window.setAsTarget = async function(playerId) {
     // Remove previous target styling
     document.querySelectorAll('.player-item.selected-target').forEach(el => {
       el.classList.remove('selected-target');
@@ -1689,7 +1703,7 @@
       log(`Set target: ${player.name || player.displayName}`, 'success');
     }
     
-    updateMergePanel();
+    await updateMergePanel();
   };
 
   window.clearSelection = function() {
@@ -1742,7 +1756,7 @@
   // MERGE PREVIEW
   // ============================================
 
-  function updateMergePanel() {
+  async function updateMergePanel() {
     const panel = document.getElementById('mergePanel');
     
     if (selectedSources.length === 0 || !selectedTarget) {
@@ -1761,77 +1775,170 @@
     `).join('');
     
     // Update target info
+    const targetName = selectedTarget.linkedPlayer || selectedTarget.name || selectedTarget.displayName;
+    const targetLegacyId = targetName.toLowerCase().replace(/\./g, '').replace(/\s+/g, '_');
+    
     document.getElementById('targetInfo').innerHTML = `
       <div class="player-name" style="color: var(--success-color);">
-        ${selectedTarget.name || selectedTarget.displayName}
-        <span style="color: var(--text-light); font-weight: normal;">(${selectedTarget.id})</span>
+        ${targetName}
+        <span style="color: var(--text-light); font-weight: normal;">(${targetLegacyId})</span>
       </div>
     `;
     
-    // Calculate combined stats
-    const combined = calculateCombinedStats();
+    // Show loading state
+    document.getElementById('combinedStatsPreview').innerHTML = `
+      <div style="grid-column: 1/-1; text-align: center; color: var(--text-light);">
+        Loading playerStats data...
+      </div>
+    `;
+    document.getElementById('seasonsList').innerHTML = `
+      <tr><td colspan="8" style="text-align: center; color: var(--text-light);">Scanning collections...</td></tr>
+    `;
+    
+    // Scan actual playerStats/pitchingStats subcollections
+    const allSeasons = [];
+    let totalGames = 0;
+    let totalGameDocs = 0;
+    let totalPitchingSeasons = 0;
+    let totalPitchingGames = 0;
+    
+    // Scan sources
+    for (const source of selectedSources) {
+      const sourceName = source.name || source.displayName;
+      const sourceLegacyId = sourceName.toLowerCase().replace(/\./g, '').replace(/\s+/g, '_');
+      
+      // Check playerStats/seasons
+      try {
+        const seasonsRef = collection(db, 'playerStats', sourceLegacyId, 'seasons');
+        const seasonsSnap = await getDocs(seasonsRef);
+        seasonsSnap.forEach(doc => {
+          const data = doc.data();
+          allSeasons.push({
+            seasonId: doc.id,
+            source: sourceLegacyId,
+            sourceType: 'seasons',
+            ...data
+          });
+          totalGames += data.games || 0;
+        });
+      } catch (err) {}
+      
+      // Check playerStats/games
+      try {
+        const gamesRef = collection(db, 'playerStats', sourceLegacyId, 'games');
+        const gamesSnap = await getDocs(gamesRef);
+        totalGameDocs += gamesSnap.size;
+      } catch (err) {}
+      
+      // Check pitchingStats/seasons
+      try {
+        const pitchSeasonsRef = collection(db, 'pitchingStats', sourceLegacyId, 'seasons');
+        const pitchSeasonsSnap = await getDocs(pitchSeasonsRef);
+        totalPitchingSeasons += pitchSeasonsSnap.size;
+      } catch (err) {}
+      
+      // Check pitchingStats/games
+      try {
+        const pitchGamesRef = collection(db, 'pitchingStats', sourceLegacyId, 'games');
+        const pitchGamesSnap = await getDocs(pitchGamesRef);
+        totalPitchingGames += pitchGamesSnap.size;
+      } catch (err) {}
+    }
+    
+    // Also check target (to show existing data)
+    try {
+      const targetSeasonsRef = collection(db, 'playerStats', targetLegacyId, 'seasons');
+      const targetSeasonsSnap = await getDocs(targetSeasonsRef);
+      targetSeasonsSnap.forEach(doc => {
+        const data = doc.data();
+        allSeasons.push({
+          seasonId: doc.id,
+          source: targetLegacyId,
+          sourceType: 'seasons (TARGET)',
+          ...data
+        });
+      });
+    } catch (err) {}
+    
+    // Calculate combined totals
+    let combinedStats = {
+      games: 0,
+      atBats: 0,
+      hits: 0,
+      runs: 0,
+      walks: 0
+    };
+    
+    allSeasons.forEach(s => {
+      combinedStats.games += s.games || 0;
+      combinedStats.atBats += s.atBats || 0;
+      combinedStats.hits += s.hits || 0;
+      combinedStats.runs += s.runs || 0;
+      combinedStats.walks += s.walks || 0;
+    });
+    
+    const ba = combinedStats.atBats > 0 ? combinedStats.hits / combinedStats.atBats : 0;
+    const obp = (combinedStats.atBats + combinedStats.walks) > 0 
+      ? (combinedStats.hits + combinedStats.walks) / (combinedStats.atBats + combinedStats.walks) : 0;
     
     // Update stats preview
     document.getElementById('combinedStatsPreview').innerHTML = `
       <div class="stat-item">
-        <div class="stat-value">${combined.career.games}</div>
+        <div class="stat-value">${allSeasons.length}</div>
+        <div class="stat-label">Seasons</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-value">${combinedStats.games}</div>
         <div class="stat-label">Games</div>
       </div>
       <div class="stat-item">
-        <div class="stat-value">${combined.career.atBats}</div>
+        <div class="stat-value">${combinedStats.atBats}</div>
         <div class="stat-label">At Bats</div>
       </div>
       <div class="stat-item">
-        <div class="stat-value">${combined.career.hits}</div>
+        <div class="stat-value">${combinedStats.hits}</div>
         <div class="stat-label">Hits</div>
       </div>
       <div class="stat-item">
-        <div class="stat-value">${combined.career.runs}</div>
+        <div class="stat-value">${combinedStats.runs}</div>
         <div class="stat-label">Runs</div>
       </div>
       <div class="stat-item">
-        <div class="stat-value">${combined.career.walks}</div>
-        <div class="stat-label">Walks</div>
-      </div>
-      <div class="stat-item">
-        <div class="stat-value">${combined.career.battingAverage.toFixed(3)}</div>
+        <div class="stat-value">${ba.toFixed(3)}</div>
         <div class="stat-label">AVG</div>
       </div>
       <div class="stat-item">
-        <div class="stat-value">${combined.career.onBasePercentage.toFixed(3)}</div>
-        <div class="stat-label">OBP</div>
+        <div class="stat-value">${totalGameDocs}</div>
+        <div class="stat-label">Game Docs</div>
       </div>
       <div class="stat-item">
-        <div class="stat-value">${Object.keys(combined.seasons).length}</div>
-        <div class="stat-label">Seasons</div>
+        <div class="stat-value">${totalPitchingSeasons + totalPitchingGames}</div>
+        <div class="stat-label">Pitching</div>
       </div>
     `;
     
+    // Sort seasons by ID
+    allSeasons.sort((a, b) => b.seasonId.localeCompare(a.seasonId));
+    
     // Update seasons table
-    const seasonsList = [];
-    Object.entries(combined.seasons).forEach(([seasonId, stats]) => {
-      seasonsList.push({
-        seasonId,
-        ...stats,
-        source: stats._source || 'Unknown'
-      });
-    });
-    
-    // Sort by season
-    seasonsList.sort((a, b) => b.seasonId.localeCompare(a.seasonId));
-    
-    document.getElementById('seasonsList').innerHTML = seasonsList.map(s => `
-      <tr>
-        <td><strong>${s.seasonId}</strong></td>
-        <td>${s.team || '-'}</td>
-        <td>${s.games || 0}</td>
-        <td>${s.atBats || 0}</td>
-        <td>${s.hits || 0}</td>
-        <td>${s.runs || 0}</td>
-        <td>${s.battingAverage ? s.battingAverage.toFixed(3) : '.000'}</td>
-        <td><code style="font-size: 0.75rem;">${s.source}</code></td>
-      </tr>
-    `).join('');
+    if (allSeasons.length === 0) {
+      document.getElementById('seasonsList').innerHTML = `
+        <tr><td colspan="8" style="text-align: center; color: var(--text-light);">No season data found in playerStats</td></tr>
+      `;
+    } else {
+      document.getElementById('seasonsList').innerHTML = allSeasons.map(s => `
+        <tr style="${s.sourceType.includes('TARGET') ? 'background: #dcfce7;' : ''}">
+          <td><strong>${s.seasonId}</strong></td>
+          <td>${s.team || '-'}</td>
+          <td>${s.games || 0}</td>
+          <td>${s.atBats || 0}</td>
+          <td>${s.hits || 0}</td>
+          <td>${s.runs || 0}</td>
+          <td>${s.battingAverage ? s.battingAverage.toFixed(3) : (s.atBats > 0 ? (s.hits/s.atBats).toFixed(3) : '.000')}</td>
+          <td><code style="font-size: 0.75rem;">${s.source}</code><br><small>${s.sourceType}</small></td>
+        </tr>
+      `).join('');
+    }
   }
 
   function calculateCombinedStats() {
@@ -1916,11 +2023,9 @@
       return;
     }
     
-    const isNewDoc = selectedTarget._noStatsDoc || selectedTarget._fromUsersCollection;
-    
     const confirmMsg = testMode 
       ? 'Run merge in TEST MODE? (No changes will be saved)'
-      : `Merge ${selectedSources.length} source record(s) into "${selectedTarget.linkedPlayer || selectedTarget.name || selectedTarget.displayName}"?\n\nThis will:\n${isNewDoc ? '- CREATE aggregatedPlayerStats document for auth user\n' : ''}- Add all seasons to target\n- Recalculate career stats\n- Mark source records as "migrated"`;
+      : `Merge ${selectedSources.length} source record(s) into "${selectedTarget.linkedPlayer || selectedTarget.name || selectedTarget.displayName}"?\n\nThis will:\n- Move all playerStats/seasons and playerStats/games docs\n- Move all pitchingStats/seasons and pitchingStats/games docs\n- DELETE source documents after moving\n- Mark aggregatedPlayerStats source as migrated\n\nYou should run the Aggregator afterward to rebuild career totals.`;
     
     if (!confirm(confirmMsg)) return;
     
@@ -1933,101 +2038,241 @@
     log('═══════════════════════════════════════', 'header');
     
     try {
-      // Calculate combined data
-      const combined = calculateCombinedStats();
-      
-      // Clean up _source markers
-      const cleanSeasons = {};
-      Object.entries(combined.seasons).forEach(([key, value]) => {
-        const { _source, ...cleanStats } = value;
-        cleanSeasons[key] = cleanStats;
-      });
-      
+      // Determine source and target legacy IDs
       const targetName = selectedTarget.linkedPlayer || selectedTarget.name || selectedTarget.displayName;
-      log(`\nTarget: ${targetName} (${selectedTarget.id})`, 'info');
-      log(`Sources: ${selectedSources.map(s => s.name || s.displayName).join(', ')}`, 'info');
-      log(`\nCombined seasons: ${Object.keys(cleanSeasons).length}`, 'success');
-      log(`Combined career games: ${combined.career.games}`, 'success');
-      log(`Combined career hits: ${combined.career.hits}`, 'success');
+      const targetLegacyId = targetName.toLowerCase().replace(/\./g, '').replace(/\s+/g, '_');
       
-      if (isNewDoc) {
-        log(`\n⚠️ Target has no aggregatedPlayerStats doc - will CREATE`, 'warning');
+      log(`\nTarget: ${targetName}`, 'info');
+      log(`Target legacy ID: ${targetLegacyId}`, 'info');
+      
+      let totalSeasonsMoved = 0;
+      let totalGamesMoved = 0;
+      let totalPitchingSeasonsMoved = 0;
+      let totalPitchingGamesMoved = 0;
+      let totalDocsDeleted = 0;
+      
+      for (const source of selectedSources) {
+        const sourceName = source.name || source.displayName;
+        const sourceLegacyId = sourceName.toLowerCase().replace(/\./g, '').replace(/\s+/g, '_');
+        
+        log(`\n${'─'.repeat(50)}`, 'header');
+        log(`Processing source: ${sourceName}`, 'info');
+        log(`Source legacy ID: ${sourceLegacyId}`, 'info');
+        
+        if (sourceLegacyId === targetLegacyId) {
+          log(`⚠️ Source and target are the same - skipping`, 'warning');
+          continue;
+        }
+        
+        // ========================================
+        // 1. MOVE playerStats/seasons
+        // ========================================
+        log(`\n📂 Checking playerStats/${sourceLegacyId}/seasons...`, 'info');
+        
+        try {
+          const seasonsRef = collection(db, 'playerStats', sourceLegacyId, 'seasons');
+          const seasonsSnap = await getDocs(seasonsRef);
+          
+          if (seasonsSnap.empty) {
+            log(`   No seasons found`, 'info');
+          } else {
+            log(`   Found ${seasonsSnap.size} season documents`, 'success');
+            
+            for (const seasonDoc of seasonsSnap.docs) {
+              const seasonId = seasonDoc.id;
+              const seasonData = seasonDoc.data();
+              
+              if (!testMode) {
+                // Copy to target
+                const targetSeasonRef = doc(db, 'playerStats', targetLegacyId, 'seasons', seasonId);
+                await setDoc(targetSeasonRef, {
+                  ...seasonData,
+                  mergedFrom: sourceLegacyId,
+                  mergedAt: serverTimestamp()
+                });
+                
+                // Delete from source
+                await deleteDoc(doc(db, 'playerStats', sourceLegacyId, 'seasons', seasonId));
+                totalDocsDeleted++;
+              }
+              
+              totalSeasonsMoved++;
+              log(`   ✓ ${seasonId}: ${seasonData.games || 0} G, ${seasonData.hits || 0} H`, 'success');
+            }
+          }
+        } catch (err) {
+          log(`   Error reading seasons: ${err.message}`, 'error');
+        }
+        
+        // ========================================
+        // 2. MOVE playerStats/games (2026+)
+        // ========================================
+        log(`\n📂 Checking playerStats/${sourceLegacyId}/games...`, 'info');
+        
+        try {
+          const gamesRef = collection(db, 'playerStats', sourceLegacyId, 'games');
+          const gamesSnap = await getDocs(gamesRef);
+          
+          if (gamesSnap.empty) {
+            log(`   No game docs found`, 'info');
+          } else {
+            log(`   Found ${gamesSnap.size} game documents`, 'success');
+            
+            for (const gameDoc of gamesSnap.docs) {
+              const gameId = gameDoc.id;
+              const gameData = gameDoc.data();
+              
+              if (!testMode) {
+                // Copy to target
+                const targetGameRef = doc(db, 'playerStats', targetLegacyId, 'games', gameId);
+                await setDoc(targetGameRef, {
+                  ...gameData,
+                  mergedFrom: sourceLegacyId,
+                  mergedAt: serverTimestamp()
+                });
+                
+                // Delete from source
+                await deleteDoc(doc(db, 'playerStats', sourceLegacyId, 'games', gameId));
+                totalDocsDeleted++;
+              }
+              
+              totalGamesMoved++;
+              log(`   ✓ ${gameId}`, 'success');
+            }
+          }
+        } catch (err) {
+          log(`   Error reading games: ${err.message}`, 'error');
+        }
+        
+        // ========================================
+        // 3. MOVE pitchingStats/seasons
+        // ========================================
+        log(`\n📂 Checking pitchingStats/${sourceLegacyId}/seasons...`, 'info');
+        
+        try {
+          const pitchSeasonsRef = collection(db, 'pitchingStats', sourceLegacyId, 'seasons');
+          const pitchSeasonsSnap = await getDocs(pitchSeasonsRef);
+          
+          if (pitchSeasonsSnap.empty) {
+            log(`   No pitching seasons found`, 'info');
+          } else {
+            log(`   Found ${pitchSeasonsSnap.size} pitching season documents`, 'success');
+            
+            for (const seasonDoc of pitchSeasonsSnap.docs) {
+              const seasonId = seasonDoc.id;
+              const seasonData = seasonDoc.data();
+              
+              if (!testMode) {
+                // Copy to target
+                const targetSeasonRef = doc(db, 'pitchingStats', targetLegacyId, 'seasons', seasonId);
+                await setDoc(targetSeasonRef, {
+                  ...seasonData,
+                  mergedFrom: sourceLegacyId,
+                  mergedAt: serverTimestamp()
+                });
+                
+                // Delete from source
+                await deleteDoc(doc(db, 'pitchingStats', sourceLegacyId, 'seasons', seasonId));
+                totalDocsDeleted++;
+              }
+              
+              totalPitchingSeasonsMoved++;
+              log(`   ✓ ${seasonId}: ${seasonData.inningsPitched || 0} IP`, 'success');
+            }
+          }
+        } catch (err) {
+          log(`   Error reading pitching seasons: ${err.message}`, 'error');
+        }
+        
+        // ========================================
+        // 4. MOVE pitchingStats/games (2026+)
+        // ========================================
+        log(`\n📂 Checking pitchingStats/${sourceLegacyId}/games...`, 'info');
+        
+        try {
+          const pitchGamesRef = collection(db, 'pitchingStats', sourceLegacyId, 'games');
+          const pitchGamesSnap = await getDocs(pitchGamesRef);
+          
+          if (pitchGamesSnap.empty) {
+            log(`   No pitching game docs found`, 'info');
+          } else {
+            log(`   Found ${pitchGamesSnap.size} pitching game documents`, 'success');
+            
+            for (const gameDoc of pitchGamesSnap.docs) {
+              const gameId = gameDoc.id;
+              const gameData = gameDoc.data();
+              
+              if (!testMode) {
+                // Copy to target
+                const targetGameRef = doc(db, 'pitchingStats', targetLegacyId, 'games', gameId);
+                await setDoc(targetGameRef, {
+                  ...gameData,
+                  mergedFrom: sourceLegacyId,
+                  mergedAt: serverTimestamp()
+                });
+                
+                // Delete from source
+                await deleteDoc(doc(db, 'pitchingStats', sourceLegacyId, 'games', gameId));
+                totalDocsDeleted++;
+              }
+              
+              totalPitchingGamesMoved++;
+              log(`   ✓ ${gameId}`, 'success');
+            }
+          }
+        } catch (err) {
+          log(`   Error reading pitching games: ${err.message}`, 'error');
+        }
+        
+        // ========================================
+        // 5. Mark aggregatedPlayerStats as migrated
+        // ========================================
+        if (!testMode) {
+          log(`\n📝 Marking aggregatedPlayerStats/${sourceLegacyId} as migrated...`, 'info');
+          
+          try {
+            const sourceAggRef = doc(db, 'aggregatedPlayerStats', sourceLegacyId);
+            const sourceAggDoc = await getDoc(sourceAggRef);
+            
+            if (sourceAggDoc.exists()) {
+              await updateDoc(sourceAggRef, {
+                migrated: true,
+                migratedTo: targetLegacyId,
+                migratedAt: serverTimestamp()
+              });
+              log(`   ✓ Marked as migrated → ${targetLegacyId}`, 'success');
+            } else {
+              log(`   No aggregatedPlayerStats doc found for source`, 'info');
+            }
+          } catch (err) {
+            log(`   Error marking as migrated: ${err.message}`, 'error');
+          }
+        }
+      }
+      
+      // Summary
+      log('\n═══════════════════════════════════════', 'header');
+      log(testMode ? '🧪 TEST COMPLETE' : '✅ MERGE COMPLETE', 'header');
+      log('═══════════════════════════════════════', 'header');
+      log(`\nSummary:`, 'info');
+      log(`  Batting seasons moved: ${totalSeasonsMoved}`, 'success');
+      log(`  Batting games moved: ${totalGamesMoved}`, 'success');
+      log(`  Pitching seasons moved: ${totalPitchingSeasonsMoved}`, 'success');
+      log(`  Pitching games moved: ${totalPitchingGamesMoved}`, 'success');
+      if (!testMode) {
+        log(`  Source docs deleted: ${totalDocsDeleted}`, 'success');
       }
       
       if (!testMode) {
-        // Build the document data
-        const updateData = {
-          seasons: cleanSeasons,
-          career: combined.career,
-          lastUpdated: serverTimestamp(),
-          mergedFrom: selectedSources.map(s => s.id),
-          mergedAt: serverTimestamp()
-        };
+        log(`\n⚠️ NEXT STEP: Run the Aggregator to rebuild career totals!`, 'warning');
+        showToast('Merge complete! Run Aggregator next.', 'success');
         
-        // If creating new doc, add required fields
-        if (isNewDoc) {
-          updateData.name = targetName;
-          updateData.displayName = selectedTarget.displayName || targetName;
-          updateData.isAuthUser = true;
-          updateData.linkedPlayer = selectedTarget.linkedPlayer || targetName;
-          if (selectedTarget.email) updateData.email = selectedTarget.email;
-          if (selectedTarget.currentTeam) updateData.currentTeam = selectedTarget.currentTeam;
-          
-          // Get team from first source if not set
-          if (!updateData.currentTeam && selectedSources[0]?.currentTeam) {
-            updateData.currentTeam = selectedSources[0].currentTeam;
-          }
-        }
-        
-        if (Object.keys(combined.pitchingSeasons).length > 0) {
-          updateData.pitchingSeasons = combined.pitchingSeasons;
-        }
-        
-        // Update/create target document
-        log('\n📝 Updating target document...', 'info');
-        
-        await setDoc(
-          doc(db, 'aggregatedPlayerStats', selectedTarget.id),
-          updateData,
-          { merge: true }
-        );
-        
-        log(`✅ Target document ${isNewDoc ? 'created' : 'updated'}`, 'success');
-        
-        // Mark source documents as migrated
-        for (const source of selectedSources) {
-          log(`\n📝 Marking ${source.id} as migrated...`, 'info');
-          
-          await updateDoc(
-            doc(db, 'aggregatedPlayerStats', source.id),
-            {
-              migrated: true,
-              migratedTo: selectedTarget.id,
-              migratedAt: serverTimestamp()
-            }
-          );
-          
-          log(`✅ ${source.id} marked as migrated`, 'success');
-        }
-        
-        log('\n═══════════════════════════════════════', 'header');
-        log('✅ MERGE COMPLETE', 'header');
-        log('═══════════════════════════════════════', 'header');
-        
-        showToast('Merge completed successfully!', 'success');
-        
-        // Refresh data and recalculate issues
+        // Refresh data
         await loadAllPlayers();
         clearSelection();
-        
-        // Update stats display
         updateStatsDisplay();
-        
       } else {
-        log('\n═══════════════════════════════════════', 'header');
-        log('🧪 TEST COMPLETE - No changes made', 'header');
-        log('═══════════════════════════════════════', 'header');
-        
+        log(`\n🧪 No changes made - this was a test run`, 'warning');
         showToast('Test complete - no changes made', 'warning');
       }
       
