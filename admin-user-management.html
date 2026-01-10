@@ -348,6 +348,15 @@
     background: #2563eb;
   }
 
+  .btn-warning {
+    background: var(--warning-color);
+    color: white;
+  }
+
+  .btn-warning:hover:not(:disabled) {
+    background: #d97706;
+  }
+
   .btn-sm {
     padding: 0.5rem 1rem;
     font-size: 0.85rem;
@@ -895,6 +904,15 @@
           <button onclick="searchPlayers()" class="btn-primary">🔍 Search</button>
           <button onclick="findPotentialDuplicates()" class="btn-info">🔄 Find Duplicates</button>
           <button onclick="clearSelection()" class="btn-secondary">✕ Clear</button>
+        </div>
+        
+        <!-- Direct playerStats ID lookup -->
+        <div style="margin-top: 1rem; padding: 1rem; background: #fef3c7; border-radius: 8px; border: 1px solid #fcd34d;">
+          <strong>🔎 Direct playerStats Lookup</strong> (for records not in aggregatedPlayerStats)
+          <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
+            <input type="text" id="directIdLookup" class="search-input" placeholder="Enter exact ID (e.g., tim_o'grady or tim_ogrady)" style="flex: 1;">
+            <button onclick="lookupPlayerStatsId()" class="btn-warning">Check ID</button>
+          </div>
         </div>
 
         <div id="searchResults" class="player-list" style="display: none;">
@@ -1589,6 +1607,102 @@
     
     displayResults(results);
     log(`Found ${results.length} matching records`, 'success');
+  };
+
+  // Direct lookup for playerStats ID (bypasses aggregatedPlayerStats)
+  window.lookupPlayerStatsId = async function() {
+    const lookupId = document.getElementById('directIdLookup').value.trim();
+    
+    if (!lookupId) {
+      showToast('Please enter an ID to lookup', 'warning');
+      return;
+    }
+    
+    log(`\n🔎 Direct lookup for playerStats/${lookupId}...`, 'info');
+    
+    let hasSeasons = false;
+    let hasGames = false;
+    let hasCareer = false;
+    let seasonCount = 0;
+    let gameCount = 0;
+    let seasonData = [];
+    
+    // Check seasons subcollection
+    try {
+      const seasonsRef = collection(db, 'playerStats', lookupId, 'seasons');
+      const seasonsSnap = await getDocs(seasonsRef);
+      hasSeasons = !seasonsSnap.empty;
+      seasonCount = seasonsSnap.size;
+      seasonsSnap.forEach(doc => {
+        const data = doc.data();
+        seasonData.push({ id: doc.id, games: data.games || 0, hits: data.hits || 0 });
+      });
+      log(`  seasons: ${seasonCount} documents`, hasSeasons ? 'success' : 'info');
+      seasonData.forEach(s => log(`    - ${s.id}: ${s.games} G, ${s.hits} H`, 'info'));
+    } catch (e) {
+      log(`  seasons: Error - ${e.message}`, 'error');
+    }
+    
+    // Check games subcollection
+    try {
+      const gamesRef = collection(db, 'playerStats', lookupId, 'games');
+      const gamesSnap = await getDocs(gamesRef);
+      hasGames = !gamesSnap.empty;
+      gameCount = gamesSnap.size;
+      log(`  games: ${gameCount} documents`, hasGames ? 'success' : 'info');
+    } catch (e) {
+      log(`  games: Error - ${e.message}`, 'error');
+    }
+    
+    // Check career subcollection
+    try {
+      const careerRef = collection(db, 'playerStats', lookupId, 'career');
+      const careerSnap = await getDocs(careerRef);
+      hasCareer = !careerSnap.empty;
+      log(`  career: ${careerSnap.size} documents`, hasCareer ? 'success' : 'info');
+    } catch (e) {
+      log(`  career: Error - ${e.message}`, 'error');
+    }
+    
+    // Check if in aggregatedPlayerStats
+    const inAggregated = allPlayers.some(p => p.id === lookupId);
+    log(`  aggregatedPlayerStats: ${inAggregated ? 'YES' : 'NO'}`, inAggregated ? 'success' : 'warning');
+    
+    if (hasSeasons || hasGames || hasCareer) {
+      // Add to allPlayers if not already there
+      if (!inAggregated) {
+        const displayName = lookupId.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+        
+        const newPlayer = {
+          id: lookupId,
+          name: displayName,
+          displayName: displayName,
+          _isAuthUser: false,
+          _isLinked: false,
+          _isMigrated: false,
+          _isLegacy: true,
+          _source: 'playerStats (manual lookup)',
+          _hasAggregatedDoc: false,
+          _unaggregated: true,
+          _seasonCount: seasonCount,
+          _gameCount: gameCount
+        };
+        
+        allPlayers.push(newPlayer);
+        log(`\n✅ Added "${lookupId}" to player list`, 'success');
+        showToast(`Found! ${seasonCount} seasons, ${gameCount} games`, 'success');
+        
+        // Show in results
+        displayResults([newPlayer]);
+      } else {
+        log(`\n✅ "${lookupId}" already in player list`, 'success');
+        const existing = allPlayers.find(p => p.id === lookupId);
+        displayResults([existing]);
+      }
+    } else {
+      log(`\n❌ No data found for playerStats/${lookupId}`, 'error');
+      showToast(`No playerStats data found for "${lookupId}"`, 'error');
+    }
   };
 
   window.findPotentialDuplicates = function() {
