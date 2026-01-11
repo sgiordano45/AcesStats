@@ -872,7 +872,9 @@ body {
 import { 
   db, 
   doc,
-  getDoc
+  getDoc,
+  collection,
+  getDocs
 } from './firebase-config.js';
 
 import {
@@ -888,12 +890,29 @@ import {
 } from './firebase-auth.js';
 
 // ============================================
+// VERSION CHECK - Increment to clear old localStorage data
+// ============================================
+const DATA_VERSION = 2;
+const VERSION_KEY = 'acesWordle_dataVersion';
+
+(function checkDataVersion() {
+  const storedVersion = localStorage.getItem(VERSION_KEY);
+  if (!storedVersion || parseInt(storedVersion) < DATA_VERSION) {
+    console.log('🔄 Clearing old Aces Wordle data (version update)');
+    localStorage.removeItem('acesWordle_game');
+    localStorage.removeItem('acesWordle_stats');
+    localStorage.setItem(VERSION_KEY, String(DATA_VERSION));
+  }
+})();
+
+// ============================================
 // CONFIGURATION
 // ============================================
 const LAUNCH_YEAR = 2026;
 const LAUNCH_MONTH = 0; // January (0-indexed)
 const LAUNCH_DAY = 6;
 const MAX_GUESSES = 6;
+const PLAYER_NAME_RATIO = 0.5; // 50% player names, 50% softball words
 
 // ============================================
 // SUBSTITUTE SEASON HELPER
@@ -919,6 +938,8 @@ let userStats = null;
 let allPlayers = [];
 let validLastNames = []; // Unique last names for valid guesses
 let lastNameToPlayer = {}; // Map last name to player info
+let softballWords = []; // Words from Firebase
+let allPuzzleWords = []; // Combined pool for puzzles
 let todaysPuzzle = null;
 let gameState = {
   guesses: [],
@@ -926,6 +947,34 @@ let gameState = {
   gameOver: false,
   won: false
 };
+
+// ============================================
+// LOAD SOFTBALL WORDS FROM FIREBASE
+// ============================================
+async function loadSoftballWords() {
+  try {
+    const wordsRef = collection(db, 'wordleWords');
+    const snapshot = await getDocs(wordsRef);
+    
+    softballWords = [];
+    snapshot.forEach(doc => {
+      const data = doc.data();
+      if (data.enabled !== false) { // Include if enabled or not set
+        softballWords.push({
+          word: (data.word || '').toUpperCase(),
+          hint: data.hint || '',
+          category: data.category || 'general',
+          type: 'softball'
+        });
+      }
+    });
+    
+    console.log(`Loaded ${softballWords.length} softball words from Firebase`);
+  } catch (error) {
+    console.error('Error loading softball words:', error);
+    softballWords = [];
+  }
+}
 
 // ============================================
 // SEEDED RANDOM
@@ -994,24 +1043,67 @@ function buildLastNameData() {
   console.log(`Built ${validLastNames.length} last names for puzzles`);
 }
 
+function buildPuzzlePool() {
+  // Build combined pool with type markers
+  allPuzzleWords = [];
+  
+  // Add player last names
+  validLastNames.forEach(lastName => {
+    allPuzzleWords.push({
+      word: lastName,
+      type: 'player',
+      players: lastNameToPlayer[lastName]
+    });
+  });
+  
+  // Add softball words
+  softballWords.forEach(sw => {
+    allPuzzleWords.push({
+      word: sw.word,
+      type: 'softball',
+      hint: sw.hint,
+      category: sw.category
+    });
+  });
+  
+  console.log(`Total puzzle pool: ${allPuzzleWords.length} words (${validLastNames.length} names, ${softballWords.length} softball)`);
+}
+
 function generateDailyPuzzle() {
   const dayNum = getDayNumber();
   const seed = dayNum * 54321;
   
-  const shuffled = shuffleWithSeed(validLastNames, seed);
-  const answer = shuffled[0];
-  const players = lastNameToPlayer[answer];
+  // Shuffle the combined pool
+  const shuffled = shuffleWithSeed(allPuzzleWords, seed);
+  const selected = shuffled[0];
   
-  // For display, show all matching players
-  const playerNames = players.map(p => p.fullName);
-  
-  return {
-    dayNum,
-    answer,
-    playerName: playerNames.join(' / '), // Show all if multiple
-    playerNames,
-    firstName: players[0].firstName
-  };
+  if (selected.type === 'player') {
+    // Player name puzzle
+    const players = selected.players;
+    const playerNames = players.map(p => p.fullName);
+    
+    return {
+      dayNum,
+      answer: selected.word,
+      type: 'player',
+      playerName: playerNames.join(' / '),
+      playerNames,
+      firstName: players[0].firstName,
+      hint: null
+    };
+  } else {
+    // Softball word puzzle
+    return {
+      dayNum,
+      answer: selected.word,
+      type: 'softball',
+      hint: selected.hint,
+      category: selected.category,
+      playerName: null,
+      playerNames: null,
+      firstName: null
+    };
+  }
 }
 
 // ============================================
@@ -1098,26 +1190,35 @@ function showHint() {
   // Show hint after 4 guesses
   let hint = '';
   if (guessCount >= 4) {
-    // Find players with this last name and get a team they played for
-    const players = allPlayers.filter(p => {
-      const name = (p.name || p.playerName || '').toUpperCase();
-      return name.endsWith(' ' + todaysPuzzle.answer) || name.endsWith(todaysPuzzle.answer);
-    });
-    
-    const allTeams = new Set();
-    players.forEach(player => {
-      if (player.seasons) {
-        Object.values(player.seasons).forEach(s => {
-          if (!isSubstituteSeason(s) && s.team) {
-            allTeams.add(s.team);
-          }
-        });
+    if (todaysPuzzle.type === 'player') {
+      // Find players with this last name and get a team they played for
+      const players = allPlayers.filter(p => {
+        const name = (p.name || p.playerName || '').toUpperCase();
+        return name.endsWith(' ' + todaysPuzzle.answer) || name.endsWith(todaysPuzzle.answer);
+      });
+      
+      const allTeams = new Set();
+      players.forEach(player => {
+        if (player.seasons) {
+          Object.values(player.seasons).forEach(s => {
+            if (!isSubstituteSeason(s) && s.team) {
+              allTeams.add(s.team);
+            }
+          });
+        }
+      });
+      
+      const teams = [...allTeams];
+      if (teams.length > 0) {
+        hint = `Hint: Played for <strong>${teams[0]}</strong>`;
       }
-    });
-    
-    const teams = [...allTeams];
-    if (teams.length > 0) {
-      hint = `Hint: Played for <strong>${teams[0]}</strong>`;
+    } else {
+      // Softball word - show the hint/definition
+      if (todaysPuzzle.hint) {
+        hint = `Hint: <strong>${todaysPuzzle.hint}</strong>`;
+      } else if (todaysPuzzle.category) {
+        hint = `Hint: <strong>${todaysPuzzle.category}</strong> related`;
+      }
     }
   }
   
@@ -1208,7 +1309,11 @@ function submitGuess() {
       endGame();
     } else if (gameState.guesses.length >= MAX_GUESSES) {
       gameState.gameOver = true;
-      showMessage(`${todaysPuzzle.playerName}`, 'info', 0);
+      // Show appropriate message based on puzzle type
+      const lossMessage = todaysPuzzle.type === 'player' 
+        ? todaysPuzzle.playerName 
+        : `${todaysPuzzle.answer} - ${todaysPuzzle.hint || 'Softball term'}`;
+      showMessage(lossMessage, 'info', 0);
       endGame();
     }
     
@@ -1284,7 +1389,7 @@ function endGame() {
 // ============================================
 // STATS & SHARING
 // ============================================
-function showStats() {
+async function showStats() {
   const modal = document.getElementById('statsModal');
   
   // Show answer if game over
@@ -1292,13 +1397,21 @@ function showStats() {
   if (gameState.gameOver) {
     answerReveal.style.display = 'block';
     document.getElementById('answerWord').textContent = todaysPuzzle.answer;
-    document.getElementById('answerPlayer').textContent = todaysPuzzle.playerName;
+    
+    // Show player name or hint depending on puzzle type
+    const revealText = todaysPuzzle.type === 'player'
+      ? todaysPuzzle.playerName
+      : (todaysPuzzle.hint || 'Softball term');
+    document.getElementById('answerPlayer').textContent = revealText;
   } else {
     answerReveal.style.display = 'none';
   }
   
-  // Load stats
-  const stats = getLocalStats();
+  // Load stats from Firebase first, fall back to localStorage
+  let stats = await loadStatsFromFirebase();
+  if (!stats) {
+    stats = getLocalStats();
+  }
   
   document.getElementById('statPlayed').textContent = stats.gamesPlayed;
   document.getElementById('statWinPct').textContent = stats.gamesPlayed > 0 
@@ -1438,6 +1551,30 @@ async function saveStatsToFirebase(stats) {
   }
 }
 
+async function loadStatsFromFirebase() {
+  if (!currentUser) return null;
+  
+  try {
+    const statsRef = doc(db, 'acesWordleGames', currentUser.uid);
+    const statsDoc = await getDoc(statsRef);
+    
+    if (statsDoc.exists()) {
+      const data = statsDoc.data();
+      return {
+        gamesPlayed: data.gamesPlayed || 0,
+        wins: data.wins || 0,
+        currentStreak: data.currentStreak || 0,
+        maxStreak: data.maxStreak || 0,
+        distribution: data.distribution || {1:0, 2:0, 3:0, 4:0, 5:0, 6:0},
+        lastPlayedPuzzle: data.lastPlayedPuzzle || 0
+      };
+    }
+  } catch (error) {
+    console.error('Error loading stats from Firebase:', error);
+  }
+  return null;
+}
+
 function saveGameStateLocal() {
   try {
     localStorage.setItem('acesWordle_game', JSON.stringify({
@@ -1522,7 +1659,7 @@ async function loadGameState() {
 // ============================================
 // USER STATS DISPLAY
 // ============================================
-function updateUserStatsDisplay() {
+async function updateUserStatsDisplay() {
   const container = document.getElementById('userStatsContainer');
   if (!container) return;
   
@@ -1538,7 +1675,11 @@ function updateUserStatsDisplay() {
     return;
   }
   
-  const stats = getLocalStats();
+  // Load from Firebase first, fall back to localStorage
+  let stats = await loadStatsFromFirebase();
+  if (!stats) {
+    stats = getLocalStats();
+  }
   
   container.innerHTML = `
     <div class="user-stats-content">
@@ -1616,7 +1757,7 @@ function setupAuthListener() {
       }
     }
     
-    updateUserStatsDisplay();
+    await updateUserStatsDisplay();
   });
 }
 
@@ -1661,18 +1802,25 @@ async function init() {
     // Check for existing auth
     currentUser = getCurrentUser();
     
-    // Load players
-    console.log('Loading player data...');
-    const rawPlayers = await getAllPlayerStatsOptimized();
+    // Load players and softball words in parallel
+    console.log('Loading player data and softball words...');
+    const [rawPlayers] = await Promise.all([
+      getAllPlayerStatsOptimized(),
+      loadSoftballWords()
+    ]);
     allPlayers = rawPlayers.filter(p => p.migrated !== true);
     console.log(`Loaded ${allPlayers.length} players`);
     
-    // Build last name data
+    // Build last name data and combined puzzle pool
     buildLastNameData();
+    buildPuzzlePool();
     
     // Generate puzzle
     todaysPuzzle = generateDailyPuzzle();
-    console.log('Today\'s puzzle:', todaysPuzzle.answer, '-', todaysPuzzle.playerName);
+    const puzzleInfo = todaysPuzzle.type === 'player' 
+      ? todaysPuzzle.playerName 
+      : `${todaysPuzzle.hint} (${todaysPuzzle.category})`;
+    console.log('Today\'s puzzle:', todaysPuzzle.answer, '-', puzzleInfo, `[${todaysPuzzle.type}]`);
     
     // Display date
     const today = new Date();
@@ -1685,7 +1833,7 @@ async function init() {
     // Setup
     setupEventListeners();
     setupAuthListener();
-    updateUserStatsDisplay();
+    await updateUserStatsDisplay();
     
     // Render
     renderBoard();
