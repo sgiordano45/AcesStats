@@ -1263,7 +1263,7 @@
     }
 
     // Build the recap URL with season parameter
-    const baseUrl = window.location.origin;
+    const baseUrl = 'https://acessoftballreference.com';
     const recapUrl = `${baseUrl}/recap.html?season=${seasonId}`;
 
     // Format the message
@@ -1401,6 +1401,7 @@ ${recapUrl}`;
       
       <div class="btn-group">
         <button class="btn btn-success" onclick="savePreview()">💾 Save Preview</button>
+        <button class="btn btn-whatsapp" onclick="sharePreviewToWhatsApp()">📱 Share to WhatsApp</button>
         <button class="btn btn-secondary" onclick="clearPreviewSelection()">Cancel</button>
       </div>
     `;
@@ -1457,6 +1458,78 @@ ${recapUrl}`;
         <p>Select a game from the list above to edit its preview</p>
       </div>
     `;
+  };
+
+  window.sharePreviewToWhatsApp = function() {
+    if (!selectedPreview) {
+      showToast('No preview selected', 'warning');
+      return;
+    }
+
+    // Get current values from the form
+    const previewText = document.getElementById('previewTextInput').value.trim();
+    const homeOdds = document.getElementById('homeOddsInput').value;
+    const awayOdds = document.getElementById('awayOddsInput').value;
+
+    // Get team names
+    const homeTeam = selectedPreview.homeTeamName || selectedPreview.homeTeam || capitalize(selectedPreview.homeTeamId);
+    const awayTeam = selectedPreview.awayTeamName || selectedPreview.awayTeam || capitalize(selectedPreview.awayTeamId);
+
+    // Format date and time
+    let dateTimeStr = 'TBD';
+    if (selectedPreview.date?.seconds) {
+      const d = new Date(selectedPreview.date.seconds * 1000);
+      dateTimeStr = d.toLocaleDateString('en-US', { 
+        weekday: 'long', 
+        month: 'short', 
+        day: 'numeric'
+      });
+      // Add time if available
+      if (selectedPreview.time) {
+        dateTimeStr += ` @ ${selectedPreview.time}`;
+      }
+    }
+
+    // Build the message
+    const baseUrl = 'https://acessoftballreference.com';
+    const previewUrl = `${baseUrl}/weekend-preview.html`;
+
+    let message = `⚾ ${awayTeam} @ ${homeTeam} - Game Preview
+
+📅 ${dateTimeStr}`;
+
+    // Add odds section if either odds exists
+    if (awayOdds || homeOdds) {
+      const awayOddsFormatted = awayOdds ? (awayOdds > 0 ? `+${awayOdds}` : awayOdds) : 'N/A';
+      const homeOddsFormatted = homeOdds ? (homeOdds > 0 ? `+${homeOdds}` : homeOdds) : 'N/A';
+      message += `
+
+📊 Peters Odds
+${awayTeam}: ${awayOddsFormatted} / ${homeTeam}: ${homeOddsFormatted}`;
+    }
+
+    // Add preview text if exists
+    if (previewText) {
+      message += `
+
+📝 Peters Preview
+${previewText}`;
+    }
+
+    // Add link
+    message += `
+
+See upcoming matchups at:
+${previewUrl}`;
+
+    // Encode for WhatsApp URL
+    const encodedMessage = encodeURIComponent(message);
+    const whatsappUrl = `https://wa.me/?text=${encodedMessage}`;
+
+    // Open WhatsApp
+    window.open(whatsappUrl, '_blank');
+    
+    showToast('Opening WhatsApp...', 'success');
   };
 
   // ========================================
