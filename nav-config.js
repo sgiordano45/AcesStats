@@ -110,6 +110,7 @@ export const NAV_STRUCTURE = {
   // Tier 4: AUTH - User-specific pages (only visible when authenticated)
   auth: [
     { id: 'profile', href: 'profile.html', label: 'My Profile', icon: '👤', priority: 4, requiresAuth: true },
+    { id: 'contributor', href: 'contributor.html', label: 'Contributor Dashboard', icon: '✨', priority: 4, requiresAuth: true },
     { id: 'favorites', href: 'favorites.html', label: 'Favorites', icon: '⭐', priority: 4, requiresAuth: true },
     { id: 'game-tracker', href: 'game-tracker.html', label: 'Game Tracker', icon: '🔶', priority: 4, requiresAuth: true },
     { id: 'roster-management', href: 'roster-management.html', label: 'Roster Management', icon: '✉️', priority: 4, requiresAuth: true },
