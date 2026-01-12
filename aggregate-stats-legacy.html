@@ -170,10 +170,14 @@
       getDocs,
       getDoc,
       setDoc,
-	  updateDoc,
+      updateDoc,
       query,
       where
     } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+    import { 
+      getAuth, 
+      onAuthStateChanged 
+    } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
 
     // Firebase configuration
     const firebaseConfig = {
@@ -188,6 +192,7 @@
     // Initialize Firebase
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
+    const auth = getAuth(app);
 
     // Make functions globally available
     window.db = db;
@@ -196,11 +201,78 @@
     window.getDocs = getDocs;
     window.getDoc = getDoc;
     window.setDoc = setDoc;
-	window.updateDoc = updateDoc;
+    window.updateDoc = updateDoc;
     window.query = query;
     window.where = where;
 
-    log('✓ Firebase initialized successfully');
+    // Auth state - disable buttons until verified
+    let currentUser = null;
+    let isAdmin = false;
+    
+    function disableButtons() {
+      document.querySelectorAll('button').forEach(btn => {
+        btn.disabled = true;
+        btn.title = 'Please wait for admin verification...';
+      });
+    }
+    
+    function enableButtons() {
+      document.querySelectorAll('button').forEach(btn => {
+        btn.disabled = false;
+        btn.title = '';
+      });
+    }
+    
+    function showAuthError(message) {
+      const container = document.querySelector('.container');
+      container.innerHTML = `
+        <h1 style="color: #d32f2f;">🔒 Access Denied</h1>
+        <div class="warning-box">
+          <strong>${message}</strong>
+          <p style="margin-top: 10px;">This tool is restricted to administrators and league staff only.</p>
+          <p><a href="signin.html">Sign in</a> with an admin account to continue.</p>
+        </div>
+      `;
+    }
+    
+    // Check admin access on auth state change
+    onAuthStateChanged(auth, async (user) => {
+      if (!user) {
+        showAuthError('You must be signed in to access this tool.');
+        return;
+      }
+      
+      currentUser = user;
+      
+      try {
+        const userDoc = await getDoc(doc(db, 'users', user.uid));
+        if (!userDoc.exists()) {
+          showAuthError('User profile not found.');
+          return;
+        }
+        
+        const userData = userDoc.data();
+        const userRole = userData.userRole || userData.role || '';
+        
+        if (userRole !== 'admin' && userRole !== 'league-staff') {
+          showAuthError(`Your role (${userRole || 'none'}) does not have permission to use this tool.`);
+          return;
+        }
+        
+        // Admin verified!
+        isAdmin = true;
+        enableButtons();
+        log(`✓ Admin access verified for ${user.email}`, 'success');
+        log('✓ Firebase initialized successfully');
+        
+      } catch (error) {
+        console.error('Auth check error:', error);
+        showAuthError('Error verifying permissions: ' + error.message);
+      }
+    });
+    
+    // Initially disable all buttons
+    disableButtons();
 
     // Utility functions
     function log(message, type = 'info') {
