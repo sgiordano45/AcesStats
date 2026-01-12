@@ -1791,15 +1791,18 @@
         i.authUser?.id === player.id || i.legacyProfile?.id === player.id
       );
       
+      // Encode ID for safe use in HTML attributes and onclick handlers
+      const safeId = encodeURIComponent(player.id);
+      
       return `
         <div class="player-item ${player._isMigrated ? 'migrated' : ''} ${hasIssue ? 'has-issue' : ''}" 
-             data-id="${player.id}"
-             onclick="togglePlayerSelection('${player.id}')"
+             data-id="${safeId}"
+             onclick="togglePlayerSelection('${safeId}')"
              style="${hasIssue ? 'border-left: 4px solid var(--warning-color);' : ''}">
           <input type="checkbox" 
-                 id="chk_${player.id}" 
+                 id="chk_${safeId}" 
                  onclick="event.stopPropagation()"
-                 onchange="togglePlayerSelection('${player.id}')"
+                 onchange="togglePlayerSelection('${safeId}')"
                  ${player._isMigrated ? 'disabled' : ''}>
           <div class="player-info">
             <div class="player-name">
@@ -1815,7 +1818,7 @@
             ${seasons} seasons • ${games} G • ${hits} H
           </div>
           <button class="btn-sm btn-info" 
-                  onclick="event.stopPropagation(); setAsTarget('${player.id}')"
+                  onclick="event.stopPropagation(); setAsTarget('${safeId}')"
                   ${player._isMigrated ? 'disabled' : ''}>
             Set Target
           </button>
@@ -1834,9 +1837,10 @@
   // SELECTION FUNCTIONS
   // ============================================
 
-  window.togglePlayerSelection = async function(playerId) {
-    const checkbox = document.getElementById(`chk_${playerId}`);
-    const item = document.querySelector(`.player-item[data-id="${playerId}"]`);
+  window.togglePlayerSelection = async function(encodedPlayerId) {
+    const playerId = decodeURIComponent(encodedPlayerId);
+    const checkbox = document.getElementById(`chk_${encodedPlayerId}`);
+    const item = document.querySelector(`.player-item[data-id="${encodedPlayerId}"]`);
     const player = allPlayers.find(p => p.id === playerId);
     
     // Don't allow selecting migrated records
@@ -1868,7 +1872,9 @@
     await updateMergePanel();
   };
 
-  window.setAsTarget = async function(playerId) {
+  window.setAsTarget = async function(encodedPlayerId) {
+    const playerId = decodeURIComponent(encodedPlayerId);
+    
     // Remove previous target styling
     document.querySelectorAll('.player-item.selected-target').forEach(el => {
       el.classList.remove('selected-target');
@@ -1882,14 +1888,14 @@
     if (player) {
       selectedTarget = player;
       
-      // Update checkbox
-      const checkbox = document.getElementById(`chk_${playerId}`);
+      // Update checkbox (use encoded ID for DOM lookup)
+      const checkbox = document.getElementById(`chk_${encodedPlayerId}`);
       if (checkbox) {
         checkbox.checked = false;
       }
       
-      // Add target styling
-      const item = document.querySelector(`.player-item[data-id="${playerId}"]`);
+      // Add target styling (use encoded ID for DOM lookup)
+      const item = document.querySelector(`.player-item[data-id="${encodedPlayerId}"]`);
       if (item) {
         item.classList.remove('selected');
         item.classList.add('selected-target');
@@ -1935,14 +1941,16 @@
 
   function updateSelectionDisplay() {
     selectedSources.forEach(source => {
-      const checkbox = document.getElementById(`chk_${source.id}`);
-      const item = document.querySelector(`.player-item[data-id="${source.id}"]`);
+      const encodedId = encodeURIComponent(source.id);
+      const checkbox = document.getElementById(`chk_${encodedId}`);
+      const item = document.querySelector(`.player-item[data-id="${encodedId}"]`);
       if (checkbox) checkbox.checked = true;
       if (item) item.classList.add('selected');
     });
     
     if (selectedTarget) {
-      const item = document.querySelector(`.player-item[data-id="${selectedTarget.id}"]`);
+      const encodedId = encodeURIComponent(selectedTarget.id);
+      const item = document.querySelector(`.player-item[data-id="${encodedId}"]`);
       if (item) item.classList.add('selected-target');
     }
   }
