@@ -1099,6 +1099,118 @@
     color: #718096;
   }
 
+  /* =============================================
+     BADGES TAB STYLES
+     ============================================= */
+  .badges-section {
+    padding: 0;
+  }
+  
+  .badge-category-section {
+    margin-bottom: 2rem;
+  }
+  
+  .badge-category-title {
+    font-size: 1.1rem;
+    color: #4a5568;
+    margin-bottom: 1rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 2px solid #e2e8f0;
+  }
+  
+  .badge-grid-inner {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 1rem;
+  }
+  
+  .badge-card-item {
+    border: 2px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 1.25rem 1rem;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    background: white;
+  }
+  
+  .badge-card-item:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  }
+  
+  .badge-icon-wrapper {
+    margin-bottom: 0.5rem;
+    min-height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  
+  .badge-icon-wrapper img {
+    max-width: 48px;
+    max-height: 48px;
+  }
+  
+  .badge-name-text {
+    font-weight: 700;
+    font-size: 0.9rem;
+    color: #2d3748;
+    margin-bottom: 0.25rem;
+  }
+  
+  .badge-tier-text {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+  }
+  
+  .badge-progress-card {
+    background: #f7fafc;
+    border-radius: 10px;
+    padding: 1rem;
+  }
+  
+  .badge-progress-name {
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+  }
+  
+  .badge-progress-info {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.85rem;
+    color: #718096;
+    margin-bottom: 0.5rem;
+  }
+  
+  .badge-progress-bar {
+    height: 8px;
+    background: #e2e8f0;
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  
+  .badge-progress-fill {
+    height: 100%;
+    background: linear-gradient(135deg, #2d5016 0%, #1a6b4a 100%);
+    border-radius: 4px;
+  }
+
+  @media (max-width: 768px) {
+    .badge-grid-inner {
+      grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    }
+    
+    .badge-card-item {
+      padding: 1rem 0.75rem;
+    }
+    
+    .badge-name-text {
+      font-size: 0.8rem;
+    }
+  }
+
   .master-chef-section {
     background: linear-gradient(135deg, #ff6b35 0%, #f7931e 100%);
     color: white;
@@ -3767,6 +3879,7 @@
         console.log(`✅ Found ${Object.keys(data.earned || {}).length} badges`);
         return {
           seasonId: currentSeasonId,
+          seasonDisplay: '2025 Fall',
           ...data
         };
       }
@@ -3777,6 +3890,17 @@
       console.error('Error fetching badges:', error);
       return {};
     }
+  }
+  
+  // Get badge icon HTML - supports both emoji and image paths
+  function getBadgeIcon(badge, size = 48) {
+    // Check if badge has an iconPath for custom image
+    if (badge.iconPath) {
+      const imgPath = badge.iconPath.endsWith('.png') ? badge.iconPath : `${badge.iconPath}.png`;
+      return `<img src="${imgPath}" alt="${badge.name || ''}" style="width: ${size}px; height: ${size}px; object-fit: contain;" onerror="this.outerHTML='<span style=\\'font-size: ${size * 0.8}px;\\'>${badge.icon || '🎖️'}</span>'">`;
+    }
+    // Fallback to emoji
+    return `<span style="font-size: ${size * 0.8}px;">${badge.icon || '🎖️'}</span>`;
   }
   
   // Populate badges tab content
@@ -3817,42 +3941,47 @@
     Object.entries(categories).forEach(([catKey, cat]) => {
       if (cat.badges.length === 0) return;
       
-      // Sort by tier (gold > silver > bronze)
+      // Sort by tier (gold > silver > bronze), then by name
       cat.badges.sort((a, b) => {
         const tierOrder = { gold: 0, silver: 1, bronze: 2 };
-        return (tierOrder[a.tier] || 3) - (tierOrder[b.tier] || 3);
+        const tierDiff = (tierOrder[a.tier] ?? 3) - (tierOrder[b.tier] ?? 3);
+        if (tierDiff !== 0) return tierDiff;
+        return (a.name || '').localeCompare(b.name || '');
       });
       
-      html += `<div class="badge-category" style="margin-bottom: 1.5rem;">`;
-      html += `<h3 style="font-size: 1rem; color: #4a5568; margin-bottom: 1rem; padding-bottom: 0.5rem; border-bottom: 2px solid #e2e8f0;">${cat.name}</h3>`;
-      html += `<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 1rem;">`;
+      html += `<div class="badge-category-section">`;
+      html += `<h3 class="badge-category-title">${cat.name}</h3>`;
+      html += `<div class="badge-grid-inner">`;
       
       cat.badges.forEach(badge => {
-        const tierClass = badge.tier || '';
         const tierColors = {
           gold: 'border-color: #ffd700; background: linear-gradient(135deg, #fffef0 0%, #fff 100%);',
           silver: 'border-color: #c0c0c0; background: linear-gradient(135deg, #fafafa 0%, #fff 100%);',
           bronze: 'border-color: #cd7f32; background: linear-gradient(135deg, #fdf8f3 0%, #fff 100%);'
         };
-        const tierStyle = tierColors[badge.tier] || '';
+        const tierStyle = tierColors[badge.tier] || 'border-color: #e2e8f0;';
+        const tierTextColor = badge.tier === 'gold' ? '#b8860b' : badge.tier === 'silver' ? '#666' : badge.tier === 'bronze' ? '#8b4513' : '#2d5016';
+        
+        // Prepare badge data for modal - escape properly
+        const modalData = {
+          icon: badge.icon || '🎖️',
+          iconPath: badge.iconPath || null,
+          name: badge.name || badge.id,
+          category: cat.name,
+          tier: badge.tier || null,
+          description: badge.description || '',
+          value: badge.value,
+          valueLabel: getValueLabel(badge.badgeId || badge.id),
+          season: badges.seasonDisplay || '2025 Fall',
+          earnedDate: badge.earnedDate || badge.gameDate || null
+        };
         
         html += `
-          <div class="badge-card" style="border: 2px solid #e2e8f0; border-radius: 12px; padding: 1.25rem 1rem; text-align: center; cursor: pointer; transition: all 0.2s; ${tierStyle}" 
-               onclick='showBadgeModal(${JSON.stringify({
-                 icon: badge.icon || '🎖️',
-                 name: badge.name || badge.id,
-                 category: cat.name,
-                 tier: badge.tier,
-                 description: badge.description || '',
-                 value: badge.value,
-                 valueLabel: badge.badgeId === 'hitStreak' ? 'Games' : badge.badgeId?.includes('Hits') ? 'Hits' : badge.badgeId?.includes('Runs') ? 'Runs' : 'Value',
-                 season: badges.seasonId || '2025 Fall'
-               }).replace(/'/g, "\\'")})'
-               onmouseover="this.style.transform='translateY(-4px)'; this.style.boxShadow='0 4px 12px rgba(0,0,0,0.15)';"
-               onmouseout="this.style.transform=''; this.style.boxShadow='';">
-            <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">${badge.icon || '🎖️'}</div>
-            <div style="font-weight: 700; font-size: 0.9rem; color: #2d3748; margin-bottom: 0.25rem;">${badge.name || badge.id}</div>
-            ${badge.tier ? `<div style="font-size: 0.75rem; font-weight: 600; text-transform: uppercase; color: ${badge.tier === 'gold' ? '#b8860b' : badge.tier === 'silver' ? '#666' : '#8b4513'};">${badge.tier}</div>` : ''}
+          <div class="badge-card-item" style="${tierStyle}" 
+               onclick='showBadgeModal(${JSON.stringify(modalData).replace(/'/g, "&apos;")})'>
+            <div class="badge-icon-wrapper">${getBadgeIcon(badge, 48)}</div>
+            <div class="badge-name-text">${badge.name || badge.id}</div>
+            ${badge.tier ? `<div class="badge-tier-text" style="color: ${tierTextColor};">${badge.tier.charAt(0).toUpperCase() + badge.tier.slice(1)}</div>` : ''}
           </div>
         `;
       });
@@ -3874,14 +4003,14 @@
         const percent = progress.max > 0 ? Math.round((progress.current / progress.max) * 100) : 0;
         
         progressHtml += `
-          <div style="background: #f7fafc; border-radius: 10px; padding: 1rem;">
-            <div style="font-weight: 600; margin-bottom: 0.5rem;">${badgeId}</div>
-            <div style="display: flex; justify-content: space-between; font-size: 0.85rem; color: #718096; margin-bottom: 0.5rem;">
+          <div class="badge-progress-card">
+            <div class="badge-progress-name">${badgeId}</div>
+            <div class="badge-progress-info">
               <span>Progress</span>
               <span>${progress.current} / ${progress.max}</span>
             </div>
-            <div style="height: 8px; background: #e2e8f0; border-radius: 4px; overflow: hidden;">
-              <div style="height: 100%; width: ${percent}%; background: linear-gradient(135deg, #2d5016 0%, #1a6b4a 100%); border-radius: 4px;"></div>
+            <div class="badge-progress-bar">
+              <div class="badge-progress-fill" style="width: ${percent}%;"></div>
             </div>
           </div>
         `;
@@ -3889,6 +4018,17 @@
       
       progressGrid.innerHTML = progressHtml || '<p style="color: #718096;">No badges in progress</p>';
     }
+  }
+  
+  // Helper to get value label based on badge type
+  function getValueLabel(badgeId) {
+    if (!badgeId) return 'Value';
+    const id = badgeId.toLowerCase();
+    if (id.includes('streak') || id.includes('ironman')) return 'Games';
+    if (id.includes('hits') || id.includes('multihit')) return 'Hits';
+    if (id.includes('runs') || id.includes('biggames')) return 'Runs';
+    if (id.includes('walks')) return 'Walks';
+    return 'Value';
   }
 
   async function populatePlayerHeader(stats, info, displayName, playerId, careerStats, awards = [], badges = {}) {
@@ -4022,7 +4162,18 @@
           tier: badge.tier || '',
           icon: badge.icon || '🎖️',
           name: badge.name || badge.id,
-          data: badge
+          data: {
+            icon: badge.icon || '🎖️',
+            iconPath: badge.iconPath || null,
+            name: badge.name || badge.id,
+            category: badge.category || 'Hitting',
+            tier: badge.tier || null,
+            description: badge.description || '',
+            value: badge.value,
+            valueLabel: getValueLabel(badge.badgeId || badge.id),
+            season: badges.seasonDisplay || '2025 Fall',
+            earnedDate: null
+          }
         });
       }
     }
@@ -4052,7 +4203,14 @@
           type: 'award',
           icon: awardIcons[awardName] || '🏆',
           name: `${awardName} ${awardYear}`.trim(),
-          data: award
+          data: {
+            icon: awardIcons[awardName] || '🏆',
+            name: awardName,
+            type: 'Season Award',
+            description: award.description || `Awarded for outstanding performance`,
+            season: `${awardYear} ${award.season || ''}`.trim(),
+            team: award.team || ''
+          }
         });
       }
     }
@@ -4064,18 +4222,23 @@
     const remainingItems = totalItems - accoladeChips.length;
     
     if (accoladeChips.length > 0) {
-      let chipsHTML = accoladeChips.map(chip => {
+      let chipsHTML = accoladeChips.map((chip, index) => {
+        // Store data in a global array and reference by index to avoid JSON escaping issues
+        window._accoladeData = window._accoladeData || [];
+        const dataIndex = window._accoladeData.length;
+        window._accoladeData.push(chip.data);
+        
         if (chip.type === 'badge') {
           const tierClass = chip.tier ? ` ${chip.tier}` : '';
           return `
-            <div class="accolade-chip badge${tierClass}" onclick='showBadgeModal(${JSON.stringify(chip.data).replace(/'/g, "\\'")})'>
+            <div class="accolade-chip badge${tierClass}" onclick="showBadgeModal(window._accoladeData[${dataIndex}])">
               <span class="accolade-chip-icon">${chip.icon}</span>
               <span>${chip.name}</span>
             </div>
           `;
         } else {
           return `
-            <div class="accolade-chip award" onclick='showAwardModal(${JSON.stringify(chip.data).replace(/'/g, "\\'")})'>
+            <div class="accolade-chip award" onclick="showAwardModal(window._accoladeData[${dataIndex}])">
               <span class="accolade-chip-icon">${chip.icon}</span>
               <span>${chip.name}</span>
             </div>
