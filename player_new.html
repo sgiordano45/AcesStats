@@ -3719,9 +3719,11 @@
     // Store player data for splits
     currentPlayerData = playerData;
     
-    // TODO: Fetch badges for this player from playerBadges collection
-    // For now, pass empty badges object - will implement badge fetching
-    const playerBadges = {};
+    // Generate legacy ID for badge lookup (same format used by badge calculator)
+    const legacyId = playerName.toLowerCase().replace(/\./g, '').replace(/\s+/g, '_');
+    
+    // Fetch badges for this player from playerBadges collection
+    const playerBadges = await fetchPlayerBadges(legacyId);
     
     await populatePlayerHeader(stats, info, playerName, playerId, careerStats, awards, playerBadges);
     populateStatsTables(stats, playerId, careerStats);
@@ -3731,6 +3733,9 @@
     if ((awards && awards.length > 0) || careerStats) {
       await populateAwards(awards, playerName, careerStats);
     }
+    
+    // Populate badges tab
+    populateBadgesTab(playerBadges, legacyId);
     
     // Initialize splits tab (load data in background)
     initializeSplitsTab(playerId, playerName);
@@ -3742,6 +3747,147 @@
     // Initialize tab from URL
     if (typeof initTabFromURL === 'function') {
       initTabFromURL();
+    }
+  }
+  
+  // Fetch player badges from Firestore
+  async function fetchPlayerBadges(legacyId) {
+    try {
+      // Try current season first (2025-fall)
+      const currentSeasonId = '2025-fall';
+      const badgeDocId = `${currentSeasonId}_${legacyId}`;
+      
+      console.log(`🎖️ Fetching badges for: ${badgeDocId}`);
+      
+      const badgeDocRef = doc(db, 'playerBadges', badgeDocId);
+      const badgeDocSnap = await getDoc(badgeDocRef);
+      
+      if (badgeDocSnap.exists()) {
+        const data = badgeDocSnap.data();
+        console.log(`✅ Found ${Object.keys(data.earned || {}).length} badges`);
+        return {
+          seasonId: currentSeasonId,
+          ...data
+        };
+      }
+      
+      console.log('ℹ️ No badges found for this player/season');
+      return {};
+    } catch (error) {
+      console.error('Error fetching badges:', error);
+      return {};
+    }
+  }
+  
+  // Populate badges tab content
+  function populateBadgesTab(badges, legacyId) {
+    const earnedGrid = document.getElementById('earnedBadgesGrid');
+    const noBadgesMsg = document.getElementById('noBadgesMessage');
+    const progressSection = document.getElementById('badgeProgressSection');
+    const progressGrid = document.getElementById('badgeProgressGrid');
+    
+    if (!badges.earned || Object.keys(badges.earned).length === 0) {
+      earnedGrid.style.display = 'none';
+      noBadgesMsg.style.display = 'block';
+      return;
+    }
+    
+    earnedGrid.style.display = 'grid';
+    noBadgesMsg.style.display = 'none';
+    
+    // Group badges by category
+    const categories = {
+      hitting: { name: '⚾ Hitting', badges: [] },
+      milestone: { name: '🏆 Milestones', badges: [] },
+      hidden: { name: '🔮 Hidden', badges: [] }
+    };
+    
+    Object.entries(badges.earned).forEach(([badgeId, badge]) => {
+      const category = badge.category || 'hitting';
+      if (categories[category]) {
+        categories[category].badges.push({ id: badgeId, ...badge });
+      } else {
+        categories.hitting.badges.push({ id: badgeId, ...badge });
+      }
+    });
+    
+    // Build HTML
+    let html = '';
+    
+    Object.entries(categories).forEach(([catKey, cat]) => {
+      if (cat.badges.length === 0) return;
+      
+      // Sort by tier (gold > silver > bronze)
+      cat.badges.sort((a, b) => {
+        const tierOrder = { gold: 0, silver: 1, bronze: 2 };
+        return (tierOrder[a.tier] || 3) - (tierOrder[b.tier] || 3);
+      });
+      
+      html += `<div class="badge-category" style="margin-bottom: 1.5rem;">`;
+      html += `<h3 style="font-size: 1rem; color: #4a5568; margin-bottom: 1rem; padding-bottom: 0.5rem; border-bottom: 2px solid #e2e8f0;">${cat.name}</h3>`;
+      html += `<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 1rem;">`;
+      
+      cat.badges.forEach(badge => {
+        const tierClass = badge.tier || '';
+        const tierColors = {
+          gold: 'border-color: #ffd700; background: linear-gradient(135deg, #fffef0 0%, #fff 100%);',
+          silver: 'border-color: #c0c0c0; background: linear-gradient(135deg, #fafafa 0%, #fff 100%);',
+          bronze: 'border-color: #cd7f32; background: linear-gradient(135deg, #fdf8f3 0%, #fff 100%);'
+        };
+        const tierStyle = tierColors[badge.tier] || '';
+        
+        html += `
+          <div class="badge-card" style="border: 2px solid #e2e8f0; border-radius: 12px; padding: 1.25rem 1rem; text-align: center; cursor: pointer; transition: all 0.2s; ${tierStyle}" 
+               onclick='showBadgeModal(${JSON.stringify({
+                 icon: badge.icon || '🎖️',
+                 name: badge.name || badge.id,
+                 category: cat.name,
+                 tier: badge.tier,
+                 description: badge.description || '',
+                 value: badge.value,
+                 valueLabel: badge.badgeId === 'hitStreak' ? 'Games' : badge.badgeId?.includes('Hits') ? 'Hits' : badge.badgeId?.includes('Runs') ? 'Runs' : 'Value',
+                 season: badges.seasonId || '2025 Fall'
+               }).replace(/'/g, "\\'")})'
+               onmouseover="this.style.transform='translateY(-4px)'; this.style.boxShadow='0 4px 12px rgba(0,0,0,0.15)';"
+               onmouseout="this.style.transform=''; this.style.boxShadow='';">
+            <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">${badge.icon || '🎖️'}</div>
+            <div style="font-weight: 700; font-size: 0.9rem; color: #2d3748; margin-bottom: 0.25rem;">${badge.name || badge.id}</div>
+            ${badge.tier ? `<div style="font-size: 0.75rem; font-weight: 600; text-transform: uppercase; color: ${badge.tier === 'gold' ? '#b8860b' : badge.tier === 'silver' ? '#666' : '#8b4513'};">${badge.tier}</div>` : ''}
+          </div>
+        `;
+      });
+      
+      html += `</div></div>`;
+    });
+    
+    earnedGrid.innerHTML = html;
+    
+    // Show progress section if there's progress data
+    if (badges.progress && Object.keys(badges.progress).length > 0) {
+      progressSection.style.display = 'block';
+      
+      let progressHtml = '';
+      Object.entries(badges.progress).forEach(([badgeId, progress]) => {
+        // Skip if already earned at max tier
+        if (badges.earned[badgeId]?.tier === 'gold') return;
+        
+        const percent = progress.max > 0 ? Math.round((progress.current / progress.max) * 100) : 0;
+        
+        progressHtml += `
+          <div style="background: #f7fafc; border-radius: 10px; padding: 1rem;">
+            <div style="font-weight: 600; margin-bottom: 0.5rem;">${badgeId}</div>
+            <div style="display: flex; justify-content: space-between; font-size: 0.85rem; color: #718096; margin-bottom: 0.5rem;">
+              <span>Progress</span>
+              <span>${progress.current} / ${progress.max}</span>
+            </div>
+            <div style="height: 8px; background: #e2e8f0; border-radius: 4px; overflow: hidden;">
+              <div style="height: 100%; width: ${percent}%; background: linear-gradient(135deg, #2d5016 0%, #1a6b4a 100%); border-radius: 4px;"></div>
+            </div>
+          </div>
+        `;
+      });
+      
+      progressGrid.innerHTML = progressHtml || '<p style="color: #718096;">No badges in progress</p>';
     }
   }
 
