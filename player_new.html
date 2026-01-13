@@ -1106,22 +1106,24 @@
     padding: 0;
   }
   
-  .badge-category-section {
-    margin-bottom: 2rem;
-  }
-  
-  .badge-category-title {
-    font-size: 1.1rem;
-    color: #4a5568;
-    margin-bottom: 1rem;
-    padding-bottom: 0.5rem;
-    border-bottom: 2px solid #e2e8f0;
-  }
-  
-  .badge-grid-inner {
+  .badges-grid-container {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
     gap: 1rem;
+  }
+  
+  .badge-category-header {
+    grid-column: 1 / -1;
+    font-size: 1rem;
+    font-weight: 600;
+    color: #4a5568;
+    padding: 0.75rem 0 0.5rem 0;
+    border-bottom: 2px solid #e2e8f0;
+    margin-top: 0.5rem;
+  }
+  
+  .badge-category-header:first-child {
+    margin-top: 0;
   }
   
   .badge-card-item {
@@ -1154,13 +1156,14 @@
   
   .badge-name-text {
     font-weight: 700;
-    font-size: 0.9rem;
+    font-size: 0.85rem;
     color: #2d3748;
     margin-bottom: 0.25rem;
+    line-height: 1.2;
   }
   
   .badge-tier-text {
-    font-size: 0.75rem;
+    font-size: 0.7rem;
     font-weight: 600;
     text-transform: uppercase;
   }
@@ -1198,8 +1201,9 @@
   }
 
   @media (max-width: 768px) {
-    .badge-grid-inner {
-      grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    .badges-grid-container {
+      grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+      gap: 0.75rem;
     }
     
     .badge-card-item {
@@ -1208,6 +1212,16 @@
     
     .badge-name-text {
       font-size: 0.8rem;
+    }
+    
+    .badge-icon-wrapper {
+      min-height: 40px;
+    }
+  }
+  
+  @media (max-width: 480px) {
+    .badges-grid-container {
+      grid-template-columns: repeat(3, 1fr);
     }
   }
 
@@ -2529,7 +2543,7 @@
     <div class="badges-section" id="badgesSection">
       <div class="section-card" style="background: white; border-radius: 16px; padding: 2rem; box-shadow: 0 2px 8px rgba(0,0,0,0.08); margin-bottom: 2rem;">
         <h2 style="margin: 0 0 1.5rem 0; color: #2d3748;">🎖️ Season Badges</h2>
-        <div id="earnedBadgesGrid" class="badges-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 1rem;">
+        <div id="earnedBadgesGrid">
           <!-- Badges populated by JS -->
         </div>
         <div id="noBadgesMessage" style="display: none; text-align: center; padding: 3rem; color: #718096;">
@@ -3916,7 +3930,7 @@
       return;
     }
     
-    earnedGrid.style.display = 'grid';
+    earnedGrid.style.display = 'block';
     noBadgesMsg.style.display = 'none';
     
     // Group badges by category
@@ -3935,8 +3949,8 @@
       }
     });
     
-    // Build HTML
-    let html = '';
+    // Build HTML - all badges in one container with category headers
+    let html = '<div class="badges-grid-container">';
     
     Object.entries(categories).forEach(([catKey, cat]) => {
       if (cat.badges.length === 0) return;
@@ -3949,10 +3963,10 @@
         return (a.name || '').localeCompare(b.name || '');
       });
       
-      html += `<div class="badge-category-section">`;
-      html += `<h3 class="badge-category-title">${cat.name}</h3>`;
-      html += `<div class="badge-grid-inner">`;
+      // Category header
+      html += `<div class="badge-category-header">${cat.name}</div>`;
       
+      // Badge cards for this category
       cat.badges.forEach(badge => {
         const tierColors = {
           gold: 'border-color: #ffd700; background: linear-gradient(135deg, #fffef0 0%, #fff 100%);',
@@ -3976,19 +3990,22 @@
           earnedDate: badge.earnedDate || badge.gameDate || null
         };
         
+        // Store data in global array
+        window._badgeTabData = window._badgeTabData || [];
+        const dataIndex = window._badgeTabData.length;
+        window._badgeTabData.push(modalData);
+        
         html += `
-          <div class="badge-card-item" style="${tierStyle}" 
-               onclick='showBadgeModal(${JSON.stringify(modalData).replace(/'/g, "&apos;")})'>
+          <div class="badge-card-item" style="${tierStyle}" onclick="showBadgeModal(window._badgeTabData[${dataIndex}])">
             <div class="badge-icon-wrapper">${getBadgeIcon(badge, 48)}</div>
             <div class="badge-name-text">${badge.name || badge.id}</div>
             ${badge.tier ? `<div class="badge-tier-text" style="color: ${tierTextColor};">${badge.tier.charAt(0).toUpperCase() + badge.tier.slice(1)}</div>` : ''}
           </div>
         `;
       });
-      
-      html += `</div></div>`;
     });
     
+    html += '</div>';
     earnedGrid.innerHTML = html;
     
     // Show progress section if there's progress data
