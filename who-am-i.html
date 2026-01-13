@@ -990,14 +990,26 @@ function generateClues(player) {
     clues.push(`Has scored runs in the league`);
   }
   
-  // CLUE 3: Career stat or walks
+  // CLUE 3: Career stat or walks (with truthful fallback)
   if (bestWalksSeason && bestWalksSeason.walks >= 5) {
     const [year, szn] = bestWalksSeason.seasonId.split('-');
     clues.push(`Drew ${bestWalksSeason.walks} walks in ${szn.charAt(0).toUpperCase() + szn.slice(1)} ${year}`);
-  } else if (career.walks) {
-    clues.push(`Has ${career.walks} career walks`);
+  } else if (career.walks && career.walks > 0) {
+    clues.push(`Has ${career.walks} career walk${career.walks !== 1 ? 's' : ''}`);
   } else {
-    clues.push(`Has walked in multiple games`);
+    // Fallback: Use batting average tier instead of false walk claim
+    const avg = career.battingAverage || 0;
+    if (avg >= 0.400) {
+      clues.push(`Career batting average is .400 or above`);
+    } else if (avg >= 0.300) {
+      clues.push(`Career batting average is between .300 and .399`);
+    } else if (avg >= 0.200) {
+      clues.push(`Career batting average is between .200 and .299`);
+    } else if (avg > 0) {
+      clues.push(`Career batting average is below .200`);
+    } else {
+      clues.push(`Has at-bats in the league`);
+    }
   }
   
   // CLUE 4: Career games
@@ -1019,7 +1031,15 @@ function generateClues(player) {
   // CLUE 7 (Easiest): Team journey (chronological)
   if (teams.length > 0) {
     // Sort seasons chronologically (oldest first) to show journey
-    const sortedSeasons = [...seasons].sort((a, b) => a.seasonId.localeCompare(b.seasonId));
+    // Season IDs are like "2023-summer-blue" or "2023-fall-green"
+    // Need proper chronological sort: summer comes before fall within same year
+    const seasonOrder = { 'spring': 1, 'summer': 2, 'fall': 3, 'winter': 4 };
+    const sortedSeasons = [...seasons].sort((a, b) => {
+      const [yearA, sznA] = a.seasonId.split('-');
+      const [yearB, sznB] = b.seasonId.split('-');
+      if (yearA !== yearB) return yearA.localeCompare(yearB);
+      return (seasonOrder[sznA] || 5) - (seasonOrder[sznB] || 5);
+    });
     const teamJourney = sortedSeasons.map(s => s.team).filter(Boolean);
     
     // Dedupe consecutive same teams
