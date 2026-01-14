@@ -368,6 +368,38 @@
     border-color: rgba(138,43,226,0.4);
   }
   
+  .highlight-stat.champion {
+    background: linear-gradient(135deg, rgba(255,215,0,0.25) 0%, rgba(255,180,0,0.15) 100%);
+    border: 2px solid #ffd700;
+    box-shadow: 0 2px 8px rgba(255,215,0,0.3);
+  }
+  
+  .highlight-stat.champion .highlight-stat-value {
+    color: #fff;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.2);
+  }
+  
+  .highlight-stat.champion .highlight-stat-label {
+    color: #ffd700;
+    font-weight: 700;
+  }
+  
+  .highlight-stat.runner-up {
+    background: linear-gradient(135deg, rgba(192,192,192,0.25) 0%, rgba(160,160,160,0.15) 100%);
+    border: 2px solid #c0c0c0;
+    box-shadow: 0 2px 8px rgba(192,192,192,0.3);
+  }
+  
+  .highlight-stat.runner-up .highlight-stat-value {
+    color: #fff;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.2);
+  }
+  
+  .highlight-stat.runner-up .highlight-stat-label {
+    color: #e0e0e0;
+    font-weight: 700;
+  }
+  
   /* =============================================
      ACCOLADE CHIPS
      ============================================= */
@@ -3848,10 +3880,13 @@
     // Generate legacy ID for badge lookup (same format used by badge calculator)
     const legacyId = playerName.toLowerCase().replace(/\./g, '').replace(/\s+/g, '_');
     
-    // Fetch badges for this player from playerBadges collection
-    const playerBadges = await fetchPlayerBadges(legacyId);
+    // Fetch badges and titles in parallel
+    const [playerBadges, playerTitles] = await Promise.all([
+      fetchPlayerBadges(legacyId),
+      fetchPlayerTitles(stats)
+    ]);
     
-    await populatePlayerHeader(stats, info, playerName, playerId, careerStats, awards, playerBadges);
+    await populatePlayerHeader(stats, info, playerName, playerId, careerStats, awards, playerBadges, playerTitles);
     populateStatsTables(stats, playerId, careerStats);
     handleMasterChefSection(playerName);
     
@@ -3904,6 +3939,100 @@
       console.error('Error fetching badges:', error);
       return {};
     }
+  }
+  
+  // Fetch player's championship and runner-up titles
+  async function fetchPlayerTitles(playerStats) {
+    try {
+      console.log('🏆 Fetching championship titles...');
+      
+      // Get non-sub seasons with team info
+      const playerSeasons = playerStats
+        .filter(s => s.sub === 'No')
+        .map(s => ({
+          seasonId: `${s.year}-${s.season.toLowerCase()}`,
+          team: s.team
+        }));
+      
+      if (playerSeasons.length === 0) {
+        return [];
+      }
+      
+      // Fetch champions and runner-ups collections
+      const championsRef = collection(db, 'champions');
+      const runnerUpsRef = collection(db, 'runnerUps');
+      
+      const [championsSnap, runnerUpsSnap] = await Promise.all([
+        getDocs(championsRef),
+        getDocs(runnerUpsRef)
+      ]);
+      
+      // Build lookup maps
+      const champions = {};
+      championsSnap.forEach(doc => {
+        const data = doc.data();
+        champions[data.seasonId] = data.team;
+      });
+      
+      const runnerUps = {};
+      runnerUpsSnap.forEach(doc => {
+        const data = doc.data();
+        runnerUps[data.seasonId] = data.runnerUp;
+      });
+      
+      console.log('📊 Champions:', champions);
+      console.log('📊 Runner-ups:', runnerUps);
+      
+      // Find player's titles
+      const titles = [];
+      
+      playerSeasons.forEach(({ seasonId, team }) => {
+        const teamLower = team.toLowerCase();
+        const championTeam = champions[seasonId]?.toLowerCase();
+        const runnerUpTeam = runnerUps[seasonId]?.toLowerCase();
+        
+        if (championTeam === teamLower) {
+          titles.push({
+            type: 'champion',
+            seasonId: seasonId,
+            team: team
+          });
+        } else if (runnerUpTeam === teamLower) {
+          titles.push({
+            type: 'runner-up',
+            seasonId: seasonId,
+            team: team
+          });
+        }
+      });
+      
+      // Sort chronologically (ascending)
+      titles.sort((a, b) => {
+        const [yearA, seasonA] = a.seasonId.split('-');
+        const [yearB, seasonB] = b.seasonId.split('-');
+        
+        if (yearA !== yearB) {
+          return parseInt(yearA) - parseInt(yearB);
+        }
+        
+        // summer comes before fall
+        const seasonOrder = { 'summer': 0, 'fall': 1 };
+        return (seasonOrder[seasonA] || 0) - (seasonOrder[seasonB] || 0);
+      });
+      
+      console.log(`✅ Found ${titles.length} titles:`, titles);
+      return titles;
+      
+    } catch (error) {
+      console.error('Error fetching titles:', error);
+      return [];
+    }
+  }
+  
+  // Format season ID for display (2023-fall -> 2023 Fall)
+  function formatSeasonDisplay(seasonId) {
+    const [year, season] = seasonId.split('-');
+    return `${year} ${season.charAt(0).toUpperCase() + season.slice(1)}`;
   }
   
   // Get badge icon HTML - supports both emoji and image paths
@@ -4048,7 +4177,7 @@
     return 'Value';
   }
 
-  async function populatePlayerHeader(stats, info, displayName, playerId, careerStats, awards = [], badges = {}) {
+  async function populatePlayerHeader(stats, info, displayName, playerId, careerStats, awards = [], badges = {}, titles = []) {
     document.getElementById('playerName').textContent = displayName;
     const regularStats = stats.filter(s => s.sub === 'No');
     const years = [...new Set(regularStats.map(s => s.year))].sort();
@@ -4136,6 +4265,26 @@
           <div class="highlight-stat-label">Avg AcesBPI</div>
         </div>
       `;
+      
+      // Add championship/runner-up titles (chronologically)
+      titles.forEach(title => {
+        const seasonDisplay = formatSeasonDisplay(title.seasonId);
+        if (title.type === 'champion') {
+          highlightsHTML += `
+            <div class="highlight-stat champion">
+              <div class="highlight-stat-value">🏆 ${seasonDisplay}</div>
+              <div class="highlight-stat-label">Champion</div>
+            </div>
+          `;
+        } else if (title.type === 'runner-up') {
+          highlightsHTML += `
+            <div class="highlight-stat runner-up">
+              <div class="highlight-stat-value">🥈 ${seasonDisplay}</div>
+              <div class="highlight-stat-label">Runner-Up</div>
+            </div>
+          `;
+        }
+      });
       
       if (awardCount > 0) {
         highlightsHTML += `
