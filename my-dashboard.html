@@ -1179,7 +1179,7 @@ body {
     // DEBUG MODE - Set to true to test with a fixed date
     // ============================================
     const DEBUG_MODE = true;
-    const DEBUG_DATE = new Date('2025-11-02T10:00:00'); // Early October - mid-season for Fall
+    const DEBUG_DATE = new Date('2025-11-02T10:00:00'); // November 2 - late season / playoff time for Fall
     // ============================================
 
     function getDebugNow() {
@@ -1203,6 +1203,35 @@ body {
         return 'Field of Dreams';
       }
       return 'TBD';
+    }
+
+    // Helper to generate game-preview URL
+    // game-preview.html accepts either:
+    //   - gameId (for playoff games)
+    //   - home, away, date (for regular games)
+    function getGamePreviewUrl(game) {
+      const isPlayoff = game.gameType?.toLowerCase() === 'playoff';
+      
+      if (isPlayoff && game.id) {
+        // Playoff games use gameId
+        return `game-preview.html?gameId=${encodeURIComponent(game.id)}`;
+      } else {
+        // Regular games use home, away, date
+        const homeTeam = game.isHome ? (linkedTeam || game.homeTeam) : game.opponent;
+        const awayTeam = game.isHome ? game.opponent : (linkedTeam || game.awayTeam);
+        
+        // Format date as M/D/YYYY
+        let dateStr = '';
+        if (game.date?.seconds) {
+          const d = new Date(game.date.seconds * 1000);
+          dateStr = `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`;
+        } else if (game.date) {
+          const d = new Date(game.date);
+          dateStr = `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`;
+        }
+        
+        return `game-preview.html?home=${encodeURIComponent(homeTeam)}&away=${encodeURIComponent(awayTeam)}&date=${encodeURIComponent(dateStr)}`;
+      }
     }
 
     console.log('📊 Dashboard loading...');
@@ -1329,6 +1358,8 @@ body {
           const rsvps = await getGameRSVPs(game.id);
           if (rsvps[currentUser.uid]) {
             userRsvp = rsvps[currentUser.uid].status || 'pending';
+            // Store for action items check
+            userRsvpStatuses[game.id] = userRsvp;
           }
         } catch (e) {
           console.log('Could not load RSVP status');
@@ -1337,7 +1368,7 @@ body {
 
       // Update preview link
       const previewLink = document.getElementById('nextGamePreviewLink');
-      previewLink.href = `game-preview.html?game=${game.id}&season=${currentSeason?.id}`;
+      previewLink.href = getGamePreviewUrl(game);
       previewLink.style.display = 'inline-flex';
 
       container.innerHTML = `
@@ -1363,11 +1394,9 @@ body {
             <div class="game-detail">
               <span>📍</span> ${getDefaultLocation(game)}
             </div>
-            ${game.gameType && game.gameType.toLowerCase() !== 'regular' ? `
-              <div class="game-detail">
-                <span>🏆</span> ${capitalize(game.gameType)}
-              </div>
-            ` : ''}
+            <div class="game-detail">
+              <span>${game.gameType?.toLowerCase() === 'playoff' ? '🏆' : '⚾'}</span> ${game.gameType?.toLowerCase() === 'playoff' ? 'Playoff' : 'Regular Season'}
+            </div>
           </div>
         </div>
         <div class="game-actions">
@@ -1432,6 +1461,15 @@ body {
       const rsvpPromises = games.map(g => getGameRSVPs(g.id));
       const allRsvps = await Promise.all(rsvpPromises);
 
+      // Store user's RSVP status for each game (for action items check)
+      games.forEach((game, index) => {
+        const rsvps = allRsvps[index] || {};
+        const userRsvp = rsvps[currentUser?.uid]?.status;
+        if (userRsvp) {
+          userRsvpStatuses[game.id] = userRsvp;
+        }
+      });
+
       // Skip first game (shown in featured card)
       const gamesToShow = games.slice(1, 6);
       
@@ -1448,9 +1486,11 @@ body {
         const dateInfo = formatGameDate(game.date, game.time);
         const rsvps = allRsvps[index + 1] || {};
         const userRsvp = rsvps[currentUser?.uid]?.status || 'pending';
+        const isPlayoff = game.gameType?.toLowerCase() === 'playoff';
+        const previewUrl = getGamePreviewUrl(game);
         
         return `
-          <a href="game-preview.html?game=${game.id}&season=${currentSeason?.id}" class="game-item">
+          <a href="${previewUrl}" class="game-item">
             <div class="game-date-box">
               <div class="game-date-day">${dateInfo.day}</div>
               <div class="game-date-month">${dateInfo.month}</div>
@@ -1458,6 +1498,7 @@ body {
             <div class="game-info">
               <div class="game-opponent">${game.isHome ? 'vs' : '@'} ${capitalize(game.opponent)}</div>
               <div class="game-meta">
+                <span>${isPlayoff ? '🏆 Playoff' : '⚾ Regular'}</span>
                 <span>${dateInfo.time}</span>
                 <span>${getDefaultLocation(game)}</span>
               </div>
@@ -1468,25 +1509,29 @@ body {
       }).join('');
     }
 
+    // Store user RSVPs for action items check
+    let userRsvpStatuses = {};
+
     // Render action items
     function renderActionItems() {
       const container = document.getElementById('actionItems');
       const countBadge = document.getElementById('actionCount');
       const actions = [];
 
-      // Check for pending RSVPs
-      const pendingRsvps = upcomingGames.filter(g => {
-        // Check if user has RSVPed (we'd need to track this)
-        return true; // Simplified - would need actual RSVP check
-      }).length;
+      // Check for pending RSVPs - only count games where user hasn't responded
+      const pendingRsvpGames = upcomingGames.filter(g => {
+        const status = userRsvpStatuses[g.id];
+        // Pending if no status or status is 'pending' or 'none'
+        return !status || status === 'pending' || status === 'none';
+      });
 
-      if (pendingRsvps > 0 && upcomingGames.length > 0) {
+      if (pendingRsvpGames.length > 0) {
         actions.push({
           icon: '✉️',
           title: 'RSVP to upcoming games',
-          description: `${upcomingGames.length} game${upcomingGames.length > 1 ? 's' : ''} need your response`,
+          description: `${pendingRsvpGames.length} game${pendingRsvpGames.length > 1 ? 's' : ''} need your response`,
           href: 'roster-management.html',
-          urgent: upcomingGames.some(g => getDaysUntil(g.date) <= 2)
+          urgent: pendingRsvpGames.some(g => getDaysUntil(g.date) <= 2)
         });
       }
 
