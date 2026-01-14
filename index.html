@@ -3545,7 +3545,8 @@
       
       const capitalize = (str) => str ? str.charAt(0).toUpperCase() + str.slice(1) : "";
       
-      const upcomingGames = seasonGames
+      // Get all upcoming games (no winner yet)
+      const allUpcomingGames = seasonGames
         .map(g => {
           let gameDate = null;
           if (g.date && g.date.seconds) {
@@ -3568,47 +3569,81 @@
         })
         .filter(g => {
           if (!g.date) return false;
-          g.date.setHours(0, 0, 0, 0);
-          return g.date >= today && g.date <= nextWeek && !g.winner;
+          const gameDate = new Date(g.date);
+          gameDate.setHours(0, 0, 0, 0);
+          return gameDate >= today && !g.winner;
         })
-        .sort((a, b) => a.date - b.date)
+        .sort((a, b) => a.date - b.date);
+      
+      // Games this week
+      const thisWeekGames = allUpcomingGames
+        .filter(g => {
+          const gameDate = new Date(g.date);
+          gameDate.setHours(0, 0, 0, 0);
+          return gameDate <= nextWeek;
+        })
         .slice(0, 8);
       
       const thisWeekModule = document.getElementById('thisWeekModule');
       const thisWeekGames = document.getElementById('thisWeekGames');
+      const thisWeekTitle = thisWeekModule.querySelector('.this-week-title');
       
-      if (upcomingGames.length === 0) {
-        // Hide module if no games this week
-        thisWeekModule.style.display = 'none';
-        return;
-      }
-      
-      // Show module and populate games
       thisWeekModule.style.display = 'block';
       
       const daysOfWeek = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
       const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
       
-      const gamesHTML = upcomingGames.map(game => {
-        const dayName = daysOfWeek[game.date.getDay()];
-        const monthName = months[game.date.getMonth()];
-        const dayNum = game.date.getDate();
+      // Case 1: Games this week
+      if (thisWeekGames.length > 0) {
+        thisWeekTitle.textContent = "📅 This Week's Games";
+        
+        const gamesHTML = thisWeekGames.map(game => {
+          const dayName = daysOfWeek[game.date.getDay()];
+          const monthName = months[game.date.getMonth()];
+          const dayNum = game.date.getDate();
+          const dateStr = `${dayName}, ${monthName} ${dayNum}`;
+          const timeStr = game.time || 'TBD';
+          
+          return `
+            <a href="game-preview.html?home=${encodeURIComponent(game.homeTeam)}&away=${encodeURIComponent(game.awayTeam)}&date=${game.date.toISOString().split('T')[0]}" class="week-game-card">
+              <div class="week-game-date">${dateStr}</div>
+              <div class="week-game-matchup">${game.awayTeam} @ ${game.homeTeam}</div>
+              <div class="week-game-time">🕐 ${timeStr}</div>
+            </a>
+          `;
+        }).join('');
+        
+        thisWeekGames.innerHTML = gamesHTML;
+        console.log(`✅ This Week loaded: ${thisWeekGames.length} games`);
+      }
+      // Case 2: No games this week, but future games exist
+      else if (allUpcomingGames.length > 0) {
+        const nextGame = allUpcomingGames[0];
+        const dayName = daysOfWeek[nextGame.date.getDay()];
+        const monthName = months[nextGame.date.getMonth()];
+        const dayNum = nextGame.date.getDate();
         const dateStr = `${dayName}, ${monthName} ${dayNum}`;
+        const timeStr = nextGame.time || 'TBD';
         
-        // Format time
-        let timeStr = game.time || 'TBD';
+        thisWeekTitle.textContent = "📅 Next Game";
         
-        return `
-          <a href="game-preview.html?home=${encodeURIComponent(game.homeTeam)}&away=${encodeURIComponent(game.awayTeam)}&date=${game.date.toISOString().split('T')[0]}" class="week-game-card">
+        thisWeekGames.innerHTML = `
+          <a href="game-preview.html?home=${encodeURIComponent(nextGame.homeTeam)}&away=${encodeURIComponent(nextGame.awayTeam)}&date=${nextGame.date.toISOString().split('T')[0]}" class="week-game-card">
             <div class="week-game-date">${dateStr}</div>
-            <div class="week-game-matchup">${game.awayTeam} @ ${game.homeTeam}</div>
+            <div class="week-game-matchup">${nextGame.awayTeam} @ ${nextGame.homeTeam}</div>
             <div class="week-game-time">🕐 ${timeStr}</div>
           </a>
         `;
-      }).join('');
-      
-      thisWeekGames.innerHTML = gamesHTML;
-      console.log(`✅ This Week loaded: ${upcomingGames.length} games`);
+        console.log(`✅ Next Game loaded: ${nextGame.awayTeam} @ ${nextGame.homeTeam}`);
+      }
+      // Case 3: No future games at all
+      else {
+        thisWeekTitle.textContent = "📅 Schedule";
+        thisWeekGames.innerHTML = `
+          <div class="this-week-empty">No games scheduled. Check back soon!</div>
+        `;
+        console.log('ℹ️ No upcoming games found');
+      }
       
     } catch (error) {
       console.error('❌ Error loading This Week games:', error);
