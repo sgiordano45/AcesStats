@@ -1027,7 +1027,7 @@ body {
               <a href="current-season.html" class="quick-link">
                 <span class="quick-link-icon">🍂</span> Current Season
               </a>
-              <a href="current-season-team.html" class="quick-link">
+              <a href="#" class="quick-link" id="myTeamLink">
                 <span class="quick-link-icon">🏆</span> My Team
               </a>
               <a href="trophy-case.html" class="quick-link">
@@ -1037,7 +1037,7 @@ body {
                 <span class="quick-link-icon">🔮</span> Weekend Preview
               </a>
               <a href="games.html" class="quick-link">
-                <span class="quick-link-icon">📅</span> All Games
+                <span class="quick-link-icon">🎮</span> Daily Games
               </a>
               <a href="pictures.html" class="quick-link">
                 <span class="quick-link-icon">📷</span> Photo Gallery
@@ -1216,7 +1216,10 @@ body {
     }
 
     // Format date for display
-    function formatGameDate(gameDate) {
+    // Time can come from: 
+    //   1) The date field itself (timestamp with time, e.g., "December 7, 2025 at 10:00:00 AM UTC-5")
+    //   2) A separate 'time' field (string, e.g., "10:00")
+    function formatGameDate(gameDate, gameTimeField = null) {
       let date;
       if (gameDate?.seconds) {
         date = new Date(gameDate.seconds * 1000);
@@ -1224,11 +1227,39 @@ body {
         date = new Date(gameDate);
       }
       
+      // Determine time display
+      let timeDisplay = 'TBD';
+      
+      // First, check if there's a separate time field (takes priority)
+      if (gameTimeField) {
+        // Format like "10:00" to "10:00 AM"
+        const timeParts = gameTimeField.split(':');
+        if (timeParts.length >= 2) {
+          let hours = parseInt(timeParts[0], 10);
+          const minutes = timeParts[1];
+          const ampm = hours >= 12 ? 'PM' : 'AM';
+          hours = hours % 12 || 12;
+          timeDisplay = `${hours}:${minutes} ${ampm}`;
+        } else {
+          timeDisplay = gameTimeField; // Use as-is if can't parse
+        }
+      } else {
+        // Fall back to time from the date timestamp
+        // Check if the time is midnight (00:00) - likely means no time was set
+        const hours = date.getHours();
+        const minutes = date.getMinutes();
+        if (hours === 0 && minutes === 0) {
+          timeDisplay = 'TBD';
+        } else {
+          timeDisplay = date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+        }
+      }
+      
       return {
         day: date.getDate(),
         month: date.toLocaleDateString('en-US', { month: 'short' }),
         weekday: date.toLocaleDateString('en-US', { weekday: 'short' }),
-        time: date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
+        time: timeDisplay,
         full: date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
       };
     }
@@ -1249,7 +1280,7 @@ body {
       }
 
       const daysUntil = getDaysUntil(game.date);
-      const dateInfo = formatGameDate(game.date);
+      const dateInfo = formatGameDate(game.date, game.time);
       const isHome = game.isHome;
       
       // Get user's RSVP status
@@ -1270,16 +1301,19 @@ body {
       previewLink.href = `game-preview.html?game=${game.id}&season=${currentSeason?.id}`;
       previewLink.style.display = 'inline-flex';
 
+      // Helper to capitalize team name
+      const capitalize = (str) => str ? str.charAt(0).toUpperCase() + str.slice(1).toLowerCase() : '';
+      
       container.innerHTML = `
         <div class="game-matchup">
           <div class="matchup-teams">
             <div class="team-info">
-              <div class="team-name">${isHome ? linkedTeam : game.opponent}</div>
+              <div class="team-name">${capitalize(isHome ? linkedTeam : game.opponent)}</div>
               <div class="team-label">${isHome ? 'Home' : 'Away'}</div>
             </div>
             <div class="vs-badge">VS</div>
             <div class="team-info">
-              <div class="team-name">${isHome ? game.opponent : linkedTeam}</div>
+              <div class="team-name">${capitalize(isHome ? game.opponent : linkedTeam)}</div>
               <div class="team-label">${isHome ? 'Away' : 'Home'}</div>
             </div>
           </div>
@@ -1375,9 +1409,10 @@ body {
       }
 
       container.innerHTML = gamesToShow.map((game, index) => {
-        const dateInfo = formatGameDate(game.date);
+        const dateInfo = formatGameDate(game.date, game.time);
         const rsvps = allRsvps[index + 1] || {};
         const userRsvp = rsvps[currentUser?.uid]?.status || 'pending';
+        const capitalize = (str) => str ? str.charAt(0).toUpperCase() + str.slice(1).toLowerCase() : '';
         
         return `
           <a href="game-preview.html?game=${game.id}&season=${currentSeason?.id}" class="game-item">
@@ -1386,9 +1421,9 @@ body {
               <div class="game-date-month">${dateInfo.month}</div>
             </div>
             <div class="game-info">
-              <div class="game-opponent">${game.isHome ? 'vs' : '@'} ${game.opponent}</div>
+              <div class="game-opponent">${game.isHome ? 'vs' : '@'} ${capitalize(game.opponent)}</div>
               <div class="game-meta">
-                <span>${dateInfo.time || 'TBD'}</span>
+                <span>${dateInfo.time}</span>
                 <span>${game.field || game.location || ''}</span>
               </div>
             </div>
@@ -1608,6 +1643,14 @@ body {
 
         // Update time display
         updateTimeDisplay();
+
+        // Set My Team quick link with team parameter
+        const myTeamLink = document.getElementById('myTeamLink');
+        if (linkedTeam) {
+          myTeamLink.href = `current-season-team.html?team=${encodeURIComponent(linkedTeam)}`;
+        } else {
+          myTeamLink.href = 'current-season.html'; // Fallback if no team linked
+        }
 
         // Load upcoming games if team is linked
         if (linkedTeam && currentSeason?.id) {
