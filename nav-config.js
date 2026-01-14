@@ -79,17 +79,16 @@ export const NAV_STRUCTURE = {
   // Tier 2: SECONDARY - Important pages (shown contextually on desktop)
   secondary: [
     { id: 'weekend-preview', href: 'weekend-preview.html', label: 'Weekend Preview', icon: '🔮', priority: 2 },
-    	{ id: 'playoffs', href: 'playoffs.html', label: 'Playoff Bracket', icon: '🥇', priority: 2 },
-	{ id: 'projections', href: 'projections.html', label: 'Playoff Projections', icon: '🎱', priority: 2 },
-    	{ id: 'clinching', href: 'playoff-clinching.html', label: 'Playoff Clinching', icon: '🔒', priority: 2 },
-			    { id: 'bracket', href: 'bracket.html', label: 'Create your own Playoff bracket', icon: '🔭', priority: 2 },
-	{ id: 'seasons', href: 'seasons.html', label: 'All Seasons', icon: '📅', priority: 2 },
+    { id: 'playoffs', href: 'playoffs.html', label: 'Playoff Bracket', icon: '🥇', priority: 2 },
+    { id: 'projections', href: 'projections.html', label: 'Playoff Projections', icon: '🎱', priority: 2 },
+    { id: 'clinching', href: 'playoff-clinching.html', label: 'Playoff Clinching', icon: '🔒', priority: 2 },
+    { id: 'bracket', href: 'bracket.html', label: 'Create your own Playoff bracket', icon: '🔭', priority: 2 },
+    { id: 'seasons', href: 'seasons.html', label: 'All Seasons', icon: '📅', priority: 2 },
     { id: 'champions', href: 'champions.html', label: 'Champions', icon: '🏆', priority: 2 },
     { id: 'recap', href: 'recap.html', label: 'Year in Review', icon: '📖', priority: 2 },
     { id: 'leaders', href: 'leaders.html', label: 'Career Leaders', icon: '👑', priority: 2 },
     { id: 'awards', href: 'awards.html', label: 'Awards', icon: '🏅', priority: 2 },
     { id: 'games', href: 'games.html', label: 'Daily Games', icon: '🎮', priority: 2 },
-
   ],
   
   // Tier 3: TERTIARY - Specialty pages (mobile-only unless contextually relevant)
@@ -98,27 +97,26 @@ export const NAV_STRUCTURE = {
     { id: 'compare', href: 'compare.html', label: 'Player Comparison', icon: '🔀', priority: 3 },
     { id: 'team-compare', href: 'team_compare.html', label: 'Team Comparison', icon: '🆚', priority: 3 },
     { id: 'h2h', href: 'h2h_grid.html', label: 'Head-to-Head Grid', icon: '⚔️', priority: 3 },
-	{ id: 'history', href: 'league-history.html', label: 'League History', icon: '📜', priority: 3 },
+    { id: 'history', href: 'league-history.html', label: 'League History', icon: '📜', priority: 3 },
     { id: 'charts', href: 'charts.html', label: 'Performance Charts', icon: '📊', priority: 3 },
     { id: 'query-stats', href: 'query-stats.html', label: 'Stats Query Tool', icon: '🔍', priority: 3 },
     { id: 'pictures', href: 'pictures.html', label: 'Gallery', icon: '📷', priority: 3 },
     { id: 'rule-proposals', href: 'rule-proposals.html', label: 'Rule Proposals', icon: '📋', priority: 3 },
-    
     // game-preview removed - requires specific game ID parameter
   ],
   
   // Tier 4: AUTH - User-specific pages (only visible when authenticated)
   auth: [
+    { id: 'dashboard', href: 'my-dashboard.html', label: 'My Dashboard', icon: '📋', priority: 4, requiresAuth: true },
     { id: 'profile', href: 'profile.html', label: 'My Profile', icon: '👤', priority: 4, requiresAuth: true },
     { id: 'contributor', href: 'contributor.html', label: 'Contributor Dashboard', icon: '✨', priority: 4, requiresAuth: true },
     { id: 'favorites', href: 'favorites.html', label: 'Favorites', icon: '⭐', priority: 4, requiresAuth: true },
-    { id: 'game-tracker', href: 'game-tracker.html', label: 'Game Tracker', icon: '🔶', priority: 4, requiresAuth: true },
     { id: 'roster-management', href: 'roster-management.html', label: 'Roster Management', icon: '✉️', priority: 4, requiresAuth: true },
-	{ id: 'offseason-hub', href: 'offseason.html', label: 'Offseason Hub', icon: '🎣️', priority: 4, requiresAuth: true },
-	{ id: 'photo-upload', href: 'photo-upload.html', label: 'Upload Photos', icon: '📤️', priority: 4, requiresAuth: true },
-	{ id: 'submit-score', href: 'submit-score.html', label: 'Submit Scores', icon: '🔢️', priority: 4, requiresAuth: true },
-	{ id: 'submit-stats', href: 'submit-stats.html', label: 'Submit Stats', icon: '🧮', priority: 4, requiresAuth: true },
-	{ id: 'directory', href: 'aces-directory.html', label: 'Aces Directory', icon: '📇', priority: 4, requiresAuth: true },
+    { id: 'directory', href: 'aces-directory.html', label: 'Aces Directory', icon: '📇', priority: 4, requiresAuth: true },
+    { id: 'submit-score', href: 'submit-score.html', label: 'Submit Scores', icon: '🔢️', priority: 4, requiresAuth: true },
+    { id: 'submit-stats', href: 'submit-stats.html', label: 'Submit Stats', icon: '🧮', priority: 4, requiresAuth: true },
+    { id: 'photo-upload', href: 'photo-upload.html', label: 'Upload Photos', icon: '📤️', priority: 4, requiresAuth: true },
+    { id: 'offseason-hub', href: 'offseason.html', label: 'Offseason Hub', icon: '🎣️', priority: 4, requiresAuth: true },
   ],
   
   // Public auth pages (signin handles both signin and signup - don't show in nav)
@@ -224,9 +222,11 @@ export const PAGE_CONFIGS = {
   'h2h_grid.html': {
     desktop: ['home', 'current-season', 'teams', 'team-compare', 'history']
   },
-    'league-history.html': {
+  
+  'league-history.html': {
     desktop: ['home', 'current-season', 'teams', 'team-compare', 'h2h']
   },
+  
   'charts.html': {
     desktop: ['home', 'current-season', 'batting', 'pitching', 'teams', 'players', 'seasons', 'leaders', 'compare', 'team-compare', 'charts']
   },
@@ -249,6 +249,10 @@ export const PAGE_CONFIGS = {
   },
   
   // Auth-specific pages
+  'my-dashboard.html': {
+    desktop: []
+  },
+  
   'profile.html': {
     desktop: []
   },
@@ -265,7 +269,7 @@ export const PAGE_CONFIGS = {
     desktop: []
   },
   
-    'offseason.html': {
+  'offseason.html': {
     desktop: []
   },
   
