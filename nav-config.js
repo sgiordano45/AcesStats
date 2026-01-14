@@ -117,6 +117,7 @@ export const NAV_STRUCTURE = {
     { id: 'submit-stats', href: 'submit-stats.html', label: 'Submit Stats', icon: '🧮', priority: 4, requiresAuth: true },
     { id: 'photo-upload', href: 'photo-upload.html', label: 'Upload Photos', icon: '📤️', priority: 4, requiresAuth: true },
     { id: 'offseason-hub', href: 'offseason.html', label: 'Offseason Hub', icon: '🎣️', priority: 4, requiresAuth: true },
+    { id: 'aces-shop', href: 'https://acesmountainside.com/', label: 'Aces Shop', icon: '🛒', priority: 4, requiresAuth: true, external: true },
   ],
   
   // Public auth pages (signin handles both signin and signup - don't show in nav)

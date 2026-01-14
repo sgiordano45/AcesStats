@@ -40,7 +40,7 @@ export class NavigationComponent {
       const result = await getUserProfile(userId);
       if (result.success && result.data) {
         const profileUrl = getProfilePageForUser(result.data);
-        console.log('📄 Profile URL for user role:', result.data.userRole, '→', profileUrl);
+        console.log('🔄 Profile URL for user role:', result.data.userRole, '→', profileUrl);
         return profileUrl;
       }
     }
@@ -137,6 +137,14 @@ export class NavigationComponent {
       }));
   }
 
+  // Helper to generate link attributes (handles external links)
+  getLinkAttributes(link) {
+    if (link.external) {
+      return `href="${link.href}" target="_blank" rel="noopener noreferrer"`;
+    }
+    return `href="${link.href}"`;
+  }
+
   // Render desktop navigation
   renderDesktop() {
     const links = this.getDesktopLinks();
@@ -144,7 +152,7 @@ export class NavigationComponent {
     return `
       <nav class="nav-container">
         ${links.map(link => `
-          <a href="${link.href}" class="nav-link ${link.active ? 'active' : ''} ${link.class || ''}">
+          <a ${this.getLinkAttributes(link)} class="nav-link ${link.active ? 'active' : ''} ${link.class || ''}">
             ${link.icon} ${link.label}
           </a>
         `).join('')}
@@ -168,14 +176,14 @@ export class NavigationComponent {
         </div>
         <nav class="mobile-nav-menu" id="mobileNavMenu">
           ${publicLinks.map(link => `
-            <a href="${link.href}" class="mobile-nav-item ${link.active ? 'active' : ''}">
+            <a ${this.getLinkAttributes(link)} class="mobile-nav-item ${link.active ? 'active' : ''}">
               ${link.icon} ${link.label}
             </a>
           `).join('')}
           ${this.isAuthenticated && authLinks.length > 0 ? `
             <div class="mobile-nav-section-divider">Account</div>
             ${authLinks.map(link => `
-              <a href="${link.href}" class="mobile-nav-item ${link.active ? 'active' : ''}">
+              <a ${this.getLinkAttributes(link)} class="mobile-nav-item ${link.active ? 'active' : ''}">
                 ${link.icon} ${link.label}
               </a>
             `).join('')}
@@ -396,7 +404,7 @@ if (typeof window !== 'undefined') {
     if (typeof window.auth !== 'undefined' && window.auth.onAuthStateChanged) {
       console.log('👂 Setting up auth state listener for navigation...');
       window.auth.onAuthStateChanged((user) => {
-        console.log('🔍 Auth state changed, user:', user ? user.email : 'none');
+        console.log('🔐 Auth state changed, user:', user ? user.email : 'none');
         // Reinitialize navigation with new auth state
         setTimeout(async () => {
           await window.reinitializeNav();
