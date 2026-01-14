@@ -1556,6 +1556,23 @@ async function submitStats() {
     if (errorCount === 0) {
       showMessage('success', `Successfully submitted stats for ${successCount} player(s)!`);
       showToast(`Stats saved for ${successCount} players`, 'success');
+      
+      // Mark the game as having stats submitted
+      try {
+        const gameRef = doc(db, 'seasons', seasonId, 'games', selectedGameId);
+        await updateDoc(gameRef, {
+          statsSubmitted: true,
+          statsSubmittedBy: currentUser.uid,
+          statsSubmittedByName: currentUser.displayName || currentUser.email,
+          statsSubmittedAt: serverTimestamp(),
+          statsSubmittedForTeam: selectedTeam
+        });
+        console.log(`✅ Marked game ${selectedGameId} as having stats submitted`);
+      } catch (gameUpdateError) {
+        console.warn('⚠️ Could not update game document with statsSubmitted flag:', gameUpdateError);
+        // Don't fail the whole operation if this update fails
+      }
+      
       setTimeout(() => clearAllStats(), 3000);
     } else {
       showMessage('warning', `Submitted ${successCount} player(s), but ${errorCount} failed.`);
@@ -1960,6 +1977,29 @@ window.submitBulkStats = async function() {
     if (errorCount === 0) {
       showMessage('success', `Successfully uploaded stats for ${successCount} player-game combinations across ${Object.keys(gameGroups).length} games!`);
       showToast(`Bulk upload complete: ${successCount} records`, 'success');
+      
+      // Mark all uploaded games as having stats submitted
+      for (const gameKey of Object.keys(gameGroups)) {
+        const game = gameGroups[gameKey];
+        const gameDate = new Date(game.date);
+        const dateStr = `${gameDate.getMonth() + 1}-${gameDate.getDate()}-${gameDate.getFullYear()}`;
+        const gameId = `${dateStr}_${selectedTeam.toLowerCase()}_vs_${game.opponent.toLowerCase()}`.replace(/\s+/g, '_');
+        
+        try {
+          const gameRef = doc(db, 'seasons', seasonId, 'games', gameId);
+          await updateDoc(gameRef, {
+            statsSubmitted: true,
+            statsSubmittedBy: currentUser.uid,
+            statsSubmittedByName: currentUser.displayName || currentUser.email,
+            statsSubmittedAt: serverTimestamp(),
+            statsSubmittedForTeam: selectedTeam,
+            statsSubmittedViaBulkUpload: true
+          });
+          console.log(`✅ Marked game ${gameId} as having stats submitted`);
+        } catch (gameUpdateError) {
+          console.warn(`⚠️ Could not update game ${gameId} with statsSubmitted flag:`, gameUpdateError);
+        }
+      }
       
       setTimeout(() => clearBulkUpload(), 2000);
     } else {
