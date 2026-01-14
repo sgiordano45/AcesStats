@@ -555,6 +555,48 @@ body {
   gap: 0.5rem;
 }
 
+/* vsOpponent Stats */
+.player-vs-opponent {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px dashed var(--border-color);
+  font-size: 0.85rem;
+}
+
+.vs-opponent-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.35rem;
+}
+
+.vs-opponent-row:last-child {
+  margin-bottom: 0;
+}
+
+.vs-opponent-label {
+  color: var(--text-light);
+  font-weight: 500;
+}
+
+.vs-opponent-value {
+  font-weight: 700;
+  color: var(--primary-color);
+}
+
+.vs-opponent-games {
+  font-size: 0.75rem;
+  color: var(--text-light);
+  font-weight: normal;
+  margin-left: 0.25rem;
+}
+
+.vs-no-data {
+  color: var(--text-light);
+  font-style: italic;
+  font-size: 0.8rem;
+}
+
 .player-stat {
   text-align: center;
   flex: 1;
@@ -1298,7 +1340,7 @@ body {
           console.log(`🔍 Sample ${homeTeam} player:`, homeTopPlayers[0]);
         }
 
-        function createPlayerCard(player) {
+        function createPlayerCard(player, opponentTeam) {
           const atBats = parseInt(player.atBats || 0);
           const hits = parseInt(player.hits || 0);
           const walks = parseInt(player.walks || 0);
@@ -1308,6 +1350,50 @@ body {
           const obp = (atBats + walks) > 0 ? ((hits + walks) / (atBats + walks)).toFixed(3) : ".000";
           const acesBPI = parseFloat(player.acesBPI || 0).toFixed(1);
           const playerName = player.playerName || player.name || player.id || "Unknown";
+
+          // Get vsOpponent stats (season and career)
+          const seasonVsOpponent = player.vsOpponent?.[opponentTeam];
+          const careerVsOpponent = player.careerVsOpponent?.[opponentTeam];
+          
+          // Build vsOpponent HTML
+          let vsOpponentHtml = '';
+          
+          if (seasonVsOpponent || careerVsOpponent) {
+            vsOpponentHtml = '<div class="player-vs-opponent">';
+            
+            // Season vs opponent
+            if (seasonVsOpponent && seasonVsOpponent.atBats > 0) {
+              const seasonVsAvg = (seasonVsOpponent.hits / seasonVsOpponent.atBats).toFixed(3);
+              vsOpponentHtml += `
+                <div class="vs-opponent-row">
+                  <span class="vs-opponent-label">vs ${opponentTeam}:</span>
+                  <span class="vs-opponent-value">${seasonVsAvg}<span class="vs-opponent-games">(${seasonVsOpponent.games} G)</span></span>
+                </div>
+              `;
+              
+              // Only show career if different from season (more games)
+              if (careerVsOpponent && careerVsOpponent.atBats > 0 && careerVsOpponent.games > seasonVsOpponent.games) {
+                const careerVsAvg = (careerVsOpponent.hits / careerVsOpponent.atBats).toFixed(3);
+                vsOpponentHtml += `
+                  <div class="vs-opponent-row">
+                    <span class="vs-opponent-label">Career vs ${opponentTeam}:</span>
+                    <span class="vs-opponent-value">${careerVsAvg}<span class="vs-opponent-games">(${careerVsOpponent.games} G)</span></span>
+                  </div>
+                `;
+              }
+            } else if (careerVsOpponent && careerVsOpponent.atBats > 0) {
+              // Only career data available (no season data yet)
+              const careerVsAvg = (careerVsOpponent.hits / careerVsOpponent.atBats).toFixed(3);
+              vsOpponentHtml += `
+                <div class="vs-opponent-row">
+                  <span class="vs-opponent-label">Career vs ${opponentTeam}:</span>
+                  <span class="vs-opponent-value">${careerVsAvg}<span class="vs-opponent-games">(${careerVsOpponent.games} G)</span></span>
+                </div>
+              `;
+            }
+            
+            vsOpponentHtml += '</div>';
+          }
 
           return `
             <div class="player-card">
@@ -1330,16 +1416,17 @@ body {
                   <span class="player-stat-value">${acesBPI}</span>
                 </div>
               </div>
+              ${vsOpponentHtml}
             </div>
           `;
         }
 
         const awayPlayersHtml = awayTopPlayers.length > 0
-          ? awayTopPlayers.map(createPlayerCard).join('')
+          ? awayTopPlayers.map(p => createPlayerCard(p, homeTeam)).join('')
           : '<div class="no-data">No qualified players found</div>';
           
         const homePlayersHtml = homeTopPlayers.length > 0
-          ? homeTopPlayers.map(createPlayerCard).join('')
+          ? homeTopPlayers.map(p => createPlayerCard(p, awayTeam)).join('')
           : '<div class="no-data">No qualified players found</div>';
 
         const keyPlayersHtml = `

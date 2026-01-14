@@ -398,8 +398,10 @@ export async function getSeasonPlayerStatsOptimized(seasonId) {
           // Auth user info for legacyId resolution
           linkedPlayer: data.linkedPlayer || null,
           isAuthUser: data.isAuthUser || false,
-          // Include the specific season stats
+          // Include the specific season stats (includes vsOpponent for that season)
           ...seasonStats,
+          // Also include career vsOpponent for historical context
+          careerVsOpponent: data.career?.vsOpponent || {},
           seasonId: seasonId,
           seasonKey: seasonKey // Keep track of full key for debugging
         });
