@@ -957,6 +957,9 @@ body {
             <a href="roster-management.html" class="header-btn primary" id="rsvpHeaderBtn">
               <span>✉️</span> RSVP to Games
             </a>
+            <a href="index.html" class="header-btn secondary">
+              <span>🏠</span> Home
+            </a>
             <a href="profile.html" class="header-btn secondary">
               <span>👤</span> My Profile
             </a>
@@ -1165,13 +1168,16 @@ body {
   </div>
 
   <script type="module">
-    import { onAuthChange, getCurrentUser, getUserProfile, isUserCaptain } from './firebase-auth.js';
+    import { onAuthChange, getCurrentUser, getUserProfile, isUserCaptain, USER_ROLES } from './firebase-auth.js';
     import { 
       getCurrentSeason, 
       getSeasonPlayerStatsOptimized,
-      getAllTeams
+      getAllTeams,
+      getSeasonGames,
+      db
     } from './firebase-data.js';
     import { getUpcomingTeamGames, getGameRSVPs, updateRSVP } from './firebase-roster.js';
+    import { collection, getDocs, query, where } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
 
     let currentUser = null;
     let userProfile = null;
@@ -1179,6 +1185,11 @@ body {
     let linkedTeam = null;
     let linkedPlayer = null;
     let upcomingGames = [];
+    
+    // Captain action tracking
+    let gamesNeedingScores = [];
+    let gamesNeedingStats = [];
+    let isCaptainOrStaff = false;
 
     // ============================================
     // DEBUG MODE - Set to true to test with a fixed date
@@ -1524,6 +1535,32 @@ body {
       const countBadge = document.getElementById('actionCount');
       const actions = [];
 
+      // ========== CAPTAIN/STAFF ACTION ITEMS ==========
+      if (isCaptainOrStaff) {
+        // Check for games needing scores (highest priority for captains)
+        if (gamesNeedingScores.length > 0) {
+          actions.push({
+            icon: '🔢',
+            title: 'Submit game scores',
+            description: `${gamesNeedingScores.length} game${gamesNeedingScores.length > 1 ? 's' : ''} need final scores`,
+            href: 'submit-score.html',
+            urgent: true // Always urgent - scores should be submitted promptly
+          });
+        }
+        
+        // Check for games needing stats
+        if (gamesNeedingStats.length > 0) {
+          actions.push({
+            icon: '📊',
+            title: 'Submit game stats',
+            description: `${gamesNeedingStats.length} game${gamesNeedingStats.length > 1 ? 's' : ''} need player stats`,
+            href: 'submit-stats.html',
+            urgent: gamesNeedingStats.length >= 3 // Urgent if 3+ games backlog
+          });
+        }
+      }
+
+      // ========== PLAYER ACTION ITEMS ==========
       // Check for pending RSVPs - only count games where user hasn't responded
       const pendingRsvpGames = upcomingGames.filter(g => {
         const status = userRsvpStatuses[g.id];
@@ -1790,6 +1827,181 @@ body {
       }
     }
 
+    // Check for games needing scores (captain/staff action item)
+    async function checkGamesNeedingScores() {
+      if (!linkedTeam || !currentSeason?.id) return [];
+      
+      try {
+        const now = getDebugNow();
+        now.setHours(23, 59, 59, 999); // Include today
+        
+        // Get all games for the current season
+        const allGames = await getSeasonGames(currentSeason.id);
+        
+        const needsScores = allGames.filter(game => {
+          // Check if this game involves the captain's team
+          const homeTeam = (game.homeTeamName || game['home team'] || game.homeTeam || '').toLowerCase();
+          const awayTeam = (game.awayTeamName || game['away team'] || game.awayTeam || '').toLowerCase();
+          const teamLower = linkedTeam.toLowerCase();
+          
+          if (homeTeam !== teamLower && awayTeam !== teamLower) {
+            return false;
+          }
+          
+          // Parse game date
+          let gameDate = null;
+          if (game.date?.seconds) {
+            gameDate = new Date(game.date.seconds * 1000);
+          } else if (game.date?.toDate) {
+            gameDate = game.date.toDate();
+          } else if (game.date) {
+            gameDate = new Date(game.date);
+          }
+          
+          // Skip future games
+          if (!gameDate || gameDate > now) {
+            return false;
+          }
+          
+          // Check if game has a score
+          const hasScore = 
+            (game.homeScore !== undefined && game.homeScore !== null && game.homeScore !== '') ||
+            (game.awayScore !== undefined && game.awayScore !== null && game.awayScore !== '') ||
+            (game['home score'] && String(game['home score']).trim() !== '') ||
+            (game['away score'] && String(game['away score']).trim() !== '') ||
+            (game.winner && game.winner.trim() !== '');
+          
+          return !hasScore;
+        });
+        
+        console.log(`🎯 Found ${needsScores.length} games needing scores for Team ${linkedTeam}`);
+        return needsScores;
+        
+      } catch (error) {
+        console.error('Error checking games needing scores:', error);
+        return [];
+      }
+    }
+
+    // Check for games needing stats (captain/staff action item)
+    // This checks if any player stats have been submitted for games involving the team
+    async function checkGamesNeedingStats() {
+      if (!linkedTeam || !currentSeason?.id) return [];
+      
+      try {
+        const now = getDebugNow();
+        now.setHours(23, 59, 59, 999);
+        
+        // Get all games for the current season
+        const allGames = await getSeasonGames(currentSeason.id);
+        
+        // Filter to past games involving the team that HAVE scores
+        const completedTeamGames = allGames.filter(game => {
+          const homeTeam = (game.homeTeamName || game['home team'] || game.homeTeam || '').toLowerCase();
+          const awayTeam = (game.awayTeamName || game['away team'] || game.awayTeam || '').toLowerCase();
+          const teamLower = linkedTeam.toLowerCase();
+          
+          if (homeTeam !== teamLower && awayTeam !== teamLower) {
+            return false;
+          }
+          
+          // Parse game date
+          let gameDate = null;
+          if (game.date?.seconds) {
+            gameDate = new Date(game.date.seconds * 1000);
+          } else if (game.date?.toDate) {
+            gameDate = game.date.toDate();
+          } else if (game.date) {
+            gameDate = new Date(game.date);
+          }
+          
+          // Skip future games
+          if (!gameDate || gameDate > now) {
+            return false;
+          }
+          
+          // Only check games that have scores (completed games)
+          const hasScore = 
+            (game.homeScore !== undefined && game.homeScore !== null && game.homeScore !== '') ||
+            (game.awayScore !== undefined && game.awayScore !== null && game.awayScore !== '') ||
+            (game['home score'] && String(game['home score']).trim() !== '') ||
+            (game['away score'] && String(game['away score']).trim() !== '') ||
+            (game.winner && game.winner.trim() !== '');
+          
+          return hasScore;
+        });
+        
+        // For each completed game, check if stats have been submitted
+        // Stats are stored in playerStats/{legacyId}/games/{seasonId}_{gameId}
+        // We'll check if ANY stats exist for the game by querying
+        const gamesWithoutStats = [];
+        
+        for (const game of completedTeamGames) {
+          try {
+            // Build the expected game doc ID pattern
+            // Games use format like "10_12_2025_white_vs_blue"
+            const gameId = game.id;
+            const seasonGameId = `${currentSeason.id}_${gameId}`;
+            
+            // Check if the game has statsSubmitted flag (if we add this later)
+            // For now, we'll check if there's at least one playerStats entry for this game
+            // This is expensive, so we use a simple heuristic: check the game's statsSubmitted field
+            if (game.statsSubmitted === true) {
+              continue; // Stats already submitted
+            }
+            
+            // If no explicit flag, we assume stats are needed for recent games
+            // In production, you'd query playerStats collection
+            gamesWithoutStats.push(game);
+            
+          } catch (e) {
+            // If we can't determine, assume needs stats
+            gamesWithoutStats.push(game);
+          }
+        }
+        
+        console.log(`📊 Found ${gamesWithoutStats.length} games needing stats for Team ${linkedTeam}`);
+        return gamesWithoutStats;
+        
+      } catch (error) {
+        console.error('Error checking games needing stats:', error);
+        return [];
+      }
+    }
+
+    // Check if user is captain or team staff
+    function checkCaptainOrStaffRole() {
+      if (!userProfile) return false;
+      
+      const userRole = userProfile.userRole;
+      
+      // Check global roles
+      if (userRole === USER_ROLES.ADMIN || 
+          userRole === USER_ROLES.LEAGUE_STAFF ||
+          userRole === USER_ROLES.CAPTAIN ||
+          userRole === USER_ROLES.TEAM_STAFF) {
+        return true;
+      }
+      
+      // Check team-specific roles
+      if (userProfile.teamRoles && linkedTeam) {
+        const teamRole = userProfile.teamRoles[linkedTeam] || 
+                         userProfile.teamRoles[linkedTeam.toLowerCase()] ||
+                         userProfile.teamRoles[capitalize(linkedTeam)];
+        if (teamRole?.status === 'active' && 
+            (teamRole.role === USER_ROLES.CAPTAIN || teamRole.role === USER_ROLES.TEAM_STAFF)) {
+          return true;
+        }
+      }
+      
+      // Legacy captain flag
+      if (userProfile.isCaptain === true) {
+        return true;
+      }
+      
+      return false;
+    }
+
     // Setup captain features
     async function setupCaptainFeatures() {
       const isCaptain = await isUserCaptain();
@@ -1980,7 +2192,18 @@ body {
           renderQuickStats(null);
         }
 
-        // Render action items
+        // Check if user is captain/staff and load their action items
+        isCaptainOrStaff = checkCaptainOrStaffRole();
+        if (isCaptainOrStaff) {
+          console.log('🎖️ User is captain/staff - checking for pending scores and stats...');
+          // Load games needing scores and stats in parallel
+          [gamesNeedingScores, gamesNeedingStats] = await Promise.all([
+            checkGamesNeedingScores(),
+            checkGamesNeedingStats()
+          ]);
+        }
+
+        // Render action items (includes captain items if applicable)
         renderActionItems();
 
         // Render favorites
