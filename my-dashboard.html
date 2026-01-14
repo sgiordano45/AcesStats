@@ -1027,17 +1027,17 @@ body {
               <a href="current-season.html" class="quick-link">
                 <span class="quick-link-icon">🍂</span> Current Season
               </a>
-              <a href="teams.html" class="quick-link">
-                <span class="quick-link-icon">🏆</span> All Teams
+              <a href="current-season-team.html" class="quick-link">
+                <span class="quick-link-icon">🏆</span> My Team
               </a>
-              <a href="batting.html" class="quick-link">
-                <span class="quick-link-icon">⚾</span> League Batting
+              <a href="trophy-case.html" class="quick-link">
+                <span class="quick-link-icon">🏅</span> Trophy Case
               </a>
               <a href="weekend-preview.html" class="quick-link">
                 <span class="quick-link-icon">🔮</span> Weekend Preview
               </a>
-              <a href="favorites.html" class="quick-link">
-                <span class="quick-link-icon">⭐</span> Favorites
+              <a href="games.html" class="quick-link">
+                <span class="quick-link-icon">📅</span> All Games
               </a>
               <a href="pictures.html" class="quick-link">
                 <span class="quick-link-icon">📷</span> Photo Gallery
@@ -1485,11 +1485,24 @@ body {
 
       statsContainer.style.display = 'grid';
       noStatsMessage.style.display = 'none';
-      viewFullLink.href = `player.html?player=${encodeURIComponent(linkedPlayer)}`;
+      
+      // Link to player page using authenticated user's Firebase UID
+      viewFullLink.href = `player.html?id=${currentUser.uid}`;
       viewFullLink.style.display = 'inline-flex';
 
-      document.getElementById('statAvg').textContent = stats.avg ? `.${String(Math.round(stats.avg * 1000)).padStart(3, '0')}` : '.---';
-      document.getElementById('statHits').textContent = stats.h ?? stats.hits ?? '--';
+      // Calculate batting average properly: H / AB
+      let avgDisplay = '.---';
+      const hits = stats.h ?? stats.hits ?? 0;
+      const atBats = stats.ab ?? stats.atBats ?? 0;
+      
+      if (atBats > 0) {
+        const avg = hits / atBats;
+        // Format as .XXX (e.g., .333, .250, .400)
+        avgDisplay = avg.toFixed(3).replace(/^0/, ''); // Remove leading zero
+      }
+
+      document.getElementById('statAvg').textContent = avgDisplay;
+      document.getElementById('statHits').textContent = hits || '--';
       document.getElementById('statRuns').textContent = stats.r ?? stats.runs ?? '--';
       document.getElementById('statGames').textContent = stats.g ?? stats.games ?? '--';
     }
@@ -1605,25 +1618,69 @@ body {
             const debugNow = getDebugNow();
             debugNow.setHours(0, 0, 0, 0);
             
-            allGames = allGames.filter(game => {
-              let gameDate;
-              if (game.date?.seconds) {
-                gameDate = new Date(game.date.seconds * 1000);
-              } else {
-                gameDate = new Date(game.date);
-              }
-              gameDate.setHours(0, 0, 0, 0);
-              return gameDate >= debugNow;
-            });
-            
-            // Re-sort by date
-            allGames.sort((a, b) => {
-              const dateA = a.date?.seconds || new Date(a.date).getTime() / 1000 || 0;
-              const dateB = b.date?.seconds || new Date(b.date).getTime() / 1000 || 0;
-              return dateA - dateB;
-            });
-            
-            console.log(`🔧 DEBUG: Filtered to ${allGames.length} games from ${debugNow.toDateString()}`);
+            // Get ALL team games for the season (since getUpcomingTeamGames filters by real today)
+            // We need to re-fetch without the date filter
+            try {
+              const { collection, getDocs } = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js');
+              const { db } = await import('./firebase-data.js');
+              
+              const gamesRef = collection(db, 'seasons', currentSeason.id, 'games');
+              const allGamesSnap = await getDocs(gamesRef);
+              
+              const teamIdLower = linkedTeam.toLowerCase();
+              allGames = [];
+              
+              allGamesSnap.forEach(doc => {
+                const data = doc.data();
+                const homeTeamValue = data.homeTeamId || data.homeTeamName || data.homeTeam || data['home team'] || '';
+                const awayTeamValue = data.awayTeamId || data.awayTeamName || data.awayTeam || data['away team'] || '';
+                
+                const homeTeamMatch = homeTeamValue.toLowerCase() === teamIdLower;
+                const awayTeamMatch = awayTeamValue.toLowerCase() === teamIdLower;
+                
+                if (!homeTeamMatch && !awayTeamMatch) return;
+                
+                // Parse game date
+                let gameDate;
+                if (data.date?.seconds) {
+                  gameDate = new Date(data.date.seconds * 1000);
+                } else if (data.date) {
+                  gameDate = new Date(data.date);
+                } else {
+                  return;
+                }
+                
+                const gameDateCompare = new Date(gameDate);
+                gameDateCompare.setHours(0, 0, 0, 0);
+                
+                // Include games from DEBUG_DATE forward
+                if (gameDateCompare >= debugNow) {
+                  const opponent = homeTeamMatch ? awayTeamValue : homeTeamValue;
+                  const gameType = data.game_type || data.gameType || 'Regular';
+                  
+                  allGames.push({
+                    id: doc.id,
+                    ...data,
+                    homeTeam: homeTeamValue,
+                    awayTeam: awayTeamValue,
+                    gameType: gameType,
+                    isHome: homeTeamMatch,
+                    opponent: opponent
+                  });
+                }
+              });
+              
+              // Sort by date
+              allGames.sort((a, b) => {
+                const dateA = a.date?.seconds || new Date(a.date).getTime() / 1000 || 0;
+                const dateB = b.date?.seconds || new Date(b.date).getTime() / 1000 || 0;
+                return dateA - dateB;
+              });
+              
+              console.log(`🔧 DEBUG: Found ${allGames.length} games from ${debugNow.toDateString()} forward`);
+            } catch (e) {
+              console.error('Debug mode game fetch error:', e);
+            }
           }
           
           upcomingGames = allGames;
