@@ -629,6 +629,25 @@ body {
   font-size: 1.25rem;
 }
 
+/* Games progress badge */
+.games-progress {
+  background: var(--success-color);
+  color: white;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 10px;
+  margin-left: auto;
+}
+
+.games-progress.partial {
+  background: var(--warning-color);
+}
+
+.games-progress.none {
+  background: var(--text-light);
+}
+
 /* Favorites Section */
 .favorites-row {
   display: flex;
@@ -1024,8 +1043,8 @@ body {
               </h2>
             </div>
             <div class="quick-links-grid">
-              <a href="current-season.html" class="quick-link">
-                <span class="quick-link-icon">🍂</span> Current Season
+              <a href="current-season.html" class="quick-link" id="currentSeasonLink">
+                <span class="quick-link-icon">🍂</span> <span id="currentSeasonLabel">Current Season</span>
               </a>
               <a href="#" class="quick-link" id="myTeamLink">
                 <span class="quick-link-icon">🏆</span> My Team
@@ -1038,6 +1057,7 @@ body {
               </a>
               <a href="games.html" class="quick-link">
                 <span class="quick-link-icon">🎮</span> Daily Games
+                <span class="games-progress" id="gamesProgress" style="display: none;"></span>
               </a>
               <a href="pictures.html" class="quick-link">
                 <span class="quick-link-icon">📷</span> Photo Gallery
@@ -1164,6 +1184,25 @@ body {
 
     function getDebugNow() {
       return DEBUG_MODE ? new Date(DEBUG_DATE) : new Date();
+    }
+
+    // Helper to capitalize team name
+    const capitalize = (str) => str ? str.charAt(0).toUpperCase() + str.slice(1).toLowerCase() : '';
+    
+    // Helper to get default location based on season
+    function getDefaultLocation(game) {
+      // First check if game has a specific location
+      if (game.field || game.location) {
+        return game.field || game.location;
+      }
+      // Default based on season type
+      const seasonId = currentSeason?.id?.toLowerCase() || '';
+      if (seasonId.includes('fall')) {
+        return 'Deerfield School';
+      } else if (seasonId.includes('summer')) {
+        return 'Field of Dreams';
+      }
+      return 'TBD';
     }
 
     console.log('📊 Dashboard loading...');
@@ -1301,9 +1340,6 @@ body {
       previewLink.href = `game-preview.html?game=${game.id}&season=${currentSeason?.id}`;
       previewLink.style.display = 'inline-flex';
 
-      // Helper to capitalize team name
-      const capitalize = (str) => str ? str.charAt(0).toUpperCase() + str.slice(1).toLowerCase() : '';
-      
       container.innerHTML = `
         <div class="game-matchup">
           <div class="matchup-teams">
@@ -1322,14 +1358,14 @@ body {
               <span>📅</span> ${dateInfo.full}
             </div>
             <div class="game-detail">
-              <span>⏰</span> ${dateInfo.time || 'TBD'}
+              <span>⏰</span> ${dateInfo.time}
             </div>
             <div class="game-detail">
-              <span>📍</span> ${game.field || game.location || 'TBD'}
+              <span>📍</span> ${getDefaultLocation(game)}
             </div>
-            ${game.gameType && game.gameType !== 'Regular' ? `
+            ${game.gameType && game.gameType.toLowerCase() !== 'regular' ? `
               <div class="game-detail">
-                <span>🏆</span> ${game.gameType}
+                <span>🏆</span> ${capitalize(game.gameType)}
               </div>
             ` : ''}
           </div>
@@ -1412,7 +1448,6 @@ body {
         const dateInfo = formatGameDate(game.date, game.time);
         const rsvps = allRsvps[index + 1] || {};
         const userRsvp = rsvps[currentUser?.uid]?.status || 'pending';
-        const capitalize = (str) => str ? str.charAt(0).toUpperCase() + str.slice(1).toLowerCase() : '';
         
         return `
           <a href="game-preview.html?game=${game.id}&season=${currentSeason?.id}" class="game-item">
@@ -1424,7 +1459,7 @@ body {
               <div class="game-opponent">${game.isHome ? 'vs' : '@'} ${capitalize(game.opponent)}</div>
               <div class="game-meta">
                 <span>${dateInfo.time}</span>
-                <span>${game.field || game.location || ''}</span>
+                <span>${getDefaultLocation(game)}</span>
               </div>
             </div>
             <div class="game-rsvp-status ${userRsvp}">${userRsvp === 'pending' ? 'RSVP?' : userRsvp.toUpperCase()}</div>
@@ -1582,6 +1617,128 @@ body {
       }
     }
 
+    // Check daily games completion progress
+    async function checkDailyGamesProgress() {
+      if (!currentUser) return;
+      
+      try {
+        const { doc, getDoc } = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js');
+        const { db } = await import('./firebase-data.js');
+        
+        // Calculate day number (same logic as games.html)
+        const LAUNCH_DATE = '2026-01-06';
+        const [launchYear, launchMonth, launchDay] = LAUNCH_DATE.split('-').map(Number);
+        const start = new Date(launchYear, launchMonth - 1, launchDay);
+        start.setHours(0, 0, 0, 0);
+        
+        // Use debug date if in debug mode, otherwise use real date
+        const now = DEBUG_MODE ? getDebugNow() : new Date();
+        now.setHours(0, 0, 0, 0);
+        
+        const daysSinceLaunch = Math.floor((now - start) / (1000 * 60 * 60 * 24));
+        const dayNum = Math.max(1, daysSinceLaunch + 1);
+        
+        // If we're before the launch date, don't show progress
+        if (daysSinceLaunch < 0) {
+          console.log('📅 Daily games not yet launched');
+          return;
+        }
+        
+        // Game configs matching games.html
+        const GAME_CONFIGS = {
+          grid: {
+            collection: 'acesGridGames',
+            subcollection: 'puzzles',
+            docIdFormat: (d) => `puzzle_${d}`,
+            checkCompletion: (data) => data.gameOver === true
+          },
+          connections: {
+            collection: 'acesConnectionsGames',
+            subcollection: 'dailyGames',
+            docIdFormat: (d) => String(d),
+            checkCompletion: (data) => data.isComplete === true || data.gameOver === true
+          },
+          wordle: {
+            collection: 'acesWordleGames',
+            subcollection: 'dailyGames',
+            docIdFormat: (d) => String(d),
+            checkCompletion: (data) => data.gameOver === true
+          },
+          higherLower: {
+            collection: 'acesHigherLowerGames',
+            subcollection: 'puzzles',
+            docIdFormat: (d) => `puzzle_${d}`,
+            checkCompletion: (data) => data.gameOver === true
+          },
+          whoAmI: {
+            collection: 'acesWhoAmIGames',
+            subcollection: 'dailyGames',
+            docIdFormat: (d) => String(d),
+            checkCompletion: (data) => data.gameOver === true
+          },
+          recall: {
+            collection: 'acesRosterRecallGames',
+            subcollection: 'dailyGames',
+            docIdFormat: (d) => String(d),
+            checkCompletion: (data) => data.phase === 'finished'
+          }
+        };
+        
+        let completedCount = 0;
+        const totalGames = Object.keys(GAME_CONFIGS).length;
+        
+        for (const [gameKey, config] of Object.entries(GAME_CONFIGS)) {
+          try {
+            const docId = config.docIdFormat(dayNum);
+            const gameRef = doc(db, config.collection, currentUser.uid, config.subcollection, docId);
+            const gameDoc = await getDoc(gameRef);
+            
+            if (gameDoc.exists()) {
+              const data = gameDoc.data();
+              if (config.checkCompletion(data)) {
+                completedCount++;
+                continue;
+              }
+            }
+            
+            // Fallback: check stats doc
+            const statsRef = doc(db, config.collection, currentUser.uid);
+            const statsDoc = await getDoc(statsRef);
+            
+            if (statsDoc.exists()) {
+              const stats = statsDoc.data();
+              if (stats.lastPlayedPuzzle === dayNum || stats.lastPuzzle === dayNum) {
+                completedCount++;
+              }
+            }
+          } catch (e) {
+            // Silently continue on errors
+          }
+        }
+        
+        // Update the progress badge
+        const progressBadge = document.getElementById('gamesProgress');
+        if (completedCount > 0) {
+          progressBadge.textContent = `${completedCount}/${totalGames}`;
+          progressBadge.style.display = 'inline';
+          
+          if (completedCount === totalGames) {
+            progressBadge.className = 'games-progress'; // Full completion - green
+          } else {
+            progressBadge.className = 'games-progress partial'; // Partial - yellow
+          }
+        } else {
+          // Don't show badge if nothing completed
+          progressBadge.style.display = 'none';
+        }
+        
+        console.log(`🎮 Daily games progress: ${completedCount}/${totalGames} (Day ${dayNum})`);
+        
+      } catch (error) {
+        console.log('Could not check daily games progress:', error);
+      }
+    }
+
     // Setup captain features
     async function setupCaptainFeatures() {
       const isCaptain = await isUserCaptain();
@@ -1651,6 +1808,21 @@ body {
         } else {
           myTeamLink.href = 'current-season.html'; // Fallback if no team linked
         }
+
+        // Update Current Season link label with actual season name (e.g., "2025 Fall")
+        if (currentSeason) {
+          const seasonLabel = document.getElementById('currentSeasonLabel');
+          const seasonIcon = currentSeason.season?.toLowerCase() === 'fall' ? '🍂' : '☀️';
+          const seasonName = `${currentSeason.year} ${capitalize(currentSeason.season || '')}`;
+          seasonLabel.textContent = seasonName;
+          
+          // Update the icon too
+          const currentSeasonLink = document.getElementById('currentSeasonLink');
+          currentSeasonLink.querySelector('.quick-link-icon').textContent = seasonIcon;
+        }
+
+        // Check daily games completion
+        await checkDailyGamesProgress();
 
         // Load upcoming games if team is linked
         if (linkedTeam && currentSeason?.id) {
