@@ -2331,6 +2331,42 @@ export function hasSpecialRole(user, role) {
 // ========================================
 
 /**
+ * Case-insensitive lookup for team role
+ * Handles mismatch between stored keys (capitalized: "Green") and game data (lowercase: "green")
+ * @param {Object} teamRoles - The teamRoles object from user profile
+ * @param {string} teamId - Team ID to find (any case)
+ * @returns {Object|null} The team role object if found, null otherwise
+ */
+function findTeamRole(teamRoles, teamId) {
+  if (!teamRoles || !teamId) return null;
+  
+  const normalizedId = teamId.toLowerCase();
+  
+  // First try exact match
+  if (teamRoles[teamId]) return teamRoles[teamId];
+  
+  // Then try case-insensitive search
+  for (const [key, value] of Object.entries(teamRoles)) {
+    if (key.toLowerCase() === normalizedId) {
+      return value;
+    }
+  }
+  
+  return null;
+}
+
+/**
+ * Case-insensitive comparison of team IDs
+ * @param {string} teamId1 - First team ID
+ * @param {string} teamId2 - Second team ID
+ * @returns {boolean} True if team IDs match (case-insensitive)
+ */
+function teamIdsMatch(teamId1, teamId2) {
+  if (!teamId1 || !teamId2) return false;
+  return teamId1.toLowerCase() === teamId2.toLowerCase();
+}
+
+/**
  * Check if user is captain of ANY team
  * Checks all possible captain indicators for backward compatibility
  * @param {Object} userProfile - User profile object
@@ -2357,20 +2393,22 @@ export function isUserCaptain(userProfile) {
 
 /**
  * Check if user is captain of a SPECIFIC team
+ * Uses case-insensitive matching for team IDs
  * @param {Object} userProfile - User profile object
- * @param {string} teamId - Team ID to check
+ * @param {string} teamId - Team ID to check (any case)
  * @returns {boolean}
  */
 export function isTeamCaptain(userProfile, teamId) {
   if (!userProfile || !teamId) return false;
   
-  const teamRole = userProfile.teamRoles?.[teamId];
+  // Case-insensitive lookup in teamRoles
+  const teamRole = findTeamRole(userProfile.teamRoles, teamId);
   if (teamRole?.role === USER_ROLES.CAPTAIN && teamRole?.status === 'active') {
     return true;
   }
   
-  // Legacy fallback: if isCaptain and linkedTeam matches
-  if (userProfile.isCaptain === true && userProfile.linkedTeam === teamId) {
+  // Legacy fallback: if isCaptain and linkedTeam matches (case-insensitive)
+  if (userProfile.isCaptain === true && teamIdsMatch(userProfile.linkedTeam, teamId)) {
     return true;
   }
   
@@ -2379,14 +2417,16 @@ export function isTeamCaptain(userProfile, teamId) {
 
 /**
  * Check if user is team-staff of a SPECIFIC team
+ * Uses case-insensitive matching for team IDs
  * @param {Object} userProfile - User profile object
- * @param {string} teamId - Team ID to check
+ * @param {string} teamId - Team ID to check (any case)
  * @returns {boolean}
  */
 export function isTeamStaff(userProfile, teamId) {
   if (!userProfile || !teamId) return false;
   
-  const teamRole = userProfile.teamRoles?.[teamId];
+  // Case-insensitive lookup in teamRoles
+  const teamRole = findTeamRole(userProfile.teamRoles, teamId);
   return teamRole?.role === USER_ROLES.TEAM_STAFF && teamRole?.status === 'active';
 }
 
@@ -2482,6 +2522,66 @@ export function canSubmitForTeam(userProfile, teamId = null) {
   
   // Without teamId, check if user is captain of any team
   return isUserCaptain(userProfile);
+}
+
+/**
+ * Get all team IDs the user can manage (as captain or team-staff)
+ * Returns normalized lowercase IDs for consistent comparison with game data
+ * @param {Object} userProfile - User profile object
+ * @returns {string[]} Array of lowercase team IDs
+ */
+export function getUserTeamIds(userProfile) {
+  if (!userProfile) return [];
+  
+  const teamIds = new Set();
+  
+  // Check teamId field
+  if (userProfile.teamId) {
+    teamIds.add(userProfile.teamId.toLowerCase());
+  }
+  
+  // Check linkedTeam field
+  if (userProfile.linkedTeam) {
+    teamIds.add(userProfile.linkedTeam.toLowerCase());
+  }
+  
+  // Check teamRoles for active captain/team-staff roles
+  if (userProfile.teamRoles && typeof userProfile.teamRoles === 'object') {
+    Object.entries(userProfile.teamRoles).forEach(([teamId, roleData]) => {
+      if (roleData && roleData.status === 'active') {
+        const role = roleData.role;
+        if (role === USER_ROLES.CAPTAIN || role === USER_ROLES.TEAM_STAFF) {
+          teamIds.add(teamId.toLowerCase());
+        }
+      }
+    });
+  }
+  
+  return Array.from(teamIds);
+}
+
+/**
+ * Check if user can submit score/stats for a specific game
+ * League roles can submit for any game; team roles can only submit for their teams
+ * @param {Object} userProfile - User profile object
+ * @param {Object} game - Game object with homeTeamId and awayTeamId
+ * @returns {boolean}
+ */
+export function canSubmitForGame(userProfile, game) {
+  if (!userProfile || !game) return false;
+  
+  // Admins and league-staff can submit for any game
+  if (hasLeagueRole(userProfile)) return true;
+  
+  // Get user's team IDs (normalized to lowercase)
+  const userTeams = getUserTeamIds(userProfile);
+  if (userTeams.length === 0) return false;
+  
+  // Check if game involves any of user's teams
+  const homeTeamId = (game.homeTeamId || '').toLowerCase();
+  const awayTeamId = (game.awayTeamId || '').toLowerCase();
+  
+  return userTeams.includes(homeTeamId) || userTeams.includes(awayTeamId);
 }
 
 /**
