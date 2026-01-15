@@ -1,9 +1,9 @@
 // service-worker.js - Unified Service Worker
 // Handles both offline functionality AND Firebase Cloud Messaging
-// Version 1.0.26 - firebase-auth.js update
+// Version 1.0.27 - update firebase-config for google analytics
 
 
-const CACHE_VERSION = 'aces-v1.0.26';
+const CACHE_VERSION = 'aces-v1.0.27';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const DYNAMIC_CACHE = `${CACHE_VERSION}-dynamic`;
 const IMAGE_CACHE = `${CACHE_VERSION}-images`;
