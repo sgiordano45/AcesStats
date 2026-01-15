@@ -2383,6 +2383,144 @@
       margin: 10px;
     }
   }
+
+  /* =============================================
+     CAREER BESTS SECTION
+     ============================================= */
+  .career-bests-section {
+    margin-top: 2rem;
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    overflow: hidden;
+    background: white;
+  }
+
+  .career-bests-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem 1.5rem;
+    background: linear-gradient(135deg, #ffd700 0%, #ffb300 100%);
+    cursor: pointer;
+    user-select: none;
+    transition: filter 0.2s;
+  }
+
+  .career-bests-header:hover {
+    filter: brightness(1.05);
+  }
+
+  .career-bests-header h3 {
+    margin: 0;
+    font-size: 1.1rem;
+    color: #3d3200;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .career-bests-toggle {
+    color: #3d3200;
+    font-size: 0.85rem;
+    font-weight: 500;
+  }
+
+  .career-bests-content {
+    padding: 1.5rem;
+    background: white;
+  }
+
+  .career-bests-content.collapsed {
+    display: none;
+  }
+
+  .career-bests-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 1rem;
+  }
+
+  .career-best-card {
+    background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+    border-radius: 10px;
+    padding: 1rem;
+    text-align: center;
+    border: 1px solid #e2e8f0;
+    transition: transform 0.2s, box-shadow 0.2s;
+  }
+
+  .career-best-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  }
+
+  .career-best-icon {
+    font-size: 1.5rem;
+    margin-bottom: 0.25rem;
+  }
+
+  .career-best-label {
+    font-size: 0.7rem;
+    color: #718096;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 0.5rem;
+    font-weight: 600;
+  }
+
+  .career-best-value {
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: #2d5016;
+    line-height: 1.2;
+  }
+
+  .career-best-context {
+    font-size: 0.75rem;
+    color: #4a5568;
+    margin-top: 0.25rem;
+  }
+
+  .career-bests-empty {
+    text-align: center;
+    padding: 2rem;
+    color: #718096;
+  }
+
+  .career-bests-empty-icon {
+    font-size: 3rem;
+    margin-bottom: 0.5rem;
+    opacity: 0.3;
+  }
+
+  @media (max-width: 640px) {
+    .career-bests-grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+    
+    .career-best-value {
+      font-size: 1.4rem;
+    }
+    
+    .career-best-card {
+      padding: 0.75rem;
+    }
+  }
+
+  @media (max-width: 380px) {
+    .career-bests-grid {
+      grid-template-columns: repeat(2, 1fr);
+      gap: 0.5rem;
+    }
+    
+    .career-best-value {
+      font-size: 1.2rem;
+    }
+    
+    .career-best-label {
+      font-size: 0.65rem;
+    }
+  }
 </style>
 <link rel="stylesheet" href="mobile-enhancements.css">
 </head>
@@ -2559,6 +2697,24 @@
         <tbody></tbody>
       </table>
     </div>
+    
+    <!-- Career Bests Section -->
+    <div class="career-bests-section" id="careerBestsSection" style="display: none;">
+      <div class="career-bests-header" onclick="toggleCareerBests()">
+        <h3>🏅 Career Bests</h3>
+        <span class="career-bests-toggle" id="careerBestsToggle">▼ Hide</span>
+      </div>
+      <div class="career-bests-content" id="careerBestsContent">
+        <div class="career-bests-grid" id="careerBestsGrid">
+          <!-- Populated by JS -->
+        </div>
+        <div class="career-bests-empty" id="careerBestsEmpty" style="display: none;">
+          <div class="career-bests-empty-icon">🏅</div>
+          <p>Play more games to see your career bests!</p>
+        </div>
+      </div>
+    </div>
+    
   </div>
   </div><!-- End Stats Tab -->
   
@@ -3888,6 +4044,7 @@
     
     await populatePlayerHeader(stats, info, playerName, playerId, careerStats, awards, playerBadges, playerTitles);
     populateStatsTables(stats, playerId, careerStats);
+    calculateCareerBests(stats);
     handleMasterChefSection(playerName);
     
     // Populate awards in the Awards tab
@@ -4596,6 +4753,163 @@
     const avgAcesWar = acesWarCount > 0 ? acesWarSum / acesWarCount : 0;
 
     return { games, atBats, hits, runs, walks, BA, OBP, avgAcesWar };
+  }
+
+  // ========================================
+  // CAREER BESTS FUNCTIONALITY
+  // ========================================
+  
+  function toggleCareerBests() {
+    const content = document.getElementById('careerBestsContent');
+    const toggle = document.getElementById('careerBestsToggle');
+    
+    if (content.classList.contains('collapsed')) {
+      content.classList.remove('collapsed');
+      toggle.textContent = '▼ Hide';
+    } else {
+      content.classList.add('collapsed');
+      toggle.textContent = '▶ Show';
+    }
+  }
+
+  function calculateCareerBests(stats) {
+    // Filter to regular season only (no subs)
+    const regularStats = stats.filter(s => s.sub === 'No');
+    
+    if (regularStats.length === 0) {
+      document.getElementById('careerBestsSection').style.display = 'none';
+      return;
+    }
+    
+    // For rate stats (BA, OBP), require 10+ ABs
+    const qualifiedForRates = regularStats.filter(s => s.atBats >= 10);
+    
+    const careerBests = [];
+    
+    // Best Batting Average (10+ ABs required)
+    if (qualifiedForRates.length > 0) {
+      const bestBA = qualifiedForRates.reduce((best, s) => 
+        (s.BA > best.BA) ? s : best
+      );
+      if (bestBA.BA > 0) {
+        careerBests.push({
+          icon: '🎯',
+          label: 'Best AVG',
+          value: bestBA.BA.toFixed(3),
+          context: `${bestBA.year} ${bestBA.season}`
+        });
+      }
+    }
+    
+    // Best OBP (10+ ABs required)
+    if (qualifiedForRates.length > 0) {
+      const bestOBP = qualifiedForRates.reduce((best, s) => 
+        (s.OBP > best.OBP) ? s : best
+      );
+      if (bestOBP.OBP > 0) {
+        careerBests.push({
+          icon: '👁️',
+          label: 'Best OBP',
+          value: bestOBP.OBP.toFixed(3),
+          context: `${bestOBP.year} ${bestOBP.season}`
+        });
+      }
+    }
+    
+    // Most Hits in a Season
+    const mostHits = regularStats.reduce((best, s) => 
+      (s.hits > best.hits) ? s : best
+    );
+    if (mostHits.hits > 0) {
+      careerBests.push({
+        icon: '💥',
+        label: 'Most Hits',
+        value: mostHits.hits,
+        context: `${mostHits.year} ${mostHits.season}`
+      });
+    }
+    
+    // Most Runs in a Season
+    const mostRuns = regularStats.reduce((best, s) => 
+      (s.runs > best.runs) ? s : best
+    );
+    if (mostRuns.runs > 0) {
+      careerBests.push({
+        icon: '🏃',
+        label: 'Most Runs',
+        value: mostRuns.runs,
+        context: `${mostRuns.year} ${mostRuns.season}`
+      });
+    }
+    
+    // Most Walks in a Season
+    const mostWalks = regularStats.reduce((best, s) => 
+      (s.walks > best.walks) ? s : best
+    );
+    if (mostWalks.walks > 0) {
+      careerBests.push({
+        icon: '🚶',
+        label: 'Most Walks',
+        value: mostWalks.walks,
+        context: `${mostWalks.year} ${mostWalks.season}`
+      });
+    }
+    
+    // Best AcesBPI (if available)
+    const withBPI = regularStats.filter(s => typeof s.AcesWar === 'number' && s.AcesWar > 0);
+    if (withBPI.length > 0) {
+      const bestBPI = withBPI.reduce((best, s) => 
+        (s.AcesWar > best.AcesWar) ? s : best
+      );
+      careerBests.push({
+        icon: '⭐',
+        label: 'Best BPI',
+        value: bestBPI.AcesWar.toFixed(1),
+        context: `${bestBPI.year} ${bestBPI.season}`
+      });
+    }
+    
+    // Most Games in a Season
+    const mostGames = regularStats.reduce((best, s) => 
+      (s.games > best.games) ? s : best
+    );
+    if (mostGames.games > 0) {
+      careerBests.push({
+        icon: '📅',
+        label: 'Most Games',
+        value: mostGames.games,
+        context: `${mostGames.year} ${mostGames.season}`
+      });
+    }
+    
+    // Render Career Bests
+    renderCareerBests(careerBests);
+  }
+
+  function renderCareerBests(careerBests) {
+    const section = document.getElementById('careerBestsSection');
+    const grid = document.getElementById('careerBestsGrid');
+    const empty = document.getElementById('careerBestsEmpty');
+    
+    if (careerBests.length === 0) {
+      grid.style.display = 'none';
+      empty.style.display = 'block';
+      section.style.display = 'block';
+      return;
+    }
+    
+    grid.innerHTML = careerBests.map(best => `
+      <div class="career-best-card">
+        <div class="career-best-icon">${best.icon}</div>
+        <div class="career-best-label">${best.label}</div>
+        <div class="career-best-value">${best.value}</div>
+        <div class="career-best-context">${best.context}</div>
+      </div>
+    `).join('');
+    
+    grid.style.display = 'grid';
+    empty.style.display = 'none';
+    section.style.display = 'block';
   }
 
   function handleMasterChefSection(displayName) {
