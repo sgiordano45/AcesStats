@@ -1,9 +1,9 @@
 // service-worker.js - Unified Service Worker
 // Handles both offline functionality AND Firebase Cloud Messaging
-// Version 1.0.28 - add iOS PWA badge support
+// Version 1.0.29 - fix duplicate FCM notifications
 
 
-const CACHE_VERSION = 'aces-v1.0.28';
+const CACHE_VERSION = 'aces-v1.0.29';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const DYNAMIC_CACHE = `${CACHE_VERSION}-dynamic`;
 const IMAGE_CACHE = `${CACHE_VERSION}-images`;
@@ -118,57 +118,41 @@ firebase.initializeApp({
 const messaging = firebase.messaging();
 
 // Handle background messages (when app is not open)
+// NOTE: FCM automatically displays notifications when 'notification' payload exists
+// This handler is for setting badges and processing data-only messages
 messaging.onBackgroundMessage((payload) => {
   console.log('[SW] Background message received:', payload);
-  console.log('[SW] Payload structure:', JSON.stringify(payload, null, 2));
   
-  try {
-    // Safely extract notification data with fallbacks
-    const notificationTitle = payload.notification?.title || payload.data?.title || 'Mountainside Aces';
-    const notificationBody = payload.notification?.body || payload.data?.body || 'New notification';
-    
-    console.log('[SW] Creating notification with title:', notificationTitle);
-    console.log('[SW] Creating notification with body:', notificationBody);
+  // Set app badge for iOS PWA and supported browsers
+  if (navigator.setAppBadge) {
+    navigator.setAppBadge(1).then(() => {
+      console.log('[SW] ✅ App badge set');
+    }).catch(err => {
+      console.log('[SW] ⚠️ Could not set app badge:', err);
+    });
+  }
+  
+  // Only show notification manually if there's NO notification payload
+  // (i.e., data-only messages). FCM auto-displays when notification payload exists.
+  if (!payload.notification) {
+    console.log('[SW] Data-only message, showing notification manually');
+    const notificationTitle = payload.data?.title || 'Mountainside Aces';
+    const notificationBody = payload.data?.body || 'New notification';
     
     const notificationOptions = {
       body: notificationBody,
-      icon: '/icon-192.png', // Your app icon (optional, won't fail if missing)
-      badge: '/badge-72.png', // Small icon (optional)
-      tag: payload.data?.type || 'default', // Prevent duplicate notifications
-      data: payload.data || {}, // Custom data for click handling
-      requireInteraction: false, // Don't require user interaction
-      vibrate: [200, 100, 200], // Vibration pattern
-      timestamp: Date.now()
+      icon: '/icon-192.png',
+      badge: '/badge-72.png',
+      tag: payload.data?.type || 'default',
+      data: payload.data || {},
+      requireInteraction: false,
+      vibrate: [200, 100, 200]
     };
     
-    console.log('[SW] Showing notification with options:', notificationOptions);
-    
-    return self.registration.showNotification(notificationTitle, notificationOptions)
-      .then(() => {
-        console.log('[SW] ✅ Notification displayed successfully');
-        // Set app badge for iOS PWA and supported browsers
-        if (navigator.setAppBadge) {
-          navigator.setAppBadge(1).then(() => {
-            console.log('[SW] ✅ App badge set');
-          }).catch(err => {
-            console.log('[SW] ⚠️ Could not set app badge:', err);
-          });
-        }
-      })
-      .catch(error => {
-        console.error('[SW] ❌ Failed to show notification:', error);
-        // Try a minimal notification as fallback
-        return self.registration.showNotification(notificationTitle, {
-          body: notificationBody
-        });
-      });
-  } catch (error) {
-    console.error('[SW] ❌ Error in onBackgroundMessage:', error);
-    // Last resort: show a basic notification
-    return self.registration.showNotification('Mountainside Aces', {
-      body: 'You have a new notification'
-    });
+    return self.registration.showNotification(notificationTitle, notificationOptions);
   }
+  
+  console.log('[SW] ✅ FCM will auto-display notification');
 });
 
 // ==============================================
