@@ -732,6 +732,10 @@
         <span class="icon">👥</span>
         Users
       </button>
+      <button class="tab-btn" data-tab="notifications">
+        <span class="icon">📢</span>
+        Notifications
+      </button>
     </div>
 
     <!-- Tab: Peters Previews -->
@@ -1179,6 +1183,117 @@
         </div>
       </div>
     </div>
+
+    <!-- Tab: Notifications -->
+    <div class="tab-content" id="tab-notifications">
+      <div class="section">
+        <div class="section-header">
+          📢 League Announcements
+        </div>
+        <div class="section-content">
+          <p style="color: var(--text-light); margin-bottom: 1.5rem;">
+            Send push notifications to all league members who have enabled announcements.
+          </p>
+          
+          <div style="display: grid; gap: 1.5rem;">
+            <!-- Send Announcement Form -->
+            <div style="background: #f8fafc; padding: 1.5rem; border-radius: 12px; border: 1px solid var(--border-color);">
+              <h4 style="margin: 0 0 1rem 0; display: flex; align-items: center; gap: 0.5rem;">
+                <span>📣</span> Send New Announcement
+              </h4>
+              
+              <div class="form-group">
+                <label>Priority</label>
+                <select id="announcementPriority">
+                  <option value="normal">📢 Normal</option>
+                  <option value="info">ℹ️ Informational</option>
+                  <option value="urgent">🚨 Urgent</option>
+                </select>
+                <div class="hint">Urgent notifications bypass quiet hours</div>
+              </div>
+              
+              <div class="form-group">
+                <label>Title <span style="color: var(--danger-color);">*</span></label>
+                <input type="text" id="announcementTitle" placeholder="e.g., Schedule Update, Playoff Information" maxlength="100">
+                <div class="hint"><span id="titleCharCount">0</span>/100 characters</div>
+              </div>
+              
+              <div class="form-group">
+                <label>Message <span style="color: var(--danger-color);">*</span></label>
+                <textarea id="announcementBody" rows="4" placeholder="Write your announcement message here..." maxlength="500" style="resize: vertical;"></textarea>
+                <div class="hint"><span id="bodyCharCount">0</span>/500 characters</div>
+              </div>
+              
+              <div class="form-group">
+                <label>Link (optional)</label>
+                <select id="announcementLinkType">
+                  <option value="">No link</option>
+                  <option value="custom">Custom URL</option>
+                  <option value="/index.html">Home Page</option>
+                  <option value="/schedule.html">Schedule</option>
+                  <option value="/playoffs.html">Playoffs</option>
+                  <option value="/league-rules.html">League Rules</option>
+                  <option value="/teams.html">Teams</option>
+                </select>
+              </div>
+              
+              <div class="form-group" id="customLinkGroup" style="display: none;">
+                <label>Custom URL</label>
+                <input type="text" id="announcementCustomLink" placeholder="/page.html or https://...">
+              </div>
+              
+              <div style="display: flex; gap: 1rem; margin-top: 1.5rem;">
+                <button class="btn btn-primary" onclick="sendAnnouncement()" id="sendAnnouncementBtn">
+                  📤 Send Announcement
+                </button>
+                <button class="btn btn-secondary" onclick="previewAnnouncement()">
+                  👁️ Preview
+                </button>
+              </div>
+            </div>
+            
+            <!-- Preview Panel -->
+            <div id="announcementPreviewPanel" style="display: none; background: white; padding: 1.5rem; border-radius: 12px; border: 2px solid var(--admin-color);">
+              <h4 style="margin: 0 0 1rem 0; color: var(--admin-color);">📱 Notification Preview</h4>
+              <div style="background: #1a1a2e; color: white; padding: 1rem; border-radius: 12px; max-width: 350px;">
+                <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
+                  <span style="font-size: 1.5rem;">⚾</span>
+                  <span style="font-weight: 600; font-size: 0.85rem;">Mountainside Aces</span>
+                  <span style="font-size: 0.75rem; opacity: 0.7; margin-left: auto;">now</span>
+                </div>
+                <div style="font-weight: 600;" id="previewTitle">Title</div>
+                <div style="font-size: 0.9rem; opacity: 0.9; margin-top: 0.25rem;" id="previewBody">Message body</div>
+              </div>
+            </div>
+            
+            <!-- Test Notification -->
+            <div style="background: #eff6ff; padding: 1.5rem; border-radius: 12px; border: 1px solid #bfdbfe;">
+              <h4 style="margin: 0 0 1rem 0; display: flex; align-items: center; gap: 0.5rem; color: #1e40af;">
+                <span>🧪</span> Test Notifications
+              </h4>
+              <p style="color: var(--text-light); margin-bottom: 1rem; font-size: 0.9rem;">
+                Send a test notification to yourself to verify the system is working.
+              </p>
+              <button class="btn btn-secondary" onclick="sendTestNotification()" id="testNotificationBtn">
+                🧪 Send Test to Me
+              </button>
+              <span id="testNotificationStatus" style="margin-left: 1rem; font-size: 0.9rem;"></span>
+            </div>
+            
+            <!-- Recent Announcements -->
+            <div style="background: #f8fafc; padding: 1.5rem; border-radius: 12px; border: 1px solid var(--border-color);">
+              <h4 style="margin: 0 0 1rem 0; display: flex; align-items: center; gap: 0.5rem;">
+                <span>📜</span> Recent Announcements
+                <button class="btn btn-sm" onclick="loadRecentAnnouncements()" style="margin-left: auto; padding: 0.25rem 0.5rem; font-size: 0.8rem;">🔄</button>
+              </h4>
+              <div id="recentAnnouncementsList" class="item-list" style="max-height: 300px;">
+                <div class="empty-state">Click refresh to load recent announcements</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -1201,9 +1316,14 @@
     query,
     where,
     orderBy,
+    limit,
     Timestamp,
     serverTimestamp
   } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+  import { getFunctions, httpsCallable } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-functions.js';
+  
+  // Initialize Firebase Functions
+  const functions = getFunctions();
 
   // ========================================
   // GLOBAL STATE
@@ -2567,6 +2687,217 @@
       setTimeout(() => toast.remove(), 300);
     }, 4000);
   }
+
+  // ========================================
+  // NOTIFICATION FUNCTIONS
+  // ========================================
+  
+  // Setup notification form listeners
+  function setupNotificationListeners() {
+    // Character counters
+    const titleInput = document.getElementById('announcementTitle');
+    const bodyInput = document.getElementById('announcementBody');
+    const linkTypeSelect = document.getElementById('announcementLinkType');
+    const customLinkGroup = document.getElementById('customLinkGroup');
+    
+    if (titleInput) {
+      titleInput.addEventListener('input', () => {
+        document.getElementById('titleCharCount').textContent = titleInput.value.length;
+      });
+    }
+    
+    if (bodyInput) {
+      bodyInput.addEventListener('input', () => {
+        document.getElementById('bodyCharCount').textContent = bodyInput.value.length;
+      });
+    }
+    
+    if (linkTypeSelect) {
+      linkTypeSelect.addEventListener('change', () => {
+        customLinkGroup.style.display = linkTypeSelect.value === 'custom' ? 'block' : 'none';
+      });
+    }
+  }
+  
+  // Call setup after DOM is ready
+  document.addEventListener('DOMContentLoaded', setupNotificationListeners);
+  
+  // Preview announcement
+  window.previewAnnouncement = function() {
+    const title = document.getElementById('announcementTitle').value || 'Title';
+    const body = document.getElementById('announcementBody').value || 'Message body';
+    const priority = document.getElementById('announcementPriority').value;
+    
+    let emoji = '📢';
+    if (priority === 'urgent') emoji = '🚨';
+    else if (priority === 'info') emoji = 'ℹ️';
+    
+    document.getElementById('previewTitle').textContent = `${emoji} ${title}`;
+    document.getElementById('previewBody').textContent = body;
+    document.getElementById('announcementPreviewPanel').style.display = 'block';
+  };
+  
+  // Send announcement
+  window.sendAnnouncement = async function() {
+    const title = document.getElementById('announcementTitle').value.trim();
+    const body = document.getElementById('announcementBody').value.trim();
+    const priority = document.getElementById('announcementPriority').value;
+    const linkType = document.getElementById('announcementLinkType').value;
+    const customLink = document.getElementById('announcementCustomLink').value.trim();
+    
+    // Validation
+    if (!title) {
+      showToast('Please enter a title', 'warning');
+      return;
+    }
+    
+    if (!body) {
+      showToast('Please enter a message', 'warning');
+      return;
+    }
+    
+    // Determine link
+    let link = null;
+    if (linkType === 'custom' && customLink) {
+      link = customLink;
+    } else if (linkType && linkType !== 'custom') {
+      link = linkType;
+    }
+    
+    // Confirm before sending
+    const confirmMsg = `Send this announcement to all users?\n\nTitle: ${title}\nMessage: ${body.substring(0, 100)}${body.length > 100 ? '...' : ''}`;
+    if (!confirm(confirmMsg)) {
+      return;
+    }
+    
+    const btn = document.getElementById('sendAnnouncementBtn');
+    const originalText = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '⏳ Sending...';
+    
+    try {
+      const sendAnnouncementFn = httpsCallable(functions, 'sendAnnouncement');
+      const result = await sendAnnouncementFn({
+        title,
+        body,
+        link,
+        priority
+      });
+      
+      showToast(`✅ ${result.data.message}`, 'success');
+      
+      // Clear form
+      document.getElementById('announcementTitle').value = '';
+      document.getElementById('announcementBody').value = '';
+      document.getElementById('announcementPriority').value = 'normal';
+      document.getElementById('announcementLinkType').value = '';
+      document.getElementById('announcementCustomLink').value = '';
+      document.getElementById('customLinkGroup').style.display = 'none';
+      document.getElementById('announcementPreviewPanel').style.display = 'none';
+      document.getElementById('titleCharCount').textContent = '0';
+      document.getElementById('bodyCharCount').textContent = '0';
+      
+      // Refresh recent announcements
+      await loadRecentAnnouncements();
+      
+    } catch (error) {
+      console.error('Error sending announcement:', error);
+      showToast(`❌ ${error.message || 'Failed to send announcement'}`, 'error');
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = originalText;
+    }
+  };
+  
+  // Send test notification
+  window.sendTestNotification = async function() {
+    const btn = document.getElementById('testNotificationBtn');
+    const status = document.getElementById('testNotificationStatus');
+    const originalText = btn.innerHTML;
+    
+    btn.disabled = true;
+    btn.innerHTML = '⏳ Sending...';
+    status.textContent = '';
+    status.style.color = '';
+    
+    try {
+      const testNotificationFn = httpsCallable(functions, 'testNotification');
+      const result = await testNotificationFn({});
+      
+      status.textContent = '✅ Test sent! Check your notifications.';
+      status.style.color = 'var(--success-color)';
+      showToast('Test notification sent!', 'success');
+      
+    } catch (error) {
+      console.error('Error sending test notification:', error);
+      status.textContent = `❌ ${error.message || 'Failed'}`;
+      status.style.color = 'var(--danger-color)';
+      showToast(error.message || 'Failed to send test notification', 'error');
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = originalText;
+    }
+  };
+  
+  // Load recent announcements
+  window.loadRecentAnnouncements = async function() {
+    const listEl = document.getElementById('recentAnnouncementsList');
+    listEl.innerHTML = '<div class="empty-state">Loading...</div>';
+    
+    try {
+      const q = query(
+        collection(db, 'announcements'),
+        orderBy('sentAt', 'desc'),
+        limit(10)
+      );
+      
+      const snapshot = await getDocs(q);
+      
+      if (snapshot.empty) {
+        listEl.innerHTML = '<div class="empty-state">No announcements sent yet</div>';
+        return;
+      }
+      
+      listEl.innerHTML = snapshot.docs.map(doc => {
+        const data = doc.data();
+        const sentAt = data.sentAt?.toDate?.() 
+          ? data.sentAt.toDate().toLocaleString('en-US', {
+              month: 'short',
+              day: 'numeric',
+              hour: 'numeric',
+              minute: '2-digit'
+            })
+          : 'Unknown';
+        
+        const priorityBadge = data.priority === 'urgent' 
+          ? '<span class="badge" style="background: #fef2f2; color: #dc2626;">🚨 Urgent</span>'
+          : data.priority === 'info'
+          ? '<span class="badge" style="background: #eff6ff; color: #2563eb;">ℹ️ Info</span>'
+          : '<span class="badge" style="background: #f0fdf4; color: #16a34a;">📢 Normal</span>';
+        
+        return `
+          <div class="item-row" style="cursor: default;">
+            <div class="item-info">
+              <div class="item-title">${data.title || 'Untitled'}</div>
+              <div class="item-subtitle" style="margin-top: 0.25rem;">
+                ${data.body?.substring(0, 80) || ''}${(data.body?.length || 0) > 80 ? '...' : ''}
+              </div>
+              <div class="item-subtitle" style="font-size: 0.8rem; margin-top: 0.5rem;">
+                ${sentAt} by ${data.sentByName || 'Unknown'} • ${data.recipientCount || 0} recipients
+              </div>
+            </div>
+            <div class="item-badges">
+              ${priorityBadge}
+            </div>
+          </div>
+        `;
+      }).join('');
+      
+    } catch (error) {
+      console.error('Error loading announcements:', error);
+      listEl.innerHTML = '<div class="empty-state">Error loading announcements</div>';
+    }
+  };
 
   // Make functions globally available
   window.showToast = showToast;
