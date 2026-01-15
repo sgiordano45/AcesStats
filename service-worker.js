@@ -1,9 +1,9 @@
 // service-worker.js - Unified Service Worker
 // Handles both offline functionality AND Firebase Cloud Messaging
-// Version 1.0.27 - update firebase-config for google analytics
+// Version 1.0.28 - add iOS PWA badge support
 
 
-const CACHE_VERSION = 'aces-v1.0.27';
+const CACHE_VERSION = 'aces-v1.0.28';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const DYNAMIC_CACHE = `${CACHE_VERSION}-dynamic`;
 const IMAGE_CACHE = `${CACHE_VERSION}-images`;
@@ -146,6 +146,14 @@ messaging.onBackgroundMessage((payload) => {
     return self.registration.showNotification(notificationTitle, notificationOptions)
       .then(() => {
         console.log('[SW] ✅ Notification displayed successfully');
+        // Set app badge for iOS PWA and supported browsers
+        if (navigator.setAppBadge) {
+          navigator.setAppBadge(1).then(() => {
+            console.log('[SW] ✅ App badge set');
+          }).catch(err => {
+            console.log('[SW] ⚠️ Could not set app badge:', err);
+          });
+        }
       })
       .catch(error => {
         console.error('[SW] ❌ Failed to show notification:', error);
@@ -423,6 +431,15 @@ self.addEventListener('notificationclick', (event) => {
   console.log('[SW] Notification clicked:', event);
   event.notification.close();
 
+  // Clear app badge when notification is clicked
+  if (navigator.clearAppBadge) {
+    navigator.clearAppBadge().then(() => {
+      console.log('[SW] ✅ App badge cleared');
+    }).catch(err => {
+      console.log('[SW] ⚠️ Could not clear app badge:', err);
+    });
+  }
+
   const clickAction = event.notification.data?.clickAction || '/';
   
   event.waitUntil(
@@ -444,6 +461,31 @@ self.addEventListener('notificationclick', (event) => {
         }
       })
   );
+});
+
+// ==============================================
+// MESSAGE HANDLING FROM APP
+// ==============================================
+
+self.addEventListener('message', (event) => {
+  console.log('[SW] Message received:', event.data);
+  
+  // Handle "Update Now" button click
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    console.log('[SW] Skip waiting requested');
+    self.skipWaiting();
+  }
+  
+  // Handle badge clear request (when app is opened)
+  if (event.data && event.data.type === 'CLEAR_BADGE') {
+    if (navigator.clearAppBadge) {
+      navigator.clearAppBadge().then(() => {
+        console.log('[SW] ✅ App badge cleared via message');
+      }).catch(err => {
+        console.log('[SW] ⚠️ Could not clear app badge:', err);
+      });
+    }
+  }
 });
 
 // ==============================================
