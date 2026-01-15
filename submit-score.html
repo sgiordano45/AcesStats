@@ -197,6 +197,28 @@
       font-size: 1.5rem;
     }
 
+    /* Access Level Badge */
+    .access-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.5rem 1rem;
+      border-radius: 20px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      margin-bottom: 1.5rem;
+    }
+
+    .access-badge.full-access {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+    }
+
+    .access-badge.team-access {
+      background: linear-gradient(135deg, #f6d365 0%, #fda085 100%);
+      color: #5a3e00;
+    }
+
     /* Form Sections */
     .form-section {
       margin-bottom: 2.5rem;
@@ -494,6 +516,9 @@
     <!-- Form (shown when authorized) -->
     <div id="scoreForm" class="content-card" style="display: none;">
       <div id="messageArea"></div>
+      
+      <!-- Access Level Indicator -->
+      <div id="accessBadge" class="access-badge" style="display: none;"></div>
 
       <form id="submitScoreForm">
         <!-- Game Selection -->
@@ -575,7 +600,7 @@
   </div>
 
   <script type="module">
-    import { auth } from './firebase-auth.js';
+    import { auth, hasLeagueRole, getUserTeamIds, canSubmitForGame } from './firebase-auth.js';
     import { db } from './firebase-config.js';
     import { onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
     import { 
@@ -594,6 +619,10 @@
     let userProfile = null;
     let selectedGame = null;
     let allGames = [];
+    
+    // Access control state
+    let hasFullAccess = false;
+    let userTeamIds = [];
 
     // Check authorization on page load
     onAuthStateChanged(auth, async (user) => {
@@ -617,16 +646,27 @@
 
         userProfile = userDoc.data();
 
-        // Check if user has authorization
-        const isAuthorized = 
-          userProfile.isCaptain === true ||
-          userProfile.isAdmin === true ||
-          userProfile.userType === 'league-staff' ||
-          userProfile.userType === 'team-staff';
+        // Use helper functions from firebase-auth.js
+        hasFullAccess = hasLeagueRole(userProfile);
+        
+        // Check if user is captain or team-staff
+        const isCaptain = userProfile.isCaptain === true || userProfile.userRole === 'captain';
+        const isTeamStaff = userProfile.userType === 'team-staff' || userProfile.userRole === 'team-staff';
+        
+        // Get user's team IDs using helper function (returns lowercase)
+        userTeamIds = getUserTeamIds(userProfile);
+        
+        // Check authorization
+        const isAuthorized = hasFullAccess || ((isCaptain || isTeamStaff) && userTeamIds.length > 0);
 
         if (isAuthorized) {
           showForm();
+          updateAccessBadge();
           await loadSeasons();
+        } else if (isCaptain || isTeamStaff) {
+          // They have a role but no team assigned
+          showError('Your account is not linked to a team. Please contact a league administrator to set up your team assignment.');
+          showAuthGate();
         } else {
           showError('You do not have permission to submit game scores. Please contact a league administrator if you believe this is an error.');
           showAuthGate();
@@ -636,6 +676,26 @@
         showError('Error checking authorization. Please try again.');
         showAuthGate();
       }
+    }
+    
+    // Update the access badge to show user's permissions
+    function updateAccessBadge() {
+      const badge = document.getElementById('accessBadge');
+      
+      if (hasFullAccess) {
+        badge.className = 'access-badge full-access';
+        badge.innerHTML = '👑 Full Access — Can submit scores for all games';
+      } else {
+        // Get team names for display
+        const teamNames = userTeamIds.map(id => 
+          id.charAt(0).toUpperCase() + id.slice(1)
+        ).join(', ');
+        
+        badge.className = 'access-badge team-access';
+        badge.innerHTML = `🎯 Team Access — Showing games for: ${teamNames}`;
+      }
+      
+      badge.style.display = 'inline-flex';
     }
 
     function showAuthGate() {
@@ -656,54 +716,51 @@
     function showSuccess(message) {
       const messageArea = document.getElementById('messageArea');
       messageArea.innerHTML = `<div class="success-message">${message}</div>`;
-      setTimeout(() => {
-        messageArea.innerHTML = '';
-      }, 5000);
     }
 
     async function loadSeasons() {
+      const seasonSelect = document.getElementById('seasonSelect');
+      
       try {
-        const seasonsSnapshot = await getDocs(collection(db, 'seasons'));
-        const seasons = [];
+        const seasonsRef = collection(db, 'seasons');
+        const seasonsSnapshot = await getDocs(seasonsRef);
         
+        const seasons = [];
         seasonsSnapshot.forEach(doc => {
-          const data = doc.data();
           seasons.push({
             id: doc.id,
-            year: data.year,
-            season: data.season,
-            isActive: data.isActive || false
+            ...doc.data()
           });
         });
 
-        // Sort seasons (active first, then by year desc)
+        // Sort by season ID descending (most recent first)
         seasons.sort((a, b) => {
-          if (a.isActive !== b.isActive) return b.isActive ? 1 : -1;
-          if (b.year !== a.year) return b.year - a.year;
-          return a.season === 'spring' ? -1 : 1;
+          // Extract year and season type for comparison
+          const parseSeasonId = (id) => {
+            const match = id.match(/(\d{4})-?(fall|summer|spring)?/i);
+            if (match) {
+              const year = parseInt(match[1]);
+              const seasonType = match[2]?.toLowerCase() || '';
+              // Fall = 1, Summer = 0, Spring = -1 for sorting within year
+              const seasonOrder = seasonType === 'fall' ? 1 : seasonType === 'summer' ? 0 : -1;
+              return year * 10 + seasonOrder;
+            }
+            return 0;
+          };
+          return parseSeasonId(b.id) - parseSeasonId(a.id);
         });
 
-        const seasonSelect = document.getElementById('seasonSelect');
         seasonSelect.innerHTML = '<option value="">Select a season</option>';
-        
         seasons.forEach(season => {
           const option = document.createElement('option');
           option.value = season.id;
-          option.textContent = `${season.year} ${season.season.charAt(0).toUpperCase() + season.season.slice(1)}${season.isActive ? ' (Current)' : ''}`;
-          if (season.isActive) {
-            option.selected = true;
-          }
+          option.textContent = season.name || season.id;
           seasonSelect.appendChild(option);
         });
 
-        // Auto-load games if active season is selected
-        if (seasons.some(s => s.isActive)) {
-          await loadGames(seasonSelect.value);
-        }
-
-        seasonSelect.addEventListener('change', async (e) => {
+        seasonSelect.addEventListener('change', (e) => {
           if (e.target.value) {
-            await loadGames(e.target.value);
+            loadGames(e.target.value);
           } else {
             document.getElementById('gameSelect').innerHTML = '<option value="">Select a season first</option>';
             document.getElementById('gameSelect').disabled = true;
@@ -712,88 +769,105 @@
 
       } catch (error) {
         console.error('Error loading seasons:', error);
-        showError('Error loading seasons. Please refresh the page.');
+        showError('Error loading seasons. Please try again.');
       }
     }
 
     async function loadGames(seasonId) {
-      try {
-        const gameSelect = document.getElementById('gameSelect');
-        gameSelect.innerHTML = '<option value="">Loading games...</option>';
-        gameSelect.disabled = true;
+      const gameSelect = document.getElementById('gameSelect');
+      gameSelect.innerHTML = '<option value="">Loading games...</option>';
+      gameSelect.disabled = true;
+      allGames = [];
 
-        // Fetch all games from the games collection (includes both regular and playoff games)
-        const gamesSnapshot = await getDocs(collection(db, 'seasons', seasonId, 'games'));
-        
-        allGames = [];
-        
-        const today = new Date();
-        today.setHours(23, 59, 59, 999);
+      try {
+        // Load regular season games
+        const gamesRef = collection(db, 'seasons', seasonId, 'games');
+        const gamesSnapshot = await getDocs(gamesRef);
 
         gamesSnapshot.forEach(doc => {
           const data = doc.data();
           
-          // Parse game date
+          // Skip placeholder games and team documents
+          if (data.placeholder === true || doc.id.startsWith('team_')) {
+            return;
+          }
+
+          // Determine if this is a playoff game
+          const isPlayoffGame = data.gameType === 'playoff' || 
+                               data.game_type === 'playoff' ||
+                               data.round !== undefined;
+
+          // Parse date
           let gameDate = null;
-          if (data.date?.seconds) {
-            // Firestore Timestamp
-            gameDate = new Date(data.date.seconds * 1000);
-          } else if (data.date && data.date.trim() !== '') {
-            // String date (but not empty string)
-            gameDate = new Date(data.date);
-            // Check if date is valid
-            if (isNaN(gameDate.getTime())) {
-              gameDate = null;
+          if (data.date) {
+            if (data.date.toDate) {
+              gameDate = data.date.toDate();
+            } else if (typeof data.date === 'string') {
+              gameDate = new Date(data.date);
             }
           }
 
-          // Determine if this is a playoff game based on game_type or gameType field
-          const isPlayoffGame = 
-            data.game_type === 'Playoff' || 
-            data.gameType === 'playoff' || 
-            data.gameType === 'Playoff';
+          // Check if score exists
+          const hasScore = 
+            (data.homeScore !== undefined && data.homeScore !== null && data.homeScore !== '') ||
+            (data.awayScore !== undefined && data.awayScore !== null && data.awayScore !== '') ||
+            (data['home score'] && data['home score'].trim() !== '') ||
+            (data['away score'] && data['away score'].trim() !== '') ||
+            (data.winner && data.winner.trim() !== '');
+          
+          // Get team IDs (normalize to lowercase for comparison)
+          const homeTeamId = (data.homeTeamId || '').toLowerCase();
+          const awayTeamId = (data.awayTeamId || '').toLowerCase();
 
-          // Show games that are today or in the past, or games without dates (TBD matchups)
-          if (!gameDate || gameDate <= today) {
-            const hasScore = 
-              (data.homeScore !== undefined && data.homeScore !== null && data.homeScore !== '') || 
-              (data.awayScore !== undefined && data.awayScore !== null && data.awayScore !== '') ||
-              (data['home score'] && data['home score'].trim() !== '') ||
-              (data['away score'] && data['away score'].trim() !== '') ||
-              (data.winner && data.winner.trim() !== '');
-
-            allGames.push({
-              id: doc.id,
-              ...data,
-              gameDate: gameDate || new Date(0), // Use epoch for games with no date so they sort last
-              hasScore: hasScore,
-              seasonId: seasonId,
-              isPlayoff: isPlayoffGame,
-              game_type: data.game_type || data.gameType || 'Regular'
-            });
-          }
+          allGames.push({
+            id: doc.id,
+            ...data,
+            homeTeamId: homeTeamId,
+            awayTeamId: awayTeamId,
+            gameDate: gameDate || new Date(0),
+            hasScore: hasScore,
+            seasonId: seasonId,
+            isPlayoff: isPlayoffGame,
+            game_type: data.game_type || data.gameType || 'Regular'
+          });
         });
+        
+        // Filter games based on access level
+        let filteredGames = allGames;
+        
+        if (!hasFullAccess) {
+          // Team-restricted: only show games involving user's team(s)
+          filteredGames = allGames.filter(game => {
+            return userTeamIds.includes(game.homeTeamId) || 
+                   userTeamIds.includes(game.awayTeamId);
+          });
+          
+          console.log(`Filtered ${allGames.length} games to ${filteredGames.length} for teams: ${userTeamIds.join(', ')}`);
+        }
 
         // Sort by date (most recent first), but undated games go last
-        allGames.sort((a, b) => {
-          // If both have no real date, maintain order
+        filteredGames.sort((a, b) => {
           if (a.gameDate.getTime() === 0 && b.gameDate.getTime() === 0) return 0;
-          // If only a has no date, b comes first
           if (a.gameDate.getTime() === 0) return 1;
-          // If only b has no date, a comes first
           if (b.gameDate.getTime() === 0) return -1;
-          // Otherwise sort by date descending
           return b.gameDate - a.gameDate;
         });
+        
+        // Update allGames to filtered list for selection
+        allGames = filteredGames;
 
         gameSelect.innerHTML = '<option value="">Select a game</option>';
         
-        if (allGames.length === 0) {
-          gameSelect.innerHTML = '<option value="">No games available for scoring</option>';
+        if (filteredGames.length === 0) {
+          if (!hasFullAccess) {
+            gameSelect.innerHTML = '<option value="">No games found for your team this season</option>';
+          } else {
+            gameSelect.innerHTML = '<option value="">No games available for scoring</option>';
+          }
           return;
         }
 
-        allGames.forEach((game, index) => {
+        filteredGames.forEach((game, index) => {
           const option = document.createElement('option');
           option.value = index;
           
