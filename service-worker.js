@@ -1,9 +1,9 @@
 // service-worker.js - Unified Service Worker
 // Handles both offline functionality AND Firebase Cloud Messaging
-// Version 1.0.29 - fix duplicate FCM notifications
+// Version 1.0.30 - firebase-config updates
 
 
-const CACHE_VERSION = 'aces-v1.0.29';
+const CACHE_VERSION = 'aces-v1.0.30';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const DYNAMIC_CACHE = `${CACHE_VERSION}-dynamic`;
 const IMAGE_CACHE = `${CACHE_VERSION}-images`;
