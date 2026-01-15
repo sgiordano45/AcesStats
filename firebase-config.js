@@ -17,6 +17,7 @@ import {
 } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
 import { getStorage } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js';
 import { getMessaging } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-messaging.js';
+import { getFunctions } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-functions.js';
 
 // Your Firebase configuration
 const firebaseConfig = {
@@ -53,6 +54,9 @@ const storage = getStorage(app);
 // Initialize Firebase Cloud Messaging
 const messaging = getMessaging(app);
 
+// Initialize Firebase Cloud Functions
+const functions = getFunctions(app);
+
 // VAPID key from Firebase Console
 const VAPID_KEY = "BK39jgi3AT0p9jdaUBIPHz3vBkBg4YRvY-yMNuGMIJEhGbXTomDyKo77ug0hPYa10YBjJBM_GRBErlYp09cDSRw";
 
@@ -62,6 +66,7 @@ export {
   db,
   storage,
   messaging,
+  functions,
   analytics,
   VAPID_KEY,
   collection, 
