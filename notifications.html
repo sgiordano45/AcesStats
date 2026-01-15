@@ -1,0 +1,1461 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<link rel="manifest" href="/manifest.json">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Send Notifications - Mountainside Aces</title>
+<meta name="theme-color" content="#2d5016">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="stylesheet" href="mobile-enhancements.css">
+<link rel="stylesheet" href="nav-styles.css">
+<style>
+  :root {
+    --primary-color: #2d5016;
+    --secondary-color: #1a6b4a;
+    --accent-color: #ffd700;
+    --card-bg: #ffffff;
+    --text-dark: #2d3748;
+    --text-light: #718096;
+    --border-color: #e2e8f0;
+    --shadow-sm: 0 2px 8px rgba(0,0,0,0.08);
+    --shadow-md: 0 4px 16px rgba(0,0,0,0.12);
+    --shadow-lg: 0 12px 32px rgba(0,0,0,0.16);
+    --success-color: #22c55e;
+    --warning-color: #f59e0b;
+    --danger-color: #ef4444;
+    --info-color: #3b82f6;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    margin: 0;
+    padding: 0;
+    background: linear-gradient(135deg, #f7fafc 0%, #edf2f7 100%);
+    min-height: 100vh;
+    color: var(--text-dark);
+  }
+
+  .loading-overlay {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(255,255,255,0.95);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    transition: opacity 0.5s ease;
+  }
+
+  .loading-overlay.hidden {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .softball-spinner::before {
+    content: '📢';
+    font-size: 80px;
+    animation: pulse 1.5s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.1); opacity: 0.8; }
+  }
+
+  /* Auth Gate */
+  .auth-gate {
+    max-width: 500px;
+    margin: 4rem auto;
+    padding: 3rem;
+    background: var(--card-bg);
+    border-radius: 16px;
+    box-shadow: var(--shadow-lg);
+    text-align: center;
+  }
+
+  .auth-gate h2 {
+    color: var(--danger-color);
+    margin-bottom: 1rem;
+  }
+
+  .auth-gate p {
+    color: var(--text-light);
+    margin-bottom: 2rem;
+  }
+
+  .auth-gate a {
+    display: inline-block;
+    padding: 0.75rem 2rem;
+    background: var(--primary-color);
+    color: white;
+    text-decoration: none;
+    border-radius: 8px;
+    font-weight: 600;
+  }
+
+  /* Header */
+  .header {
+    background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+    color: white;
+    padding: 2.5rem 2rem;
+    box-shadow: var(--shadow-lg);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .header::before {
+    content: '';
+    position: absolute;
+    top: -100px;
+    right: -100px;
+    width: 300px;
+    height: 300px;
+    background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+    border-radius: 50%;
+  }
+
+  .header::after {
+    content: '🔔';
+    position: absolute;
+    bottom: -40px;
+    left: -30px;
+    font-size: 180px;
+    opacity: 0.08;
+  }
+
+  .header-content {
+    max-width: 1200px;
+    margin: 0 auto;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    position: relative;
+    z-index: 1;
+    flex-wrap: wrap;
+    gap: 1rem;
+  }
+
+  .header h1 {
+    margin: 0;
+    font-size: 2rem;
+    font-weight: 800;
+    margin-bottom: 0.25rem;
+  }
+
+  .header p {
+    margin: 0;
+    opacity: 0.9;
+    font-size: 0.95rem;
+  }
+
+  .role-badge {
+    display: inline-block;
+    background: rgba(255,255,255,0.2);
+    padding: 0.25rem 0.75rem;
+    border-radius: 20px;
+    font-size: 0.85rem;
+    margin-top: 0.5rem;
+  }
+
+  .header-buttons {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+
+  .nav-btn {
+    padding: 0.75rem 1.25rem;
+    border: 2px solid white;
+    background: white;
+    color: var(--primary-color);
+    border-radius: 10px;
+    font-weight: 600;
+    font-size: 0.9rem;
+    cursor: pointer;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    transition: all 0.3s ease;
+  }
+
+  .nav-btn:hover {
+    background: var(--accent-color);
+    border-color: var(--accent-color);
+    transform: translateY(-2px);
+  }
+
+  /* Container */
+  .container {
+    max-width: 1200px;
+    margin: 2rem auto;
+    padding: 0 1.5rem;
+  }
+
+  /* Main Layout */
+  .main-grid {
+    display: grid;
+    grid-template-columns: 1fr 350px;
+    gap: 2rem;
+  }
+
+  @media (max-width: 900px) {
+    .main-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  /* Section Cards */
+  .section {
+    background: var(--card-bg);
+    border-radius: 16px;
+    margin-bottom: 2rem;
+    box-shadow: var(--shadow-sm);
+    border: 1px solid var(--border-color);
+    overflow: hidden;
+  }
+
+  .section-header {
+    background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+    color: white;
+    padding: 1.25rem 1.5rem;
+    font-size: 1.25rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .section-content {
+    padding: 1.5rem;
+  }
+
+  /* Form Styles */
+  .form-group {
+    margin-bottom: 1.25rem;
+  }
+
+  .form-group label {
+    display: block;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+    color: var(--text-dark);
+  }
+
+  .form-group input,
+  .form-group select,
+  .form-group textarea {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    border: 2px solid var(--border-color);
+    border-radius: 8px;
+    font-size: 1rem;
+    transition: border-color 0.3s ease;
+  }
+
+  .form-group input:focus,
+  .form-group select:focus,
+  .form-group textarea:focus {
+    outline: none;
+    border-color: var(--primary-color);
+  }
+
+  .hint {
+    font-size: 0.8rem;
+    color: var(--text-light);
+    margin-top: 0.25rem;
+  }
+
+  /* Buttons */
+  .btn {
+    padding: 0.75rem 1.5rem;
+    border: none;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 0.95rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .btn-primary {
+    background: var(--primary-color);
+    color: white;
+  }
+
+  .btn-primary:hover {
+    background: var(--secondary-color);
+    transform: translateY(-2px);
+  }
+
+  .btn-primary:disabled {
+    background: #a0aec0;
+    cursor: not-allowed;
+    transform: none;
+  }
+
+  .btn-secondary {
+    background: #e2e8f0;
+    color: var(--text-dark);
+  }
+
+  .btn-secondary:hover {
+    background: #cbd5e0;
+  }
+
+  /* Team Selector */
+  .team-selector {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+  }
+
+  .team-chip {
+    padding: 0.5rem 1rem;
+    background: #f1f5f9;
+    border: 2px solid var(--border-color);
+    border-radius: 20px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    font-size: 0.9rem;
+  }
+
+  .team-chip:hover {
+    border-color: var(--primary-color);
+    background: #e2e8f0;
+  }
+
+  .team-chip.selected {
+    background: var(--primary-color);
+    color: white;
+    border-color: var(--primary-color);
+  }
+
+  .team-chip.disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  /* Recipients Panel */
+  .recipients-panel {
+    position: sticky;
+    top: 2rem;
+  }
+
+  .recipients-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem 1.5rem;
+    background: linear-gradient(135deg, var(--info-color) 0%, #2563eb 100%);
+    color: white;
+    border-radius: 16px 16px 0 0;
+  }
+
+  .recipients-header h3 {
+    margin: 0;
+    font-size: 1.1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .recipient-count {
+    background: rgba(255,255,255,0.2);
+    padding: 0.25rem 0.75rem;
+    border-radius: 20px;
+    font-weight: 700;
+    font-size: 0.9rem;
+  }
+
+  .recipients-content {
+    background: white;
+    border: 1px solid var(--border-color);
+    border-top: none;
+    border-radius: 0 0 16px 16px;
+    max-height: 500px;
+    overflow-y: auto;
+  }
+
+  .recipient-item {
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .recipient-item:last-child {
+    border-bottom: none;
+  }
+
+  .recipient-avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-weight: 700;
+    font-size: 0.85rem;
+  }
+
+  .recipient-info {
+    flex: 1;
+  }
+
+  .recipient-name {
+    font-weight: 600;
+    color: var(--text-dark);
+    font-size: 0.9rem;
+  }
+
+  .recipient-team {
+    font-size: 0.75rem;
+    color: var(--text-light);
+  }
+
+  .no-recipients {
+    padding: 2rem;
+    text-align: center;
+    color: var(--text-light);
+  }
+
+  /* Preview Panel */
+  .preview-panel {
+    background: white;
+    padding: 1.5rem;
+    border-radius: 12px;
+    border: 2px solid var(--primary-color);
+    margin-top: 1.5rem;
+    display: none;
+  }
+
+  .preview-panel.visible {
+    display: block;
+  }
+
+  .preview-device {
+    background: #1a1a2e;
+    color: white;
+    padding: 1rem;
+    border-radius: 12px;
+    max-width: 350px;
+    margin: 0 auto;
+  }
+
+  .preview-app-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .preview-app-icon {
+    font-size: 1.5rem;
+  }
+
+  .preview-app-name {
+    font-weight: 600;
+    font-size: 0.85rem;
+  }
+
+  .preview-time {
+    font-size: 0.75rem;
+    opacity: 0.7;
+    margin-left: auto;
+  }
+
+  .preview-title {
+    font-weight: 700;
+    font-size: 1rem;
+    margin-bottom: 0.25rem;
+  }
+
+  .preview-body {
+    font-size: 0.9rem;
+    opacity: 0.9;
+    line-height: 1.4;
+  }
+
+  /* Recent Announcements */
+  .recent-list {
+    max-height: 400px;
+    overflow-y: auto;
+  }
+
+  .recent-item {
+    padding: 1rem;
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  .recent-item:last-child {
+    border-bottom: none;
+  }
+
+  .recent-item-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 0.5rem;
+  }
+
+  .recent-item-title {
+    font-weight: 600;
+    color: var(--text-dark);
+  }
+
+  .recent-item-meta {
+    font-size: 0.8rem;
+    color: var(--text-light);
+    margin-top: 0.5rem;
+  }
+
+  .priority-badge {
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+  }
+
+  .priority-normal { background: #f0fdf4; color: #16a34a; }
+  .priority-info { background: #eff6ff; color: #2563eb; }
+  .priority-urgent { background: #fef2f2; color: #dc2626; }
+
+  /* Toast Notifications */
+  .toast-container {
+    position: fixed;
+    bottom: 2rem;
+    right: 2rem;
+    z-index: 10000;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .toast {
+    padding: 1rem 1.5rem;
+    border-radius: 8px;
+    color: white;
+    font-weight: 500;
+    box-shadow: var(--shadow-lg);
+    animation: slideIn 0.3s ease;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .toast-success { background: var(--success-color); }
+  .toast-error { background: var(--danger-color); }
+  .toast-warning { background: var(--warning-color); }
+
+  @keyframes slideIn {
+    from {
+      transform: translateX(100%);
+      opacity: 0;
+    }
+    to {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
+
+  /* Loading States */
+  .loading-text {
+    color: var(--text-light);
+    font-style: italic;
+    padding: 1rem;
+    text-align: center;
+  }
+
+  /* Responsive Adjustments */
+  @media (max-width: 768px) {
+    .header h1 {
+      font-size: 1.5rem;
+    }
+
+    .container {
+      padding: 0 1rem;
+    }
+
+    .section-content {
+      padding: 1rem;
+    }
+
+    .recipients-panel {
+      position: static;
+    }
+  }
+
+  /* Scope info */
+  .scope-info {
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 1.5rem;
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+
+  .scope-info .icon {
+    font-size: 1.25rem;
+  }
+
+  .scope-info p {
+    margin: 0;
+    color: #1e40af;
+    font-size: 0.9rem;
+  }
+
+  /* Test Section */
+  .test-section {
+    background: #f0fdf4;
+    border: 1px solid #86efac;
+    border-radius: 8px;
+    padding: 1rem;
+    margin-top: 1.5rem;
+  }
+
+  .test-section h4 {
+    margin: 0 0 0.75rem 0;
+    color: #166534;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .test-section p {
+    margin: 0 0 1rem 0;
+    font-size: 0.85rem;
+    color: var(--text-light);
+  }
+</style>
+</head>
+<body>
+
+<nav-component></nav-component>
+
+<!-- Loading Overlay -->
+<div class="loading-overlay" id="loadingOverlay">
+  <div class="softball-spinner"></div>
+</div>
+
+<!-- Auth Gate (shown if not authorized) -->
+<div class="auth-gate" id="authGate" style="display: none;">
+  <h2>🔒 Access Required</h2>
+  <p>You must be a Captain, League Staff, or Admin to send notifications.</p>
+  <a href="signin.html">Sign In</a>
+</div>
+
+<!-- Main Content -->
+<div id="mainContent" style="display: none;">
+  <div class="header">
+    <div class="header-content">
+      <div>
+        <h1>📢 Send Notifications</h1>
+        <p>Send push notifications to league members</p>
+        <span class="role-badge" id="userRoleBadge">Loading...</span>
+      </div>
+      <div class="header-buttons">
+        <a href="index.html" class="nav-btn">🏠 Home</a>
+        <a href="profile.html" class="nav-btn">👤 Profile</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="container">
+    <div class="main-grid">
+      <!-- Left Column: Notification Form -->
+      <div class="form-column">
+        <!-- Scope Info -->
+        <div class="scope-info" id="scopeInfo">
+          <span class="icon">ℹ️</span>
+          <p id="scopeText">Loading your notification scope...</p>
+        </div>
+
+        <!-- Team Selector (for captains with multiple teams or league-wide) -->
+        <div class="section" id="teamSelectorSection" style="display: none;">
+          <div class="section-header">
+            🎯 Select Recipients
+          </div>
+          <div class="section-content">
+            <p style="color: var(--text-light); margin-bottom: 1rem; font-size: 0.9rem;">
+              Choose which team(s) to notify. Your selection will update the recipients list.
+            </p>
+            <div class="team-selector" id="teamSelector">
+              <!-- Team chips will be rendered here -->
+            </div>
+          </div>
+        </div>
+
+        <!-- Notification Form -->
+        <div class="section">
+          <div class="section-header">
+            📣 Compose Notification
+          </div>
+          <div class="section-content">
+            <div class="form-group">
+              <label>Priority</label>
+              <select id="notificationPriority">
+                <option value="normal">📢 Normal</option>
+                <option value="info">ℹ️ Informational</option>
+                <option value="urgent">🚨 Urgent</option>
+              </select>
+              <div class="hint">Urgent notifications bypass quiet hours</div>
+            </div>
+
+            <div class="form-group">
+              <label>Title <span style="color: var(--danger-color);">*</span></label>
+              <input type="text" id="notificationTitle" placeholder="e.g., Schedule Update, Game Reminder" maxlength="100">
+              <div class="hint"><span id="titleCharCount">0</span>/100 characters</div>
+            </div>
+
+            <div class="form-group">
+              <label>Message <span style="color: var(--danger-color);">*</span></label>
+              <textarea id="notificationBody" rows="4" placeholder="Write your notification message here..." maxlength="500" style="resize: vertical;"></textarea>
+              <div class="hint"><span id="bodyCharCount">0</span>/500 characters</div>
+            </div>
+
+            <div class="form-group">
+              <label>Link (optional)</label>
+              <select id="notificationLinkType">
+                <option value="">No link</option>
+                <option value="custom">Custom URL</option>
+                <option value="/index.html">Home Page</option>
+                <option value="/schedule.html">Schedule</option>
+                <option value="/playoffs.html">Playoffs</option>
+                <option value="/roster-management.html">Roster Management</option>
+                <option value="/leaders.html">Leaders</option>
+              </select>
+            </div>
+
+            <div class="form-group" id="customLinkGroup" style="display: none;">
+              <label>Custom URL</label>
+              <input type="text" id="notificationCustomLink" placeholder="/page.html or https://...">
+            </div>
+
+            <div style="display: flex; gap: 1rem; margin-top: 1.5rem; flex-wrap: wrap;">
+              <button class="btn btn-primary" onclick="sendNotification()" id="sendNotificationBtn" disabled>
+                📤 Send Notification
+              </button>
+              <button class="btn btn-secondary" onclick="previewNotification()">
+                👁️ Preview
+              </button>
+            </div>
+
+            <!-- Preview Panel -->
+            <div class="preview-panel" id="previewPanel">
+              <h4 style="margin: 0 0 1rem 0; color: var(--primary-color);">📱 Notification Preview</h4>
+              <div class="preview-device">
+                <div class="preview-app-header">
+                  <span class="preview-app-icon">⚾</span>
+                  <span class="preview-app-name">Mountainside Aces</span>
+                  <span class="preview-time">now</span>
+                </div>
+                <div class="preview-title" id="previewTitle">Title</div>
+                <div class="preview-body" id="previewBody">Message body</div>
+              </div>
+            </div>
+
+            <!-- Test Section -->
+            <div class="test-section">
+              <h4>🧪 Test Notifications</h4>
+              <p>Send a test notification to yourself to verify the system is working.</p>
+              <button class="btn btn-secondary" onclick="sendTestNotification()" id="testNotificationBtn">
+                🧪 Send Test to Me
+              </button>
+              <span id="testNotificationStatus" style="margin-left: 1rem; font-size: 0.9rem;"></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Recent Announcements -->
+        <div class="section">
+          <div class="section-header">
+            <span>📜</span> Recent Announcements
+            <button class="btn btn-secondary" onclick="loadRecentAnnouncements()" style="margin-left: auto; padding: 0.4rem 0.75rem; font-size: 0.8rem;">
+              🔄 Refresh
+            </button>
+          </div>
+          <div class="section-content">
+            <div id="recentAnnouncementsList" class="recent-list">
+              <div class="loading-text">Loading recent announcements...</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right Column: Recipients Panel -->
+      <div class="recipients-column">
+        <div class="recipients-panel">
+          <div class="recipients-header">
+            <h3>👥 Recipients</h3>
+            <span class="recipient-count" id="recipientCount">0</span>
+          </div>
+          <div class="recipients-content" id="recipientsList">
+            <div class="loading-text">Loading recipients...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Toast Container -->
+<div class="toast-container" id="toastContainer"></div>
+
+<script type="module">
+  import { db, functions } from './firebase-config.js';
+  import { collection, getDocs, query, where, orderBy, limit } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+  import { httpsCallable } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-functions.js';
+  import { onAuthStateChanged } from './firebase-auth.js';
+  import { auth, getUserProfile, isAdmin, isLeagueStaff, isUserCaptain, getCaptainTeams, hasLeagueRole } from './firebase-auth.js';
+
+  // ========================================
+  // STATE VARIABLES
+  // ========================================
+  let currentUser = null;
+  let userProfile = null;
+  let allUsers = [];
+  let teams = [];
+  let selectedTeams = new Set();
+  let userScope = 'none'; // 'all', 'team', 'none'
+  let userTeams = []; // Teams the user can send to
+
+  // ========================================
+  // INITIALIZATION
+  // ========================================
+  
+  onAuthStateChanged(auth, async (user) => {
+    if (user) {
+      currentUser = user;
+      try {
+        userProfile = await getUserProfile(user.uid);
+        
+        // Determine user scope
+        if (isAdmin(userProfile) || isLeagueStaff(userProfile)) {
+          userScope = 'all';
+          userTeams = []; // Will load all teams
+        } else if (isUserCaptain(userProfile)) {
+          userScope = 'team';
+          userTeams = getCaptainTeams(userProfile);
+        } else {
+          // Not authorized
+          userScope = 'none';
+        }
+        
+        if (userScope === 'none') {
+          showAuthGate();
+          return;
+        }
+        
+        await initializePage();
+        
+      } catch (error) {
+        console.error('Error loading user profile:', error);
+        showAuthGate();
+      }
+    } else {
+      showAuthGate();
+    }
+  });
+
+  async function initializePage() {
+    document.getElementById('loadingOverlay').classList.add('hidden');
+    document.getElementById('mainContent').style.display = 'block';
+    
+    // Update role badge
+    updateRoleBadge();
+    
+    // Update scope info
+    updateScopeInfo();
+    
+    // Load teams and users
+    await loadTeams();
+    await loadUsersWithNotifications();
+    
+    // Setup form listeners
+    setupFormListeners();
+    
+    // Load recent announcements
+    await loadRecentAnnouncements();
+    
+    // Enable send button if recipients exist
+    updateSendButton();
+  }
+
+  function showAuthGate() {
+    document.getElementById('loadingOverlay').classList.add('hidden');
+    document.getElementById('authGate').style.display = 'block';
+    document.getElementById('mainContent').style.display = 'none';
+  }
+
+  function updateRoleBadge() {
+    const badge = document.getElementById('userRoleBadge');
+    if (isAdmin(userProfile)) {
+      badge.textContent = '👑 Admin';
+    } else if (isLeagueStaff(userProfile)) {
+      badge.textContent = '⚙️ League Staff';
+    } else if (isUserCaptain(userProfile)) {
+      const teamCount = userTeams.length;
+      badge.textContent = `🎯 Captain (${teamCount} team${teamCount > 1 ? 's' : ''})`;
+    }
+  }
+
+  function updateScopeInfo() {
+    const scopeText = document.getElementById('scopeText');
+    if (userScope === 'all') {
+      scopeText.innerHTML = '<strong>League-wide access:</strong> You can send notifications to all league members who have enabled notifications.';
+    } else if (userScope === 'team') {
+      const teamNames = userTeams.map(t => capitalize(t)).join(', ');
+      scopeText.innerHTML = `<strong>Team access:</strong> You can send notifications to members of: <strong>${teamNames}</strong>`;
+    }
+  }
+
+  // ========================================
+  // DATA LOADING
+  // ========================================
+
+  async function loadTeams() {
+    try {
+      const teamsSnap = await getDocs(collection(db, 'teams'));
+      teams = [];
+      
+      teamsSnap.forEach(doc => {
+        teams.push({
+          id: doc.id,
+          name: doc.data().teamName || doc.id
+        });
+      });
+      
+      teams.sort((a, b) => a.name.localeCompare(b.name));
+      
+      // Show team selector if user can select teams
+      if (userScope === 'all' || userTeams.length > 1) {
+        renderTeamSelector();
+      }
+      
+    } catch (error) {
+      console.error('Error loading teams:', error);
+    }
+  }
+
+  async function loadUsersWithNotifications() {
+    try {
+      const usersSnap = await getDocs(collection(db, 'users'));
+      allUsers = [];
+      
+      usersSnap.forEach(doc => {
+        const data = doc.data();
+        // Only include users with notifications enabled and FCM tokens
+        if (data.notificationsEnabled && data.fcmTokens && data.fcmTokens.length > 0) {
+          allUsers.push({
+            id: doc.id,
+            displayName: data.displayName || 'Unknown User',
+            email: data.email,
+            linkedTeam: data.linkedTeam,
+            teamRoles: data.teamRoles || {},
+            fcmTokenCount: data.fcmTokens.length
+          });
+        }
+      });
+      
+      // Sort by name
+      allUsers.sort((a, b) => (a.displayName || '').localeCompare(b.displayName || ''));
+      
+      console.log(`📊 Loaded ${allUsers.length} users with notifications enabled`);
+      
+      // Initialize selected teams based on scope
+      if (userScope === 'all') {
+        // Select "All Teams" by default
+        selectedTeams.add('all');
+      } else if (userScope === 'team') {
+        // Select all captain teams by default
+        userTeams.forEach(t => selectedTeams.add(t.toLowerCase()));
+      }
+      
+      // Render recipients
+      renderRecipients();
+      
+    } catch (error) {
+      console.error('Error loading users:', error);
+      document.getElementById('recipientsList').innerHTML = '<div class="no-recipients">Error loading recipients</div>';
+    }
+  }
+
+  // ========================================
+  // TEAM SELECTOR
+  // ========================================
+
+  function renderTeamSelector() {
+    const selectorSection = document.getElementById('teamSelectorSection');
+    const selectorContainer = document.getElementById('teamSelector');
+    selectorSection.style.display = 'block';
+    
+    let html = '';
+    
+    if (userScope === 'all') {
+      // Add "All Teams" option for league-wide access
+      html += `
+        <div class="team-chip ${selectedTeams.has('all') ? 'selected' : ''}" 
+             data-team="all" onclick="toggleTeam('all')">
+          🌐 All Teams
+        </div>
+      `;
+      
+      // Add individual teams
+      teams.forEach(team => {
+        html += `
+          <div class="team-chip ${selectedTeams.has(team.id.toLowerCase()) ? 'selected' : ''}" 
+               data-team="${team.id.toLowerCase()}" onclick="toggleTeam('${team.id.toLowerCase()}')">
+            ${capitalize(team.name)}
+          </div>
+        `;
+      });
+    } else if (userTeams.length > 1) {
+      // Captain with multiple teams
+      userTeams.forEach(teamId => {
+        const team = teams.find(t => t.id.toLowerCase() === teamId.toLowerCase());
+        const teamName = team ? team.name : teamId;
+        html += `
+          <div class="team-chip ${selectedTeams.has(teamId.toLowerCase()) ? 'selected' : ''}" 
+               data-team="${teamId.toLowerCase()}" onclick="toggleTeam('${teamId.toLowerCase()}')">
+            ${capitalize(teamName)}
+          </div>
+        `;
+      });
+    }
+    
+    selectorContainer.innerHTML = html;
+  }
+
+  window.toggleTeam = function(teamId) {
+    if (teamId === 'all') {
+      // If selecting "all", clear other selections
+      if (selectedTeams.has('all')) {
+        selectedTeams.delete('all');
+      } else {
+        selectedTeams.clear();
+        selectedTeams.add('all');
+      }
+    } else {
+      // If selecting a specific team, remove "all"
+      selectedTeams.delete('all');
+      
+      if (selectedTeams.has(teamId)) {
+        selectedTeams.delete(teamId);
+      } else {
+        selectedTeams.add(teamId);
+      }
+    }
+    
+    // Update UI
+    renderTeamSelector();
+    renderRecipients();
+    updateSendButton();
+  };
+
+  // ========================================
+  // RECIPIENTS RENDERING
+  // ========================================
+
+  function renderRecipients() {
+    const container = document.getElementById('recipientsList');
+    const countEl = document.getElementById('recipientCount');
+    
+    // Filter users based on selected teams
+    const filteredUsers = getFilteredRecipients();
+    
+    countEl.textContent = filteredUsers.length;
+    
+    if (filteredUsers.length === 0) {
+      container.innerHTML = '<div class="no-recipients">No recipients match your selection.<br>Select teams above or check if users have notifications enabled.</div>';
+      return;
+    }
+    
+    container.innerHTML = filteredUsers.map(user => {
+      const initials = getInitials(user.displayName);
+      const teamDisplay = getUserTeamDisplay(user);
+      
+      return `
+        <div class="recipient-item">
+          <div class="recipient-avatar">${initials}</div>
+          <div class="recipient-info">
+            <div class="recipient-name">${user.displayName}</div>
+            <div class="recipient-team">${teamDisplay}</div>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  function getFilteredRecipients() {
+    if (selectedTeams.size === 0) {
+      return [];
+    }
+    
+    if (selectedTeams.has('all')) {
+      // Return all users with notifications
+      if (userScope === 'all') {
+        return allUsers;
+      } else {
+        // Captain can only send to their teams
+        return allUsers.filter(user => userMatchesTeams(user, userTeams));
+      }
+    }
+    
+    // Filter by selected teams
+    return allUsers.filter(user => {
+      const userTeamIds = getUserTeamIds(user);
+      return userTeamIds.some(tid => selectedTeams.has(tid.toLowerCase()));
+    });
+  }
+
+  function userMatchesTeams(user, teamList) {
+    const userTeamIds = getUserTeamIds(user);
+    return teamList.some(t => userTeamIds.includes(t.toLowerCase()));
+  }
+
+  function getUserTeamIds(user) {
+    const teamIds = new Set();
+    
+    if (user.linkedTeam) {
+      teamIds.add(user.linkedTeam.toLowerCase());
+    }
+    
+    if (user.teamRoles) {
+      Object.entries(user.teamRoles).forEach(([teamId, tr]) => {
+        if (tr.status === 'active') {
+          teamIds.add(teamId.toLowerCase());
+        }
+      });
+    }
+    
+    return Array.from(teamIds);
+  }
+
+  function getUserTeamDisplay(user) {
+    const teamIds = getUserTeamIds(user);
+    if (teamIds.length === 0) return 'No team';
+    
+    const teamNames = teamIds.map(tid => {
+      const team = teams.find(t => t.id.toLowerCase() === tid);
+      return team ? capitalize(team.name) : capitalize(tid);
+    });
+    
+    return teamNames.join(', ');
+  }
+
+  function getInitials(name) {
+    if (!name) return '?';
+    const parts = name.split(' ').filter(p => p.length > 0);
+    if (parts.length === 0) return '?';
+    if (parts.length === 1) return parts[0].charAt(0).toUpperCase();
+    return (parts[0].charAt(0) + parts[parts.length - 1].charAt(0)).toUpperCase();
+  }
+
+  // ========================================
+  // FORM HANDLING
+  // ========================================
+
+  function setupFormListeners() {
+    const titleInput = document.getElementById('notificationTitle');
+    const bodyInput = document.getElementById('notificationBody');
+    const linkTypeSelect = document.getElementById('notificationLinkType');
+    const customLinkGroup = document.getElementById('customLinkGroup');
+    
+    titleInput.addEventListener('input', () => {
+      document.getElementById('titleCharCount').textContent = titleInput.value.length;
+      updateSendButton();
+    });
+    
+    bodyInput.addEventListener('input', () => {
+      document.getElementById('bodyCharCount').textContent = bodyInput.value.length;
+      updateSendButton();
+    });
+    
+    linkTypeSelect.addEventListener('change', () => {
+      customLinkGroup.style.display = linkTypeSelect.value === 'custom' ? 'block' : 'none';
+    });
+  }
+
+  function updateSendButton() {
+    const btn = document.getElementById('sendNotificationBtn');
+    const title = document.getElementById('notificationTitle').value.trim();
+    const body = document.getElementById('notificationBody').value.trim();
+    const recipients = getFilteredRecipients();
+    
+    btn.disabled = !title || !body || recipients.length === 0;
+  }
+
+  // ========================================
+  // PREVIEW
+  // ========================================
+
+  window.previewNotification = function() {
+    const title = document.getElementById('notificationTitle').value || 'Title';
+    const body = document.getElementById('notificationBody').value || 'Message body';
+    const priority = document.getElementById('notificationPriority').value;
+    
+    let emoji = '📢';
+    if (priority === 'urgent') emoji = '🚨';
+    else if (priority === 'info') emoji = 'ℹ️';
+    
+    document.getElementById('previewTitle').textContent = `${emoji} ${title}`;
+    document.getElementById('previewBody').textContent = body;
+    document.getElementById('previewPanel').classList.add('visible');
+  };
+
+  // ========================================
+  // SEND NOTIFICATION
+  // ========================================
+
+  window.sendNotification = async function() {
+    const title = document.getElementById('notificationTitle').value.trim();
+    const body = document.getElementById('notificationBody').value.trim();
+    const priority = document.getElementById('notificationPriority').value;
+    const linkType = document.getElementById('notificationLinkType').value;
+    const customLink = document.getElementById('notificationCustomLink').value.trim();
+    
+    if (!title || !body) {
+      showToast('Please enter a title and message', 'warning');
+      return;
+    }
+    
+    const recipients = getFilteredRecipients();
+    if (recipients.length === 0) {
+      showToast('No recipients selected', 'warning');
+      return;
+    }
+    
+    // Determine link
+    let link = null;
+    if (linkType === 'custom' && customLink) {
+      link = customLink;
+    } else if (linkType && linkType !== 'custom') {
+      link = linkType;
+    }
+    
+    // Build scope description
+    let scopeDesc = '';
+    if (selectedTeams.has('all')) {
+      scopeDesc = 'all league members';
+    } else {
+      const teamNames = Array.from(selectedTeams).map(tid => {
+        const team = teams.find(t => t.id.toLowerCase() === tid);
+        return team ? capitalize(team.name) : capitalize(tid);
+      }).join(', ');
+      scopeDesc = `team${selectedTeams.size > 1 ? 's' : ''}: ${teamNames}`;
+    }
+    
+    // Confirm before sending
+    const confirmMsg = `Send this notification to ${recipients.length} recipient${recipients.length > 1 ? 's' : ''} (${scopeDesc})?\n\nTitle: ${title}\nMessage: ${body.substring(0, 100)}${body.length > 100 ? '...' : ''}`;
+    if (!confirm(confirmMsg)) {
+      return;
+    }
+    
+    const btn = document.getElementById('sendNotificationBtn');
+    const originalText = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '⏳ Sending...';
+    
+    try {
+      // Get recipient user IDs
+      const recipientIds = recipients.map(u => u.id);
+      
+      // Determine if this is league-wide or team-specific
+      const isLeagueWide = selectedTeams.has('all') && userScope === 'all';
+      const targetTeams = isLeagueWide ? [] : Array.from(selectedTeams);
+      
+      const sendAnnouncementFn = httpsCallable(functions, 'sendAnnouncement');
+      const result = await sendAnnouncementFn({
+        title,
+        body,
+        link,
+        priority,
+        targetTeams,
+        recipientIds,
+        isLeagueWide
+      });
+      
+      showToast(`✅ ${result.data.message || 'Notification sent successfully!'}`, 'success');
+      
+      // Clear form
+      document.getElementById('notificationTitle').value = '';
+      document.getElementById('notificationBody').value = '';
+      document.getElementById('notificationPriority').value = 'normal';
+      document.getElementById('notificationLinkType').value = '';
+      document.getElementById('notificationCustomLink').value = '';
+      document.getElementById('customLinkGroup').style.display = 'none';
+      document.getElementById('previewPanel').classList.remove('visible');
+      document.getElementById('titleCharCount').textContent = '0';
+      document.getElementById('bodyCharCount').textContent = '0';
+      
+      // Refresh recent announcements
+      await loadRecentAnnouncements();
+      
+      // Update send button state
+      updateSendButton();
+      
+    } catch (error) {
+      console.error('Error sending notification:', error);
+      showToast(`❌ ${error.message || 'Failed to send notification'}`, 'error');
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = originalText;
+      updateSendButton();
+    }
+  };
+
+  // ========================================
+  // TEST NOTIFICATION
+  // ========================================
+
+  window.sendTestNotification = async function() {
+    const btn = document.getElementById('testNotificationBtn');
+    const status = document.getElementById('testNotificationStatus');
+    const originalText = btn.innerHTML;
+    
+    btn.disabled = true;
+    btn.innerHTML = '⏳ Sending...';
+    status.textContent = '';
+    status.style.color = '';
+    
+    try {
+      const testNotificationFn = httpsCallable(functions, 'testNotification');
+      const result = await testNotificationFn({});
+      
+      status.textContent = '✅ Test sent! Check your notifications.';
+      status.style.color = 'var(--success-color)';
+      showToast('Test notification sent!', 'success');
+      
+    } catch (error) {
+      console.error('Error sending test notification:', error);
+      status.textContent = `❌ ${error.message || 'Failed'}`;
+      status.style.color = 'var(--danger-color)';
+      showToast(error.message || 'Failed to send test notification', 'error');
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = originalText;
+    }
+  };
+
+  // ========================================
+  // RECENT ANNOUNCEMENTS
+  // ========================================
+
+  window.loadRecentAnnouncements = async function() {
+    const listEl = document.getElementById('recentAnnouncementsList');
+    listEl.innerHTML = '<div class="loading-text">Loading...</div>';
+    
+    try {
+      const q = query(
+        collection(db, 'announcements'),
+        orderBy('sentAt', 'desc'),
+        limit(10)
+      );
+      
+      const snapshot = await getDocs(q);
+      
+      if (snapshot.empty) {
+        listEl.innerHTML = '<div class="no-recipients">No announcements sent yet</div>';
+        return;
+      }
+      
+      listEl.innerHTML = snapshot.docs.map(doc => {
+        const data = doc.data();
+        const sentAt = data.sentAt?.toDate?.() 
+          ? data.sentAt.toDate().toLocaleString('en-US', {
+              month: 'short',
+              day: 'numeric',
+              hour: 'numeric',
+              minute: '2-digit'
+            })
+          : 'Unknown';
+        
+        const priorityClass = data.priority === 'urgent' 
+          ? 'priority-urgent'
+          : data.priority === 'info'
+          ? 'priority-info'
+          : 'priority-normal';
+        
+        const priorityLabel = data.priority === 'urgent' 
+          ? '🚨 Urgent'
+          : data.priority === 'info'
+          ? 'ℹ️ Info'
+          : '📢 Normal';
+        
+        const scopeLabel = data.isLeagueWide 
+          ? 'League-wide' 
+          : (data.targetTeams?.length > 0 
+            ? data.targetTeams.map(t => capitalize(t)).join(', ')
+            : 'Custom');
+        
+        return `
+          <div class="recent-item">
+            <div class="recent-item-header">
+              <div class="recent-item-title">${data.title || 'Untitled'}</div>
+              <span class="priority-badge ${priorityClass}">${priorityLabel}</span>
+            </div>
+            <div style="font-size: 0.85rem; color: var(--text-light); line-height: 1.4;">
+              ${data.body?.substring(0, 100) || ''}${(data.body?.length || 0) > 100 ? '...' : ''}
+            </div>
+            <div class="recent-item-meta">
+              ${sentAt} by ${data.sentByName || 'Unknown'} • ${data.recipientCount || 0} recipients • ${scopeLabel}
+            </div>
+          </div>
+        `;
+      }).join('');
+      
+    } catch (error) {
+      console.error('Error loading announcements:', error);
+      listEl.innerHTML = '<div class="no-recipients">Error loading announcements</div>';
+    }
+  };
+
+  // ========================================
+  // UTILITY FUNCTIONS
+  // ========================================
+
+  function capitalize(str) {
+    if (!str) return '';
+    return str.charAt(0).toUpperCase() + str.slice(1);
+  }
+
+  function showToast(message, type = 'success') {
+    const container = document.getElementById('toastContainer');
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+    
+    const icon = type === 'success' ? '✓' : type === 'error' ? '✕' : '⚠';
+    toast.innerHTML = `<span>${icon}</span> ${message}`;
+    
+    container.appendChild(toast);
+    
+    setTimeout(() => {
+      toast.style.opacity = '0';
+      toast.style.transform = 'translateX(100%)';
+      setTimeout(() => toast.remove(), 300);
+    }, 4000);
+  }
+</script>
+
+<script type="module">
+  import { NavigationComponent } from './nav-component.js';
+</script>
+<script src="mobile-enhancements.js"></script>
+</body>
+</html>
