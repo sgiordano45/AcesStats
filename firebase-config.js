@@ -3,6 +3,7 @@
 
 // Import Firebase SDK from CDN
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+import { getAnalytics } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-analytics.js';
 import { 
   initializeFirestore,
   collection, 
@@ -24,11 +25,15 @@ const firebaseConfig = {
   projectId: "acessoftballreference-84791",
   storageBucket: "acessoftballreference-84791.firebasestorage.app",
   messagingSenderId: "777699560175",
-  appId: "1:777699560175:web:4092b422e7d7116352e91a"
+  appId: "1:777699560175:web:4092b422e7d7116352e91a",
+  measurementId: "G-1F8JKZH6DZ"
 };
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
+
+// Initialize Google Analytics
+const analytics = getAnalytics(app);
 
 // Detect Safari for cache strategy
 const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
@@ -57,6 +62,7 @@ export {
   db,
   storage,
   messaging,
+  analytics,
   VAPID_KEY,
   collection, 
   doc, 
