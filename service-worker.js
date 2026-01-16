@@ -1,8 +1,8 @@
 // service-worker.js - Unified Service Worker
 // Handles both offline functionality AND Firebase Cloud Messaging
-// Version 2.0.0 - JS files now use network-first (no more version bumps for JS updates!)
+// Version 2.0.1 - Simplified SW activation (fixes Chrome reload loop)
 
-const CACHE_VERSION = 'aces-v2.0.0';
+const CACHE_VERSION = 'aces-v2.0.1';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const DYNAMIC_CACHE = `${CACHE_VERSION}-dynamic`;
 const IMAGE_CACHE = `${CACHE_VERSION}-images`;
@@ -225,23 +225,12 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('message', (event) => {
   console.log('[SW] Received message:', event.data);
   
-  // Handle skip waiting message - activate new service worker immediately
+  // Handle skip waiting message - just call skipWaiting and let activate event handle the rest
   if (event.data && event.data.type === 'SKIP_WAITING') {
-    console.log('[SW] SKIP_WAITING requested - activating immediately');
-    self.skipWaiting().then(() => {
-      console.log('[SW] skipWaiting complete, claiming clients');
-      return self.clients.claim();
-    }).then(() => {
-      console.log('[SW] Now controlling all clients');
-      // Notify all clients to reload
-      return self.clients.matchAll();
-    }).then(clients => {
-      clients.forEach(client => {
-        client.postMessage({ type: 'SW_UPDATED' });
-      });
-    }).catch(err => {
-      console.error('[SW] skipWaiting error:', err);
-    });
+    console.log('[SW] SKIP_WAITING requested');
+    self.skipWaiting();
+    // Note: clients.claim() is called in the activate event handler
+    // controllerchange event will fire on the page when this SW takes control
   }
 
   // Handle cache URLs message

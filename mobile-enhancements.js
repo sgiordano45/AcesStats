@@ -526,39 +526,38 @@
 
       let hasReloaded = false;
 
-      function doReload(source) {
+      function doReload() {
         if (hasReloaded) return;
         hasReloaded = true;
         sessionStorage.setItem(swUpdateKey, now.toString());
-        console.log(`✅ SW active (${source}) - reloading`);
+        console.log('✅ New SW in control - reloading');
         window.location.reload();
       }
 
-      // Method 1: controllerchange event (preferred)
-      navigator.serviceWorker.addEventListener('controllerchange', () => {
-        doReload('controllerchange');
-      }, { once: true });
-
-      // Method 2: SW_UPDATED message (backup)
-      navigator.serviceWorker.addEventListener('message', (event) => {
-        if (event.data && event.data.type === 'SW_UPDATED') {
-          doReload('message');
-        }
-      });
-
-      // Method 3: Fallback timeout (5 seconds) - only if SW actually changed
-      setTimeout(() => {
-        if (hasReloaded) return;
-        if (registration.waiting || registration.installing) {
-          doReload('timeout');
-        }
-      }, 5000);
+      // Listen for controllerchange - fires when new SW takes control
+      navigator.serviceWorker.addEventListener('controllerchange', doReload, { once: true });
 
       // Trigger the update after delay
       setTimeout(() => {
         if (registration.waiting) {
-          console.log('📤 Activating new service worker');
+          console.log('📤 Sending SKIP_WAITING to service worker');
           registration.waiting.postMessage({ type: 'SKIP_WAITING' });
+          
+          // Fallback: if controllerchange doesn't fire within 3 seconds,
+          // check if the waiting SW is gone (update succeeded)
+          setTimeout(() => {
+            if (hasReloaded) return;
+            // Re-check registration state
+            navigator.serviceWorker.getRegistration().then(reg => {
+              if (reg && !reg.waiting) {
+                // No more waiting SW = update succeeded, safe to reload
+                console.log('✅ SW update confirmed (no waiting), reloading');
+                doReload();
+              } else if (reg && reg.waiting) {
+                console.log('⚠️ SW still waiting after 3s - may need manual refresh');
+              }
+            });
+          }, 3000);
         }
       }, AUTO_UPDATE_DELAY_MS);
     }
