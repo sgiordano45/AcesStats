@@ -3880,207 +3880,83 @@
   });
 </script>
 
-<!-- Service Worker Registration with Automatic Updates -->
-<!-- Updates automatically in background - no user interaction needed -->
+<!-- Online/Offline Status Indicator -->
+<!-- Service Worker registration handled by mobile-enhancements.js -->
 
 <script>
-// Simplified Service Worker Registration - Immediate Auto-Update
-if ('serviceWorker' in navigator) {
-  console.log('✅ Service Worker API available');
-  
-  // Configuration
-  const AUTO_UPDATE_DELAY_MS = 3 * 1000; // 3 seconds - update almost immediately
-  
-  window.addEventListener('load', async () => {
-    try {
-      console.log('🔄 Attempting to register service worker...');
-      
-      const registration = await navigator.serviceWorker.register('/service-worker.js', {
-        scope: '/'
-      });
-      
-      console.log('✅ Service Worker registered successfully!');
-      console.log('📦 Scope:', registration.scope);
+// Show online/offline status indicator
+function updateOnlineStatus() {
+  const existingIndicator = document.getElementById('onlineStatusIndicator');
+  if (existingIndicator) {
+    existingIndicator.remove();
+  }
 
-      // Check current state
-      if (registration.installing) {
-        console.log('⏳ Service Worker installing...');
-      } else if (registration.waiting) {
-        console.log('⏳ Service Worker waiting - update available!');
-        handleUpdateAvailable(registration);
-      } else if (registration.active) {
-        console.log('✅ Service Worker active!');
-        
-        // Clear app badge when PWA is opened (iOS badge support)
-        if ('clearAppBadge' in navigator) {
-          navigator.clearAppBadge().then(() => {
-            console.log('✅ App badge cleared');
-          }).catch(() => {});
+  if (!navigator.onLine) {
+    const indicator = document.createElement('div');
+    indicator.id = 'onlineStatusIndicator';
+    indicator.className = 'online-status-indicator offline';
+    indicator.innerHTML = `
+      <span class="status-icon">📡</span>
+      <span class="status-text">Offline Mode</span>
+    `;
+
+    if (!document.getElementById('online-status-styles')) {
+      const styles = document.createElement('style');
+      styles.id = 'online-status-styles';
+      styles.textContent = `
+        .online-status-indicator {
+          position: fixed;
+          top: 20px;
+          right: 20px;
+          background: #1e293b;
+          color: white;
+          padding: 10px 16px;
+          border-radius: 8px;
+          font-size: 14px;
+          font-weight: 500;
+          z-index: 9998;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+          animation: fadeIn 0.3s ease;
         }
-      }
-
-      // Listen for updates
-      registration.addEventListener('updatefound', () => {
-        const newWorker = registration.installing;
-        console.log('🔄 Service Worker update found');
-
-        newWorker.addEventListener('statechange', () => {
-          console.log('🔄 New service worker state:', newWorker.state);
-          
-          if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-            console.log('📢 New version available!');
-            handleUpdateAvailable(registration);
-          }
-        });
-      });
-
-      // Check for updates every hour
-      setInterval(() => {
-        console.log('🔄 Checking for Service Worker updates...');
-        registration.update();
-      }, 60 * 60 * 1000);
-
-    } catch (error) {
-      console.error('❌ Service Worker registration FAILED:', error);
-    }
-  });
-
-  // Handle when an update is available
-  function handleUpdateAvailable(registration) {
-    // Auto-update immediately in background - no user interaction needed
-    console.log('🔄 Update available - applying automatically');
-    
-    let hasReloaded = false;
-    
-    // Method 1: Listen for controllerchange (preferred)
-    navigator.serviceWorker.addEventListener('controllerchange', () => {
-      if (hasReloaded) return;
-      hasReloaded = true;
-      console.log('✅ New service worker active (controllerchange) - reloading');
-      window.location.reload();
-    }, { once: true });
-    
-    // Method 2: Listen for SW_UPDATED message (backup)
-    navigator.serviceWorker.addEventListener('message', (event) => {
-      if (event.data && event.data.type === 'SW_UPDATED') {
-        if (hasReloaded) return;
-        hasReloaded = true;
-        console.log('✅ New service worker active (message) - reloading');
-        window.location.reload();
-      }
-    });
-    
-    // Method 3: Fallback timeout - force reload after 5 seconds if nothing else worked
-    setTimeout(() => {
-      if (hasReloaded) return;
-      // Check if we have a new controller
-      if (navigator.serviceWorker.controller) {
-        hasReloaded = true;
-        console.log('⏰ Fallback timeout - forcing reload');
-        window.location.reload();
-      }
-    }, 5000);
-    
-    // Brief delay to ensure page is stable, then trigger update
-    setTimeout(() => {
-      if (registration.waiting) {
-        console.log('📤 Activating new service worker');
-        registration.waiting.postMessage({ type: 'SKIP_WAITING' });
-      }
-    }, AUTO_UPDATE_DELAY_MS);
-  }
-
-  // Show online/offline status indicator
-  function updateOnlineStatus() {
-    const existingIndicator = document.getElementById('onlineStatusIndicator');
-    if (existingIndicator) {
-      existingIndicator.remove();
-    }
-
-    if (!navigator.onLine) {
-      const indicator = document.createElement('div');
-      indicator.id = 'onlineStatusIndicator';
-      indicator.className = 'online-status-indicator offline';
-      indicator.innerHTML = `
-        <span class="status-icon">📡</span>
-        <span class="status-text">Offline Mode</span>
-      `;
-
-      if (!document.getElementById('online-status-styles')) {
-        const styles = document.createElement('style');
-        styles.id = 'online-status-styles';
-        styles.textContent = `
+        .online-status-indicator.offline {
+          background: #dc2626;
+        }
+        @keyframes fadeIn {
+          from { opacity: 0; transform: translateY(-10px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        @media (max-width: 768px) {
           .online-status-indicator {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            background: white;
-            padding: 10px 16px;
-            border-radius: 50px;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            z-index: 9999;
-            animation: slideInRight 0.3s ease-out;
-            font-size: 14px;
-            font-weight: 600;
+            top: 10px;
+            right: 10px;
+            font-size: 12px;
+            padding: 8px 12px;
           }
-
-          .online-status-indicator.offline {
-            background: #fff3cd;
-            border: 2px solid #ffc107;
-            color: #856404;
-          }
-
-          .status-icon {
-            font-size: 16px;
-          }
-
-          @keyframes slideInRight {
-            from {
-              transform: translateX(100px);
-              opacity: 0;
-            }
-            to {
-              transform: translateX(0);
-              opacity: 1;
-            }
-          }
-
-          @media (max-width: 768px) {
-            .online-status-indicator {
-              top: 10px;
-              right: 10px;
-              font-size: 12px;
-              padding: 8px 12px;
-            }
-          }
-        `;
-        document.head.appendChild(styles);
-      }
-
-      document.body.appendChild(indicator);
+        }
+      `;
+      document.head.appendChild(styles);
     }
-  }
 
-  // Listen for online/offline events
-  window.addEventListener('online', () => {
-    console.log('🌐 Connection restored');
-    updateOnlineStatus();
-  });
-  
-  window.addEventListener('offline', () => {
-    console.log('📡 Connection lost - offline mode active');
-    updateOnlineStatus();
-  });
-  
-  // Check status on load
-  updateOnlineStatus();
-  
-} else {
-  console.error('❌ Service Worker API not available in this browser');
+    document.body.appendChild(indicator);
+  }
 }
+
+// Listen for online/offline events
+window.addEventListener('online', () => {
+  console.log('🌐 Connection restored');
+  updateOnlineStatus();
+});
+
+window.addEventListener('offline', () => {
+  console.log('📡 Connection lost - offline mode active');
+  updateOnlineStatus();
+});
+
+// Check status on load
+updateOnlineStatus();
 </script>
 
 <!-- Load offline queue manager -->
