@@ -909,7 +909,7 @@
             <p><strong>Team:</strong> <span id="linkedTeamName"></span></p>
           </div>
           <div class="linked-buttons">
-            <button class="btn btn-profile" onclick="window.location.href='profile.html'">
+            <button class="btn btn-profile" id="profileButton">
               <span>Go to Profile Page →</span>
             </button>
             <button class="btn btn-secondary" onclick="unlinkPlayer()">
@@ -1013,6 +1013,25 @@
 	let suggestedPlayer = null;
 	let userAuthMethod = 'unknown'; // 'google' or 'email'
 	
+    // Helper function to check if profile setup is complete
+    function isProfileSetupComplete(profileData) {
+      if (!profileData) return false;
+      
+      const progress = profileData.profileSetupProgress || {};
+      
+      // Step 1: Player Info
+      const step1Done = !!(profileData.position || profileData.primaryPosition || 
+                           (profileData.bats && profileData.throws)) || progress.playerInfoDismissed;
+      // Step 2: App Install
+      const step2Done = progress.appInstallComplete || progress.appInstallDismissed;
+      // Step 3: Notifications
+      const step3Done = profileData.notificationsEnabled === true || progress.notificationsDismissed;
+      // Step 4: Directory
+      const step4Done = profileData.directoryOptIn === true || progress.directoryDismissed;
+      
+      return step1Done && step2Done && step3Done && step4Done;
+    }
+	
 	
     // Initialize
     onAuthChange(async (user) => {
@@ -1108,6 +1127,16 @@ async function handleUserLoggedIn(user) {
       document.getElementById('selectionSection').style.display = 'none';
       document.getElementById('linkedPlayerName').textContent = profileData.linkedPlayer || 'Unknown';
       document.getElementById('linkedTeamName').textContent = profileData.linkedTeam || 'Unknown';
+      
+      // Check if profile setup is complete and update button accordingly
+      const profileBtn = document.getElementById('profileButton');
+      if (isProfileSetupComplete(profileData)) {
+        profileBtn.innerHTML = '<span>Go to Profile Page →</span>';
+        profileBtn.onclick = () => window.location.href = 'profile.html';
+      } else {
+        profileBtn.innerHTML = '<span>Continue Profile Setup →</span>';
+        profileBtn.onclick = () => window.location.href = 'profile-setup-guide.html';
+      }
     }
     
     function showPendingRequest(request) {
@@ -1150,9 +1179,9 @@ async function handleUserLoggedIn(user) {
         
         if (result.success) {
           console.log('✅ Auto-approval processed');
-          // Reload page to show linked status
+          // Redirect to profile setup guide
           setTimeout(() => {
-            window.location.reload();
+            window.location.href = 'profile-setup-guide.html';
           }, 2000);
         }
       } catch (error) {
