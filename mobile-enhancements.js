@@ -466,6 +466,11 @@
       .then(registration => {
         console.log('✅ Service Worker registered');
 
+        // Force check for updates (Safari doesn't always check automatically)
+        registration.update().then(() => {
+          console.log('🔍 Update check complete');
+        });
+
         // If there's already a waiting worker, activate it
         if (registration.waiting) {
           console.log('🔄 Update waiting - activating');
