@@ -1136,7 +1136,7 @@ exports.sendAnnouncement = functions.https.onCall(async (data, context) => {
   
   const userId = context.auth.uid;
   
-  // Verify admin or league-staff role
+  // Verify admin, league-staff, or captain role
   const userDoc = await db.collection('users').doc(userId).get();
   if (!userDoc.exists) {
     throw new functions.https.HttpsError(
@@ -1146,18 +1146,28 @@ exports.sendAnnouncement = functions.https.onCall(async (data, context) => {
   }
   
   const userData = userDoc.data();
-  const userRole = userData.role || 'fan';
+  const userRole = userData.role || userData.userRole || 'fan';
+  const isCaptain = userData.isCaptain === true || userRole === 'captain';
   const allowedRoles = ['admin', 'league-staff'];
   
-  if (!allowedRoles.includes(userRole)) {
+  // Captains can send, but only to specific recipients (enforced below)
+  if (!allowedRoles.includes(userRole) && !isCaptain) {
     throw new functions.https.HttpsError(
       'permission-denied',
-      'Only admins and league staff can send announcements.'
+      'Only admins, league staff, and captains can send announcements.'
     );
   }
   
   // Validate required fields
-  const { title, body, link, priority } = data;
+  const { title, body, link, priority, recipientUserIds } = data;
+  
+  // Captains MUST specify recipients (can't send to everyone)
+  if (isCaptain && !allowedRoles.includes(userRole) && (!recipientUserIds || recipientUserIds.length === 0)) {
+    throw new functions.https.HttpsError(
+      'invalid-argument',
+      'Captains must specify recipients.'
+    );
+  }
   
   if (!title || !body) {
     throw new functions.https.HttpsError(
@@ -1182,8 +1192,35 @@ exports.sendAnnouncement = functions.https.onCall(async (data, context) => {
   
   console.log(`📢 Sending announcement from ${userData.displayName || userId}: "${title}"`);
   
-  // Get all tokens for users who have announcements enabled
-  const tokens = await getAllAnnouncementTokens();
+  // Get tokens based on whether specific recipients are provided
+  let tokens = [];
+  let targetUserIds = [];
+  
+  if (recipientUserIds && recipientUserIds.length > 0) {
+    // Send to specific users only
+    console.log(`Filtering to ${recipientUserIds.length} specific recipients`);
+    targetUserIds = recipientUserIds;
+    
+    // Get tokens for specific users
+    for (const recipientId of recipientUserIds) {
+      const recipientDoc = await db.collection('users').doc(recipientId).get();
+      if (!recipientDoc.exists) continue;
+      
+      const recipientData = recipientDoc.data();
+      
+      // Check if user has notifications enabled and wants announcements
+      if (recipientData.notificationsEnabled !== false && 
+          recipientData.notificationPreferences?.announcements !== false) {
+        const fcmTokens = recipientData.fcmTokens || [];
+        tokens.push(...fcmTokens);
+      }
+    }
+  } else {
+    // Send to all users with announcements enabled (league-wide)
+    console.log('Sending to all users with announcements enabled');
+    tokens = await getAllAnnouncementTokens();
+    targetUserIds = await getAnnouncementUserIds();
+  }
   
   if (tokens.length === 0) {
     console.log('No tokens to notify');
@@ -1229,9 +1266,8 @@ exports.sendAnnouncement = functions.https.onCall(async (data, context) => {
   
   const result = await sendToTokens(tokens, message);
   
-  // Save to notification feed for all users with announcements enabled
-  const announcementUserIds = await getAnnouncementUserIds();
-  await saveNotificationToFeed(announcementUserIds, {
+  // Save to notification feed for targeted users only
+  await saveNotificationToFeed(targetUserIds, {
     title: `${emoji} ${title}`,
     body: body,
     type: 'announcement',
@@ -1249,16 +1285,19 @@ exports.sendAnnouncement = functions.https.onCall(async (data, context) => {
     sentByName: userData.displayName || 'League Admin',
     sentAt: admin.firestore.FieldValue.serverTimestamp(),
     recipientCount: result.successCount,
-    failureCount: result.failureCount
+    failureCount: result.failureCount,
+    targetedUserCount: targetUserIds.length,
+    wasFiltered: recipientUserIds && recipientUserIds.length > 0
   });
   
-  console.log(`✅ Announcement sent: ${result.successCount} success, ${result.failureCount} failed`);
+  console.log(`✅ Announcement sent: ${result.successCount} success, ${result.failureCount} failed (targeted ${targetUserIds.length} users)`);
   
   return {
     success: true,
-    message: `Announcement sent to ${result.successCount} users.`,
+    message: `Announcement sent to ${result.successCount} of ${targetUserIds.length} targeted users.`,
     recipientCount: result.successCount,
-    failureCount: result.failureCount
+    failureCount: result.failureCount,
+    targetedUserCount: targetUserIds.length
   };
 });
 
