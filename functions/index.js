@@ -1302,6 +1302,211 @@ exports.sendAnnouncement = functions.https.onCall(async (data, context) => {
 });
 
 // ============================================================================
+// 7b. UNSEND ANNOUNCEMENT (Remove from all notification feeds)
+// ============================================================================
+
+/**
+ * Unsend/recall an announcement - removes from all user notification feeds
+ * Callable by admins and league staff only
+ * 
+ * @param {Object} data - { announcementId, title? } - ID from announcements collection
+ * @param {Object} context - Firebase callable context
+ */
+exports.unsendAnnouncement = functions.https.onCall(async (data, context) => {
+  // Verify authentication
+  if (!context.auth) {
+    throw new functions.https.HttpsError(
+      'unauthenticated',
+      'You must be signed in to unsend announcements.'
+    );
+  }
+  
+  const userId = context.auth.uid;
+  
+  // Verify admin or league-staff role
+  const userDoc = await db.collection('users').doc(userId).get();
+  if (!userDoc.exists) {
+    throw new functions.https.HttpsError(
+      'permission-denied',
+      'User profile not found.'
+    );
+  }
+  
+  const userData = userDoc.data();
+  const userRole = userData.role || userData.userRole || 'fan';
+  const allowedRoles = ['admin', 'league-staff'];
+  
+  if (!allowedRoles.includes(userRole)) {
+    throw new functions.https.HttpsError(
+      'permission-denied',
+      'Only admins and league staff can unsend announcements.'
+    );
+  }
+  
+  const { announcementId, title } = data;
+  
+  if (!announcementId) {
+    throw new functions.https.HttpsError(
+      'invalid-argument',
+      'Announcement ID is required.'
+    );
+  }
+  
+  console.log(`🗑️ Unsending announcement ${announcementId} by ${userData.displayName || userId}`);
+  
+  // Get all users and delete matching notifications from their feeds
+  const usersSnapshot = await db.collection('users').get();
+  
+  let deletedCount = 0;
+  const batch = db.batch();
+  let batchCount = 0;
+  const MAX_BATCH = 500; // Firestore batch limit
+  
+  for (const userDoc of usersSnapshot.docs) {
+    // Query this user's notifications for matching announcement
+    const notificationsRef = db.collection('users').doc(userDoc.id).collection('notifications');
+    
+    // Match by title if provided, otherwise we need the exact notification ID
+    let matchQuery;
+    if (title) {
+      matchQuery = notificationsRef
+        .where('type', '==', 'announcement')
+        .where('title', '==', title);
+    } else {
+      // If no title, try to match by metadata.announcementId if we stored it
+      matchQuery = notificationsRef.where('type', '==', 'announcement');
+    }
+    
+    const matchingNotifs = await matchQuery.get();
+    
+    for (const notifDoc of matchingNotifs.docs) {
+      batch.delete(notifDoc.ref);
+      batchCount++;
+      deletedCount++;
+      
+      // Commit batch if approaching limit
+      if (batchCount >= MAX_BATCH) {
+        await batch.commit();
+        batchCount = 0;
+      }
+    }
+  }
+  
+  // Commit remaining batch
+  if (batchCount > 0) {
+    await batch.commit();
+  }
+  
+  // Optionally delete or mark the announcement record
+  try {
+    await db.collection('announcements').doc(announcementId).update({
+      unsent: true,
+      unsentAt: admin.firestore.FieldValue.serverTimestamp(),
+      unsentBy: userId
+    });
+  } catch (e) {
+    console.warn('Could not update announcement record:', e);
+  }
+  
+  console.log(`✅ Unsent announcement: removed ${deletedCount} notifications from user feeds`);
+  
+  return {
+    success: true,
+    message: `Removed notification from ${deletedCount} user feeds.`,
+    deletedCount
+  };
+});
+
+// ============================================================================
+// 7c. CLEANUP NOTIFICATIONS (Admin tool for bulk removal)
+// ============================================================================
+
+/**
+ * Cleanup/remove notifications in bulk - admin only
+ * Useful for removing accidental notifications or clearing old ones
+ * 
+ * @param {Object} data - { title?, type?, all? }
+ * @param {Object} context - Firebase callable context
+ */
+exports.cleanupNotifications = functions.https.onCall(async (data, context) => {
+  // Verify authentication
+  if (!context.auth) {
+    throw new functions.https.HttpsError(
+      'unauthenticated',
+      'You must be signed in.'
+    );
+  }
+  
+  const userId = context.auth.uid;
+  
+  // Verify admin role only (not even league-staff for this)
+  const userDoc = await db.collection('users').doc(userId).get();
+  if (!userDoc.exists) {
+    throw new functions.https.HttpsError(
+      'permission-denied',
+      'User profile not found.'
+    );
+  }
+  
+  const userData = userDoc.data();
+  const userRole = userData.role || userData.userRole || 'fan';
+  const isAdmin = userRole === 'admin' || userData.isAdmin === true;
+  
+  if (!isAdmin) {
+    throw new functions.https.HttpsError(
+      'permission-denied',
+      'Only admins can run bulk cleanup.'
+    );
+  }
+  
+  const { title, type, all } = data;
+  
+  if (!title && !type && !all) {
+    throw new functions.https.HttpsError(
+      'invalid-argument',
+      'Specify title, type, or all:true'
+    );
+  }
+  
+  console.log(`🧹 Cleanup requested by ${userData.displayName || userId}:`, { title, type, all });
+  
+  const usersSnapshot = await db.collection('users').get();
+  
+  let totalDeleted = 0;
+  let usersAffected = 0;
+  
+  for (const userDoc of usersSnapshot.docs) {
+    const notificationsRef = db.collection('users').doc(userDoc.id).collection('notifications');
+    
+    let matchingNotifs;
+    if (all === true) {
+      matchingNotifs = await notificationsRef.get();
+    } else if (title) {
+      matchingNotifs = await notificationsRef.where('title', '==', title).get();
+    } else if (type) {
+      matchingNotifs = await notificationsRef.where('type', '==', type).get();
+    }
+    
+    if (matchingNotifs && !matchingNotifs.empty) {
+      usersAffected++;
+      for (const notifDoc of matchingNotifs.docs) {
+        await notifDoc.ref.delete();
+        totalDeleted++;
+      }
+    }
+  }
+  
+  console.log(`✅ Cleanup complete: ${totalDeleted} notifications from ${usersAffected} users`);
+  
+  return {
+    success: true,
+    message: `Deleted ${totalDeleted} notifications from ${usersAffected} users.`,
+    totalDeleted,
+    usersAffected
+  };
+});
+
+// ============================================================================
 // 8. TEST NOTIFICATION (Callable function for users to test their setup)
 // ============================================================================
 
