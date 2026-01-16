@@ -1114,6 +1114,21 @@ body {
     </div>
   </div>
 
+  <!-- Profile Setup Guide Banner (shows when setup incomplete) -->
+  <div id="setupGuideBanner" style="display: none; margin: 1rem auto; max-width: 1200px; padding: 0 2rem;">
+    <div style="background: linear-gradient(135deg, #dcfce7 0%, #d1fae5 100%); border: 2px solid #22c55e; padding: 1rem 1.25rem; border-radius: 12px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem;">
+      <div>
+        <strong style="color: #166534; font-size: 15px;">📋 Complete Your Profile Setup</strong>
+        <p style="margin: 0.25rem 0 0 0; color: #15803d; font-size: 14px;">
+          Finish setting up notifications and other preferences to get the most out of your Aces experience.
+        </p>
+      </div>
+      <a href="profile-setup-guide.html" style="background: linear-gradient(135deg, #2d5016 0%, #1a6b4a 100%); color: white; padding: 0.75rem 1.25rem; border-radius: 10px; text-decoration: none; font-weight: 600; font-size: 14px; white-space: nowrap;">
+        Continue Setup →
+      </a>
+    </div>
+  </div>
+
 
   <!-- Navigation Tabs -->
   <nav class="nav-tabs">
@@ -2398,6 +2413,37 @@ import { updateDoc } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-fi
     let allPlayers = [];
 
     console.log('📄 Profile page loading...');
+
+// Check if profile setup is complete and show/hide banner
+function checkAndShowSetupBanner(profileData) {
+  const banner = document.getElementById('setupGuideBanner');
+  if (!banner) return;
+  
+  if (!profileData) {
+    // No profile data - show setup banner
+    banner.style.display = 'block';
+    return;
+  }
+  
+  const progress = profileData.profileSetupProgress || {};
+  
+  // Step 1: Player Info
+  const step1Done = !!(profileData.position || profileData.primaryPosition || 
+                       (profileData.bats && profileData.throws)) || progress.playerInfoDismissed;
+  
+  // Step 2: Notifications - check for actual FCM tokens
+  const step2Done = (profileData.fcmTokens && profileData.fcmTokens.length > 0) || progress.notificationsDismissed;
+  
+  // Step 3: Directory
+  const step3Done = profileData.directoryOptIn === true || progress.directoryDismissed;
+  
+  const isComplete = step1Done && step2Done && step3Done;
+  
+  console.log('📋 Setup status:', { step1Done, step2Done, step3Done, isComplete });
+  
+  banner.style.display = isComplete ? 'none' : 'block';
+}
+
 // Add this function to load notification preferences:
 async function loadNotificationPreferences() {
   try {
@@ -2579,6 +2625,9 @@ async function loadNotificationPreferences() {
           console.log('⚠️ No profile data found');
           userProfile = null;
         }
+        
+        // Check if profile setup is complete and show/hide banner
+        checkAndShowSetupBanner(userProfile);
         
         // If there's a mergedFromProfile, load that old profile data too
         let mergedProfileData = null;
