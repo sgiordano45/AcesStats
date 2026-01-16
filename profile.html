@@ -1572,6 +1572,59 @@ body {
           <button id="enable-notifications-btn" class="btn btn-primary" style="display: none;">
             🔔 Enable Push Notifications
           </button>
+          
+          <!-- Blocked Notifications Help Panel -->
+          <div id="notification-blocked-help" style="display: none; background: #fef3c7; border: 1px solid #fcd34d; border-radius: 8px; padding: 1rem; margin-top: 1rem;">
+            <h4 style="margin: 0 0 0.75rem 0; color: #92400e; font-size: 0.95rem;">🚫 Notifications are blocked</h4>
+            <p style="margin: 0 0 1rem 0; font-size: 0.85rem; color: #78350f;">
+              Your browser has blocked notifications for this site. To enable them, follow these steps:
+            </p>
+            
+            <div id="blocked-instructions-desktop" style="display: none;">
+              <p style="margin: 0 0 0.5rem 0; font-size: 0.85rem; color: #78350f;"><strong>Chrome/Edge Desktop:</strong></p>
+              <ol style="margin: 0; padding-left: 1.25rem; font-size: 0.85rem; color: #78350f;">
+                <li>Click the lock icon (🔒) in the address bar</li>
+                <li>Find "Notifications" in the dropdown</li>
+                <li>Change from "Block" to "Allow"</li>
+                <li>Refresh this page</li>
+              </ol>
+            </div>
+            
+            <div id="blocked-instructions-android" style="display: none;">
+              <p style="margin: 0 0 0.5rem 0; font-size: 0.85rem; color: #78350f;"><strong>Android:</strong></p>
+              <ol style="margin: 0; padding-left: 1.25rem; font-size: 0.85rem; color: #78350f;">
+                <li>Open your device Settings</li>
+                <li>Go to Apps → Aces (or your browser)</li>
+                <li>Tap Notifications → Allow</li>
+                <li>Return here and refresh</li>
+              </ol>
+            </div>
+            
+            <div id="blocked-instructions-ios" style="display: none;">
+              <p style="margin: 0 0 0.5rem 0; font-size: 0.85rem; color: #78350f;"><strong>iPhone/iPad:</strong></p>
+              <ol style="margin: 0; padding-left: 1.25rem; font-size: 0.85rem; color: #78350f;">
+                <li>Make sure the app is added to your Home Screen</li>
+                <li>Open Settings → Notifications</li>
+                <li>Find "Aces" and enable Allow Notifications</li>
+                <li>Open the app from Home Screen and refresh</li>
+              </ol>
+              <p style="margin: 0.75rem 0 0 0; font-size: 0.8rem; color: #92400e; font-style: italic;">
+                Note: iOS requires the app to be installed to Home Screen for notifications to work.
+              </p>
+            </div>
+            
+            <button onclick="location.reload()" class="btn btn-secondary" style="margin-top: 1rem; font-size: 0.85rem;">
+              🔄 Refresh Page
+            </button>
+          </div>
+          
+          <!-- Not Supported Panel -->
+          <div id="notification-not-supported" style="display: none; background: #fee2e2; border: 1px solid #fca5a5; border-radius: 8px; padding: 1rem; margin-top: 1rem;">
+            <h4 style="margin: 0 0 0.5rem 0; color: #991b1b; font-size: 0.95rem;">❌ Notifications not supported</h4>
+            <p style="margin: 0; font-size: 0.85rem; color: #7f1d1d;">
+              Your browser doesn't support push notifications. Try using Chrome, Edge, Firefox, or Safari on a supported device.
+            </p>
+          </div>
         </div>
         
         <div id="notification-preferences" style="display: none;">
@@ -2352,7 +2405,43 @@ async function loadNotificationPreferences() {
     const enableBtn = document.getElementById('enable-notifications-btn');
     const prefsSection = document.getElementById('notification-preferences');
     const disableBtn = document.getElementById('disable-notifications-btn');
+    const blockedHelp = document.getElementById('notification-blocked-help');
+    const notSupported = document.getElementById('notification-not-supported');
     
+    // Hide all panels first
+    enableBtn.style.display = 'none';
+    prefsSection.style.display = 'none';
+    disableBtn.style.display = 'none';
+    blockedHelp.style.display = 'none';
+    notSupported.style.display = 'none';
+    
+    // Check if notifications are supported
+    if (!('Notification' in window)) {
+      statusText.textContent = '❌ Push notifications are not supported';
+      statusText.style.color = '#dc2626';
+      notSupported.style.display = 'block';
+      return;
+    }
+    
+    // Check if permission is denied (blocked)
+    if (Notification.permission === 'denied') {
+      statusText.textContent = '🚫 Push notifications are blocked';
+      statusText.style.color = '#d97706';
+      blockedHelp.style.display = 'block';
+      
+      // Show platform-specific instructions
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+      const isAndroid = /Android/.test(navigator.userAgent);
+      const isMobile = isIOS || isAndroid;
+      
+      document.getElementById('blocked-instructions-desktop').style.display = isMobile ? 'none' : 'block';
+      document.getElementById('blocked-instructions-android').style.display = isAndroid ? 'block' : 'none';
+      document.getElementById('blocked-instructions-ios').style.display = isIOS ? 'block' : 'none';
+      
+      return;
+    }
+    
+    // Check if enabled and working
     if (Notification.permission === 'granted' && userData?.notificationsEnabled) {
       statusText.textContent = '✅ Push notifications are enabled';
       statusText.style.color = 'var(--primary-color)';
@@ -2365,6 +2454,7 @@ async function loadNotificationPreferences() {
       document.getElementById('pref-rsvp-reminders').checked = prefs.rsvpReminders?.enabled ?? true;
       document.getElementById('pref-schedule-changes').checked = prefs.scheduleChanges?.enabled ?? true;
       document.getElementById('pref-lineup-changes').checked = prefs.lineupChanges?.enabled ?? true;
+      document.getElementById('pref-announcements').checked = prefs.announcements !== false; // Default true
       document.getElementById('pref-score-updates').checked = prefs.scoreUpdates?.enabled ?? false;
       document.getElementById('pref-final-score-only').checked = prefs.scoreUpdates?.finalScoreOnly ?? true;
       document.getElementById('pref-milestones').checked = prefs.milestones?.enabled ?? true;
@@ -2373,7 +2463,8 @@ async function loadNotificationPreferences() {
       document.getElementById('quiet-end').value = prefs.quietHours?.end || '08:00';
       
     } else {
-      statusText.textContent = '🔕 Push notifications are disabled';
+      // Not enabled yet - show enable button
+      statusText.textContent = '🔕 Push notifications are not enabled';
       statusText.style.color = 'var(--text-light)';
       enableBtn.style.display = 'block';
     }
@@ -4297,12 +4388,26 @@ document.getElementById('enable-notifications-btn')?.addEventListener('click', a
   if (!user) return;
   
   try {
-    await requestNotificationPermission(user.uid);
-    await loadNotificationPreferences(); // Refresh UI
-    showSuccessMessage('successMessagePreferences');
+    const result = await requestNotificationPermission(user.uid);
+    
+    // Check if user denied the permission
+    if (Notification.permission === 'denied') {
+      // User blocked - the loadNotificationPreferences will show the help panel
+      await loadNotificationPreferences();
+      return;
+    }
+    
+    if (result) {
+      await loadNotificationPreferences(); // Refresh UI
+      showSuccessMessage('successMessagePreferences');
+    } else {
+      // Permission wasn't granted but also not explicitly denied (user dismissed)
+      await loadNotificationPreferences();
+    }
   } catch (error) {
     console.error('Error enabling notifications:', error);
-    alert('Failed to enable notifications. Please try again.');
+    // Refresh to show current state (might be blocked)
+    await loadNotificationPreferences();
   }
 });
 
