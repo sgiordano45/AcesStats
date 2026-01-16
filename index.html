@@ -3880,21 +3880,16 @@
   });
 </script>
 
-<!-- Service Worker Registration with Auto-Update -->
-<!-- Auto-updates after 2 hours if user ignores the Update Now button -->
+<!-- Service Worker Registration with Automatic Updates -->
+<!-- Updates automatically in background - no user interaction needed -->
 
 <script>
-// Enhanced Service Worker Registration - With Auto-Update
+// Simplified Service Worker Registration - Immediate Auto-Update
 if ('serviceWorker' in navigator) {
   console.log('✅ Service Worker API available');
   
   // Configuration
-  const AUTO_UPDATE_DELAY_MS = 2 * 60 * 60 * 1000; // 2 hours
-  const REMINDER_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
-  
-  let updateRegistration = null;
-  let updateDetectedAt = null;
-  let reminderInterval = null;
+  const AUTO_UPDATE_DELAY_MS = 3 * 1000; // 3 seconds - update almost immediately
   
   window.addEventListener('load', async () => {
     try {
@@ -3952,232 +3947,23 @@ if ('serviceWorker' in navigator) {
 
   // Handle when an update is available
   function handleUpdateAvailable(registration) {
-    updateRegistration = registration;
+    // Auto-update immediately in background - no user interaction needed
+    console.log('🔄 Update available - applying automatically');
     
-    // Check if we already stored when update was detected
-    const storedTime = localStorage.getItem('swUpdateDetectedAt');
-    if (storedTime) {
-      updateDetectedAt = parseInt(storedTime, 10);
-    } else {
-      updateDetectedAt = Date.now();
-      localStorage.setItem('swUpdateDetectedAt', updateDetectedAt.toString());
-    }
-    
-    // Check if auto-update timeout has passed
-    const timeSinceDetection = Date.now() - updateDetectedAt;
-    if (timeSinceDetection >= AUTO_UPDATE_DELAY_MS) {
-      console.log('⏰ Auto-update timeout reached - forcing update');
-      triggerUpdate(registration, true);
-      return;
-    }
-    
-    // Show notification
-    showUpdateNotification(registration);
-    
-    // Set up auto-update timer for remaining time
-    const remainingTime = AUTO_UPDATE_DELAY_MS - timeSinceDetection;
-    console.log(`⏰ Auto-update in ${Math.round(remainingTime / 1000 / 60)} minutes if not manually updated`);
-    
-    setTimeout(() => {
-      if (updateRegistration && updateRegistration.waiting) {
-        console.log('⏰ Auto-update timeout reached - forcing update');
-        triggerUpdate(updateRegistration, true);
-      }
-    }, remainingTime);
-    
-    // Set up reminder if user dismisses (clear any existing interval first)
-    if (reminderInterval) {
-      clearInterval(reminderInterval);
-    }
-    reminderInterval = setInterval(() => {
-      if (updateRegistration && updateRegistration.waiting) {
-        const existing = document.querySelector('.update-notification');
-        if (!existing) {
-          console.log('🔔 Showing update reminder');
-          showUpdateNotification(updateRegistration);
-        }
-      } else {
-        // No longer waiting, clear the interval
-        clearInterval(reminderInterval);
-        reminderInterval = null;
-      }
-    }, REMINDER_INTERVAL_MS);
-  }
-
-  // Trigger the actual update
-  function triggerUpdate(registration, isAuto = false) {
-    if (isAuto) {
-      console.log('🔄 Auto-updating service worker...');
-    }
-    
-    // Clear the stored detection time
-    localStorage.removeItem('swUpdateDetectedAt');
-    
-    // Clear reminder interval
-    if (reminderInterval) {
-      clearInterval(reminderInterval);
-      reminderInterval = null;
-    }
-    
-    // Set up controller change listener
+    // Set up listener to reload when new SW takes control
     navigator.serviceWorker.addEventListener('controllerchange', () => {
-      console.log('✅ New service worker activated, reloading...');
+      console.log('✅ New service worker active - reloading');
       window.location.reload();
     }, { once: true });
-
-    // Tell the waiting service worker to activate
-    if (registration.waiting) {
-      console.log('📤 Sending SKIP_WAITING message');
-      registration.waiting.postMessage({ type: 'SKIP_WAITING' });
-    }
-  }
-
-  // Show update notification
-  function showUpdateNotification(registration) {
-    console.log('📢 Showing update notification');
     
-    // Remove existing notification if present
-    const existing = document.querySelector('.update-notification');
-    if (existing) {
-      existing.remove();
-    }
-
-    // Calculate time remaining for auto-update
-    const timeSinceDetection = Date.now() - updateDetectedAt;
-    const remainingMinutes = Math.max(0, Math.round((AUTO_UPDATE_DELAY_MS - timeSinceDetection) / 1000 / 60));
-
-    const notification = document.createElement('div');
-    notification.className = 'update-notification';
-    notification.innerHTML = `
-      <div class="update-content">
-        <button class="update-dismiss" title="Dismiss (will auto-update in ${remainingMinutes} min)">×</button>
-        <strong>🎉 Update Available!</strong>
-        <p>A new version of the app is ready.</p>
-        <button id="updateButton" class="update-button">Update Now</button>
-        <p class="update-auto-note">Auto-updates in ${remainingMinutes} minutes</p>
-      </div>
-    `;
-
-    // Add styles
-    if (!document.getElementById('update-notification-styles')) {
-      const styles = document.createElement('style');
-      styles.id = 'update-notification-styles';
-      styles.textContent = `
-        .update-notification {
-          position: fixed;
-          bottom: 20px;
-          left: 50%;
-          transform: translateX(-50%);
-          background: linear-gradient(135deg, #003366, #004488);
-          color: white;
-          padding: 20px;
-          border-radius: 12px;
-          box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
-          z-index: 99999;
-          max-width: 400px;
-          animation: slideUp 0.4s ease-out;
-        }
-        .update-content {
-          position: relative;
-        }
-        .update-content strong {
-          display: block;
-          margin-bottom: 8px;
-          font-size: 18px;
-        }
-        .update-content p {
-          margin: 0 0 12px 0;
-          font-size: 14px;
-          opacity: 0.95;
-        }
-        .update-auto-note {
-          font-size: 11px !important;
-          opacity: 0.7 !important;
-          margin-top: 8px !important;
-          margin-bottom: 0 !important;
-          text-align: center;
-        }
-        .update-dismiss {
-          position: absolute;
-          top: -8px;
-          right: -8px;
-          background: rgba(255,255,255,0.2);
-          border: none;
-          color: white;
-          width: 24px;
-          height: 24px;
-          border-radius: 50%;
-          cursor: pointer;
-          font-size: 16px;
-          line-height: 1;
-        }
-        .update-dismiss:hover {
-          background: rgba(255,255,255,0.3);
-        }
-        .update-button {
-          background: white;
-          color: #003366;
-          border: none;
-          padding: 12px 24px;
-          border-radius: 8px;
-          font-weight: 600;
-          font-size: 15px;
-          cursor: pointer;
-          transition: all 0.2s;
-          width: 100%;
-          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-        }
-        .update-button:hover {
-          transform: translateY(-2px);
-          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
-          background: #f0f0f0;
-        }
-        @keyframes slideUp {
-          from { transform: translate(-50%, 100px); opacity: 0; }
-          to { transform: translate(-50%, 0); opacity: 1; }
-        }
-        @media (max-width: 768px) {
-          .update-notification {
-            left: 10px;
-            right: 10px;
-            transform: none;
-            max-width: none;
-            bottom: 10px;
-          }
-          @keyframes slideUp {
-            from { transform: translateY(100px); opacity: 0; }
-            to { transform: translateY(0); opacity: 1; }
-          }
-        }
-      `;
-      document.head.appendChild(styles);
-    }
-    document.body.appendChild(notification);
-
-    // Handle dismiss button
-    notification.querySelector('.update-dismiss').addEventListener('click', () => {
-      notification.remove();
-    });
-
-    // Handle update button click
-    const updateButton = document.getElementById('updateButton');
-    updateButton.addEventListener('click', () => {
-      console.log('🔄 Update button clicked!');
-      updateButton.textContent = 'Updating...';
-      updateButton.disabled = true;
-      triggerUpdate(registration, false);
-    });
-
-    console.log('✅ Update notification displayed');
+    // Brief delay to ensure page is stable, then update
+    setTimeout(() => {
+      if (registration.waiting) {
+        console.log('📤 Activating new service worker');
+        registration.waiting.postMessage({ type: 'SKIP_WAITING' });
+      }
+    }, AUTO_UPDATE_DELAY_MS);
   }
-
-  // BONUS: Update on navigation away from page (safe moment to update)
-  window.addEventListener('beforeunload', () => {
-    if (updateRegistration && updateRegistration.waiting) {
-      // Don't wait for response, just trigger it
-      updateRegistration.waiting.postMessage({ type: 'SKIP_WAITING' });
-    }
-  });
 
   // Show online/offline status indicator
   function updateOnlineStatus() {
