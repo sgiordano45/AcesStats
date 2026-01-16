@@ -1,9 +1,9 @@
 // service-worker.js - Unified Service Worker
 // Handles both offline functionality AND Firebase Cloud Messaging
-// Version 1.1.05 - testing auto refresh
+// Version 1.1.06 - testing auto refresh
 
 
-const CACHE_VERSION = 'aces-v1.1.05';
+const CACHE_VERSION = 'aces-v1.1.06';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const DYNAMIC_CACHE = `${CACHE_VERSION}-dynamic`;
 const IMAGE_CACHE = `${CACHE_VERSION}-images`;
