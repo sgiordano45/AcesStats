@@ -17,13 +17,44 @@ async function getServiceWorkerRegistration() {
     if ('serviceWorker' in navigator) {
       // Wait for the existing service worker to be ready
       const registration = await navigator.serviceWorker.ready;
-      console.log('✅ Using existing service worker for FCM');
+      console.log('âœ… Using existing service worker for FCM');
       return registration;
     }
     return null;
   } catch (error) {
-    console.error('❌ Error getting service worker registration:', error);
+    console.error('âŒ Error getting service worker registration:', error);
     throw error;
+  }
+}
+
+/**
+ * Get the current device's FCM token (without saving)
+ * Used to identify which token belongs to this device when disabling
+ * @returns {Promise<string|null>} FCM token or null if not available
+ */
+export async function getCurrentDeviceToken() {
+  try {
+    // Check if notifications are supported and permitted
+    if (!('Notification' in window) || Notification.permission !== 'granted') {
+      console.log('Notifications not enabled on this device');
+      return null;
+    }
+
+    const registration = await getServiceWorkerRegistration();
+    if (!registration) {
+      console.log('Service worker not available');
+      return null;
+    }
+
+    const currentToken = await getToken(messaging, { 
+      vapidKey: VAPID_KEY,
+      serviceWorkerRegistration: registration
+    });
+
+    return currentToken || null;
+  } catch (error) {
+    console.error('Error getting current device token:', error);
+    return null;
   }
 }
 
@@ -41,14 +72,14 @@ export async function requestNotificationPermission(userId) {
     }
 
     // Wait for service worker to be ready
-    console.log('🔄 Waiting for service worker to be ready...');
+    console.log('ðŸ”„ Waiting for service worker to be ready...');
     const registration = await getServiceWorkerRegistration();
     
     if (!registration) {
       throw new Error('Service worker not available');
     }
 
-    console.log('✅ Service worker is ready for FCM');
+    console.log('âœ… Service worker is ready for FCM');
 
     // Check if already granted
     if (Notification.permission === 'granted') {
@@ -59,14 +90,14 @@ export async function requestNotificationPermission(userId) {
     const permission = await Notification.requestPermission();
     
     if (permission === 'granted') {
-      console.log('✅ Notification permission granted');
+      console.log('âœ… Notification permission granted');
       return await getAndSaveToken(userId);
     } else {
-      console.log('❌ Notification permission denied');
+      console.log('âŒ Notification permission denied');
       return null;
     }
   } catch (error) {
-    console.error('❌ Error requesting notification permission:', error);
+    console.error('âŒ Error requesting notification permission:', error);
     throw error;
   }
 }
@@ -78,34 +109,34 @@ export async function requestNotificationPermission(userId) {
  */
 async function getAndSaveToken(userId) {
   try {
-    console.log('🔑 Getting FCM token for user:', userId);
+    console.log('ðŸ”‘ Getting FCM token for user:', userId);
     
     // CRITICAL: Wait for service worker and pass registration to getToken
     // This tells Firebase to use our unified service-worker.js instead of
     // trying to register its own firebase-messaging-sw.js
     const registration = await navigator.serviceWorker.ready;
-    console.log('📦 Using service worker registration:', registration);
+    console.log('ðŸ“¦ Using service worker registration:', registration);
     
     // Get FCM token - pass the serviceWorkerRegistration option
     const currentToken = await getToken(messaging, { 
       vapidKey: VAPID_KEY,
-      serviceWorkerRegistration: registration  // ← This is the critical part!
+      serviceWorkerRegistration: registration  // â† This is the critical part!
     });
     
     if (currentToken) {
-      console.log('✅ FCM Token obtained:', currentToken.substring(0, 20) + '...');
+      console.log('âœ… FCM Token obtained:', currentToken.substring(0, 20) + '...');
       
       // Save token to user profile
       await saveFCMToken(userId, currentToken);
       
-      console.log('✅ Token saved successfully');
+      console.log('âœ… Token saved successfully');
       return currentToken;
     } else {
-      console.warn('⚠️ No FCM token available - check service worker and VAPID key');
+      console.warn('âš ï¸ No FCM token available - check service worker and VAPID key');
       return null;
     }
   } catch (error) {
-    console.error('❌ Error getting FCM token:', error);
+    console.error('âŒ Error getting FCM token:', error);
     console.error('Error details:', {
       code: error.code,
       message: error.message,
@@ -130,9 +161,9 @@ export async function saveFCMToken(userId, token) {
       notificationsEnabled: true
     }, { merge: true });
     
-    console.log('✅ FCM token saved to user profile');
+    console.log('âœ… FCM token saved to user profile');
   } catch (error) {
-    console.error('❌ Error saving FCM token:', error);
+    console.error('âŒ Error saving FCM token:', error);
     throw error;
   }
 }
@@ -164,9 +195,9 @@ export async function removeFCMToken(userId, token) {
       lastTokenUpdate: new Date().toISOString()
     }, { merge: true });
     
-    console.log('✅ FCM token removed from user profile');
+    console.log('âœ… FCM token removed from user profile');
   } catch (error) {
-    console.error('❌ Error removing FCM token:', error);
+    console.error('âŒ Error removing FCM token:', error);
     throw error;
   }
 }
@@ -179,17 +210,17 @@ export async function disableAllNotifications(userId) {
   try {
     const userRef = doc(db, 'users', userId);
     
-    console.log('🔕 Disabling all notifications for user:', userId);
+    console.log('ðŸ”• Disabling all notifications for user:', userId);
     
     const userDoc = await getDoc(userRef);
     
     if (!userDoc.exists()) {
-      console.warn('⚠️ User document does not exist, nothing to disable');
+      console.warn('âš ï¸ User document does not exist, nothing to disable');
       return { success: true, message: 'No notifications to disable' };
     }
     
     const currentTokens = userDoc.data()?.fcmTokens || [];
-    console.log(`🗑️ Removing ${currentTokens.length} token(s)`);
+    console.log(`ðŸ—‘ï¸ Removing ${currentTokens.length} token(s)`);
     
     await setDoc(userRef, {
       fcmTokens: [],
@@ -197,10 +228,10 @@ export async function disableAllNotifications(userId) {
       lastTokenUpdate: new Date().toISOString()
     }, { merge: true });
     
-    console.log('✅ All notifications disabled and tokens removed');
+    console.log('âœ… All notifications disabled and tokens removed');
     return { success: true, message: 'Notifications disabled successfully' };
   } catch (error) {
-    console.error('❌ Error disabling all notifications:', error);
+    console.error('âŒ Error disabling all notifications:', error);
     throw error;
   }
 }
@@ -210,7 +241,7 @@ export async function disableAllNotifications(userId) {
  */
 export function onForegroundMessage(callback) {
   return onMessage(messaging, (payload) => {
-    console.log('📨 Foreground message received:', payload);
+    console.log('ðŸ“¨ Foreground message received:', payload);
     
     // Show notification even when app is open
     if (Notification.permission === 'granted') {
@@ -242,9 +273,9 @@ export async function updateNotificationPreferences(userId, preferences) {
       notificationPreferences: preferences
     });
     
-    console.log('✅ Notification preferences updated');
+    console.log('âœ… Notification preferences updated');
   } catch (error) {
-    console.error('❌ Error updating notification preferences:', error);
+    console.error('âŒ Error updating notification preferences:', error);
     throw error;
   }
 }

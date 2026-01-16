@@ -1807,7 +1807,7 @@ body {
         
         <div class="notification-actions" style="margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid var(--border-color);">
           <button id="disable-notifications-btn" class="btn btn-danger" style="display: none;">
-            🔕 Disable All Notifications
+            🔕 Disable on This Device
           </button>
         </div>
       </div>
@@ -2402,7 +2402,7 @@ body {
 import { onAuthChange, getCurrentUser, logoutUser, getUserProfile, updateUserProfile as updateUserProfileAuth, addFavoriteTeam, addFavoritePlayer, auth } from './firebase-auth.js';
 import { getCurrentSeason, getSeasonPlayerStatsOptimized, getAllTeams, getAllPlayerStatsOptimized, db, doc, getDoc } from './firebase-data.js';
 import { updateDoc } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
-	import {   requestNotificationPermission,   updateNotificationPreferences,  removeFCMToken } from './firebase-messaging.js';
+	import {   requestNotificationPermission,   updateNotificationPreferences,  removeFCMToken, getCurrentDeviceToken } from './firebase-messaging.js';
 	import { uploadProfilePhoto, deleteOldProfilePhoto } from './firebase-storage.js';
 	
     let currentUser = null;
@@ -4500,9 +4500,9 @@ document.getElementById('save-preferences-btn')?.addEventListener('click', async
   }
 });
 
-// Disable all notifications button
+// Disable notifications on THIS device only
 document.getElementById('disable-notifications-btn')?.addEventListener('click', async () => {
-  if (!confirm('Are you sure you want to disable all push notifications? You can re-enable them later.')) {
+  if (!confirm('Disable push notifications on THIS device? Your other devices will still receive notifications.')) {
     return;
   }
   
@@ -4510,11 +4510,15 @@ document.getElementById('disable-notifications-btn')?.addEventListener('click', 
   if (!user) return;
   
   try {
-    const userDoc = await getDoc(doc(db, 'users', user.uid));
-    const tokens = userDoc.data()?.fcmTokens || [];
+    // Get the current device's token
+    const currentToken = await getCurrentDeviceToken();
     
-    for (const token of tokens) {
-      await removeFCMToken(user.uid, token);
+    if (currentToken) {
+      // Only remove THIS device's token
+      await removeFCMToken(user.uid, currentToken);
+      console.log('✅ Removed token for this device only');
+    } else {
+      console.log('⚠️ No token found for this device');
     }
     
     await loadNotificationPreferences(); // Refresh UI
