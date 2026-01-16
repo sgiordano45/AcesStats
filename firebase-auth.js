@@ -380,8 +380,64 @@ export function onAuthChange(callback) {
         // Silent fail - don't disrupt user experience
         console.warn('⚠️ FCM token refresh skipped:', err.message || err);
       });
+      
+      // Check if user should see dashboard today (once per calendar day)
+      checkDailyDashboardVisit();
     }
   });
+}
+
+/**
+ * Redirect authenticated users to dashboard once per calendar day
+ * Preserves their intended destination with a "Continue" button on dashboard
+ */
+function checkDailyDashboardVisit() {
+  try {
+    const today = new Date().toISOString().split('T')[0]; // "2026-01-16"
+    const lastVisit = localStorage.getItem('lastDashboardVisit');
+    const currentPath = window.location.pathname;
+    const currentSearch = window.location.search;
+    
+    // Skip if already visited dashboard today
+    if (lastVisit === today) {
+      return;
+    }
+    
+    // Skip if already on dashboard (dashboard will set the flag)
+    if (currentPath.includes('my-dashboard.html')) {
+      return;
+    }
+    
+    // Skip auth-related pages
+    const skipPages = [
+      'signin.html', 
+      'signup.html', 
+      'reset-password.html', 
+      'verify-email.html',
+      'link-player.html'
+    ];
+    if (skipPages.some(page => currentPath.includes(page))) {
+      return;
+    }
+    
+    // Skip if coming from a notification click
+    if (currentSearch.includes('from=notification') || currentSearch.includes('from=push')) {
+      // Mark as visited so we don't redirect later in their session
+      localStorage.setItem('lastDashboardVisit', today);
+      return;
+    }
+    
+    // Build the continue URL (preserve their intended destination)
+    const continueUrl = encodeURIComponent(currentPath + currentSearch);
+    
+    // Redirect to dashboard with continue parameter
+    console.log('📋 Daily dashboard check - redirecting');
+    window.location.href = `/my-dashboard.html?continue=${continueUrl}`;
+    
+  } catch (err) {
+    // Silent fail - don't block user if localStorage isn't available
+    console.warn('Daily dashboard check skipped:', err);
+  }
 }
 
 /**
