@@ -466,6 +466,13 @@
       .then(registration => {
         console.log('✅ Service Worker registered');
 
+        // Clear any stale update timestamp (if update completed)
+        const swUpdateKey = 'sw_update_time';
+        if (sessionStorage.getItem(swUpdateKey) && !registration.waiting) {
+          console.log('✅ SW update completed successfully');
+          sessionStorage.removeItem(swUpdateKey);
+        }
+
         // Force check for updates (Safari doesn't always check automatically)
         registration.update().then(() => {
           console.log('🔍 Update check complete');
@@ -506,33 +513,44 @@
       });
 
     function activateUpdate(registration) {
+      // Prevent reload loops - check if we recently reloaded for SW update
+      const swUpdateKey = 'sw_update_time';
+      const lastUpdate = sessionStorage.getItem(swUpdateKey);
+      const now = Date.now();
+      
+      // If we reloaded within the last 10 seconds, skip to prevent loop
+      if (lastUpdate && (now - parseInt(lastUpdate, 10)) < 10000) {
+        console.log('🔄 SW update reload was recent, skipping to prevent loop');
+        return;
+      }
+
       let hasReloaded = false;
+
+      function doReload(source) {
+        if (hasReloaded) return;
+        hasReloaded = true;
+        sessionStorage.setItem(swUpdateKey, now.toString());
+        console.log(`✅ SW active (${source}) - reloading`);
+        window.location.reload();
+      }
 
       // Method 1: controllerchange event (preferred)
       navigator.serviceWorker.addEventListener('controllerchange', () => {
-        if (hasReloaded) return;
-        hasReloaded = true;
-        console.log('✅ SW active (controllerchange) - reloading');
-        window.location.reload();
+        doReload('controllerchange');
       }, { once: true });
 
       // Method 2: SW_UPDATED message (backup)
       navigator.serviceWorker.addEventListener('message', (event) => {
         if (event.data && event.data.type === 'SW_UPDATED') {
-          if (hasReloaded) return;
-          hasReloaded = true;
-          console.log('✅ SW active (message) - reloading');
-          window.location.reload();
+          doReload('message');
         }
       });
 
-      // Method 3: Fallback timeout (5 seconds)
+      // Method 3: Fallback timeout (5 seconds) - only if SW actually changed
       setTimeout(() => {
         if (hasReloaded) return;
-        if (navigator.serviceWorker.controller) {
-          hasReloaded = true;
-          console.log('⏰ Fallback timeout - reloading');
-          window.location.reload();
+        if (registration.waiting || registration.installing) {
+          doReload('timeout');
         }
       }, 5000);
 
