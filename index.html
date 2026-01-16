@@ -3950,13 +3950,38 @@ if ('serviceWorker' in navigator) {
     // Auto-update immediately in background - no user interaction needed
     console.log('🔄 Update available - applying automatically');
     
-    // Set up listener to reload when new SW takes control
+    let hasReloaded = false;
+    
+    // Method 1: Listen for controllerchange (preferred)
     navigator.serviceWorker.addEventListener('controllerchange', () => {
-      console.log('✅ New service worker active - reloading');
+      if (hasReloaded) return;
+      hasReloaded = true;
+      console.log('✅ New service worker active (controllerchange) - reloading');
       window.location.reload();
     }, { once: true });
     
-    // Brief delay to ensure page is stable, then update
+    // Method 2: Listen for SW_UPDATED message (backup)
+    navigator.serviceWorker.addEventListener('message', (event) => {
+      if (event.data && event.data.type === 'SW_UPDATED') {
+        if (hasReloaded) return;
+        hasReloaded = true;
+        console.log('✅ New service worker active (message) - reloading');
+        window.location.reload();
+      }
+    });
+    
+    // Method 3: Fallback timeout - force reload after 5 seconds if nothing else worked
+    setTimeout(() => {
+      if (hasReloaded) return;
+      // Check if we have a new controller
+      if (navigator.serviceWorker.controller) {
+        hasReloaded = true;
+        console.log('⏰ Fallback timeout - forcing reload');
+        window.location.reload();
+      }
+    }, 5000);
+    
+    // Brief delay to ensure page is stable, then trigger update
     setTimeout(() => {
       if (registration.waiting) {
         console.log('📤 Activating new service worker');
