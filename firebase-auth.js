@@ -370,7 +370,72 @@ export function getCurrentUser() {
 }
 
 export function onAuthChange(callback) {
-  return onAuthStateChanged(auth, callback);
+  return onAuthStateChanged(auth, async (user) => {
+    // Call the original callback first (don't block on FCM refresh)
+    callback(user);
+    
+    // Then silently try to refresh FCM token if needed (non-blocking)
+    if (user) {
+      refreshFCMTokenIfNeeded(user.uid).catch(err => {
+        // Silent fail - don't disrupt user experience
+        console.warn('⚠️ FCM token refresh skipped:', err.message || err);
+      });
+    }
+  });
+}
+
+/**
+ * Silently refresh FCM token if it's older than 7 days
+ * This keeps push notification tokens fresh for active users
+ * @param {string} userId - User's UID
+ */
+async function refreshFCMTokenIfNeeded(userId) {
+  try {
+    // Check if notifications are supported
+    if (!('Notification' in window)) {
+      return;
+    }
+    
+    // Only proceed if browser permission is already granted
+    if (Notification.permission !== 'granted') {
+      return;
+    }
+    
+    // Get user profile to check notification status
+    const userDoc = await getDoc(doc(db, 'users', userId));
+    if (!userDoc.exists()) {
+      return;
+    }
+    
+    const userData = userDoc.data();
+    
+    // Only refresh if user has notifications enabled
+    if (!userData.notificationsEnabled) {
+      return;
+    }
+    
+    // Check how old the token is
+    const lastUpdate = userData.lastTokenUpdate ? new Date(userData.lastTokenUpdate) : null;
+    const daysSinceUpdate = lastUpdate 
+      ? (Date.now() - lastUpdate.getTime()) / (1000 * 60 * 60 * 24) 
+      : Infinity;
+    
+    // Only refresh if token is older than 7 days
+    if (daysSinceUpdate <= 7) {
+      return;
+    }
+    
+    console.log(`🔄 Refreshing FCM token (last update: ${daysSinceUpdate.toFixed(1)} days ago)`);
+    
+    // Refresh the token silently
+    await requestNotificationPermission(userId);
+    
+    console.log('✅ FCM token refreshed successfully');
+    
+  } catch (error) {
+    // Re-throw to be caught by the caller's .catch()
+    throw error;
+  }
 }
 
 export async function setAuthPersistence(rememberMe = true) {
