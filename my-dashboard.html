@@ -1065,6 +1065,78 @@ body {
     grid-template-columns: repeat(2, 1fr);
   }
 }
+
+/* Continue Banner - shown when user was redirected to dashboard */
+.continue-banner {
+  background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%);
+  color: white;
+  padding: 0.75rem 1rem;
+  margin: -1.5rem -1.5rem 1.5rem -1.5rem;
+  border-radius: 12px 12px 0 0;
+}
+
+.continue-content {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.continue-text {
+  flex: 1;
+  font-size: 0.95rem;
+}
+
+.continue-text strong {
+  font-weight: 600;
+}
+
+.continue-btn {
+  background: white;
+  color: #1e40af;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 0.9rem;
+  transition: all 0.2s ease;
+}
+
+.continue-btn:hover {
+  background: #f0f9ff;
+  transform: translateX(2px);
+}
+
+.continue-dismiss {
+  background: transparent;
+  border: none;
+  color: white;
+  font-size: 1.25rem;
+  cursor: pointer;
+  padding: 0.25rem;
+  opacity: 0.7;
+  line-height: 1;
+}
+
+.continue-dismiss:hover {
+  opacity: 1;
+}
+
+@media (max-width: 480px) {
+  .continue-banner {
+    margin: -1rem -1rem 1rem -1rem;
+    padding: 0.6rem 0.75rem;
+  }
+  
+  .continue-text {
+    font-size: 0.85rem;
+  }
+  
+  .continue-btn {
+    padding: 0.4rem 0.75rem;
+    font-size: 0.8rem;
+  }
+}
 </style>
 </head>
 <body>
@@ -1454,6 +1526,106 @@ body {
       if (hour < 12) return 'Good morning';
       if (hour < 17) return 'Good afternoon';
       return 'Good evening';
+    }
+
+    /**
+     * Show "Continue to X" banner if user was redirected from another page
+     */
+    function showContinueBanner() {
+      try {
+        const urlParams = new URLSearchParams(window.location.search);
+        const continueUrl = urlParams.get('continue');
+        
+        if (!continueUrl) return;
+        
+        const decodedUrl = decodeURIComponent(continueUrl);
+        
+        // Don't show for home page
+        if (decodedUrl === '/' || decodedUrl === '/index.html' || decodedUrl === 'index.html') return;
+        
+        // Get friendly page name
+        const pageName = getFriendlyPageName(decodedUrl);
+        
+        // Create and show the banner
+        const banner = document.createElement('div');
+        banner.id = 'continueBanner';
+        banner.className = 'continue-banner';
+        banner.innerHTML = `
+          <div class="continue-content">
+            <span class="continue-text">↩️ Continue to <strong>${pageName}</strong></span>
+            <a href="${decodedUrl}" class="continue-btn">Go →</a>
+            <button class="continue-dismiss" onclick="this.parentElement.parentElement.remove()">×</button>
+          </div>
+        `;
+        
+        // Insert at top of signed-in content
+        const signedInContent = document.getElementById('signedInContent');
+        if (signedInContent) {
+          signedInContent.insertBefore(banner, signedInContent.firstChild);
+        }
+        
+        // Clean up URL (remove continue param from address bar)
+        window.history.replaceState({}, '', window.location.pathname);
+        
+      } catch (err) {
+        console.warn('Continue banner error:', err);
+      }
+    }
+
+    /**
+     * Get a friendly display name for a page URL
+     */
+    function getFriendlyPageName(url) {
+      const path = url.split('?')[0];
+      const params = new URLSearchParams(url.includes('?') ? url.split('?')[1] : '');
+      
+      // Helper to capitalize
+      const cap = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : '';
+      
+      const pageNames = {
+        'player.html': () => params.get('name') ? `${params.get('name')}'s Page` : 'Player Page',
+        'team.html': () => params.get('team') ? `Team ${cap(params.get('team'))}` : 'Team Page',
+        'current-season-team.html': () => params.get('team') ? `Team ${cap(params.get('team'))}` : 'Team Page',
+        'season.html': () => 'Season Stats',
+        'batting.html': () => 'Batting Stats',
+        'pitching.html': () => 'Pitching Stats',
+        'teams.html': () => 'All Teams',
+        'players.html': () => 'All Players',
+        'playoffs.html': () => 'Playoff Bracket',
+        'projections.html': () => 'Playoff Projections',
+        'playoff-clinching.html': () => 'Clinching Scenarios',
+        'weekend-preview.html': () => 'Weekend Preview',
+        'game-preview.html': () => 'Game Preview',
+        'leaders.html': () => 'Career Leaders',
+        'milestones.html': () => 'Milestones',
+        'compare.html': () => 'Player Comparison',
+        'team_compare.html': () => 'Team Comparison',
+        'h2h_grid.html': () => 'Head-to-Head',
+        'charts.html': () => 'Charts',
+        'pictures.html': () => 'Photo Gallery',
+        'favorites.html': () => 'Favorites',
+        'roster-management.html': () => 'Roster Management',
+        'profile.html': () => 'My Profile',
+        'aces-directory.html': () => 'Directory',
+        'game-tracker.html': () => 'Game Tracker',
+        'notifications.html': () => 'Notifications',
+        'current-season.html': () => 'Current Season',
+        'seasons.html': () => 'All Seasons',
+        'awards.html': () => 'Awards',
+        'league-rules.html': () => 'League Rules',
+        'league-history.html': () => 'League History'
+      };
+      
+      // Find matching page
+      for (const [page, getName] of Object.entries(pageNames)) {
+        if (path.includes(page)) {
+          return getName();
+        }
+      }
+      
+      // Fallback: clean up filename
+      const filename = path.split('/').pop().replace('.html', '').replace(/-/g, ' ');
+      return filename.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') || 'Previous Page';
     }
 
     // Calculate days until game
@@ -2490,6 +2662,13 @@ body {
     async function initDashboard(user) {
       try {
         currentUser = user;
+        
+        // Mark dashboard as visited today (for daily check-in redirect)
+        const today = new Date().toISOString().split('T')[0];
+        localStorage.setItem('lastDashboardVisit', today);
+        
+        // Check if user was redirected here - show continue banner
+        showContinueBanner();
         
         // Get user profile
         const profileResult = await getUserProfile(user.uid);
