@@ -1204,16 +1204,15 @@
               <tr>
                 <th>User</th>
                 <th title="Player Info">1️⃣</th>
-                <th title="App Install">2️⃣</th>
-                <th title="Notifications">3️⃣</th>
-                <th title="Directory">4️⃣</th>
+                <th title="Notifications">2️⃣</th>
+                <th title="Directory">3️⃣</th>
                 <th>Role</th>
                 <th>Joined</th>
               </tr>
             </thead>
             <tbody id="setupUsersTable">
               <tr>
-                <td colspan="7" style="text-align: center; padding: 2rem; color: var(--text-light);">
+                <td colspan="6" style="text-align: center; padding: 2rem; color: var(--text-light);">
                   Loading user data...
                 </td>
               </tr>
@@ -2826,7 +2825,7 @@
     } catch (error) {
       console.error('Error loading setup status:', error);
       document.getElementById('setupUsersTable').innerHTML = `
-        <tr><td colspan="7" style="text-align: center; color: var(--danger-color);">
+        <tr><td colspan="6" style="text-align: center; color: var(--danger-color);">
           Error loading users: ${error.message}
         </td></tr>
       `;
@@ -2834,6 +2833,7 @@
   }
 
   // Calculate setup status for a user
+  // Calculate setup status for a user (3 steps: Player Info, Notifications, Directory)
   function calculateSetupStatus(user) {
     const progress = user.profileSetupProgress || {};
     
@@ -2842,26 +2842,20 @@
     const step1Dismissed = progress.playerInfoDismissed || false;
     const step1Done = step1Complete || step1Dismissed;
     
-    // Step 2: App Install
-    const step2Complete = progress.appInstallComplete || false;
-    const step2Dismissed = progress.appInstallDismissed || false;
+    // Step 2: Notifications - check for actual FCM tokens
+    const step2Complete = user.fcmTokens && user.fcmTokens.length > 0;
+    const step2Dismissed = progress.notificationsDismissed || false;
     const step2Done = step2Complete || step2Dismissed;
     
-    // Step 3: Notifications - check for actual FCM tokens, not just the flag
-    // (notificationsEnabled defaults to true incorrectly in firebase-auth.js)
-    const step3Complete = user.fcmTokens && user.fcmTokens.length > 0;
-    const step3Dismissed = progress.notificationsDismissed || false;
+    // Step 3: Directory
+    const step3Complete = user.directoryOptIn === true;
+    const step3Dismissed = progress.directoryDismissed || false;
     const step3Done = step3Complete || step3Dismissed;
     
-    // Step 4: Directory
-    const step4Complete = user.directoryOptIn === true;
-    const step4Dismissed = progress.directoryDismissed || false;
-    const step4Done = step4Complete || step4Dismissed;
-    
-    const stepsComplete = [step1Done, step2Done, step3Done, step4Done].filter(Boolean).length;
+    const stepsComplete = [step1Done, step2Done, step3Done].filter(Boolean).length;
     
     let status = 'none';
-    if (stepsComplete === 4) status = 'complete';
+    if (stepsComplete === 3) status = 'complete';
     else if (stepsComplete > 0) status = 'partial';
     
     return {
@@ -2869,8 +2863,7 @@
       stepsComplete,
       step1: { complete: step1Complete, dismissed: step1Dismissed, done: step1Done },
       step2: { complete: step2Complete, dismissed: step2Dismissed, done: step2Done },
-      step3: { complete: step3Complete, dismissed: step3Dismissed, done: step3Done },
-      step4: { complete: step4Complete, dismissed: step4Dismissed, done: step4Done }
+      step3: { complete: step3Complete, dismissed: step3Dismissed, done: step3Done }
     };
   }
 
@@ -2891,7 +2884,7 @@
     
     if (users.length === 0) {
       tbody.innerHTML = `
-        <tr><td colspan="7" style="text-align: center; padding: 2rem; color: var(--text-light);">
+        <tr><td colspan="6" style="text-align: center; padding: 2rem; color: var(--text-light);">
           No users found matching filter.
         </td></tr>
       `;
@@ -2915,7 +2908,6 @@
           <td>${renderStepIndicator(status.step1)}</td>
           <td>${renderStepIndicator(status.step2)}</td>
           <td>${renderStepIndicator(status.step3)}</td>
-          <td>${renderStepIndicator(status.step4)}</td>
           <td><span class="badge badge-${getRoleBadgeClass(user.userRole)}">${user.userRole || 'user'}</span></td>
           <td style="font-size: 0.8rem; color: var(--text-light);">${joinDate}</td>
         </tr>
