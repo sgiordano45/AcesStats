@@ -3,7 +3,7 @@
 // Version 1.0.33 - testing new index.html updates
 
 
-const CACHE_VERSION = 'aces-v1.0.33';
+const CACHE_VERSION = 'aces-v1.1.0';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const DYNAMIC_CACHE = `${CACHE_VERSION}-dynamic`;
 const IMAGE_CACHE = `${CACHE_VERSION}-images`;
@@ -242,10 +242,23 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('message', (event) => {
   console.log('[SW] Received message:', event.data);
   
-  // Handle skip waiting message (from "Update Now" button)
+  // Handle skip waiting message - activate new service worker immediately
   if (event.data && event.data.type === 'SKIP_WAITING') {
-    console.log('[SW] SKIP_WAITING requested - activating new service worker');
-    self.skipWaiting();
+    console.log('[SW] SKIP_WAITING requested - activating immediately');
+    self.skipWaiting().then(() => {
+      console.log('[SW] skipWaiting complete, claiming clients');
+      return self.clients.claim();
+    }).then(() => {
+      console.log('[SW] Now controlling all clients');
+      // Notify all clients to reload
+      return self.clients.matchAll();
+    }).then(clients => {
+      clients.forEach(client => {
+        client.postMessage({ type: 'SW_UPDATED' });
+      });
+    }).catch(err => {
+      console.error('[SW] skipWaiting error:', err);
+    });
   }
 
   // Handle cache URLs message
@@ -254,6 +267,17 @@ self.addEventListener('message', (event) => {
     caches.open(DYNAMIC_CACHE).then((cache) => {
       cache.addAll(urlsToCache);
     });
+  }
+  
+  // Handle badge clear request (when app is opened)
+  if (event.data && event.data.type === 'CLEAR_BADGE') {
+    if (navigator.clearAppBadge) {
+      navigator.clearAppBadge().then(() => {
+        console.log('[SW] App badge cleared via message');
+      }).catch(err => {
+        console.log('[SW] Could not clear app badge:', err);
+      });
+    }
   }
 });
 
@@ -445,31 +469,6 @@ self.addEventListener('notificationclick', (event) => {
         }
       })
   );
-});
-
-// ==============================================
-// MESSAGE HANDLING FROM APP
-// ==============================================
-
-self.addEventListener('message', (event) => {
-  console.log('[SW] Message received:', event.data);
-  
-  // Handle "Update Now" button click
-  if (event.data && event.data.type === 'SKIP_WAITING') {
-    console.log('[SW] Skip waiting requested');
-    self.skipWaiting();
-  }
-  
-  // Handle badge clear request (when app is opened)
-  if (event.data && event.data.type === 'CLEAR_BADGE') {
-    if (navigator.clearAppBadge) {
-      navigator.clearAppBadge().then(() => {
-        console.log('[SW] ✅ App badge cleared via message');
-      }).catch(err => {
-        console.log('[SW] ⚠️ Could not clear app badge:', err);
-      });
-    }
-  }
 });
 
 // ==============================================
