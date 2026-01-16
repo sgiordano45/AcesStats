@@ -558,6 +558,7 @@
   .recent-item {
     padding: 1rem;
     border-bottom: 1px solid var(--border-color);
+    position: relative;
   }
 
   .recent-item:last-child {
@@ -569,11 +570,50 @@
     justify-content: space-between;
     align-items: flex-start;
     margin-bottom: 0.5rem;
+    gap: 0.5rem;
   }
 
   .recent-item-title {
     font-weight: 600;
     color: var(--text-dark);
+    flex: 1;
+  }
+
+  .recent-item-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .unsend-btn {
+    background: none;
+    border: 1px solid var(--danger-color);
+    color: var(--danger-color);
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+  }
+
+  .unsend-btn:hover {
+    background: var(--danger-color);
+    color: white;
+  }
+
+  .unsend-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .unsent-badge {
+    background: #fef2f2;
+    color: #991b1b;
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 600;
   }
 
   .recent-item-meta {
@@ -993,9 +1033,14 @@
         <div class="section">
           <div class="section-header">
             <span>📜</span> Recent Announcements
-            <button class="btn btn-secondary" onclick="loadRecentAnnouncements()" style="margin-left: auto; padding: 0.4rem 0.75rem; font-size: 0.8rem;">
-              🔄 Refresh
-            </button>
+            <div style="margin-left: auto; display: flex; gap: 0.5rem;">
+              <button class="btn btn-secondary" onclick="loadRecentAnnouncements()" style="padding: 0.4rem 0.75rem; font-size: 0.8rem;">
+                🔄 Refresh
+              </button>
+              <button class="btn btn-secondary" onclick="showCleanupModal()" id="cleanupBtn" style="padding: 0.4rem 0.75rem; font-size: 0.8rem; display: none; background: #fef2f2; border-color: var(--danger-color); color: var(--danger-color);">
+                🧹 Cleanup
+              </button>
+            </div>
           </div>
           <div class="section-content">
             <div id="recentAnnouncementsList" class="recent-list">
@@ -1046,6 +1091,42 @@
           </div>
         </div>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- Cleanup Modal (Admin Only) -->
+<div id="cleanupModal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 10000; align-items: center; justify-content: center;">
+  <div style="background: white; padding: 2rem; border-radius: 16px; max-width: 400px; width: 90%; box-shadow: var(--shadow-lg);">
+    <h3 style="margin: 0 0 1rem 0; color: var(--danger-color);">🧹 Bulk Cleanup</h3>
+    <p style="color: var(--text-light); margin-bottom: 1.5rem;">
+      Remove notifications from all user feeds. Use with caution!
+    </p>
+    
+    <div style="margin-bottom: 1rem;">
+      <label style="font-weight: 600; display: block; margin-bottom: 0.5rem;">Cleanup Option:</label>
+      <select id="cleanupOption" style="width: 100%; padding: 0.75rem; border: 1px solid var(--border-color); border-radius: 8px;">
+        <option value="">-- Select --</option>
+        <option value="type-announcement">All Announcements</option>
+        <option value="type-game_reminder">All Game Reminders</option>
+        <option value="type-rsvp_reminder">All RSVP Reminders</option>
+        <option value="type-score_update">All Score Updates</option>
+        <option value="all">⚠️ ALL Notifications</option>
+      </select>
+    </div>
+    
+    <div style="margin-bottom: 1.5rem;">
+      <label style="font-weight: 600; display: block; margin-bottom: 0.5rem;">Or by exact title:</label>
+      <input type="text" id="cleanupTitle" placeholder="Exact notification title..." style="width: 100%; padding: 0.75rem; border: 1px solid var(--border-color); border-radius: 8px;">
+    </div>
+    
+    <div style="display: flex; gap: 1rem;">
+      <button onclick="runCleanup()" class="btn" style="flex: 1; background: var(--danger-color); color: white; padding: 0.75rem;">
+        🗑️ Run Cleanup
+      </button>
+      <button onclick="hideCleanupModal()" class="btn btn-secondary" style="flex: 1; padding: 0.75rem;">
+        Cancel
+      </button>
     </div>
   </div>
 </div>
@@ -1174,6 +1255,12 @@
           userScope = 'all';
           userTeams = []; // Will load all teams
           console.log('✅ Authorized as admin/league-staff');
+          
+          // Show cleanup button for admins only
+          if (checkIsAdmin(userProfile)) {
+            const cleanupBtn = document.getElementById('cleanupBtn');
+            if (cleanupBtn) cleanupBtn.style.display = 'inline-block';
+          }
         } else if (checkIsCaptain(userProfile)) {
           userScope = 'team';
           userTeams = getCaptainTeamIds(userProfile);
@@ -1922,6 +2009,7 @@
       
       listEl.innerHTML = snapshot.docs.map(doc => {
         const data = doc.data();
+        const docId = doc.id;
         const sentAt = data.sentAt?.toDate?.() 
           ? data.sentAt.toDate().toLocaleString('en-US', {
               month: 'short',
@@ -1943,23 +2031,32 @@
           ? 'ℹ️ Info'
           : '📢 Normal';
         
-        const scopeLabel = data.isLeagueWide 
+        const scopeLabel = data.wasFiltered === false || data.isLeagueWide
           ? 'League-wide' 
           : (data.targetTeams?.length > 0 
             ? data.targetTeams.map(t => capitalize(t)).join(', ')
-            : 'Custom');
+            : `${data.targetedUserCount || data.recipientCount || 0} users`);
+        
+        const isUnsent = data.unsent === true;
         
         return `
-          <div class="recent-item">
+          <div class="recent-item ${isUnsent ? 'unsent' : ''}" data-id="${docId}">
             <div class="recent-item-header">
               <div class="recent-item-title">${data.title || 'Untitled'}</div>
-              <span class="priority-badge ${priorityClass}">${priorityLabel}</span>
+              <div class="recent-item-actions">
+                ${isUnsent 
+                  ? '<span class="unsent-badge">Recalled</span>' 
+                  : `<button class="unsend-btn" onclick="unsendAnnouncement('${docId}', '${(data.title || '').replace(/'/g, "\\'")}')">🗑️ Unsend</button>`
+                }
+                <span class="priority-badge ${priorityClass}">${priorityLabel}</span>
+              </div>
             </div>
-            <div style="font-size: 0.85rem; color: var(--text-light); line-height: 1.4;">
+            <div style="font-size: 0.85rem; color: var(--text-light); line-height: 1.4; ${isUnsent ? 'text-decoration: line-through; opacity: 0.6;' : ''}">
               ${data.body?.substring(0, 100) || ''}${(data.body?.length || 0) > 100 ? '...' : ''}
             </div>
             <div class="recent-item-meta">
-              ${sentAt} by ${data.sentByName || 'Unknown'} • ${data.recipientCount || 0} recipients • ${scopeLabel}
+              ${sentAt} by ${data.sentByName || 'Unknown'} • ${data.recipientCount || 0} delivered • ${scopeLabel}
+              ${isUnsent ? ` • <span style="color: var(--danger-color);">Recalled</span>` : ''}
             </div>
           </div>
         `;
@@ -1968,6 +2065,105 @@
     } catch (error) {
       console.error('Error loading announcements:', error);
       listEl.innerHTML = '<div class="no-recipients">Error loading announcements</div>';
+    }
+  };
+
+  // Unsend/recall an announcement
+  window.unsendAnnouncement = async function(announcementId, title) {
+    if (!confirm(`Are you sure you want to unsend "${title}"?\n\nThis will remove the notification from all users' feeds.`)) {
+      return;
+    }
+    
+    // Find and disable the button
+    const btn = document.querySelector(`[data-id="${announcementId}"] .unsend-btn`);
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = '⏳ Removing...';
+    }
+    
+    try {
+      const unsendAnnouncementFn = httpsCallable(functions, 'unsendAnnouncement');
+      const result = await unsendAnnouncementFn({
+        announcementId,
+        title
+      });
+      
+      if (result.data.success) {
+        showToast(`Removed notification from ${result.data.deletedCount} user feeds`, 'success');
+        // Reload the list to show updated state
+        await loadRecentAnnouncements();
+      } else {
+        throw new Error('Failed to unsend');
+      }
+      
+    } catch (error) {
+      console.error('Error unsending announcement:', error);
+      showToast('Failed to unsend announcement: ' + error.message, 'error');
+      
+      // Re-enable button on error
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = '🗑️ Unsend';
+      }
+    }
+  };
+
+  // ========================================
+  // CLEANUP FUNCTIONS (Admin Only)
+  // ========================================
+  
+  window.showCleanupModal = function() {
+    document.getElementById('cleanupModal').style.display = 'flex';
+    document.getElementById('cleanupOption').value = '';
+    document.getElementById('cleanupTitle').value = '';
+  };
+  
+  window.hideCleanupModal = function() {
+    document.getElementById('cleanupModal').style.display = 'none';
+  };
+  
+  window.runCleanup = async function() {
+    const option = document.getElementById('cleanupOption').value;
+    const title = document.getElementById('cleanupTitle').value.trim();
+    
+    if (!option && !title) {
+      showToast('Please select an option or enter a title', 'error');
+      return;
+    }
+    
+    const confirmMsg = title 
+      ? `Delete all notifications with title "${title}"?`
+      : option === 'all'
+      ? '⚠️ DELETE ALL NOTIFICATIONS FROM ALL USERS? This cannot be undone!'
+      : `Delete all ${option.replace('type-', '')} notifications from all users?`;
+    
+    if (!confirm(confirmMsg)) {
+      return;
+    }
+    
+    try {
+      const cleanupFn = httpsCallable(functions, 'cleanupNotifications');
+      
+      let params = {};
+      if (title) {
+        params.title = title;
+      } else if (option === 'all') {
+        params.all = true;
+      } else if (option.startsWith('type-')) {
+        params.type = option.replace('type-', '');
+      }
+      
+      const result = await cleanupFn(params);
+      
+      if (result.data.success) {
+        showToast(`Deleted ${result.data.totalDeleted} notifications from ${result.data.usersAffected} users`, 'success');
+        hideCleanupModal();
+        await loadRecentAnnouncements();
+      }
+      
+    } catch (error) {
+      console.error('Cleanup error:', error);
+      showToast('Cleanup failed: ' + error.message, 'error');
     }
   };
 
