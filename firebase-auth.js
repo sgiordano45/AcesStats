@@ -733,7 +733,8 @@ async function createUserProfile(userId, data) {
     // Preferences
     favoriteTeams: [],
     favoritePlayers: [],
-    notificationsEnabled: true,
+    notificationsEnabled: false, // Only becomes true when FCM token is registered
+    fcmTokens: [], // Will be populated when user enables notifications
     preferences: {
       emailGameReminders: true,
       emailScoreUpdates: false,

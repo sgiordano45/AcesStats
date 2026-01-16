@@ -1179,7 +1179,7 @@
           </div>
           <div class="setup-stat" style="border-color: var(--info-color); background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);">
             <div class="setup-stat-value" id="notificationsEnabled" style="color: #1e40af;">-</div>
-            <div class="setup-stat-label">Notifications On</div>
+            <div class="setup-stat-label">Has FCM Token</div>
           </div>
           <div class="setup-stat" style="border-color: var(--primary-color); background: linear-gradient(135deg, #dcfce7 0%, #d1fae5 100%);">
             <div class="setup-stat-value" id="directoryOptIn" style="color: var(--primary-color);">-</div>
@@ -1193,8 +1193,8 @@
           <button class="setup-filter-btn" data-setup-filter="complete" onclick="applySetupFilter('complete')">✅ Complete</button>
           <button class="setup-filter-btn" data-setup-filter="partial" onclick="applySetupFilter('partial')">⏳ Partial</button>
           <button class="setup-filter-btn" data-setup-filter="none" onclick="applySetupFilter('none')">❌ Not Started</button>
-          <button class="setup-filter-btn" data-setup-filter="notifications" onclick="applySetupFilter('notifications')">🔔 Notifications</button>
-          <button class="setup-filter-btn" data-setup-filter="no-notifications" onclick="applySetupFilter('no-notifications')">🔕 No Notifications</button>
+          <button class="setup-filter-btn" data-setup-filter="notifications" onclick="applySetupFilter('notifications')">🔔 Has FCM Token</button>
+          <button class="setup-filter-btn" data-setup-filter="no-notifications" onclick="applySetupFilter('no-notifications')">🔕 No FCM Token</button>
         </div>
 
         <!-- Users Table -->
@@ -2779,6 +2779,12 @@
       
       usersSnapshot.forEach(doc => {
         const data = doc.data();
+        
+        // Skip placeholder/migrated accounts - only show real auth users
+        if (data.email && data.email.includes('@placeholder.aces')) {
+          return; // Skip this user
+        }
+        
         allAuthUsers.push({
           id: doc.id,
           ...data,
@@ -2799,7 +2805,8 @@
         complete: allAuthUsers.filter(u => u.setupStatus.status === 'complete').length,
         partial: allAuthUsers.filter(u => u.setupStatus.status === 'partial').length,
         none: allAuthUsers.filter(u => u.setupStatus.status === 'none').length,
-        notifications: allAuthUsers.filter(u => u.notificationsEnabled === true).length,
+        // Check for actual FCM tokens, not just the notificationsEnabled flag (which has a bad default)
+        notifications: allAuthUsers.filter(u => u.fcmTokens && u.fcmTokens.length > 0).length,
         directory: allAuthUsers.filter(u => u.directoryOptIn === true).length
       };
       
@@ -2840,8 +2847,9 @@
     const step2Dismissed = progress.appInstallDismissed || false;
     const step2Done = step2Complete || step2Dismissed;
     
-    // Step 3: Notifications
-    const step3Complete = user.notificationsEnabled === true;
+    // Step 3: Notifications - check for actual FCM tokens, not just the flag
+    // (notificationsEnabled defaults to true incorrectly in firebase-auth.js)
+    const step3Complete = user.fcmTokens && user.fcmTokens.length > 0;
     const step3Dismissed = progress.notificationsDismissed || false;
     const step3Done = step3Complete || step3Dismissed;
     
@@ -2953,10 +2961,10 @@
         filtered = allAuthUsers.filter(u => u.setupStatus.status === 'none');
         break;
       case 'notifications':
-        filtered = allAuthUsers.filter(u => u.notificationsEnabled === true);
+        filtered = allAuthUsers.filter(u => u.fcmTokens && u.fcmTokens.length > 0);
         break;
       case 'no-notifications':
-        filtered = allAuthUsers.filter(u => u.notificationsEnabled !== true);
+        filtered = allAuthUsers.filter(u => !u.fcmTokens || u.fcmTokens.length === 0);
         break;
     }
     
