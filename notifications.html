@@ -425,6 +425,67 @@
     color: var(--text-light);
   }
 
+  .recipient-item {
+    cursor: pointer;
+    transition: background 0.15s ease;
+  }
+
+  .recipient-item:hover {
+    background: #f8fafc;
+  }
+
+  .recipient-item.selected {
+    background: #f0fdf4;
+  }
+
+  .recipient-checkbox {
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    border: 2px solid #cbd5e1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: white;
+    transition: all 0.15s ease;
+    flex-shrink: 0;
+  }
+
+  .recipient-checkbox.checked {
+    background: var(--success-color);
+    border-color: var(--success-color);
+  }
+
+  .recipients-controls {
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    gap: 0.5rem;
+    background: #f8fafc;
+  }
+
+  .select-btn {
+    padding: 0.4rem 0.75rem;
+    border-radius: 6px;
+    border: 1px solid var(--border-color);
+    background: white;
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .select-btn:hover {
+    background: #f1f5f9;
+  }
+
+  .select-btn.active {
+    background: var(--primary-color);
+    color: white;
+    border-color: var(--primary-color);
+  }
+
   .no-recipients {
     padding: 2rem;
     text-align: center;
@@ -1007,6 +1068,7 @@
   let userProfile = null;
   let allUsers = [];          // Users with notifications enabled
   let disabledUsers = [];     // Users with notifications disabled/missing
+  let selectedUsers = new Set(); // Specific users selected to receive notification
   let teams = [];
   let selectedTeams = new Set();
   let userScope = 'none'; // 'all', 'team', 'none'
@@ -1228,6 +1290,12 @@
       usersSnap.forEach(docSnap => {
         const data = docSnap.data();
         
+        // Skip migrated legacy accounts (they've been merged into another account)
+        if (data.migrated === true) {
+          console.log(`⏭️ Skipping migrated account: ${data.displayName} → ${data.migratedTo}`);
+          return;
+        }
+        
         // Build user object
         const user = {
           id: docSnap.id,
@@ -1279,6 +1347,9 @@
         // Select all captain teams by default
         userTeams.forEach(t => selectedTeams.add(t.toLowerCase()));
       }
+      
+      // Select all users by default
+      allUsers.forEach(u => selectedUsers.add(u.id));
       
       // Render recipients and notification status
       renderRecipients();
@@ -1356,6 +1427,11 @@
       }
     }
     
+    // Auto-select all users from newly filtered teams
+    const filtered = getTeamFilteredUsers();
+    selectedUsers.clear();
+    filtered.forEach(u => selectedUsers.add(u.id));
+    
     // Update UI
     renderTeamSelector();
     renderRecipients();
@@ -1372,21 +1448,50 @@
     const countEl = document.getElementById('recipientCount');
     
     // Filter users based on selected teams
-    const filteredUsers = getFilteredRecipients();
+    const filteredUsers = getTeamFilteredUsers();
     
-    countEl.textContent = filteredUsers.length;
+    // Update selected users to only include those in filtered list
+    const filteredIds = new Set(filteredUsers.map(u => u.id));
+    selectedUsers.forEach(id => {
+      if (!filteredIds.has(id)) {
+        selectedUsers.delete(id);
+      }
+    });
+    
+    // Count selected from filtered
+    const selectedCount = filteredUsers.filter(u => selectedUsers.has(u.id)).length;
+    countEl.textContent = `${selectedCount}/${filteredUsers.length}`;
     
     if (filteredUsers.length === 0) {
       container.innerHTML = '<div class="no-recipients">No recipients match your selection.<br>Select teams above or check if users have notifications enabled.</div>';
       return;
     }
     
-    container.innerHTML = filteredUsers.map(user => {
+    // Add Select All/None header
+    const allSelected = filteredUsers.every(u => selectedUsers.has(u.id));
+    const noneSelected = filteredUsers.every(u => !selectedUsers.has(u.id));
+    
+    let html = `
+      <div class="recipients-controls">
+        <button class="select-btn ${allSelected ? 'active' : ''}" onclick="selectAllUsers()">
+          ✓ Select All
+        </button>
+        <button class="select-btn ${noneSelected ? 'active' : ''}" onclick="selectNoUsers()">
+          ✗ Select None
+        </button>
+      </div>
+    `;
+    
+    html += filteredUsers.map(user => {
       const initials = getInitials(user.displayName);
       const teamDisplay = getUserTeamDisplay(user);
+      const isSelected = selectedUsers.has(user.id);
       
       return `
-        <div class="recipient-item">
+        <div class="recipient-item ${isSelected ? 'selected' : ''}" onclick="toggleUser('${user.id}')">
+          <div class="recipient-checkbox ${isSelected ? 'checked' : ''}">
+            ${isSelected ? '✓' : ''}
+          </div>
           <div class="recipient-avatar">${initials}</div>
           <div class="recipient-info">
             <div class="recipient-name">${user.displayName}</div>
@@ -1395,9 +1500,11 @@
         </div>
       `;
     }).join('');
+    
+    container.innerHTML = html;
   }
 
-  function getFilteredRecipients() {
+  function getTeamFilteredUsers() {
     if (selectedTeams.size === 0) {
       return [];
     }
@@ -1418,6 +1525,36 @@
       return userTeamIds.some(tid => selectedTeams.has(tid.toLowerCase()));
     });
   }
+
+  function getFilteredRecipients() {
+    // Get team-filtered users who are also selected
+    const teamFiltered = getTeamFilteredUsers();
+    return teamFiltered.filter(u => selectedUsers.has(u.id));
+  }
+
+  window.toggleUser = function(userId) {
+    if (selectedUsers.has(userId)) {
+      selectedUsers.delete(userId);
+    } else {
+      selectedUsers.add(userId);
+    }
+    renderRecipients();
+    updateSendButton();
+  };
+
+  window.selectAllUsers = function() {
+    const filtered = getTeamFilteredUsers();
+    filtered.forEach(u => selectedUsers.add(u.id));
+    renderRecipients();
+    updateSendButton();
+  };
+
+  window.selectNoUsers = function() {
+    const filtered = getTeamFilteredUsers();
+    filtered.forEach(u => selectedUsers.delete(u.id));
+    renderRecipients();
+    updateSendButton();
+  };
 
   function userMatchesTeams(user, teamList) {
     const userTeamIds = getUserTeamIds(user);
