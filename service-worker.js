@@ -1,9 +1,8 @@
 // service-worker.js - Unified Service Worker
 // Handles both offline functionality AND Firebase Cloud Messaging
-// Version 1.1.06 - testing auto refresh
+// Version 2.0.0 - JS files now use network-first (no more version bumps for JS updates!)
 
-
-const CACHE_VERSION = 'aces-v1.1.06';
+const CACHE_VERSION = 'aces-v2.0.0';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const DYNAMIC_CACHE = `${CACHE_VERSION}-dynamic`;
 const IMAGE_CACHE = `${CACHE_VERSION}-images`;
@@ -11,28 +10,12 @@ const IMAGE_CACHE = `${CACHE_VERSION}-images`;
 // Base path for GitHub Pages subdirectory deployment
 const BASE_PATH = '';
 
-// Critical files that should always be cached (CSS/JS only - HTML uses network-first)
+// Only CSS files use cache-first (small, stable, helps visual consistency)
+// JS files now use network-first so updates roll out immediately!
 const STATIC_ASSETS = [
   `${BASE_PATH}/style.css`,
   `${BASE_PATH}/mobile-enhancements.css`,
-  `${BASE_PATH}/firebase-auth.js`,
-  `${BASE_PATH}/firebase-data.js`,
-  `${BASE_PATH}/firebase-roster.js`,
-  `${BASE_PATH}/firebase-config.js`,
-  `${BASE_PATH}/firebase-offline-wrapper.js`,
-  `${BASE_PATH}/firebase-messaging.js`,
-  `${BASE_PATH}/firebase_game_tracker.js`,
-  `${BASE_PATH}/offline-queue.js`,
-  `${BASE_PATH}/nav-component.js`,
-  `${BASE_PATH}/nav-config.js`,
-  `${BASE_PATH}/nav-styles.css`,
-  `${BASE_PATH}/mobile-enhancements.js`,
-  `${BASE_PATH}/script.js`,
-  `${BASE_PATH}/player.js`,
-  `${BASE_PATH}/games.js`,
-  `${BASE_PATH}/team-colors.js`,
-  `${BASE_PATH}/link-helpers.js`,
-  `${BASE_PATH}/update-firebase.js`
+  `${BASE_PATH}/nav-styles.css`
 ];
 
 // HTML pages to pre-cache for offline (but served network-first when online)
@@ -160,14 +143,14 @@ messaging.onBackgroundMessage((payload) => {
 // ==============================================
 
 // Install event - cache static assets
-// CRITICAL: Do NOT call skipWaiting() here - wait for user to click "Update Now"
+// CRITICAL: Do NOT call skipWaiting() here - mobile-enhancements.js handles activation
 self.addEventListener('install', (event) => {
   console.log('[SW] Installing service worker v' + CACHE_VERSION + '...');
   
   event.waitUntil(
     caches.open(STATIC_CACHE)
       .then(async (cache) => {
-        console.log('[SW] Caching static assets (CSS/JS)...');
+        console.log('[SW] Caching static assets (CSS only - JS uses network-first)...');
         
         // Cache CSS, JS, and external resources
         const allAssets = [...STATIC_ASSETS, ...EXTERNAL_RESOURCES];
@@ -199,7 +182,7 @@ self.addEventListener('install', (event) => {
       })
       .then(() => {
         console.log('[SW] Installation complete - waiting for activation');
-        // DO NOT call skipWaiting() here - let the user decide via "Update Now" button
+        // DO NOT call skipWaiting() here - mobile-enhancements.js handles this after page loads
       })
       .catch((error) => {
         console.error('[SW] Critical error during installation:', error);
@@ -311,25 +294,31 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Strategy 1: Cache-first for static assets
+  // Strategy 1: Cache-first for CSS only
   if (isStaticAsset(url)) {
     event.respondWith(cacheFirst(request, STATIC_CACHE));
     return;
   }
 
-  // Strategy 2: Cache-first for images
+  // Strategy 2: Network-first for JS files (always get latest!)
+  if (isJavaScriptFile(url)) {
+    event.respondWith(networkFirst(request, DYNAMIC_CACHE));
+    return;
+  }
+
+  // Strategy 3: Cache-first for images
   if (isImageRequest(url)) {
     event.respondWith(cacheFirst(request, IMAGE_CACHE));
     return;
   }
 
-  // Strategy 3: Network-first for Firebase API calls
+  // Strategy 4: Network-first for Firebase API calls
   if (isFirebaseRequest(url)) {
     event.respondWith(networkFirst(request, DYNAMIC_CACHE));
     return;
   }
 
-  // Strategy 4: Network-first with offline fallback for HTML pages
+  // Strategy 5: Network-first with offline fallback for HTML pages
   if (request.headers.get('Accept') && request.headers.get('Accept').includes('text/html')) {
     event.respondWith(networkFirstWithOfflinePage(request));
     return;
@@ -415,6 +404,10 @@ async function networkFirstWithOfflinePage(request) {
 
 function isStaticAsset(url) {
   return STATIC_ASSETS.some(asset => url.pathname === asset);
+}
+
+function isJavaScriptFile(url) {
+  return url.pathname.endsWith('.js');
 }
 
 function isExternalResource(url) {
