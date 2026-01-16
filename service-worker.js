@@ -1,9 +1,9 @@
 // service-worker.js - Unified Service Worker
 // Handles both offline functionality AND Firebase Cloud Messaging
-// Version 1.1.02 - firebase-auth notification default fix
+// Version 1.1.03 - switching SW registration to mobile-enhancements
 
 
-const CACHE_VERSION = 'aces-v1.1.02';
+const CACHE_VERSION = 'aces-v1.1.03';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const DYNAMIC_CACHE = `${CACHE_VERSION}-dynamic`;
 const IMAGE_CACHE = `${CACHE_VERSION}-images`;
