@@ -446,4 +446,102 @@
     debounce
   };
 
+  // ========================================
+  // SERVICE WORKER AUTO-UPDATE
+  // ========================================
+
+  /**
+   * Register service worker and auto-update when new version available
+   * Updates silently in background - no user interaction needed
+   */
+  function setupServiceWorkerAutoUpdate() {
+    if (!('serviceWorker' in navigator)) {
+      console.log('Service Worker not supported');
+      return;
+    }
+
+    const AUTO_UPDATE_DELAY_MS = 1000; // 1 second
+
+    navigator.serviceWorker.register('/service-worker.js', { scope: '/' })
+      .then(registration => {
+        console.log('✅ Service Worker registered');
+
+        // If there's already a waiting worker, activate it
+        if (registration.waiting) {
+          console.log('🔄 Update waiting - activating');
+          activateUpdate(registration);
+          return;
+        }
+
+        // Listen for new updates
+        registration.addEventListener('updatefound', () => {
+          const newWorker = registration.installing;
+          console.log('🔄 Service Worker update found');
+
+          newWorker.addEventListener('statechange', () => {
+            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+              console.log('🔄 New version ready - activating');
+              activateUpdate(registration);
+            }
+          });
+        });
+
+        // Check for updates every hour
+        setInterval(() => {
+          registration.update();
+        }, 60 * 60 * 1000);
+
+        // Clear app badge when PWA is opened (iOS)
+        if (registration.active && 'clearAppBadge' in navigator) {
+          navigator.clearAppBadge().catch(() => {});
+        }
+      })
+      .catch(error => {
+        console.error('❌ Service Worker registration failed:', error);
+      });
+
+    function activateUpdate(registration) {
+      let hasReloaded = false;
+
+      // Method 1: controllerchange event (preferred)
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (hasReloaded) return;
+        hasReloaded = true;
+        console.log('✅ SW active (controllerchange) - reloading');
+        window.location.reload();
+      }, { once: true });
+
+      // Method 2: SW_UPDATED message (backup)
+      navigator.serviceWorker.addEventListener('message', (event) => {
+        if (event.data && event.data.type === 'SW_UPDATED') {
+          if (hasReloaded) return;
+          hasReloaded = true;
+          console.log('✅ SW active (message) - reloading');
+          window.location.reload();
+        }
+      });
+
+      // Method 3: Fallback timeout (5 seconds)
+      setTimeout(() => {
+        if (hasReloaded) return;
+        if (navigator.serviceWorker.controller) {
+          hasReloaded = true;
+          console.log('⏰ Fallback timeout - reloading');
+          window.location.reload();
+        }
+      }, 5000);
+
+      // Trigger the update after delay
+      setTimeout(() => {
+        if (registration.waiting) {
+          console.log('📤 Activating new service worker');
+          registration.waiting.postMessage({ type: 'SKIP_WAITING' });
+        }
+      }, AUTO_UPDATE_DELAY_MS);
+    }
+  }
+
+  // Initialize service worker (runs on all pages)
+  setupServiceWorkerAutoUpdate();
+
 })();
