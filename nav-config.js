@@ -112,6 +112,7 @@ export const NAV_STRUCTURE = {
     { id: 'contributor', href: 'contributor.html', label: 'Contributor Dashboard', icon: '✨', priority: 4, requiresAuth: true },
     { id: 'favorites', href: 'favorites.html', label: 'Favorites', icon: '⭐', priority: 4, requiresAuth: true },
     { id: 'roster-management', href: 'roster-management.html', label: 'Roster Management', icon: '✉️', priority: 4, requiresAuth: true },
+    { id: 'notifications', href: 'notifications.html', label: 'Send Notifications', icon: '📣', priority: 4, requiresAuth: true },
     { id: 'directory', href: 'aces-directory.html', label: 'Aces Directory', icon: '📇', priority: 4, requiresAuth: true },
     { id: 'submit-score', href: 'submit-score.html', label: 'Submit Scores', icon: '🔢️', priority: 4, requiresAuth: true },
     { id: 'submit-stats', href: 'submit-stats.html', label: 'Submit Stats', icon: '🧮', priority: 4, requiresAuth: true },
@@ -268,6 +269,10 @@ export const PAGE_CONFIGS = {
   
   'roster-management.html': {
     desktop: []
+  },
+  
+  'notifications.html': {
+    desktop: ['home', 'roster-management']
   },
   
   'offseason.html': {
