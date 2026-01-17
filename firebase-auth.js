@@ -393,7 +393,7 @@ export function onAuthChange(callback) {
  */
 function checkDailyDashboardVisit() {
   try {
-    const today = new Date().toISOString().split('T')[0]; // "2026-01-16"
+    const today = new Date().toLocaleDateString('en-CA'); // Local date YYYY-MM-DD
     const lastVisit = localStorage.getItem('lastDashboardVisit');
     const currentPath = window.location.pathname;
     const currentSearch = window.location.search;
