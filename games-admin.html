@@ -294,6 +294,10 @@
           <div class="stat-value" id="statWordlePlayers">-</div>
           <div class="stat-label">Wordle Players</div>
         </div>
+        <div class="stat-card">
+          <div class="stat-value" id="statRecallPlayers">-</div>
+          <div class="stat-label">Recall Players</div>
+        </div>
       </div>
     </div>
 
@@ -436,6 +440,20 @@
       </div>
     </div>
 
+    <!-- Roster Recall Stats Recalculation -->
+    <div class="admin-section">
+      <h2>🧠 Roster Recall Stats Recalculation</h2>
+      <p style="color: var(--text-gray); margin-bottom: 1rem;">
+        Recalculate user stats (gamesPlayed, perfectGames, totalScore, bestScore) from their daily game history.
+        Useful after version updates that may have cleared localStorage and overwrote Firebase stats.
+      </p>
+      <div class="action-buttons">
+        <button class="btn-primary" onclick="previewRecallRecalc()">Preview Changes</button>
+        <button class="btn-success" onclick="executeRecallRecalc()">Recalculate All Stats</button>
+      </div>
+      <div id="recallRecalcLog" class="log-area" style="margin-top: 1rem; display: none; max-height: 400px;"></div>
+    </div>
+
     <!-- Log Output -->
     <div class="admin-section">
       <h2>📋 Log Output</h2>
@@ -569,7 +587,7 @@ window.clearLog = function() {
 // Load quick stats
 async function loadQuickStats() {
   try {
-    const collections = ['acesGridGames', 'acesConnectionsGames', 'acesWordleGames'];
+    const collections = ['acesGridGames', 'acesConnectionsGames', 'acesWordleGames', 'acesRosterRecallGames'];
     const userIds = new Set();
     
     for (const col of collections) {
@@ -582,6 +600,8 @@ async function loadQuickStats() {
         document.getElementById('statConnectionsPlayers').textContent = snapshot.size;
       } else if (col === 'acesWordleGames') {
         document.getElementById('statWordlePlayers').textContent = snapshot.size;
+      } else if (col === 'acesRosterRecallGames') {
+        document.getElementById('statRecallPlayers').textContent = snapshot.size;
       }
     }
     
@@ -897,6 +917,187 @@ window.executeBatchFix = async function() {
     log(`\n✅ Batch fix complete: ${fixCount} documents updated`, 'success');
   } catch (error) {
     log('Error: ' + error.message, 'error');
+  }
+};
+
+// ============================================
+// ROSTER RECALL STATS RECALCULATION
+// ============================================
+function logRecall(message, type = 'info') {
+  const logArea = document.getElementById('recallRecalcLog');
+  logArea.style.display = 'block';
+  const className = `log-${type}`;
+  logArea.innerHTML += `<span class="${className}">${message}</span>\n`;
+  logArea.scrollTop = logArea.scrollHeight;
+}
+
+function clearRecallLog() {
+  const logArea = document.getElementById('recallRecalcLog');
+  logArea.innerHTML = '';
+}
+
+window.previewRecallRecalc = async function() {
+  clearRecallLog();
+  logRecall('🔍 Previewing Roster Recall stats recalculation...', 'info');
+  
+  try {
+    const usersSnapshot = await getDocs(collection(db, 'acesRosterRecallGames'));
+    logRecall(`Found ${usersSnapshot.size} players with Roster Recall data\n`, 'info');
+    
+    for (const userDoc of usersSnapshot.docs) {
+      const userId = userDoc.id;
+      const userData = userDoc.data();
+      const displayName = userData.displayName || userId.substring(0, 8);
+      
+      // Get all daily games for this user
+      const gamesSnapshot = await getDocs(collection(db, 'acesRosterRecallGames', userId, 'dailyGames'));
+      
+      // Recalculate stats from games
+      let gamesPlayed = 0;
+      let perfectGames = 0;
+      let totalScore = 0;
+      let bestScore = 0;
+      let lastPlayedPuzzle = 0;
+      
+      gamesSnapshot.forEach(gameDoc => {
+        const game = gameDoc.data();
+        if (game.phase === 'finished') {
+          gamesPlayed++;
+          const score = game.score || 0;
+          totalScore += score;
+          bestScore = Math.max(bestScore, score);
+          
+          // Check if perfect (found all players)
+          const foundCount = game.foundPlayers?.length || 0;
+          // We need the total count from the category, but we may not have it
+          // Perfect is typically when timeRemaining > 0 and all found
+          // For now, check if they had a high score or time remaining
+          if (game.foundPlayers && game.totalTime && game.timeRemaining > 0) {
+            // This might be a perfect game, but we need category player count
+            // Marking as perfect if bonus would have been added (score % indicates it)
+            // Actually, let's check if score includes 50pt bonus
+            // Player points = foundCount * 10, time bonus = timeRemaining, perfect = 50
+            // If (score - timeRemaining - foundCount*10) >= 50, might be perfect
+            const playerPoints = foundCount * 10;
+            const timeBonus = game.timeRemaining || 0;
+            const remainder = score - playerPoints - timeBonus;
+            if (remainder >= 50) {
+              perfectGames++;
+            }
+          }
+          
+          const dayNum = parseInt(gameDoc.id) || game.dayNum || 0;
+          lastPlayedPuzzle = Math.max(lastPlayedPuzzle, dayNum);
+        }
+      });
+      
+      // Compare with current stats
+      const current = {
+        gamesPlayed: userData.gamesPlayed || 0,
+        perfectGames: userData.perfectGames || 0,
+        totalScore: userData.totalScore || 0,
+        bestScore: userData.bestScore || 0
+      };
+      
+      const hasChanges = 
+        current.gamesPlayed !== gamesPlayed ||
+        current.perfectGames !== perfectGames ||
+        current.totalScore !== totalScore ||
+        current.bestScore !== bestScore;
+      
+      if (hasChanges) {
+        logRecall(`⚠️ ${displayName}:`, 'warn');
+        logRecall(`   Current: ${current.gamesPlayed} played, ${current.perfectGames} perfect, ${current.totalScore} total, ${current.bestScore} best`, 'warn');
+        logRecall(`   Should be: ${gamesPlayed} played, ${perfectGames} perfect, ${totalScore} total, ${bestScore} best`, 'success');
+      } else {
+        logRecall(`✓ ${displayName}: ${gamesPlayed} games, ${totalScore} total - OK`, 'success');
+      }
+    }
+    
+    logRecall('\n✅ Preview complete. Click "Recalculate All Stats" to apply changes.', 'info');
+  } catch (error) {
+    logRecall(`❌ Error: ${error.message}`, 'error');
+    console.error(error);
+  }
+};
+
+window.executeRecallRecalc = async function() {
+  if (!confirm('This will recalculate Roster Recall stats for ALL players from their game history. Continue?')) {
+    return;
+  }
+  
+  clearRecallLog();
+  logRecall('🚀 Recalculating all Roster Recall player stats...', 'info');
+  
+  try {
+    const usersSnapshot = await getDocs(collection(db, 'acesRosterRecallGames'));
+    let updatedCount = 0;
+    let errorCount = 0;
+    
+    for (const userDoc of usersSnapshot.docs) {
+      const userId = userDoc.id;
+      const userData = userDoc.data();
+      const displayName = userData.displayName || userId.substring(0, 8);
+      
+      try {
+        // Get all daily games for this user
+        const gamesSnapshot = await getDocs(collection(db, 'acesRosterRecallGames', userId, 'dailyGames'));
+        
+        // Recalculate stats from games
+        let gamesPlayed = 0;
+        let perfectGames = 0;
+        let totalScore = 0;
+        let bestScore = 0;
+        let lastPlayedPuzzle = 0;
+        
+        gamesSnapshot.forEach(gameDoc => {
+          const game = gameDoc.data();
+          if (game.phase === 'finished') {
+            gamesPlayed++;
+            const score = game.score || 0;
+            totalScore += score;
+            bestScore = Math.max(bestScore, score);
+            
+            // Check if perfect
+            const foundCount = game.foundPlayers?.length || 0;
+            if (game.foundPlayers && game.timeRemaining > 0) {
+              const playerPoints = foundCount * 10;
+              const timeBonus = game.timeRemaining || 0;
+              const remainder = score - playerPoints - timeBonus;
+              if (remainder >= 50) {
+                perfectGames++;
+              }
+            }
+            
+            const dayNum = parseInt(gameDoc.id) || game.dayNum || 0;
+            lastPlayedPuzzle = Math.max(lastPlayedPuzzle, dayNum);
+          }
+        });
+        
+        // Update user stats
+        await setDoc(doc(db, 'acesRosterRecallGames', userId), {
+          ...userData,
+          gamesPlayed,
+          perfectGames,
+          totalScore,
+          bestScore,
+          lastPlayedPuzzle,
+          statsRecalculatedAt: serverTimestamp()
+        }, { merge: true });
+        
+        updatedCount++;
+        logRecall(`✓ ${displayName}: ${gamesPlayed} games, ${perfectGames} perfect, ${totalScore} total, ${bestScore} best`, 'success');
+        
+      } catch (err) {
+        errorCount++;
+        logRecall(`❌ ${displayName}: ${err.message}`, 'error');
+      }
+    }
+    
+    logRecall(`\n✅ Complete: ${updatedCount} updated, ${errorCount} errors`, 'success');
+  } catch (error) {
+    logRecall(`❌ Error: ${error.message}`, 'error');
+    console.error(error);
   }
 };
 
