@@ -1137,6 +1137,107 @@ body {
     font-size: 0.8rem;
   }
 }
+
+/* App Setup Banner - shown when user has no FCM tokens */
+.setup-banner {
+  background: linear-gradient(135deg, #7c3aed 0%, #a855f7 100%);
+  color: white;
+  padding: 1rem 1.5rem;
+  margin-bottom: 1.5rem;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(124, 58, 237, 0.3);
+  display: none;
+}
+
+.setup-banner.visible {
+  display: block;
+}
+
+.setup-banner-content {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.setup-banner-icon {
+  font-size: 2rem;
+  flex-shrink: 0;
+}
+
+.setup-banner-text {
+  flex: 1;
+  min-width: 200px;
+}
+
+.setup-banner-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  margin-bottom: 0.25rem;
+}
+
+.setup-banner-desc {
+  font-size: 0.9rem;
+  opacity: 0.9;
+}
+
+.setup-banner-btn {
+  background: white;
+  color: #7c3aed;
+  padding: 0.6rem 1.25rem;
+  border-radius: 8px;
+  text-decoration: none;
+  font-weight: 700;
+  font-size: 0.95rem;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.setup-banner-btn:hover {
+  background: #faf5ff;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+}
+
+.setup-banner-dismiss {
+  background: rgba(255,255,255,0.2);
+  border: none;
+  color: white;
+  font-size: 1.25rem;
+  cursor: pointer;
+  padding: 0.25rem 0.5rem;
+  border-radius: 6px;
+  line-height: 1;
+  transition: background 0.2s ease;
+}
+
+.setup-banner-dismiss:hover {
+  background: rgba(255,255,255,0.3);
+}
+
+@media (max-width: 480px) {
+  .setup-banner {
+    padding: 0.875rem 1rem;
+    margin-bottom: 1rem;
+  }
+  
+  .setup-banner-icon {
+    font-size: 1.5rem;
+  }
+  
+  .setup-banner-title {
+    font-size: 1rem;
+  }
+  
+  .setup-banner-desc {
+    font-size: 0.8rem;
+  }
+  
+  .setup-banner-btn {
+    padding: 0.5rem 1rem;
+    font-size: 0.85rem;
+  }
+}
 </style>
 </head>
 <body>
@@ -1196,6 +1297,19 @@ body {
 
     <!-- Dashboard Content -->
     <main class="dashboard-container">
+      <!-- App Setup Banner - shown when no FCM tokens -->
+      <div class="setup-banner" id="setupBanner">
+        <div class="setup-banner-content">
+          <div class="setup-banner-icon">📱</div>
+          <div class="setup-banner-text">
+            <div class="setup-banner-title">Get Aces Alerts on Your Phone</div>
+            <div class="setup-banner-desc">Install the app and enable notifications so you never miss a game update</div>
+          </div>
+          <a href="profile-setup-guide.html?step=2" class="setup-banner-btn">Set Up Now →</a>
+          <button class="setup-banner-dismiss" onclick="dismissSetupBanner()" title="Remind me later">✕</button>
+        </div>
+      </div>
+
       <div class="dashboard-grid">
         
         <!-- Next Game Card (Featured) -->
@@ -2847,6 +2961,9 @@ body {
         // Setup captain features
         await setupCaptainFeatures();
 
+        // Check if we should show app setup banner (no FCM tokens)
+        checkSetupBanner(userProfile);
+
         // Hide loading, show content
         document.getElementById('loadingOverlay').classList.add('hidden');
         document.getElementById('signedInContent').style.display = 'block';
@@ -2879,6 +2996,63 @@ body {
 
     // Update time every minute
     setInterval(updateTimeDisplay, 60000);
+
+    // ========================================
+    // APP SETUP BANNER FUNCTIONS
+    // ========================================
+    
+    /**
+     * Check if we should show the app setup banner
+     * Shows if: no FCM tokens AND not snoozed in last 24 hours
+     */
+    function checkSetupBanner(profile) {
+      const banner = document.getElementById('setupBanner');
+      if (!banner) return;
+      
+      // Check if user has FCM tokens
+      const hasFCMTokens = profile?.fcmTokens && profile.fcmTokens.length > 0;
+      
+      if (hasFCMTokens) {
+        // User already has notifications set up
+        banner.classList.remove('visible');
+        return;
+      }
+      
+      // Check if banner was snoozed
+      const snoozeKey = 'setupBannerSnoozedUntil';
+      const snoozedUntil = localStorage.getItem(snoozeKey);
+      
+      if (snoozedUntil) {
+        const snoozeTime = parseInt(snoozedUntil, 10);
+        if (Date.now() < snoozeTime) {
+          // Still in snooze period
+          console.log('📱 Setup banner snoozed until', new Date(snoozeTime).toLocaleString());
+          banner.classList.remove('visible');
+          return;
+        }
+      }
+      
+      // Show the banner
+      console.log('📱 Showing app setup banner (no FCM tokens)');
+      banner.classList.add('visible');
+    }
+    
+    /**
+     * Dismiss the setup banner for 24 hours
+     */
+    window.dismissSetupBanner = function() {
+      const banner = document.getElementById('setupBanner');
+      if (banner) {
+        banner.classList.remove('visible');
+      }
+      
+      // Snooze for 24 hours
+      const snoozeKey = 'setupBannerSnoozedUntil';
+      const snoozeUntil = Date.now() + (24 * 60 * 60 * 1000); // 24 hours from now
+      localStorage.setItem(snoozeKey, snoozeUntil.toString());
+      
+      console.log('📱 Setup banner snoozed for 24 hours');
+    }
   </script>
 <script src="mobile-enhancements.js"></script>
 </body>
