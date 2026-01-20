@@ -940,6 +940,28 @@
     color: var(--primary-color);
     font-weight: 500;
   }
+
+  /* Sortable Table Headers */
+  .setup-table th.sortable {
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.2s;
+  }
+
+  .setup-table th.sortable:hover {
+    background: #e2e8f0;
+  }
+
+  .sort-icon {
+    margin-left: 0.25rem;
+    opacity: 0.5;
+    font-size: 0.75rem;
+  }
+
+  .sort-icon.active {
+    opacity: 1;
+    color: var(--admin-color);
+  }
 </style>
 </head>
 <body>
@@ -1185,6 +1207,14 @@
             <div class="setup-stat-value" id="directoryOptIn" style="color: var(--primary-color);">-</div>
             <div class="setup-stat-label">In Directory</div>
           </div>
+          <div class="setup-stat" style="border-color: #8b5cf6; background: linear-gradient(135deg, #ede9fe 0%, #ddd6fe 100%);">
+            <div class="setup-stat-value" id="activeRecently" style="color: #6d28d9;">-</div>
+            <div class="setup-stat-label">Active (30 days)</div>
+          </div>
+          <div class="setup-stat" style="border-color: #f97316; background: linear-gradient(135deg, #ffedd5 0%, #fed7aa 100%);">
+            <div class="setup-stat-value" id="staleUsers" style="color: #c2410c;">-</div>
+            <div class="setup-stat-label">Stale (60+ days)</div>
+          </div>
         </div>
 
         <!-- Filter Buttons -->
@@ -1195,6 +1225,8 @@
           <button class="setup-filter-btn" data-setup-filter="none" onclick="applySetupFilter('none')">❌ Not Started</button>
           <button class="setup-filter-btn" data-setup-filter="notifications" onclick="applySetupFilter('notifications')">🔔 Has FCM Token</button>
           <button class="setup-filter-btn" data-setup-filter="no-notifications" onclick="applySetupFilter('no-notifications')">🔕 No FCM Token</button>
+          <button class="setup-filter-btn" data-setup-filter="stale" onclick="applySetupFilter('stale')">⏰ Stale (60+ days)</button>
+          <button class="setup-filter-btn" data-setup-filter="never-visited" onclick="applySetupFilter('never-visited')">👻 Never Visited</button>
         </div>
 
         <!-- Users Table -->
@@ -1202,17 +1234,24 @@
           <table class="setup-table">
             <thead>
               <tr>
-                <th>User</th>
+                <th class="sortable" onclick="sortSetupTable('name')" title="Click to sort">
+                  User <span class="sort-icon" id="sort-name">↕</span>
+                </th>
                 <th title="Player Info">1️⃣</th>
                 <th title="Notifications">2️⃣</th>
                 <th title="Directory">3️⃣</th>
                 <th>Role</th>
-                <th>Joined</th>
+                <th class="sortable" onclick="sortSetupTable('joined')" title="Click to sort">
+                  Joined <span class="sort-icon active" id="sort-joined">↓</span>
+                </th>
+                <th class="sortable" onclick="sortSetupTable('lastVisit')" title="Click to sort">
+                  Last Visit <span class="sort-icon" id="sort-lastVisit">↕</span>
+                </th>
               </tr>
             </thead>
             <tbody id="setupUsersTable">
               <tr>
-                <td colspan="6" style="text-align: center; padding: 2rem; color: var(--text-light);">
+                <td colspan="7" style="text-align: center; padding: 2rem; color: var(--text-light);">
                   Loading user data...
                 </td>
               </tr>
@@ -2766,6 +2805,12 @@
 
   let allAuthUsers = [];
   let currentSetupFilter = 'all';
+  
+  // Sort state tracking
+  let currentSort = {
+    field: 'joined',    // Default sort field
+    direction: 'desc'   // 'asc' or 'desc'
+  };
 
   // Load and display profile setup status
   async function loadProfileSetupStatus() {
@@ -2799,6 +2844,7 @@
       });
       
       // Calculate stats
+      const now = Date.now() / 1000;
       const stats = {
         total: allAuthUsers.length,
         complete: allAuthUsers.filter(u => u.setupStatus.status === 'complete').length,
@@ -2806,7 +2852,18 @@
         none: allAuthUsers.filter(u => u.setupStatus.status === 'none').length,
         // Check for actual FCM tokens, not just the notificationsEnabled flag (which has a bad default)
         notifications: allAuthUsers.filter(u => u.fcmTokens && u.fcmTokens.length > 0).length,
-        directory: allAuthUsers.filter(u => u.directoryOptIn === true).length
+        directory: allAuthUsers.filter(u => u.directoryOptIn === true).length,
+        // Visit tracking stats
+        activeRecently: allAuthUsers.filter(u => {
+          if (!u.lastVisit?.seconds) return false;
+          const daysSinceVisit = (now - u.lastVisit.seconds) / 86400;
+          return daysSinceVisit <= 30;
+        }).length,
+        staleUsers: allAuthUsers.filter(u => {
+          if (!u.lastVisit?.seconds) return true; // No visit = stale
+          const daysSinceVisit = (now - u.lastVisit.seconds) / 86400;
+          return daysSinceVisit > 60;
+        }).length
       };
       
       // Update dashboard
@@ -2816,6 +2873,8 @@
       document.getElementById('setupNone').textContent = stats.none;
       document.getElementById('notificationsEnabled').textContent = stats.notifications;
       document.getElementById('directoryOptIn').textContent = stats.directory;
+      document.getElementById('activeRecently').textContent = stats.activeRecently;
+      document.getElementById('staleUsers').textContent = stats.staleUsers;
       
       // Render table
       renderSetupUsersTable(allAuthUsers);
@@ -2825,7 +2884,7 @@
     } catch (error) {
       console.error('Error loading setup status:', error);
       document.getElementById('setupUsersTable').innerHTML = `
-        <tr><td colspan="6" style="text-align: center; color: var(--danger-color);">
+        <tr><td colspan="7" style="text-align: center; color: var(--danger-color);">
           Error loading users: ${error.message}
         </td></tr>
       `;
@@ -2878,13 +2937,41 @@
     }
   }
 
+  // Format relative time (e.g., "2h ago", "3d ago")
+  function formatRelativeTime(timestampSeconds) {
+    if (!timestampSeconds) return '<span style="color: var(--text-light);">Never</span>';
+    
+    const now = Date.now() / 1000;
+    const diff = now - timestampSeconds;
+    
+    if (diff < 3600) {
+      const mins = Math.floor(diff / 60);
+      return `${mins}m ago`;
+    } else if (diff < 86400) {
+      const hours = Math.floor(diff / 3600);
+      return `${hours}h ago`;
+    } else if (diff < 604800) {
+      const days = Math.floor(diff / 86400);
+      return `${days}d ago`;
+    } else if (diff < 2592000) {
+      const weeks = Math.floor(diff / 604800);
+      return `${weeks}w ago`;
+    } else {
+      const months = Math.floor(diff / 2592000);
+      if (months > 2) {
+        return `<span style="color: var(--warning-color);">${months}mo ago</span>`;
+      }
+      return `${months}mo ago`;
+    }
+  }
+
   // Render users table
   function renderSetupUsersTable(users) {
     const tbody = document.getElementById('setupUsersTable');
     
     if (users.length === 0) {
       tbody.innerHTML = `
-        <tr><td colspan="6" style="text-align: center; padding: 2rem; color: var(--text-light);">
+        <tr><td colspan="7" style="text-align: center; padding: 2rem; color: var(--text-light);">
           No users found matching filter.
         </td></tr>
       `;
@@ -2897,6 +2984,7 @@
       const joinDate = user.createdAt?.seconds 
         ? new Date(user.createdAt.seconds * 1000).toLocaleDateString()
         : 'Unknown';
+      const lastVisitDisplay = formatRelativeTime(user.lastVisit?.seconds);
       
       return `
         <tr>
@@ -2910,6 +2998,7 @@
           <td>${renderStepIndicator(status.step3)}</td>
           <td><span class="badge badge-${getRoleBadgeClass(user.userRole)}">${user.userRole || 'user'}</span></td>
           <td style="font-size: 0.8rem; color: var(--text-light);">${joinDate}</td>
+          <td style="font-size: 0.8rem;">${lastVisitDisplay}</td>
         </tr>
       `;
     }).join('');
@@ -2930,6 +3019,101 @@
     }
   }
 
+  /**
+   * Sort the setup users table by specified field
+   */
+  window.sortSetupTable = function(field) {
+    // Toggle direction if same field, otherwise default to asc (except joined/lastVisit which default to desc)
+    if (currentSort.field === field) {
+      currentSort.direction = currentSort.direction === 'asc' ? 'desc' : 'asc';
+    } else {
+      currentSort.field = field;
+      // Date fields default to descending (newest first), text fields to ascending (A-Z)
+      currentSort.direction = (field === 'joined' || field === 'lastVisit') ? 'desc' : 'asc';
+    }
+    
+    // Update sort icons
+    document.querySelectorAll('.sort-icon').forEach(icon => {
+      icon.classList.remove('active');
+      icon.textContent = '↕';
+    });
+    
+    const activeIcon = document.getElementById(`sort-${field}`);
+    if (activeIcon) {
+      activeIcon.classList.add('active');
+      activeIcon.textContent = currentSort.direction === 'asc' ? '↑' : '↓';
+    }
+    
+    // Sort the data
+    const sorted = [...allAuthUsers].sort((a, b) => {
+      let aVal, bVal;
+      
+      switch (field) {
+        case 'name':
+          aVal = (a.displayName || '').toLowerCase();
+          bVal = (b.displayName || '').toLowerCase();
+          break;
+        case 'joined':
+          aVal = a.createdAt?.seconds || 0;
+          bVal = b.createdAt?.seconds || 0;
+          break;
+        case 'lastVisit':
+          aVal = a.lastVisit?.seconds || 0;
+          bVal = b.lastVisit?.seconds || 0;
+          break;
+        default:
+          aVal = a[field] || '';
+          bVal = b[field] || '';
+      }
+      
+      // Compare
+      if (aVal < bVal) return currentSort.direction === 'asc' ? -1 : 1;
+      if (aVal > bVal) return currentSort.direction === 'asc' ? 1 : -1;
+      return 0;
+    });
+    
+    // Apply current filter to sorted data
+    applySetupFilterToData(sorted);
+  };
+
+  /**
+   * Apply filter to already-sorted data
+   */
+  function applySetupFilterToData(sortedUsers) {
+    let filtered = sortedUsers;
+    const now = Date.now() / 1000;
+    
+    switch (currentSetupFilter) {
+      case 'complete':
+        filtered = sortedUsers.filter(u => u.setupStatus.status === 'complete');
+        break;
+      case 'partial':
+        filtered = sortedUsers.filter(u => u.setupStatus.status === 'partial');
+        break;
+      case 'none':
+        filtered = sortedUsers.filter(u => u.setupStatus.status === 'none');
+        break;
+      case 'notifications':
+        filtered = sortedUsers.filter(u => u.fcmTokens && u.fcmTokens.length > 0);
+        break;
+      case 'no-notifications':
+        filtered = sortedUsers.filter(u => !u.fcmTokens || u.fcmTokens.length === 0);
+        break;
+      case 'stale':
+        filtered = sortedUsers.filter(u => {
+          if (!u.lastVisit?.seconds) return true;
+          const daysSinceVisit = (now - u.lastVisit.seconds) / 86400;
+          return daysSinceVisit > 60;
+        });
+        break;
+      case 'never-visited':
+        filtered = sortedUsers.filter(u => !u.lastVisit);
+        break;
+    }
+    
+    renderSetupUsersTable(filtered);
+  }
+
   // Apply setup filter
   window.applySetupFilter = function(filter) {
     currentSetupFilter = filter;
@@ -2939,28 +3123,8 @@
       btn.classList.toggle('active', btn.dataset.setupFilter === filter);
     });
     
-    // Filter users
-    let filtered = allAuthUsers;
-    
-    switch (filter) {
-      case 'complete':
-        filtered = allAuthUsers.filter(u => u.setupStatus.status === 'complete');
-        break;
-      case 'partial':
-        filtered = allAuthUsers.filter(u => u.setupStatus.status === 'partial');
-        break;
-      case 'none':
-        filtered = allAuthUsers.filter(u => u.setupStatus.status === 'none');
-        break;
-      case 'notifications':
-        filtered = allAuthUsers.filter(u => u.fcmTokens && u.fcmTokens.length > 0);
-        break;
-      case 'no-notifications':
-        filtered = allAuthUsers.filter(u => !u.fcmTokens || u.fcmTokens.length === 0);
-        break;
-    }
-    
-    renderSetupUsersTable(filtered);
+    // Re-sort with current sort settings (which will also apply the filter)
+    sortSetupTable(currentSort.field);
   };
 
   // ============================================
