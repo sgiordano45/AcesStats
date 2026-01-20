@@ -90,6 +90,7 @@ export const NAV_STRUCTURE = {
     { id: 'awards', href: 'awards.html', label: 'Awards', icon: '🏅', priority: 2 },
     { id: 'games', href: 'games.html', label: 'Daily Games', icon: '🎮', priority: 2 },
     { id: 'trophy-case', href: 'trophy-case.html', label: 'Trophy Case', icon: '🏅', priority: 2 },
+    { id: 'activity', href: 'activity.html', label: 'League Activity', icon: '📰', priority: 2 },
   ],
 
   // Tier 3: TERTIARY - Specialty pages (mobile-only unless contextually relevant)
@@ -249,6 +250,10 @@ export const PAGE_CONFIGS = {
   
   'pictures.html': {
     desktop: ['home', 'current-season', 'teams', 'players', 'pictures']
+  },
+
+  'activity.html': {
+    desktop: ['home', 'current-season', 'pictures', 'players', 'teams']
   },
   
   'games.html': {
