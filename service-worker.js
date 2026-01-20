@@ -1,8 +1,8 @@
 // service-worker.js - Unified Service Worker
 // Handles both offline functionality AND Firebase Cloud Messaging
-// Version 2.0.1 - Simplified SW activation (fixes Chrome reload loop)
+// Version 2.0.2 - mobile-enhacements improvements
 
-const CACHE_VERSION = 'aces-v2.0.1';
+const CACHE_VERSION = 'aces-v2.0.2';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const DYNAMIC_CACHE = `${CACHE_VERSION}-dynamic`;
 const IMAGE_CACHE = `${CACHE_VERSION}-images`;
