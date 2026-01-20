@@ -89,8 +89,9 @@ export const NAV_STRUCTURE = {
     { id: 'leaders', href: 'leaders.html', label: 'Career Leaders', icon: '👑', priority: 2 },
     { id: 'awards', href: 'awards.html', label: 'Awards', icon: '🏅', priority: 2 },
     { id: 'games', href: 'games.html', label: 'Daily Games', icon: '🎮', priority: 2 },
+    { id: 'trophy-case', href: 'trophy-case.html', label: 'Trophy Case', icon: '🏅', priority: 2 },
   ],
-  
+
   // Tier 3: TERTIARY - Specialty pages (mobile-only unless contextually relevant)
   tertiary: [
     { id: 'milestones', href: 'milestones.html', label: 'Milestones', icon: '🎯', priority: 3 },
@@ -102,6 +103,8 @@ export const NAV_STRUCTURE = {
     { id: 'query-stats', href: 'query-stats.html', label: 'Stats Query Tool', icon: '🔍', priority: 3 },
     { id: 'pictures', href: 'pictures.html', label: 'Gallery', icon: '📷', priority: 3 },
     { id: 'rule-proposals', href: 'rule-proposals.html', label: 'Rule Proposals', icon: '📋', priority: 3 },
+    { id: 'championship-preview', href: 'championship-preview.html', label: 'Championship Preview', icon: '🎊', priority: 3 },
+    { id: 'playoff-history', href: 'playoff-history.html', label: 'Playoff History', icon: '🗂️', priority: 3 },
     // game-preview removed - requires specific game ID parameter
   ],
   
@@ -120,8 +123,9 @@ export const NAV_STRUCTURE = {
     { id: 'offseason-hub', href: 'offseason.html', label: 'Offseason Hub', icon: '🎣️', priority: 4, requiresAuth: true },
     { id: 'aces-shop', href: 'https://acesmountainside.com/', label: 'Aces Shop', icon: '🛒', priority: 4, requiresAuth: true, external: true },
     { id: 'admin-view-as', href: 'admin-view-as.html', label: 'View As User', icon: '🎭', priority: 4, requiresAuth: true, requiresRole: 'admin' },
+    { id: 'aces-wrapped', href: 'aces-wrapped.html', label: 'Aces Wrapped', icon: '🎁', priority: 4, requiresAuth: true },
   ],
-  
+
   // Public auth pages (signin handles both signin and signup - don't show in nav)
   authPublic: [
     { id: 'signin', href: 'signin.html', label: 'Sign In', icon: '🔐', priority: 5, hideFromNav: true },
