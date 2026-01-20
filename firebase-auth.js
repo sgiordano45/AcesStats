@@ -24,7 +24,7 @@ import { getAuth,
          browserLocalPersistence
 } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
 
-import { doc, setDoc, getDoc, updateDoc, serverTimestamp, collection, getDocs, query, where } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+import { doc, setDoc, getDoc, updateDoc, serverTimestamp, collection, getDocs, query, where, increment } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
 
 import { app, db } from './firebase-data.js';
 
@@ -376,6 +376,9 @@ export function onAuthChange(callback) {
     
     // Then silently try to refresh FCM token if needed (non-blocking)
     if (user) {
+      // Track user visit (throttled - won't write every time)
+      trackUserVisit(user);
+      
       refreshFCMTokenIfNeeded(user.uid).catch(err => {
         // Silent fail - don't disrupt user experience
         console.warn('⚠️ FCM token refresh skipped:', err.message || err);
@@ -383,6 +386,17 @@ export function onAuthChange(callback) {
       
       // Check if user should see dashboard today (once per calendar day)
       checkDailyDashboardVisit();
+      
+      // Check for weekly profile setup redirect (if no notifications)
+      try {
+        const userDoc = await getDoc(doc(db, 'users', user.uid));
+        if (userDoc.exists()) {
+          checkProfileSetupRedirect(user, userDoc.data());
+        }
+      } catch (err) {
+        // Silent fail - don't disrupt user experience
+        console.warn('⚠️ Setup redirect check skipped:', err.message || err);
+      }
     }
   });
 }
@@ -437,6 +451,112 @@ function checkDailyDashboardVisit() {
   } catch (err) {
     // Silent fail - don't block user if localStorage isn't available
     console.warn('Daily dashboard check skipped:', err);
+  }
+}
+
+// ========================================
+// VISIT TRACKING
+// ========================================
+
+const VISIT_THROTTLE_MS = 5 * 60 * 1000; // 5 minutes between updates
+
+/**
+ * Track user's last visit to the site with throttling
+ * Only updates Firestore if last tracked visit was > 5 minutes ago
+ * @param {Object} user - Firebase auth user
+ */
+async function trackUserVisit(user) {
+  if (!user) return;
+  
+  // Check session storage for recent tracking
+  const lastTracked = sessionStorage.getItem('lastVisitTracked');
+  const now = Date.now();
+  
+  if (lastTracked && (now - parseInt(lastTracked)) < VISIT_THROTTLE_MS) {
+    return; // Throttled - skip update
+  }
+  
+  try {
+    const userRef = doc(db, 'users', user.uid);
+    
+    await updateDoc(userRef, {
+      lastVisit: serverTimestamp(),
+      lastVisitPage: window.location.pathname,
+      visitCount: increment(1)
+    });
+    
+    // Mark as tracked in session
+    sessionStorage.setItem('lastVisitTracked', now.toString());
+    
+    console.log('📍 Visit tracked for:', user.displayName || user.email);
+  } catch (error) {
+    if (error.code !== 'not-found') {
+      console.warn('⚠️ Could not track visit:', error.message);
+    }
+  }
+}
+
+// ========================================
+// WEEKLY PROFILE SETUP REDIRECT
+// ========================================
+
+const SETUP_REDIRECT_INTERVAL_DAYS = 7;
+const SETUP_GUIDE_PATH = '/profile.html';
+
+/**
+ * Check if user should be redirected to profile setup
+ * Redirects once per week until notifications are enabled
+ * @param {Object} user - Firebase auth user
+ * @param {Object} userProfile - Firestore user profile data
+ */
+async function checkProfileSetupRedirect(user, userProfile) {
+  if (!user || !userProfile) return;
+  
+  const currentPath = window.location.pathname;
+  
+  // Skip if already on profile/setup/auth pages
+  const skipPages = [
+    'profile.html',
+    'signin.html', 
+    'signup.html', 
+    'reset-password.html', 
+    'verify-email.html',
+    'link-player.html',
+    'my-dashboard.html' // Don't interrupt dashboard flow
+  ];
+  if (skipPages.some(page => currentPath.includes(page))) {
+    return;
+  }
+  
+  // Skip if user has FCM tokens (notifications already set up)
+  if (userProfile.fcmTokens && userProfile.fcmTokens.length > 0) {
+    return;
+  }
+  
+  // Skip if user explicitly dismissed notifications (respect their choice)
+  const progress = userProfile.profileSetupProgress || {};
+  if (progress.notificationsDismissed) {
+    return;
+  }
+  
+  // Use localStorage for redirect tracking (no extra Firestore write)
+  const storageKey = `setupRedirect_${user.uid}`;
+  const lastRedirect = parseInt(localStorage.getItem(storageKey) || '0');
+  const now = Date.now();
+  const daysSinceRedirect = (now - lastRedirect) / (1000 * 86400);
+  
+  // Only redirect if it's been 7+ days (or never redirected)
+  if (daysSinceRedirect >= SETUP_REDIRECT_INTERVAL_DAYS) {
+    console.log('🔔 Redirecting to profile setup (weekly reminder)');
+    
+    // Update localStorage
+    localStorage.setItem(storageKey, now.toString());
+    
+    // Store return URL so we can send them back after setup
+    sessionStorage.setItem('setupReturnUrl', window.location.href);
+    
+    // Redirect with flag so profile page knows to show setup guide
+    window.location.href = `${SETUP_GUIDE_PATH}?showSetup=true`;
   }
 }
 
@@ -803,6 +923,11 @@ async function createUserProfile(userId, data) {
     
     // Profile completion
     profileComplete: false,
+    
+    // Visit tracking
+    lastVisit: serverTimestamp(),
+    lastVisitPage: window.location.pathname,
+    visitCount: 1,
     
     theme: 'light',
     updatedAt: serverTimestamp()
