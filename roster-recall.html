@@ -958,11 +958,39 @@ function getCareerStatPlayers(stat, threshold) {
 }
 
 function getSeasonSpecificStatPlayers(stat, threshold, seasonId) {
-  // Players who hit threshold in a SPECIFIC season
+  // Players who hit threshold in a SPECIFIC season (aggregated across all teams)
   const players = [];
   allPlayers.forEach(p => {
     const seasons = getNonSubSeasons(p);
-    const match = seasons.find(s => s.seasonId === seasonId);
+    // Get ALL entries for this season (player might have been on multiple teams)
+    const matches = seasons.filter(s => s.seasonId === seasonId);
+    if (matches.length === 0) return;
+    
+    // Sum stats across all team entries for this season
+    let value = 0;
+    matches.forEach(match => {
+      if (stat === 'hits') value += match.hits || 0;
+      else if (stat === 'runs') value += match.runs || 0;
+      else if (stat === 'walks') value += match.walks || 0;
+      else if (stat === 'games') value += match.games || 0;
+    });
+    
+    if (value >= threshold) {
+      players.push(p.name || p.playerName);
+    }
+  });
+  return [...new Set(players)];
+}
+
+function getTeamSeasonStatPlayers(stat, threshold, seasonId, team) {
+  // Players who hit threshold on a SPECIFIC team in a SPECIFIC season
+  const players = [];
+  allPlayers.forEach(p => {
+    const seasons = getNonSubSeasons(p);
+    const match = seasons.find(s => 
+      s.seasonId === seasonId && 
+      s.team?.toLowerCase() === team.toLowerCase()
+    );
     if (!match) return;
     
     let value = 0;
@@ -1100,8 +1128,8 @@ function generateCategoryPool() {
     const [year, szn] = seasonId.split('-');
     const seasonLabel = `${year} ${szn.charAt(0).toUpperCase() + szn.slice(1)}`;
     
-    // Hits thresholds for specific seasons
-    [10, 15, 20].forEach(threshold => {
+    // Hits thresholds for specific seasons (higher since leagues have 150+ players)
+    [20, 25, 30, 35].forEach(threshold => {
       const players = getSeasonSpecificStatPlayers('hits', threshold, seasonId);
       if (players.length >= 5 && players.length <= 25) {
         categories.push({
@@ -1134,6 +1162,50 @@ function generateCategoryPool() {
           type: 'season'
         });
       }
+    });
+  });
+  
+  // ========== TYPE: TEAMSTAT (Team-specific stats in a season) ==========
+  recentSeasons.forEach(seasonId => {
+    const [year, szn] = seasonId.split('-');
+    const seasonLabel = `${year} ${szn.charAt(0).toUpperCase() + szn.slice(1)}`;
+    
+    teams.forEach(team => {
+      // Hits thresholds for specific team in season
+      [8, 10, 12, 15].forEach(threshold => {
+        const players = getTeamSeasonStatPlayers('hits', threshold, seasonId, team);
+        if (players.length >= 5 && players.length <= 20) {
+          categories.push({
+            name: `${threshold}+ Hits for ${seasonLabel} ${team}`,
+            players,
+            type: 'teamstat'
+          });
+        }
+      });
+      
+      // Runs thresholds for specific team in season
+      [5, 8, 10].forEach(threshold => {
+        const players = getTeamSeasonStatPlayers('runs', threshold, seasonId, team);
+        if (players.length >= 5 && players.length <= 20) {
+          categories.push({
+            name: `${threshold}+ Runs for ${seasonLabel} ${team}`,
+            players,
+            type: 'teamstat'
+          });
+        }
+      });
+      
+      // Games thresholds for specific team in season  
+      [8, 10, 12].forEach(threshold => {
+        const players = getTeamSeasonStatPlayers('games', threshold, seasonId, team);
+        if (players.length >= 5 && players.length <= 20) {
+          categories.push({
+            name: `${threshold}+ Games for ${seasonLabel} ${team}`,
+            players,
+            type: 'teamstat'
+          });
+        }
+      });
     });
   });
   
@@ -1213,7 +1285,7 @@ function generateDailyPuzzle() {
   const allCategories = generateCategoryPool();
   
   // Group categories by type for variety rotation
-  const categoryTypes = ['roster', 'career', 'season', 'multi', 'veteran', 'alpha'];
+  const categoryTypes = ['roster', 'career', 'season', 'teamstat', 'multi', 'veteran', 'alpha'];
   const byType = {};
   categoryTypes.forEach(t => byType[t] = []);
   
