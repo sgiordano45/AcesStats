@@ -498,6 +498,25 @@
       }
     }
     
+    // Helper function to check if profile setup is complete
+    function isProfileSetupComplete(profileData) {
+      if (!profileData) return false;
+      
+      const progress = profileData.profileSetupProgress || {};
+      
+      // Step 1: Player Info
+      const step1Done = !!(profileData.position || profileData.primaryPosition || 
+                           (profileData.bats && profileData.throws)) || progress.playerInfoDismissed;
+      // Step 2: App Install
+      const step2Done = progress.appInstallComplete || progress.appInstallDismissed;
+      // Step 3: Notifications - check for actual FCM tokens, not just the flag
+      const step3Done = (profileData.fcmTokens && profileData.fcmTokens.length > 0) || progress.notificationsDismissed;
+      // Step 4: Directory
+      const step4Done = profileData.directoryOptIn === true || progress.directoryDismissed;
+      
+      return step1Done && step2Done && step3Done && step4Done;
+    }
+
   async function handleSuccessfulLogin(user) {
   try {
     // ✅ NEW: Check email verification FIRST (before profile checks)
@@ -517,11 +536,20 @@
       
       // Check if already linked to a player
       if (profileData.linkedPlayer) {
-        console.log('✓ User has linked player, redirecting to profile...');
-        showAlert('✅ Welcome back! Redirecting to your profile...', 'success');
-        setTimeout(() => {
-          window.location.href = 'profile.html';
-        }, 1500);
+        // Check if profile setup is complete
+        if (isProfileSetupComplete(profileData)) {
+          console.log('✓ User has linked player & complete setup, redirecting to profile...');
+          showAlert('✅ Welcome back! Redirecting to your profile...', 'success');
+          setTimeout(() => {
+            window.location.href = 'profile.html';
+          }, 1500);
+        } else {
+          console.log('⚙️ User has linked player but incomplete setup, redirecting to setup guide...');
+          showAlert('✅ Welcome back! Let\'s finish setting up your profile...', 'success');
+          setTimeout(() => {
+            window.location.href = 'profile-setup-guide.html';
+          }, 1500);
+        }
         return;
       }
       
