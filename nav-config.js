@@ -102,8 +102,9 @@ export const NAV_STRUCTURE = {
     { id: 'charts', href: 'charts.html', label: 'Performance Charts', icon: '📊', priority: 3 },
     { id: 'query-stats', href: 'query-stats.html', label: 'Stats Query Tool', icon: '🔍', priority: 3 },
     { id: 'pictures', href: 'pictures.html', label: 'Gallery', icon: '📷', priority: 3 },
-    { id: 'rule-proposals', href: 'rule-proposals.html', label: 'Rule Proposals', icon: '📋', priority: 3 },
-    { id: 'championship-preview', href: 'championship-preview.html', label: 'Championship Preview', icon: '🎊', priority: 3 },
+    { id: 'rule-proposal', href: 'rule-proposals.html', label: 'Rule Proposals', icon: '📋', priority: 3 },
+    { id: 'rule-review', href: 'rule-review.html', label: 'Rule Review', icon: '📝', priority: 3 },
+    { id: 'champ-preview', href: 'championship-preview.html', label: 'Championship Preview', icon: '🎊', priority: 3 },
     { id: 'playoff-history', href: 'playoff-history.html', label: 'Playoff History', icon: '🗂️', priority: 3 },
     // game-preview removed - requires specific game ID parameter
   ],
@@ -265,6 +266,14 @@ export const PAGE_CONFIGS = {
 
   'playoff-history.html': {
     desktop: ['home', 'playoffs', 'seasons', 'champions']
+  },
+
+  'rule-proposals.html': {
+    desktop: ['home', 'league-rules', 'rule-review']
+  },
+
+  'rule-review.html': {
+    desktop: ['home', 'league-rules', 'rule-proposal']
   },
 
   // Auth-specific pages
