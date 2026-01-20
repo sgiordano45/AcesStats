@@ -213,7 +213,11 @@ export const PAGE_CONFIGS = {
   'champions.html': {
     desktop: ['home', 'current-season', 'seasons', 'champions', 'recap', 'awards', 'leaders', 'teams']
   },
-  
+
+  'trophy-case.html': {
+    desktop: ['home', 'champions', 'awards', 'leaders', 'players']
+  },
+
   'milestones.html': {
     desktop: ['home', 'batting', 'pitching', 'players', 'leaders', ]
   },
@@ -254,7 +258,15 @@ export const PAGE_CONFIGS = {
   'game-preview.html': {
     desktop: ['home', 'current-season', 'weekend-preview']
   },
-  
+
+  'championship-preview.html': {
+    desktop: ['home', 'current-season', 'playoffs', 'weekend-preview']
+  },
+
+  'playoff-history.html': {
+    desktop: ['home', 'playoffs', 'seasons', 'champions']
+  },
+
   // Auth-specific pages
   'my-dashboard.html': {
     desktop: []
@@ -283,7 +295,11 @@ export const PAGE_CONFIGS = {
   'offseason.html': {
     desktop: []
   },
-  
+
+  'aces-wrapped.html': {
+    desktop: []
+  },
+
   // Signin page (handles both signin and signup) - minimal nav
   'signin.html': {
     desktop: ['home']
