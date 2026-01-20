@@ -70,7 +70,7 @@
       btn.id = 'backToTopBtn';
       btn.className = 'back-to-top-btn';
       btn.setAttribute('aria-label', 'Back to top');
-      btn.innerHTML = '↑';
+      btn.innerHTML = '↑ Top';
       document.body.appendChild(btn);
     }
 
