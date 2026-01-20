@@ -468,7 +468,20 @@
     }
     
     async function loadUsers() {
-      allUsers = await fetchAllUsersForImpersonation();
+      const fetchedUsers = await fetchAllUsersForImpersonation();
+      
+      // Filter out migrated/legacy profiles
+      // Real authenticated users have: email, Firebase UID format, and not migrated
+      allUsers = fetchedUsers.filter(user => {
+        const hasEmail = !!user.email;
+        const notMigrated = !user.migrated;
+        // Firebase UIDs are long alphanumeric strings without underscores
+        const isFirebaseUID = user.uid && user.uid.length > 20 && !user.uid.includes('_');
+        
+        return hasEmail && notMigrated && isFirebaseUID;
+      });
+      
+      console.log(`✅ Loaded ${allUsers.length} authenticated users (filtered from ${fetchedUsers.length})`);
       updateStats();
       renderUsers(allUsers);
     }
