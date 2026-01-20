@@ -125,7 +125,6 @@ export const NAV_STRUCTURE = {
     { id: 'offseason-hub', href: 'offseason.html', label: 'Offseason Hub', icon: '🎣️', priority: 4, requiresAuth: true },
     { id: 'aces-shop', href: 'https://acesmountainside.com/', label: 'Aces Shop', icon: '🛒', priority: 4, requiresAuth: true, external: true },
     { id: 'admin-view-as', href: 'admin-view-as.html', label: 'View As User', icon: '🎭', priority: 4, requiresAuth: true, requiresRole: 'admin' },
-    { id: 'aces-wrapped', href: 'aces-wrapped.html', label: 'Aces Wrapped', icon: '🎁', priority: 4, requiresAuth: true },
   ],
 
   // Public auth pages (signin handles both signin and signup - don't show in nav)
