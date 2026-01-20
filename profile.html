@@ -2404,7 +2404,8 @@ import { getCurrentSeason, getSeasonPlayerStatsOptimized, getAllTeams, getAllPla
 import { updateDoc } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
 	import {   requestNotificationPermission,   updateNotificationPreferences,  removeFCMToken, getCurrentDeviceToken } from './firebase-messaging.js';
 	import { uploadProfilePhoto, deleteOldProfilePhoto } from './firebase-storage.js';
-	
+	import { isImpersonating, getEffectiveUserProfile, injectImpersonationBanner } from './admin-impersonate.js';
+
     let currentUser = null;
     let userProfile = null;
     let selectedTeam = null;
@@ -2621,6 +2622,12 @@ async function loadNotificationPreferences() {
 		
         if (result.success && result.data) {
           userProfile = result.data;
+          // Check for impersonation mode
+          if (isImpersonating()) {
+            userProfile = getEffectiveUserProfile(userProfile);
+            console.log('🎭 Impersonation active - viewing as:', userProfile?.displayName);
+          }
+          injectImpersonationBanner();
         } else {
           console.log('⚠️ No profile data found');
           userProfile = null;

@@ -2188,7 +2188,8 @@
 
 <script type="module">
   import { auth, onAuthChange, getUserProfile, USER_ROLES } from './firebase-auth.js';
-  
+  import { isImpersonating, getEffectiveUserProfile, injectImpersonationBanner } from './admin-impersonate.js';
+
   const authSection = document.getElementById('authSection');
   const personalizationSection = document.getElementById('personalizationSection');
   
@@ -2209,7 +2210,13 @@
         const profileResult = await getUserProfile(user.uid);
         if (profileResult.success && profileResult.data) {
           profile = profileResult.data;
-          
+          // Check for impersonation mode
+          if (isImpersonating()) {
+            profile = getEffectiveUserProfile(profile);
+            console.log('🎭 Impersonation active - viewing as:', profile?.displayName);
+          }
+          injectImpersonationBanner();
+
           if (profile.preferredDisplayName) {
             displayName = profile.preferredDisplayName;
             console.log('✅ Using preferred display name:', displayName);
