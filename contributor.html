@@ -736,6 +736,10 @@
         <span class="icon">🎲</span>
         Odds & Previews
       </button>
+      <button class="tab-btn hidden" data-tab="banners" id="tabBtnBanners">
+        <span class="icon">📢</span>
+        Banners
+      </button>
     </div>
 
     <!-- Tab: Eulogies -->
@@ -820,6 +824,36 @@
         </div>
       </div>
     </div>
+
+    <!-- Tab: Banner Messages -->
+    <div class="tab-content" id="tab-banners">
+      <div class="section">
+        <div class="section-header">
+          📢 Banner Messages Manager
+        </div>
+        <div class="section-content">
+          <p style="color: var(--text-light); margin-bottom: 1.5rem;">
+            Manage the scrolling banner messages that appear on the home page. Messages are sorted by priority (lower numbers appear first).
+          </p>
+          
+          <div class="btn-group" style="margin-bottom: 1.5rem;">
+            <button class="btn btn-secondary" onclick="loadBanners()">🔄 Refresh</button>
+            <button class="btn btn-primary" onclick="showNewBannerForm()">➕ Add Banner</button>
+          </div>
+
+          <div class="item-list" id="bannerList">
+            <div class="empty-state">Loading banners...</div>
+          </div>
+
+          <div class="editor-panel" id="bannerEditor">
+            <div class="no-selection">
+              <div class="icon">📢</div>
+              <p>Select a banner to edit or click "Add Banner" to create a new one</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -867,6 +901,7 @@
   // Cached data
   let previewsCache = [];
   let eulogiesCache = [];
+  let bannersCache = [];
 
   // Team list for dropdowns
   const TEAMS = ['Black', 'Green', 'Red', 'Blue', 'White', 'Orange', 'Silver', 'Purple', 'Gold', 'Carolina', 'Army'];
@@ -959,20 +994,24 @@
     const canSeeEulogies = userRoles.eulogist || userRoles.isAdmin || userRoles.isLeagueStaff;
     const canSeePhotos = userRoles.photographer || userRoles.isAdmin || userRoles.isLeagueStaff;
     const canSeeOdds = userRoles.oddsmaker || userRoles.isAdmin || userRoles.isLeagueStaff;
+    const canSeeBanners = userRoles.isAdmin || userRoles.isLeagueStaff;
 
     const eulogiesTab = document.getElementById('tabBtnEulogies');
     const photosTab = document.getElementById('tabBtnPhotos');
     const oddsTab = document.getElementById('tabBtnOdds');
+    const bannersTab = document.getElementById('tabBtnBanners');
 
     if (canSeeEulogies) eulogiesTab.classList.remove('hidden');
     if (canSeePhotos) photosTab.classList.remove('hidden');
     if (canSeeOdds) oddsTab.classList.remove('hidden');
+    if (canSeeBanners) bannersTab.classList.remove('hidden');
 
     // Set first visible tab as active
     let firstTab = null;
     if (canSeeEulogies) firstTab = 'eulogies';
     else if (canSeePhotos) firstTab = 'photos';
     else if (canSeeOdds) firstTab = 'odds';
+    else if (canSeeBanners) firstTab = 'banners';
 
     if (firstTab) {
       document.querySelector(`[data-tab="${firstTab}"]`).classList.add('active');
@@ -1016,6 +1055,11 @@
       if (userRoles.oddsmaker || userRoles.isAdmin || userRoles.isLeagueStaff) {
         await loadPreviews();
       }
+    }
+    
+    // Load banners (no season selection needed)
+    if (userRoles.isAdmin || userRoles.isLeagueStaff) {
+      await loadBanners();
     }
   }
 
@@ -1530,6 +1574,231 @@ ${previewUrl}`;
     window.open(whatsappUrl, '_blank');
     
     showToast('Opening WhatsApp...', 'success');
+  };
+
+  // ========================================
+  // BANNER MESSAGES TAB
+  // ========================================
+  
+  let selectedBanner = null;
+  
+  window.loadBanners = async function() {
+    const listEl = document.getElementById('bannerList');
+    listEl.innerHTML = '<div class="empty-state">Loading banners...</div>';
+
+    try {
+      const q = query(
+        collection(db, 'bannerMessages'),
+        orderBy('priority', 'asc')
+      );
+      const snapshot = await getDocs(q);
+
+      bannersCache = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+
+      if (bannersCache.length === 0) {
+        listEl.innerHTML = '<div class="empty-state">No banners yet. Click "Add Banner" to create one.</div>';
+        return;
+      }
+
+      listEl.innerHTML = bannersCache.map((banner, idx) => {
+        const statusClass = banner.isActive ? 'badge-preview' : '';
+        const statusText = banner.isActive ? 'Active' : 'Inactive';
+        const messagePreview = (banner.message || '').substring(0, 50) + ((banner.message || '').length > 50 ? '...' : '');
+        
+        // Format date range if exists
+        let dateInfo = '';
+        if (banner.startDate || banner.endDate) {
+          const start = banner.startDate?.toDate ? banner.startDate.toDate().toLocaleDateString() : '';
+          const end = banner.endDate?.toDate ? banner.endDate.toDate().toLocaleDateString() : '';
+          if (start && end) dateInfo = `${start} - ${end}`;
+          else if (start) dateInfo = `From ${start}`;
+          else if (end) dateInfo = `Until ${end}`;
+        }
+        
+        return `
+          <div class="item-row" data-idx="${idx}" onclick="selectBanner(${idx})">
+            <div class="item-info">
+              <div class="item-title">${messagePreview || '(No message)'}</div>
+              <div class="item-subtitle">Priority: ${banner.priority || 0} ${dateInfo ? '• ' + dateInfo : ''}</div>
+            </div>
+            <div class="item-badges">
+              <span class="badge ${statusClass}">${statusText}</span>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+    } catch (error) {
+      console.error('Error loading banners:', error);
+      listEl.innerHTML = '<div class="empty-state">Error loading banners</div>';
+      showToast('Error loading banners', 'error');
+    }
+  };
+
+  window.selectBanner = function(idx) {
+    selectedBanner = bannersCache[idx];
+    
+    document.querySelectorAll('#bannerList .item-row').forEach((row, i) => {
+      row.classList.toggle('selected', i === idx);
+    });
+
+    renderBannerEditor(false);
+  };
+
+  window.showNewBannerForm = function() {
+    selectedBanner = null;
+    document.querySelectorAll('#bannerList .item-row').forEach(row => {
+      row.classList.remove('selected');
+    });
+    renderBannerEditor(true);
+  };
+
+  function renderBannerEditor(isNew) {
+    const editorEl = document.getElementById('bannerEditor');
+    editorEl.classList.add('active');
+    
+    // Format dates for input fields
+    let startDateValue = '';
+    let endDateValue = '';
+    if (!isNew && selectedBanner) {
+      if (selectedBanner.startDate?.toDate) {
+        startDateValue = selectedBanner.startDate.toDate().toISOString().split('T')[0];
+      }
+      if (selectedBanner.endDate?.toDate) {
+        endDateValue = selectedBanner.endDate.toDate().toISOString().split('T')[0];
+      }
+    }
+
+    editorEl.innerHTML = `
+      <h3>${isNew ? '➕ New Banner' : '✏️ Edit Banner'}</h3>
+      
+      <div class="form-group">
+        <label>Banner Message</label>
+        <textarea id="bannerMessageInput" placeholder="Enter the banner message text..." style="min-height: 100px;">${isNew ? '' : (selectedBanner?.message || '')}</textarea>
+        <div class="hint">This text will scroll across the banner on the home page. Emojis are supported! 🎉</div>
+      </div>
+      
+      <div class="form-row">
+        <div class="form-group">
+          <label>Priority</label>
+          <input type="number" id="bannerPriorityInput" value="${isNew ? '10' : (selectedBanner?.priority || 10)}" min="1" max="100" placeholder="1-100">
+          <div class="hint">Lower numbers appear first (1 = highest priority)</div>
+        </div>
+        <div class="form-group">
+          <div class="checkbox-group" style="margin-top: 1.75rem;">
+            <input type="checkbox" id="bannerActiveCheck" ${isNew || selectedBanner?.isActive ? 'checked' : ''}>
+            <label for="bannerActiveCheck">✅ Banner is Active</label>
+          </div>
+        </div>
+      </div>
+      
+      <div class="form-row">
+        <div class="form-group">
+          <label>Start Date (Optional)</label>
+          <input type="date" id="bannerStartDate" value="${startDateValue}">
+          <div class="hint">Banner will only show on or after this date</div>
+        </div>
+        <div class="form-group">
+          <label>End Date (Optional)</label>
+          <input type="date" id="bannerEndDate" value="${endDateValue}">
+          <div class="hint">Banner will stop showing after this date</div>
+        </div>
+      </div>
+      
+      <div class="btn-group">
+        <button class="btn btn-success" onclick="saveBanner(${isNew})">💾 ${isNew ? 'Create' : 'Save'}</button>
+        ${!isNew ? `<button class="btn btn-danger" onclick="deleteBanner()">🗑️ Delete</button>` : ''}
+        <button class="btn btn-secondary" onclick="clearBannerSelection()">Cancel</button>
+      </div>
+    `;
+  }
+
+  window.saveBanner = async function(isNew) {
+    const message = document.getElementById('bannerMessageInput').value.trim();
+    const priority = parseInt(document.getElementById('bannerPriorityInput').value) || 10;
+    const isActive = document.getElementById('bannerActiveCheck').checked;
+    const startDateStr = document.getElementById('bannerStartDate').value;
+    const endDateStr = document.getElementById('bannerEndDate').value;
+
+    if (!message) {
+      showToast('Please enter a banner message', 'warning');
+      return;
+    }
+
+    try {
+      const bannerData = {
+        message,
+        priority,
+        isActive,
+        lastUpdated: serverTimestamp(),
+        lastUpdatedBy: currentUser.uid
+      };
+      
+      // Handle optional dates
+      if (startDateStr) {
+        bannerData.startDate = Timestamp.fromDate(new Date(startDateStr + 'T00:00:00'));
+      } else {
+        bannerData.startDate = null;
+      }
+      
+      if (endDateStr) {
+        bannerData.endDate = Timestamp.fromDate(new Date(endDateStr + 'T23:59:59'));
+      } else {
+        bannerData.endDate = null;
+      }
+
+      if (isNew) {
+        bannerData.createdAt = serverTimestamp();
+        bannerData.createdBy = currentUser.uid;
+        await addDoc(collection(db, 'bannerMessages'), bannerData);
+        showToast('Banner created successfully!', 'success');
+      } else {
+        await updateDoc(doc(db, 'bannerMessages', selectedBanner.id), bannerData);
+        showToast('Banner updated successfully!', 'success');
+      }
+
+      await loadBanners();
+      clearBannerSelection();
+
+    } catch (error) {
+      console.error('Error saving banner:', error);
+      showToast('Error saving banner: ' + error.message, 'error');
+    }
+  };
+
+  window.deleteBanner = async function() {
+    if (!selectedBanner) return;
+    
+    if (!confirm(`Are you sure you want to delete this banner?\n\n"${selectedBanner.message?.substring(0, 50)}..."`)) {
+      return;
+    }
+
+    try {
+      await deleteDoc(doc(db, 'bannerMessages', selectedBanner.id));
+      showToast('Banner deleted successfully!', 'success');
+      await loadBanners();
+      clearBannerSelection();
+    } catch (error) {
+      console.error('Error deleting banner:', error);
+      showToast('Error deleting banner: ' + error.message, 'error');
+    }
+  };
+
+  window.clearBannerSelection = function() {
+    selectedBanner = null;
+    document.querySelectorAll('#bannerList .item-row').forEach(row => {
+      row.classList.remove('selected');
+    });
+    document.getElementById('bannerEditor').classList.remove('active');
+    document.getElementById('bannerEditor').innerHTML = `
+      <div class="no-selection">
+        <div class="icon">📢</div>
+        <p>Select a banner to edit or click "Add Banner" to create a new one</p>
+      </div>
+    `;
   };
 
   // ========================================
