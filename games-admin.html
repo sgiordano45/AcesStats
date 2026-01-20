@@ -440,6 +440,20 @@
       </div>
     </div>
 
+    <!-- Aces Connections Stats Recalculation -->
+    <div class="admin-section">
+      <h2>🔗 Connections Stats Recalculation</h2>
+      <p style="color: var(--text-gray); margin-bottom: 1rem;">
+        Recalculate user stats (gamesPlayed, wins, perfectGames, totalCorrect, totalGuesses) from their daily game history.
+        Useful after adding the new "wins" field or fixing data inconsistencies.
+      </p>
+      <div class="action-buttons">
+        <button class="btn-primary" onclick="previewConnectionsRecalc()">Preview Changes</button>
+        <button class="btn-success" onclick="executeConnectionsRecalc()">Recalculate All Stats</button>
+      </div>
+      <div id="connectionsRecalcLog" class="log-area" style="margin-top: 1rem; display: none; max-height: 400px;"></div>
+    </div>
+
     <!-- Roster Recall Stats Recalculation -->
     <div class="admin-section">
       <h2>🧠 Roster Recall Stats Recalculation</h2>
@@ -917,6 +931,216 @@ window.executeBatchFix = async function() {
     log(`\n✅ Batch fix complete: ${fixCount} documents updated`, 'success');
   } catch (error) {
     log('Error: ' + error.message, 'error');
+  }
+};
+
+// ============================================
+// CONNECTIONS STATS RECALCULATION
+// ============================================
+function logConnections(message, type = 'info') {
+  const logArea = document.getElementById('connectionsRecalcLog');
+  logArea.style.display = 'block';
+  const className = `log-${type}`;
+  logArea.innerHTML += `<span class="${className}">${message}</span>\n`;
+  logArea.scrollTop = logArea.scrollHeight;
+}
+
+function clearConnectionsLog() {
+  const logArea = document.getElementById('connectionsRecalcLog');
+  logArea.innerHTML = '';
+}
+
+window.previewConnectionsRecalc = async function() {
+  clearConnectionsLog();
+  logConnections('🔍 Previewing Connections stats recalculation...', 'info');
+  
+  try {
+    const usersSnapshot = await getDocs(collection(db, 'acesConnectionsGames'));
+    logConnections(`Found ${usersSnapshot.size} players with Connections data\n`, 'info');
+    
+    let needsUpdate = 0;
+    
+    for (const userDoc of usersSnapshot.docs) {
+      const userId = userDoc.id;
+      const userData = userDoc.data();
+      const displayName = userData.displayName || userId.substring(0, 8);
+      
+      // Get all daily games for this user
+      const gamesSnapshot = await getDocs(collection(db, 'acesConnectionsGames', userId, 'dailyGames'));
+      
+      // Recalculate stats from games
+      let gamesPlayed = 0;
+      let wins = 0;
+      let perfectGames = 0;
+      let totalCorrect = 0;
+      let totalGuesses = 0;
+      let lastPlayedPuzzle = 0;
+      
+      gamesSnapshot.forEach(gameDoc => {
+        const game = gameDoc.data();
+        if (game.isComplete) {
+          gamesPlayed++;
+          
+          // Count correct categories (not 'X' in solveOrder)
+          const solveOrder = game.solveOrder || [];
+          const correct = solveOrder.filter(d => d !== 'X').length;
+          totalCorrect += correct;
+          
+          // Win = all 4 categories correct
+          if (correct === 4) {
+            wins++;
+            // Perfect = win with 0 mistakes
+            if (game.mistakes === 0) {
+              perfectGames++;
+            }
+          }
+          
+          // Count guesses
+          totalGuesses += (game.guessHistory?.length || 0);
+          
+          const dayNum = parseInt(gameDoc.id) || game.dayNum || 0;
+          lastPlayedPuzzle = Math.max(lastPlayedPuzzle, dayNum);
+        }
+      });
+      
+      // Compare with current stats
+      const current = {
+        gamesPlayed: userData.gamesPlayed || 0,
+        wins: userData.wins || 0,
+        perfectGames: userData.perfectGames || 0,
+        totalCorrect: userData.totalCorrect || 0,
+        totalGuesses: userData.totalGuesses || 0
+      };
+      
+      const hasChanges = 
+        current.gamesPlayed !== gamesPlayed ||
+        current.wins !== wins ||
+        current.perfectGames !== perfectGames ||
+        current.totalCorrect !== totalCorrect ||
+        current.totalGuesses !== totalGuesses;
+      
+      if (hasChanges) {
+        needsUpdate++;
+        logConnections(`⚠️ ${displayName}:`, 'warn');
+        logConnections(`   Current: ${current.gamesPlayed} played, ${current.wins} wins, ${current.perfectGames} perfect, ${current.totalCorrect} correct`, 'warn');
+        logConnections(`   Should be: ${gamesPlayed} played, ${wins} wins, ${perfectGames} perfect, ${totalCorrect} correct`, 'success');
+      } else {
+        logConnections(`✓ ${displayName}: ${gamesPlayed} games, ${wins} wins, ${perfectGames} perfect - OK`, 'success');
+      }
+    }
+    
+    logConnections(`\n📊 Summary: ${needsUpdate} users need updates`, 'info');
+    logConnections('✅ Preview complete. Click "Recalculate All Stats" to apply changes.', 'info');
+  } catch (error) {
+    logConnections(`❌ Error: ${error.message}`, 'error');
+    console.error(error);
+  }
+};
+
+window.executeConnectionsRecalc = async function() {
+  if (!confirm('This will recalculate Connections stats for ALL players from their game history. Continue?')) {
+    return;
+  }
+  
+  clearConnectionsLog();
+  logConnections('🚀 Recalculating all Connections player stats...', 'info');
+  
+  try {
+    const usersSnapshot = await getDocs(collection(db, 'acesConnectionsGames'));
+    let updatedCount = 0;
+    let errorCount = 0;
+    
+    for (const userDoc of usersSnapshot.docs) {
+      const userId = userDoc.id;
+      const userData = userDoc.data();
+      const displayName = userData.displayName || userId.substring(0, 8);
+      
+      try {
+        // Get all daily games for this user
+        const gamesSnapshot = await getDocs(collection(db, 'acesConnectionsGames', userId, 'dailyGames'));
+        
+        // Recalculate stats from games
+        let gamesPlayed = 0;
+        let wins = 0;
+        let perfectGames = 0;
+        let totalCorrect = 0;
+        let totalGuesses = 0;
+        let lastPlayedPuzzle = 0;
+        let currentStreak = 0;
+        let longestStreak = userData.longestStreak || 0;
+        
+        // Sort games by day number to calculate streaks
+        const sortedGames = [];
+        gamesSnapshot.forEach(gameDoc => {
+          const game = gameDoc.data();
+          const dayNum = parseInt(gameDoc.id) || game.dayNum || 0;
+          sortedGames.push({ dayNum, game });
+        });
+        sortedGames.sort((a, b) => a.dayNum - b.dayNum);
+        
+        let previousDayNum = 0;
+        
+        for (const { dayNum, game } of sortedGames) {
+          if (game.isComplete) {
+            gamesPlayed++;
+            
+            // Count correct categories (not 'X' in solveOrder)
+            const solveOrder = game.solveOrder || [];
+            const correct = solveOrder.filter(d => d !== 'X').length;
+            totalCorrect += correct;
+            
+            // Win = all 4 categories correct
+            if (correct === 4) {
+              wins++;
+              // Perfect = win with 0 mistakes
+              if (game.mistakes === 0) {
+                perfectGames++;
+              }
+            }
+            
+            // Count guesses
+            totalGuesses += (game.guessHistory?.length || 0);
+            
+            // Streak calculation
+            if (previousDayNum === dayNum - 1) {
+              currentStreak++;
+            } else {
+              currentStreak = 1;
+            }
+            longestStreak = Math.max(longestStreak, currentStreak);
+            previousDayNum = dayNum;
+            
+            lastPlayedPuzzle = Math.max(lastPlayedPuzzle, dayNum);
+          }
+        }
+        
+        // Update user stats
+        await setDoc(doc(db, 'acesConnectionsGames', userId), {
+          ...userData,
+          gamesPlayed,
+          wins,
+          perfectGames,
+          totalCorrect,
+          totalGuesses,
+          currentStreak,
+          longestStreak,
+          lastPlayedPuzzle,
+          statsRecalculatedAt: serverTimestamp()
+        }, { merge: true });
+        
+        updatedCount++;
+        logConnections(`✓ ${displayName}: ${gamesPlayed} games, ${wins} wins, ${perfectGames} perfect`, 'success');
+        
+      } catch (err) {
+        errorCount++;
+        logConnections(`❌ ${displayName}: ${err.message}`, 'error');
+      }
+    }
+    
+    logConnections(`\n✅ Complete: ${updatedCount} updated, ${errorCount} errors`, 'success');
+  } catch (error) {
+    logConnections(`❌ Error: ${error.message}`, 'error');
+    console.error(error);
   }
 };
 
