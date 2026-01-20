@@ -84,6 +84,12 @@ export class NavigationComponent {
     return hasUserId;
   }
 
+  // Check if PWA is installed (standalone mode)
+  isPWAInstalled() {
+    return window.matchMedia('(display-mode: standalone)').matches || 
+           window.navigator.standalone === true;
+  }
+
   // Get all links for mobile (everything user has access to)
   getMobileLinks() {
     const allLinks = [];
@@ -163,10 +169,19 @@ export class NavigationComponent {
   // Render mobile navigation with auth section
   renderMobile() {
     const links = this.getMobileLinks();
+    const isPWAInstalled = this.isPWAInstalled();
     
     // Split links into public and auth pages
     const publicLinks = links.filter(link => !link.requiresAuth);
     const authLinks = links.filter(link => link.requiresAuth);
+    
+    // Install App link - only show if not already installed
+    const installAppLink = !isPWAInstalled ? `
+      <div class="mobile-nav-section-divider">App</div>
+      <a href="#" class="mobile-nav-item install-app-link" id="mobileInstallAppBtn">
+        📲 Install App
+      </a>
+    ` : '';
     
     return `
       <div class="mobile-nav-container">
@@ -180,6 +195,7 @@ export class NavigationComponent {
               ${link.icon} ${link.label}
             </a>
           `).join('')}
+          ${installAppLink}
           ${this.isAuthenticated && authLinks.length > 0 ? `
             <div class="mobile-nav-section-divider">Account</div>
             ${authLinks.map(link => `
@@ -265,12 +281,18 @@ export class NavigationComponent {
       }
     }
     
+    // Add body class if PWA is installed (for CSS hiding)
+    if (nav.isPWAInstalled()) {
+      document.body.classList.add('pwa-installed');
+    }
+    
     // IMPORTANT: Set up event listeners AFTER the HTML is inserted
     // Use requestAnimationFrame to ensure DOM is fully painted
     requestAnimationFrame(() => {
       const mobileMenuBtn = document.getElementById('mobileMenuBtn');
       const mobileNavMenu = document.getElementById('mobileNavMenu');
       const mobileSignOutBtn = document.getElementById('mobileSignOutBtn');
+      const mobileInstallAppBtn = document.getElementById('mobileInstallAppBtn');
       
       console.log('Setting up mobile menu...', { mobileMenuBtn, mobileNavMenu, mobileSignOutBtn });
       
@@ -316,6 +338,31 @@ export class NavigationComponent {
           }
         });
         console.log('✅ Mobile sign-out button listener attached');
+      }
+      
+      // Mobile Install App button
+      if (mobileInstallAppBtn) {
+        mobileInstallAppBtn.addEventListener('click', function(e) {
+          e.preventDefault();
+          e.stopPropagation();
+          console.log('📲 Install App clicked from nav menu');
+          
+          // Close the mobile menu first
+          const menu = document.getElementById('mobileNavMenu');
+          if (menu) {
+            menu.classList.remove('open');
+          }
+          
+          // Trigger PWA install (function defined in mobile-enhancements.js)
+          if (typeof window.triggerPWAInstall === 'function') {
+            window.triggerPWAInstall();
+          } else {
+            // Fallback if mobile-enhancements.js hasn't loaded yet
+            console.warn('⚠️ triggerPWAInstall not available, showing manual instructions');
+            alert('To install the app:\n\n1. Open browser menu (⋮ or ⋯)\n2. Tap "Add to Home Screen"\n3. Follow the prompts');
+          }
+        });
+        console.log('✅ Mobile install app button listener attached');
       }
       
       // Close menu when clicking outside

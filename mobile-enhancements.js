@@ -1,7 +1,7 @@
 /**
  * Mobile Enhancements JavaScript
  * Shared functionality for mobile-responsive improvements
- * @version 1.1.0 - Updated for new navigation system
+ * @version 1.2.0 - Added Back to Top, PWA Install Banner, Keyboard Fix
  */
 
 (function() {
@@ -50,6 +50,424 @@
         }
       }
     });
+  }
+
+  // ========================================
+  // BACK TO TOP BUTTON
+  // ========================================
+
+  /**
+   * Create and manage Back to Top button
+   */
+  function setupBackToTop() {
+    // Only on mobile
+    if (window.innerWidth > 768) return;
+
+    // Create button if it doesn't exist
+    let btn = document.getElementById('backToTopBtn');
+    if (!btn) {
+      btn = document.createElement('button');
+      btn.id = 'backToTopBtn';
+      btn.className = 'back-to-top-btn';
+      btn.setAttribute('aria-label', 'Back to top');
+      btn.innerHTML = '↑';
+      document.body.appendChild(btn);
+    }
+
+    // Show/hide based on scroll position
+    const toggleVisibility = () => {
+      if (window.scrollY > 400) {
+        btn.classList.add('visible');
+      } else {
+        btn.classList.remove('visible');
+      }
+    };
+
+    // Scroll to top when clicked
+    btn.addEventListener('click', () => {
+      window.scrollTo({
+        top: 0,
+        behavior: prefersReducedMotion() ? 'auto' : 'smooth'
+      });
+    });
+
+    // Listen for scroll with throttle
+    let ticking = false;
+    window.addEventListener('scroll', () => {
+      if (!ticking) {
+        window.requestAnimationFrame(() => {
+          toggleVisibility();
+          ticking = false;
+        });
+        ticking = true;
+      }
+    }, { passive: true });
+
+    // Initial check
+    toggleVisibility();
+    console.log('✅ Back to Top button initialized');
+  }
+
+  // ========================================
+  // PWA INSTALL BANNER
+  // ========================================
+
+  let deferredPrompt = null;
+  const PWA_DISMISS_KEY = 'pwa_install_dismissed';
+  const PWA_DISMISS_DAYS = 7;
+
+  /**
+   * Check if PWA install banner should be shown
+   */
+  function shouldShowPWABanner() {
+    // Don't show if already installed (standalone mode)
+    if (window.matchMedia('(display-mode: standalone)').matches) {
+      console.log('📱 App already installed (standalone mode)');
+      return false;
+    }
+
+    // Check iOS standalone
+    if (window.navigator.standalone === true) {
+      console.log('📱 App already installed (iOS standalone)');
+      return false;
+    }
+
+    // Check dismiss timestamp
+    const dismissedAt = localStorage.getItem(PWA_DISMISS_KEY);
+    if (dismissedAt) {
+      const dismissedDate = new Date(parseInt(dismissedAt, 10));
+      const now = new Date();
+      const daysSinceDismiss = (now - dismissedDate) / (1000 * 60 * 60 * 24);
+      
+      if (daysSinceDismiss < PWA_DISMISS_DAYS) {
+        console.log(`📱 PWA banner dismissed ${Math.floor(daysSinceDismiss)} days ago, waiting ${PWA_DISMISS_DAYS} days`);
+        return false;
+      } else {
+        // Clear old dismissal
+        localStorage.removeItem(PWA_DISMISS_KEY);
+      }
+    }
+
+    return true;
+  }
+
+  /**
+   * Detect if user is on iOS Safari
+   */
+  function isIOSSafari() {
+    const ua = window.navigator.userAgent;
+    const iOS = /iPad|iPhone|iPod/.test(ua);
+    const webkit = /WebKit/.test(ua);
+    const notChrome = !/CriOS/.test(ua);
+    const notFirefox = !/FxiOS/.test(ua);
+    return iOS && webkit && notChrome && notFirefox;
+  }
+
+  /**
+   * Create PWA install banner
+   */
+  function createPWABanner() {
+    // Only on mobile
+    if (window.innerWidth > 768) return;
+
+    if (!shouldShowPWABanner()) return;
+
+    // Create banner element
+    const banner = document.createElement('div');
+    banner.id = 'pwaInstallBanner';
+    banner.className = 'pwa-install-banner';
+    
+    const isIOS = isIOSSafari();
+    
+    banner.innerHTML = `
+      <div class="pwa-banner-content">
+        <div class="pwa-banner-icon">⚾</div>
+        <div class="pwa-banner-text">
+          <strong>Install Mountainside Aces</strong>
+          <span>${isIOS ? 'Add to your home screen for quick access' : 'Get the app for a better experience'}</span>
+        </div>
+        <div class="pwa-banner-actions">
+          <button class="pwa-install-btn" id="pwaInstallBtn">
+            ${isIOS ? 'How to Install' : 'Install'}
+          </button>
+          <button class="pwa-dismiss-btn" id="pwaDismissBtn" aria-label="Dismiss">×</button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(banner);
+
+    // Show banner with animation
+    requestAnimationFrame(() => {
+      banner.classList.add('visible');
+    });
+
+    // Handle install button
+    const installBtn = document.getElementById('pwaInstallBtn');
+    installBtn.addEventListener('click', () => {
+      if (isIOS) {
+        showIOSInstallInstructions();
+      } else if (deferredPrompt) {
+        // Chrome/Edge install prompt
+        deferredPrompt.prompt();
+        deferredPrompt.userChoice.then((choiceResult) => {
+          if (choiceResult.outcome === 'accepted') {
+            console.log('✅ User accepted PWA install');
+            hidePWABanner();
+          } else {
+            console.log('❌ User dismissed PWA install');
+          }
+          deferredPrompt = null;
+        });
+      } else {
+        // Fallback: show manual instructions
+        showManualInstallInstructions();
+      }
+    });
+
+    // Handle dismiss button
+    const dismissBtn = document.getElementById('pwaDismissBtn');
+    dismissBtn.addEventListener('click', () => {
+      dismissPWABanner();
+    });
+
+    console.log('✅ PWA install banner created');
+  }
+
+  /**
+   * Show iOS-specific install instructions
+   */
+  function showIOSInstallInstructions() {
+    const modal = document.createElement('div');
+    modal.id = 'pwaInstallModal';
+    modal.className = 'pwa-install-modal';
+    modal.innerHTML = `
+      <div class="pwa-modal-content">
+        <button class="pwa-modal-close" id="pwaModalClose">×</button>
+        <h3>📱 Install on iPhone/iPad</h3>
+        <ol class="pwa-install-steps">
+          <li>Tap the <strong>Share</strong> button <span class="ios-share-icon">⬆️</span> at the bottom of Safari</li>
+          <li>Scroll down and tap <strong>"Add to Home Screen"</strong></li>
+          <li>Tap <strong>"Add"</strong> in the top right</li>
+        </ol>
+        <p class="pwa-install-note">The app will appear on your home screen like a regular app!</p>
+        <button class="pwa-modal-btn" id="pwaModalDone">Got it!</button>
+      </div>
+    `;
+    document.body.appendChild(modal);
+
+    // Show with animation
+    requestAnimationFrame(() => {
+      modal.classList.add('visible');
+    });
+
+    // Close handlers
+    const closeModal = () => {
+      modal.classList.remove('visible');
+      setTimeout(() => modal.remove(), 300);
+    };
+
+    document.getElementById('pwaModalClose').addEventListener('click', closeModal);
+    document.getElementById('pwaModalDone').addEventListener('click', closeModal);
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) closeModal();
+    });
+  }
+
+  /**
+   * Show manual install instructions for other browsers
+   */
+  function showManualInstallInstructions() {
+    const modal = document.createElement('div');
+    modal.id = 'pwaInstallModal';
+    modal.className = 'pwa-install-modal';
+    modal.innerHTML = `
+      <div class="pwa-modal-content">
+        <button class="pwa-modal-close" id="pwaModalClose">×</button>
+        <h3>📱 Install the App</h3>
+        <p>To install Mountainside Aces:</p>
+        <ol class="pwa-install-steps">
+          <li>Open the <strong>browser menu</strong> (⋮ or ⋯)</li>
+          <li>Look for <strong>"Install app"</strong> or <strong>"Add to Home Screen"</strong></li>
+          <li>Follow the prompts to install</li>
+        </ol>
+        <button class="pwa-modal-btn" id="pwaModalDone">Got it!</button>
+      </div>
+    `;
+    document.body.appendChild(modal);
+
+    requestAnimationFrame(() => {
+      modal.classList.add('visible');
+    });
+
+    const closeModal = () => {
+      modal.classList.remove('visible');
+      setTimeout(() => modal.remove(), 300);
+    };
+
+    document.getElementById('pwaModalClose').addEventListener('click', closeModal);
+    document.getElementById('pwaModalDone').addEventListener('click', closeModal);
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) closeModal();
+    });
+  }
+
+  /**
+   * Hide PWA banner (after install)
+   */
+  function hidePWABanner() {
+    const banner = document.getElementById('pwaInstallBanner');
+    if (banner) {
+      banner.classList.remove('visible');
+      setTimeout(() => banner.remove(), 300);
+    }
+  }
+
+  /**
+   * Dismiss PWA banner (user clicked X)
+   */
+  function dismissPWABanner() {
+    localStorage.setItem(PWA_DISMISS_KEY, Date.now().toString());
+    hidePWABanner();
+    console.log(`📱 PWA banner dismissed for ${PWA_DISMISS_DAYS} days`);
+  }
+
+  /**
+   * Setup PWA install prompt capture
+   */
+  function setupPWAInstall() {
+    // Capture the beforeinstallprompt event (Chrome/Edge)
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredPrompt = e;
+      console.log('✅ PWA install prompt captured');
+      
+      // Show banner if conditions are met
+      if (shouldShowPWABanner()) {
+        createPWABanner();
+      }
+    });
+
+    // For iOS or if beforeinstallprompt doesn't fire, show banner after delay
+    setTimeout(() => {
+      if (!deferredPrompt && shouldShowPWABanner() && window.innerWidth <= 768) {
+        createPWABanner();
+      }
+    }, 3000); // 3 second delay to not interrupt initial page load
+
+    // Listen for successful install
+    window.addEventListener('appinstalled', () => {
+      console.log('✅ PWA was installed');
+      hidePWABanner();
+      deferredPrompt = null;
+    });
+  }
+
+  /**
+   * Public function to trigger install (for nav menu link)
+   */
+  window.triggerPWAInstall = function() {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      deferredPrompt.userChoice.then((choiceResult) => {
+        if (choiceResult.outcome === 'accepted') {
+          console.log('✅ User accepted PWA install from menu');
+        }
+        deferredPrompt = null;
+      });
+    } else if (isIOSSafari()) {
+      showIOSInstallInstructions();
+    } else {
+      showManualInstallInstructions();
+    }
+  };
+
+  /**
+   * Check if app is installed (for hiding menu option)
+   */
+  window.isPWAInstalled = function() {
+    return window.matchMedia('(display-mode: standalone)').matches || 
+           window.navigator.standalone === true;
+  };
+
+  // ========================================
+  // KEYBOARD OVERLAP FIX
+  // ========================================
+
+  /**
+   * Fix input fields being hidden by mobile keyboard
+   */
+  function setupKeyboardOverlapFix() {
+    // Only on mobile
+    if (window.innerWidth > 768) return;
+
+    // Track focused input
+    let focusedInput = null;
+
+    // Listen for focus on inputs and textareas
+    document.addEventListener('focusin', (e) => {
+      const target = e.target;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT') {
+        focusedInput = target;
+        
+        // Delay to allow keyboard to appear
+        setTimeout(() => {
+          scrollInputIntoView(target);
+        }, 300);
+      }
+    });
+
+    // Clear on blur
+    document.addEventListener('focusout', () => {
+      focusedInput = null;
+    });
+
+    // Handle resize (keyboard appearing/disappearing)
+    let lastHeight = window.innerHeight;
+    window.addEventListener('resize', () => {
+      const currentHeight = window.innerHeight;
+      
+      // Keyboard appeared (height decreased significantly)
+      if (currentHeight < lastHeight - 100 && focusedInput) {
+        setTimeout(() => {
+          scrollInputIntoView(focusedInput);
+        }, 100);
+      }
+      
+      lastHeight = currentHeight;
+    });
+
+    console.log('✅ Keyboard overlap fix initialized');
+  }
+
+  /**
+   * Scroll input element into visible area
+   */
+  function scrollInputIntoView(element) {
+    if (!element) return;
+
+    const rect = element.getBoundingClientRect();
+    const viewportHeight = window.innerHeight;
+    
+    // Check if element is in the bottom half of the screen (likely covered by keyboard)
+    if (rect.bottom > viewportHeight * 0.5) {
+      // Calculate scroll needed to put element at 1/3 from top
+      const targetY = viewportHeight * 0.33;
+      const scrollNeeded = rect.top - targetY;
+      
+      window.scrollBy({
+        top: scrollNeeded,
+        behavior: prefersReducedMotion() ? 'auto' : 'smooth'
+      });
+    }
+
+    // Also use native scrollIntoView as backup
+    if (element.scrollIntoView) {
+      element.scrollIntoView({
+        behavior: prefersReducedMotion() ? 'auto' : 'smooth',
+        block: 'center'
+      });
+    }
   }
 
   // ========================================
@@ -255,6 +673,13 @@
           document.body.style.overflow = '';
           document.getElementById('mobileMenuBtn')?.focus();
         }
+        
+        // Also close PWA modal
+        const modal = document.getElementById('pwaInstallModal');
+        if (modal) {
+          modal.classList.remove('visible');
+          setTimeout(() => modal.remove(), 300);
+        }
       }
     });
   }
@@ -287,22 +712,21 @@
 
     let touchStartX = 0;
     let touchEndX = 0;
-    
-    document.addEventListener('touchstart', e => {
+    const swipeThreshold = 80;
+
+    document.addEventListener('touchstart', (e) => {
       touchStartX = e.changedTouches[0].screenX;
     }, { passive: true });
-    
-    document.addEventListener('touchend', e => {
+
+    document.addEventListener('touchend', (e) => {
       touchEndX = e.changedTouches[0].screenX;
       handleSwipe();
     }, { passive: true });
-    
+
     function handleSwipe() {
-      const swipeThreshold = 100;
       const menu = document.getElementById('mobileNavMenu');
-      
       if (!menu) return;
-      
+
       // Swipe right to open menu (if closed)
       if (touchEndX > touchStartX + swipeThreshold && !menu.classList.contains('open')) {
         if (touchStartX < 50) { // Only if swipe started from left edge
@@ -403,9 +827,18 @@
     // Touch
     setupSwipeGestures();
     
+    // NEW: Back to Top button
+    setupBackToTop();
+    
+    // NEW: PWA Install prompt
+    setupPWAInstall();
+    
+    // NEW: Keyboard overlap fix
+    setupKeyboardOverlapFix();
+    
     // Log initialization (can be removed in production)
     if (window.innerWidth <= 768) {
-      console.log('Mobile enhancements initialized');
+      console.log('Mobile enhancements initialized (v1.2.0)');
     }
   }
 
@@ -443,7 +876,9 @@
     isLandscape,
     prefersReducedMotion,
     announceToScreenReader,
-    debounce
+    debounce,
+    triggerPWAInstall: window.triggerPWAInstall,
+    isPWAInstalled: window.isPWAInstalled
   };
 
   // ========================================
