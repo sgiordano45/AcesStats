@@ -2451,7 +2451,20 @@ async function loadNotificationPreferences() {
     const user = auth.currentUser;
     if (!user) return;
     
-    const userDoc = await getDoc(doc(db, 'users', user.uid));
+    // Check for impersonation mode
+    let userId = user.uid;
+    let isImpersonatingUser = false;
+    
+    if (typeof isImpersonating === 'function' && isImpersonating()) {
+      const impersonatedUser = getEffectiveUserProfile(null);
+      if (impersonatedUser?.uid) {
+        userId = impersonatedUser.uid;
+        isImpersonatingUser = true;
+        console.log('🎭 Loading notification preferences for impersonated user:', userId);
+      }
+    }
+    
+    const userDoc = await getDoc(doc(db, 'users', userId));
     const userData = userDoc.data();
     
     // Check notification status
@@ -2468,6 +2481,45 @@ async function loadNotificationPreferences() {
     disableBtn.style.display = 'none';
     blockedHelp.style.display = 'none';
     notSupported.style.display = 'none';
+    
+    // Check if we're impersonating - show user's actual state, not browser state
+    if (isImpersonatingUser) {
+      const hasValidTokens = userData?.fcmTokens && userData.fcmTokens.length > 0;
+      const tokenCount = userData?.fcmTokens?.length || 0;
+      
+      if (hasValidTokens) {
+        statusText.textContent = `✅ Push notifications enabled (${tokenCount} device${tokenCount > 1 ? 's' : ''})`;
+        statusText.style.color = 'var(--primary-color)';
+        prefsSection.style.display = 'block';
+        // Don't show enable/disable buttons when impersonating - read only
+        
+        // Load preferences (read-only view)
+        const prefs = userData.notificationPreferences || {};
+        document.getElementById('pref-game-reminders').checked = prefs.gameReminders?.enabled ?? true;
+        document.getElementById('pref-rsvp-reminders').checked = prefs.rsvpReminders?.enabled ?? true;
+        document.getElementById('pref-schedule-changes').checked = prefs.scheduleChanges?.enabled ?? true;
+        document.getElementById('pref-lineup-changes').checked = prefs.lineupChanges?.enabled ?? true;
+        document.getElementById('pref-announcements').checked = prefs.announcements !== false;
+        document.getElementById('pref-score-updates').checked = prefs.scoreUpdates?.enabled ?? false;
+        document.getElementById('pref-final-score-only').checked = prefs.scoreUpdates?.finalScoreOnly ?? true;
+        document.getElementById('pref-milestones').checked = prefs.milestones?.enabled ?? true;
+        document.getElementById('pref-quiet-hours').checked = prefs.quietHours?.enabled ?? true;
+        document.getElementById('quiet-start').value = prefs.quietHours?.start || '22:00';
+        document.getElementById('quiet-end').value = prefs.quietHours?.end || '08:00';
+        
+      } else if (userData?.notificationsEnabled) {
+        // Flag says enabled but no tokens registered
+        statusText.textContent = '⚠️ Notifications enabled but no devices registered';
+        statusText.style.color = '#f59e0b';
+      } else {
+        statusText.textContent = '🔕 Push notifications are not enabled';
+        statusText.style.color = 'var(--text-light)';
+      }
+      
+      return; // Exit early for impersonation - no browser checks needed
+    }
+    
+    // Normal user flow - check browser notification state
     
     // Check if notifications are supported
     if (!('Notification' in window)) {
@@ -2650,7 +2702,10 @@ async function loadNotificationPreferences() {
         }
         
 // NEW: Determine the display name to use (preferred or Google name)
-const displayName = userProfile?.preferredDisplayName || user.displayName || 'User';
+const displayName = userProfile?.preferredDisplayName || userProfile?.displayName || user.displayName || 'User';
+
+// Check if we're impersonating to handle photos correctly
+const isCurrentlyImpersonating = typeof isImpersonating === 'function' && isImpersonating();
 
 // Update header - prioritize custom profile photo, fallback to Google photo
 const photoElement = document.getElementById('profilePhoto');
@@ -2658,8 +2713,12 @@ if (userProfile?.profilePhotoURL) {
   // User has uploaded a custom profile photo
   photoElement.src = userProfile.profilePhotoURL;
   photoElement.style.display = 'block';
-} else if (user.photoURL) {
-  // Use Google photo if available
+} else if (isCurrentlyImpersonating && userProfile?.photoURL) {
+  // When impersonating, use the impersonated user's stored Google photo URL
+  photoElement.src = userProfile.photoURL;
+  photoElement.style.display = 'block';
+} else if (!isCurrentlyImpersonating && user.photoURL) {
+  // Use current user's Google photo if available (not impersonating)
   photoElement.src = user.photoURL;
   photoElement.style.display = 'block';
 } else {
@@ -2670,11 +2729,20 @@ if (userProfile?.profilePhotoURL) {
 document.getElementById('displayName').textContent = displayName;
 document.getElementById('playerName').textContent = userProfile?.linkedPlayer || 'Not linked';
 document.getElementById('teamBadge').textContent = userProfile?.linkedTeam || 'No team';
-document.getElementById('accountEmail').value = user.email;
 
-// Determine account type based on provider data
+// Show impersonated user's email when impersonating, otherwise current user
+document.getElementById('accountEmail').value = isCurrentlyImpersonating ? (userProfile?.email || 'Unknown') : user.email;
+
+// Determine account type based on provider data or stored registration method
 let accountType = 'Email/Password';
-if (user.providerData && user.providerData.length > 0) {
+if (isCurrentlyImpersonating) {
+  // For impersonated users, check their stored registration method or photoURL as hint
+  if (userProfile?.registrationMethod === 'google' || (userProfile?.photoURL && userProfile.photoURL.includes('googleusercontent'))) {
+    accountType = 'Google Sign-In';
+  } else if (userProfile?.registrationMethod === 'email') {
+    accountType = 'Email/Password';
+  }
+} else if (user.providerData && user.providerData.length > 0) {
   const provider = user.providerData[0].providerId;
   if (provider === 'google.com') {
     accountType = 'Google Sign-In';
@@ -2685,18 +2753,48 @@ if (user.providerData && user.providerData.length > 0) {
 document.getElementById('accountType').value = accountType;
 
 // NEW: Update password change UI based on account type
-updatePasswordChangeUI(user);
+// When impersonating, hide password change options
+if (isCurrentlyImpersonating) {
+  document.getElementById('passwordChangeForm').style.display = 'none';
+  document.getElementById('googlePasswordMessage').style.display = 'none';
+  // Optionally add an impersonation notice
+  const passwordSection = document.querySelector('.section-card:has(#passwordChangeForm)') || 
+                          document.getElementById('passwordChangeForm')?.closest('.section-card');
+  if (passwordSection) {
+    const existingNotice = passwordSection.querySelector('.impersonation-notice');
+    if (!existingNotice) {
+      const notice = document.createElement('p');
+      notice.className = 'impersonation-notice';
+      notice.style.cssText = 'color: #f59e0b; font-style: italic; margin-bottom: 1rem;';
+      notice.textContent = '🎭 Password settings not viewable in View As mode';
+      passwordSection.querySelector('.section-header').after(notice);
+    }
+  }
+} else {
+  updatePasswordChangeUI(user);
+}
 
 
 // NEW: Load the display name form
 document.getElementById('preferredDisplayName').value = userProfile?.preferredDisplayName || '';
-document.getElementById('googleAccountName').textContent = user.displayName || user.email;
+document.getElementById('googleAccountName').textContent = isCurrentlyImpersonating 
+  ? (userProfile?.displayName || userProfile?.email || 'Unknown') 
+  : (user.displayName || user.email);
 		
 		        
         
-        // Calculate member since
-        const createdDate = new Date(user.metadata.creationTime);
-        document.getElementById('memberSince').textContent = `Member since ${createdDate.getFullYear()}`;
+        // Calculate member since - use impersonated user's createdAt if available
+let memberSinceText = '';
+if (isCurrentlyImpersonating && userProfile?.createdAt) {
+  // Use the impersonated user's profile creation date
+  const createdDate = userProfile.createdAt.toDate ? userProfile.createdAt.toDate() : new Date(userProfile.createdAt);
+  memberSinceText = `Member since ${createdDate.getFullYear()}`;
+} else {
+  // Use the current user's auth creation time
+  const createdDate = new Date(user.metadata.creationTime);
+  memberSinceText = `Member since ${createdDate.getFullYear()}`;
+}
+document.getElementById('memberSince').textContent = memberSinceText;
 
 
 		// NEW: Load "Ace since" year (first year they appear in data)
