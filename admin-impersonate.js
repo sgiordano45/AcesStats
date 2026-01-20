@@ -304,6 +304,7 @@ function formatRole(role) {
 
 /**
  * Fetch all users for admin selection dropdown
+ * Excludes migrated/legacy profiles - only returns real authenticated users
  * @returns {Promise<Array>}
  */
 export async function fetchAllUsersForImpersonation() {
@@ -314,8 +315,15 @@ export async function fetchAllUsersForImpersonation() {
     usersSnapshot.forEach(docSnap => {
       const data = docSnap.data();
       
-      // Only include real authenticated users (have email)
-      if (data.email) {
+      // Filter criteria for real authenticated users:
+      // 1. Must have email (all Firebase auth users have this)
+      // 2. Must not be marked as migrated
+      // 3. Document ID must be a Firebase UID (long alphanumeric, no underscores)
+      const hasEmail = !!data.email;
+      const notMigrated = !data.migrated;
+      const isFirebaseUID = docSnap.id.length > 20 && !docSnap.id.includes('_');
+      
+      if (hasEmail && notMigrated && isFirebaseUID) {
         users.push({
           uid: docSnap.id,
           displayName: data.displayName || 'No Name',
