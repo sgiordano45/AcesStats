@@ -1,8 +1,8 @@
 // service-worker.js - Unified Service Worker
 // Handles both offline functionality AND Firebase Cloud Messaging
-// Version 2.0.3 - mobile-enhacements improvements
+// Version 2.0.4 - dark mode toggle
 
-const CACHE_VERSION = 'aces-v2.0.3';
+const CACHE_VERSION = 'aces-v2.0.4';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const DYNAMIC_CACHE = `${CACHE_VERSION}-dynamic`;
 const IMAGE_CACHE = `${CACHE_VERSION}-images`;
