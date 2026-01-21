@@ -187,7 +187,12 @@ export class NavigationComponent {
       <div class="mobile-nav-container">
         <div class="mobile-nav-header">
           <div class="mobile-nav-title">⚾ Mountainside Aces</div>
-          <button class="hamburger-menu" id="mobileMenuBtn" aria-label="Toggle navigation">☰</button>
+          <div class="mobile-nav-actions">
+            <button class="theme-toggle" id="mobileThemeToggle" aria-label="Toggle dark mode" title="Toggle dark/light mode">
+              <span class="theme-toggle-icon">🌙</span>
+            </button>
+            <button class="hamburger-menu" id="mobileMenuBtn" aria-label="Toggle navigation">☰</button>
+          </div>
         </div>
         <nav class="mobile-nav-menu" id="mobileNavMenu">
           ${publicLinks.map(link => `
