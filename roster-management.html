@@ -1156,6 +1156,88 @@ const saveLineupData = async (type, data, inning = null) => {
     saveLineupData('bench', newBenchPlayers[selectedGame], targetInning);
   };
 
+  // Apply one inning's fielding positions to all 7 innings
+  const applyFieldingToAllInnings = async (sourceInning = 1) => {
+    if (!isCaptain) return;
+    
+    const sourcePositions = fieldingPositions[selectedGame]?.[sourceInning] || {};
+    const sourceBench = benchPlayers[selectedGame]?.[sourceInning] || [];
+    
+    if (Object.keys(sourcePositions).length === 0) {
+      alert(`Inning ${sourceInning} has no fielding positions set. Please set positions first.`);
+      return;
+    }
+    
+    if (!confirm(`Apply Inning ${sourceInning}'s defensive positions to all 7 innings?`)) {
+      return;
+    }
+    
+    setSavingLineup(true);
+    
+    try {
+      const newFieldingPositions = { ...fieldingPositions };
+      const newBenchPlayers = { ...benchPlayers };
+      
+      if (!newFieldingPositions[selectedGame]) newFieldingPositions[selectedGame] = {};
+      if (!newBenchPlayers[selectedGame]) newBenchPlayers[selectedGame] = {};
+      
+      // Clone source positions for each inning
+      for (let inning = 1; inning <= 7; inning++) {
+        // Clone fielding positions
+        const clonedPositions = {};
+        Object.keys(sourcePositions).forEach(pos => {
+          const player = sourcePositions[pos];
+          if (player && player.id) {
+            const fullPlayer = players.find(p => p.id === player.id);
+            if (fullPlayer) {
+              clonedPositions[pos] = { ...fullPlayer };
+            }
+          }
+        });
+        newFieldingPositions[selectedGame][inning] = clonedPositions;
+        
+        // Clone bench players
+        const clonedBench = sourceBench.map(player => {
+          if (player && player.id) {
+            const fullPlayer = players.find(p => p.id === player.id);
+            return fullPlayer ? { ...fullPlayer } : null;
+          }
+          return null;
+        }).filter(p => p !== null);
+        newBenchPlayers[selectedGame][inning] = clonedBench;
+      }
+      
+      // Update state
+      setFieldingPositions(newFieldingPositions);
+      setBenchPlayers(newBenchPlayers);
+      
+      // Save all innings to Firebase
+      for (let inning = 1; inning <= 7; inning++) {
+        await window.FirebaseRoster.saveFieldingPositions(
+          selectedGame, 
+          selectedTeam, 
+          inning, 
+          newFieldingPositions[selectedGame][inning], 
+          currentUser.uid
+        );
+        await window.FirebaseRoster.saveBenchPlayers(
+          selectedGame, 
+          selectedTeam, 
+          inning, 
+          newBenchPlayers[selectedGame][inning]?.map(p => p.id) || [], 
+          currentUser.uid
+        );
+      }
+      
+      alert(`✅ Inning ${sourceInning}'s positions applied to all 7 innings!`);
+    } catch (error) {
+      console.error('Error applying fielding to all innings:', error);
+      alert('Failed to apply positions. Please try again.');
+    } finally {
+      setSavingLineup(false);
+    }
+  };
+
   // Copy batting order from most recent previous game
     const copyFromPreviousGame = async () => {
       if (!isCaptain || !selectedGame) return;
@@ -2386,10 +2468,23 @@ const printDefensiveRotation = () => {
                     <div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
   <h2 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 'bold', color: 'var(--text-dark)' }}>Defensive Positions by Inning</h2>
-  <button onClick={printDefensiveRotation} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 1rem', background: 'var(--primary-color)', color: 'white', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer', transition: 'all 0.2s ease' }} onMouseEnter={(e) => e.target.style.background = 'var(--secondary-color)'} onMouseLeave={(e) => e.target.style.background = 'var(--primary-color)'}>
-    <Printer style={{ width: '18px', height: '18px' }} />
-    Print Defensive Rotation
-  </button>
+  <div style={{ display: 'flex', gap: '0.5rem' }}>
+    {isCaptain && (
+      <button 
+        onClick={() => applyFieldingToAllInnings(1)} 
+        disabled={savingLineup}
+        style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 1rem', background: '#6366f1', color: 'white', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: savingLineup ? 'not-allowed' : 'pointer', transition: 'all 0.2s ease', opacity: savingLineup ? 0.7 : 1 }} 
+        onMouseEnter={(e) => !savingLineup && (e.target.style.background = '#4f46e5')} 
+        onMouseLeave={(e) => e.target.style.background = '#6366f1'}
+      >
+        {savingLineup ? '⏳' : '📋'} Apply Inning 1 to All
+      </button>
+    )}
+    <button onClick={printDefensiveRotation} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 1rem', background: 'var(--primary-color)', color: 'white', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: 'pointer', transition: 'all 0.2s ease' }} onMouseEnter={(e) => e.target.style.background = 'var(--secondary-color)'} onMouseLeave={(e) => e.target.style.background = 'var(--primary-color)'}>
+      <Printer style={{ width: '18px', height: '18px' }} />
+      Print
+    </button>
+  </div>
 </div>
                       
                       {isMobile ? (
@@ -2432,6 +2527,18 @@ const printDefensiveRotation = () => {
                                       cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
                               <ChevronLeft style={{ width: '18px', height: '18px' }} />
                               Copy All from Inning {currentInning - 1}
+                            </button>
+                          )}
+                          
+                          {isCaptain && gameFieldingPositions[currentInning] && Object.keys(gameFieldingPositions[currentInning]).length > 0 && (
+                            <button
+                              onClick={() => applyFieldingToAllInnings(currentInning)}
+                              disabled={savingLineup}
+                              style={{ width: '100%', marginBottom: '1rem', padding: '12px', background: '#6366f1',
+                                      color: 'white', border: 'none', borderRadius: '12px', fontSize: '14px', fontWeight: '600',
+                                      cursor: savingLineup ? 'not-allowed' : 'pointer', opacity: savingLineup ? 0.7 : 1,
+                                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                              {savingLineup ? '⏳ Applying...' : `📋 Apply Inning ${currentInning} to All 7 Innings`}
                             </button>
                           )}
                           
