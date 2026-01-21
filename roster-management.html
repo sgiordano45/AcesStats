@@ -446,6 +446,7 @@ function RosterManagement({ currentUser }) {
   const [selectedTeam, setSelectedTeam] = useState('');
   const [selectedGame, setSelectedGame] = useState(null);
   const [rsvps, setRsvps] = useState({});
+  const [lastRsvpUpdate, setLastRsvpUpdate] = useState({}); // Track last RSVP update per game
   const [battingOrder, setBattingOrder] = useState({});
   const [fieldingPositions, setFieldingPositions] = useState({});
   const [benchPlayers, setBenchPlayers] = useState({});
@@ -478,6 +479,28 @@ function RosterManagement({ currentUser }) {
 
   const isCaptain = userProfile?.isCaptain || false;
   const seasonConfig = SEASONS[season];
+
+  // Helper function to format relative time
+  const formatRelativeTime = (timestamp) => {
+    if (!timestamp) return null;
+    
+    const now = new Date();
+    const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
+    const diffMs = now - date;
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+    
+    if (diffMins < 1) return 'just now';
+    if (diffMins === 1) return '1 minute ago';
+    if (diffMins < 60) return `${diffMins} minutes ago`;
+    if (diffHours === 1) return '1 hour ago';
+    if (diffHours < 24) return `${diffHours} hours ago`;
+    if (diffDays === 1) return 'yesterday';
+    if (diffDays < 7) return `${diffDays} days ago`;
+    
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  };
 
   useEffect(() => {
     loadInitialData();
@@ -697,12 +720,26 @@ function RosterManagement({ currentUser }) {
       const unsubscribes = games.map(game => 
         window.FirebaseRoster.listenToGameRSVPs(game.id, (updatedRsvps) => {
           const formattedRsvps = {};
+          let mostRecentUpdate = null;
+          
           players.forEach(player => {
             const key = `${player.id}-${game.id}`;
             const userRsvp = updatedRsvps[player.id];
             formattedRsvps[key] = userRsvp?.status || 'none';
+            
+            // Track most recent update timestamp
+            if (userRsvp?.updatedAt) {
+              const updateTime = userRsvp.updatedAt.toDate ? userRsvp.updatedAt.toDate() : new Date(userRsvp.updatedAt);
+              if (!mostRecentUpdate || updateTime > mostRecentUpdate) {
+                mostRecentUpdate = updateTime;
+              }
+            }
           });
+          
           setRsvps(prev => ({ ...prev, ...formattedRsvps }));
+          if (mostRecentUpdate) {
+            setLastRsvpUpdate(prev => ({ ...prev, [game.id]: mostRecentUpdate }));
+          }
         })
       );
       
@@ -1986,6 +2023,19 @@ const printDefensiveRotation = () => {
                                                  }}>{rsvpCounts.none}</span>
                                                  <span style={{ color: '#9ca3af', fontWeight: '500', fontSize: '13px' }}>Pending</span>
                                                </div>
+                                             </div>
+                                           )}
+                                           
+                                           {/* Last RSVP Update Timestamp */}
+                                           {selectedGame && lastRsvpUpdate[selectedGame] && (
+                                             <div style={{
+                                               textAlign: 'center',
+                                               fontSize: '12px',
+                                               color: 'var(--text-light)',
+                                               marginTop: '-0.75rem',
+                                               marginBottom: '1.5rem'
+                                             }}>
+                                               🕐 RSVPs last updated {formatRelativeTime(lastRsvpUpdate[selectedGame])}
                                              </div>
                                            )}
 
