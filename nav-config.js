@@ -69,6 +69,7 @@ export const NAV_STRUCTURE = {
   primary: [
     { id: 'home', href: 'index.html', label: 'Home', icon: '🏠', priority: 1 },
     { id: 'current-season', href: 'current-season.html', label: 'Current Season', icon: '🍂', priority: 1 },
+    { id: 'activity', href: 'activity.html', label: 'Activity Feed', icon: '📣', priority: 1 },
     { id: 'league-rules', href: 'league-rules.html', label: 'League Rules', icon: '⚖️', priority: 1 },
     { id: 'batting', href: 'batting.html', label: 'Batting Stats', icon: '⚾', priority: 1, class: 'batting' },
     { id: 'pitching', href: 'pitching.html', label: 'Pitching Stats', icon: '🥎', priority: 1, class: 'pitching' },
@@ -90,7 +91,6 @@ export const NAV_STRUCTURE = {
     { id: 'awards', href: 'awards.html', label: 'Awards', icon: '🏅', priority: 2 },
     { id: 'games', href: 'games.html', label: 'Daily Games', icon: '🎮', priority: 2 },
     { id: 'trophy-case', href: 'trophy-case.html', label: 'Trophy Case', icon: '🏅', priority: 2 },
-    { id: 'activity', href: 'activity.html', label: 'League Activity', icon: '📰', priority: 2 },
   ],
 
   // Tier 3: TERTIARY - Specialty pages (mobile-only unless contextually relevant)
