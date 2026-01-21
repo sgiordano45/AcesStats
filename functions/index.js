@@ -1090,6 +1090,13 @@ exports.sendCaptainRsvpAlerts = functions.pubsub
             // Check notifications enabled and quiet hours
             if (captainData.notificationsEnabled !== false &&
                 !isInQuietHours(captainData.notificationPreferences?.quietHours)) {
+              
+              // Check if captain has opted out of these alerts
+              if (captainData.notificationPreferences?.captainRsvpAlerts === false) {
+                console.log(`Captain ${captainDoc.id} has opted out of RSVP alerts`);
+                continue;
+              }
+              
               const fcmTokens = captainData.fcmTokens || [];
               if (fcmTokens.length > 0) {
                 teamCaptains.push({
@@ -1164,7 +1171,6 @@ exports.sendCaptainRsvpAlerts = functions.pubsub
     console.log('👨‍✈️ Captain RSVP alerts complete');
     return null;
   });
-
 // ============================================================================
 // 6. SCHEDULE CHANGES (Triggered when preview details change)
 // ============================================================================
