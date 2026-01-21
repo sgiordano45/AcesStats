@@ -1136,6 +1136,18 @@
               </div>
 
               <div class="form-group">
+                <label>Quick Actions</label>
+                <div class="btn-group" style="margin-top: 0.5rem; margin-bottom: 1rem;">
+                  <button class="btn btn-secondary" onclick="selectAllCaptains()">
+                    👑 Message All Captains
+                  </button>
+                  <button class="btn btn-secondary" onclick="clearTeamSelection()">
+                    🔄 Clear Selection
+                  </button>
+                </div>
+              </div>
+
+              <div class="form-group">
                 <label>Target Teams (Optional - leave empty for league-wide)</label>
                 <div class="team-filter-chips" id="teamFilterChips">
                   Loading teams...
@@ -1146,6 +1158,10 @@
                 <div class="recipient-count">
                   <span id="recipientCountText">0 recipients</span>
                 </div>
+              </div>
+
+              <div id="captainsSelectedIndicator" style="display: none; background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%); border: 2px solid #f59e0b; border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 1rem;">
+                <span style="font-weight: 600; color: #92400e;">👑 Targeting All Captains</span>
               </div>
 
               <button class="btn btn-success" id="sendNotificationBtn" onclick="sendNotification()" disabled style="width: 100%; justify-content: center; padding: 1rem;">
@@ -1983,9 +1999,16 @@
   // NOTIFICATION FUNCTIONS
   // ========================================
 
+  let targetingCaptains = false;
+
   function renderTeamFilterChips() {
     const container = document.getElementById('teamFilterChips');
-    container.innerHTML = allTeams.map(team => `
+    // Filter out Kings from the team list
+    const activeTeams = allTeams.filter(team => 
+      team.id.toLowerCase() !== 'kings' && 
+      (team.name || '').toLowerCase() !== 'kings'
+    );
+    container.innerHTML = activeTeams.map(team => `
       <label class="team-chip" onclick="toggleTeamFilter('${team.id}')">
         <input type="checkbox" value="${team.id}">
         ${capitalize(team.name || team.id)}
@@ -1993,7 +2016,48 @@
     `).join('');
   }
 
+  window.selectAllCaptains = function() {
+    // Clear any team selections
+    selectedTeams = [];
+    document.querySelectorAll('.team-chip').forEach(chip => {
+      chip.classList.remove('selected');
+    });
+
+    // Set targeting captains mode
+    targetingCaptains = true;
+    
+    // Count captains
+    const captains = registeredUsers.filter(u => u.isCaptain === true);
+    
+    // Update UI
+    document.getElementById('captainsSelectedIndicator').style.display = 'block';
+    document.getElementById('recipientPreview').style.display = 'block';
+    document.getElementById('recipientCountText').textContent = `${captains.length} captains`;
+    
+    updateSendButton();
+    showToast(`Targeting ${captains.length} team captains`, 'success');
+  };
+
+  window.clearTeamSelection = function() {
+    selectedTeams = [];
+    targetingCaptains = false;
+    
+    document.querySelectorAll('.team-chip').forEach(chip => {
+      chip.classList.remove('selected');
+    });
+    
+    document.getElementById('captainsSelectedIndicator').style.display = 'none';
+    updateRecipientPreview();
+    updateSendButton();
+  };
+
   window.toggleTeamFilter = function(teamId) {
+    // Clear captains mode if user is selecting teams
+    if (targetingCaptains) {
+      targetingCaptains = false;
+      document.getElementById('captainsSelectedIndicator').style.display = 'none';
+    }
+
     const idx = selectedTeams.indexOf(teamId);
     if (idx === -1) {
       selectedTeams.push(teamId);
@@ -2014,6 +2078,12 @@
   function updateRecipientPreview() {
     const previewEl = document.getElementById('recipientPreview');
     const countEl = document.getElementById('recipientCountText');
+
+    // Don't show standard preview if targeting captains
+    if (targetingCaptains) {
+      previewEl.style.display = 'none';
+      return;
+    }
 
     if (selectedTeams.length === 0) {
       // League-wide
@@ -2094,11 +2164,17 @@
 
       // Determine recipients
       let targetTeams = selectedTeams.length > 0 ? selectedTeams : [];
-      let isLeagueWide = selectedTeams.length === 0;
+      let isLeagueWide = selectedTeams.length === 0 && !targetingCaptains;
+      let isCaptainsOnly = targetingCaptains;
       
       // Get recipient IDs
       let recipientIds = [];
-      if (isLeagueWide) {
+      if (isCaptainsOnly) {
+        // Target only captains
+        recipientIds = registeredUsers
+          .filter(u => u.isCaptain === true)
+          .map(u => u.uid);
+      } else if (isLeagueWide) {
         recipientIds = registeredUsers.map(u => u.uid);
       } else {
         recipientIds = registeredUsers
@@ -2115,9 +2191,10 @@
         body,
         link,
         priority,
-        targetTeams,
+        targetTeams: isCaptainsOnly ? ['captains'] : targetTeams,
         recipientUserIds: recipientIds,
-        isLeagueWide
+        isLeagueWide,
+        isCaptainsOnly
       });
       
       showToast(`✅ ${result.data.message || 'Notification sent successfully!'}`, 'success');
@@ -2132,8 +2209,10 @@
       document.getElementById('previewPanel').classList.remove('visible');
       document.getElementById('titleCharCount').textContent = '0';
       document.getElementById('bodyCharCount').textContent = '0';
+      document.getElementById('captainsSelectedIndicator').style.display = 'none';
       
       selectedTeams = [];
+      targetingCaptains = false;
       document.querySelectorAll('.team-chip').forEach(chip => {
         chip.classList.remove('selected');
       });
