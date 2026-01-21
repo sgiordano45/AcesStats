@@ -1,4 +1,5 @@
 // nav-component.js - Reusable Navigation Component
+// v1.1.0 - Fixed iOS PWA hamburger button reliability with event delegation
 import { NAV_STRUCTURE, ALL_PAGES, PAGE_CONFIGS, DEFAULT_CONFIG, loadPageVisibility, getFilteredNavStructure, isPageVisible } from './nav-config.js';
 
 export class NavigationComponent {
@@ -221,7 +222,7 @@ export class NavigationComponent {
     `;
   }
 
-  // Render complete navigation (both mobile and desktop)
+  // Render both navigations
   render() {
     return {
       mobile: this.renderMobile(),
@@ -229,37 +230,15 @@ export class NavigationComponent {
     };
   }
 
-  // Handle sign out
-  async handleSignOut() {
-    console.log('🚪 Mobile sign out clicked');
-    try {
-      // Check if Firebase auth is available
-      if (typeof window.auth !== 'undefined' && window.auth.signOut) {
-        await window.auth.signOut();
-        console.log('✅ User signed out successfully');
-        window.location.reload();
-      } else {
-        console.error('❌ Firebase auth not available');
-        alert('Sign out failed. Please try again.');
-      }
-    } catch (error) {
-      console.error('❌ Sign out error:', error);
-      alert('Error signing out. Please try again.');
-    }
-  }
-
-  // Initialize navigation on page load
+  // Static factory method for easy use
   static async init(options = {}) {
-    // Load visibility config from Firebase FIRST
+    // Load visibility config from Firebase first
     await loadPageVisibility();
+    const filteredNav = getFilteredNavStructure();
     
-    // Get filtered navigation structure based on Firebase visibility
-    const filteredNavStructure = getFilteredNavStructure();
-    
-    // Create nav component with filtered structure
-    const nav = new NavigationComponent({
+    const nav = new NavigationComponent({ 
       ...options,
-      navStructure: filteredNavStructure
+      navStructure: filteredNav
     });
     
     const { mobile, desktop } = nav.render();
@@ -291,97 +270,8 @@ export class NavigationComponent {
       document.body.classList.add('pwa-installed');
     }
     
-    // IMPORTANT: Set up event listeners AFTER the HTML is inserted
-    // Use requestAnimationFrame to ensure DOM is fully painted
-    requestAnimationFrame(() => {
-      const mobileMenuBtn = document.getElementById('mobileMenuBtn');
-      const mobileNavMenu = document.getElementById('mobileNavMenu');
-      const mobileSignOutBtn = document.getElementById('mobileSignOutBtn');
-      const mobileInstallAppBtn = document.getElementById('mobileInstallAppBtn');
-      
-      console.log('Setting up mobile menu...', { mobileMenuBtn, mobileNavMenu, mobileSignOutBtn });
-      
-      // Mobile menu toggle
-      if (mobileMenuBtn && mobileNavMenu) {
-        // Directly attach listener without cloning
-        mobileMenuBtn.addEventListener('click', function(e) {
-          e.preventDefault();
-          e.stopPropagation();
-          console.log('Mobile menu button clicked!');
-          const menu = document.getElementById('mobileNavMenu');
-          if (menu) {
-            menu.classList.toggle('open');
-            console.log('Menu open state:', menu.classList.contains('open'));
-          }
-        }, { passive: false });
-        console.log('✅ Mobile menu event listener attached');
-      } else {
-        console.error('❌ Mobile nav elements not found!', { 
-          menuBtn: !!mobileMenuBtn, 
-          navMenu: !!mobileNavMenu 
-        });
-      }
-      
-      // Mobile sign out button
-      if (mobileSignOutBtn) {
-        mobileSignOutBtn.addEventListener('click', async function(e) {
-          e.preventDefault();
-          e.stopPropagation();
-          console.log('🚪 Mobile sign out clicked');
-          try {
-            if (typeof window.auth !== 'undefined' && window.auth.signOut) {
-              await window.auth.signOut();
-              console.log('✅ User signed out successfully');
-              window.location.reload();
-            } else {
-              console.error('❌ Firebase auth not available');
-              alert('Sign out failed. Please try again.');
-            }
-          } catch (error) {
-            console.error('❌ Sign out error:', error);
-            alert('Error signing out. Please try again.');
-          }
-        });
-        console.log('✅ Mobile sign-out button listener attached');
-      }
-      
-      // Mobile Install App button
-      if (mobileInstallAppBtn) {
-        mobileInstallAppBtn.addEventListener('click', function(e) {
-          e.preventDefault();
-          e.stopPropagation();
-          console.log('📲 Install App clicked from nav menu');
-          
-          // Close the mobile menu first
-          const menu = document.getElementById('mobileNavMenu');
-          if (menu) {
-            menu.classList.remove('open');
-          }
-          
-          // Trigger PWA install (function defined in mobile-enhancements.js)
-          if (typeof window.triggerPWAInstall === 'function') {
-            window.triggerPWAInstall();
-          } else {
-            // Fallback if mobile-enhancements.js hasn't loaded yet
-            console.warn('⚠️ triggerPWAInstall not available, showing manual instructions');
-            alert('To install the app:\n\n1. Open browser menu (⋮ or ⋯)\n2. Tap "Add to Home Screen"\n3. Follow the prompts');
-          }
-        });
-        console.log('✅ Mobile install app button listener attached');
-      }
-      
-      // Close menu when clicking outside
-      document.addEventListener('click', function(e) {
-        const menu = document.getElementById('mobileNavMenu');
-        const btn = document.getElementById('mobileMenuBtn');
-        if (menu && btn && menu.classList.contains('open')) {
-          if (!menu.contains(e.target) && !btn.contains(e.target)) {
-            menu.classList.remove('open');
-            console.log('Menu closed by outside click');
-          }
-        }
-      });
-    });
+    // Set up delegated event listeners (only once)
+    NavigationComponent.setupDelegatedListeners();
     
     // Keep the global function for backwards compatibility
     window.toggleMobileMenu = function() {
@@ -402,7 +292,138 @@ export class NavigationComponent {
       NavigationComponent.init(options);
     });
     
+    console.log('✅ Navigation initialized');
     return nav;
+  }
+  
+  /**
+   * Set up delegated event listeners ONCE on document
+   * This survives DOM replacements and fixes iOS PWA issues
+   */
+  static setupDelegatedListeners() {
+    // Only set up once
+    if (window._navDelegatedListenersAttached) {
+      console.log('ℹ️ Delegated listeners already attached');
+      return;
+    }
+    window._navDelegatedListenersAttached = true;
+    
+    console.log('🔧 Setting up delegated event listeners for navigation');
+    
+    // Use both click and touchend for better iOS reliability
+    const handleMenuToggle = function(e) {
+      const btn = e.target.closest('#mobileMenuBtn, .hamburger-menu');
+      if (btn) {
+        e.preventDefault();
+        e.stopPropagation();
+        console.log('📱 Hamburger menu clicked (delegated)');
+        const menu = document.getElementById('mobileNavMenu');
+        if (menu) {
+          menu.classList.toggle('open');
+          console.log('Menu open state:', menu.classList.contains('open'));
+        }
+        return;
+      }
+      
+      // Sign out button
+      const signOutBtn = e.target.closest('#mobileSignOutBtn, .mobile-signout-btn');
+      if (signOutBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+        console.log('🚪 Mobile sign out clicked (delegated)');
+        (async () => {
+          try {
+            if (typeof window.auth !== 'undefined' && window.auth.signOut) {
+              await window.auth.signOut();
+              console.log('✅ User signed out successfully');
+              window.location.reload();
+            } else {
+              console.error('❌ Firebase auth not available');
+              alert('Sign out failed. Please try again.');
+            }
+          } catch (error) {
+            console.error('❌ Sign out error:', error);
+            alert('Error signing out. Please try again.');
+          }
+        })();
+        return;
+      }
+      
+      // Install app button
+      const installBtn = e.target.closest('#mobileInstallAppBtn, .install-app-link');
+      if (installBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+        console.log('📲 Install App clicked (delegated)');
+        
+        // Close the mobile menu first
+        const menu = document.getElementById('mobileNavMenu');
+        if (menu) {
+          menu.classList.remove('open');
+        }
+        
+        // Trigger PWA install
+        if (typeof window.triggerPWAInstall === 'function') {
+          window.triggerPWAInstall();
+        } else {
+          console.warn('⚠️ triggerPWAInstall not available');
+          alert('To install the app:\n\n1. Open browser menu (⋮ or ⋯)\n2. Tap "Add to Home Screen"\n3. Follow the prompts');
+        }
+        return;
+      }
+      
+      // Close menu when clicking outside
+      const menu = document.getElementById('mobileNavMenu');
+      const menuBtn = document.getElementById('mobileMenuBtn');
+      if (menu && menu.classList.contains('open')) {
+        if (!menu.contains(e.target) && !menuBtn?.contains(e.target)) {
+          menu.classList.remove('open');
+          console.log('Menu closed by outside click');
+        }
+      }
+    };
+    
+    // Attach to document with capture phase for reliability
+    document.addEventListener('click', handleMenuToggle, { capture: false, passive: false });
+    
+    // Also handle touchend for iOS - sometimes click doesn't fire reliably
+    let lastTouchTime = 0;
+    document.addEventListener('touchend', function(e) {
+      const btn = e.target.closest('#mobileMenuBtn, .hamburger-menu');
+      if (btn) {
+        // Prevent double-firing with click
+        const now = Date.now();
+        if (now - lastTouchTime < 300) return;
+        lastTouchTime = now;
+        
+        e.preventDefault();
+        console.log('📱 Hamburger menu touchend (delegated)');
+        const menu = document.getElementById('mobileNavMenu');
+        if (menu) {
+          menu.classList.toggle('open');
+        }
+      }
+    }, { passive: false });
+    
+    // Handle visibility change for iOS PWA resume
+    document.addEventListener('visibilitychange', function() {
+      if (document.visibilityState === 'visible') {
+        console.log('👁️ App became visible - checking nav state');
+        // Small delay to let iOS settle
+        setTimeout(() => {
+          const btn = document.getElementById('mobileMenuBtn');
+          const menu = document.getElementById('mobileNavMenu');
+          if (btn && menu) {
+            console.log('✅ Nav elements present after visibility change');
+          } else {
+            console.warn('⚠️ Nav elements missing after visibility change, reinitializing...');
+            window.reinitializeNav?.();
+          }
+        }, 100);
+      }
+    });
+    
+    console.log('✅ Delegated event listeners attached');
   }
 }
 
@@ -411,10 +432,11 @@ if (typeof window !== 'undefined') {
   // Flag to prevent double initialization during page load
   let isInitializing = false;
   let hasInitialized = false;
+  let lastReinitTime = 0;
   
   // Store a reference to reinitialize nav when auth is ready
   window.reinitializeNav = async function() {
-    // Prevent reinit if we're currently initializing or haven't completed first init
+    // Prevent reinit if we're currently initializing
     if (isInitializing) {
       console.log('⏳ Already initializing, skipping reinit...');
       return;
@@ -425,6 +447,14 @@ if (typeof window !== 'undefined') {
       console.log('⏳ Initial page load, skipping early reinit...');
       return;
     }
+    
+    // Debounce: don't reinit more than once per second
+    const now = Date.now();
+    if (now - lastReinitTime < 1000) {
+      console.log('⏳ Reinit debounced (too soon after last reinit)');
+      return;
+    }
+    lastReinitTime = now;
     
     console.log('🔄 Reinitializing navigation with updated auth state...');
     document.querySelector('.mobile-nav-container')?.remove();
