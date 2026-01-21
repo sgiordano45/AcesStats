@@ -1113,6 +1113,92 @@ const saveLineupData = async (type, data, inning = null) => {
     saveLineupData('bench', newBenchPlayers[selectedGame], targetInning);
   };
 
+  // Copy batting order from most recent previous game
+    const copyFromPreviousGame = async () => {
+      if (!isCaptain || !selectedGame) return;
+      
+      try {
+        // Import Firestore functions
+        const { collection, query, where, orderBy, limit, getDocs } = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js');
+        
+        // Get recent games for this team's season
+        const gamesRef = collection(db, 'games');
+        const pastGamesQuery = query(
+          gamesRef,
+          where('season', '==', currentSeason.id),
+          orderBy('date', 'desc'),
+          limit(20)
+        );
+        
+        const gamesSnapshot = await getDocs(pastGamesQuery);
+        
+        // Filter for this team's games (excluding current game)
+        const teamGames = gamesSnapshot.docs.filter(docSnap => {
+          const data = docSnap.data();
+          const homeTeam = (data.homeTeam || data.home_team || '').toLowerCase();
+          const awayTeam = (data.awayTeam || data.away_team || '').toLowerCase();
+          const team = selectedTeam.toLowerCase();
+          return (homeTeam === team || awayTeam === team) && docSnap.id !== selectedGame;
+        });
+        
+        if (teamGames.length === 0) {
+          alert('No previous games found for this team.');
+          return;
+        }
+        
+        // Check each game for a batting order (most recent first)
+        for (const gameDoc of teamGames) {
+          const prevBattingOrder = await window.FirebaseRoster.getBattingOrder(gameDoc.id, selectedTeam);
+          
+          if (prevBattingOrder && prevBattingOrder.length > 0 && prevBattingOrder.some(id => id)) {
+            // Found a lineup! Map player IDs to player objects
+            const copiedOrder = prevBattingOrder.map(playerId => {
+              if (!playerId) return null;
+              const player = players.find(p => p.id === playerId);
+              if (!player) return null;
+              
+              // Check if player RSVP'd yes for current game
+              const key = `${player.id}-${selectedGame}`;
+              return rsvps[key] === 'yes' ? player : null;
+            });
+            
+            const totalInPrevious = prevBattingOrder.filter(id => id).length;
+            const copiedCount = copiedOrder.filter(p => p).length;
+            
+            if (copiedCount === 0) {
+              // No overlap - try next game
+              continue;
+            }
+            
+            // Update state and save
+            const newBattingOrder = { ...battingOrder, [selectedGame]: copiedOrder };
+            setBattingOrder(newBattingOrder);
+            await saveLineupData('batting', copiedOrder);
+            
+            // Get game info for message
+            const gameData = gameDoc.data();
+            const gameDate = gameData.date?.toDate?.()
+              ? gameData.date.toDate().toLocaleDateString()
+              : gameData.date;
+            
+            const skippedCount = totalInPrevious - copiedCount;
+            let message = `✅ Copied ${copiedCount} players from ${gameDate}`;
+            if (skippedCount > 0) {
+              message += `\n⚠️ ${skippedCount} player(s) skipped (not RSVP'd Yes or not on roster)`;
+            }
+            alert(message);
+            return;
+          }
+        }
+        
+        alert('No previous batting orders found to copy.');
+        
+      } catch (error) {
+        console.error('Error copying previous lineup:', error);
+        alert('Error copying previous lineup. Please try again.');
+      }
+    };
+  
 const printBattingOrder = () => {
   const selectedGameData = games.find(g => g.id === selectedGame);
   if (!selectedGameData) return;
@@ -1899,9 +1985,39 @@ const printDefensiveRotation = () => {
     Print Batting Order
   </button>
 </div>
-                      <p style={{ fontSize: '14px', color: 'var(--text-light)', marginBottom: '1rem' }}>
-                        {seasonConfig.name} allows up to {seasonConfig.battingOrderSize} batters. {isMobile ? 'Tap + to add players, use arrows to reorder.' : 'Drag players from the available list.'}
-                      </p>
+                                                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center', marginBottom: '1rem' }}>
+                                                                                     <p style={{ fontSize: '14px', color: 'var(--text-light)', margin: 0, flex: 1 }}>
+                                                                                       {seasonConfig.name} allows up to {seasonConfig.battingOrderSize} batters. {isMobile ? 'Tap + to add players, use arrows to reorder.' : 'Drag players from the available list.'}
+                                                                                     </p>
+                                                                                     <button
+                                                                                       onClick={copyFromPreviousGame}
+                                                                                       style={{
+                                                                                         padding: '8px 16px',
+                                                                                         background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
+                                                                                         color: 'white',
+                                                                                         border: 'none',
+                                                                                         borderRadius: '8px',
+                                                                                         fontSize: '13px',
+                                                                                         fontWeight: '600',
+                                                                                         cursor: 'pointer',
+                                                                                         display: 'flex',
+                                                                                         alignItems: 'center',
+                                                                                         gap: '6px',
+                                                                                         transition: 'all 0.2s ease',
+                                                                                         boxShadow: '0 2px 8px rgba(99, 102, 241, 0.3)'
+                                                                                       }}
+                                                                                       onMouseEnter={(e) => {
+                                                                                         e.target.style.transform = 'translateY(-1px)';
+                                                                                         e.target.style.boxShadow = '0 4px 12px rgba(99, 102, 241, 0.4)';
+                                                                                       }}
+                                                                                       onMouseLeave={(e) => {
+                                                                                         e.target.style.transform = 'translateY(0)';
+                                                                                         e.target.style.boxShadow = '0 2px 8px rgba(99, 102, 241, 0.3)';
+                                                                                       }}
+                                                                                     >
+                                                                                       📋 Copy Previous Lineup
+                                                                                     </button>
+                                                                                   </div>
                       
                       {isMobile ? (
                         // MOBILE VIEW: Vertical list with arrow buttons
