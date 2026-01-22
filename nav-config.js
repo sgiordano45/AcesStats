@@ -107,6 +107,7 @@ export const NAV_STRUCTURE = {
     { id: 'rule-review', href: 'rule-review.html', label: 'Rule Review', icon: '📝', priority: 3 },
     { id: 'champ-preview', href: 'championship-preview.html', label: 'Championship Preview', icon: '🎊', priority: 3 },
     { id: 'playoff-history', href: 'playoff-history.html', label: 'Playoff History', icon: '🗂️', priority: 3 },
+    { id: 'feature-submit', href: 'feature-submit.html', label: 'Submit Feedback', icon: '💡', priority: 3 },
     // game-preview removed - requires specific game ID parameter
   ],
   
@@ -279,6 +280,10 @@ export const PAGE_CONFIGS = {
 
   'rule-review.html': {
     desktop: ['home', 'league-rules', 'rule-proposal']
+  },
+
+  'feature-submit.html': {
+    desktop: ['home', 'rule-proposal']
   },
 
   // Auth-specific pages
