@@ -283,7 +283,7 @@ export const PAGE_CONFIGS = {
   },
 
   'feature-submit.html': {
-    desktop: ['home', 'rule-proposal']
+    desktop: []
   },
 
   // Auth-specific pages
