@@ -697,19 +697,40 @@ useEffect(() => {
             unsubscribeMetadata = window.FirebaseGameTracker.subscribeToGameMetadata(seasonId, selectedGame.id, (data) => {
                 setGameMetadata(data);
                 
-                // Update local batting state based on shared metadata
-                if (data && data.currentBattingTeam) {
-                    const shouldWeBeBatting = (data.currentBattingTeam === myTeamId);
+                // Update local state based on shared metadata
+                if (data) {
+                    // Update opponent score from metadata
+                    // If we're home, opponent is away; if we're away, opponent is home
+                    const opponentScoreFromMetadata = isHomeTeam ? data.awayScore : data.homeScore;
+                    if (opponentScoreFromMetadata !== undefined && opponentScoreFromMetadata !== null) {
+                        setGameState(prev => {
+                            if (prev.score.opponent !== opponentScoreFromMetadata) {
+                                return {
+                                    ...prev,
+                                    score: {
+                                        ...prev.score,
+                                        opponent: opponentScoreFromMetadata
+                                    }
+                                };
+                            }
+                            return prev;
+                        });
+                    }
                     
-                    // Only update if it changed
-                    if (gameState.isYourTeamBatting !== shouldWeBeBatting) {
-                        console.log(`🔄 Batting changed: ${shouldWeBeBatting ? 'Your team' : 'Opponent'} now batting`);
-                        setGameState(prev => ({
-                            ...prev,
-                            isYourTeamBatting: shouldWeBeBatting,
-                            inning: data.inning || prev.inning,
-                            outs: data.outs || 0
-                        }));
+                    // Update batting state
+                    if (data.currentBattingTeam) {
+                        const shouldWeBeBatting = (data.currentBattingTeam === myTeamId);
+                        
+                        // Only update if it changed
+                        if (gameState.isYourTeamBatting !== shouldWeBeBatting) {
+                            console.log(`🔄 Batting changed: ${shouldWeBeBatting ? 'Your team' : 'Opponent'} now batting`);
+                            setGameState(prev => ({
+                                ...prev,
+                                isYourTeamBatting: shouldWeBeBatting,
+                                inning: data.inning || prev.inning,
+                                outs: data.outs || 0
+                            }));
+                        }
                     }
                 }
             });
@@ -897,7 +918,8 @@ useEffect(() => {
                         game.seasonId
                     );
                     
-                    if (savedState && !savedState.cleared && savedState.gameState) {
+                    // Check for saved game (data is flat, not nested)
+                    if (savedState && !savedState.cleared && (savedState.plays?.length > 0 || savedState.inning > 1)) {
                         console.log('📂 Found game in progress');
                     }
                 } catch (error) {
@@ -922,17 +944,19 @@ useEffect(() => {
                     selectedGame.seasonId
                 );
                 
-                if (savedState && !savedState.cleared && savedState.gameState) {
+                // Check if there's a saved game (data is stored flat, not nested)
+                if (savedState && !savedState.cleared && (savedState.plays?.length > 0 || savedState.inning > 1)) {
                     const resume = window.confirm(
                         'A game in progress was found. Do you want to resume where you left off?\n\n' +
-                        `Inning: ${savedState.gameState.inning}\n` +
-                        `Outs: ${savedState.gameState.outs}\n` +
-                        `Score: ${savedState.gameState.score.yourTeam}\n` +
-                        `Plays recorded: ${savedState.gameState.playHistory?.length || 0}\n\n` +
+                        `Inning: ${savedState.inning || 1}\n` +
+                        `Outs: ${savedState.outs || 0}\n` +
+                        `Score: ${savedState.score || 0}\n` +
+                        `Plays recorded: ${savedState.plays?.length || 0}\n\n` +
                         'Click OK to resume, or Cancel to start a new game.'
                     );
                     
                     if (resume) {
+                        // Restore batting order from saved player IDs
                         const savedBattingOrderIds = savedState.battingOrder || [];
                         const orderedPlayers = savedBattingOrderIds
                             .map(playerId => players.find(p => p.id === playerId))
@@ -944,9 +968,24 @@ useEffect(() => {
                             setBattingOrder(players);
                         }
                         
-                        setGameState(savedState.gameState);
+                        // Map flat Firebase structure to component's gameState structure
+                        const restoredGameState = {
+                            inning: savedState.inning || 1,
+                            outs: savedState.outs || 0,
+                            bases: savedState.bases || { first: null, second: null, third: null },
+                            score: { 
+                                yourTeam: savedState.score || 0, 
+                                opponent: 0  // Will be updated from metadata subscription
+                            },
+                            currentBatter: savedState.currentBatter || 0,
+                            playHistory: savedState.plays || [],
+                            gameActive: savedState.gameActive !== false,
+                            isYourTeamBatting: savedState.isYourTeamBatting !== false
+                        };
+                        
+                        setGameState(restoredGameState);
                         setSetupMode(false);
-                        console.log('✅ Resumed game from saved state');
+                        console.log('✅ Resumed game from saved state:', restoredGameState);
                         return;
                     } else {
                         await window.FirebaseGameTracker.clearGameState(
