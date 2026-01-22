@@ -399,6 +399,20 @@ body {
   border: 2px solid rgba(255, 215, 0, 0.5);
 }
 
+/* Runner-Up Banner */
+.runner-up-banner {
+  background: linear-gradient(135deg, #c0c0c0 0%, #e8e8e8 100%);
+  color: #333;
+  padding: 0.6rem 1rem;
+  text-align: center;
+  font-weight: 700;
+  font-size: 0.85rem;
+  border-radius: 10px;
+  margin-top: 0.75rem;
+  box-shadow: 0 3px 6px rgba(192, 192, 192, 0.3);
+  border: 2px solid rgba(192, 192, 192, 0.5);
+}
+
 /* Games Breakdown */
 .games-breakdown {
   grid-column: 1 / -1;
@@ -601,6 +615,7 @@ body {
     let allData = [];
     let allGames = [];
     let activeSeasonIds = new Set();
+    let championshipsData = {}; // { seasonId: { champion: 'Team', runnerUp: 'Team' } }
     
     // Seasons where a non-Aces team won the championship
     // (external teams participated in the league that season)
@@ -717,6 +732,20 @@ body {
         
         console.log(`Loaded ${allGames.length} games`);
         
+        // Load championships data from champions collection
+        console.log('🏆 Loading championships data...');
+        const championsSnapshot = await getDocs(collection(db, 'champions'));
+        championshipsData = {};
+        championsSnapshot.forEach(doc => {
+          const data = doc.data();
+          const seasonId = data.seasonId || doc.id;
+          championshipsData[seasonId] = {
+            champion: data.team,
+            runnerUp: data.runnerUp
+          };
+        });
+        console.log('🏆 Championships loaded:', championshipsData);
+        
         generateTeamCards();
         
       } catch (error) {
@@ -750,7 +779,8 @@ body {
         const regularSeasonGames = teamGames.filter(g => g.game_type === 'Regular').length;
         const playoffGames = teamGames.filter(g => g.game_type === 'Playoff').length;
         
-        const championships = calculateTeamChampionships(teamName);
+        // Get championships and runner-ups from loaded data
+        const titles = getTeamTitles(teamName);
         
         return {
           name: teamName,
@@ -760,7 +790,8 @@ body {
           totalTeamGames: totalTeamGames,
           regularSeasonGames: regularSeasonGames,
           playoffGames: playoffGames,
-          championships: championships,
+          championships: titles.championships,
+          runnerUps: titles.runnerUps,
           firstYear: years[0],
           lastYear: years[years.length - 1]
         };
@@ -769,9 +800,10 @@ body {
       const totalTeams = teams.length;
       const activeTeams = teamStats.filter(t => parseInt(t.lastYear) === 2025).length;
       const totalChampionships = teamStats.reduce((sum, t) => sum + t.championships.length, 0);
+      const totalRunnerUps = teamStats.reduce((sum, t) => sum + t.runnerUps.length, 0);
       
       document.getElementById("totalTeamsText").textContent =
-        `${totalTeams} total teams (${activeTeams} active in 2025, ${totalTeams - activeTeams} inactive) • ${totalChampionships} championships awarded`;
+        `${totalTeams} total teams (${activeTeams} active in 2025, ${totalTeams - activeTeams} inactive) • ${totalChampionships} championships, ${totalRunnerUps} runner-ups`;
       
       const container = document.getElementById("teams-container");
       container.innerHTML = '';
@@ -800,6 +832,14 @@ body {
             `🏆 ${team.championships[0]} Champions` :
             `🏆 ${team.championships.length} Championships`;
           championshipHTML = `<div class="championship-banner">${championshipText}</div>`;
+        }
+        
+        let runnerUpHTML = '';
+        if (team.runnerUps.length > 0) {
+          const runnerUpText = team.runnerUps.length === 1 ?
+            `🥈 ${team.runnerUps[0]} Runner-Up` :
+            `🥈 ${team.runnerUps.length} Runner-Ups`;
+          runnerUpHTML = `<div class="runner-up-banner">${runnerUpText}</div>`;
         }
         
         const teamCard = document.createElement('a');
@@ -836,6 +876,7 @@ body {
               ${team.totalTeamGames > 0 ? `<div class="games-breakdown">${gamesBreakdown}</div>` : ''}
             </div>
             ${championshipHTML}
+            ${runnerUpHTML}
           </div>
         `;
         
@@ -843,6 +884,55 @@ body {
       });
     }
 
+    /**
+     * Get team championships and runner-ups from the loaded champions collection data
+     * @param {string} teamName - Team name to look up
+     * @returns {{ championships: string[], runnerUps: string[] }}
+     */
+    function getTeamTitles(teamName) {
+      const championships = [];
+      const runnerUps = [];
+      const teamLower = teamName.toLowerCase();
+      
+      // Iterate through all seasons in championshipsData
+      Object.entries(championshipsData).forEach(([seasonId, data]) => {
+        // Format season display (e.g., "2024-fall" -> "2024 Fall")
+        const parts = seasonId.split('-');
+        let seasonDisplay = seasonId;
+        if (parts.length >= 2) {
+          const year = parts[0];
+          const season = parts[1].charAt(0).toUpperCase() + parts[1].slice(1);
+          seasonDisplay = `${year} ${season}`;
+        }
+        
+        // Check if this team was champion
+        if (data.champion && data.champion.toLowerCase() === teamLower) {
+          championships.push(seasonDisplay);
+        }
+        
+        // Check if this team was runner-up
+        if (data.runnerUp && data.runnerUp.toLowerCase() === teamLower) {
+          runnerUps.push(seasonDisplay);
+        }
+      });
+      
+      // Sort chronologically
+      const sortSeasons = (a, b) => {
+        const parseSeasonKey = (s) => {
+          const [year, season] = s.split(' ');
+          const seasonOrder = { Spring: 0, Summer: 1, Fall: 2 };
+          return parseInt(year) * 10 + (seasonOrder[season] || 0);
+        };
+        return parseSeasonKey(a) - parseSeasonKey(b);
+      };
+      
+      championships.sort(sortSeasons);
+      runnerUps.sort(sortSeasons);
+      
+      return { championships, runnerUps };
+    }
+
+    // Legacy function - kept for reference but no longer used
     function calculateTeamChampionships(teamName) {
       const championships = [];
       
