@@ -194,14 +194,15 @@ function getOrdinalSuffix(num) {
 }
 
 
-        // Wrapper for loadGameState that adds seasonId from game object
-        async function loadGameState(gameId, teamId, seasonId = null) {
-            // If seasonId not provided, try to get it from the selectedGame in React state
-            // For now, default to 'fall-2024' but this should be passed properly
-            const season = seasonId || 'fall-2024'; // TODO: Get from game object
+        // Wrapper for loadGameState that requires seasonId
+        async function loadGameState(gameId, teamId, seasonId) {
+            if (!seasonId) {
+                console.error('❌ loadGameState requires seasonId');
+                return null;
+            }
             
             try {
-                return await loadGameStateSync(season, gameId, teamId);
+                return await loadGameStateSync(seasonId, gameId, teamId);
             } catch (error) {
                 console.error('Error loading game state:', error);
                 return null;
@@ -210,12 +211,15 @@ function getOrdinalSuffix(num) {
 
 
 
-        // Wrapper for clearGameState that adds seasonId
-        async function clearGameState(gameId, teamId, seasonId = null) {
-            const season = seasonId || 'fall-2024'; // TODO: Get from game object
+        // Wrapper for clearGameState that requires seasonId
+        async function clearGameState(gameId, teamId, seasonId) {
+            if (!seasonId) {
+                console.error('❌ clearGameState requires seasonId');
+                return;
+            }
             
             try {
-                await clearGameStateSync(season, gameId, teamId);
+                await clearGameStateSync(seasonId, gameId, teamId);
                 console.log('🗑️ Game state cleared');
             } catch (error) {
                 console.error('Error clearing game state:', error);
@@ -874,7 +878,8 @@ useEffect(() => {
                     
                     const savedState = await window.FirebaseGameTracker.loadGameState(
                         game.id,
-                        selectedTeam
+                        selectedTeam,
+                        game.seasonId
                     );
                     
                     if (savedState && !savedState.cleared && savedState.gameState) {
@@ -889,9 +894,17 @@ useEffect(() => {
             const startGame = async () => {
                 if (!selectedTeam || !selectedGame) return;
                 
+                // Validate seasonId exists
+                if (!selectedGame.seasonId) {
+                    console.error('❌ Game missing seasonId - cannot start tracking');
+                    alert('Error: Game is missing season information. Please refresh and try again.');
+                    return;
+                }
+                
                 const savedState = await window.FirebaseGameTracker.loadGameState(
                     selectedGame.id,
-                    selectedTeam
+                    selectedTeam,
+                    selectedGame.seasonId
                 );
                 
                 if (savedState && !savedState.cleared && savedState.gameState) {
@@ -923,7 +936,8 @@ useEffect(() => {
                     } else {
                         await window.FirebaseGameTracker.clearGameState(
                             selectedGame.id,
-                            selectedTeam
+                            selectedTeam,
+                            selectedGame.seasonId
                         );
                     }
                 }
@@ -969,9 +983,8 @@ useEffect(() => {
                 
                 // Initialize shared game metadata
                 try {
-                    const seasonId = selectedGame.seasonId || 'fall-2024';
                     const firstBattingTeam = isHome ? selectedGame.awayTeam : selectedGame.homeTeam;
-                    await window.FirebaseGameTracker.updateGameMetadata(seasonId, selectedGame.id, {
+                    await window.FirebaseGameTracker.updateGameMetadata(selectedGame.seasonId, selectedGame.id, {
                         inning: 1,
                         outs: 0,
                         homeScore: 0,
@@ -1235,8 +1248,7 @@ useEffect(() => {
                 
                 // Update shared game metadata so both teams know who's batting
                 try {
-                    const seasonId = selectedGame.seasonId || 'fall-2024';
-                    await window.FirebaseGameTracker.updateGameMetadata(seasonId, selectedGame.id, {
+                    await window.FirebaseGameTracker.updateGameMetadata(selectedGame.seasonId, selectedGame.id, {
                         inning: nextInning,
                         outs: 0,
                         currentBattingTeam: nextBattingTeam,
@@ -1296,10 +1308,11 @@ useEffect(() => {
                 );
                 
                 if (confirmed) {
-                    if (selectedGame && selectedTeam) {
+                    if (selectedGame && selectedTeam && selectedGame.seasonId) {
                         await window.FirebaseGameTracker.clearGameState(
                             selectedGame.id,
-                            selectedTeam
+                            selectedTeam,
+                            selectedGame.seasonId
                         );
                     }
                     
