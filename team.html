@@ -239,6 +239,99 @@
     font-weight: 500;
   }
   
+  /* Team Highlights Row (Championships/Runner-ups) */
+  .team-highlights {
+    display: flex;
+    gap: 12px;
+    padding: 1.5rem 0 0 0;
+    position: relative;
+    z-index: 1;
+    flex-wrap: wrap;
+  }
+  
+  .team-highlights:empty {
+    display: none;
+    padding: 0;
+  }
+  
+  .team-highlight-stat {
+    background: rgba(255,255,255,0.12);
+    border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 12px;
+    padding: 12px 18px;
+    text-align: center;
+    min-width: 100px;
+    transition: all 0.2s ease;
+    cursor: default;
+  }
+  
+  .team-highlight-stat:hover {
+    background: rgba(255,255,255,0.2);
+    transform: translateY(-2px);
+  }
+  
+  .team-highlight-stat-value {
+    font-size: 1.3em;
+    font-weight: 800;
+    line-height: 1.2;
+    white-space: nowrap;
+  }
+  
+  .team-highlight-stat-label {
+    font-size: 0.7em;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    opacity: 0.85;
+    margin-top: 4px;
+  }
+  
+  .team-highlight-stat.champion {
+    background: linear-gradient(135deg, rgba(255,215,0,0.25) 0%, rgba(255,180,0,0.15) 100%);
+    border: 2px solid #ffd700;
+    box-shadow: 0 2px 8px rgba(255,215,0,0.3);
+  }
+  
+  .team-highlight-stat.champion .team-highlight-stat-value {
+    color: #fff;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.2);
+  }
+  
+  .team-highlight-stat.champion .team-highlight-stat-label {
+    color: #ffd700;
+    font-weight: 700;
+  }
+  
+  .team-highlight-stat.runner-up {
+    background: linear-gradient(135deg, rgba(192,192,192,0.25) 0%, rgba(160,160,160,0.15) 100%);
+    border: 2px solid #c0c0c0;
+    box-shadow: 0 2px 8px rgba(192,192,192,0.3);
+  }
+  
+  .team-highlight-stat.runner-up .team-highlight-stat-value {
+    color: #fff;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.2);
+  }
+  
+  .team-highlight-stat.runner-up .team-highlight-stat-label {
+    color: #e0e0e0;
+    font-weight: 700;
+  }
+  
+  @media (max-width: 768px) {
+    .team-highlights {
+      gap: 8px;
+    }
+    
+    .team-highlight-stat {
+      padding: 10px 14px;
+      min-width: 80px;
+    }
+    
+    .team-highlight-stat-value {
+      font-size: 1.1em;
+    }
+  }
+  
   /* Summary Section */
   .summary {
     background: var(--card-bg);
@@ -889,6 +982,9 @@
     <div class="team-info">
       <h1>Team Stats: <span id="team-name">Loading...</span></h1>
       <p class="team-description">Complete season-by-season statistics and performance history</p>
+      <div class="team-highlights" id="teamHighlights">
+        <!-- Championship badges will be inserted here -->
+      </div>
     </div>
   </div>
 
@@ -963,6 +1059,142 @@
 </div>
 
 <script type="module" src="team.js"></script>
+<script type="module">
+// Championship Badges Module
+import { db, collection, getDocs } from './firebase-config.js';
+
+/**
+ * Format season ID for display (e.g., "2024-fall" -> "Fall '24")
+ */
+function formatSeasonDisplay(seasonId) {
+  if (!seasonId) return '';
+  const parts = seasonId.split('-');
+  if (parts.length >= 2) {
+    const year = parts[0].slice(-2); // Last 2 digits of year
+    const season = parts[1].charAt(0).toUpperCase() + parts[1].slice(1);
+    return `${season} '${year}`;
+  }
+  return seasonId;
+}
+
+/**
+ * Load and display championship badges for the team
+ */
+async function loadTeamChampionships(teamName) {
+  const highlightsContainer = document.getElementById('teamHighlights');
+  if (!highlightsContainer || !teamName) return;
+  
+  try {
+    console.log('🏆 Loading championships for team:', teamName);
+    
+    // Fetch champions and runner-ups collections
+    const championsRef = collection(db, 'champions');
+    const runnerUpsRef = collection(db, 'runnerUps');
+    
+    const [championsSnap, runnerUpsSnap] = await Promise.all([
+      getDocs(championsRef),
+      getDocs(runnerUpsRef)
+    ]);
+    
+    // Build lookup maps
+    const champions = {};
+    championsSnap.forEach(doc => {
+      const data = doc.data();
+      champions[data.seasonId] = data.champion;
+    });
+    
+    const runnerUps = {};
+    runnerUpsSnap.forEach(doc => {
+      const data = doc.data();
+      runnerUps[data.seasonId] = data.runnerUp;
+    });
+    
+    console.log('📊 Champions:', champions);
+    console.log('📊 Runner-ups:', runnerUps);
+    
+    // Find titles for this team
+    const titles = [];
+    const teamLower = teamName.toLowerCase();
+    
+    // Check all seasons for this team's championships/runner-ups
+    const allSeasonIds = new Set([...Object.keys(champions), ...Object.keys(runnerUps)]);
+    
+    allSeasonIds.forEach(seasonId => {
+      const championTeam = champions[seasonId]?.toLowerCase();
+      const runnerUpTeam = runnerUps[seasonId]?.toLowerCase();
+      
+      if (championTeam === teamLower) {
+        titles.push({
+          seasonId: seasonId,
+          type: 'champion'
+        });
+      } else if (runnerUpTeam === teamLower) {
+        titles.push({
+          seasonId: seasonId,
+          type: 'runner-up'
+        });
+      }
+    });
+    
+    // Sort titles chronologically
+    titles.sort((a, b) => {
+      const parseSeasonId = (id) => {
+        const [year, season] = id.split('-');
+        const seasonOrder = { spring: 0, summer: 1, fall: 2 };
+        return parseInt(year) * 10 + (seasonOrder[season?.toLowerCase()] || 0);
+      };
+      return parseSeasonId(a.seasonId) - parseSeasonId(b.seasonId);
+    });
+    
+    console.log('🏆 Titles for', teamName, ':', titles);
+    
+    // Render the badges
+    if (titles.length === 0) {
+      highlightsContainer.innerHTML = '';
+      return;
+    }
+    
+    let highlightsHTML = '';
+    titles.forEach(title => {
+      const seasonDisplay = formatSeasonDisplay(title.seasonId);
+      if (title.type === 'champion') {
+        highlightsHTML += `
+          <div class="team-highlight-stat champion">
+            <div class="team-highlight-stat-value">🏆 ${seasonDisplay}</div>
+            <div class="team-highlight-stat-label">Champion</div>
+          </div>
+        `;
+      } else if (title.type === 'runner-up') {
+        highlightsHTML += `
+          <div class="team-highlight-stat runner-up">
+            <div class="team-highlight-stat-value">🥈 ${seasonDisplay}</div>
+            <div class="team-highlight-stat-label">Runner-Up</div>
+          </div>
+        `;
+      }
+    });
+    
+    highlightsContainer.innerHTML = highlightsHTML;
+    
+  } catch (error) {
+    console.error('❌ Error loading team championships:', error);
+    highlightsContainer.innerHTML = '';
+  }
+}
+
+// Initialize when page loads
+document.addEventListener('DOMContentLoaded', () => {
+  const params = new URLSearchParams(window.location.search);
+  const teamName = params.get('team');
+  
+  if (teamName) {
+    // Small delay to ensure Firebase is initialized
+    setTimeout(() => {
+      loadTeamChampionships(teamName);
+    }, 100);
+  }
+});
+</script>
 <script src="team-colors.js"></script>
 
 <script>
