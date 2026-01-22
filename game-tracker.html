@@ -1213,6 +1213,36 @@ useEffect(() => {
                 setTempOuts(0);
             };
 
+            // Update opponent score manually (for when opponent team isn't tracking)
+            const updateOpponentScore = async (delta) => {
+                const newOpponentScore = Math.max(0, gameState.score.opponent + delta);
+                
+                // Update local state
+                setGameState(prev => ({
+                    ...prev,
+                    score: {
+                        ...prev.score,
+                        opponent: newOpponentScore
+                    }
+                }));
+                
+                // Update Firebase metadata
+                try {
+                    const updateData = {
+                        // If we're home, opponent is away; if we're away, opponent is home
+                        [isHome ? 'awayScore' : 'homeScore']: newOpponentScore
+                    };
+                    await window.FirebaseGameTracker.updateGameMetadata(
+                        selectedGame.seasonId, 
+                        selectedGame.id, 
+                        updateData
+                    );
+                    console.log(`✅ Opponent score updated: ${newOpponentScore}`);
+                } catch (error) {
+                    console.error('Error updating opponent score:', error);
+                }
+            };
+
             const advanceToNextHalfInning = async () => {
                 const newState = { ...gameState };
                 newState.outs = 0;
@@ -1367,10 +1397,11 @@ useEffect(() => {
                     
                     setGameState({ ...gameState, gameActive: false });
                     
-                    if (selectedGame && selectedTeam) {
+                    if (selectedGame && selectedTeam && selectedGame.seasonId) {
                         await window.FirebaseGameTracker.clearGameState(
                             selectedGame.id,
-                            selectedTeam
+                            selectedTeam,
+                            selectedGame.seasonId
                         );
                     }
                 }
@@ -1829,7 +1860,7 @@ const ViewerOnlyMessage = () => {
                         <ViewerOnlyMessage />
                     )}
 
-                    <div className="bg-gradient-to-br from-purple-500 to-purple-700 text-white p-5 rounded-xl mb-5 grid grid-cols-3 gap-4 text-center">
+                    <div className="bg-gradient-to-br from-purple-500 to-purple-700 text-white p-5 rounded-xl mb-5 grid grid-cols-4 gap-4 text-center">
                         <div>
                             <div className="text-sm opacity-90">Inning</div>
                             <div className="text-2xl font-bold">
@@ -1844,9 +1875,32 @@ const ViewerOnlyMessage = () => {
                             <div className="text-2xl font-bold">{gameState.outs}</div>
                         </div>
                         <div>
-                            <div className="text-sm opacity-90">{selectedTeam} Score</div>
+                            <div className="text-sm opacity-90">{selectedTeam}</div>
                             <div className="text-2xl font-bold">
                                 {gameState.score.yourTeam}
+                            </div>
+                        </div>
+                        <div>
+                            <div className="text-sm opacity-90">{opponentName}</div>
+                            <div className="text-2xl font-bold flex items-center justify-center gap-2">
+                                {userCanTrack && (
+                                    <button
+                                        onClick={() => updateOpponentScore(-1)}
+                                        disabled={gameState.score.opponent <= 0}
+                                        className="w-7 h-7 rounded-full bg-white/20 hover:bg-white/30 disabled:opacity-30 disabled:cursor-not-allowed text-sm font-bold"
+                                    >
+                                        −
+                                    </button>
+                                )}
+                                <span>{gameState.score.opponent}</span>
+                                {userCanTrack && (
+                                    <button
+                                        onClick={() => updateOpponentScore(1)}
+                                        className="w-7 h-7 rounded-full bg-white/20 hover:bg-white/30 text-sm font-bold"
+                                    >
+                                        +
+                                    </button>
+                                )}
                             </div>
                         </div>
                     </div>
@@ -1895,15 +1949,42 @@ const ViewerOnlyMessage = () => {
                             <div className="text-xl font-bold mb-2 text-blue-900">
                                 {opponentName} is Batting
                             </div>
-                            <div className="text-base text-blue-800 mb-3">
-                                No tracking needed - wait for 3 outs
+                            <div className="text-base text-blue-800 mb-4">
+                                Track their runs below, then click "Back at Bat" after 3 outs
                             </div>
-                            <button
-                                onClick={advanceToNextHalfInning}
-                                className="px-8 py-3 text-lg font-bold border-none rounded-lg cursor-pointer bg-purple-600 text-white hover:bg-purple-700 transition-colors shadow-lg inline-flex items-center gap-2"
-                            >
-                                <PlayCircle size={20} /> Back at Bat
-                            </button>
+                            
+                            {userCanTrack && (
+                                <div className="bg-white rounded-lg p-4 mb-4 inline-block">
+                                    <div className="text-sm text-gray-600 mb-2">{opponentName} Runs This Inning</div>
+                                    <div className="flex items-center justify-center gap-4">
+                                        <button
+                                            onClick={() => updateOpponentScore(-1)}
+                                            disabled={gameState.score.opponent <= 0}
+                                            className="w-12 h-12 rounded-full bg-red-100 hover:bg-red-200 disabled:opacity-30 disabled:cursor-not-allowed text-2xl font-bold text-red-600 border-2 border-red-300"
+                                        >
+                                            −
+                                        </button>
+                                        <span className="text-4xl font-bold text-blue-900 min-w-16">
+                                            {gameState.score.opponent}
+                                        </span>
+                                        <button
+                                            onClick={() => updateOpponentScore(1)}
+                                            className="w-12 h-12 rounded-full bg-green-100 hover:bg-green-200 text-2xl font-bold text-green-600 border-2 border-green-300"
+                                        >
+                                            +
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                            
+                            <div>
+                                <button
+                                    onClick={advanceToNextHalfInning}
+                                    className="px-8 py-3 text-lg font-bold border-none rounded-lg cursor-pointer bg-purple-600 text-white hover:bg-purple-700 transition-colors shadow-lg inline-flex items-center gap-2"
+                                >
+                                    <PlayCircle size={20} /> Back at Bat
+                                </button>
+                            </div>
                         </div>
                     )}
 
