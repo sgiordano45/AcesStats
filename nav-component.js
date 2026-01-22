@@ -1,5 +1,5 @@
 // nav-component.js - Reusable Navigation Component
-// v1.1.0 - Fixed iOS PWA hamburger button reliability with event delegation
+// v1.2.0 - Added role-based filtering for auth pages
 import { NAV_STRUCTURE, ALL_PAGES, PAGE_CONFIGS, DEFAULT_CONFIG, loadPageVisibility, getFilteredNavStructure, isPageVisible } from './nav-config.js';
 
 export class NavigationComponent {
@@ -9,6 +9,7 @@ export class NavigationComponent {
     this.isAuthenticated = options.isAuthenticated || this.checkAuth();
     this.userDisplayName = options.userDisplayName || this.getUserDisplayName();
     this.navStructure = options.navStructure || NAV_STRUCTURE; // Use filtered structure if provided
+    this.userProfile = options.userProfile || null; // User profile for role checking
   }
 
   // Auto-detect current page from URL
@@ -26,6 +27,66 @@ export class NavigationComponent {
       return user.displayName || user.email?.split('@')[0] || 'User';
     }
     return 'User';
+  }
+  
+  /**
+   * Check if user has the required role for a nav item
+   * @param {string} requiredRole - Role string like 'captain', 'admin', 'league_staff', 'contributor'
+   * @returns {boolean}
+   */
+  userHasRole(requiredRole) {
+    if (!requiredRole) return true; // No role required
+    if (!this.userProfile) return false; // No profile loaded, can't verify role
+    
+    const profile = this.userProfile;
+    
+    switch (requiredRole) {
+      case 'admin':
+        return profile.isAdmin === true || profile.userRole === 'admin';
+        
+      case 'league_staff':
+      case 'league-staff':
+        return profile.isAdmin === true || 
+               profile.userRole === 'admin' ||
+               profile.userRole === 'league-staff' ||
+               profile.isLeagueStaff === true;
+        
+      case 'captain':
+        // Check isCaptain flag or captain in teamRoles
+        if (profile.isCaptain === true) return true;
+        if (profile.userRole === 'captain') return true;
+        if (profile.teamRoles) {
+          return Object.values(profile.teamRoles).some(
+            tr => tr.role === 'captain' && tr.status === 'active'
+          );
+        }
+        // Admin and league-staff can also see captain pages
+        return profile.isAdmin === true || profile.userRole === 'admin' || 
+               profile.userRole === 'league-staff' || profile.isLeagueStaff === true;
+        
+      case 'team-staff':
+      case 'team_staff':
+        // Check teamRoles for team-staff
+        if (profile.teamRoles) {
+          const hasTeamStaff = Object.values(profile.teamRoles).some(
+            tr => (tr.role === 'team-staff' || tr.role === 'captain') && tr.status === 'active'
+          );
+          if (hasTeamStaff) return true;
+        }
+        // Captains, league-staff, admin can also see team-staff pages
+        return this.userHasRole('captain');
+        
+      case 'contributor':
+        // Check specialRoles.contributor
+        return profile.specialRoles?.contributor === true ||
+               profile.isAdmin === true || profile.userRole === 'admin';
+        
+      default:
+        // Check specialRoles for other custom roles
+        if (profile.specialRoles?.[requiredRole] === true) return true;
+        // Admin can see everything
+        return profile.isAdmin === true || profile.userRole === 'admin';
+    }
   }
   
   async getProfilePageUrl() {
@@ -107,15 +168,20 @@ export class NavigationComponent {
       });
     });
     
-    // Add auth pages if user is authenticated
+    // Add auth pages if user is authenticated (with role filtering)
     if (this.isAuthenticated) {
       this.navStructure.auth.forEach(page => {
-        if (!page.hideFromNav) {
-          allLinks.push({
-            ...page,
-            active: page.href === this.currentPage
-          });
+        if (page.hideFromNav) return;
+        
+        // Check role requirement
+        if (page.requiresRole && !this.userHasRole(page.requiresRole)) {
+          return; // Skip pages user doesn't have access to
         }
+        
+        allLinks.push({
+          ...page,
+          active: page.href === this.currentPage
+        });
       });
     }
     
@@ -236,9 +302,26 @@ export class NavigationComponent {
     await loadPageVisibility();
     const filteredNav = getFilteredNavStructure();
     
+    // Try to load user profile for role-based filtering
+    let userProfile = null;
+    try {
+      if (typeof window.auth !== 'undefined' && window.auth.currentUser) {
+        const { getUserProfile } = await import('./firebase-auth.js');
+        const userId = window.auth.currentUser.uid;
+        const result = await getUserProfile(userId);
+        if (result.success && result.data) {
+          userProfile = result.data;
+          console.log('👤 Loaded user profile for nav filtering:', userProfile.userRole || 'no role');
+        }
+      }
+    } catch (error) {
+      console.warn('⚠️ Could not load user profile for nav filtering:', error);
+    }
+    
     const nav = new NavigationComponent({ 
       ...options,
-      navStructure: filteredNav
+      navStructure: filteredNav,
+      userProfile: userProfile
     });
     
     const { mobile, desktop } = nav.render();
