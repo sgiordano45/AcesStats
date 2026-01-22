@@ -791,7 +791,10 @@ useEffect(() => {
                     console.log('✅ Current season:', seasonData);
                     
                     const teams = await window.FirebaseGameTracker.getAllTeams();
-                    const teamNames = teams.map(t => t.name || t.id).sort();
+                    const teamNames = teams
+                        .map(t => t.name || t.id)
+                        .filter(name => name.toLowerCase() !== 'kings') // Remove inactive team
+                        .sort();
                     setAllTeams(teamNames);
                     console.log('✅ Teams loaded:', teamNames.length);
                     
@@ -1488,123 +1491,179 @@ useEffect(() => {
 
             if (loading) {
                 return (
-                    <div className="max-w-4xl mx-auto p-8 text-center">
-                        <h1 className="text-4xl font-bold text-gray-900 mb-3">Loading Game Tracker...</h1>
-                        <p className="text-lg text-gray-600">Connecting to Firebase...</p>
+                    <div className="min-h-screen flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #f7fafc 0%, #edf2f7 100%)' }}>
+                        <div className="text-center">
+                            <div className="text-6xl mb-4 animate-bounce">⚾</div>
+                            <h1 className="text-2xl font-bold mb-2" style={{ color: '#2d5016' }}>Loading Game Tracker...</h1>
+                            <p className="text-gray-600">Connecting to Firebase...</p>
+                        </div>
                     </div>
                 );
             }
 
             if (error) {
                 return (
-                    <div className="max-w-4xl mx-auto p-8 text-center">
-                        <h1 className="text-4xl font-bold text-red-600 mb-3">Error Loading Data</h1>
-                        <p className="text-lg text-gray-600 mb-4">{error}</p>
-                        <p className="text-sm text-gray-500">Please check your Firebase connection.</p>
+                    <div className="min-h-screen flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #f7fafc 0%, #edf2f7 100%)' }}>
+                        <div className="text-center bg-white p-8 rounded-2xl shadow-lg max-w-md mx-4">
+                            <div className="text-5xl mb-4">❌</div>
+                            <h1 className="text-2xl font-bold text-red-600 mb-3">Error Loading Data</h1>
+                            <p className="text-gray-600 mb-4">{error}</p>
+                            <p className="text-sm text-gray-500">Please check your Firebase connection.</p>
+                        </div>
                     </div>
                 );
             }
 
             if (setupMode) {
                 return (
-                    <div className="max-w-4xl mx-auto p-8 font-sans">
-                        <div className="text-center mb-10">
-                            <h1 className="text-4xl font-bold text-gray-900 mb-3">
-                                Game Tracker Setup
-                            </h1>
-                            <p className="text-lg text-gray-600">
-                                {currentSeason ? `${currentSeason.year} ${currentSeason.season.charAt(0).toUpperCase() + currentSeason.season.slice(1)} Season` : 'Loading...'}
-                            </p>
-                            {!currentUser && (
-                                <p className="text-sm text-amber-600 mt-2">
-                                    ℹ️ Not signed in - tracking will work but won't save to your account
+                    <div className="min-h-screen" style={{ background: 'linear-gradient(135deg, #f7fafc 0%, #edf2f7 100%)' }}>
+                        {/* Header */}
+                        <div className="relative overflow-hidden" style={{ background: 'linear-gradient(135deg, #2d5016 0%, #1a6b4a 100%)', padding: '3rem 2rem' }}>
+                            <div className="absolute top-0 right-0 w-64 h-64 rounded-full opacity-10" style={{ background: 'radial-gradient(circle, white 0%, transparent 70%)', transform: 'translate(30%, -30%)' }}></div>
+                            <div className="absolute bottom-0 left-0 text-9xl opacity-5 select-none" style={{ transform: 'translate(-20%, 20%)' }}>⚾</div>
+                            <div className="max-w-4xl mx-auto text-center relative z-10">
+                                <h1 className="text-4xl font-bold text-white mb-2">
+                                    ⚾ Game Tracker
+                                </h1>
+                                <p className="text-xl text-white/90">
+                                    {currentSeason ? `${currentSeason.year} ${currentSeason.season.charAt(0).toUpperCase() + currentSeason.season.slice(1)} Season` : 'Loading...'}
                                 </p>
-                            )}
+                                {!currentUser && (
+                                    <p className="text-sm mt-3 px-4 py-2 rounded-full inline-block" style={{ background: 'rgba(255,215,0,0.2)', color: '#ffd700' }}>
+                                        ℹ️ Sign in to save tracking to your account
+                                    </p>
+                                )}
+                            </div>
                         </div>
 
-                        <div className="bg-white border-2 border-gray-200 rounded-xl p-6 mb-6">
-                            <h2 className="text-2xl font-bold mb-4 text-gray-800">1. Select Your Team</h2>
-                            <select 
-                                value={selectedTeam}
-                                onChange={(e) => handleTeamSelect(e.target.value)}
-                                className="w-full p-4 text-lg border-2 border-gray-300 rounded-lg focus:border-purple-500 focus:outline-none"
-                            >
-                                <option value="">Choose a team...</option>
-                                {allTeams.map(team => (
-                                    <option key={team} value={team}>{team}</option>
-                                ))}
-                            </select>
-                        </div>
-
-                        {selectedTeam && games.length > 0 && (
-                            <div className="bg-white border-2 border-gray-200 rounded-xl p-6 mb-6">
-                                <h2 className="text-2xl font-bold mb-4 text-gray-800">2. Select Game to Track</h2>
-                                <div className="space-y-3">
-                                    {games.map((game, idx) => (
-                                        <button
-                                            key={idx}
-                                            onClick={() => handleGameSelect(game)}
-                                            className={`w-full p-4 text-left rounded-lg border-2 transition-all ${
-                                                selectedGame === game 
-                                                    ? 'border-purple-500 bg-purple-50' 
-                                                    : 'border-gray-300 hover:border-purple-300 bg-white'
-                                            }`}
-                                        >
-                                            <div className="flex justify-between items-center">
-                                                <div>
-                                                    <span className="font-bold text-lg">{game.awayTeam}</span>
-                                                    <span className="mx-3 text-gray-500">@</span>
-                                                    <span className="font-bold text-lg">{game.homeTeam}</span>
-                                                </div>
-                                                <div className="text-gray-600">{game.date}</div>
-                                            </div>
-                                            <div className="text-sm text-gray-500 mt-1">
-                                                {game.isHome ? 'Home Game' : 'Away Game'}
-                                            </div>
-                                        </button>
+                        {/* Main Content */}
+                        <div className="max-w-4xl mx-auto p-6 -mt-6">
+                            {/* Step 1: Team Selection */}
+                            <div className="bg-white rounded-2xl p-6 mb-6 relative overflow-hidden" style={{ boxShadow: '0 4px 16px rgba(0,0,0,0.08)', border: '1px solid #e2e8f0' }}>
+                                <div className="absolute top-0 left-0 right-0 h-1" style={{ background: 'linear-gradient(90deg, #2d5016 0%, #1a6b4a 100%)' }}></div>
+                                <h2 className="text-xl font-bold mb-4 flex items-center gap-3" style={{ color: '#2d3748' }}>
+                                    <span className="w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold" style={{ background: 'linear-gradient(135deg, #2d5016 0%, #1a6b4a 100%)' }}>1</span>
+                                    Select Your Team
+                                </h2>
+                                <select 
+                                    value={selectedTeam}
+                                    onChange={(e) => handleTeamSelect(e.target.value)}
+                                    className="w-full p-4 text-lg rounded-xl transition-all focus:outline-none"
+                                    style={{ 
+                                        border: '2px solid #e2e8f0',
+                                        background: selectedTeam ? '#f0fdf4' : 'white'
+                                    }}
+                                    onFocus={(e) => e.target.style.borderColor = '#2d5016'}
+                                    onBlur={(e) => e.target.style.borderColor = '#e2e8f0'}
+                                >
+                                    <option value="">Choose a team...</option>
+                                    {allTeams.map(team => (
+                                        <option key={team} value={team}>{team}</option>
                                     ))}
-                                </div>
+                                </select>
                             </div>
-                        )}
 
-                        {selectedTeam && games.length === 0 && (
-                            <div className="bg-amber-50 border-2 border-amber-400 rounded-xl p-6 mb-6">
-                                <div className="flex items-center gap-3">
-                                    <AlertCircle size={24} />
-                                    <p className="text-amber-900">No upcoming games found for {selectedTeam}</p>
+                            {/* Step 2: Game Selection */}
+                            {selectedTeam && games.length > 0 && (
+                                <div className="bg-white rounded-2xl p-6 mb-6 relative overflow-hidden" style={{ boxShadow: '0 4px 16px rgba(0,0,0,0.08)', border: '1px solid #e2e8f0' }}>
+                                    <div className="absolute top-0 left-0 right-0 h-1" style={{ background: 'linear-gradient(90deg, #2d5016 0%, #1a6b4a 100%)' }}></div>
+                                    <h2 className="text-xl font-bold mb-4 flex items-center gap-3" style={{ color: '#2d3748' }}>
+                                        <span className="w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold" style={{ background: 'linear-gradient(135deg, #2d5016 0%, #1a6b4a 100%)' }}>2</span>
+                                        Select Game to Track
+                                    </h2>
+                                    <div className="space-y-3">
+                                        {games.map((game, idx) => (
+                                            <button
+                                                key={idx}
+                                                onClick={() => handleGameSelect(game)}
+                                                className="w-full p-4 text-left rounded-xl transition-all"
+                                                style={{
+                                                    border: selectedGame === game ? '2px solid #2d5016' : '2px solid #e2e8f0',
+                                                    background: selectedGame === game ? 'linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)' : 'white',
+                                                    transform: selectedGame === game ? 'scale(1.02)' : 'scale(1)',
+                                                    boxShadow: selectedGame === game ? '0 4px 12px rgba(45,80,22,0.15)' : 'none'
+                                                }}
+                                            >
+                                                <div className="flex justify-between items-center">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="font-bold text-lg" style={{ color: '#2d3748' }}>{game.awayTeam}</span>
+                                                        <span className="text-gray-400 text-sm">@</span>
+                                                        <span className="font-bold text-lg" style={{ color: '#2d3748' }}>{game.homeTeam}</span>
+                                                    </div>
+                                                    <div className="text-sm font-medium" style={{ color: '#718096' }}>{game.date}</div>
+                                                </div>
+                                                <div className="flex items-center gap-2 mt-2">
+                                                    <span className="text-xs px-2 py-1 rounded-full font-medium" style={{ 
+                                                        background: game.isHome ? '#dcfce7' : '#e0f2fe',
+                                                        color: game.isHome ? '#166534' : '#0369a1'
+                                                    }}>
+                                                        {game.isHome ? '🏠 Home' : '✈️ Away'}
+                                                    </span>
+                                                    {selectedGame === game && (
+                                                        <span className="text-xs px-2 py-1 rounded-full font-medium" style={{ background: '#fef3c7', color: '#92400e' }}>
+                                                            ✓ Selected
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </button>
+                                        ))}
+                                    </div>
                                 </div>
-                            </div>
-                        )}
+                            )}
 
-                        {selectedTeam && selectedGame && (
-                            <>
-                                {lineupExists && (
-                                    <div className="bg-green-50 border-2 border-green-400 rounded-xl p-4 mb-6">
-                                        <div className="flex items-center gap-3">
-                                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                                <polyline points="20 6 9 17 4 12"/>
-                                            </svg>
-                                            <p className="text-green-900 font-semibold">
-                                                ✓ Batting order set by captain - will be loaded automatically
+                            {/* No Games Warning */}
+                            {selectedTeam && games.length === 0 && (
+                                <div className="bg-amber-50 border-2 border-amber-300 rounded-2xl p-6 mb-6">
+                                    <div className="flex items-center gap-3">
+                                        <span className="text-2xl">📅</span>
+                                        <p className="text-amber-900 font-medium">No upcoming games found for {selectedTeam}</p>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Step 3: Start Game */}
+                            {selectedTeam && selectedGame && (
+                                <div className="bg-white rounded-2xl p-6 relative overflow-hidden" style={{ boxShadow: '0 4px 16px rgba(0,0,0,0.08)', border: '1px solid #e2e8f0' }}>
+                                    <div className="absolute top-0 left-0 right-0 h-1" style={{ background: 'linear-gradient(90deg, #2d5016 0%, #1a6b4a 100%)' }}></div>
+                                    
+                                    {lineupExists && (
+                                        <div className="mb-6 p-4 rounded-xl flex items-center gap-3" style={{ background: '#f0fdf4', border: '1px solid #86efac' }}>
+                                            <span className="text-xl">✅</span>
+                                            <p className="font-medium" style={{ color: '#166534' }}>
+                                                Batting order set by captain - will be loaded automatically
                                             </p>
                                         </div>
+                                    )}
+                                    
+                                    <div className="text-center">
+                                        <h2 className="text-xl font-bold mb-4 flex items-center justify-center gap-3" style={{ color: '#2d3748' }}>
+                                            <span className="w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold" style={{ background: 'linear-gradient(135deg, #2d5016 0%, #1a6b4a 100%)' }}>3</span>
+                                            Ready to Track
+                                        </h2>
+                                        
+                                        <div className="mb-6 p-4 rounded-xl" style={{ background: '#f7fafc' }}>
+                                            <p className="text-lg font-bold" style={{ color: '#2d3748' }}>
+                                                {selectedTeam} vs {opponentName}
+                                            </p>
+                                            <p className="text-sm mt-1" style={{ color: '#718096' }}>
+                                                {selectedGame?.date} • {isHome ? 'Home Game 🏠' : 'Away Game ✈️'}
+                                            </p>
+                                        </div>
+                                        
+                                        <button
+                                            onClick={startGame}
+                                            className="px-10 py-4 text-xl font-bold text-white rounded-xl transition-all hover:scale-105"
+                                            style={{ 
+                                                background: 'linear-gradient(135deg, #2d5016 0%, #1a6b4a 100%)',
+                                                boxShadow: '0 4px 16px rgba(45,80,22,0.3)'
+                                            }}
+                                        >
+                                            ⚾ Start Game Tracker
+                                        </button>
                                     </div>
-                                )}
-                                <div className="text-center">
-                                    <button
-                                        onClick={startGame}
-                                        className="px-12 py-5 text-xl font-bold bg-gradient-to-r from-purple-500 to-purple-700 text-white rounded-xl hover:from-purple-600 hover:to-purple-800 transition-all shadow-lg"
-                                    >
-                                        Start Game Tracker
-                                    </button>
-                                    <p className="mt-4 text-gray-600">
-                                        Tracking: <strong>{selectedTeam}</strong> vs {opponentName}
-                                        <br />
-                                        <span className="text-sm">({isHome ? 'Home' : 'Away'} team)</span>
-                                    </p>
                                 </div>
-                            </>
-                        )}
+                            )}
+                        </div>
                     </div>
                 );
             }
@@ -1695,7 +1754,7 @@ const LiveScoreHeader = ({ gameMetadata, yourTeamName, opponentTeamName, isHome 
     const opponentScore = isHome ? gameMetadata.awayScore : gameMetadata.homeScore;
     
     return (
-        <div className="bg-gradient-to-r from-blue-600 to-purple-600 text-white p-6 rounded-xl mb-6">
+        <div className="text-white p-6 rounded-xl mb-6" style={{ background: 'linear-gradient(135deg, #2d5016 0%, #1a6b4a 100%)' }}>
             <div className="flex items-center justify-between">
                 {/* Your Team */}
                 <div className="flex-1 text-center">
@@ -1717,7 +1776,7 @@ const LiveScoreHeader = ({ gameMetadata, yourTeamName, opponentTeamName, isHome 
             </div>
             
             <div className="flex items-center justify-center gap-2 mt-3">
-                <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
+                <div className="w-2 h-2 rounded-full animate-pulse" style={{ background: '#ffd700' }} />
                 <span className="text-sm">LIVE</span>
             </div>
         </div>
@@ -1836,10 +1895,10 @@ const MergedPlayByPlay = ({ yourPlays, opponentPlays, yourTeamName, opponentName
                             <div 
                                 key={`${play.team}-${play.timestamp}-${idx}`}
                                 className={`p-3 border-b border-gray-100 ${
-                                    play.isYourTeam ? 'bg-blue-50' : 'bg-gray-50'
+                                    play.isYourTeam ? 'bg-green-50' : 'bg-gray-50'
                                 }`}
                             >
-                                <span className="font-bold text-purple-600">
+                                <span className="font-bold" style={{ color: '#2d5016' }}>
                                     {play.inning}
                                 </span>
                                 {' • '}
@@ -1946,7 +2005,7 @@ const ViewerOnlyMessage = () => {
                         <ViewerOnlyMessage />
                     )}
 
-                    <div className="bg-gradient-to-br from-purple-500 to-purple-700 text-white p-5 rounded-xl mb-5 grid grid-cols-4 gap-4 text-center">
+                    <div className="text-white p-5 rounded-xl mb-5 grid grid-cols-4 gap-4 text-center" style={{ background: 'linear-gradient(135deg, #2d5016 0%, #1a6b4a 100%)' }}>
                         <div>
                             <div className="text-sm opacity-90">Inning</div>
                             <div className="text-2xl font-bold">
@@ -2031,11 +2090,11 @@ const ViewerOnlyMessage = () => {
                     )}
 
                     {!gameState.isYourTeamBatting && !inningOver && (
-                        <div className="bg-blue-50 border-2 border-blue-400 rounded-lg p-6 mb-5 text-center">
-                            <div className="text-xl font-bold mb-2 text-blue-900">
+                        <div className="rounded-xl p-6 mb-5 text-center" style={{ background: '#f0fdf4', border: '2px solid #86efac' }}>
+                            <div className="text-xl font-bold mb-2" style={{ color: '#166534' }}>
                                 {opponentName} is Batting
                             </div>
-                            <div className="text-base text-blue-800 mb-4">
+                            <div className="text-base mb-4" style={{ color: '#15803d' }}>
                                 Track their runs below, then click "Back at Bat" after 3 outs
                             </div>
                             
@@ -2050,7 +2109,7 @@ const ViewerOnlyMessage = () => {
                                         >
                                             −
                                         </button>
-                                        <span className="text-4xl font-bold text-blue-900 min-w-16">
+                                        <span className="text-4xl font-bold min-w-16" style={{ color: '#166534' }}>
                                             {gameState.score.opponent}
                                         </span>
                                         <button
@@ -2066,7 +2125,8 @@ const ViewerOnlyMessage = () => {
                             <div>
                                 <button
                                     onClick={advanceToNextHalfInning}
-                                    className="px-8 py-3 text-lg font-bold border-none rounded-lg cursor-pointer bg-purple-600 text-white hover:bg-purple-700 transition-colors shadow-lg inline-flex items-center gap-2"
+                                    className="px-8 py-3 text-lg font-bold border-none rounded-xl cursor-pointer text-white transition-all shadow-lg inline-flex items-center gap-2 hover:scale-105"
+                                    style={{ background: 'linear-gradient(135deg, #2d5016 0%, #1a6b4a 100%)' }}
                                 >
                                     <PlayCircle size={20} /> Back at Bat
                                 </button>
@@ -2229,7 +2289,12 @@ const ViewerOnlyMessage = () => {
                                         return (
                                             <div 
                                                 key={stat.name}
-                                                className={`text-xs p-2 rounded ${isCurrentBatter ? 'bg-purple-100 border-2 border-purple-500 font-bold' : 'bg-gray-50'}`}
+                                                className="text-xs p-2 rounded"
+                                                style={isCurrentBatter ? { 
+                                                    background: '#f0fdf4', 
+                                                    border: '2px solid #22c55e',
+                                                    fontWeight: 'bold'
+                                                } : { background: '#f9fafb' }}
                                             >
                                                 <div className="flex items-center gap-1 mb-1">
                                                     <span className="text-gray-500">#{stat.number}</span>
