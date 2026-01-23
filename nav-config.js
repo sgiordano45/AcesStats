@@ -108,6 +108,7 @@ export const NAV_STRUCTURE = {
     { id: 'champ-preview', href: 'championship-preview.html', label: 'Championship Preview', icon: '🎊', priority: 3 },
     { id: 'playoff-history', href: 'playoff-history.html', label: 'Playoff History', icon: '🗂️', priority: 3 },
     { id: 'feature-submit', href: 'feature-submit.html', label: 'Submit Feedback', icon: '💡', priority: 3 },
+    { id: 'help', href: 'help.html', label: 'Help Center', icon: '📚', priority: 3 },
     // game-preview removed - requires specific game ID parameter
   ],
   
@@ -285,6 +286,10 @@ export const PAGE_CONFIGS = {
 
   'feature-submit.html': {
     desktop: []
+  },
+
+  'help.html': {
+    desktop: ['home']
   },
 
   // Auth-specific pages
