@@ -806,6 +806,26 @@ import {
 } from './firebase-auth.js';
 
 // ============================================
+// VERSION CHECK - Increment to clear old localStorage data
+// ============================================
+const DATA_VERSION = 2;
+const VERSION_KEY = 'acesHigherLower_dataVersion';
+
+(function checkDataVersion() {
+  const storedVersion = localStorage.getItem(VERSION_KEY);
+  if (!storedVersion || parseInt(storedVersion) < DATA_VERSION) {
+    console.log('🔄 Clearing old Aces Higher or Lower data (version update)');
+    // Clear all puzzle data
+    Object.keys(localStorage).forEach(key => {
+      if (key.startsWith('acesHigherLower_puzzle_')) {
+        localStorage.removeItem(key);
+      }
+    });
+    localStorage.setItem(VERSION_KEY, String(DATA_VERSION));
+  }
+})();
+
+// ============================================
 // CONFIGURATION
 // ============================================
 // Set this to the date you want Puzzle #1 to be
@@ -836,62 +856,37 @@ let gameState = {
 // ============================================
 // CATEGORY DEFINITIONS
 // ============================================
+// Curated rotation of categories - balanced mix, reliable data
+// This is the PRIMARY rotation that cycles daily
 const STAT_CATEGORIES = [
-  // Career stats (these are most reliable - always have data)
+  // Mix career and recent seasons for variety
   { id: 'career_hits', label: 'Career Hits', type: 'career', field: 'hits', format: 'number' },
-  { id: 'career_runs', label: 'Career Runs', type: 'career', field: 'runs', format: 'number' },
-  { id: 'career_walks', label: 'Career Walks', type: 'career', field: 'walks', format: 'number' },
-  { id: 'career_games', label: 'Career Games', type: 'career', field: 'games', format: 'number' },
-  { id: 'career_ba', label: 'Career Batting Avg', type: 'career', field: 'battingAverage', format: 'avg' },
-  
-  // 2022 Season stats
-  { id: '2022_summer_hits', label: '2022 Summer Hits', type: 'season', seasonId: '2022-summer', field: 'hits', format: 'number' },
-  { id: '2022_summer_runs', label: '2022 Summer Runs', type: 'season', seasonId: '2022-summer', field: 'runs', format: 'number' },
-  { id: '2022_summer_walks', label: '2022 Summer Walks', type: 'season', seasonId: '2022-summer', field: 'walks', format: 'number' },
-  { id: '2022_summer_games', label: '2022 Summer Games', type: 'season', seasonId: '2022-summer', field: 'games', format: 'number' },
-  { id: '2022_summer_ba', label: '2022 Summer BA', type: 'season', seasonId: '2022-summer', field: 'battingAverage', format: 'avg', minAB: 20 },
-  { id: '2022_fall_hits', label: '2022 Fall Hits', type: 'season', seasonId: '2022-fall', field: 'hits', format: 'number' },
-  { id: '2022_fall_runs', label: '2022 Fall Runs', type: 'season', seasonId: '2022-fall', field: 'runs', format: 'number' },
-  { id: '2022_fall_walks', label: '2022 Fall Walks', type: 'season', seasonId: '2022-fall', field: 'walks', format: 'number' },
-  { id: '2022_fall_games', label: '2022 Fall Games', type: 'season', seasonId: '2022-fall', field: 'games', format: 'number' },
-  { id: '2022_fall_ba', label: '2022 Fall BA', type: 'season', seasonId: '2022-fall', field: 'battingAverage', format: 'avg', minAB: 20 },
-  
-  // 2023 Season stats
-  { id: '2023_summer_hits', label: '2023 Summer Hits', type: 'season', seasonId: '2023-summer', field: 'hits', format: 'number' },
-  { id: '2023_summer_runs', label: '2023 Summer Runs', type: 'season', seasonId: '2023-summer', field: 'runs', format: 'number' },
-  { id: '2023_summer_walks', label: '2023 Summer Walks', type: 'season', seasonId: '2023-summer', field: 'walks', format: 'number' },
-  { id: '2023_summer_games', label: '2023 Summer Games', type: 'season', seasonId: '2023-summer', field: 'games', format: 'number' },
-  { id: '2023_summer_ba', label: '2023 Summer BA', type: 'season', seasonId: '2023-summer', field: 'battingAverage', format: 'avg', minAB: 20 },
-  { id: '2023_fall_hits', label: '2023 Fall Hits', type: 'season', seasonId: '2023-fall', field: 'hits', format: 'number' },
-  { id: '2023_fall_runs', label: '2023 Fall Runs', type: 'season', seasonId: '2023-fall', field: 'runs', format: 'number' },
-  { id: '2023_fall_walks', label: '2023 Fall Walks', type: 'season', seasonId: '2023-fall', field: 'walks', format: 'number' },
-  { id: '2023_fall_games', label: '2023 Fall Games', type: 'season', seasonId: '2023-fall', field: 'games', format: 'number' },
-  { id: '2023_fall_ba', label: '2023 Fall BA', type: 'season', seasonId: '2023-fall', field: 'battingAverage', format: 'avg', minAB: 20 },
-  
-  // 2024 Season stats
   { id: '2024_summer_hits', label: '2024 Summer Hits', type: 'season', seasonId: '2024-summer', field: 'hits', format: 'number' },
-  { id: '2024_summer_runs', label: '2024 Summer Runs', type: 'season', seasonId: '2024-summer', field: 'runs', format: 'number' },
-  { id: '2024_summer_walks', label: '2024 Summer Walks', type: 'season', seasonId: '2024-summer', field: 'walks', format: 'number' },
-  { id: '2024_summer_games', label: '2024 Summer Games', type: 'season', seasonId: '2024-summer', field: 'games', format: 'number' },
-  { id: '2024_summer_ba', label: '2024 Summer BA', type: 'season', seasonId: '2024-summer', field: 'battingAverage', format: 'avg', minAB: 20 },
-  { id: '2024_fall_hits', label: '2024 Fall Hits', type: 'season', seasonId: '2024-fall', field: 'hits', format: 'number' },
-  { id: '2024_fall_runs', label: '2024 Fall Runs', type: 'season', seasonId: '2024-fall', field: 'runs', format: 'number' },
-  { id: '2024_fall_walks', label: '2024 Fall Walks', type: 'season', seasonId: '2024-fall', field: 'walks', format: 'number' },
-  { id: '2024_fall_games', label: '2024 Fall Games', type: 'season', seasonId: '2024-fall', field: 'games', format: 'number' },
-  { id: '2024_fall_ba', label: '2024 Fall BA', type: 'season', seasonId: '2024-fall', field: 'battingAverage', format: 'avg', minAB: 20 },
-  
-  // 2025 Season stats
+  { id: 'career_runs', label: 'Career Runs', type: 'career', field: 'runs', format: 'number' },
   { id: '2025_summer_hits', label: '2025 Summer Hits', type: 'season', seasonId: '2025-summer', field: 'hits', format: 'number' },
+  { id: 'career_games', label: 'Career Games', type: 'career', field: 'games', format: 'number' },
+  { id: '2024_fall_hits', label: '2024 Fall Hits', type: 'season', seasonId: '2024-fall', field: 'hits', format: 'number' },
+  { id: 'career_walks', label: 'Career Walks', type: 'career', field: 'walks', format: 'number' },
   { id: '2025_summer_runs', label: '2025 Summer Runs', type: 'season', seasonId: '2025-summer', field: 'runs', format: 'number' },
-  { id: '2025_summer_walks', label: '2025 Summer Walks', type: 'season', seasonId: '2025-summer', field: 'walks', format: 'number' },
+  { id: 'career_ba', label: 'Career Batting Avg', type: 'career', field: 'battingAverage', format: 'avg' },
+  { id: '2024_summer_runs', label: '2024 Summer Runs', type: 'season', seasonId: '2024-summer', field: 'runs', format: 'number' },
+  { id: '2024_fall_runs', label: '2024 Fall Runs', type: 'season', seasonId: '2024-fall', field: 'runs', format: 'number' },
   { id: '2025_summer_games', label: '2025 Summer Games', type: 'season', seasonId: '2025-summer', field: 'games', format: 'number' },
-  { id: '2025_summer_ba', label: '2025 Summer BA', type: 'season', seasonId: '2025-summer', field: 'battingAverage', format: 'avg', minAB: 20 },
-  { id: '2025_fall_hits', label: '2025 Fall Hits', type: 'season', seasonId: '2025-fall', field: 'hits', format: 'number' },
-  { id: '2025_fall_runs', label: '2025 Fall Runs', type: 'season', seasonId: '2025-fall', field: 'runs', format: 'number' },
-  { id: '2025_fall_walks', label: '2025 Fall Walks', type: 'season', seasonId: '2025-fall', field: 'walks', format: 'number' },
-  { id: '2025_fall_games', label: '2025 Fall Games', type: 'season', seasonId: '2025-fall', field: 'games', format: 'number' },
-  { id: '2025_fall_ba', label: '2025 Fall BA', type: 'season', seasonId: '2025-fall', field: 'battingAverage', format: 'avg', minAB: 20 },
+  { id: '2024_summer_games', label: '2024 Summer Games', type: 'season', seasonId: '2024-summer', field: 'games', format: 'number' },
+  { id: '2024_fall_games', label: '2024 Fall Games', type: 'season', seasonId: '2024-fall', field: 'games', format: 'number' },
+  { id: '2023_summer_hits', label: '2023 Summer Hits', type: 'season', seasonId: '2023-summer', field: 'hits', format: 'number' },
+  { id: '2023_fall_hits', label: '2023 Fall Hits', type: 'season', seasonId: '2023-fall', field: 'hits', format: 'number' },
+  { id: '2025_summer_walks', label: '2025 Summer Walks', type: 'season', seasonId: '2025-summer', field: 'walks', format: 'number' },
+  { id: '2024_summer_walks', label: '2024 Summer Walks', type: 'season', seasonId: '2024-summer', field: 'walks', format: 'number' },
+  { id: '2023_summer_runs', label: '2023 Summer Runs', type: 'season', seasonId: '2023-summer', field: 'runs', format: 'number' },
+  { id: '2023_fall_runs', label: '2023 Fall Runs', type: 'season', seasonId: '2023-fall', field: 'runs', format: 'number' },
 ];
+
+// Tier configuration for difficulty matching
+const TIER_CONFIG = {
+  numTiers: 4,  // Divide players into 4 skill tiers
+  minPlayersPerTier: 3  // Need at least 3 players per tier for good matchups
+};
 
 // ============================================
 // SEEDED RANDOM FOR DAILY PUZZLES
@@ -958,8 +953,36 @@ function getPlayerTeam(player, category) {
 }
 
 // ============================================
-// PUZZLE GENERATION
+// PUZZLE GENERATION - TIER-BASED MATCHING
 // ============================================
+
+// Assign players to tiers based on their stat percentile
+function assignPlayersToTiers(players, category) {
+  // Get stats and sort
+  const playersWithStats = players.map(p => ({
+    player: p,
+    stat: getPlayerStat(p, category)
+  })).filter(p => p.stat !== null && p.stat !== undefined);
+  
+  // Sort by stat value (descending - highest first)
+  playersWithStats.sort((a, b) => b.stat - a.stat);
+  
+  const totalPlayers = playersWithStats.length;
+  const tiersCount = TIER_CONFIG.numTiers;
+  const playersPerTier = Math.floor(totalPlayers / tiersCount);
+  
+  // Create tiers
+  const tiers = [];
+  for (let i = 0; i < tiersCount; i++) {
+    const start = i * playersPerTier;
+    // Last tier gets any remaining players
+    const end = (i === tiersCount - 1) ? totalPlayers : start + playersPerTier;
+    tiers.push(playersWithStats.slice(start, end));
+  }
+  
+  return tiers;
+}
+
 function generateMatchupsForCategory(category, seed) {
   // Find players with valid stats for this category
   const validPlayers = allPlayers.filter(p => {
@@ -974,40 +997,82 @@ function generateMatchupsForCategory(category, seed) {
     return null;
   }
   
-  // Shuffle players
-  const shuffledPlayers = shuffleWithSeed(validPlayers, seed);
+  // Assign players to tiers
+  const tiers = assignPlayersToTiers(validPlayers, category);
   
-  // Generate matchups with interesting stat differences
+  // Check if we have enough players in each tier
+  const viableTiers = tiers.filter(t => t.length >= TIER_CONFIG.minPlayersPerTier);
+  console.log(`Viable tiers: ${viableTiers.length} of ${tiers.length}`);
+  
+  if (viableTiers.length === 0) {
+    console.log(`No viable tiers for category "${category.label}"`);
+    return null;
+  }
+  
+  // Generate matchups by pulling pairs from tiers
   const matchups = [];
   const usedPlayers = new Set();
+  let tierRotation = 0;
   
-  for (let i = 0; i < shuffledPlayers.length - 1 && matchups.length < TOTAL_ROUNDS; i++) {
-    const player1 = shuffledPlayers[i];
+  // Shuffle tier order based on seed for variety
+  const shuffledTierIndices = shuffleWithSeed(
+    viableTiers.map((_, i) => i), 
+    seed
+  );
+  
+  while (matchups.length < TOTAL_ROUNDS) {
+    // Get the current tier (rotate through shuffled tiers)
+    const tierIndex = shuffledTierIndices[tierRotation % shuffledTierIndices.length];
+    const tier = viableTiers[tierIndex];
+    tierRotation++;
     
-    if (usedPlayers.has(player1.name)) continue;
+    // Shuffle players within this tier
+    const shuffledTier = shuffleWithSeed(
+      tier.filter(p => !usedPlayers.has(p.player.name)),
+      seed + matchups.length + tierRotation
+    );
     
-    // Find a good opponent
-    for (let j = i + 1; j < shuffledPlayers.length; j++) {
-      const player2 = shuffledPlayers[j];
-      
-      if (usedPlayers.has(player2.name)) continue;
-      
-      const stat1 = getPlayerStat(player1, category);
-      const stat2 = getPlayerStat(player2, category);
-      
-      // Make sure stats are different (more interesting)
-      if (stat1 !== stat2) {
-        matchups.push({
-          left: player1,
-          right: player2,
-          leftStat: stat1,
-          rightStat: stat2
-        });
-        usedPlayers.add(player1.name);
-        usedPlayers.add(player2.name);
+    // Need at least 2 unused players in this tier
+    if (shuffledTier.length < 2) {
+      // If we've tried all tiers and still can't make matchups, break
+      if (tierRotation > viableTiers.length * TOTAL_ROUNDS) {
         break;
       }
+      continue;
     }
+    
+    // Find a pair with different stats (more interesting)
+    let foundPair = false;
+    for (let i = 0; i < shuffledTier.length - 1 && !foundPair; i++) {
+      for (let j = i + 1; j < shuffledTier.length && !foundPair; j++) {
+        const p1 = shuffledTier[i];
+        const p2 = shuffledTier[j];
+        
+        if (p1.stat !== p2.stat) {
+          matchups.push({
+            left: p1.player,
+            right: p2.player,
+            leftStat: p1.stat,
+            rightStat: p2.stat,
+            tier: tierIndex + 1  // For debugging
+          });
+          usedPlayers.add(p1.player.name);
+          usedPlayers.add(p2.player.name);
+          foundPair = true;
+        }
+      }
+    }
+    
+    // Safety: prevent infinite loop
+    if (tierRotation > 100) {
+      console.log('Safety break: too many tier rotations');
+      break;
+    }
+  }
+  
+  console.log(`Generated ${matchups.length} tier-based matchups`);
+  if (matchups.length > 0) {
+    console.log('Matchup tiers:', matchups.map(m => m.tier).join(', '));
   }
   
   return matchups.length === TOTAL_ROUNDS ? matchups : null;
@@ -1017,20 +1082,26 @@ function generateDailyPuzzle() {
   const dayNum = getDayNumber();
   const baseSeed = dayNum * 54322;
   
-  // Try the primary category first
+  // Primary category from the curated rotation
   const primaryCategoryIndex = dayNum % STAT_CATEGORIES.length;
   let category = STAT_CATEGORIES[primaryCategoryIndex];
   let matchups = generateMatchupsForCategory(category, baseSeed);
   
   // If primary category doesn't have enough data, try fallbacks
+  // Use a rotating fallback based on dayNum to avoid always hitting career_hits
   if (!matchups) {
-    console.log(`Primary category failed, trying fallbacks...`);
+    console.log(`Primary category "${category.label}" failed, trying fallbacks...`);
     
-    // Try career stats first (most reliable), then recent seasons
-    const fallbackOrder = [
-      'career_hits', 'career_runs', 'career_games', 'career_walks', 'career_ba',
-      '2024_fall_hits', '2024_summer_hits', '2023_fall_hits', '2023_summer_hits'
+    // Fallbacks rotate based on day - no single category dominates
+    const fallbackRotation = [
+      ['career_runs', 'career_games', 'career_hits', 'career_walks', 'career_ba'],
+      ['career_games', 'career_hits', 'career_walks', 'career_ba', 'career_runs'],
+      ['career_hits', 'career_walks', 'career_ba', 'career_runs', 'career_games'],
+      ['career_walks', 'career_ba', 'career_runs', 'career_games', 'career_hits'],
+      ['career_ba', 'career_runs', 'career_games', 'career_hits', 'career_walks'],
     ];
+    
+    const fallbackOrder = fallbackRotation[dayNum % fallbackRotation.length];
     
     for (const fallbackId of fallbackOrder) {
       const fallbackCategory = STAT_CATEGORIES.find(c => c.id === fallbackId);
@@ -1045,9 +1116,10 @@ function generateDailyPuzzle() {
     }
   }
   
-  // Last resort: try all categories
+  // Last resort: try all categories in random order
   if (!matchups) {
-    for (const cat of STAT_CATEGORIES) {
+    const shuffledCategories = shuffleWithSeed([...STAT_CATEGORIES], baseSeed);
+    for (const cat of shuffledCategories) {
       if (cat.id !== category.id) {
         matchups = generateMatchupsForCategory(cat, baseSeed);
         if (matchups) {
