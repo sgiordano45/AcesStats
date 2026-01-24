@@ -1,7 +1,7 @@
 /**
  * Mobile Enhancements JavaScript
  * Shared functionality for mobile-responsive improvements
- * @version 1.2.0 - Added Back to Top, PWA Install Banner, Keyboard Fix
+ * @version 1.3.0 - Added Share functionality with Web Share API
  */
 
 (function() {
@@ -744,6 +744,241 @@
   }
 
   // ========================================
+  // SHARE FUNCTIONALITY
+  // ========================================
+
+  /**
+   * Show toast notification
+   * @param {string} message - Message to display
+   * @param {string} type - 'success', 'error', or 'info'
+   * @param {number} duration - Duration in ms (default 3000)
+   */
+  function showToast(message, type = 'success', duration = 3000) {
+    // Remove any existing toast
+    const existingToast = document.querySelector('.share-toast');
+    if (existingToast) {
+      existingToast.remove();
+    }
+
+    // Create toast element
+    const toast = document.createElement('div');
+    toast.className = `share-toast share-toast-${type}`;
+    toast.innerHTML = `
+      <span class="toast-icon">${type === 'success' ? '✓' : type === 'error' ? '✕' : 'ℹ'}</span>
+      <span class="toast-message">${message}</span>
+    `;
+    
+    document.body.appendChild(toast);
+    
+    // Trigger animation
+    requestAnimationFrame(() => {
+      toast.classList.add('show');
+    });
+    
+    // Auto-remove
+    setTimeout(() => {
+      toast.classList.remove('show');
+      setTimeout(() => toast.remove(), 300);
+    }, duration);
+  }
+
+  /**
+   * Check if Web Share API is available
+   */
+  function canUseWebShare() {
+    return navigator.share !== undefined;
+  }
+
+  /**
+   * Copy text to clipboard
+   * @param {string} text - Text to copy
+   * @returns {Promise<boolean>} Success status
+   */
+  async function copyToClipboard(text) {
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+      // Fallback for older browsers
+      const textArea = document.createElement('textarea');
+      textArea.value = text;
+      textArea.style.position = 'fixed';
+      textArea.style.left = '-999999px';
+      textArea.style.top = '-999999px';
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+      const success = document.execCommand('copy');
+      document.body.removeChild(textArea);
+      return success;
+    } catch (err) {
+      console.error('Failed to copy to clipboard:', err);
+      return false;
+    }
+  }
+
+  /**
+   * Share content using Web Share API or fallback to clipboard
+   * @param {Object} options - Share options
+   * @param {string} options.url - URL to share (defaults to current page)
+   * @param {string} options.title - Title for share (defaults to document title)
+   * @param {string} options.text - Optional description text
+   * @returns {Promise<boolean>} Success status
+   */
+  async function sharePage(options = {}) {
+    const url = options.url || window.location.href;
+    const title = options.title || document.title;
+    const text = options.text || '';
+
+    // Try Web Share API first (mobile native sharing)
+    if (canUseWebShare()) {
+      try {
+        await navigator.share({
+          title: title,
+          text: text,
+          url: url
+        });
+        // Don't show toast on successful native share (user sees native UI)
+        return true;
+      } catch (err) {
+        // User cancelled or error - fall through to clipboard
+        if (err.name === 'AbortError') {
+          return false; // User cancelled, no message needed
+        }
+        console.log('Web Share failed, falling back to clipboard');
+      }
+    }
+
+    // Fallback: Copy to clipboard
+    const success = await copyToClipboard(url);
+    if (success) {
+      showToast('Link copied to clipboard!', 'success');
+    } else {
+      showToast('Failed to copy link', 'error');
+    }
+    return success;
+  }
+
+  /**
+   * Get page-specific share metadata
+   */
+  function getPageShareMeta() {
+    const path = window.location.pathname;
+    const params = new URLSearchParams(window.location.search);
+    
+    // Player page
+    if (path.includes('player.html')) {
+      const playerName = document.getElementById('playerName')?.textContent;
+      if (playerName && playerName !== 'Player Name' && playerName !== 'Loading...') {
+        return {
+          title: `${playerName} - Mountainside Aces Stats`,
+          text: `Check out ${playerName}'s stats on Mountainside Aces!`
+        };
+      }
+    }
+    
+    // Team page
+    if (path.includes('team.html')) {
+      const teamName = document.getElementById('team-name')?.textContent;
+      if (teamName && teamName !== 'Loading...') {
+        return {
+          title: `${teamName} - Mountainside Aces`,
+          text: `Check out ${teamName}'s stats on Mountainside Aces!`
+        };
+      }
+    }
+    
+    // Game preview
+    if (path.includes('game-preview.html')) {
+      const home = document.getElementById('homeTeamName')?.textContent;
+      const away = document.getElementById('awayTeamName')?.textContent;
+      if (home && away && home !== '--' && away !== '--') {
+        return {
+          title: `${away} @ ${home} - Game Preview`,
+          text: `Check out the preview for ${away} @ ${home}!`
+        };
+      }
+    }
+    
+    // Season page
+    if (path.includes('season.html')) {
+      const year = params.get('year');
+      const season = params.get('season');
+      if (year && season) {
+        return {
+          title: `${year} ${season} Season - Mountainside Aces`,
+          text: `Check out the ${year} ${season} season stats!`
+        };
+      }
+    }
+    
+    // Current season team
+    if (path.includes('current-season-team.html')) {
+      const header = document.querySelector('h1')?.textContent;
+      if (header) {
+        return {
+          title: header + ' - Mountainside Aces',
+          text: `Check out the team page on Mountainside Aces!`
+        };
+      }
+    }
+    
+    // Default
+    return {
+      title: document.title || 'Mountainside Aces',
+      text: 'Check out this page on Mountainside Aces!'
+    };
+  }
+
+  /**
+   * Create and inject floating share button
+   */
+  function setupShareButton() {
+    // Skip pages where sharing doesn't make sense
+    const path = window.location.pathname;
+    const skipPages = ['signin.html', 'signup.html', 'reset-password.html', 'verify-email.html', 
+                       'admin-', 'submit-score.html', 'submit-stats.html', 'link-player.html',
+                       'roster-management.html', 'photo-upload.html', 'approve-links.html'];
+    
+    if (skipPages.some(skip => path.includes(skip))) {
+      return;
+    }
+    
+    // Don't duplicate
+    if (document.getElementById('floatingShareBtn')) return;
+    
+    // Create floating share button
+    const btn = document.createElement('button');
+    btn.id = 'floatingShareBtn';
+    btn.className = 'floating-share-btn';
+    btn.setAttribute('aria-label', 'Share this page');
+    btn.innerHTML = `
+      <svg class="share-icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="18" cy="5" r="3"></circle>
+        <circle cx="6" cy="12" r="3"></circle>
+        <circle cx="18" cy="19" r="3"></circle>
+        <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line>
+        <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
+      </svg>
+    `;
+    
+    btn.addEventListener('click', () => {
+      const meta = getPageShareMeta();
+      sharePage(meta);
+    });
+    
+    document.body.appendChild(btn);
+    
+    // Show after small delay (let page content load for better metadata)
+    setTimeout(() => {
+      btn.classList.add('visible');
+    }, 1000);
+    
+    console.log('✅ Share button initialized');
+  }
+
+  // ========================================
   // UTILITY FUNCTIONS
   // ========================================
 
@@ -836,9 +1071,12 @@
     // NEW: Keyboard overlap fix
     setupKeyboardOverlapFix();
     
+    // NEW: Share button
+    setupShareButton();
+    
     // Log initialization (can be removed in production)
     if (window.innerWidth <= 768) {
-      console.log('Mobile enhancements initialized (v1.2.0)');
+      console.log('Mobile enhancements initialized (v1.3.0)');
     }
   }
 
@@ -878,7 +1116,13 @@
     announceToScreenReader,
     debounce,
     triggerPWAInstall: window.triggerPWAInstall,
-    isPWAInstalled: window.isPWAInstalled
+    isPWAInstalled: window.isPWAInstalled,
+    // Share utilities
+    showToast,
+    sharePage,
+    copyToClipboard,
+    canUseWebShare,
+    getPageShareMeta
   };
 
   // ========================================
