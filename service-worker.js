@@ -1,8 +1,8 @@
 // service-worker.js - Unified Service Worker
 // Handles both offline functionality AND Firebase Cloud Messaging
-// Version 2.0.4 - dark mode toggle
+// Version 2.0.5 - PWA Share
 
-const CACHE_VERSION = 'aces-v2.0.4';
+const CACHE_VERSION = 'aces-v2.0.5';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const DYNAMIC_CACHE = `${CACHE_VERSION}-dynamic`;
 const IMAGE_CACHE = `${CACHE_VERSION}-images`;
