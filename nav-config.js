@@ -128,6 +128,7 @@ export const NAV_STRUCTURE = {
     { id: 'photo-upload', href: 'photo-upload.html', label: 'Upload Photos', icon: '📤️', priority: 4, requiresAuth: true },
     { id: 'offseason-hub', href: 'offseason.html', label: 'Offseason Hub', icon: '🎣️', priority: 4, requiresAuth: true },
     { id: 'aces-shop', href: 'https://acesmountainside.com/', label: 'Aces Shop', icon: '🛒', priority: 4, requiresAuth: true, external: true },
+    { id: 'admin-hub', href: 'admin-pages.html', label: 'Admin Hub', icon: '🛠️', priority: 4, requiresAuth: true, requiresRole: 'admin' },
     { id: 'admin-view-as', href: 'admin-view-as.html', label: 'View As User', icon: '🎭', priority: 4, requiresAuth: true, requiresRole: 'admin' },
   ],
 
