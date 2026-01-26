@@ -1069,10 +1069,14 @@ exports.sendCaptainRsvpAlerts = functions.pubsub
       
       console.log(`RSVP Yes counts - ${homeTeamId}: ${yesCountByTeam[homeTeamId]}, ${awayTeamId}: ${yesCountByTeam[awayTeamId]}`);
       
-      // Calculate hours until game for message
+      // Format game date for message
       const gameDate = game.date.toDate();
-      const hoursUntil = Math.round((gameDate - now) / (1000 * 60 * 60));
-      const timeText = hoursUntil < 24 ? 'tomorrow' : `in ${Math.round(hoursUntil / 24)} day(s)`;
+      const dateText = gameDate.toLocaleDateString('en-US', {
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric',
+        timeZone: 'America/New_York'
+      });
       
       // Check each team and alert captains if needed
       const teamsToAlert = [
@@ -1145,7 +1149,7 @@ exports.sendCaptainRsvpAlerts = functions.pubsub
           const message = {
             notification: {
               title: `${emoji} Low RSVP Alert`,
-              body: `Only ${team.yesCount} confirmed for ${timeText}'s game vs ${opponent}. Need ${needed} more to field a full team!`
+              body: `Only ${team.yesCount} confirmed for ${dateText} game vs ${opponent}. Need ${needed} more to field a full team!`
             },
             data: {
               type: 'captain_rsvp_alert',
