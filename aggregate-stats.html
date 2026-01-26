@@ -1698,6 +1698,9 @@
         allSeasonTotals.set(legacyId, seasonTotals);
         totalGamesProcessed += games.length;
       }
+      
+      // Store games for career high / hit streak detection later
+      const playerGamesMap = playerBattingGames;
 
       // STEP 3: Calculate league averages for acesBPI
       log('');
@@ -1895,6 +1898,201 @@
         }
       }
 
+      // STEP 6: Detect career highs and hit streaks
+      log('');
+      log('Step 6: Detecting career highs and hit streaks...', 'game');
+      
+      let careerHighsCreated = 0;
+      let hitStreaksCreated = 0;
+      
+      for (const [legacyId, games] of playerGamesMap) {
+        try {
+          const docId = legacyToDocId.get(legacyId) || legacyId;
+          const playerInfo = docIdToPlayerInfo.get(docId) || {};
+          const seasonTotals = allSeasonTotals.get(legacyId);
+          const playerName = seasonTotals?.playerName || playerInfo.name || legacyId;
+          const teamId = seasonTotals?.team || '';
+          
+          // Sort games by date for streak detection
+          const sortedGames = [...games].sort((a, b) => {
+            const dateA = a.gameDate?.toDate?.() || new Date(a.gameDate) || new Date(0);
+            const dateB = b.gameDate?.toDate?.() || new Date(b.gameDate) || new Date(0);
+            return dateA - dateB;
+          });
+          
+          // =====================
+          // CAREER HIGHS DETECTION
+          // =====================
+          // Find max hits and runs in THIS season's games
+          let maxHitsGame = null;
+          let maxRunsGame = null;
+          let maxHits = 0;
+          let maxRuns = 0;
+          
+          sortedGames.forEach(game => {
+            if ((game.hits || 0) > maxHits) {
+              maxHits = game.hits;
+              maxHitsGame = game;
+            }
+            if ((game.runs || 0) > maxRuns) {
+              maxRuns = game.runs;
+              maxRunsGame = game;
+            }
+          });
+          
+          // Get existing career highs from ALL games (including past seasons)
+          let existingMaxHits = 0;
+          let existingMaxRuns = 0;
+          
+          try {
+            const allGamesRef = window.collection(window.db, 'playerStats', legacyId, 'games');
+            const allGamesSnap = await window.getDocs(allGamesRef);
+            
+            allGamesSnap.forEach(gameDoc => {
+              const gameData = gameDoc.data();
+              // Only count games from PREVIOUS seasons (not current)
+              if (gameData.seasonId !== seasonId) {
+                existingMaxHits = Math.max(existingMaxHits, gameData.hits || 0);
+                existingMaxRuns = Math.max(existingMaxRuns, gameData.runs || 0);
+              }
+            });
+          } catch (err) {
+            // No previous games, that's fine
+          }
+          
+          // Create career high documents if new highs are set (minimum 3 to be notable)
+          if (maxHits >= 3 && maxHits > existingMaxHits && maxHitsGame) {
+            const careerHighDocId = `${docId}_hits_${maxHitsGame.gameId || seasonId}`;
+            
+            // Check if this career high already exists
+            const existingCareerHigh = await window.getDoc(
+              window.doc(window.db, 'careerHighs', careerHighDocId)
+            );
+            
+            if (!existingCareerHigh.exists()) {
+              await window.setDoc(
+                window.doc(window.db, 'careerHighs', careerHighDocId),
+                {
+                  playerId: docId,
+                  playerLegacyId: legacyId,
+                  playerName: playerName,
+                  teamId: teamId?.toLowerCase() || null,
+                  teamName: teamId || null,
+                  seasonId: seasonId,
+                  stat: 'hits',
+                  value: maxHits,
+                  previousHigh: existingMaxHits,
+                  gameId: maxHitsGame.gameId || null,
+                  opponent: maxHitsGame.opponent || null,
+                  gameDate: maxHitsGame.gameDate || null,
+                  achievedAt: new Date()
+                }
+              );
+              careerHighsCreated++;
+              log(`  🏆 Career high: ${playerName} - ${maxHits} hits (prev: ${existingMaxHits})`, 'success');
+            }
+          }
+          
+          if (maxRuns >= 3 && maxRuns > existingMaxRuns && maxRunsGame) {
+            const careerHighDocId = `${docId}_runs_${maxRunsGame.gameId || seasonId}`;
+            
+            // Check if this career high already exists
+            const existingCareerHigh = await window.getDoc(
+              window.doc(window.db, 'careerHighs', careerHighDocId)
+            );
+            
+            if (!existingCareerHigh.exists()) {
+              await window.setDoc(
+                window.doc(window.db, 'careerHighs', careerHighDocId),
+                {
+                  playerId: docId,
+                  playerLegacyId: legacyId,
+                  playerName: playerName,
+                  teamId: teamId?.toLowerCase() || null,
+                  teamName: teamId || null,
+                  seasonId: seasonId,
+                  stat: 'runs',
+                  value: maxRuns,
+                  previousHigh: existingMaxRuns,
+                  gameId: maxRunsGame.gameId || null,
+                  opponent: maxRunsGame.opponent || null,
+                  gameDate: maxRunsGame.gameDate || null,
+                  achievedAt: new Date()
+                }
+              );
+              careerHighsCreated++;
+              log(`  🏆 Career high: ${playerName} - ${maxRuns} runs (prev: ${existingMaxRuns})`, 'success');
+            }
+          }
+          
+          // =====================
+          // HIT STREAK DETECTION
+          // =====================
+          // Calculate current hitting streak from sorted games
+          let currentStreak = 0;
+          let maxStreak = 0;
+          let streakStartDate = null;
+          let streakEndDate = null;
+          let maxStreakStart = null;
+          let maxStreakEnd = null;
+          
+          sortedGames.forEach((game, idx) => {
+            if ((game.hits || 0) >= 1) {
+              if (currentStreak === 0) {
+                streakStartDate = game.gameDate;
+              }
+              currentStreak++;
+              streakEndDate = game.gameDate;
+              
+              if (currentStreak > maxStreak) {
+                maxStreak = currentStreak;
+                maxStreakStart = streakStartDate;
+                maxStreakEnd = streakEndDate;
+              }
+            } else {
+              currentStreak = 0;
+              streakStartDate = null;
+            }
+          });
+          
+          // Create hit streak document for notable streaks (5+)
+          if (maxStreak >= 5) {
+            const hitStreakDocId = `${docId}_${seasonId}_${maxStreak}`;
+            
+            // Check if this exact streak already exists
+            const existingStreak = await window.getDoc(
+              window.doc(window.db, 'hitStreaks', hitStreakDocId)
+            );
+            
+            if (!existingStreak.exists()) {
+              await window.setDoc(
+                window.doc(window.db, 'hitStreaks', hitStreakDocId),
+                {
+                  playerId: docId,
+                  playerLegacyId: legacyId,
+                  playerName: playerName,
+                  teamId: teamId?.toLowerCase() || null,
+                  teamName: teamId || null,
+                  seasonId: seasonId,
+                  streakLength: maxStreak,
+                  startDate: maxStreakStart || null,
+                  endDate: maxStreakEnd || null,
+                  achievedAt: new Date()
+                }
+              );
+              hitStreaksCreated++;
+              log(`  🔥 Hit streak: ${playerName} - ${maxStreak} games`, 'success');
+            }
+          }
+          
+        } catch (error) {
+          log(`  ✗ Error detecting achievements for ${legacyId}: ${error.message}`, 'error');
+        }
+      }
+      
+      log(`  Career highs created: ${careerHighsCreated}`, careerHighsCreated > 0 ? 'success' : 'skip');
+      log(`  Hit streaks created: ${hitStreaksCreated}`, hitStreaksCreated > 0 ? 'success' : 'skip');
+
       log('');
       log('═══════════════════════════════════════', 'header');
       log('AGGREGATION COMPLETE', 'header');
@@ -1902,6 +2100,8 @@
       log(`Batting stats updated: ${battingUpdatedCount}`, 'success');
       log(`Pitching stats updated: ${pitchingUpdatedCount}`, 'success');
       log(`Total games processed: ${totalGamesProcessed}`, 'success');
+      log(`Career highs detected: ${careerHighsCreated}`, careerHighsCreated > 0 ? 'success' : 'skip');
+      log(`Hit streaks detected: ${hitStreaksCreated}`, hitStreaksCreated > 0 ? 'success' : 'skip');
       if (errorCount > 0) log(`Errors: ${errorCount}`, 'error');
       
       updateSeasonStats(playerBattingGames.size, totalGamesProcessed, battingUpdatedCount, pitchingUpdatedCount);
