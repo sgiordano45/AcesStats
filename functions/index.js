@@ -768,31 +768,39 @@ exports.sendGameReminders = functions.pubsub
         continue;
       }
       
-      // Format game time
-      const gameDate = game.date.toDate();
-      const timeString = gameDate.toLocaleTimeString('en-US', {
-        hour: 'numeric',
-        minute: '2-digit',
-        hour12: true
-      });
-      
-      // Determine if this is a playoff game
-      const isPlayoff = isPlayoffGame(gameId);
-      const gameTypeEmoji = isPlayoff ? '🏆 ' : '';
-      
-      const message = {
-        notification: {
-          title: '⏰ Game Tomorrow!',
-          body: `${gameTypeEmoji}${game.homeTeamName} vs ${game.awayTeamName} at ${timeString}`
-        },
-        data: {
-          type: 'game_reminder',
-          seasonId: currentSeason.id,
-          gameId: gameDoc.id,
-          isPlayoff: String(isPlayoff),
-          clickAction: `/roster-management.html?game=${gameDoc.id}`
-        },
-        webpush: {
+        // Format game time
+              const gameDate = game.date.toDate();
+              const timeString = gameDate.toLocaleTimeString('en-US', {
+                hour: 'numeric',
+                minute: '2-digit',
+                hour12: true
+              });
+
+              // Determine if this is a playoff game
+              const isPlayoff = isPlayoffGame(gameId);
+              const gameTypeEmoji = isPlayoff ? '🏆 ' : '';
+              
+              // Format the date
+              const dateString = gameDate.toLocaleDateString('en-US', {
+                weekday: 'short',
+                month: 'short',
+                day: 'numeric',
+                timeZone: 'America/New_York'
+              });
+
+              const message = {
+                  notification: {
+                  title: '⏰ Game Tomorrow!',
+                  body: `${gameTypeEmoji}${game.homeTeamName} vs ${game.awayTeamName} - ${dateString} at ${timeString}`
+                },
+                  data: {
+                  type: 'game_reminder',
+                  seasonId: currentSeason.id,
+                  gameId: gameDoc.id,
+                  isPlayoff: String(isPlayoff),
+                  clickAction: `/roster-management.html?game=${gameDoc.id}`
+                },
+                  webpush: {
           fcmOptions: {
             link: `/roster-management.html?game=${gameDoc.id}`
           }
@@ -869,42 +877,48 @@ exports.sendRsvpReminders = functions.pubsub
       
       const rsvpdUserIds = new Set();
       rsvpsSnapshot.forEach(doc => {
-        rsvpdUserIds.add(doc.id);
+        const data = doc.data();
+        // Only count "yes" or "no" as valid RSVPs - "none" means they haven't committed
+        if (data.status === 'yes' || data.status === 'no') {
+          rsvpdUserIds.add(doc.id);
+        }
       });
       
-      console.log(`${rsvpdUserIds.size} players have RSVP'd`);
+      console.log(`${rsvpdUserIds.size} players have RSVP'd (yes/no)`);
       
-      // Get all players on both teams
-      const homeLinksSnapshot = await db
-        .collection('playerLinks')
-        .where('teamId', '==', game.homeTeamId)
-        .where('status', '==', 'approved')
-        .get();
+      // Get all users with linkedTeam matching either team
+      // Normalize team IDs for case-insensitive matching
+      const teamIds = [game.homeTeamId, game.awayTeamId].filter(Boolean);
+      const normalizedTeamIds = teamIds.map(id => id?.toLowerCase());
       
-      const awayLinksSnapshot = await db
-        .collection('playerLinks')
-        .where('teamId', '==', game.awayTeamId)
-        .where('status', '==', 'approved')
+      const usersSnapshot = await db
+        .collection('users')
+        .where('linkedTeam', '!=', null)
         .get();
       
       // Find players who haven't RSVP'd
       const needsRSVP = [];
       
-      for (const linkDoc of [...homeLinksSnapshot.docs, ...awayLinksSnapshot.docs]) {
-        const userId = linkDoc.data().userId;
+      for (const userDoc of usersSnapshot.docs) {
+        const userId = userDoc.id;
+        const userData = userDoc.data();
+        const userTeam = userData.linkedTeam?.toLowerCase();
         
-        // Skip if already RSVP'd
+        // Skip if not on either team
+        if (!normalizedTeamIds.includes(userTeam)) {
+          continue;
+        }
+        
+        // Skip if already RSVP'd (yes or no)
         if (rsvpdUserIds.has(userId)) {
           continue;
         }
         
-        // Get user and check notification preferences
-        const userDoc = await db.collection('users').doc(userId).get();
-        if (!userDoc.exists) {
+        // Check quiet hours
+        if (isInQuietHours(userData.notificationPreferences?.quietHours)) {
+          console.log(`Skipping ${userId} - in quiet hours`);
           continue;
         }
-        
-        const userData = userDoc.data();
         
         // Check if user wants RSVP reminders
         if (userData.notificationsEnabled !== false && 
@@ -914,7 +928,7 @@ exports.sendRsvpReminders = functions.pubsub
             needsRSVP.push({
               userId,
               tokens: fcmTokens,
-              playerName: linkDoc.data().playerName
+              playerName: userData.linkedPlayer || userData.displayName
             });
           }
         }
@@ -1803,6 +1817,139 @@ exports.testNotification = functions.https.onCall(async (data, context) => {
     message: `Test notification sent successfully!`,
     successCount: result.successCount,
     failureCount: result.failureCount
+  };
+});
+
+// ============================================================================
+// MANUAL TRIGGER: Game Reminders (Admin only - for testing)
+// ============================================================================
+
+exports.triggerGameReminders = functions.https.onCall(async (data, context) => {
+  // Verify authentication
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'Must be signed in');
+  }
+  
+  // Verify admin
+  const userDoc = await db.collection('users').doc(context.auth.uid).get();
+  const userData = userDoc.data();
+  const isAdmin = userData?.role === 'admin' || userData?.isAdmin === true;
+  
+  if (!isAdmin) {
+    throw new functions.https.HttpsError('permission-denied', 'Admin only');
+  }
+  
+  console.log('🧪 Manual trigger: Game reminders');
+  
+  // Get current season
+  const currentSeason = await getCurrentSeason();
+  if (!currentSeason) {
+    return { success: false, message: 'No active season' };
+  }
+  
+  // Allow override of date range for testing
+  const daysAhead = data.daysAhead ?? 1; // Default: tomorrow
+  
+  const now = new Date();
+  const targetStart = new Date(now);
+  targetStart.setDate(targetStart.getDate() + daysAhead);
+  targetStart.setHours(0, 0, 0, 0);
+  
+  const targetEnd = new Date(targetStart);
+  targetEnd.setDate(targetEnd.getDate() + 1);
+  
+  console.log(`Looking for games between ${targetStart.toISOString()} and ${targetEnd.toISOString()}`);
+  
+  // Query games
+  const gamesSnapshot = await db
+    .collection('seasons')
+    .doc(currentSeason.id)
+    .collection('games')
+    .where('date', '>=', admin.firestore.Timestamp.fromDate(targetStart))
+    .where('date', '<', admin.firestore.Timestamp.fromDate(targetEnd))
+    .get();
+  
+  if (gamesSnapshot.empty) {
+    return { success: true, message: `No games found for ${daysAhead} day(s) ahead`, gamesFound: 0, seasonId: currentSeason.id };
+  }
+  
+  let notificationsSent = 0;
+  const gamesSummary = [];
+  
+  for (const gameDoc of gamesSnapshot.docs) {
+    const game = gameDoc.data();
+    const gameId = gameDoc.id;
+    
+    // Handle both field name cases (homeTeamId and homeTeamID)
+    const homeTeamId = game.homeTeamId || game.homeTeamID;
+    const awayTeamId = game.awayTeamId || game.awayTeamID;
+    
+    console.log(`Processing: ${game.homeTeamName || homeTeamId} vs ${game.awayTeamName || awayTeamId}`);
+    
+    const tokens = await getTeamPlayerTokensWithPreference(
+      [homeTeamId, awayTeamId].filter(Boolean),
+      'gameReminders'
+    );
+    
+    gamesSummary.push({
+      gameId,
+      matchup: `${game.homeTeamName || homeTeamId} vs ${game.awayTeamName || awayTeamId}`,
+      tokensFound: tokens.length
+    });
+    
+    if (tokens.length === 0) {
+      console.log('No tokens for this game');
+      continue;
+    }
+    
+      const gameDate = game.date.toDate();
+          const timeString = gameDate.toLocaleTimeString('en-US', {
+            hour: 'numeric',
+            minute: '2-digit',
+            hour12: true,
+            timeZone: 'America/New_York'
+          });
+          
+          const dateString = gameDate.toLocaleDateString('en-US', {
+            weekday: 'short',
+            month: 'short',
+            day: 'numeric',
+            timeZone: 'America/New_York'
+          });
+          
+          const isPlayoff = isPlayoffGame(gameId);
+          const gameTypeEmoji = isPlayoff ? '🏆 ' : '';
+          
+          const message = {
+            notification: {
+              title: '⏰ Game Reminder (TEST)',
+              body: `${gameTypeEmoji}${game.homeTeamName || homeTeamId} vs ${game.awayTeamName || awayTeamId} - ${dateString} at ${timeString}`
+            },
+      data: {
+        type: 'game_reminder',
+        seasonId: currentSeason.id,
+        gameId: gameId,
+        isPlayoff: String(isPlayoff),
+        clickAction: `/roster-management.html?game=${gameId}`
+      },
+      webpush: {
+        fcmOptions: {
+          link: `/roster-management.html?game=${gameId}`
+        }
+      }
+    };
+      console.log('Message body:', message.notification.body);
+      
+    const result = await sendToTokens(tokens, message);
+    notificationsSent += result.successCount;
+  }
+  
+  return {
+    success: true,
+    seasonId: currentSeason.id,
+    gamesFound: gamesSnapshot.size,
+    notificationsSent,
+    games: gamesSummary
   };
 });
 
