@@ -1,7 +1,7 @@
 /**
  * Mobile Enhancements JavaScript
  * Shared functionality for mobile-responsive improvements
- * @version 1.3.0 - Added Share functionality with Web Share API
+ * @version 1.3.1 - Added foreground push notification handler
  */
 
 (function() {
@@ -1076,7 +1076,7 @@
     
     // Log initialization (can be removed in production)
     if (window.innerWidth <= 768) {
-      console.log('Mobile enhancements initialized (v1.3.0)');
+      console.log('Mobile enhancements initialized (v1.3.1)');
     }
   }
 
@@ -1244,5 +1244,37 @@
 
   // Initialize service worker (runs on all pages)
   setupServiceWorkerAutoUpdate();
+
+  // ========================================
+  // FOREGROUND PUSH NOTIFICATIONS
+  // ========================================
+  
+  /**
+   * Set up foreground notification handler so push notifications
+   * show even when the site is open in a browser tab
+   */
+  function setupForegroundNotifications() {
+    // Use dynamic import since this is not an ES6 module
+    import('./firebase-messaging.js')
+      .then(({ onForegroundMessage }) => {
+        onForegroundMessage((payload) => {
+          console.log('📬 Foreground notification received:', payload);
+          
+          // Dispatch custom event so pages can react if needed
+          window.dispatchEvent(new CustomEvent('acesNotification', { 
+            detail: payload 
+          }));
+        });
+        console.log('✅ Foreground notification handler initialized');
+      })
+      .catch(error => {
+        // Silently fail - messaging may not be supported (Safari) or user not logged in
+        console.log('ℹ️ Foreground notifications not available:', error.message);
+      });
+  }
+  
+  // Initialize foreground notifications after a short delay
+  // (allows firebase-messaging.js to initialize first)
+  setTimeout(setupForegroundNotifications, 1000);
 
 })();
