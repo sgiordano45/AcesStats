@@ -1,8 +1,8 @@
 // service-worker.js - Unified Service Worker
 // Handles both offline functionality AND Firebase Cloud Messaging
-// Version 2.0.5 - PWA Share
+// Version 2.0.6 - Fix iOS PWA notification tag to prevent silent replacement
 
-const CACHE_VERSION = 'aces-v2.0.5';
+const CACHE_VERSION = 'aces-v2.0.6';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const DYNAMIC_CACHE = `${CACHE_VERSION}-dynamic`;
 const IMAGE_CACHE = `${CACHE_VERSION}-images`;
@@ -126,10 +126,12 @@ messaging.onBackgroundMessage((payload) => {
       body: notificationBody,
       icon: '/icon-192.png',
       badge: '/badge-72.png',
-      tag: payload.data?.type || 'default',
+      // Make tag unique to prevent silent replacement (iOS PWA fix)
+      tag: `${payload.data?.type || 'default'}_${payload.data?.gameId || ''}_${Date.now()}`,
       data: payload.data || {},
       requireInteraction: false,
-      vibrate: [200, 100, 200]
+      vibrate: [200, 100, 200],
+      renotify: true // Ensure alert shows even if replacing existing notification
     };
     
     return self.registration.showNotification(notificationTitle, notificationOptions);
