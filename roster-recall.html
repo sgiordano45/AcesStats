@@ -840,7 +840,7 @@ import {
 // ============================================
 // VERSION CHECK - Increment to clear old localStorage data
 // ============================================
-const DATA_VERSION = 6; // Simplified category system
+const DATA_VERSION = 7; // Fix seasonId key extraction (keys include team name)
 const VERSION_KEY = 'acesRosterRecall_dataVersion';
 
 (function checkDataVersion() {
@@ -928,9 +928,11 @@ function shuffleWithSeed(array, seed) {
 // ============================================
 function getTeamRoster(team, seasonId) {
   const players = [];
+  const targetTeam = team?.toLowerCase();
   allPlayers.forEach(p => {
     const seasons = getNonSubSeasons(p);
-    const match = seasons.find(s => s.seasonId === seasonId && s.team?.toLowerCase() === team.toLowerCase());
+    // Keys are like "2024-summer-gold", extract season part for comparison
+    const match = seasons.find(s => extractSeasonFromKey(s.seasonId) === seasonId && s.team?.toLowerCase() === targetTeam);
     if (match) {
       players.push(p.name || p.playerName);
     }
@@ -957,13 +959,25 @@ function getCareerStatPlayers(stat, threshold) {
   return [...new Set(players)];
 }
 
+function extractSeasonFromKey(key) {
+  // Keys are like "2024-summer-gold" or "2024-fall-white-sub"
+  // Extract just "2024-summer" or "2024-fall"
+  if (!key) return null;
+  const parts = key.split('-');
+  if (parts.length >= 2) {
+    return `${parts[0]}-${parts[1]}`; // "2024-summer"
+  }
+  return key;
+}
+
 function getSeasonSpecificStatPlayers(stat, threshold, seasonId) {
   // Players who hit threshold in a SPECIFIC season (aggregated across all teams)
   const players = [];
   allPlayers.forEach(p => {
     const seasons = getNonSubSeasons(p);
     // Get ALL entries for this season (player might have been on multiple teams)
-    const matches = seasons.filter(s => s.seasonId === seasonId);
+    // Keys are like "2024-summer-gold", so extract just the season part
+    const matches = seasons.filter(s => extractSeasonFromKey(s.seasonId) === seasonId);
     if (matches.length === 0) return;
     
     // Sum stats across all team entries for this season
@@ -985,11 +999,13 @@ function getSeasonSpecificStatPlayers(stat, threshold, seasonId) {
 function getTeamSeasonStatPlayers(stat, threshold, seasonId, team) {
   // Players who hit threshold on a SPECIFIC team in a SPECIFIC season
   const players = [];
+  const targetTeam = team?.toLowerCase();
   allPlayers.forEach(p => {
     const seasons = getNonSubSeasons(p);
+    // Keys are like "2024-summer-gold", extract season part for comparison
     const match = seasons.find(s => 
-      s.seasonId === seasonId && 
-      s.team?.toLowerCase() === team.toLowerCase()
+      extractSeasonFromKey(s.seasonId) === seasonId && 
+      s.team?.toLowerCase() === targetTeam
     );
     if (!match) return;
     
@@ -1072,19 +1088,27 @@ function getLastNameStartsWith(letter) {
 function generateCategoryPool() {
   const categories = [];
   
-  // Get available season IDs
-  const seasonIds = new Set();
+  // Get available season IDs (full keys like "2024-summer-gold")
+  const fullSeasonIds = new Set();
   allPlayers.forEach(p => {
-    getNonSubSeasons(p).forEach(s => seasonIds.add(s.seasonId));
+    getNonSubSeasons(p).forEach(s => fullSeasonIds.add(s.seasonId));
   });
-  const sortedSeasons = [...seasonIds].sort().reverse();
+  const sortedFullSeasons = [...fullSeasonIds].sort().reverse();
+  
+  // Extract unique seasons (year-season only, like "2024-summer") for league-wide stats
+  const uniqueSeasons = new Set();
+  sortedFullSeasons.forEach(s => uniqueSeasons.add(extractSeasonFromKey(s)));
+  const sortedUniqueSeasons = [...uniqueSeasons].sort().reverse();
   
   // Filter to only 2024 and 2025 seasons
-  const recentSeasons = sortedSeasons.filter(s => s.startsWith('2024') || s.startsWith('2025'));
+  const recentUniqueSeasons = sortedUniqueSeasons.filter(s => s.startsWith('2024') || s.startsWith('2025'));
+  
+  console.log(`📊 Found ${sortedFullSeasons.length} team-season keys, ${sortedUniqueSeasons.length} unique seasons, ${recentUniqueSeasons.length} recent (2024/2025)`);
   
   // ========== TYPE: ROSTER (2024/2025 only) ==========
-  const teams = ['Black', 'Blue', 'Green', 'Red', 'Orange', 'Purple', 'Gold', 'Silver', 'White', 'Carolina'];
-  recentSeasons.forEach(seasonId => {
+  // Use unique seasons + team loop (not full season keys which already include team)
+  const teams = ['Black', 'Blue', 'Green', 'Red', 'Orange', 'Purple', 'Gold', 'Silver', 'White', 'Carolina', 'Army'];
+  recentUniqueSeasons.forEach(seasonId => {
     teams.forEach(team => {
       const roster = getTeamRoster(team, seasonId);
       if (roster.length >= 5 && roster.length <= 25) {
@@ -1124,7 +1148,7 @@ function generateCategoryPool() {
   }
   
   // ========== TYPE: SEASON (specific season stats) ==========
-  recentSeasons.forEach(seasonId => {
+  recentUniqueSeasons.forEach(seasonId => {
     const [year, szn] = seasonId.split('-');
     const seasonLabel = `${year} ${szn.charAt(0).toUpperCase() + szn.slice(1)}`;
     
@@ -1166,7 +1190,7 @@ function generateCategoryPool() {
   });
   
   // ========== TYPE: TEAMSTAT (Team-specific stats in a season) ==========
-  recentSeasons.forEach(seasonId => {
+  recentUniqueSeasons.forEach(seasonId => {
     const [year, szn] = seasonId.split('-');
     const seasonLabel = `${year} ${szn.charAt(0).toUpperCase() + szn.slice(1)}`;
     
