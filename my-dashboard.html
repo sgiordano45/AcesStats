@@ -2563,41 +2563,79 @@ body {
       }
     }
 
-    // Check for games needing scores (captain/staff action item)
-    async function checkGamesNeedingScores() {
-      if (!linkedTeam || !currentSeason?.id) return [];
-      
-      try {
-        const now = getDebugNow();
-        now.setHours(23, 59, 59, 999); // Include today
+    
+          // Check for games needing scores (captain/staff action item)
+          // FIXED: Only show games where the scheduled time has passed (plus buffer for game duration)
+          async function checkGamesNeedingScores() {
+            if (!linkedTeam || !currentSeason?.id) return [];
+            
+            try {
+              const now = getDebugNow();
+              // Don't extend to end of day - use actual current time
+              // Games should only appear AFTER they've been played
+              
+              // Get all games for the current season
+              const allGames = await getSeasonGames(currentSeason.id);
+              
+              const needsScores = allGames.filter(game => {
+                // Check if this game involves the captain's team
+                const homeTeam = (game.homeTeamName || game['home team'] || game.homeTeam || '').toLowerCase();
+                const awayTeam = (game.awayTeamName || game['away team'] || game.awayTeam || '').toLowerCase();
+                const teamLower = linkedTeam.toLowerCase();
+                
+                if (homeTeam !== teamLower && awayTeam !== teamLower) {
+                  return false;
+                }
+                
+                // Parse game date
+                let gameDate = null;
+                if (game.date?.seconds) {
+                  gameDate = new Date(game.date.seconds * 1000);
+                } else if (game.date?.toDate) {
+                  gameDate = game.date.toDate();
+                } else if (game.date) {
+                  gameDate = new Date(game.date);
+                }
+                
+                if (!gameDate) {
+                  return false;
+                }
+                
+                // Parse game time and combine with date
+                // Game times are typically stored as strings like "2:00 PM" or "14:00"
+                const gameTime = game.time || game.gameTime || '';
+                let gameDateTime = new Date(gameDate);
+                
+                if (gameTime) {
+                  // Try to parse the time string
+                  const timeParts = gameTime.match(/(\d{1,2}):(\d{2})\s*(AM|PM)?/i);
+                  if (timeParts) {
+                    let hours = parseInt(timeParts[1], 10);
+                    const minutes = parseInt(timeParts[2], 10);
+                    const ampm = timeParts[3]?.toUpperCase();
+                    
+                    // Convert to 24-hour format if AM/PM specified
+                    if (ampm === 'PM' && hours < 12) hours += 12;
+                    if (ampm === 'AM' && hours === 12) hours = 0;
+                    
+                    gameDateTime.setHours(hours, minutes, 0, 0);
+                  }
+                } else {
+                  // If no time specified, assume game is at noon (to be safe)
+                  // This prevents morning notifications for afternoon games
+                  gameDateTime.setHours(12, 0, 0, 0);
+                }
+                
+                // Add 2-hour buffer for typical game duration
+                // Game should be "complete" 2 hours after start time
+                const gameEndTime = new Date(gameDateTime.getTime() + (2 * 60 * 60 * 1000));
+                
+                // Skip games that haven't finished yet
+                if (gameEndTime > now) {
+                  return false;
+                }
+                
         
-        // Get all games for the current season
-        const allGames = await getSeasonGames(currentSeason.id);
-        
-        const needsScores = allGames.filter(game => {
-          // Check if this game involves the captain's team
-          const homeTeam = (game.homeTeamName || game['home team'] || game.homeTeam || '').toLowerCase();
-          const awayTeam = (game.awayTeamName || game['away team'] || game.awayTeam || '').toLowerCase();
-          const teamLower = linkedTeam.toLowerCase();
-          
-          if (homeTeam !== teamLower && awayTeam !== teamLower) {
-            return false;
-          }
-          
-          // Parse game date
-          let gameDate = null;
-          if (game.date?.seconds) {
-            gameDate = new Date(game.date.seconds * 1000);
-          } else if (game.date?.toDate) {
-            gameDate = game.date.toDate();
-          } else if (game.date) {
-            gameDate = new Date(game.date);
-          }
-          
-          // Skip future games
-          if (!gameDate || gameDate > now) {
-            return false;
-          }
           
           // Check if game has a score
           const hasScore = 
@@ -2625,36 +2663,63 @@ body {
       if (!linkedTeam || !currentSeason?.id) return [];
       
       try {
-        const now = getDebugNow();
-        now.setHours(23, 59, 59, 999);
-        
-        // Get all games for the current season
-        const allGames = await getSeasonGames(currentSeason.id);
-        
-        // Filter to past games involving the team that HAVE scores
-        const completedTeamGames = allGames.filter(game => {
-          const homeTeam = (game.homeTeamName || game['home team'] || game.homeTeam || '').toLowerCase();
-          const awayTeam = (game.awayTeamName || game['away team'] || game.awayTeam || '').toLowerCase();
-          const teamLower = linkedTeam.toLowerCase();
-          
-          if (homeTeam !== teamLower && awayTeam !== teamLower) {
-            return false;
-          }
-          
-          // Parse game date
-          let gameDate = null;
-          if (game.date?.seconds) {
-            gameDate = new Date(game.date.seconds * 1000);
-          } else if (game.date?.toDate) {
-            gameDate = game.date.toDate();
-          } else if (game.date) {
-            gameDate = new Date(game.date);
-          }
-          
-          // Skip future games
-          if (!gameDate || gameDate > now) {
-            return false;
-          }
+          const now = getDebugNow();
+                 // Use actual current time, not end of day
+                 
+                 // Get all games for the current season
+                 const allGames = await getSeasonGames(currentSeason.id);
+                 
+                 // Filter to past games involving the team that HAVE scores
+                 const completedTeamGames = allGames.filter(game => {
+                   const homeTeam = (game.homeTeamName || game['home team'] || game.homeTeam || '').toLowerCase();
+                   const awayTeam = (game.awayTeamName || game['away team'] || game.awayTeam || '').toLowerCase();
+                   const teamLower = linkedTeam.toLowerCase();
+                   
+                   if (homeTeam !== teamLower && awayTeam !== teamLower) {
+                     return false;
+                   }
+                   
+                   // Parse game date
+                   let gameDate = null;
+                   if (game.date?.seconds) {
+                     gameDate = new Date(game.date.seconds * 1000);
+                   } else if (game.date?.toDate) {
+                     gameDate = game.date.toDate();
+                   } else if (game.date) {
+                     gameDate = new Date(game.date);
+                   }
+                   
+                   if (!gameDate) {
+                     return false;
+                   }
+                   
+                   // Parse game time and combine with date (same logic as checkGamesNeedingScores)
+                   const gameTime = game.time || game.gameTime || '';
+                   let gameDateTime = new Date(gameDate);
+                   
+                   if (gameTime) {
+                     const timeParts = gameTime.match(/(\d{1,2}):(\d{2})\s*(AM|PM)?/i);
+                     if (timeParts) {
+                       let hours = parseInt(timeParts[1], 10);
+                       const minutes = parseInt(timeParts[2], 10);
+                       const ampm = timeParts[3]?.toUpperCase();
+                       
+                       if (ampm === 'PM' && hours < 12) hours += 12;
+                       if (ampm === 'AM' && hours === 12) hours = 0;
+                       
+                       gameDateTime.setHours(hours, minutes, 0, 0);
+                     }
+                   } else {
+                     gameDateTime.setHours(12, 0, 0, 0);
+                   }
+                   
+                   // Add 2-hour buffer for game duration
+                   const gameEndTime = new Date(gameDateTime.getTime() + (2 * 60 * 60 * 1000));
+                   
+                   // Skip games that haven't finished yet
+                   if (gameEndTime > now) {
+                     return false;
+                   }
           
           // Only check games that have scores (completed games)
           const hasScore = 
