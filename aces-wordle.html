@@ -674,6 +674,103 @@ body {
   visibility: visible;
 }
 
+/* Announcement Popup */
+.announcement-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 3000;
+  opacity: 0;
+  visibility: hidden;
+  transition: all 0.3s ease;
+  padding: 1rem;
+}
+
+.announcement-overlay.active {
+  opacity: 1;
+  visibility: visible;
+}
+
+.announcement-content {
+  background: linear-gradient(135deg, #ffffff 0%, #f7fafc 100%);
+  border-radius: 16px;
+  padding: 1.75rem;
+  max-width: 380px;
+  width: 100%;
+  box-shadow: 0 20px 50px rgba(0,0,0,0.3);
+  animation: announceSlideUp 0.4s ease;
+  text-align: center;
+  position: relative;
+  border: 3px solid var(--accent-color);
+}
+
+@keyframes announceSlideUp {
+  from { transform: translateY(30px) scale(0.95); opacity: 0; }
+  to { transform: translateY(0) scale(1); opacity: 1; }
+}
+
+.announcement-icon {
+  font-size: 3rem;
+  margin-bottom: 0.75rem;
+}
+
+.announcement-title {
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: var(--primary-color);
+  margin: 0 0 0.75rem 0;
+}
+
+.announcement-body {
+  font-size: 0.95rem;
+  color: var(--text-dark);
+  line-height: 1.6;
+  margin-bottom: 1.25rem;
+}
+
+.announcement-body strong {
+  color: var(--primary-color);
+  font-weight: 700;
+}
+
+.announcement-highlight {
+  background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+  color: white;
+  padding: 0.75rem 1rem;
+  border-radius: 10px;
+  margin: 1rem 0;
+  font-weight: 600;
+}
+
+.announcement-examples {
+  font-size: 0.85rem;
+  color: var(--text-light);
+  background: #f7fafc;
+  padding: 0.75rem;
+  border-radius: 8px;
+  margin: 0.75rem 0;
+}
+
+.announcement-dismiss {
+  padding: 0.75rem 2rem;
+  background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+  color: white;
+  border: none;
+  border-radius: 10px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.announcement-dismiss:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(45, 80, 22, 0.3);
+}
+
 /* Mobile Adjustments */
 @media (max-width: 480px) {
   .tile {
@@ -868,6 +965,25 @@ body {
 <!-- Toast -->
 <div class="toast" id="toast"></div>
 
+<!-- Announcement Popup -->
+<div class="announcement-overlay" id="announcementOverlay">
+  <div class="announcement-content">
+    <div class="announcement-icon">📢</div>
+    <h2 class="announcement-title">Word List Expanding!</h2>
+    <div class="announcement-body">
+      <p>Starting on <strong id="announcementDay">Day XX</strong>, Aces Wordle will include more than just player last names!</p>
+      <div class="announcement-highlight">
+        🥎 Softball terms, plays & lingo incoming!
+      </div>
+      <div class="announcement-examples">
+        Examples: BUNT, STEAL, SLIDE, RELAY, and more...
+      </div>
+      <p style="margin-top: 0.75rem; font-size: 0.9rem;">Hints will help you know if it's a name or term!</p>
+    </div>
+    <button class="announcement-dismiss" onclick="dismissAnnouncement()">Got It!</button>
+  </div>
+</div>
+
 <script type="module">
 import { 
   db, 
@@ -913,6 +1029,16 @@ const LAUNCH_MONTH = 0; // January (0-indexed)
 const LAUNCH_DAY = 6;
 const MAX_GUESSES = 6;
 const PLAYER_NAME_RATIO = 0.5; // 50% player names, 50% softball words
+
+// Announcement Configuration
+// Set these values to control when the popup appears
+const ANNOUNCEMENT_CONFIG = {
+  enabled: true,                    // Set to false to disable announcement
+  showStartDay: 1,                  // First day to show announcement (inclusive)
+  showEndDay: 28,                   // Last day to show announcement (inclusive)
+  changeStartDay: 29,               // Day when expanded word list begins
+  storageKey: 'acesWordle_announcement_dismissed_v1'
+};
 
 // ============================================
 // SUBSTITUTE SEASON HELPER
@@ -1071,11 +1197,16 @@ function buildPuzzlePool() {
 
 function generateDailyPuzzle() {
   const dayNum = getDayNumber();
-  const seed = dayNum * 54321;
   
-  // Shuffle the combined pool
-  const shuffled = shuffleWithSeed(allPuzzleWords, seed);
-  const selected = shuffled[0];
+  // Use a FIXED seed so the pool order is always the same
+  // Then index by day number to cycle through without repeats
+  const FIXED_SEED = 54321;
+  const shuffled = shuffleWithSeed(allPuzzleWords, FIXED_SEED);
+  
+  // Day 1 = index 0, Day 2 = index 1, etc.
+  // Only cycles back after going through entire pool
+  const index = (dayNum - 1) % shuffled.length;
+  const selected = shuffled[index];
   
   if (selected.type === 'player') {
     // Player name puzzle
@@ -1104,6 +1235,70 @@ function generateDailyPuzzle() {
       firstName: null
     };
   }
+}
+
+// ============================================
+// FIREBASE PUZZLE STORAGE (Prevents repeats when adding words)
+// ============================================
+async function loadPuzzleFromFirebase(dayNum) {
+  try {
+    const puzzleRef = doc(db, 'wordleDailyPuzzles', String(dayNum));
+    const puzzleDoc = await getDoc(puzzleRef);
+    
+    if (puzzleDoc.exists()) {
+      const data = puzzleDoc.data();
+      console.log(`📅 Loaded puzzle #${dayNum} from Firebase: ${data.answer}`);
+      return {
+        dayNum: data.dayNum,
+        answer: data.answer,
+        type: data.type,
+        playerName: data.playerName || null,
+        playerNames: data.playerNames || null,
+        firstName: data.firstName || null,
+        hint: data.hint || null,
+        category: data.category || null
+      };
+    }
+  } catch (error) {
+    console.error('Error loading puzzle from Firebase:', error);
+  }
+  return null;
+}
+
+async function savePuzzleToFirebase(puzzle) {
+  try {
+    const puzzleRef = doc(db, 'wordleDailyPuzzles', String(puzzle.dayNum));
+    await setDoc(puzzleRef, {
+      dayNum: puzzle.dayNum,
+      answer: puzzle.answer,
+      type: puzzle.type,
+      playerName: puzzle.playerName,
+      playerNames: puzzle.playerNames,
+      firstName: puzzle.firstName,
+      hint: puzzle.hint,
+      category: puzzle.category,
+      createdAt: serverTimestamp()
+    });
+    console.log(`💾 Saved puzzle #${puzzle.dayNum} to Firebase: ${puzzle.answer}`);
+  } catch (error) {
+    console.error('Error saving puzzle to Firebase:', error);
+  }
+}
+
+async function getOrCreateDailyPuzzle() {
+  const dayNum = getDayNumber();
+  
+  // First, check if puzzle already exists in Firebase
+  const existingPuzzle = await loadPuzzleFromFirebase(dayNum);
+  if (existingPuzzle) {
+    return existingPuzzle;
+  }
+  
+  // Generate new puzzle and save to Firebase
+  const newPuzzle = generateDailyPuzzle();
+  await savePuzzleToFirebase(newPuzzle);
+  
+  return newPuzzle;
 }
 
 // ============================================
@@ -1783,6 +1978,56 @@ window.toggleHowToPlay = function() {
   toggle.textContent = section.classList.contains('expanded') ? '▲' : '▼';
 };
 
+// ============================================
+// ANNOUNCEMENT POPUP
+// ============================================
+function shouldShowAnnouncement() {
+  if (!ANNOUNCEMENT_CONFIG.enabled) return false;
+  
+  const dayNum = getDayNumber();
+  
+  // Check if within the display window
+  if (dayNum < ANNOUNCEMENT_CONFIG.showStartDay || dayNum > ANNOUNCEMENT_CONFIG.showEndDay) {
+    return false;
+  }
+  
+  // Check if already dismissed
+  try {
+    const dismissed = localStorage.getItem(ANNOUNCEMENT_CONFIG.storageKey);
+    if (dismissed === 'true') return false;
+  } catch (e) {}
+  
+  return true;
+}
+
+function showAnnouncement() {
+  // Update the day number in the announcement
+  const dayElement = document.getElementById('announcementDay');
+  if (dayElement) {
+    dayElement.textContent = `Day ${ANNOUNCEMENT_CONFIG.changeStartDay}`;
+  }
+  
+  // Show the overlay
+  const overlay = document.getElementById('announcementOverlay');
+  if (overlay) {
+    setTimeout(() => {
+      overlay.classList.add('active');
+    }, 500); // Small delay after page load
+  }
+}
+
+window.dismissAnnouncement = function() {
+  const overlay = document.getElementById('announcementOverlay');
+  if (overlay) {
+    overlay.classList.remove('active');
+  }
+  
+  // Remember dismissal
+  try {
+    localStorage.setItem(ANNOUNCEMENT_CONFIG.storageKey, 'true');
+  } catch (e) {}
+};
+
 // Expose functions to window for onclick handlers
 window.showStats = showStats;
 window.closeStatsModal = closeStatsModal;
@@ -1827,8 +2072,8 @@ async function init() {
     buildLastNameData();
     buildPuzzlePool();
     
-    // Generate puzzle
-    todaysPuzzle = generateDailyPuzzle();
+    // Generate puzzle (checks Firebase first, then generates if needed)
+    todaysPuzzle = await getOrCreateDailyPuzzle();
     const puzzleInfo = todaysPuzzle.type === 'player' 
       ? todaysPuzzle.playerName 
       : `${todaysPuzzle.hint} (${todaysPuzzle.category})`;
@@ -1854,6 +2099,11 @@ async function init() {
     
     if (gameState.gameOver) {
       document.getElementById('actionButtons').style.display = 'flex';
+    }
+    
+    // Check if announcement should show
+    if (shouldShowAnnouncement()) {
+      showAnnouncement();
     }
     
     // Hide loading
