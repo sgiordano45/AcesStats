@@ -2285,11 +2285,49 @@ body {
 
       // ========== PLAYER ACTION ITEMS ==========
       // Check for pending RSVPs - only count games where user hasn't responded
-      const pendingRsvpGames = upcomingGames.filter(g => {
-        const status = userRsvpStatuses[g.id];
-        // Pending if no status or status is 'pending' or 'none'
-        return !status || status === 'pending' || status === 'none';
-      });
+      const now = getDebugNow();
+            const pendingRsvpGames = upcomingGames.filter(g => {
+              const status = userRsvpStatuses[g.id];
+              // Skip if already responded
+              if (status && status !== 'pending' && status !== 'none') {
+                return false;
+              }
+              
+              // Check if game has already started
+              let gameDate = null;
+              if (g.date?.seconds) {
+                gameDate = new Date(g.date.seconds * 1000);
+              } else if (g.date?.toDate) {
+                gameDate = g.date.toDate();
+              } else if (g.date) {
+                gameDate = new Date(g.date);
+              }
+              
+              if (!gameDate) return false;
+              
+              // Parse game time
+              const gameTime = g.time || g.gameTime || '';
+              let gameDateTime = new Date(gameDate);
+              
+              if (gameTime) {
+                const timeParts = gameTime.match(/(\d{1,2}):(\d{2})\s*(AM|PM)?/i);
+                if (timeParts) {
+                  let hours = parseInt(timeParts[1], 10);
+                  const minutes = parseInt(timeParts[2], 10);
+                  const ampm = timeParts[3]?.toUpperCase();
+                  
+                  if (ampm === 'PM' && hours < 12) hours += 12;
+                  if (ampm === 'AM' && hours === 12) hours = 0;
+                  
+                  gameDateTime.setHours(hours, minutes, 0, 0);
+                }
+              } else {
+                gameDateTime.setHours(12, 0, 0, 0);
+              }
+              
+              // Only include if game hasn't started yet
+              return gameDateTime > now;
+            });
 
       if (pendingRsvpGames.length > 0) {
         actions.push({
