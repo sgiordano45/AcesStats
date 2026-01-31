@@ -463,6 +463,113 @@
     font-style: italic;
   }
 
+  /* Live Game Card Styles */
+  .week-game-card.live-game {
+    background: rgba(255, 68, 68, 0.25);
+    border: 2px solid rgba(255, 68, 68, 0.6);
+    animation: liveCardPulse 3s ease-in-out infinite;
+  }
+
+  .week-game-card.live-game:hover {
+    background: rgba(255, 68, 68, 0.35);
+  }
+
+  @keyframes liveCardPulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(255, 68, 68, 0.4); }
+    50% { box-shadow: 0 0 0 8px rgba(255, 68, 68, 0); }
+  }
+
+  .week-game-live-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: #ff4444;
+    color: white;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 0.5rem;
+  }
+
+  .week-game-live-badge .live-dot-small {
+    width: 6px;
+    height: 6px;
+    background: white;
+    border-radius: 50%;
+    animation: liveDotSmall 1s ease-in-out infinite;
+  }
+
+  @keyframes liveDotSmall {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  .week-game-score {
+    font-size: 1.4rem;
+    font-weight: 800;
+    margin: 0.25rem 0;
+    display: flex;
+    justify-content: center;
+    gap: 0.5rem;
+  }
+
+  .week-game-score-divider {
+    opacity: 0.6;
+  }
+
+  .week-game-inning {
+    font-size: 0.75rem;
+    opacity: 0.9;
+    margin-top: 0.25rem;
+  }
+
+  /* Final Game Card Styles */
+  .week-game-card.final-game {
+    background: rgba(255, 255, 255, 0.1);
+    opacity: 0.85;
+  }
+
+  .week-game-final-badge {
+    display: inline-block;
+    background: rgba(255, 255, 255, 0.3);
+    color: white;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 0.65rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    margin-bottom: 0.5rem;
+  }
+
+  .week-game-teams {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .week-game-team-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .week-game-team-name {
+    font-weight: 600;
+    font-size: 0.9rem;
+  }
+
+  .week-game-team-name.winner {
+    font-weight: 700;
+  }
+
+  .week-game-team-score {
+    font-weight: 700;
+    font-size: 1rem;
+  }
+
   @media (max-width: 768px) {
     .this-week-module {
       padding: 1rem;
@@ -531,6 +638,35 @@
   .news-upcoming {
     color: #87ceeb;
     font-weight: 600;
+  }
+
+  /* Live Game Indicator Styles */
+  .news-live {
+    color: #00ff88 !important;
+    font-weight: 700 !important;
+    text-shadow: 0 0 10px rgba(0, 255, 136, 0.5);
+  }
+
+  .live-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    background: #ff4444;
+    border-radius: 50%;
+    margin-right: 6px;
+    animation: liveDot 1s ease-in-out infinite;
+    box-shadow: 0 0 6px rgba(255, 68, 68, 0.8);
+  }
+
+  @keyframes liveDot {
+    0%, 100% { 
+      opacity: 1;
+      transform: scale(1);
+    }
+    50% { 
+      opacity: 0.5;
+      transform: scale(0.8);
+    }
   }
 
   @keyframes scroll-left {
@@ -3497,12 +3633,23 @@
     getSeasonGames,
     getSeasonPreviews  // ADD THIS IMPORT
   } from './firebase-data.js';
+  
+  // Import live game indicator module
+  import { 
+    initializeLiveGameTracking, 
+    formatLiveGame,
+    cleanupListeners,
+    getLiveGames,
+    isGameCurrentlyLive,
+    getLiveGameData
+  } from './live-game-indicator.js';
 
   // Banner messages are now loaded from Firebase instead of hardcoded
   let announcements = [];
 
   let recentScores = [];
   let upcomingSchedule = [];
+  let liveGames = []; // Track live games for real-time updates
 
   /**
    * Load active banner messages from Firebase
@@ -3731,7 +3878,16 @@
 
   function updateNewsBanner() {
     const newsContent = document.getElementById('newsContent');
-    const allNews = [...announcements, ...recentScores, ...upcomingSchedule];
+    
+    // Format live games for the banner (live games go first!)
+    const liveGamesItems = liveGames.map(game => ({
+      type: 'live',
+      text: `<span class="live-dot"></span>LIVE: ${game.awayTeam} ${game.awayScore} @ ${game.homeTeam} ${game.homeScore} (${game.isTop ? 'Top' : 'Bot'} ${game.inning})`,
+      className: 'news-live'
+    }));
+    
+    // Live games go first, then announcements, recent scores, and upcoming
+    const allNews = [...liveGamesItems, ...announcements, ...recentScores, ...upcomingSchedule];
     
     if (allNews.length === 0) {
       newsContent.innerHTML = '<span class="news-item news-announcement">🏆 Welcome to Mountainside Aces Statistics Hub!</span>';
@@ -3744,8 +3900,55 @@
     
     newsContent.innerHTML = newsHTML;
   }
+  
+  /**
+   * Handle live game updates from Firebase real-time listener
+   */
+  function handleLiveGamesUpdate(updatedLiveGames) {
+    liveGames = updatedLiveGames;
+    console.log(`🔴 Live games updated: ${liveGames.length} games active`);
+    updateNewsBanner();
+    updateThisWeekLiveGames(); // Also update This Week module
+  }
+  
+  /**
+   * Update the This Week module cards when live game data changes
+   */
+  function updateThisWeekLiveGames() {
+    const thisWeekGamesContainer = document.getElementById('thisWeekGames');
+    if (!thisWeekGamesContainer) return;
+    
+    // Update each game card that's now live
+    liveGames.forEach(liveGame => {
+      const card = thisWeekGamesContainer.querySelector(`[data-game-id="${liveGame.id}"]`);
+      if (card) {
+        // Update the card to show live status
+        card.classList.add('live-game');
+        
+        // Update the content
+        const inningText = `${liveGame.isTop ? 'Top' : 'Bot'} ${liveGame.inning}`;
+        card.innerHTML = `
+          <div class="week-game-live-badge">
+            <span class="live-dot-small"></span>
+            LIVE
+          </div>
+          <div class="week-game-teams">
+            <div class="week-game-team-row">
+              <span class="week-game-team-name">${liveGame.awayTeam}</span>
+              <span class="week-game-team-score">${liveGame.awayScore}</span>
+            </div>
+            <div class="week-game-team-row">
+              <span class="week-game-team-name">${liveGame.homeTeam}</span>
+              <span class="week-game-team-score">${liveGame.homeScore}</span>
+            </div>
+          </div>
+          <div class="week-game-inning">⚾ ${inningText}</div>
+        `;
+      }
+    });
+  }
 
-  // This Week Module - Shows upcoming games for the week
+  // This Week Module - Shows upcoming games for the week with live score support
   async function loadThisWeekGames() {
     try {
       console.log('📅 Loading This Week games...');
@@ -3755,6 +3958,8 @@
       
       const today = new Date();
       today.setHours(0, 0, 0, 0);
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
       
       // Get games for the next 7 days
       const nextWeek = new Date(today);
@@ -3762,8 +3967,8 @@
       
       const capitalize = (str) => str ? str.charAt(0).toUpperCase() + str.slice(1) : "";
       
-      // Get all upcoming games (no winner yet)
-      const allUpcomingGames = seasonGames
+      // Map ALL games (including completed ones for today)
+      const allGames = seasonGames
         .map(g => {
           let gameDate = null;
           if (g.date && g.date.seconds) {
@@ -3781,25 +3986,35 @@
             date: gameDate,
             time: g.time || '',
             gameId: g.id || g.gameId,
-            winner: g.winner
+            winner: g.winner,
+            homeScore: g.homeScore,
+            awayScore: g.awayScore
           };
         })
+        .filter(g => g.date !== null);
+      
+      // Separate into categories
+      const todaysGames = allGames.filter(g => {
+        const gameDate = new Date(g.date);
+        gameDate.setHours(0, 0, 0, 0);
+        return gameDate.getTime() === today.getTime();
+      });
+      
+      const upcomingGames = allGames
         .filter(g => {
-          if (!g.date) return false;
           const gameDate = new Date(g.date);
           gameDate.setHours(0, 0, 0, 0);
-          return gameDate >= today && !g.winner;
+          return gameDate > today && gameDate <= nextWeek && !g.winner;
         })
         .sort((a, b) => a.date - b.date);
       
-      // Games this week
-      const thisWeekGamesList = allUpcomingGames
+      const futureGames = allGames
         .filter(g => {
           const gameDate = new Date(g.date);
           gameDate.setHours(0, 0, 0, 0);
-          return gameDate <= nextWeek;
+          return gameDate > nextWeek && !g.winner;
         })
-        .slice(0, 8);
+        .sort((a, b) => a.date - b.date);
       
       const thisWeekModule = document.getElementById('thisWeekModule');
       const thisWeekGamesContainer = document.getElementById('thisWeekGames');
@@ -3810,47 +4025,121 @@
       const daysOfWeek = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
       const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
       
-      // Case 1: Games this week
-      if (thisWeekGamesList.length > 0) {
-        thisWeekTitle.textContent = "📅 This Week's Games";
+      // Get current live games
+      const currentLiveGames = getLiveGames();
+      
+      // Helper to generate game card HTML
+      function generateGameCard(game) {
+        const dayName = daysOfWeek[game.date.getDay()];
+        const monthName = months[game.date.getMonth()];
+        const dayNum = game.date.getDate();
+        const dateStr = `${dayName}, ${monthName} ${dayNum}`;
+        const timeStr = game.time || 'TBD';
         
-        const gamesHTML = thisWeekGamesList.map(game => {
-          const dayName = daysOfWeek[game.date.getDay()];
-          const monthName = months[game.date.getMonth()];
-          const dayNum = game.date.getDate();
-          const dateStr = `${dayName}, ${monthName} ${dayNum}`;
-          const timeStr = game.time || 'TBD';
-          
+        // Check if this game is live
+        const liveData = currentLiveGames.find(lg => lg.id === game.gameId);
+        const isLive = !!liveData;
+        
+        // Check if game is completed (has winner)
+        const isCompleted = !!game.winner;
+        
+        // Check if game is today
+        const gameDate = new Date(game.date);
+        gameDate.setHours(0, 0, 0, 0);
+        const isToday = gameDate.getTime() === today.getTime();
+        
+        if (isLive && liveData) {
+          // LIVE game card
+          const inningText = `${liveData.isTop ? 'Top' : 'Bot'} ${liveData.inning}`;
           return `
-            <a href="game-preview.html?home=${encodeURIComponent(game.homeTeam)}&away=${encodeURIComponent(game.awayTeam)}&date=${game.date.toISOString().split('T')[0]}" class="week-game-card">
-              <div class="week-game-date">${dateStr}</div>
+            <a href="game-tracker.html" class="week-game-card live-game" data-game-id="${game.gameId}">
+              <div class="week-game-live-badge">
+                <span class="live-dot-small"></span>
+                LIVE
+              </div>
+              <div class="week-game-teams">
+                <div class="week-game-team-row">
+                  <span class="week-game-team-name">${liveData.awayTeam}</span>
+                  <span class="week-game-team-score">${liveData.awayScore}</span>
+                </div>
+                <div class="week-game-team-row">
+                  <span class="week-game-team-name">${liveData.homeTeam}</span>
+                  <span class="week-game-team-score">${liveData.homeScore}</span>
+                </div>
+              </div>
+              <div class="week-game-inning">⚾ ${inningText}</div>
+            </a>
+          `;
+        } else if (isCompleted) {
+          // FINAL game card
+          const awayWon = game.winner === game.awayTeam;
+          const homeWon = game.winner === game.homeTeam;
+          return `
+            <a href="game-preview.html?home=${encodeURIComponent(game.homeTeam)}&away=${encodeURIComponent(game.awayTeam)}&date=${game.date.toISOString().split('T')[0]}" class="week-game-card final-game" data-game-id="${game.gameId}">
+              <div class="week-game-final-badge">Final</div>
+              <div class="week-game-teams">
+                <div class="week-game-team-row">
+                  <span class="week-game-team-name ${awayWon ? 'winner' : ''}">${game.awayTeam}</span>
+                  <span class="week-game-team-score">${game.awayScore ?? '-'}</span>
+                </div>
+                <div class="week-game-team-row">
+                  <span class="week-game-team-name ${homeWon ? 'winner' : ''}">${game.homeTeam}</span>
+                  <span class="week-game-team-score">${game.homeScore ?? '-'}</span>
+                </div>
+              </div>
+            </a>
+          `;
+        } else {
+          // Scheduled game card
+          const dateLabel = isToday ? 'Today' : dateStr;
+          return `
+            <a href="game-preview.html?home=${encodeURIComponent(game.homeTeam)}&away=${encodeURIComponent(game.awayTeam)}&date=${game.date.toISOString().split('T')[0]}" class="week-game-card" data-game-id="${game.gameId}">
+              <div class="week-game-date">${dateLabel}</div>
               <div class="week-game-matchup">${game.awayTeam} @ ${game.homeTeam}</div>
               <div class="week-game-time">🕐 ${timeStr}</div>
             </a>
           `;
-        }).join('');
+        }
+      }
+      
+      // Build the games list: Today's games first (live, then scheduled, then final), then upcoming
+      const gamesToShow = [];
+      
+      // Add today's games first (prioritize live > scheduled > final)
+      const todayLive = todaysGames.filter(g => currentLiveGames.some(lg => lg.id === g.gameId));
+      const todayScheduled = todaysGames.filter(g => !g.winner && !currentLiveGames.some(lg => lg.id === g.gameId));
+      const todayFinal = todaysGames.filter(g => g.winner);
+      
+      gamesToShow.push(...todayLive, ...todayScheduled, ...todayFinal);
+      
+      // Add upcoming games
+      gamesToShow.push(...upcomingGames);
+      
+      // Limit to 8 games
+      const limitedGames = gamesToShow.slice(0, 8);
+      
+      // Case 1: Games to show (today + this week)
+      if (limitedGames.length > 0) {
+        const hasLive = currentLiveGames.length > 0;
+        const hasToday = todaysGames.length > 0;
         
+        if (hasLive) {
+          thisWeekTitle.innerHTML = "🔴 Live Games";
+        } else if (hasToday) {
+          thisWeekTitle.textContent = "📅 Today's Games";
+        } else {
+          thisWeekTitle.textContent = "📅 This Week's Games";
+        }
+        
+        const gamesHTML = limitedGames.map(game => generateGameCard(game)).join('');
         thisWeekGamesContainer.innerHTML = gamesHTML;
-        console.log(`✅ This Week loaded: ${thisWeekGamesList.length} games`);
+        console.log(`✅ This Week loaded: ${limitedGames.length} games (${todayLive.length} live, ${todayScheduled.length} scheduled today, ${todayFinal.length} final)`);
       }
       // Case 2: No games this week, but future games exist
-      else if (allUpcomingGames.length > 0) {
-        const nextGame = allUpcomingGames[0];
-        const dayName = daysOfWeek[nextGame.date.getDay()];
-        const monthName = months[nextGame.date.getMonth()];
-        const dayNum = nextGame.date.getDate();
-        const dateStr = `${dayName}, ${monthName} ${dayNum}`;
-        const timeStr = nextGame.time || 'TBD';
-        
+      else if (futureGames.length > 0) {
+        const nextGame = futureGames[0];
         thisWeekTitle.textContent = "📅 Next Game";
-        
-        thisWeekGamesContainer.innerHTML = `
-          <a href="game-preview.html?home=${encodeURIComponent(nextGame.homeTeam)}&away=${encodeURIComponent(nextGame.awayTeam)}&date=${nextGame.date.toISOString().split('T')[0]}" class="week-game-card">
-            <div class="week-game-date">${dateStr}</div>
-            <div class="week-game-matchup">${nextGame.awayTeam} @ ${nextGame.homeTeam}</div>
-            <div class="week-game-time">🕐 ${timeStr}</div>
-          </a>
-        `;
+        thisWeekGamesContainer.innerHTML = generateGameCard(nextGame);
         console.log(`✅ Next Game loaded: ${nextGame.awayTeam} @ ${nextGame.homeTeam}`);
       }
       // Case 3: No future games at all
@@ -3868,10 +4157,23 @@
     }
   }
 
-  document.addEventListener('DOMContentLoaded', function() {
+  document.addEventListener('DOMContentLoaded', async function() {
     loadRecentScores();
     loadThisWeekGames();
     loadMilestoneWatch();
+    
+    // Initialize live game tracking with real-time updates
+    try {
+      await initializeLiveGameTracking(handleLiveGamesUpdate);
+      console.log('✅ Live game tracking initialized');
+    } catch (error) {
+      console.warn('Could not initialize live game tracking:', error);
+    }
+  });
+  
+  // Cleanup listeners when page is unloaded
+  window.addEventListener('beforeunload', () => {
+    cleanupListeners();
   });
 
   setInterval(loadRecentScores, 5 * 60 * 1000);
