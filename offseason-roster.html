@@ -621,6 +621,64 @@
       font-style: italic;
     }
 
+    /* Unassigned Players Zone */
+    .unassigned-zone {
+      background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+      border: 2px dashed #3b82f6;
+      border-radius: 16px;
+      padding: 1.5rem;
+      margin-bottom: 2rem;
+    }
+
+    .unassigned-zone h3 {
+      color: #1e40af;
+      font-size: 1.1rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .unassigned-zone .zone-subtitle {
+      color: #3b82f6;
+      font-size: 0.85rem;
+      margin-bottom: 1rem;
+    }
+
+    .unassigned-players-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1rem;
+    }
+
+    .unassigned-player {
+      background: white;
+      border: 2px solid #93c5fd;
+    }
+
+    .unassigned-player .player-name {
+      color: #1e40af;
+    }
+
+    .unassigned-player .import-badge {
+      display: inline-block;
+      background: #3b82f6;
+      color: white;
+      font-size: 0.65rem;
+      padding: 0.15rem 0.4rem;
+      border-radius: 4px;
+      margin-left: 0.5rem;
+      font-weight: 600;
+    }
+
+    .empty-unassigned {
+      text-align: center;
+      padding: 2rem;
+      color: #1e40af;
+      font-style: italic;
+    }
+
     /* Instructions */
     .instructions {
       background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
@@ -745,6 +803,7 @@
     let teams = {};
     let unavailablePlayers = [];
     let pastPlayers = []; // Players not in current season
+    let unassignedPlayers = []; // Players imported but not yet assigned to teams
     let seasonType = 'fall-to-summer'; // or 'summer-to-fall'
     let draggedPlayer = null;
     let changeLog = [];
@@ -915,6 +974,7 @@
           
           teams = data.teams || {};
           unavailablePlayers = data.unavailablePlayers || [];
+          unassignedPlayers = data.unassignedPlayers || [];
           seasonType = data.seasonType || 'fall-to-summer';
           
           console.log('🎯 Loaded into memory - teams:', Object.keys(teams).length);
@@ -1129,6 +1189,7 @@
         await updateDoc(offseasonRef, {
           teams: teams,
           unavailablePlayers: unavailablePlayers,
+          unassignedPlayers: unassignedPlayers,
           seasonType: seasonType,
           lastModified: serverTimestamp(),
           lastModifiedBy: currentUser.uid,
@@ -1238,10 +1299,28 @@
       
       // Handle drop to unavailable
       if (toTeam === 'unavailable') {
-        if (fromTeam !== 'unavailable') {
+        if (fromTeam === 'unassigned') {
+          unassignedPlayers = unassignedPlayers.filter(p => p.id !== player.id);
+          unavailablePlayers.push(player);
+          changeDescription = `moved ${player.name} from Unassigned to Unavailable`;
+        } else if (fromTeam !== 'unavailable') {
           teams[fromTeam].players = teams[fromTeam].players.filter(p => p.id !== player.id);
           unavailablePlayers.push(player);
           changeDescription = `moved ${player.name} from ${fromTeam} to Unavailable`;
+        }
+      }
+      // Handle drop from unassigned to team
+      else if (fromTeam === 'unassigned') {
+        if (teams[toTeam] && teams[toTeam].players.length < teams[toTeam].maxRoster) {
+          unassignedPlayers = unassignedPlayers.filter(p => p.id !== player.id);
+          // Add default stats for imported player
+          const playerWithStats = {
+            ...player,
+            ba: player.ba || '.000',
+            acesBPI: player.acesBPI || '0.0'
+          };
+          teams[toTeam].players.push(playerWithStats);
+          changeDescription = `assigned ${player.name} to ${toTeam} (new player)`;
         }
       }
       // Handle drop from unavailable
@@ -1419,6 +1498,16 @@
               <div id="unavailablePlayersGrid" class="unavailable-players-grid" style="${unavailablePlayers.length > 0 ? 'display: grid;' : 'display: none;'}"></div>
             </div>
 
+            <!-- Unassigned Players Zone (from roster import) -->
+            <div id="unassignedZone" class="unassigned-zone" style="${unassignedPlayers.length > 0 ? 'display: block;' : 'display: none;'}" data-team="unassigned">
+              <h3>📋 Unassigned Players</h3>
+              <p class="zone-subtitle">New players from roster import - drag to assign to teams</p>
+              <div id="unassignedEmpty" class="empty-unassigned" style="${unassignedPlayers.length === 0 ? 'display: block;' : 'display: none;'}">
+                No unassigned players. Use League Staff Admin → Roster Import to add new players.
+              </div>
+              <div id="unassignedPlayersGrid" class="unassigned-players-grid" style="${unassignedPlayers.length > 0 ? 'display: grid;' : 'display: none;'}"></div>
+            </div>
+
             <div class="teams-grid" id="teamsGrid"></div>
           </div>
 
@@ -1436,6 +1525,7 @@
       
       renderTeams();
       renderUnavailable();
+      renderUnassigned();
       renderActiveEditors();
       populatePastPlayersDropdown();
       populateTeamSelectDropdown();
@@ -1494,6 +1584,55 @@
       `).join('');
       
       setupUnavailableDrag();
+    }
+    
+    function renderUnassigned() {
+      const zone = document.getElementById('unassignedZone');
+      const grid = document.getElementById('unassignedPlayersGrid');
+      const empty = document.getElementById('unassignedEmpty');
+      
+      if (!zone || !grid) return;
+      
+      // Show/hide zone based on whether there are unassigned players
+      if (unassignedPlayers.length > 0) {
+        zone.style.display = 'block';
+        grid.style.display = 'grid';
+        empty.style.display = 'none';
+      } else {
+        zone.style.display = 'none';
+        return;
+      }
+      
+      grid.innerHTML = unassignedPlayers.map(player => `
+        <div class="unassigned-player player-card" draggable="true" data-player-id="${player.id}">
+          <div class="player-name">
+            ${player.name}
+            <span class="import-badge">IMPORTED</span>
+          </div>
+          <div class="player-stats">
+            <span>New Player</span>
+            ${player.importedAt ? `<span>Added: ${new Date(player.importedAt).toLocaleDateString()}</span>` : ''}
+          </div>
+        </div>
+      `).join('');
+      
+      setupUnassignedDrag();
+    }
+    
+    function setupUnassignedDrag() {
+      document.querySelectorAll('#unassignedPlayersGrid .player-card').forEach(card => {
+        card.addEventListener('dragstart', (e) => {
+          const playerId = e.target.dataset.playerId;
+          const player = unassignedPlayers.find(p => p.id === playerId);
+          
+          draggedPlayer = { player, fromTeam: 'unassigned' };
+          e.target.classList.add('dragging');
+        });
+        
+        card.addEventListener('dragend', (e) => {
+          e.target.classList.remove('dragging');
+        });
+      });
     }
     
     function renderChangelog() {
