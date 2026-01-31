@@ -32,9 +32,12 @@ function isGameLive(metadata) {
 }
 
 /**
- * Find all games happening today that might be live
+ * Find all games that might be live:
+ * 1. Games scheduled for today
+ * 2. Games scheduled within the next 7 days (for testing/early starts)
+ * 3. Any game with recent metadata activity
  */
-async function getTodaysGames() {
+async function getTrackableGames() {
     try {
         const currentSeason = await getCurrentSeason();
         if (!currentSeason) return [];
@@ -45,10 +48,15 @@ async function getTodaysGames() {
         
         const today = new Date();
         today.setHours(0, 0, 0, 0);
-        const tomorrow = new Date(today);
-        tomorrow.setDate(tomorrow.getDate() + 1);
         
-        return allGames.filter(game => {
+        // Look at games from today through next 7 days
+        const nextWeek = new Date(today);
+        nextWeek.setDate(nextWeek.getDate() + 7);
+        
+        const trackableGames = allGames.filter(game => {
+            // Skip games that already have a winner (completed)
+            if (game.winner) return false;
+            
             let gameDate;
             if (game.date && game.date.seconds) {
                 gameDate = new Date(game.date.seconds * 1000);
@@ -59,13 +67,17 @@ async function getTodaysGames() {
             }
             
             gameDate.setHours(0, 0, 0, 0);
-            return gameDate >= today && gameDate < tomorrow;
+            
+            // Include games from today through next week
+            return gameDate >= today && gameDate <= nextWeek;
         }).map(game => ({
             ...game,
             seasonId: currentSeason.id
         }));
+        
+        return trackableGames;
     } catch (error) {
-        console.error('Error getting today\'s games:', error);
+        console.error('Error getting trackable games:', error);
         return [];
     }
 }
@@ -112,16 +124,16 @@ export async function initializeLiveGameTracking(onUpdate) {
     cleanupListeners();
     
     try {
-        const todaysGames = await getTodaysGames();
-        console.log(`📅 Found ${todaysGames.length} games scheduled for today`);
+        const trackableGames = await getTrackableGames();
+        console.log(`📅 Found ${trackableGames.length} games to monitor for live activity`);
         
-        if (todaysGames.length === 0) {
+        if (trackableGames.length === 0) {
             onUpdate([]);
             return;
         }
         
         // Subscribe to metadata for each game
-        todaysGames.forEach(game => {
+        trackableGames.forEach(game => {
             const gameId = game.id;
             const seasonId = game.seasonId;
             
