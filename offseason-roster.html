@@ -705,6 +705,139 @@
       font-size: 0.9rem;
     }
 
+    /* Create Team Modal */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.5);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .modal-overlay.active {
+      display: flex;
+    }
+
+    .modal-content {
+      background: white;
+      border-radius: 16px;
+      padding: 2rem;
+      max-width: 400px;
+      width: 90%;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    }
+
+    .modal-header {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: var(--text-dark);
+      margin-bottom: 1.5rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .modal-body .form-group {
+      margin-bottom: 1.25rem;
+    }
+
+    .modal-body label {
+      display: block;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+      color: var(--text-dark);
+    }
+
+    .modal-body input {
+      width: 100%;
+      padding: 0.75rem 1rem;
+      border: 2px solid var(--border-color);
+      border-radius: 8px;
+      font-size: 1rem;
+      transition: border-color 0.2s ease;
+    }
+
+    .modal-body input:focus {
+      outline: none;
+      border-color: var(--primary-color);
+    }
+
+    .modal-info {
+      background: #f0fdf4;
+      border: 1px solid #86efac;
+      border-radius: 8px;
+      padding: 0.75rem;
+      font-size: 0.85rem;
+      color: #166534;
+      margin-bottom: 1.25rem;
+    }
+
+    .modal-actions {
+      display: flex;
+      gap: 0.75rem;
+      justify-content: flex-end;
+    }
+
+    .modal-actions .btn {
+      padding: 0.75rem 1.5rem;
+    }
+
+    .btn-create-team {
+      background: #9333ea;
+      color: white;
+    }
+
+    .btn-create-team:hover {
+      background: #7e22ce;
+    }
+
+    /* Load Season Dropdown */
+    .load-season-wrapper {
+      position: relative;
+      display: inline-block;
+    }
+
+    .load-season-select {
+      appearance: none;
+      background: #f59e0b;
+      color: white;
+      border: none;
+      padding: 0.75rem 2.5rem 0.75rem 1rem;
+      border-radius: 12px;
+      font-weight: 600;
+      font-size: 0.9rem;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .load-season-select:hover {
+      background: #d97706;
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-md);
+    }
+
+    .load-season-select:focus {
+      outline: none;
+      box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.3);
+    }
+
+    .load-season-wrapper::after {
+      content: '▼';
+      position: absolute;
+      right: 1rem;
+      top: 50%;
+      transform: translateY(-50%);
+      pointer-events: none;
+      color: white;
+      font-size: 0.7rem;
+    }
+
     /* Mobile Responsive */
     @media (max-width: 768px) {
       .main-layout {
@@ -773,6 +906,26 @@
   <!-- Main Content (will be filled by JavaScript) -->
   <div id="appContent"></div>
 
+  <!-- Create Team Modal -->
+  <div class="modal-overlay" id="createTeamModal">
+    <div class="modal-content">
+      <div class="modal-header">➕ Create New Team</div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="newTeamName">Team Name</label>
+          <input type="text" id="newTeamName" placeholder="e.g., Army, Navy, Carolina" maxlength="30">
+        </div>
+        <div class="modal-info" id="rosterSizeInfo">
+          Max roster will be set to <strong>16 players</strong> (Fall → Summer)
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" onclick="hideCreateTeamModal()">Cancel</button>
+        <button class="btn btn-create-team" onclick="createNewTeam()">Create Team</button>
+      </div>
+    </div>
+  </div>
+
   <script type="module">
     import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
     import { 
@@ -808,6 +961,7 @@
     let draggedPlayer = null;
     let changeLog = [];
     let activeEditors = [];
+    let availableSeasons = []; // For load from season dropdown
     let unsubscribeRoster = null;
     let unsubscribeChangelog = null;
     let unsubscribePresence = null;
@@ -831,6 +985,7 @@
         
         if (hasPermission) {
           console.log('✅ User has permission, initializing offseason planning...');
+          await loadAvailableSeasons();
           await initializeOffseasonPlanning();
           await setupPresenceTracking();
         } else {
@@ -851,6 +1006,8 @@
           
           // Check permissions: Captain, League Staff, or Admin
           hasPermission = userProfile.isCaptain || 
+                         userProfile.isLeagueStaff === true ||
+                         userProfile.isAdmin === true ||
                          userProfile.userRole === 'staff' || 
                          userProfile.userRole === 'admin' ||
                          userProfile.role === 'admin' ||
@@ -1379,6 +1536,12 @@
                 </svg>
                 <span class="hide-mobile">Change Log</span>
               </button>
+              <button class="btn btn-create-team" id="createTeamBtn" onclick="showCreateTeamModal()">
+                <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M12 5v14M5 12h14"/>
+                </svg>
+                <span class="hide-mobile">New Team</span>
+              </button>
               <button class="btn btn-save" id="saveBtn">
                 <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
                   <path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/>
@@ -1394,6 +1557,11 @@
                 </svg>
                 Reset from Current Season
               </button>
+              <div class="load-season-wrapper">
+                <select class="load-season-select" id="loadSeasonSelect" onchange="handleLoadSeasonChange(this.value)">
+                  <option value="">📅 Load from Season...</option>
+                </select>
+              </div>
             </div>
           </div>
         </header>
@@ -1407,6 +1575,7 @@
                 <li><strong>Toggle Season Type:</strong> Switch between Fall→Summer (16 spots) and Summer→Fall (14 spots)</li>
                 <li id="unavailableInstruction" style="${seasonType === 'summer-to-fall' ? 'display: list-item;' : 'display: none;'}"><strong>Unavailable Players:</strong> Drag players here who won't play next season</li>
                 <li><strong>Save Changes:</strong> All captains/staff see updates in real-time</li>
+                <li><strong>Load from Season:</strong> Kickstart planning by loading rosters from a previous season (keeps unassigned pool)</li>
                 <li><strong>Add Past Players:</strong> Bring back players from previous seasons</li>
                 <li><strong>Create New Players:</strong> Add placeholder entries for new recruits (user accounts will be created when they register)</li>
                 <li><strong>Create New Teams:</strong> Add teams like Army (summer only) or special teams</li>
@@ -1529,6 +1698,7 @@
       renderActiveEditors();
       populatePastPlayersDropdown();
       populateTeamSelectDropdown();
+      populateSeasonDropdown();
       setupEventListeners();
     }
     
@@ -2049,6 +2219,234 @@
         sidebar.classList.toggle('mobile-hidden');
       });
     }
+    
+    // ========================================
+    // CREATE TEAM MODAL
+    // ========================================
+    
+    window.showCreateTeamModal = function() {
+      const modal = document.getElementById('createTeamModal');
+      const input = document.getElementById('newTeamName');
+      const info = document.getElementById('rosterSizeInfo');
+      
+      // Update roster size info based on current season type
+      const maxRoster = seasonType === 'fall-to-summer' ? 16 : 14;
+      const seasonLabel = seasonType === 'fall-to-summer' ? 'Fall → Summer' : 'Summer → Fall';
+      info.innerHTML = `Max roster will be set to <strong>${maxRoster} players</strong> (${seasonLabel})`;
+      
+      input.value = '';
+      modal.classList.add('active');
+      input.focus();
+    };
+    
+    window.hideCreateTeamModal = function() {
+      document.getElementById('createTeamModal').classList.remove('active');
+    };
+    
+    window.createNewTeam = function() {
+      const input = document.getElementById('newTeamName');
+      const teamName = input.value.trim();
+      
+      if (!teamName) {
+        showToast('Please enter a team name', 'error');
+        return;
+      }
+      
+      // Check for duplicate (case-insensitive)
+      const existingNames = Object.keys(teams).map(n => n.toLowerCase());
+      if (existingNames.includes(teamName.toLowerCase())) {
+        showToast(`Team "${teamName}" already exists`, 'error');
+        return;
+      }
+      
+      // Create the team
+      const maxRoster = seasonType === 'fall-to-summer' ? 16 : 14;
+      teams[teamName] = {
+        maxRoster: maxRoster,
+        players: []
+      };
+      
+      // Save and re-render
+      saveRosterChanges();
+      logChange('team_created', `created team "${teamName}" with ${maxRoster} roster spots`);
+      
+      hideCreateTeamModal();
+      renderTeams();
+      populateTeamSelectDropdown();
+      
+      showToast(`Team "${teamName}" created! ✅`, 'success');
+    };
+    
+    // Close modal on escape key
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        hideCreateTeamModal();
+      }
+    });
+    
+    // Close modal on backdrop click
+    document.getElementById('createTeamModal')?.addEventListener('click', (e) => {
+      if (e.target.id === 'createTeamModal') {
+        hideCreateTeamModal();
+      }
+    });
+    
+    // Enter key to submit
+    document.getElementById('newTeamName')?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        createNewTeam();
+      }
+    });
+    
+    // ========================================
+    // LOAD FROM SEASON
+    // ========================================
+    
+    async function loadAvailableSeasons() {
+      try {
+        const seasonsSnapshot = await getDocs(collection(db, 'seasons'));
+        availableSeasons = seasonsSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        })).sort((a, b) => {
+          // Sort by year desc, then fall before summer
+          if (a.year !== b.year) return b.year - a.year;
+          return a.season === 'fall' ? -1 : 1;
+        });
+        
+        console.log(`📅 Loaded ${availableSeasons.length} seasons for dropdown`);
+      } catch (error) {
+        console.error('Error loading seasons:', error);
+        availableSeasons = [];
+      }
+    }
+    
+    function populateSeasonDropdown() {
+      const select = document.getElementById('loadSeasonSelect');
+      if (!select) return;
+      
+      select.innerHTML = '<option value="">📅 Load from Season...</option>';
+      
+      availableSeasons.forEach(season => {
+        const option = document.createElement('option');
+        option.value = season.id;
+        option.textContent = `${season.year} ${season.season.charAt(0).toUpperCase() + season.season.slice(1)}`;
+        select.appendChild(option);
+      });
+    }
+    
+    window.handleLoadSeasonChange = async function(seasonId) {
+      const select = document.getElementById('loadSeasonSelect');
+      
+      if (!seasonId) return;
+      
+      // Find selected season
+      const selectedSeason = availableSeasons.find(s => s.id === seasonId);
+      if (!selectedSeason) {
+        select.value = '';
+        return;
+      }
+      
+      const seasonLabel = `${selectedSeason.year} ${selectedSeason.season.charAt(0).toUpperCase() + selectedSeason.season.slice(1)}`;
+      
+      // Confirm the action
+      const confirmed = confirm(
+        `⚠️ Load rosters from ${seasonLabel}?\n\n` +
+        `This will:\n` +
+        `• Replace all current team rosters\n` +
+        `• Keep your unassigned players pool\n` +
+        `• Keep unavailable players list\n\n` +
+        `This is intended to kick off roster planning. Continue?`
+      );
+      
+      if (!confirmed) {
+        select.value = '';
+        return;
+      }
+      
+      // Show loading state
+      select.disabled = true;
+      const originalText = select.options[select.selectedIndex].text;
+      select.options[select.selectedIndex].text = '⏳ Loading...';
+      
+      try {
+        // Fetch players from that season
+        const seasonPlayers = await getSeasonPlayerStatsOptimized(seasonId);
+        console.log(`📊 Loaded ${seasonPlayers.length} players from ${seasonLabel}`);
+        
+        if (seasonPlayers.length === 0) {
+          showToast(`No players found in ${seasonLabel}`, 'error');
+          select.value = '';
+          select.disabled = false;
+          return;
+        }
+        
+        // Get career stats for BA and AcesBPI
+        const allPlayerStats = await getAllPlayerStatsOptimized();
+        const playerStatsMap = {};
+        allPlayerStats.forEach(player => {
+          playerStatsMap[player.name] = {
+            ba: player.career?.battingAverage?.toFixed(3) || '.000',
+            acesBPI: player.career?.acesBPI?.toFixed(1) || '0.0'
+          };
+        });
+        
+        // Group players by team
+        const newTeams = {};
+        const maxRoster = seasonType === 'fall-to-summer' ? 16 : 14;
+        
+        seasonPlayers.forEach(player => {
+          const playerName = player.playerName || player.name || player.id;
+          const teamName = player.team || player.teamId || player.currentTeam;
+          
+          if (!teamName || teamName === 'Unknown' || teamName.trim() === '') {
+            console.log(`⚠️ Player ${playerName} has no team, skipping`);
+            return;
+          }
+          
+          if (!newTeams[teamName]) {
+            newTeams[teamName] = {
+              maxRoster: maxRoster,
+              players: []
+            };
+          }
+          
+          const stats = playerStatsMap[playerName] || { ba: '.000', acesBPI: '0.0' };
+          
+          newTeams[teamName].players.push({
+            id: playerName.toLowerCase().replace(/\s+/g, '_'),
+            name: playerName,
+            ba: stats.ba,
+            acesBPI: stats.acesBPI
+          });
+        });
+        
+        console.log(`✅ Built ${Object.keys(newTeams).length} teams from ${seasonLabel}`);
+        
+        // Replace teams (keep unassigned and unavailable)
+        teams = newTeams;
+        
+        // Save changes
+        await saveRosterChanges();
+        await logChange('season_loaded', `loaded rosters from ${seasonLabel} (${seasonPlayers.length} players)`);
+        
+        // Re-render
+        renderTeams();
+        populateTeamSelectDropdown();
+        
+        showToast(`Loaded ${seasonPlayers.length} players from ${seasonLabel}! ✅`, 'success');
+        
+      } catch (error) {
+        console.error('Error loading season:', error);
+        showToast('Error loading season: ' + error.message, 'error');
+      } finally {
+        select.value = '';
+        select.disabled = false;
+        // Restore option text
+        const opt = Array.from(select.options).find(o => o.value === seasonId);
+        if (opt) opt.text = originalText;
+      }
+    };
     
     function showToast(message, type = 'info') {
       // Simple toast notification (you can enhance this)
