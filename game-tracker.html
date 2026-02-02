@@ -127,7 +127,8 @@
     getGameTrackingPermissions,
     subscribeToPresence,
     loadGameState as loadGameStateSync,
-    clearGameState as clearGameStateSync
+    clearGameState as clearGameStateSync,
+    loadGameMetadata as loadGameMetadataSync
 } from './firebase-game-sync.js';
 
 
@@ -418,7 +419,8 @@ function getOrdinalSuffix(num) {
             getGameTrackingPermissions,
             subscribeToPresence,
             loadGameStateSync,
-            clearGameStateSync
+            clearGameStateSync,
+            loadGameMetadataSync
         };
 
         // Wait for auth state to be determined before signaling ready
@@ -1132,31 +1134,71 @@ useEffect(() => {
                     setBattingOrder(players);
                 }
                 
-                setGameState({
-                    inning: 1,
-                    outs: 0,
-                    bases: { first: null, second: null, third: null },
-                    score: { yourTeam: 0, opponent: 0 },
-                    currentBatter: 0,
-                    playHistory: [],
-                    gameActive: true,
-                    isYourTeamBatting: !isHome
-                });
-                
-                // Initialize shared game metadata
-                // Away team ALWAYS bats first (top of 1st)
+                // Check if game metadata already exists (another tracker may have started)
                 try {
-                    const firstBattingTeam = selectedGame.awayTeam || selectedGame.awayTeamId;
-                    await window.FirebaseGameTracker.updateGameMetadata(selectedGame.seasonId, selectedGame.id, {
+                    const existingMetadata = await window.FirebaseGameTracker.loadGameMetadataSync(
+                        selectedGame.seasonId,
+                        selectedGame.id
+                    );
+                    
+                    if (existingMetadata && existingMetadata.inning !== undefined) {
+                        // Metadata exists - join the existing game instead of resetting
+                        console.log(`✅ Joining existing game: inning ${existingMetadata.inning}, ${existingMetadata.currentBattingTeam} batting`);
+                        
+                        // Determine if our team should be batting based on existing metadata
+                        const shouldWeBeBatting = existingMetadata.currentBattingTeam === selectedTeam;
+                        
+                        setGameState({
+                            inning: existingMetadata.inning || 1,
+                            outs: existingMetadata.outs || 0,
+                            bases: { first: null, second: null, third: null },
+                            score: { 
+                                yourTeam: isHome ? (existingMetadata.homeScore || 0) : (existingMetadata.awayScore || 0),
+                                opponent: isHome ? (existingMetadata.awayScore || 0) : (existingMetadata.homeScore || 0)
+                            },
+                            currentBatter: 0,
+                            playHistory: [],
+                            gameActive: true,
+                            isYourTeamBatting: shouldWeBeBatting
+                        });
+                    } else {
+                        // No existing metadata - initialize fresh game
+                        setGameState({
+                            inning: 1,
+                            outs: 0,
+                            bases: { first: null, second: null, third: null },
+                            score: { yourTeam: 0, opponent: 0 },
+                            currentBatter: 0,
+                            playHistory: [],
+                            gameActive: true,
+                            isYourTeamBatting: !isHome
+                        });
+                        
+                        // Initialize shared game metadata
+                        // Away team ALWAYS bats first (top of 1st)
+                        const firstBattingTeam = selectedGame.awayTeam || selectedGame.awayTeamId;
+                        await window.FirebaseGameTracker.updateGameMetadata(selectedGame.seasonId, selectedGame.id, {
+                            inning: 1,
+                            outs: 0,
+                            homeScore: 0,
+                            awayScore: 0,
+                            currentBattingTeam: firstBattingTeam
+                        });
+                        console.log(`✅ Game metadata initialized: ${firstBattingTeam} batting first (top of 1st)`);
+                    }
+                } catch (error) {
+                    console.error('Error checking/initializing game metadata:', error);
+                    // Fallback to default state
+                    setGameState({
                         inning: 1,
                         outs: 0,
-                        homeScore: 0,
-                        awayScore: 0,
-                        currentBattingTeam: firstBattingTeam
+                        bases: { first: null, second: null, third: null },
+                        score: { yourTeam: 0, opponent: 0 },
+                        currentBatter: 0,
+                        playHistory: [],
+                        gameActive: true,
+                        isYourTeamBatting: !isHome
                     });
-                    console.log(`✅ Game metadata initialized: ${firstBattingTeam} batting first (top of 1st)`);
-                } catch (error) {
-                    console.error('Error initializing game metadata:', error);
                 }
                 
                 setSetupMode(false);

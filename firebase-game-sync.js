@@ -132,6 +132,30 @@ export function subscribeToGameState(seasonId, gameId, teamId, callback) {
 }
 
 /**
+ * Load current game metadata (one-time read, not subscription)
+ * Used to check if game is already in progress before initializing
+ * @param {string} seasonId - Season ID
+ * @param {string} gameId - Game ID
+ * @returns {object|null} Current metadata or null if not exists
+ */
+export async function loadGameMetadata(seasonId, gameId) {
+    try {
+        const metadataRef = doc(db, 'seasons', seasonId, 'games', gameId, 'metadata', 'current');
+        const snapshot = await getDoc(metadataRef);
+        
+        if (snapshot.exists()) {
+            console.log('✅ Loaded existing game metadata');
+            return snapshot.data();
+        }
+        
+        return null;
+    } catch (error) {
+        console.error('Error loading game metadata:', error);
+        return null;
+    }
+}
+
+/**
  * Update game metadata
  * @param {string} seasonId - Season ID
  * @param {string} gameId - Game ID
