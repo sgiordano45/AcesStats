@@ -3628,10 +3628,10 @@
 
   <script type="module">
   // News Banner - CONVERTED TO FIREBASE
+  // 2026+ UPDATE: Removed getSeasonPreviews - upcoming games now come from games collection directly
   import {
     getCurrentSeason,
-    getSeasonGames,
-    getSeasonPreviews  // ADD THIS IMPORT
+    getSeasonGames
   } from './firebase-data.js';
   
   // Import live game indicator module
@@ -3736,12 +3736,10 @@
       const capitalize = (str) => str ? str.charAt(0).toUpperCase() + str.slice(1) : "";
       
       const currentSeasonData = await getCurrentSeason();
-      const [seasonGames, previews] = await Promise.all([
-        getSeasonGames(currentSeasonData.id),
-        getSeasonPreviews(currentSeasonData.id)  // USE FIREBASE FUNCTION
-      ]);
+      // 2026+ UPDATE: Only fetch games - upcoming games come from same collection
+      const seasonGames = await getSeasonGames(currentSeasonData.id);
       
-      console.log(`✅ Loaded ${seasonGames.length} games and ${previews.length} previews for banner`);
+      console.log(`✅ Loaded ${seasonGames.length} games for banner`);
       
       const today = new Date();
       today.setHours(0, 0, 0, 0);
@@ -3766,6 +3764,7 @@
           "away score": g.awayScore !== undefined ? g.awayScore : null,
           winner: capitalize(g.winner || ""),
           date: dateString,
+          time: g.time || "",  // 2026+ UPDATE: Include time for upcoming games display
           year: currentSeasonData.year.toString(),
           season: capitalize(currentSeasonData.season)
         };
@@ -3787,11 +3786,12 @@
         className: 'news-score'
       }));
       
-      // Filter previews for upcoming games
-      const upcomingGames = previews
-        .filter(preview => {
-          const gameDate = new Date(preview.date);
-          return gameDate >= today;
+      // 2026+ UPDATE: Get upcoming games from games collection (no separate previews collection)
+      const upcomingGames = mappedGames
+        .filter(game => {
+          const gameDate = new Date(game.date);
+          // Upcoming = future date OR no winner yet
+          return gameDate >= today && (!game.winner || game.winner.trim() === "");
         })
         .sort((a, b) => new Date(a.date) - new Date(b.date))
         .slice(0, 5);
