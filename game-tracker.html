@@ -1268,6 +1268,30 @@ useEffect(() => {
                 setTempOuts(tempOuts + 1);
             };
 
+            // Un-score a runner (put them back on 3rd base)
+            const unscoreRunner = (runnerName) => {
+                // Remove from scored runners
+                setRunnersScored(prev => prev.filter(r => r !== runnerName));
+                // Decrement score
+                setTempScore(prev => Math.max(0, prev - 1));
+                // Put runner back on 3rd (if 3rd is empty, otherwise error)
+                setTempBases(prev => {
+                    if (prev.third) {
+                        // 3rd is occupied - try 2nd
+                        if (prev.second) {
+                            // 2nd is occupied - try 1st
+                            if (prev.first) {
+                                alert(`Cannot un-score ${runnerName}: all bases occupied`);
+                                return prev;
+                            }
+                            return { ...prev, first: runnerName };
+                        }
+                        return { ...prev, second: runnerName };
+                    }
+                    return { ...prev, third: runnerName };
+                });
+            };
+
             const confirmPlay = () => {
                 if (!pendingPlay) return;
 
@@ -2391,15 +2415,33 @@ const ViewerOnlyMessage = () => {
                                 </svg>
 
                                 {pendingPlay && (displayScore > 0 || tempOuts > 0) && (
-                                    <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-3 items-center">
-                                        {displayScore > 0 && (
-                                            <div className="bg-green-600 text-white px-4 py-2 rounded-lg font-bold">
-                                                +{displayScore} Run{displayScore > 1 ? 's' : ''}
-                                            </div>
-                                        )}
-                                        {tempOuts > 0 && (
-                                            <div className="bg-red-500 text-white px-4 py-2 rounded-lg font-bold">
-                                                +{tempOuts} Out{tempOuts > 1 ? 's' : ''}
+                                    <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex flex-col gap-2 items-center">
+                                        <div className="flex gap-3 items-center">
+                                            {displayScore > 0 && (
+                                                <div className="bg-green-600 text-white px-4 py-2 rounded-lg font-bold">
+                                                    +{displayScore} Run{displayScore > 1 ? 's' : ''}
+                                                </div>
+                                            )}
+                                            {tempOuts > 0 && (
+                                                <div className="bg-red-500 text-white px-4 py-2 rounded-lg font-bold">
+                                                    +{tempOuts} Out{tempOuts > 1 ? 's' : ''}
+                                                </div>
+                                            )}
+                                        </div>
+                                        {/* Show who scored with option to un-score */}
+                                        {runnersScored.length > 0 && (
+                                            <div className="flex flex-wrap gap-1 justify-center">
+                                                {runnersScored.map((runner, idx) => (
+                                                    <button
+                                                        key={idx}
+                                                        onClick={() => unscoreRunner(runner)}
+                                                        className="bg-green-700 hover:bg-amber-600 text-white text-xs px-2 py-1 rounded flex items-center gap-1 transition-colors"
+                                                        title={`Click to put ${runner.split(' ').pop()} back on base`}
+                                                    >
+                                                        <span>⬅</span>
+                                                        <span>{runner.split(' ').pop()}</span>
+                                                    </button>
+                                                ))}
                                             </div>
                                         )}
                                     </div>
