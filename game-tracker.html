@@ -709,8 +709,12 @@ useEffect(() => {
                 (data) => {
                     if (!data) return; // Guard against null data
                     
-                    // Only update if it wasn't this user who made the change
-                    if (data.metadata?.lastUpdatedBy !== currentUser.uid) {
+                    // IMPORTANT: Only apply updates if there's REAL data from another user
+                    // Don't overwrite our state with empty defaults when our team hasn't recorded plays yet
+                    const hasRealData = data.plays && data.plays.length > 0;
+                    const isFromAnotherUser = data.metadata?.lastUpdatedBy && data.metadata.lastUpdatedBy !== currentUser.uid;
+                    
+                    if (hasRealData && isFromAnotherUser) {
                         console.log('📥 Your team updated by', data.metadata?.lastUpdatedByName);
                         
                         // Set flag to prevent auto-save loop
@@ -721,19 +725,23 @@ useEffect(() => {
                         // Use functional update to preserve opponent score from local state (for single-person tracking)
                         // Only use opponent's score if they're actually tracking (have plays)
                         const opponentIsTracking = opponentGameState?.isTracking === true;
+                        
+                        // IMPORTANT: Do NOT override isYourTeamBatting from gameState
+                        // That should ONLY come from metadata subscription
                         setGameState(prev => ({
-                            inning: data.inning || 1,
-                            outs: data.outs || 0,
-                            bases: data.bases || { first: null, second: null, third: null },
+                            inning: data.inning || prev.inning,
+                            outs: data.outs ?? prev.outs,
+                            bases: data.bases || prev.bases,
                             score: { 
-                                yourTeam: data.score || 0, 
+                                yourTeam: data.score ?? prev.score.yourTeam, 
                                 // Use opponent's real-time score only if they're tracking, else preserve local
                                 opponent: opponentIsTracking ? opponentGameState.score : prev.score.opponent 
                             },
-                            currentBatter: data.currentBatter || 0,
-                            playHistory: data.plays || [],
+                            currentBatter: data.currentBatter ?? prev.currentBatter,
+                            playHistory: data.plays || prev.playHistory,
                             gameActive: data.gameActive !== false,
-                            isYourTeamBatting: data.isYourTeamBatting !== false
+                            // PRESERVE isYourTeamBatting from previous state - metadata controls this
+                            isYourTeamBatting: prev.isYourTeamBatting
                         }));
                         
                         // Reconstruct batting order from IDs
@@ -752,6 +760,8 @@ useEffect(() => {
                             message: `${data.metadata?.lastUpdatedByName || 'Teammate'} updated the game`,
                             type: 'update'
                         });
+                    } else if (!hasRealData) {
+                        console.log('ℹ️ No plays recorded yet for your team - preserving local state');
                     }
                 }
             );
@@ -804,36 +814,38 @@ useEffect(() => {
                     // Update opponent score from metadata
                     // If we're home, opponent is away; if we're away, opponent is home
                     const opponentScoreFromMetadata = isHomeTeam ? data.awayScore : data.homeScore;
-                    if (opponentScoreFromMetadata !== undefined && opponentScoreFromMetadata !== null) {
-                        setGameState(prev => {
-                            if (prev.score.opponent !== opponentScoreFromMetadata) {
-                                return {
-                                    ...prev,
-                                    score: {
-                                        ...prev.score,
-                                        opponent: opponentScoreFromMetadata
-                                    }
-                                };
-                            }
-                            return prev;
-                        });
-                    }
                     
-                    // Update batting state
-                    if (data.currentBattingTeam) {
-                        const shouldWeBeBatting = (data.currentBattingTeam === myTeamId);
+                    // Determine batting state from metadata (authoritative source)
+                    const shouldWeBeBatting = data.currentBattingTeam ? (data.currentBattingTeam === myTeamId) : null;
+                    
+                    // Update state with metadata values
+                    // Use functional update to get current state and avoid stale closure
+                    setGameState(prev => {
+                        let newState = { ...prev };
+                        let changed = false;
                         
-                        // Only update if it changed
-                        if (gameState.isYourTeamBatting !== shouldWeBeBatting) {
-                            console.log(`🔄 Batting changed: ${shouldWeBeBatting ? 'Your team' : 'Opponent'} now batting`);
-                            setGameState(prev => ({
-                                ...prev,
-                                isYourTeamBatting: shouldWeBeBatting,
-                                inning: data.inning || prev.inning,
-                                outs: data.outs || 0
-                            }));
+                        // Update opponent score if changed
+                        if (opponentScoreFromMetadata !== undefined && 
+                            opponentScoreFromMetadata !== null && 
+                            prev.score.opponent !== opponentScoreFromMetadata) {
+                            newState.score = {
+                                ...prev.score,
+                                opponent: opponentScoreFromMetadata
+                            };
+                            changed = true;
                         }
-                    }
+                        
+                        // Update batting state from metadata (AUTHORITATIVE)
+                        if (shouldWeBeBatting !== null && prev.isYourTeamBatting !== shouldWeBeBatting) {
+                            console.log(`🔄 Batting changed: ${shouldWeBeBatting ? 'Your team' : 'Opponent'} now batting`);
+                            newState.isYourTeamBatting = shouldWeBeBatting;
+                            newState.inning = data.inning || prev.inning;
+                            newState.outs = data.outs ?? prev.outs;
+                            changed = true;
+                        }
+                        
+                        return changed ? newState : prev;
+                    });
                 }
             });
             
