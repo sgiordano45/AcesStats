@@ -542,7 +542,9 @@ useEffect(() => {
     }
     
     if (!setupMode && selectedGame && selectedTeam && gameState.gameActive && currentUser) {
+        console.log('💾 Auto-save triggered - opponent score:', gameState.score.opponent);
         const saveTimer = setTimeout(() => {
+            console.log('💾 Auto-save executing - opponent score:', gameState.score.opponent);
             window.FirebaseGameTracker.saveGameState(
                 selectedGame.id,
                 selectedTeam,
@@ -631,20 +633,25 @@ useEffect(() => {
                         // The data IS the game state (not data.gameState)
                         // Map the Firebase structure to our component's gameState structure
                         // Use functional update to preserve opponent score from local state (for single-person tracking)
-                        setGameState(prev => ({
-                            inning: data.inning || 1,
-                            outs: data.outs || 0,
-                            bases: data.bases || { first: null, second: null, third: null },
-                            score: { 
-                                yourTeam: data.score || 0, 
-                                // Prefer real-time opponent tracking, fall back to existing local state
-                                opponent: opponentGameState?.score ?? prev.score.opponent 
-                            },
-                            currentBatter: data.currentBatter || 0,
-                            playHistory: data.plays || [],
-                            gameActive: data.gameActive !== false,
-                            isYourTeamBatting: data.isYourTeamBatting !== false
-                        }));
+                        console.log('👥 Teammate sync - opponentGameState?.score:', opponentGameState?.score);
+                        setGameState(prev => {
+                            const newOpponentScore = opponentGameState?.score ?? prev.score.opponent;
+                            console.log('👥 Teammate sync - prev.score.opponent:', prev.score.opponent, 'using:', newOpponentScore);
+                            return {
+                                inning: data.inning || 1,
+                                outs: data.outs || 0,
+                                bases: data.bases || { first: null, second: null, third: null },
+                                score: { 
+                                    yourTeam: data.score || 0, 
+                                    // Prefer real-time opponent tracking, fall back to existing local state
+                                    opponent: newOpponentScore 
+                                },
+                                currentBatter: data.currentBatter || 0,
+                                playHistory: data.plays || [],
+                                gameActive: data.gameActive !== false,
+                                isYourTeamBatting: data.isYourTeamBatting !== false
+                            };
+                        });
                         
                         // Reconstruct batting order from IDs
                         if (data.battingOrder && battingOrder.length > 0) {
@@ -709,8 +716,10 @@ useEffect(() => {
                     // Update opponent score from metadata
                     // If we're home, opponent is away; if we're away, opponent is home
                     const opponentScoreFromMetadata = isHomeTeam ? data.awayScore : data.homeScore;
+                    console.log('📊 Metadata subscription - isHomeTeam:', isHomeTeam, 'opponentScoreFromMetadata:', opponentScoreFromMetadata, 'data:', data);
                     if (opponentScoreFromMetadata !== undefined && opponentScoreFromMetadata !== null) {
                         setGameState(prev => {
+                            console.log('📊 Metadata updating opponent score - prev:', prev.score.opponent, 'new:', opponentScoreFromMetadata);
                             if (prev.score.opponent !== opponentScoreFromMetadata) {
                                 return {
                                     ...prev,
@@ -722,6 +731,7 @@ useEffect(() => {
                             }
                             return prev;
                         });
+                    }
                     }
                     
                     // Update batting state
@@ -1309,9 +1319,11 @@ useEffect(() => {
             };
 
             const advanceToNextHalfInning = async () => {
+                console.log('🔄 advanceToNextHalfInning called - current opponent score:', gameState.score.opponent);
                 const newState = { ...gameState };
                 newState.outs = 0;
                 newState.bases = { first: null, second: null, third: null };
+                console.log('🔄 newState.score.opponent after spread:', newState.score.opponent);
                 
                 // Determine which team should bat next based on current state
                 let nextBattingTeam;
@@ -1337,6 +1349,7 @@ useEffect(() => {
                 
                 // Update local state
                 newState.inning = nextInning;
+                console.log('🔄 advanceToNextHalfInning - about to setGameState with opponent score:', newState.score.opponent);
                 setGameState(newState);
                 
                 // Update shared game metadata so both teams know who's batting
