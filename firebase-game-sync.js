@@ -238,6 +238,11 @@ export function canUserTrackTeam(userProfile, teamId) {
         return true;
     }
     
+    // Scorekeepers can track any team (special role)
+    if (userProfile.specialRoles?.scorekeeper === true) {
+        return true;
+    }
+    
     // Captains can track their own team
     if (userProfile.isCaptain && userProfile.teamId === teamId) {
         return true;
