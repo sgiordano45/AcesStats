@@ -74,6 +74,31 @@
 .animate-slide-in {
   animation: slide-in 0.3s ease-out;
 }
+
+/* LIVE game indicator pulse animation */
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+@keyframes live-ping {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  75%, 100% {
+    transform: scale(1.5);
+    opacity: 0;
+  }
+}
+
+.live-badge {
+  animation: pulse 2s ease-in-out infinite;
+}
     </style>
 </head>
 <body>
@@ -512,6 +537,7 @@ function getOrdinalSuffix(num) {
 			const [presenceUsers, setPresenceUsers] = useState([]);
 			const [notifications, setNotifications] = useState([]);
 			const [editingLineup, setEditingLineup] = useState(false);
+			const [liveGames, setLiveGames] = useState({});  // Track which games have active trackers
 			
 			// Track whether the last state update came from Firebase to prevent save loops
 			const isUpdatingFromFirebase = useRef(false);
@@ -544,6 +570,34 @@ function getOrdinalSuffix(num) {
                     loadTeamData();
                 }
             }, [selectedTeam, currentSeason]);
+
+// Check for live games (games with active trackers) when game list changes
+useEffect(() => {
+    if (!games.length || !currentSeason) return;
+    
+    const unsubscribers = [];
+    
+    games.forEach(game => {
+        if (!game.seasonId) return;
+        
+        // Subscribe to presence for each game
+        const unsubscribe = window.FirebaseGameTracker.subscribeToPresence(
+            game.seasonId,
+            game.id,
+            (trackers) => {
+                setLiveGames(prev => ({
+                    ...prev,
+                    [game.id]: trackers.length > 0 ? trackers : null
+                }));
+            }
+        );
+        unsubscribers.push(unsubscribe);
+    });
+    
+    return () => {
+        unsubscribers.forEach(unsub => unsub && unsub());
+    };
+}, [games, currentSeason]);
 
 // Warn before leaving page with active game in progress
 useEffect(() => {
@@ -1754,25 +1808,57 @@ useEffect(() => {
                                         Select Game to Track
                                     </h2>
                                     <div className="space-y-3">
-                                        {games.map((game, idx) => (
+                                        {games.map((game, idx) => {
+                                            const isLive = liveGames[game.id] && liveGames[game.id].length > 0;
+                                            const trackerCount = isLive ? liveGames[game.id].length : 0;
+                                            
+                                            return (
                                             <button
                                                 key={idx}
                                                 onClick={() => handleGameSelect(game)}
                                                 className="w-full p-4 text-left rounded-xl transition-all"
                                                 style={{
-                                                    border: selectedGame === game ? '2px solid #2d5016' : '2px solid #e2e8f0',
-                                                    background: selectedGame === game ? 'linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)' : 'white',
+                                                    border: isLive ? '2px solid #ef4444' : selectedGame === game ? '2px solid #2d5016' : '2px solid #e2e8f0',
+                                                    background: isLive 
+                                                        ? 'linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%)' 
+                                                        : selectedGame === game 
+                                                            ? 'linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)' 
+                                                            : 'white',
                                                     transform: selectedGame === game ? 'scale(1.02)' : 'scale(1)',
-                                                    boxShadow: selectedGame === game ? '0 4px 12px rgba(45,80,22,0.15)' : 'none'
+                                                    boxShadow: isLive 
+                                                        ? '0 4px 12px rgba(239,68,68,0.2)' 
+                                                        : selectedGame === game 
+                                                            ? '0 4px 12px rgba(45,80,22,0.15)' 
+                                                            : 'none'
                                                 }}
                                             >
                                                 <div className="flex justify-between items-center">
                                                     <div className="flex items-center gap-2">
+                                                        {isLive && (
+                                                            <span 
+                                                                className="text-xs px-2 py-1 rounded-full font-bold flex items-center gap-1"
+                                                                style={{ 
+                                                                    background: '#ef4444', 
+                                                                    color: 'white',
+                                                                    animation: 'pulse 2s infinite'
+                                                                }}
+                                                            >
+                                                                <span className="w-2 h-2 rounded-full bg-white animate-ping" style={{ animationDuration: '1s' }}></span>
+                                                                LIVE
+                                                            </span>
+                                                        )}
                                                         <span className="font-bold text-lg" style={{ color: '#2d3748' }}>{game.awayTeam}</span>
                                                         <span className="text-gray-400 text-sm">@</span>
                                                         <span className="font-bold text-lg" style={{ color: '#2d3748' }}>{game.homeTeam}</span>
                                                     </div>
-                                                    <div className="text-sm font-medium" style={{ color: '#718096' }}>{game.date}</div>
+                                                    <div className="text-right">
+                                                        <div className="text-sm font-medium" style={{ color: '#718096' }}>{game.date}</div>
+                                                        {isLive && (
+                                                            <div className="text-xs" style={{ color: '#dc2626' }}>
+                                                                {trackerCount} tracking
+                                                            </div>
+                                                        )}
+                                                    </div>
                                                 </div>
                                                 <div className="flex items-center gap-2 mt-2">
                                                     <span className="text-xs px-2 py-1 rounded-full font-medium" style={{ 
@@ -1788,7 +1874,7 @@ useEffect(() => {
                                                     )}
                                                 </div>
                                             </button>
-                                        ))}
+                                        )})}
                                     </div>
                                 </div>
                             )}
