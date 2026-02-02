@@ -1035,8 +1035,8 @@ const PLAYER_NAME_RATIO = 0.5; // 50% player names, 50% softball words
 const ANNOUNCEMENT_CONFIG = {
   enabled: true,                    // Set to false to disable announcement
   showStartDay: 1,                  // First day to show announcement (inclusive)
-  showEndDay: 28,                   // Last day to show announcement (inclusive)
-  changeStartDay: 29,               // Day when expanded word list begins
+  showEndDay: 21,                   // Last day to show announcement (inclusive)
+  changeStartDay: 22,               // Day when expanded word list begins
   storageKey: 'acesWordle_announcement_dismissed_v1'
 };
 
@@ -1268,17 +1268,23 @@ async function loadPuzzleFromFirebase(dayNum) {
 async function savePuzzleToFirebase(puzzle) {
   try {
     const puzzleRef = doc(db, 'wordleDailyPuzzles', String(puzzle.dayNum));
-    await setDoc(puzzleRef, {
+    
+    // Build object excluding undefined values (Firebase doesn't allow undefined)
+    const puzzleData = {
       dayNum: puzzle.dayNum,
       answer: puzzle.answer,
       type: puzzle.type,
-      playerName: puzzle.playerName,
-      playerNames: puzzle.playerNames,
-      firstName: puzzle.firstName,
-      hint: puzzle.hint,
-      category: puzzle.category,
       createdAt: serverTimestamp()
-    });
+    };
+    
+    // Only add fields if they have values
+    if (puzzle.playerName) puzzleData.playerName = puzzle.playerName;
+    if (puzzle.playerNames) puzzleData.playerNames = puzzle.playerNames;
+    if (puzzle.firstName) puzzleData.firstName = puzzle.firstName;
+    if (puzzle.hint) puzzleData.hint = puzzle.hint;
+    if (puzzle.category) puzzleData.category = puzzle.category;
+    
+    await setDoc(puzzleRef, puzzleData);
     console.log(`💾 Saved puzzle #${puzzle.dayNum} to Firebase: ${puzzle.answer}`);
   } catch (error) {
     console.error('Error saving puzzle to Firebase:', error);
