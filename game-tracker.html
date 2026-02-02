@@ -542,9 +542,7 @@ useEffect(() => {
     }
     
     if (!setupMode && selectedGame && selectedTeam && gameState.gameActive && currentUser) {
-        console.log('💾 Auto-save triggered - opponent score:', gameState.score.opponent);
         const saveTimer = setTimeout(() => {
-            console.log('💾 Auto-save executing - opponent score:', gameState.score.opponent);
             window.FirebaseGameTracker.saveGameState(
                 selectedGame.id,
                 selectedTeam,
@@ -633,25 +631,22 @@ useEffect(() => {
                         // The data IS the game state (not data.gameState)
                         // Map the Firebase structure to our component's gameState structure
                         // Use functional update to preserve opponent score from local state (for single-person tracking)
-                        console.log('👥 Teammate sync - opponentGameState?.score:', opponentGameState?.score);
-                        setGameState(prev => {
-                            const newOpponentScore = opponentGameState?.score ?? prev.score.opponent;
-                            console.log('👥 Teammate sync - prev.score.opponent:', prev.score.opponent, 'using:', newOpponentScore);
-                            return {
-                                inning: data.inning || 1,
-                                outs: data.outs || 0,
-                                bases: data.bases || { first: null, second: null, third: null },
-                                score: { 
-                                    yourTeam: data.score || 0, 
-                                    // Prefer real-time opponent tracking, fall back to existing local state
-                                    opponent: newOpponentScore 
-                                },
-                                currentBatter: data.currentBatter || 0,
-                                playHistory: data.plays || [],
-                                gameActive: data.gameActive !== false,
-                                isYourTeamBatting: data.isYourTeamBatting !== false
-                            };
-                        });
+                        // Only use opponent's score if they're actually tracking (have plays)
+                        const opponentIsTracking = opponentGameState?.isTracking === true;
+                        setGameState(prev => ({
+                            inning: data.inning || 1,
+                            outs: data.outs || 0,
+                            bases: data.bases || { first: null, second: null, third: null },
+                            score: { 
+                                yourTeam: data.score || 0, 
+                                // Use opponent's real-time score only if they're tracking, else preserve local
+                                opponent: opponentIsTracking ? opponentGameState.score : prev.score.opponent 
+                            },
+                            currentBatter: data.currentBatter || 0,
+                            playHistory: data.plays || [],
+                            gameActive: data.gameActive !== false,
+                            isYourTeamBatting: data.isYourTeamBatting !== false
+                        }));
                         
                         // Reconstruct batting order from IDs
                         if (data.battingOrder && battingOrder.length > 0) {
@@ -685,16 +680,21 @@ useEffect(() => {
                         console.log('📥 Opponent game state updated');
                         
                         // The data IS the game state (not data.gameState)
+                        // Only include score if opponent is actually tracking (has plays)
+                        // This prevents overriding our manual score tracking with a default 0
+                        const isOpponentTracking = data.plays && data.plays.length > 0;
                         const mappedOpponentState = {
-                            score: data.score || 0,
+                            score: isOpponentTracking ? (data.score || 0) : undefined,
                             inning: data.inning || 1,
-                            outs: data.outs || 0
+                            outs: data.outs || 0,
+                            playHistory: data.plays || [],
+                            isTracking: isOpponentTracking
                         };
                         
                         setOpponentGameState(mappedOpponentState);
                         
-                        // Show score change notification
-                        if (data.score !== opponentGameState?.score) {
+                        // Show score change notification only if opponent is actually tracking
+                        if (isOpponentTracking && data.score !== opponentGameState?.score) {
                             const opponentScore = data.score || 0;
                             const yourScore = gameState.score.yourTeam;
                             addNotification({
@@ -716,10 +716,8 @@ useEffect(() => {
                     // Update opponent score from metadata
                     // If we're home, opponent is away; if we're away, opponent is home
                     const opponentScoreFromMetadata = isHomeTeam ? data.awayScore : data.homeScore;
-                    console.log('📊 Metadata subscription - isHomeTeam:', isHomeTeam, 'opponentScoreFromMetadata:', opponentScoreFromMetadata, 'data:', data);
                     if (opponentScoreFromMetadata !== undefined && opponentScoreFromMetadata !== null) {
                         setGameState(prev => {
-                            console.log('📊 Metadata updating opponent score - prev:', prev.score.opponent, 'new:', opponentScoreFromMetadata);
                             if (prev.score.opponent !== opponentScoreFromMetadata) {
                                 return {
                                     ...prev,
@@ -1318,11 +1316,9 @@ useEffect(() => {
             };
 
             const advanceToNextHalfInning = async () => {
-                console.log('🔄 advanceToNextHalfInning called - current opponent score:', gameState.score.opponent);
                 const newState = { ...gameState };
                 newState.outs = 0;
                 newState.bases = { first: null, second: null, third: null };
-                console.log('🔄 newState.score.opponent after spread:', newState.score.opponent);
                 
                 // Determine which team should bat next based on current state
                 let nextBattingTeam;
@@ -1348,18 +1344,21 @@ useEffect(() => {
                 
                 // Update local state
                 newState.inning = nextInning;
-                console.log('🔄 advanceToNextHalfInning - about to setGameState with opponent score:', newState.score.opponent);
                 setGameState(newState);
                 
                 // Update shared game metadata so both teams know who's batting
                 try {
+                    // Only use opponent's real-time score if they're actually tracking (have plays)
+                    // Otherwise use our manually-tracked opponent score
+                    const opponentIsTracking = opponentGameState?.isTracking === true;
+                    const opponentScore = opponentIsTracking ? opponentGameState.score : gameState.score.opponent;
+                    
                     await window.FirebaseGameTracker.updateGameMetadata(selectedGame.seasonId, selectedGame.id, {
                         inning: nextInning,
                         outs: 0,
                         currentBattingTeam: nextBattingTeam,
-                        // Use opponent's real-time score if they're tracking, otherwise use our local tracking
-                        homeScore: isHome ? gameState.score.yourTeam : (opponentGameState?.score ?? gameState.score.opponent),
-                        awayScore: !isHome ? gameState.score.yourTeam : (opponentGameState?.score ?? gameState.score.opponent)
+                        homeScore: isHome ? gameState.score.yourTeam : opponentScore,
+                        awayScore: !isHome ? gameState.score.yourTeam : opponentScore
                     });
                     console.log(`✅ Half-inning advanced: ${nextBattingTeam} now batting in inning ${nextInning}`);
                 } catch (error) {
