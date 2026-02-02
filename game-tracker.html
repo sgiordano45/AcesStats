@@ -290,6 +290,16 @@ function getOrdinalSuffix(num) {
                 if (play.runsScored > 0) {
                     stats.rbi += play.runsScored;
                 }
+                
+                // Count runs scored using runnersScored array
+                if (play.runnersScored && Array.isArray(play.runnersScored)) {
+                    play.runnersScored.forEach(runnerName => {
+                        const runnerId = battingOrder.find(p => p.name === runnerName)?.id;
+                        if (runnerId && playerStats[runnerId]) {
+                            playerStats[runnerId].runs++;
+                        }
+                    });
+                }
             });
             
             // Calculate derived stats
@@ -480,6 +490,7 @@ function getOrdinalSuffix(num) {
             const [tempScore, setTempScore] = useState(0);
             const [tempOuts, setTempOuts] = useState(0);
             const [draggedRunner, setDraggedRunner] = useState(null);
+            const [runnersScored, setRunnersScored] = useState([]);  // Track WHO scored on this play
 
 
 			const [opponentTeamId, setOpponentTeamId] = useState(null);
@@ -1104,25 +1115,30 @@ useEffect(() => {
                 const newBases = { ...gameState.bases };
                 let autoScore = 0;
                 let autoOuts = 0;
+                let scoredRunners = [];  // Track who scored
 
                 if (play.bases === 4) {
-                    if (newBases.third) autoScore++;
-                    if (newBases.second) autoScore++;
-                    if (newBases.first) autoScore++;
-                    autoScore++;
+                    // Home run - everyone scores
+                    if (newBases.third) { autoScore++; scoredRunners.push(newBases.third); }
+                    if (newBases.second) { autoScore++; scoredRunners.push(newBases.second); }
+                    if (newBases.first) { autoScore++; scoredRunners.push(newBases.first); }
+                    autoScore++;  // Batter scores
+                    scoredRunners.push(currentBatter.name);
                     newBases.first = null;
                     newBases.second = null;
                     newBases.third = null;
                 } else if (play.bases === 3) {
-                    if (newBases.third) autoScore++;
-                    if (newBases.second) autoScore++;
-                    if (newBases.first) autoScore++;
+                    // Triple - runners from all bases score
+                    if (newBases.third) { autoScore++; scoredRunners.push(newBases.third); }
+                    if (newBases.second) { autoScore++; scoredRunners.push(newBases.second); }
+                    if (newBases.first) { autoScore++; scoredRunners.push(newBases.first); }
                     newBases.third = currentBatter.name;
                     newBases.second = null;
                     newBases.first = null;
                 } else if (play.bases === 2) {
-                    if (newBases.third) autoScore++;
-                    if (newBases.second) autoScore++;
+                    // Double - runners from 2nd and 3rd score
+                    if (newBases.third) { autoScore++; scoredRunners.push(newBases.third); }
+                    if (newBases.second) { autoScore++; scoredRunners.push(newBases.second); }
                     newBases.third = newBases.first;
                     newBases.second = currentBatter.name;
                     newBases.first = null;
@@ -1133,7 +1149,9 @@ useEffect(() => {
                         if (newBases.first) {
                             if (newBases.second) {
                                 if (newBases.third) {
+                                    // Bases loaded walk - runner from 3rd scores
                                     autoScore++;
+                                    scoredRunners.push(newBases.third);
                                     newBases.third = newBases.second;
                                     newBases.second = newBases.first;
                                     newBases.first = currentBatter.name;
@@ -1152,6 +1170,7 @@ useEffect(() => {
                             newBases.first = currentBatter.name;
                         }
                     } else {
+                        // Single - runner from 3rd scores
                         const runnersToMove = [];
                         if (newBases.third) runnersToMove.push({ runner: newBases.third, from: 'third' });
                         if (newBases.second) runnersToMove.push({ runner: newBases.second, from: 'second' });
@@ -1164,6 +1183,7 @@ useEffect(() => {
                         runnersToMove.forEach(({runner, from}) => {
                             if (from === 'third') {
                                 autoScore++;
+                                scoredRunners.push(runner);
                             } else if (from === 'second') {
                                 newBases.third = runner;
                             } else if (from === 'first') {
@@ -1182,6 +1202,7 @@ useEffect(() => {
                 setTempBases(newBases);
                 setTempScore(autoScore);
                 setTempOuts(autoOuts);
+                setRunnersScored(scoredRunners);  // Initialize with auto-scored runners
                 setPendingPlay({ play, type: playType });
             };
 
@@ -1199,7 +1220,9 @@ useEffect(() => {
                     } else if (base === 'second') {
                         newBases.third = runner;
                     } else if (base === 'third') {
+                        // Runner scores - track them
                         setTempScore(tempScore + 1);
+                        setRunnersScored(prev => [...prev, runner]);
                     }
                 } else if (direction === 'back') {
                     if (base === 'second') {
@@ -1227,7 +1250,9 @@ useEffect(() => {
                 newBases[draggedRunner.base] = null;
 
                 if (targetBase === 'home') {
+                    // Runner scores - track them
                     setTempScore(tempScore + 1);
+                    setRunnersScored(prev => [...prev, draggedRunner.runner]);
                 } else {
                     newBases[targetBase] = draggedRunner.runner;
                 }
@@ -1262,6 +1287,7 @@ useEffect(() => {
                     basesBefore: { ...gameState.bases },
                     basesAfter: { ...tempBases },
                     runsScored: tempScore,
+                    runnersScored: [...runnersScored],  // Track WHO scored
                     timestamp: Date.now()
                 };
 
@@ -1275,6 +1301,7 @@ useEffect(() => {
                 setTempBases(null);
                 setTempScore(0);
                 setTempOuts(0);
+                setRunnersScored([]);  // Reset runners scored
             };
 
             const cancelPlay = () => {
@@ -1282,6 +1309,7 @@ useEffect(() => {
                 setTempBases(null);
                 setTempScore(0);
                 setTempOuts(0);
+                setRunnersScored([]);  // Reset runners scored
             };
 
             // Update opponent score manually (for when opponent team isn't tracking)
@@ -1787,26 +1815,25 @@ useEffect(() => {
                     }
                 });
                 
-                // Count runs scored by this player
+                // Count runs scored by this player using the explicit runnersScored array
                 gameState.playHistory.forEach(play => {
-                    if (play.basesAfter.first !== play.basesBefore.first && play.basesBefore.first === player.name) {
-                        // Player was on first and moved/scored
-                    }
-                    if (play.basesAfter.second !== play.basesBefore.second && play.basesBefore.second === player.name) {
-                        // Player was on second and moved/scored
-                    }
-                    if (play.basesAfter.third !== play.basesBefore.third && play.basesBefore.third === player.name) {
-                        // Player was on third and moved/scored
-                    }
-                    // Check if player scored (was on base before, not after, and runs were scored)
-                    if (play.runsScored > 0) {
-                        if (play.basesBefore.third === player.name && !play.basesAfter.third) runs++;
-                        if (play.basesBefore.second === player.name && !play.basesAfter.second && !play.basesAfter.third) runs++;
-                        if (play.basesBefore.first === player.name && !play.basesAfter.first && !play.basesAfter.second && !play.basesAfter.third) runs++;
-                    }
-                    // Home runs count as a run for the batter
-                    if (play.batter === player.name && play.playType === 'homerun') {
-                        runs++;
+                    // Use runnersScored array if available (new format)
+                    if (play.runnersScored && Array.isArray(play.runnersScored)) {
+                        if (play.runnersScored.includes(player.name)) {
+                            runs++;
+                        }
+                    } else {
+                        // Fallback for old plays without runnersScored array
+                        // Home runs count as a run for the batter
+                        if (play.batter === player.name && play.playType === 'homerun') {
+                            runs++;
+                        }
+                        // Try to infer from base changes (legacy logic)
+                        if (play.runsScored > 0) {
+                            if (play.basesBefore.third === player.name && !play.basesAfter.third) runs++;
+                            else if (play.basesBefore.second === player.name && !play.basesAfter.second && !play.basesAfter.third) runs++;
+                            else if (play.basesBefore.first === player.name && !play.basesAfter.first && !play.basesAfter.second && !play.basesAfter.third) runs++;
+                        }
                     }
                 });
                 
