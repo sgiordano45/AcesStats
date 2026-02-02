@@ -326,10 +326,20 @@ function getOrdinalSuffix(num) {
         }
 
         // Save game results to Firebase
-        async function saveGameResults(gameId, teamId, seasonId, gameState, battingOrder, isHome, opponentName) {
+        async function saveGameResults(gameId, teamId, seasonId, gameState, battingOrder, isHome, opponentName, removedPlayers = []) {
             try {
-                // Calculate batting stats
-                const battingStats = calculateBattingStats(gameState.playHistory, battingOrder);
+                // Combine current batting order with removed players for complete stats
+                const allPlayers = [...battingOrder, ...removedPlayers];
+                
+                // Calculate batting stats for all players who participated
+                const battingStats = calculateBattingStats(gameState.playHistory, allPlayers);
+                
+                // Mark which players left the game early
+                battingStats.forEach(stat => {
+                    if (removedPlayers.find(p => p.id === stat.playerId)) {
+                        stat.leftGameEarly = true;
+                    }
+                });
                 
                 // Save to gameResults collection
                 const resultsRef = doc(db, 'gameResults', `${gameId}_${teamId}`);
@@ -491,6 +501,7 @@ function getOrdinalSuffix(num) {
             const [tempOuts, setTempOuts] = useState(0);
             const [draggedRunner, setDraggedRunner] = useState(null);
             const [runnersScored, setRunnersScored] = useState([]);  // Track WHO scored on this play
+            const [removedPlayers, setRemovedPlayers] = useState([]);  // Track players who left the game mid-game
 
 
 			const [opponentTeamId, setOpponentTeamId] = useState(null);
@@ -1489,10 +1500,12 @@ useEffect(() => {
             };
 
             const endGame = async () => {
+                const totalPlayers = battingOrder.length + removedPlayers.length;
                 const confirmed = window.confirm(
                     'Are you sure you want to end the game?\n\n' +
                     `Final Score: ${selectedTeam} ${gameState.score.yourTeam} - ${opponentName} ${gameState.score.opponent}\n` +
-                    `Plays Recorded: ${gameState.playHistory.length}\n\n` +
+                    `Plays Recorded: ${gameState.playHistory.length}\n` +
+                    `Players: ${totalPlayers}${removedPlayers.length > 0 ? ` (${removedPlayers.length} left early)` : ''}\n\n` +
                     'This will save batting stats and clear the game tracker.'
                 );
                 
@@ -1505,7 +1518,8 @@ useEffect(() => {
                             gameState,
                             battingOrder,
                             isHome,
-                            opponentName
+                            opponentName,
+                            removedPlayers  // Include players who left the game
                         );
                         
                         if (result.success) {
@@ -1596,9 +1610,16 @@ useEffect(() => {
                     return;
                 }
                 
-                const playerName = battingOrder[index].name;
-                const confirmed = window.confirm(`Remove ${playerName} from the batting order?`);
+                const player = battingOrder[index];
+                const playerName = player.name;
+                const confirmed = window.confirm(
+                    `Remove ${playerName} from the batting order?\n\n` +
+                    `Their stats from this game will be preserved.`
+                );
                 if (!confirmed) return;
+                
+                // Add to removed players list (to preserve their stats)
+                setRemovedPlayers(prev => [...prev, player]);
                 
                 const newOrder = battingOrder.filter((_, i) => i !== index);
                 
@@ -1871,6 +1892,58 @@ useEffect(() => {
                     avg: atBats > 0 ? (hits / atBats).toFixed(3) : '.000'
                 };
             });
+
+            // Calculate stats for players who left the game
+            const removedPlayerStats = removedPlayers.map(player => {
+                const playerPlays = gameState.playHistory.filter(play => play.batter === player.name);
+                
+                let atBats = 0;
+                let hits = 0;
+                let runs = 0;
+                let walks = 0;
+                
+                playerPlays.forEach(play => {
+                    if (play.playType !== 'walk' && play.playType !== 'sacfly') {
+                        atBats++;
+                    }
+                    if (['single', 'double', 'triple', 'homerun'].includes(play.playType)) {
+                        hits++;
+                    }
+                    if (play.playType === 'walk') {
+                        walks++;
+                    }
+                });
+                
+                // Count runs scored by this player
+                gameState.playHistory.forEach(play => {
+                    if (play.runnersScored && Array.isArray(play.runnersScored)) {
+                        if (play.runnersScored.includes(player.name)) {
+                            runs++;
+                        }
+                    } else {
+                        if (play.batter === player.name && play.playType === 'homerun') {
+                            runs++;
+                        }
+                        if (play.runsScored > 0) {
+                            if (play.basesBefore.third === player.name && !play.basesAfter.third) runs++;
+                            else if (play.basesBefore.second === player.name && !play.basesAfter.second && !play.basesAfter.third) runs++;
+                            else if (play.basesBefore.first === player.name && !play.basesAfter.first && !play.basesAfter.second && !play.basesAfter.third) runs++;
+                        }
+                    }
+                });
+                
+                return {
+                    name: player.name,
+                    number: player.number,
+                    atBats,
+                    hits,
+                    runs,
+                    walks,
+                    avg: atBats > 0 ? (hits / atBats).toFixed(3) : '.000',
+                    leftGame: true  // Flag to indicate player left the game
+                };
+            });
+
 			// Notification Toast Component
 const NotificationToast = ({ notification, onDismiss }) => {
     return (
@@ -2574,6 +2647,47 @@ const ViewerOnlyMessage = () => {
                                 {editingLineup && availablePlayers.length === 0 && (
                                     <div className="mt-3 pt-3 border-t border-gray-200 text-xs text-gray-500 text-center">
                                         All rostered players are in lineup
+                                    </div>
+                                )}
+                                
+                                {/* Left Game Section - Show players who were removed */}
+                                {removedPlayerStats.length > 0 && (
+                                    <div className="mt-3 pt-3 border-t border-gray-200">
+                                        <div className="text-xs font-semibold text-gray-500 mb-2 flex items-center gap-1">
+                                            <span>🚑</span> Left Game ({removedPlayerStats.length})
+                                        </div>
+                                        <div className="space-y-2 max-h-40 overflow-y-auto">
+                                            {removedPlayerStats.map((stat, idx) => (
+                                                <div 
+                                                    key={stat.name}
+                                                    className="p-2 rounded-lg text-xs"
+                                                    style={{ background: '#fef3c7', border: '1px solid #fcd34d' }}
+                                                >
+                                                    <div className="flex items-center gap-1 mb-1">
+                                                        <span className="text-gray-500">#{stat.number}</span>
+                                                        <span className="font-semibold text-gray-700 truncate">{stat.name.split(' ').pop()}</span>
+                                                    </div>
+                                                    <div className="grid grid-cols-4 gap-1 text-center">
+                                                        <div>
+                                                            <div className="text-gray-500">AB</div>
+                                                            <div className="font-bold text-gray-700">{stat.atBats}</div>
+                                                        </div>
+                                                        <div>
+                                                            <div className="text-gray-500">H</div>
+                                                            <div className="font-bold text-gray-700">{stat.hits}</div>
+                                                        </div>
+                                                        <div>
+                                                            <div className="text-gray-500">R</div>
+                                                            <div className="font-bold text-gray-700">{stat.runs}</div>
+                                                        </div>
+                                                        <div>
+                                                            <div className="text-gray-500">BB</div>
+                                                            <div className="font-bold text-gray-700">{stat.walks}</div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
                                     </div>
                                 )}
                             </div>
