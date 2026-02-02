@@ -538,6 +538,8 @@ function getOrdinalSuffix(num) {
 			const [notifications, setNotifications] = useState([]);
 			const [editingLineup, setEditingLineup] = useState(false);
 			const [liveGames, setLiveGames] = useState({});  // Track which games have active trackers
+			const [spectatorMode, setSpectatorMode] = useState(false);  // Allow admins to view without editing
+			const [hasTrackPermission, setHasTrackPermission] = useState(false);  // Track if user CAN track (before spectator toggle)
 			
 			// Track whether the last state update came from Firebase to prevent save loops
 			const isUpdatingFromFirebase = useRef(false);
@@ -663,10 +665,12 @@ useEffect(() => {
             const profileResult = await window.FirebaseGameTracker.getUserProfile(currentUser.uid);
             const userProfile = profileResult.success ? profileResult.data : null;
             
-            // Check if user can track this team
+            // Check if user can track this team (base permission)
             const canTrack = window.FirebaseGameTracker.canUserTrackTeam(userProfile, selectedTeam);
-            setUserCanTrack(canTrack);
-            console.log('🔐 User can track:', canTrack);
+            setHasTrackPermission(canTrack);
+            // Only enable tracking if user has permission AND is not in spectator mode
+            setUserCanTrack(canTrack && !spectatorMode);
+            console.log('🔐 User can track:', canTrack, '| Spectator mode:', spectatorMode);
             
             // Determine opponent team
             const isHomeTeam = isHome;
@@ -858,6 +862,11 @@ useEffect(() => {
         }
     };
 }, [selectedGame, setupMode, selectedTeam, currentUser, isHome]);
+
+// Update userCanTrack when spectator mode is toggled
+useEffect(() => {
+    setUserCanTrack(hasTrackPermission && !spectatorMode);
+}, [hasTrackPermission, spectatorMode]);
 
             const loadInitialData = async () => {
                 try {
@@ -2317,6 +2326,35 @@ const ViewerOnlyMessage = () => {
                     {/* Presence Indicator */}
                     {presenceUsers.length > 0 && (
                         <PresenceIndicator presenceUsers={presenceUsers} />
+                    )}
+
+                    {/* Spectator Mode Toggle - Only for users who have permission to track */}
+                    {hasTrackPermission && (
+                        <div className="mb-4 flex justify-center">
+                            <button
+                                onClick={() => setSpectatorMode(!spectatorMode)}
+                                className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all"
+                                style={{
+                                    background: spectatorMode ? '#fef3c7' : '#e0f2fe',
+                                    color: spectatorMode ? '#92400e' : '#0369a1',
+                                    border: spectatorMode ? '2px solid #fcd34d' : '2px solid #7dd3fc'
+                                }}
+                            >
+                                {spectatorMode ? (
+                                    <>
+                                        <span>👁️</span>
+                                        <span>Spectator Mode ON</span>
+                                        <span className="text-xs opacity-75">(click to edit)</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <span>✏️</span>
+                                        <span>Editor Mode</span>
+                                        <span className="text-xs opacity-75">(click to spectate)</span>
+                                    </>
+                                )}
+                            </button>
+                        </div>
                     )}
 
                     {/* Viewer-Only Message */}
