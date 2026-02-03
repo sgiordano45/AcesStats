@@ -549,6 +549,7 @@ function getOrdinalSuffix(num) {
 			const [liveGames, setLiveGames] = useState({});  // Track which games have active trackers
 			const [spectatorMode, setSpectatorMode] = useState(false);  // Allow admins to view without editing
 			const [hasTrackPermission, setHasTrackPermission] = useState(false);  // Track if user CAN track (before spectator toggle)
+			const [canBootUsers, setCanBootUsers] = useState(false);  // Track if user can remove others from presence
 			
 			// Pitcher tracking state
 			const [opponentPlayers, setOpponentPlayers] = useState([]);  // Opponent roster for pitcher selection
@@ -567,6 +568,34 @@ function getOrdinalSuffix(num) {
                 setTimeout(() => {
                     setNotifications(prev => prev.filter(n => n.id !== notification.id));
                 }, 5000);
+            };
+
+            // Handler to boot/remove a user from presence
+            const handleBootUser = async (userId) => {
+                if (!selectedGame?.seasonId || !selectedGame?.id) {
+                    console.error('Cannot boot user - missing game info');
+                    return;
+                }
+                try {
+                    await window.FirebaseGameTracker.removePresence(
+                        selectedGame.seasonId,
+                        selectedGame.id,
+                        userId
+                    );
+                    addNotification({
+                        id: Date.now(),
+                        message: 'User removed from game tracker',
+                        type: 'info'
+                    });
+                    console.log('👢 Booted user:', userId);
+                } catch (error) {
+                    console.error('Error booting user:', error);
+                    addNotification({
+                        id: Date.now(),
+                        message: 'Failed to remove user',
+                        type: 'error'
+                    });
+                }
             };
 
             // Wait for Firebase to be ready, then load data
@@ -720,7 +749,17 @@ useEffect(() => {
             setHasTrackPermission(canTrack);
             // Only enable tracking if user has permission AND is not in spectator mode
             setUserCanTrack(canTrack && !spectatorMode);
-            console.log('🔐 User can track:', canTrack, '| Spectator mode:', spectatorMode);
+            
+            // Check if user can boot others (admins, league staff, scorekeepers)
+            const canBoot = userProfile && (
+                userProfile.isAdmin || 
+                userProfile.userType === 'league-staff' ||
+                userProfile.userRole === 'admin' ||
+                userProfile.userRole === 'staff' ||
+                userProfile.specialRoles?.scorekeeper === true
+            );
+            setCanBootUsers(canBoot);
+            console.log('🔐 User can track:', canTrack, '| Can boot:', canBoot, '| Spectator mode:', spectatorMode);
             
             // Determine opponent team
             const isHomeTeam = isHome;
@@ -2506,7 +2545,7 @@ const LiveScoreHeader = ({ gameMetadata, yourTeamName, opponentTeamName, isHome 
 };
 
 // Presence Indicator Component
-const PresenceIndicator = ({ presenceUsers, myUserId }) => {
+const PresenceIndicator = ({ presenceUsers, myUserId, canBoot, onBootUser }) => {
     if (!presenceUsers || presenceUsers.length === 0) return null;
     
     // Filter out current user and separate by role
@@ -2519,6 +2558,25 @@ const PresenceIndicator = ({ presenceUsers, myUserId }) => {
     
     if (otherUsers.length === 0 && !currentUserPresence) return null;
     
+    const renderUserWithBoot = (user, emoji) => (
+        <span key={user.userId} className="inline-flex items-center gap-1">
+            {user.userName || 'Unknown'}
+            {canBoot && (
+                <button
+                    onClick={() => {
+                        if (confirm(`Remove ${user.userName || 'this user'} from the game tracker?`)) {
+                            onBootUser(user.userId);
+                        }
+                    }}
+                    className="ml-1 text-xs text-red-500 hover:text-red-700 hover:bg-red-100 rounded px-1"
+                    title={`Remove ${user.userName || 'user'}`}
+                >
+                    ✕
+                </button>
+            )}
+        </span>
+    );
+    
     return (
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
             <div className="flex items-center gap-3">
@@ -2526,12 +2584,22 @@ const PresenceIndicator = ({ presenceUsers, myUserId }) => {
                 <div className="flex-1 text-sm">
                     {trackers.length > 0 && (
                         <div className="font-semibold text-blue-900">
-                            🎯 Also Tracking: {trackers.map(t => t.userName || 'Unknown').join(', ')}
+                            🎯 Also Tracking: {trackers.map((t, i) => (
+                                <React.Fragment key={t.userId}>
+                                    {i > 0 && ', '}
+                                    {renderUserWithBoot(t, '🎯')}
+                                </React.Fragment>
+                            ))}
                         </div>
                     )}
                     {viewers.length > 0 && (
                         <div className="text-blue-700">
-                            👁️ Watching: {viewers.map(v => v.userName || 'Unknown').join(', ')}
+                            👁️ Watching: {viewers.map((v, i) => (
+                                <React.Fragment key={v.userId}>
+                                    {i > 0 && ', '}
+                                    {renderUserWithBoot(v, '👁️')}
+                                </React.Fragment>
+                            ))}
                         </div>
                     )}
                     {otherUsers.length === 0 && currentUserPresence && (
@@ -3119,7 +3187,12 @@ const ViewerOnlyMessage = () => {
 
                     {/* Presence Indicator */}
                     {presenceUsers.length > 0 && (
-                        <PresenceIndicator presenceUsers={presenceUsers} myUserId={currentUser?.uid} />
+                        <PresenceIndicator 
+                                            presenceUsers={presenceUsers} 
+                                            myUserId={currentUser?.uid}
+                                            canBoot={canBootUsers}
+                                            onBootUser={handleBootUser}
+                                        />
                     )}
 
                     {/* Pitcher Bar - shows current pitchers */}
