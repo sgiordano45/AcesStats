@@ -759,6 +759,35 @@ useEffect(() => {
                 (data) => {
                     if (!data) return; // Guard against null data
                     
+                    // Check if game was cleared/reset by another user
+                    if (data.cleared === true) {
+                        console.log('🔄 Game was reset by another user');
+                        addNotification({
+                            id: Date.now(),
+                            message: 'Game was reset by another tracker',
+                            type: 'warning'
+                        });
+                        
+                        // Reset local state to defaults
+                        setGameState({
+                            inning: 1,
+                            outs: 0,
+                            bases: { first: null, second: null, third: null },
+                            score: { yourTeam: 0, opponent: 0 },
+                            currentBatter: 0,
+                            playHistory: [],
+                            gameActive: true,
+                            isYourTeamBatting: true
+                        });
+                        setPendingPlay(null);
+                        setTempBases(null);
+                        setTempScore(0);
+                        setTempOuts(0);
+                        setYourPitcher(null);
+                        setOpponentPitcher(null);
+                        return;
+                    }
+                    
                     // IMPORTANT: Only apply updates if there's REAL data from another user
                     // Don't overwrite our state with empty defaults when our team hasn't recorded plays yet
                     const hasRealData = data.plays && data.plays.length > 0;
@@ -861,6 +890,14 @@ useEffect(() => {
                 
                 // Update local state based on shared metadata
                 if (data) {
+                    // Check if metadata was just cleared/reset (has clearedAt and scores are 0)
+                    if (data.clearedAt && data.homeScore === 0 && data.awayScore === 0 && data.inning === 1) {
+                        console.log('🔄 Game metadata was reset');
+                        // Reset pitchers when metadata is cleared
+                        setYourPitcher(null);
+                        setOpponentPitcher(null);
+                    }
+                    
                     // Update opponent score from metadata
                     // If we're home, opponent is away; if we're away, opponent is home
                     const opponentScoreFromMetadata = isHomeTeam ? data.awayScore : data.homeScore;
@@ -897,28 +934,30 @@ useEffect(() => {
                         return changed ? newState : prev;
                     });
                     
-                    // Sync pitcher selections from metadata
-                    const myPitcherFromMetadata = isHomeTeam ? data.homePitcher : data.awayPitcher;
-                    const theirPitcherFromMetadata = isHomeTeam ? data.awayPitcher : data.homePitcher;
-                    
-                    if (myPitcherFromMetadata && myPitcherFromMetadata.id) {
-                        setYourPitcher(prev => {
-                            if (prev?.id !== myPitcherFromMetadata.id) {
-                                console.log(`⚾ Your pitcher synced: ${myPitcherFromMetadata.name}`);
-                                return myPitcherFromMetadata;
-                            }
-                            return prev;
-                        });
-                    }
-                    
-                    if (theirPitcherFromMetadata && theirPitcherFromMetadata.id) {
-                        setOpponentPitcher(prev => {
-                            if (prev?.id !== theirPitcherFromMetadata.id) {
-                                console.log(`⚾ Opponent pitcher synced: ${theirPitcherFromMetadata.name}`);
-                                return theirPitcherFromMetadata;
-                            }
-                            return prev;
-                        });
+                    // Sync pitcher selections from metadata (only if not cleared)
+                    if (!data.clearedAt) {
+                        const myPitcherFromMetadata = isHomeTeam ? data.homePitcher : data.awayPitcher;
+                        const theirPitcherFromMetadata = isHomeTeam ? data.awayPitcher : data.homePitcher;
+                        
+                        if (myPitcherFromMetadata && myPitcherFromMetadata.id) {
+                            setYourPitcher(prev => {
+                                if (prev?.id !== myPitcherFromMetadata.id) {
+                                    console.log(`⚾ Your pitcher synced: ${myPitcherFromMetadata.name}`);
+                                    return myPitcherFromMetadata;
+                                }
+                                return prev;
+                            });
+                        }
+                        
+                        if (theirPitcherFromMetadata && theirPitcherFromMetadata.id) {
+                            setOpponentPitcher(prev => {
+                                if (prev?.id !== theirPitcherFromMetadata.id) {
+                                    console.log(`⚾ Opponent pitcher synced: ${theirPitcherFromMetadata.name}`);
+                                    return theirPitcherFromMetadata;
+                                }
+                                return prev;
+                            });
+                        }
                     }
                 }
             });

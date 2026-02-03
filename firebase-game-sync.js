@@ -30,7 +30,7 @@ export function subscribeToGameMetadata(seasonId, gameId, callback) {
         return onSnapshot(metadataRef, 
             (snapshot) => {
                 if (snapshot.exists()) {
-                    console.log('ðŸ“Š Game metadata updated:', snapshot.data());
+                    console.log('[SYNC] Game metadata updated:', snapshot.data());
                     callback(snapshot.data());
                 } else {
                     // Initialize with default values
@@ -74,7 +74,7 @@ export function subscribeToPresence(seasonId, gameId, callback) {
                         ...doc.data()
                     });
                 });
-                console.log('ðŸ‘¥ Active trackers:', trackers.length);
+                console.log('[PRESENCE] Active trackers:', trackers.length);
                 callback(trackers);
             },
             (error) => {
@@ -104,7 +104,7 @@ export function subscribeToGameState(seasonId, gameId, teamId, callback) {
             (snapshot) => {
                 if (snapshot.exists()) {
                     const data = snapshot.data();
-                    console.log(`ðŸŸï¸ Game state updated for team ${teamId}:`, {
+                    console.log(`[SYNC] Game state updated for team ${teamId}:`, {
                         inning: data.inning,
                         atBats: data.atBats?.length || 0,
                         plays: data.plays?.length || 0
@@ -146,7 +146,7 @@ export async function updateGameMetadata(seasonId, gameId, metadata) {
             lastUpdated: serverTimestamp()
         }, { merge: true });
         
-        console.log('âœ… Game metadata updated:', metadata);
+        console.log('[SYNC] Game metadata updated:', metadata);
     } catch (error) {
         console.error('Error updating game metadata:', error);
         throw error;
@@ -170,7 +170,7 @@ export async function updateGameState(seasonId, gameId, teamId, gameState) {
             lastUpdated: serverTimestamp()
         });
         
-        console.log(`âœ… Game state saved for team ${teamId}`);
+        console.log(`[SYNC] Game state saved for team ${teamId}`);
     } catch (error) {
         console.error(`Error updating game state for team ${teamId}:`, error);
         throw error;
@@ -198,7 +198,7 @@ export async function updatePresence(seasonId, gameId, userId, teamId, userName,
             lastSeen: serverTimestamp()
         });
         
-        console.log(`✅ Presence updated for ${userName} (${role}) tracking ${teamId}`);
+        console.log(`[PRESENCE] Updated for ${userName} (${role}) tracking ${teamId}`);
     } catch (error) {
         console.error('Error updating presence:', error);
         throw error;
@@ -216,7 +216,7 @@ export async function removePresence(seasonId, gameId, userId) {
         const presenceRef = doc(db, 'seasons', seasonId, 'games', gameId, 'presence', userId);
         await deleteDoc(presenceRef);
         
-        console.log(`âœ… Presence removed for user ${userId}`);
+        console.log(`[PRESENCE] Removed for user ${userId}`);
     } catch (error) {
         console.error('Error removing presence:', error);
         throw error;
@@ -236,7 +236,8 @@ export function canUserTrackTeam(userProfile, teamId) {
     if (userProfile.isAdmin || 
         userProfile.userType === 'league-staff' ||
         userProfile.userRole === 'admin' ||
-        userProfile.userRole === 'staff') {
+        userProfile.userRole === 'staff' ||
+        userProfile.userRole === 'scorekeeper') {
         return true;
     }
     
@@ -292,7 +293,7 @@ export async function loadGameState(seasonId, gameId, teamId) {
         const snapshot = await getDoc(gameStateRef);
         
         if (snapshot.exists()) {
-            console.log(`✅ Loaded saved game state for team ${teamId}`);
+            console.log(`[SYNC] Loaded saved game state for team ${teamId}`);
             return snapshot.data();
         }
         
@@ -315,7 +316,7 @@ export async function loadGameMetadata(seasonId, gameId) {
         const snapshot = await getDoc(metadataRef);
         
         if (snapshot.exists()) {
-            console.log(`✅ Loaded game metadata for game ${gameId}`);
+            console.log(`[SYNC] Loaded game metadata for game ${gameId}`);
             return snapshot.data();
         }
         
@@ -341,7 +342,7 @@ export async function clearGameState(seasonId, gameId, teamId) {
             clearedAt: serverTimestamp()
         }, { merge: true });
         
-        console.log(`ðŸ—‘ï¸ Game state cleared for team ${teamId}`);
+        console.log(`[CLEAR] Game state cleared for team ${teamId}`);
     } catch (error) {
         console.error(`Error clearing game state for team ${teamId}:`, error);
         throw error;
@@ -367,7 +368,7 @@ export async function clearGameMetadata(seasonId, gameId) {
             clearedAt: serverTimestamp()
         });
         
-        console.log(`🗑️ Game metadata reset for game ${gameId}`);
+        console.log(`[CLEAR] Game metadata reset for game ${gameId}`);
     } catch (error) {
         console.error(`Error clearing game metadata:`, error);
         throw error;
@@ -391,7 +392,7 @@ export async function fullGameReset(seasonId, gameId, homeTeam, awayTeam) {
         // Clear shared metadata
         await clearGameMetadata(seasonId, gameId);
         
-        console.log(`🔄 Full game reset complete for ${homeTeam} vs ${awayTeam}`);
+        console.log(`[RESET] Full game reset complete for ${homeTeam} vs ${awayTeam}`);
         return { success: true };
     } catch (error) {
         console.error('Error in full game reset:', error);
