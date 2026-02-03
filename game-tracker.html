@@ -1192,8 +1192,21 @@ useEffect(() => {
                     selectedGame.seasonId
                 );
                 
-                // Check if there's a saved game (data is stored flat, not nested)
-                if (savedState && !savedState.cleared && (savedState.plays?.length > 0 || savedState.inning > 1)) {
+                // Also check metadata for stale data
+                const existingMeta = await window.FirebaseGameTracker.loadGameMetadataSync(
+                    selectedGame.seasonId,
+                    selectedGame.id
+                );
+                
+                // Check if there's a saved game with real progress (not cleared)
+                const hasRealSavedGame = savedState && !savedState.cleared && (savedState.plays?.length > 0 || savedState.inning > 1);
+                
+                // Check if metadata has stale data (scores > 0 or inning > 1 without clearedAt)
+                const hasStaleMetadata = existingMeta && !existingMeta.clearedAt && 
+                    (existingMeta.homeScore > 0 || existingMeta.awayScore > 0 || existingMeta.inning > 1);
+                
+                if (hasRealSavedGame) {
+                    // Game in progress - offer to resume
                     const resume = window.confirm(
                         '📂 A game in progress was found.\n\n' +
                         `Inning: ${savedState.inning || 1}\n` +
@@ -1258,6 +1271,24 @@ useEffect(() => {
                             console.error('❌ Error clearing metadata:', metaError);
                         }
                     }
+                } else if (hasStaleMetadata) {
+                    // Game state was cleared but metadata still has old data - clean it up
+                    console.log('🧹 Found stale metadata (gameState cleared but metadata has old scores) - cleaning up...');
+                    try {
+                        await window.FirebaseGameTracker.clearGameMetadata(
+                            selectedGame.seasonId,
+                            selectedGame.id
+                        );
+                        console.log('✅ Stale metadata cleared');
+                    } catch (metaError) {
+                        console.error('❌ Error clearing stale metadata:', metaError);
+                    }
+                }
+                
+                // Flag to track if we should skip joining (we just cleared data)
+                const shouldStartFresh = hasStaleMetadata || (savedState && savedState.cleared);
+                if (shouldStartFresh) {
+                    console.log('🆕 Starting fresh game (previous data was cleared)');
                 }
                 
                 try {
@@ -1295,9 +1326,10 @@ useEffect(() => {
                         selectedGame.id
                     );
                     
-                    // Check if metadata exists and hasn't just been cleared
-                    // Also skip if inning is 1 and scores are 0 (fresh game state)
-                    const hasRealGameData = existingMetadata && 
+                    // Check if metadata exists with real progress
+                    // Skip if: we just cleared data, OR metadata was just cleared, OR it's fresh state
+                    const hasRealGameData = !shouldStartFresh && 
+                        existingMetadata && 
                         existingMetadata.inning !== undefined && 
                         !existingMetadata.clearedAt &&  // Skip if just cleared
                         (existingMetadata.inning > 1 || existingMetadata.homeScore > 0 || existingMetadata.awayScore > 0);
