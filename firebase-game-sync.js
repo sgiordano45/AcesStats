@@ -237,7 +237,8 @@ export function canUserTrackTeam(userProfile, teamId) {
         userProfile.userType === 'league-staff' ||
         userProfile.userRole === 'admin' ||
         userProfile.userRole === 'staff' ||
-        userProfile.userRole === 'scorekeeper') {
+        userProfile.userRole === 'scorekeeper' ||
+        userProfile.specialRoles?.scorekeeper === true) {
         return true;
     }
     
