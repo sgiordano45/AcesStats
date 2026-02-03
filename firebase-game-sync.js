@@ -333,7 +333,7 @@ export async function loadGameMetadata(seasonId, gameId) {
  * @param {string} gameId - Game ID
  * @param {string} teamId - Team ID
  */
-export async function clearGameState(seasonId, gameId, teamId) {
+export async function clearGameState(seasonId, gameId, teamId, clearedBy = null) {
     try {
         const gameStateRef = doc(db, 'seasons', seasonId, 'games', gameId, 'gameState', teamId);
         
@@ -349,7 +349,11 @@ export async function clearGameState(seasonId, gameId, teamId) {
             battingOrder: [],
             gameActive: true,
             cleared: true,
-            clearedAt: serverTimestamp()
+            clearedAt: serverTimestamp(),
+            metadata: clearedBy ? {
+                lastUpdatedBy: clearedBy.id,
+                lastUpdatedByName: clearedBy.name
+            } : null
         });
         
         console.log(`[CLEAR] Game state cleared for team ${teamId}`);
@@ -368,14 +372,17 @@ export async function clearGameMetadata(seasonId, gameId) {
     try {
         const metadataRef = doc(db, 'seasons', seasonId, 'games', gameId, 'metadata', 'current');
         
+        // Reset to fresh game state (no clearedAt flag - it persists and causes issues)
         await setDoc(metadataRef, {
             inning: 1,
+            outs: 0,
             halfInning: 'top',
             homeScore: 0,
             awayScore: 0,
             homePitcher: null,
             awayPitcher: null,
-            clearedAt: serverTimestamp()
+            currentBattingTeam: null,
+            lastUpdated: serverTimestamp()
         });
         
         console.log(`[CLEAR] Game metadata reset for game ${gameId}`);

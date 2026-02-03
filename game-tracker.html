@@ -759,33 +759,9 @@ useEffect(() => {
                 (data) => {
                     if (!data) return; // Guard against null data
                     
-                    // Check if game was cleared/reset by another user
-                    if (data.cleared === true) {
-                        console.log('🔄 Game was reset by another user');
-                        addNotification({
-                            id: Date.now(),
-                            message: 'Game was reset by another tracker',
-                            type: 'warning'
-                        });
-                        
-                        // Reset local state to defaults
-                        setGameState({
-                            inning: 1,
-                            outs: 0,
-                            bases: { first: null, second: null, third: null },
-                            score: { yourTeam: 0, opponent: 0 },
-                            currentBatter: 0,
-                            playHistory: [],
-                            gameActive: true,
-                            isYourTeamBatting: true
-                        });
-                        setPendingPlay(null);
-                        setTempBases(null);
-                        setTempScore(0);
-                        setTempOuts(0);
-                        setYourPitcher(null);
-                        setOpponentPitcher(null);
-                        return;
+                    // Log if game appears to be in cleared state (for debugging)
+                    if (data.cleared === true && (!data.plays || data.plays.length === 0)) {
+                        console.log('ℹ️ Game state shows cleared flag (will be overwritten on next save)');
                     }
                     
                     // IMPORTANT: Only apply updates if there's REAL data from another user
@@ -890,14 +866,6 @@ useEffect(() => {
                 
                 // Update local state based on shared metadata
                 if (data) {
-                    // Check if metadata was just cleared/reset (has clearedAt and scores are 0)
-                    if (data.clearedAt && data.homeScore === 0 && data.awayScore === 0 && data.inning === 1) {
-                        console.log('🔄 Game metadata was reset');
-                        // Reset pitchers when metadata is cleared
-                        setYourPitcher(null);
-                        setOpponentPitcher(null);
-                    }
-                    
                     // Update opponent score from metadata
                     // If we're home, opponent is away; if we're away, opponent is home
                     const opponentScoreFromMetadata = isHomeTeam ? data.awayScore : data.homeScore;
@@ -934,30 +902,28 @@ useEffect(() => {
                         return changed ? newState : prev;
                     });
                     
-                    // Sync pitcher selections from metadata (only if not cleared)
-                    if (!data.clearedAt) {
-                        const myPitcherFromMetadata = isHomeTeam ? data.homePitcher : data.awayPitcher;
-                        const theirPitcherFromMetadata = isHomeTeam ? data.awayPitcher : data.homePitcher;
-                        
-                        if (myPitcherFromMetadata && myPitcherFromMetadata.id) {
-                            setYourPitcher(prev => {
-                                if (prev?.id !== myPitcherFromMetadata.id) {
-                                    console.log(`⚾ Your pitcher synced: ${myPitcherFromMetadata.name}`);
-                                    return myPitcherFromMetadata;
-                                }
-                                return prev;
-                            });
-                        }
-                        
-                        if (theirPitcherFromMetadata && theirPitcherFromMetadata.id) {
-                            setOpponentPitcher(prev => {
-                                if (prev?.id !== theirPitcherFromMetadata.id) {
-                                    console.log(`⚾ Opponent pitcher synced: ${theirPitcherFromMetadata.name}`);
-                                    return theirPitcherFromMetadata;
-                                }
-                                return prev;
-                            });
-                        }
+                    // Always sync pitcher selections from metadata if they exist
+                    const myPitcherFromMetadata = isHomeTeam ? data.homePitcher : data.awayPitcher;
+                    const theirPitcherFromMetadata = isHomeTeam ? data.awayPitcher : data.homePitcher;
+                    
+                    if (myPitcherFromMetadata && myPitcherFromMetadata.id) {
+                        setYourPitcher(prev => {
+                            if (prev?.id !== myPitcherFromMetadata.id) {
+                                console.log(`⚾ Your pitcher synced: ${myPitcherFromMetadata.name}`);
+                                return myPitcherFromMetadata;
+                            }
+                            return prev;
+                        });
+                    }
+                    
+                    if (theirPitcherFromMetadata && theirPitcherFromMetadata.id) {
+                        setOpponentPitcher(prev => {
+                            if (prev?.id !== theirPitcherFromMetadata.id) {
+                                console.log(`⚾ Opponent pitcher synced: ${theirPitcherFromMetadata.name}`);
+                                return theirPitcherFromMetadata;
+                            }
+                            return prev;
+                        });
                     }
                 }
             });
@@ -1201,8 +1167,9 @@ useEffect(() => {
                 // Check if there's a saved game with real progress (not cleared)
                 const hasRealSavedGame = savedState && !savedState.cleared && (savedState.plays?.length > 0 || savedState.inning > 1);
                 
-                // Check if metadata has stale data (scores > 0 or inning > 1 without clearedAt)
-                const hasStaleMetadata = existingMeta && !existingMeta.clearedAt && 
+                // Check if metadata has stale data (scores > 0 but our game was cleared)
+                // This happens when game was cleared but metadata wasn't properly reset
+                const hasStaleMetadata = savedState?.cleared && existingMeta && 
                     (existingMeta.homeScore > 0 || existingMeta.awayScore > 0 || existingMeta.inning > 1);
                 
                 if (hasRealSavedGame) {
@@ -1327,11 +1294,10 @@ useEffect(() => {
                     );
                     
                     // Check if metadata exists with real progress
-                    // Skip if: we just cleared data, OR metadata was just cleared, OR it's fresh state
+                    // Skip if: we just cleared data, OR it's fresh state (inning 1, no scores)
                     const hasRealGameData = !shouldStartFresh && 
                         existingMetadata && 
                         existingMetadata.inning !== undefined && 
-                        !existingMetadata.clearedAt &&  // Skip if just cleared
                         (existingMetadata.inning > 1 || existingMetadata.homeScore > 0 || existingMetadata.awayScore > 0);
                     
                     if (hasRealGameData) {
