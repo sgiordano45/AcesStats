@@ -337,10 +337,20 @@ export async function clearGameState(seasonId, gameId, teamId) {
     try {
         const gameStateRef = doc(db, 'seasons', seasonId, 'games', gameId, 'gameState', teamId);
         
+        // Replace entire document (not merge) to fully reset
         await setDoc(gameStateRef, {
+            teamId,
+            inning: 1,
+            outs: 0,
+            score: 0,
+            bases: { first: null, second: null, third: null },
+            currentBatter: 0,
+            plays: [],
+            battingOrder: [],
+            gameActive: true,
             cleared: true,
             clearedAt: serverTimestamp()
-        }, { merge: true });
+        });
         
         console.log(`[CLEAR] Game state cleared for team ${teamId}`);
     } catch (error) {

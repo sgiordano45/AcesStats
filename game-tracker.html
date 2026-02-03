@@ -1195,12 +1195,13 @@ useEffect(() => {
                 // Check if there's a saved game (data is stored flat, not nested)
                 if (savedState && !savedState.cleared && (savedState.plays?.length > 0 || savedState.inning > 1)) {
                     const resume = window.confirm(
-                        'A game in progress was found. Do you want to resume where you left off?\n\n' +
+                        '📂 A game in progress was found.\n\n' +
                         `Inning: ${savedState.inning || 1}\n` +
                         `Outs: ${savedState.outs || 0}\n` +
                         `Score: ${savedState.score || 0}\n` +
                         `Plays recorded: ${savedState.plays?.length || 0}\n\n` +
-                        'Click OK to resume, or Cancel to start a new game.'
+                        '• OK = Resume where you left off\n' +
+                        '• Cancel = Start fresh (resets game for ALL trackers)'
                     );
                     
                     if (resume) {
@@ -1236,11 +1237,26 @@ useEffect(() => {
                         console.log('✅ Resumed game from saved state:', restoredGameState);
                         return;
                     } else {
+                        // User wants to start fresh - clear both game state AND metadata
+                        console.log('🔄 User chose fresh start - clearing all data...');
+                        
                         await window.FirebaseGameTracker.clearGameState(
                             selectedGame.id,
                             selectedTeam,
                             selectedGame.seasonId
                         );
+                        
+                        // Also clear the shared metadata to reset inning/score
+                        console.log('🔄 Clearing game metadata...');
+                        try {
+                            await window.FirebaseGameTracker.clearGameMetadata(
+                                selectedGame.seasonId,
+                                selectedGame.id
+                            );
+                            console.log('✅ Game state and metadata cleared for fresh start');
+                        } catch (metaError) {
+                            console.error('❌ Error clearing metadata:', metaError);
+                        }
                     }
                 }
                 
@@ -1279,8 +1295,15 @@ useEffect(() => {
                         selectedGame.id
                     );
                     
-                    if (existingMetadata && existingMetadata.inning !== undefined) {
-                        // Metadata exists - join the existing game instead of resetting
+                    // Check if metadata exists and hasn't just been cleared
+                    // Also skip if inning is 1 and scores are 0 (fresh game state)
+                    const hasRealGameData = existingMetadata && 
+                        existingMetadata.inning !== undefined && 
+                        !existingMetadata.clearedAt &&  // Skip if just cleared
+                        (existingMetadata.inning > 1 || existingMetadata.homeScore > 0 || existingMetadata.awayScore > 0);
+                    
+                    if (hasRealGameData) {
+                        // Metadata exists with real progress - join the existing game
                         console.log(`✅ Joining existing game: inning ${existingMetadata.inning}, ${existingMetadata.currentBattingTeam} batting`);
                         
                         // Determine if our team should be batting based on existing metadata
