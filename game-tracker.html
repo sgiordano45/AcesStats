@@ -655,6 +655,40 @@ useEffect(() => {
     }
 }, [gameState, setupMode, selectedGame, selectedTeam, battingOrder, currentUser]);
 
+// Load opponent team's roster for pitcher selection
+const loadOpponentRoster = async (opponentTeam) => {
+    if (!currentSeason || !opponentTeam) return [];
+    
+    try {
+        console.log('📄 Loading opponent roster for:', opponentTeam);
+        
+        const seasonPlayers = await window.FirebaseGameTracker.getSeasonPlayerStatsOptimized(
+            currentSeason.id
+        );
+        
+        const oppPlayers = seasonPlayers.filter(p => 
+            p.team?.toLowerCase() === opponentTeam.toLowerCase() && !p.migrated
+        );
+        
+        const formattedOppPlayers = oppPlayers.map((player, index) => {
+            const name = player.name || player.playerName;
+            return {
+                id: player.playerId || player.id,
+                name,
+                number: player.number || (index + 1).toString()
+            };
+        });
+        
+        setOpponentPlayers(formattedOppPlayers);
+        console.log('✅ Opponent roster loaded:', formattedOppPlayers.length, 'players');
+        return formattedOppPlayers;
+        
+    } catch (error) {
+        console.error('❌ Error loading opponent roster:', error);
+        return [];
+    }
+};
+
 useEffect(() => {
     let unsubscribeYourTeam = null;
     let unsubscribeOpponent = null;
@@ -690,6 +724,9 @@ useEffect(() => {
             setOpponentTeamId(opponentId);
             setOpponentTeamName(opponentName);
             console.log('🏟️ My team:', myTeamId, 'vs Opponent:', opponentId);
+            
+            // Load opponent roster for pitcher selection (do this early so it's ready)
+            loadOpponentRoster(opponentName);
             
             // Get seasonId for all subsequent calls
             const seasonId = selectedGame.seasonId;
@@ -1044,40 +1081,6 @@ useEffect(() => {
                     
                 } catch (error) {
                     console.error('❌ Error loading team data:', error);
-                }
-            };
-
-            // Load opponent team's roster for pitcher selection
-            const loadOpponentRoster = async (opponentTeam) => {
-                if (!currentSeason || !opponentTeam) return [];
-                
-                try {
-                    console.log('📄 Loading opponent roster for:', opponentTeam);
-                    
-                    const seasonPlayers = await window.FirebaseGameTracker.getSeasonPlayerStatsOptimized(
-                        currentSeason.id
-                    );
-                    
-                    const oppPlayers = seasonPlayers.filter(p => 
-                        p.team?.toLowerCase() === opponentTeam.toLowerCase() && !p.migrated
-                    );
-                    
-                    const formattedOppPlayers = oppPlayers.map((player, index) => {
-                        const name = player.name || player.playerName;
-                        return {
-                            id: player.playerId || player.id,
-                            name,
-                            number: player.number || (index + 1).toString()
-                        };
-                    });
-                    
-                    setOpponentPlayers(formattedOppPlayers);
-                    console.log('✅ Opponent roster loaded:', formattedOppPlayers.length, 'players');
-                    return formattedOppPlayers;
-                    
-                } catch (error) {
-                    console.error('❌ Error loading opponent roster:', error);
-                    return [];
                 }
             };
 
