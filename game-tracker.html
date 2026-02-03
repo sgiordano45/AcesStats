@@ -843,6 +843,8 @@ useEffect(() => {
                             score: isOpponentTracking ? (data.score || 0) : undefined,
                             inning: data.inning || 1,
                             outs: data.outs || 0,
+                            bases: data.bases || { first: null, second: null, third: null },
+                            currentBatter: data.currentBatter || 0,
                             playHistory: data.plays || [],
                             isTracking: isOpponentTracking
                         };
@@ -2950,6 +2952,92 @@ const MergedPlayByPlay = ({ yourPlays, opponentPlays, yourTeamName, opponentName
     );
 };
 
+// Read-Only Diamond Component for viewing opponent's base runners
+const ReadOnlyDiamond = ({ bases, teamName, outs = 0 }) => {
+    // bases should be { first: "Player Name" or null, second: ..., third: ... }
+    const hasRunners = bases && (bases.first || bases.second || bases.third);
+    
+    return (
+        <div className="w-full max-w-sm mx-auto bg-green-800 rounded-xl p-6">
+            <div className="text-center text-white font-bold mb-2 text-lg">
+                {teamName} Base Runners
+            </div>
+            <svg viewBox="0 0 400 400" className="w-full h-auto">
+                {/* Diamond shape */}
+                <polygon 
+                    points="200,80 320,200 200,320 80,200" 
+                    fill="#8b4513"
+                    stroke="#fff"
+                    strokeWidth="3"
+                />
+                
+                {/* Home plate */}
+                <circle cx="200" cy="320" r="25" fill="#fff" />
+                <text x="200" y="365" textAnchor="middle" fill="#fff" fontSize="14" fontWeight="bold">
+                    HOME
+                </text>
+
+                {/* Bases */}
+                {['first', 'second', 'third'].map((base) => {
+                    const positions = {
+                        first: { cx: 320, cy: 200, labelY: 165 },
+                        second: { cx: 200, cy: 80, labelY: 45 },
+                        third: { cx: 80, cy: 200, labelY: 165 }
+                    };
+                    const pos = positions[base];
+                    const baseLabel = base === 'first' ? '1B' : base === 'second' ? '2B' : '3B';
+                    const runner = bases ? bases[base] : null;
+
+                    return (
+                        <g key={base}>
+                            <circle 
+                                cx={pos.cx} 
+                                cy={pos.cy} 
+                                r="32" 
+                                fill={runner ? '#fbbf24' : '#fff'} 
+                                stroke="#000"
+                                strokeWidth="2"
+                            />
+                            <text x={pos.cx} y={pos.labelY} textAnchor="middle" fill="#fff" fontSize="12" fontWeight="bold">
+                                {baseLabel}
+                            </text>
+                            {runner && (
+                                <text 
+                                    x={pos.cx} 
+                                    y={pos.cy + 5} 
+                                    textAnchor="middle" 
+                                    fill="#000" 
+                                    fontSize="11" 
+                                    fontWeight="bold"
+                                >
+                                    {runner.split(' ').pop()}
+                                </text>
+                            )}
+                        </g>
+                    );
+                })}
+            </svg>
+            
+            {/* Outs indicator */}
+            <div className="flex justify-center gap-2 mt-2">
+                <span className="text-white text-sm font-medium">Outs:</span>
+                {[0, 1, 2].map(i => (
+                    <div 
+                        key={i}
+                        className={`w-5 h-5 rounded-full border-2 border-white ${i < outs ? 'bg-red-500' : 'bg-transparent'}`}
+                    />
+                ))}
+            </div>
+            
+            {!hasRunners && (
+                <div className="text-center text-green-200 text-sm mt-2 italic">
+                    Bases empty
+                </div>
+            )}
+        </div>
+    );
+};
+
 // Viewer-Only Message Component
 const ViewerOnlyMessage = () => {
     return (
@@ -3181,17 +3269,32 @@ const ViewerOnlyMessage = () => {
                     )}
 
                     {!gameState.isYourTeamBatting && !inningOver && (
-                        <div className="rounded-xl p-6 mb-5 text-center" style={{ background: '#f0fdf4', border: '2px solid #86efac' }}>
-                            <div className="text-xl font-bold mb-2" style={{ color: '#166534' }}>
+                        <div className="rounded-xl p-6 mb-5" style={{ background: '#f0fdf4', border: '2px solid #86efac' }}>
+                            <div className="text-xl font-bold mb-2 text-center" style={{ color: '#166534' }}>
                                 {opponentName} is Batting
                             </div>
-                            <div className="text-base mb-4" style={{ color: '#15803d' }}>
-                                Track their runs below, then click "Back at Bat" after 3 outs
-                            </div>
+                            
+                            {/* Show opponent's diamond if they're tracking (have base data) */}
+                            {opponentGameState?.isTracking ? (
+                                <div className="mb-4">
+                                    <ReadOnlyDiamond 
+                                        bases={opponentGameState.bases}
+                                        teamName={opponentName}
+                                        outs={opponentGameState.outs || 0}
+                                    />
+                                </div>
+                            ) : (
+                                <div className="text-base mb-4 text-center" style={{ color: '#15803d' }}>
+                                    {userCanTrack 
+                                        ? "Track their runs below, then click \"Back at Bat\" after 3 outs"
+                                        : `Waiting for ${opponentName}'s tracker to record at-bats...`
+                                    }
+                                </div>
+                            )}
                             
                             {userCanTrack && (
-                                <div className="bg-white rounded-xl p-4 mb-4 inline-block">
-                                    <div className="text-sm text-gray-600 mb-2">{opponentName} Runs</div>
+                                <div className="bg-white rounded-xl p-4 mb-4 mx-auto" style={{ maxWidth: '280px' }}>
+                                    <div className="text-sm text-gray-600 mb-2 text-center">{opponentName} Runs</div>
                                     <div className="flex items-center justify-center gap-4">
                                         <button
                                             onClick={() => updateOpponentScore(-1)}
@@ -3213,8 +3316,18 @@ const ViewerOnlyMessage = () => {
                                 </div>
                             )}
                             
+                            {/* Show score for viewers (no +/- buttons) */}
+                            {!userCanTrack && (
+                                <div className="bg-white rounded-xl p-4 mb-4 mx-auto" style={{ maxWidth: '200px' }}>
+                                    <div className="text-sm text-gray-600 mb-2 text-center">{opponentName} Score</div>
+                                    <div className="text-5xl font-bold text-center" style={{ color: '#166534' }}>
+                                        {gameState.score.opponent}
+                                    </div>
+                                </div>
+                            )}
+                            
                             {userCanTrack && (
-                                <div>
+                                <div className="text-center">
                                     <button
                                         onClick={advanceToNextHalfInning}
                                         className="px-6 py-4 sm:px-8 sm:py-3 text-lg font-bold border-none rounded-xl cursor-pointer text-white transition-all shadow-lg inline-flex items-center gap-2 hover:scale-105 active:scale-95"
