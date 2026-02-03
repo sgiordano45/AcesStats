@@ -2755,7 +2755,24 @@ const PitcherChangeConfirmation = ({ pending, onConfirm, onCancel }) => {
 };
 
 // Merged Play-by-Play Component
-const MergedPlayByPlay = ({ yourPlays, opponentPlays, yourTeamName, opponentName }) => {
+const MergedPlayByPlay = ({ yourPlays, opponentPlays, yourTeamName, opponentName, isHome }) => {
+    // Helper to format inning display
+    const formatInning = (play) => {
+        const inningNum = play.inning || 1;
+        const suffix = inningNum === 1 ? 'st' : inningNum === 2 ? 'nd' : inningNum === 3 ? 'rd' : 'th';
+        
+        // Determine half based on isYourTeam and whether you're home
+        // Home team bats in bottom, Away team bats in top
+        let half;
+        if (play.isYourTeam) {
+            half = isHome ? 'Bot' : 'Top';
+        } else {
+            half = isHome ? 'Top' : 'Bot';
+        }
+        
+        return `${half} ${inningNum}${suffix}`;
+    };
+    
     // Helper to determine if batter advanced beyond expected base
     const getAdvancementNote = (play) => {
         if (!play.basesAfter || !play.batter) return null;
@@ -2821,10 +2838,27 @@ const MergedPlayByPlay = ({ yourPlays, opponentPlays, yourTeamName, opponentName
         return combined.sort((a, b) => b.timestamp - a.timestamp);
     }, [yourPlays, opponentPlays, yourTeamName, opponentName]);
     
+    // Get team color for display
+    const getTeamColor = (teamName) => {
+        const colors = {
+            'White': { bg: 'bg-gray-100', border: 'border-gray-400', text: 'text-gray-800', emoji: '⚪' },
+            'Black': { bg: 'bg-gray-800', border: 'border-gray-900', text: 'text-white', emoji: '⚫' },
+            'Blue': { bg: 'bg-blue-100', border: 'border-blue-500', text: 'text-blue-800', emoji: '🔵' },
+            'Red': { bg: 'bg-red-100', border: 'border-red-500', text: 'text-red-800', emoji: '🔴' },
+            'Green': { bg: 'bg-green-100', border: 'border-green-500', text: 'text-green-800', emoji: '🟢' },
+            'Orange': { bg: 'bg-orange-100', border: 'border-orange-500', text: 'text-orange-800', emoji: '🟠' },
+            'Purple': { bg: 'bg-purple-100', border: 'border-purple-500', text: 'text-purple-800', emoji: '🟣' },
+            'Gold': { bg: 'bg-yellow-100', border: 'border-yellow-500', text: 'text-yellow-800', emoji: '🟡' },
+            'Silver': { bg: 'bg-slate-200', border: 'border-slate-400', text: 'text-slate-700', emoji: '🪙' },
+            'Carolina': { bg: 'bg-cyan-100', border: 'border-cyan-500', text: 'text-cyan-800', emoji: '🩵' }
+        };
+        return colors[teamName] || { bg: 'bg-gray-100', border: 'border-gray-400', text: 'text-gray-700', emoji: '⚾' };
+    };
+    
     return (
         <div className="bg-white border border-gray-200 rounded-xl p-5">
             <h2 className="text-xl font-bold mb-4">
-                Play-by-Play {opponentPlays && opponentPlays.length > 0 ? '(Both Teams)' : `(${yourTeamName} Only)`}
+                📜 Play-by-Play {opponentPlays && opponentPlays.length > 0 ? '(Both Teams)' : `(${yourTeamName} Only)`}
             </h2>
             <div className="max-h-80 overflow-y-auto">
                 {allPlays.length === 0 ? (
@@ -2833,6 +2867,8 @@ const MergedPlayByPlay = ({ yourPlays, opponentPlays, yourTeamName, opponentName
                     </div>
                 ) : (
                     allPlays.map((play, idx) => {
+                        const teamColor = getTeamColor(play.team);
+                        
                         // Handle pitching change records
                         if (play.type === 'pitching-change') {
                             return (
@@ -2840,20 +2876,24 @@ const MergedPlayByPlay = ({ yourPlays, opponentPlays, yourTeamName, opponentName
                                     key={`pitching-${play.timestamp}-${idx}`}
                                     className="p-3 border-b border-gray-100 bg-purple-50"
                                 >
-                                    <span className="font-bold" style={{ color: '#2d5016' }}>
-                                        {play.inning}
+                                    <span className="font-bold text-purple-700">
+                                        {formatInning(play)}
+                                    </span>
+                                    {' • '}
+                                    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold ${teamColor.bg} ${teamColor.text}`}>
+                                        {teamColor.emoji} {play.team}
                                     </span>
                                     {' • '}
                                     <span className="text-purple-700">
-                                        🔄 <span className="font-semibold">{play.team}</span> Pitching Change
+                                        🔄 Pitching Change
                                     </span>
-                                    {' • '}
+                                    {' → '}
                                     <span className="font-bold text-purple-900">
                                         {play.newPitcher?.name}
                                     </span>
                                     {play.oldPitcher && (
-                                        <span className="text-gray-500 ml-1">
-                                            replaces {play.oldPitcher.name}
+                                        <span className="text-gray-500 ml-1 text-sm">
+                                            (was {play.oldPitcher.name})
                                         </span>
                                     )}
                                 </div>
@@ -2865,16 +2905,18 @@ const MergedPlayByPlay = ({ yourPlays, opponentPlays, yourTeamName, opponentName
                         return (
                             <div 
                                 key={`${play.team}-${play.timestamp}-${idx}`}
-                                className={`p-3 border-b border-gray-100 ${
-                                    play.isYourTeam ? 'bg-green-50' : 'bg-gray-50'
+                                className={`p-3 border-b border-l-4 ${
+                                    play.isYourTeam 
+                                        ? 'bg-green-50 border-l-green-500' 
+                                        : 'bg-gray-50 border-l-gray-400'
                                 }`}
                             >
                                 <span className="font-bold" style={{ color: '#2d5016' }}>
-                                    {play.inning}
+                                    {formatInning(play)}
                                 </span>
                                 {' • '}
-                                <span className="font-semibold text-gray-700">
-                                    {play.team}
+                                <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold ${teamColor.bg} ${teamColor.text}`}>
+                                    {teamColor.emoji} {play.team}
                                 </span>
                                 {' • '}
                                 <span className="font-bold">{play.batter}</span>
@@ -3714,6 +3756,7 @@ const ViewerOnlyMessage = () => {
                         opponentPlays={opponentGameState?.playHistory || []}
                         yourTeamName={selectedTeam}
                         opponentName={opponentTeamName}
+                        isHome={isHome}
                     />
                 </div>
                 </>
