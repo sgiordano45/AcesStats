@@ -128,7 +128,9 @@
     subscribeToPresence,
     loadGameState as loadGameStateSync,
     clearGameState as clearGameStateSync,
-    loadGameMetadata as loadGameMetadataSync
+    loadGameMetadata as loadGameMetadataSync,
+    clearGameMetadata,
+    fullGameReset
 } from './firebase-game-sync.js';
 
 
@@ -420,7 +422,9 @@ function getOrdinalSuffix(num) {
             subscribeToPresence,
             loadGameStateSync,
             clearGameStateSync,
-            loadGameMetadataSync
+            loadGameMetadataSync,
+            clearGameMetadata,
+            fullGameReset
         };
 
         // Wait for auth state to be determined before signaling ready
@@ -736,13 +740,15 @@ useEffect(() => {
                 return;
             }
             
-            // Update presence
+            // Update presence with role
+            const role = spectatorMode ? 'viewer' : 'tracker';
             await window.FirebaseGameTracker.updatePresence(
                 seasonId,
                 selectedGame.id,
                 currentUser.uid,
                 myTeamId,
-                currentUser.displayName || 'Unknown'
+                currentUser.displayName || 'Unknown',
+                role
             );
             
             // Subscribe to YOUR team's game state
@@ -948,7 +954,20 @@ useEffect(() => {
 // Update userCanTrack when spectator mode is toggled
 useEffect(() => {
     setUserCanTrack(hasTrackPermission && !spectatorMode);
-}, [hasTrackPermission, spectatorMode]);
+    
+    // Update presence when spectator mode changes
+    if (selectedGame && selectedTeam && currentUser && selectedGame.seasonId && !setupMode) {
+        const role = spectatorMode ? 'viewer' : 'tracker';
+        window.FirebaseGameTracker.updatePresence(
+            selectedGame.seasonId,
+            selectedGame.id,
+            currentUser.uid,
+            selectedTeam,
+            currentUser.displayName || 'Unknown',
+            role
+        ).catch(err => console.warn('Could not update presence role:', err));
+    }
+}, [hasTrackPermission, spectatorMode, selectedGame, selectedTeam, currentUser, setupMode]);
 
             const loadInitialData = async () => {
                 try {
@@ -1800,12 +1819,19 @@ useEffect(() => {
             };
 
             const clearProgress = async () => {
+                // Check for other users
+                const otherUsers = presenceUsers.filter(u => u.userId !== currentUser?.uid);
+                const otherUserWarning = otherUsers.length > 0 
+                    ? `\n⚠️ WARNING: ${otherUsers.length} other user(s) are connected:\n${otherUsers.map(u => `  • ${u.userName}`).join('\n')}\n`
+                    : '';
+                
                 const confirmed = window.confirm(
                     '⚠️ Clear Game Progress?\n\n' +
                     'This will:\n' +
-                    '- Delete all saved progress for this game\n' +
-                    '- Reset to game setup screen\n' +
-                    '- NOT save any batting stats\n\n' +
+                    '- Delete all saved progress for YOUR TEAM\n' +
+                    '- Reset scores and inning to default\n' +
+                    '- NOT save any batting stats\n' +
+                    otherUserWarning + '\n' +
                     `Current Progress:\n` +
                     `- Inning: ${gameState.inning}\n` +
                     `- Score: ${gameState.score.yourTeam}-${gameState.score.opponent}\n` +
@@ -1814,31 +1840,45 @@ useEffect(() => {
                 );
                 
                 if (confirmed) {
-                    if (selectedGame && selectedTeam && selectedGame.seasonId) {
-                        await window.FirebaseGameTracker.clearGameState(
-                            selectedGame.id,
-                            selectedTeam,
-                            selectedGame.seasonId
-                        );
+                    try {
+                        if (selectedGame && selectedTeam && selectedGame.seasonId) {
+                            // Clear team's game state
+                            await window.FirebaseGameTracker.clearGameState(
+                                selectedGame.id,
+                                selectedTeam,
+                                selectedGame.seasonId
+                            );
+                            
+                            // Also reset the shared metadata
+                            await window.FirebaseGameTracker.clearGameMetadata(
+                                selectedGame.seasonId,
+                                selectedGame.id
+                            );
+                        }
+                        
+                        setSetupMode(true);
+                        setGameState({
+                            inning: 1,
+                            outs: 0,
+                            bases: { first: null, second: null, third: null },
+                            score: { yourTeam: 0, opponent: 0 },
+                            currentBatter: 0,
+                            playHistory: [],
+                            gameActive: true,
+                            isYourTeamBatting: true
+                        });
+                        setPendingPlay(null);
+                        setTempBases(null);
+                        setTempScore(0);
+                        setTempOuts(0);
+                        setYourPitcher(null);
+                        setOpponentPitcher(null);
+                        
+                        alert('✅ Game progress cleared. You can start fresh or choose a different game.');
+                    } catch (error) {
+                        console.error('Error clearing game:', error);
+                        alert('❌ Error clearing game. Please try again.');
                     }
-                    
-                    setSetupMode(true);
-                    setGameState({
-                        inning: 1,
-                        outs: 0,
-                        bases: { first: null, second: null, third: null },
-                        score: { yourTeam: 0, opponent: 0 },
-                        currentBatter: 0,
-                        playHistory: [],
-                        gameActive: true,
-                        isYourTeamBatting: true
-                    });
-                    setPendingPlay(null);
-                    setTempBases(null);
-                    setTempScore(0);
-                    setTempOuts(0);
-                    
-                    alert('✅ Game progress cleared. You can start fresh or choose a different game.');
                 }
             };
 
@@ -1879,12 +1919,24 @@ useEffect(() => {
                     setGameState({ ...gameState, gameActive: false });
                     
                     if (selectedGame && selectedTeam && selectedGame.seasonId) {
+                        // Clear team's game state
                         await window.FirebaseGameTracker.clearGameState(
                             selectedGame.id,
                             selectedTeam,
                             selectedGame.seasonId
                         );
+                        
+                        // Also clear shared metadata
+                        await window.FirebaseGameTracker.clearGameMetadata(
+                            selectedGame.seasonId,
+                            selectedGame.id
+                        );
                     }
+                    
+                    // Reset local state
+                    setYourPitcher(null);
+                    setOpponentPitcher(null);
+                    setSetupMode(true);
                 }
             };
 
@@ -2389,11 +2441,18 @@ const LiveScoreHeader = ({ gameMetadata, yourTeamName, opponentTeamName, isHome 
 };
 
 // Presence Indicator Component
-const PresenceIndicator = ({ presenceUsers }) => {
+const PresenceIndicator = ({ presenceUsers, myUserId }) => {
     if (!presenceUsers || presenceUsers.length === 0) return null;
     
-    const trackers = presenceUsers.filter(u => u.role === 'tracker');
-    const viewers = presenceUsers.filter(u => u.role === 'viewer');
+    // Filter out current user and separate by role
+    const otherUsers = presenceUsers.filter(u => u.userId !== myUserId);
+    const trackers = otherUsers.filter(u => u.role === 'tracker' || !u.role); // Default to tracker if no role
+    const viewers = otherUsers.filter(u => u.role === 'viewer');
+    
+    // Also show if user is a tracker
+    const currentUserPresence = presenceUsers.find(u => u.userId === myUserId);
+    
+    if (otherUsers.length === 0 && !currentUserPresence) return null;
     
     return (
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
@@ -2402,14 +2461,22 @@ const PresenceIndicator = ({ presenceUsers }) => {
                 <div className="flex-1 text-sm">
                     {trackers.length > 0 && (
                         <div className="font-semibold text-blue-900">
-                            Tracking: {trackers.map(t => t.userName).join(', ')}
+                            🎯 Also Tracking: {trackers.map(t => t.userName || 'Unknown').join(', ')}
                         </div>
                     )}
                     {viewers.length > 0 && (
                         <div className="text-blue-700">
-                            Watching: {viewers.map(v => v.userName).join(', ')}
+                            👁️ Watching: {viewers.map(v => v.userName || 'Unknown').join(', ')}
                         </div>
                     )}
+                    {otherUsers.length === 0 && currentUserPresence && (
+                        <div className="text-blue-700">
+                            You're the only one here
+                        </div>
+                    )}
+                    <div className="text-xs text-blue-500 mt-1">
+                        {presenceUsers.length} {presenceUsers.length === 1 ? 'person' : 'people'} connected
+                    </div>
                 </div>
             </div>
         </div>
@@ -2859,7 +2926,7 @@ const ViewerOnlyMessage = () => {
 
                     {/* Presence Indicator */}
                     {presenceUsers.length > 0 && (
-                        <PresenceIndicator presenceUsers={presenceUsers} />
+                        <PresenceIndicator presenceUsers={presenceUsers} myUserId={currentUser?.uid} />
                     )}
 
                     {/* Pitcher Bar - shows current pitchers */}
