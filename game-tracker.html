@@ -196,13 +196,16 @@ async function saveGameState(gameId, teamId, teamName, gameState, battingOrder, 
         try {
             // Determine home and away scores based on which team this is
             const isHome = gameObj ? (gameObj.homeTeam?.toLowerCase() === teamName.toLowerCase()) : false;
+            
+            // IMPORTANT: Only save OUR score - don't overwrite opponent's score
+            // The opponent will save their own score when they track
+            // Using merge:true means we only update the fields we specify
             await updateGameMetadata(seasonId, gameId, {
                 inning: gameState.inning,
                 outs: gameState.outs,
                 currentBattingTeam: gameState.isYourTeamBatting ? teamId : null,
-                // Preserve scores in metadata - use yourTeam for our side, opponent for their side
-                [isHome ? 'homeScore' : 'awayScore']: gameState.score.yourTeam,
-                [isHome ? 'awayScore' : 'homeScore']: gameState.score.opponent
+                // Only save our team's score
+                [isHome ? 'homeScore' : 'awayScore']: gameState.score.yourTeam
             });
         } catch (metadataError) {
             console.warn('Could not update game metadata:', metadataError);
