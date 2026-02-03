@@ -292,13 +292,36 @@ export async function loadGameState(seasonId, gameId, teamId) {
         const snapshot = await getDoc(gameStateRef);
         
         if (snapshot.exists()) {
-            console.log(`âœ… Loaded saved game state for team ${teamId}`);
+            console.log(`✅ Loaded saved game state for team ${teamId}`);
             return snapshot.data();
         }
         
         return null;
     } catch (error) {
         console.error(`Error loading game state for team ${teamId}:`, error);
+        return null;
+    }
+}
+
+/**
+ * Load game metadata (one-time fetch, not subscription)
+ * @param {string} seasonId - Season ID
+ * @param {string} gameId - Game ID
+ * @returns {object|null} Game metadata or null
+ */
+export async function loadGameMetadata(seasonId, gameId) {
+    try {
+        const metadataRef = doc(db, 'seasons', seasonId, 'games', gameId, 'metadata', 'current');
+        const snapshot = await getDoc(metadataRef);
+        
+        if (snapshot.exists()) {
+            console.log(`✅ Loaded game metadata for game ${gameId}`);
+            return snapshot.data();
+        }
+        
+        return null;
+    } catch (error) {
+        console.error(`Error loading game metadata:`, error);
         return null;
     }
 }
