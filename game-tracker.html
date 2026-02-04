@@ -945,24 +945,32 @@ useEffect(() => {
                             changed = true;
                         }
                         
-                        // ALWAYS sync inning from metadata (authoritative source)
+                        // Sync inning from metadata (authoritative source)
                         if (data.inning !== undefined && data.inning !== null && prev.inning !== data.inning) {
                             console.log(`🔄 Inning synced from metadata: ${data.inning}`);
                             newState.inning = data.inning;
                             changed = true;
                         }
                         
-                        // ALWAYS sync outs from metadata (authoritative source)
-                        if (data.outs !== undefined && data.outs !== null && prev.outs !== data.outs) {
-                            console.log(`🔄 Outs synced from metadata: ${data.outs}`);
+                        // Sync outs from metadata ONLY when opponent is batting
+                        // When WE are batting, our local outs is authoritative (we're tracking them)
+                        // This prevents race conditions where metadata overwrites our just-recorded outs
+                        const weAreBatting = shouldWeBeBatting === true || (shouldWeBeBatting === null && prev.isYourTeamBatting);
+                        if (!weAreBatting && data.outs !== undefined && data.outs !== null && prev.outs !== data.outs) {
+                            console.log(`🔄 Outs synced from metadata (opponent batting): ${data.outs}`);
                             newState.outs = data.outs;
                             changed = true;
                         }
                         
                         // Update batting state from metadata (AUTHORITATIVE)
+                        // When batting changes, also sync outs since it's a new half-inning
                         if (shouldWeBeBatting !== null && prev.isYourTeamBatting !== shouldWeBeBatting) {
                             console.log(`🔄 Batting changed: ${shouldWeBeBatting ? 'Your team' : 'Opponent'} now batting`);
                             newState.isYourTeamBatting = shouldWeBeBatting;
+                            // Sync outs on half-inning change (usually 0 for fresh half)
+                            if (data.outs !== undefined && data.outs !== null) {
+                                newState.outs = data.outs;
+                            }
                             changed = true;
                         }
                         
@@ -2229,7 +2237,7 @@ useEffect(() => {
 
             const displayBases = pendingPlay ? tempBases : gameState.bases;
             const displayScore = pendingPlay ? tempScore : 0;
-            const inningOver = (gameMetadata?.outs ?? gameState.outs) >= 3;
+            const inningOver = gameState.outs >= 3;
 
             if (loading) {
                 return (
@@ -3340,7 +3348,7 @@ const ViewerOnlyMessage = () => {
                         </div>
                         <div>
                             <div className="text-sm opacity-90">Outs</div>
-                            <div className="text-2xl font-bold">{gameMetadata?.outs ?? gameState.outs}</div>
+                            <div className="text-2xl font-bold">{gameState.outs}</div>
                         </div>
                         <div>
                             <div className="text-sm opacity-90">{selectedTeam}</div>
