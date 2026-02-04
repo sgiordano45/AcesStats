@@ -1331,25 +1331,34 @@ useEffect(() => {
                         console.log('✅ Resumed game from saved state:', restoredGameState);
                         return;
                     } else {
-                        // User wants to start fresh - clear both game state AND metadata
-                        console.log('🔄 User chose fresh start - clearing all data...');
+                        // User wants to start fresh - clear BOTH teams' game state AND metadata
+                        console.log('🔄 User chose fresh start - clearing all data for both teams...');
                         
-                        await window.FirebaseGameTracker.clearGameState(
-                            selectedGame.id,
-                            selectedTeam,
-                            selectedGame.seasonId
-                        );
+                        // Get opponent team ID
+                        const opponentId = isHome ? selectedGame.awayTeamId : selectedGame.homeTeamId;
                         
-                        // Also clear the shared metadata to reset inning/score
-                        console.log('🔄 Clearing game metadata...');
                         try {
+                            await window.FirebaseGameTracker.fullGameReset(
+                                selectedGame.seasonId,
+                                selectedGame.id,
+                                selectedGame.homeTeamId || selectedGame.homeTeam,
+                                selectedGame.awayTeamId || selectedGame.awayTeam
+                            );
+                            console.log('✅ Full game reset complete - both teams cleared');
+                            // Clear local opponent state immediately so UI updates
+                            setOpponentGameState(null);
+                        } catch (resetError) {
+                            console.error('❌ Error in full game reset, falling back to partial clear:', resetError);
+                            // Fallback to just clearing our team
+                            await window.FirebaseGameTracker.clearGameState(
+                                selectedGame.id,
+                                selectedTeam,
+                                selectedGame.seasonId
+                            );
                             await window.FirebaseGameTracker.clearGameMetadata(
                                 selectedGame.seasonId,
                                 selectedGame.id
                             );
-                            console.log('✅ Game state and metadata cleared for fresh start');
-                        } catch (metaError) {
-                            console.error('❌ Error clearing metadata:', metaError);
                         }
                     }
                 } else if (hasStaleMetadata) {
@@ -2008,7 +2017,7 @@ useEffect(() => {
                 const confirmed = window.confirm(
                     '⚠️ Clear Game Progress?\n\n' +
                     'This will:\n' +
-                    '- Delete all saved progress for YOUR TEAM\n' +
+                    '- Delete all saved progress for BOTH TEAMS\n' +
                     '- Reset scores and inning to default\n' +
                     '- NOT save any batting stats\n' +
                     otherUserWarning + '\n' +
@@ -2022,17 +2031,12 @@ useEffect(() => {
                 if (confirmed) {
                     try {
                         if (selectedGame && selectedTeam && selectedGame.seasonId) {
-                            // Clear team's game state
-                            await window.FirebaseGameTracker.clearGameState(
-                                selectedGame.id,
-                                selectedTeam,
-                                selectedGame.seasonId
-                            );
-                            
-                            // Also reset the shared metadata
-                            await window.FirebaseGameTracker.clearGameMetadata(
+                            // Full game reset - clears both teams and metadata
+                            await window.FirebaseGameTracker.fullGameReset(
                                 selectedGame.seasonId,
-                                selectedGame.id
+                                selectedGame.id,
+                                selectedGame.homeTeamId || selectedGame.homeTeam,
+                                selectedGame.awayTeamId || selectedGame.awayTeam
                             );
                         }
                         
@@ -2047,6 +2051,8 @@ useEffect(() => {
                             gameActive: true,
                             isYourTeamBatting: true
                         });
+                        // Also clear opponent game state locally
+                        setOpponentGameState(null);
                         setPendingPlay(null);
                         setTempBases(null);
                         setTempScore(0);
