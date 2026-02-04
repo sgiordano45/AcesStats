@@ -200,13 +200,20 @@ async function saveGameState(gameId, teamId, teamName, gameState, battingOrder, 
             // IMPORTANT: Only save OUR score - don't overwrite opponent's score
             // The opponent will save their own score when they track
             // Using merge:true means we only update the fields we specify
-            await updateGameMetadata(seasonId, gameId, {
+            const metadataUpdate = {
                 inning: gameState.inning,
-                outs: gameState.outs,
-                currentBattingTeam: gameState.isYourTeamBatting ? teamId : null,
                 // Only save our team's score
                 [isHome ? 'homeScore' : 'awayScore']: gameState.score.yourTeam
-            });
+            };
+            
+            // Only write outs and currentBattingTeam when YOUR team is batting
+            // This prevents overwriting opponent's data during their half-inning
+            if (gameState.isYourTeamBatting) {
+                metadataUpdate.outs = gameState.outs;
+                metadataUpdate.currentBattingTeam = teamId;
+            }
+            
+            await updateGameMetadata(seasonId, gameId, metadataUpdate);
         } catch (metadataError) {
             console.warn('Could not update game metadata:', metadataError);
         }
