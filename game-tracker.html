@@ -384,7 +384,7 @@ function getOrdinalSuffix(num) {
                         yourTeam: gameState.score.yourTeam,
                         opponent: gameState.score.opponent
                     },
-                    innings: gameState.inning,
+                    innings: gameMetadata?.inning || gameState.inning,
                     battingStats,
                     playByPlay: gameState.playHistory,
                     completedAt: serverTimestamp()
@@ -934,12 +934,24 @@ useEffect(() => {
                             changed = true;
                         }
                         
+                        // ALWAYS sync inning from metadata (authoritative source)
+                        if (data.inning !== undefined && data.inning !== null && prev.inning !== data.inning) {
+                            console.log(`🔄 Inning synced from metadata: ${data.inning}`);
+                            newState.inning = data.inning;
+                            changed = true;
+                        }
+                        
+                        // ALWAYS sync outs from metadata (authoritative source)
+                        if (data.outs !== undefined && data.outs !== null && prev.outs !== data.outs) {
+                            console.log(`🔄 Outs synced from metadata: ${data.outs}`);
+                            newState.outs = data.outs;
+                            changed = true;
+                        }
+                        
                         // Update batting state from metadata (AUTHORITATIVE)
                         if (shouldWeBeBatting !== null && prev.isYourTeamBatting !== shouldWeBeBatting) {
                             console.log(`🔄 Batting changed: ${shouldWeBeBatting ? 'Your team' : 'Opponent'} now batting`);
                             newState.isYourTeamBatting = shouldWeBeBatting;
-                            newState.inning = data.inning || prev.inning;
-                            newState.outs = data.outs ?? prev.outs;
                             changed = true;
                         }
                         
@@ -1446,13 +1458,16 @@ useEffect(() => {
             const initiatePlay = (playType) => {
                 const play = PLAY_TYPES.find(p => p.value === playType);
                 if (!play) return;
+                
+                // Use metadata inning as authoritative source for play tagging
+                const currentInning = gameMetadata?.inning || gameState.inning;
 
                 if (play.noAdjust) {
                     const newState = { ...gameState };
                     newState.outs += 1;
 
                     const playRecord = {
-                        inning: gameState.inning,
+                        inning: currentInning,
                         isYourTeam: gameState.isYourTeamBatting,
                         batter: currentBatter.name,
                         playType: play.value,
@@ -1657,11 +1672,14 @@ useEffect(() => {
 
                 const newState = { ...gameState };
                 const play = pendingPlay.play;
+                
+                // Use metadata inning as authoritative source for play tagging
+                const currentInning = gameMetadata?.inning || gameState.inning;
 
                 newState.outs += tempOuts;
 
                 const playRecord = {
-                    inning: gameState.inning,
+                    inning: currentInning,
                     isYourTeam: gameState.isYourTeamBatting,
                     batter: currentBatter.name,
                     playType: play.value,
@@ -1735,7 +1753,7 @@ useEffect(() => {
                     type: 'pitching-change',
                     team: teamName,
                     teamId: isYourTeam ? selectedTeam : opponentTeamId,
-                    inning: gameState.inning,
+                    inning: gameMetadata?.inning || gameState.inning,
                     halfInning: gameState.isYourTeamBatting ? 'bottom' : 'top',
                     oldPitcher: oldPitcher ? { id: oldPitcher.id, name: oldPitcher.name } : null,
                     newPitcher: { id: newPitcher.id, name: newPitcher.name },
@@ -1937,7 +1955,7 @@ useEffect(() => {
                     '- NOT save any batting stats\n' +
                     otherUserWarning + '\n' +
                     `Current Progress:\n` +
-                    `- Inning: ${gameState.inning}\n` +
+                    `- Inning: ${gameMetadata?.inning || gameState.inning}\n` +
                     `- Score: ${gameState.score.yourTeam}-${gameState.score.opponent}\n` +
                     `- Plays: ${gameState.playHistory.length}\n\n` +
                     'Are you sure you want to clear all progress?'
@@ -2051,7 +2069,7 @@ useEffect(() => {
                         '⚠️ Leave Game Tracker?\n\n' +
                         'Your progress is auto-saved and you can resume later.\n\n' +
                         `Current Progress:\n` +
-                        `- Inning: ${gameState.inning}\n` +
+                        `- Inning: ${gameMetadata?.inning || gameState.inning}\n` +
                         `- Score: ${selectedTeam} ${gameState.score.yourTeam} - ${opponentName} ${gameState.score.opponent}\n` +
                         `- Plays: ${gameState.playHistory.length}\n\n` +
                         'Go back to game selection?'
@@ -2147,7 +2165,7 @@ useEffect(() => {
 
             const displayBases = pendingPlay ? tempBases : gameState.bases;
             const displayScore = pendingPlay ? tempScore : 0;
-            const inningOver = gameState.outs >= 3;
+            const inningOver = (gameMetadata?.outs ?? gameState.outs) >= 3;
 
             if (loading) {
                 return (
@@ -3250,7 +3268,7 @@ const ViewerOnlyMessage = () => {
                         <div>
                             <div className="text-sm opacity-90">Inning</div>
                             <div className="text-2xl font-bold">
-                                {(isHome && !gameState.isYourTeamBatting) || (!isHome && gameState.isYourTeamBatting) ? '▲' : '▼'} {gameState.inning}
+                                {(isHome && !gameState.isYourTeamBatting) || (!isHome && gameState.isYourTeamBatting) ? '▲' : '▼'} {gameMetadata?.inning || gameState.inning}
                             </div>
                             <div className="text-xs opacity-75 mt-1">
                                 {gameState.isYourTeamBatting ? `${selectedTeam} Batting` : `${opponentName} Batting`}
@@ -3258,7 +3276,7 @@ const ViewerOnlyMessage = () => {
                         </div>
                         <div>
                             <div className="text-sm opacity-90">Outs</div>
-                            <div className="text-2xl font-bold">{gameState.outs}</div>
+                            <div className="text-2xl font-bold">{gameMetadata?.outs ?? gameState.outs}</div>
                         </div>
                         <div>
                             <div className="text-sm opacity-90">{selectedTeam}</div>
@@ -3310,7 +3328,7 @@ const ViewerOnlyMessage = () => {
                                                 onClick={advanceToNextHalfInning}
                                                 className="px-8 py-5 sm:px-10 sm:py-4 text-lg font-bold border-none rounded-xl cursor-pointer bg-white text-amber-600 shadow-lg hover:shadow-xl active:shadow-md active:scale-95 transition-all"
                                             >
-                                                {isHome ? `Top ${gameState.inning + 1} - ${opponentName} Batting` : `Bottom ${gameState.inning} - ${opponentName} Batting`}
+                                                {isHome ? `Top ${(gameMetadata?.inning || gameState.inning) + 1} - ${opponentName} Batting` : `Bottom ${gameMetadata?.inning || gameState.inning} - ${opponentName} Batting`}
                                             </button>
                                         </>
                                     ) : (
@@ -3333,7 +3351,7 @@ const ViewerOnlyMessage = () => {
                                                 onClick={advanceToNextHalfInning}
                                                 className="px-8 py-5 sm:px-10 sm:py-4 text-lg font-bold border-none rounded-xl cursor-pointer bg-white text-amber-600 shadow-lg hover:shadow-xl active:shadow-md active:scale-95 transition-all"
                                             >
-                                                {isHome ? `Bottom ${gameState.inning} - ${selectedTeam} Batting` : `Top ${gameState.inning + 1} - ${selectedTeam} Batting`}
+                                                {isHome ? `Bottom ${gameMetadata?.inning || gameState.inning} - ${selectedTeam} Batting` : `Top ${(gameMetadata?.inning || gameState.inning) + 1} - ${selectedTeam} Batting`}
                                             </button>
                                         </>
                                     ) : (
