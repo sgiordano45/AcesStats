@@ -551,7 +551,6 @@ function getOrdinalSuffix(num) {
 			const [gameMetadata, setGameMetadata] = useState(null);
 			const [userCanTrack, setUserCanTrack] = useState(false);
 			const [presenceUsers, setPresenceUsers] = useState([]);
-			const [notifications, setNotifications] = useState([]);
 			const [editingLineup, setEditingLineup] = useState(false);
 			const [liveGames, setLiveGames] = useState({});  // Track which games have active trackers
 			const [spectatorMode, setSpectatorMode] = useState(false);  // Allow admins to view without editing
@@ -569,15 +568,6 @@ function getOrdinalSuffix(num) {
 			// Track whether the last state update came from Firebase to prevent save loops
 			const isUpdatingFromFirebase = useRef(false);
 
-            // Helper function to add notifications
-            const addNotification = (notification) => {
-                setNotifications(prev => [...prev, notification]);
-                // Auto-dismiss after 5 seconds
-                setTimeout(() => {
-                    setNotifications(prev => prev.filter(n => n.id !== notification.id));
-                }, 5000);
-            };
-
             // Handler to boot/remove a user from presence
             const handleBootUser = async (userId) => {
                 if (!selectedGame?.seasonId || !selectedGame?.id) {
@@ -590,19 +580,9 @@ function getOrdinalSuffix(num) {
                         selectedGame.id,
                         userId
                     );
-                    addNotification({
-                        id: Date.now(),
-                        message: 'User removed from game tracker',
-                        type: 'info'
-                    });
                     console.log('👢 Booted user:', userId);
                 } catch (error) {
                     console.error('Error booting user:', error);
-                    addNotification({
-                        id: Date.now(),
-                        message: 'Failed to remove user',
-                        type: 'error'
-                    });
                 }
             };
 
@@ -870,12 +850,7 @@ useEffect(() => {
                             }
                         }
                         
-                        // Show notification
-                        addNotification({
-                            id: Date.now(),
-                            message: `${data.metadata?.lastUpdatedByName || 'Teammate'} updated the game`,
-                            type: 'update'
-                        });
+                        console.log(`📥 Your team updated by ${data.metadata?.lastUpdatedByName || 'Teammate'}`);
                     } else if (!hasRealData) {
                         console.log('ℹ️ No plays recorded yet for your team - preserving local state');
                     }
@@ -908,17 +883,6 @@ useEffect(() => {
                         };
                         
                         setOpponentGameState(mappedOpponentState);
-                        
-                        // Show score change notification only if opponent is actually tracking
-                        if (isOpponentTracking && data.score !== opponentGameState?.score) {
-                            const opponentScore = data.score || 0;
-                            const yourScore = gameState.score.yourTeam;
-                            addNotification({
-                                id: Date.now(),
-                                message: `Score update: ${selectedTeam} ${yourScore} - ${opponentScore} ${opponentName}`,
-                                type: 'score'
-                            });
-                        }
                     }
                 );
             }
@@ -2683,29 +2647,6 @@ useEffect(() => {
                 };
             });
 
-			// Notification Toast Component
-const NotificationToast = ({ notification, onDismiss }) => {
-    return (
-        <div className={`fixed top-20 right-4 max-w-sm rounded-lg shadow-lg p-4 z-50 ${
-            notification.type === 'score' ? 'bg-green-600' :
-            notification.type === 'update' ? 'bg-blue-600' :
-            'bg-gray-600'
-        } text-white animate-slide-in`}>
-            <div className="flex items-center gap-3">
-                <div className="flex-1">
-                    <div className="font-semibold">{notification.message}</div>
-                </div>
-                <button 
-                    onClick={onDismiss}
-                    className="text-white opacity-75 hover:opacity-100 text-xl leading-none"
-                >
-                    ×
-                </button>
-            </div>
-        </div>
-    );
-};
-
 // Live Score Header Component
 const LiveScoreHeader = ({ gameMetadata, yourTeamName, opponentTeamName, isHome }) => {
     if (!gameMetadata) return null;
@@ -3419,18 +3360,6 @@ const ViewerOnlyMessage = () => {
 };
             return (
                 <>
-                    <div className="fixed top-20 right-4 z-50 space-y-2">
-                        {notifications.map(notif => (
-                            <NotificationToast
-                                key={notif.id}
-                                notification={notif}
-                                onDismiss={() => setNotifications(prev => 
-                                    prev.filter(n => n.id !== notif.id)
-                                )}
-                            />
-                        ))}
-                    </div>
-                    
                     {/* Pitcher Selection Modal */}
                     <PitcherSelectionModal
                         isOpen={showPitcherModal}
