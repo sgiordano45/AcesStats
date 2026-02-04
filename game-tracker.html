@@ -624,6 +624,9 @@ useEffect(() => {
     
     const unsubscribers = [];
     
+    // Staleness threshold - 10 minutes
+    const STALE_THRESHOLD_MS = 10 * 60 * 1000;
+    
     games.forEach(game => {
         if (!game.seasonId) return;
         
@@ -632,9 +635,17 @@ useEffect(() => {
             game.seasonId,
             game.id,
             (trackers) => {
+                // Filter out stale trackers (lastSeen older than threshold)
+                const now = Date.now();
+                const activeTrackers = trackers.filter(t => {
+                    if (!t.lastSeen) return false;
+                    const lastSeenMs = t.lastSeen.toMillis ? t.lastSeen.toMillis() : t.lastSeen;
+                    return (now - lastSeenMs) < STALE_THRESHOLD_MS;
+                });
+                
                 setLiveGames(prev => ({
                     ...prev,
-                    [game.id]: trackers.length > 0 ? trackers : null
+                    [game.id]: activeTrackers.length > 0 ? activeTrackers : null
                 }));
             }
         );
@@ -986,7 +997,15 @@ useEffect(() => {
             
             // Subscribe to presence
             unsubscribePresence = window.FirebaseGameTracker.subscribeToPresence(seasonId, selectedGame.id, (users) => {
-                setPresenceUsers(users);
+                // Filter out stale users (older than 10 minutes)
+                const STALE_THRESHOLD_MS = 10 * 60 * 1000;
+                const now = Date.now();
+                const activeUsers = users.filter(u => {
+                    if (!u.lastSeen) return false;
+                    const lastSeenMs = u.lastSeen.toMillis ? u.lastSeen.toMillis() : u.lastSeen;
+                    return (now - lastSeenMs) < STALE_THRESHOLD_MS;
+                });
+                setPresenceUsers(activeUsers);
             });
             
             console.log('✅ Real-time sync initialized');
@@ -1029,6 +1048,45 @@ useEffect(() => {
         ).catch(err => console.warn('Could not update presence role:', err));
     }
 }, [hasTrackPermission, spectatorMode, selectedGame, selectedTeam, currentUser, setupMode]);
+
+// Presence heartbeat - update every 2 minutes to stay "fresh"
+useEffect(() => {
+    if (!selectedGame || !selectedTeam || !currentUser || !selectedGame.seasonId || setupMode) {
+        return;
+    }
+    
+    const HEARTBEAT_INTERVAL = 2 * 60 * 1000; // 2 minutes
+    
+    const updatePresenceNow = () => {
+        const role = spectatorMode ? 'viewer' : 'tracker';
+        window.FirebaseGameTracker.updatePresence(
+            selectedGame.seasonId,
+            selectedGame.id,
+            currentUser.uid,
+            selectedTeam,
+            currentUser.displayName || 'Unknown',
+            role
+        ).catch(err => console.warn('Presence update failed:', err));
+    };
+    
+    // Regular heartbeat interval
+    const heartbeat = setInterval(updatePresenceNow, HEARTBEAT_INTERVAL);
+    
+    // Also update presence when page becomes visible (phone wakes up, tab refocused)
+    const handleVisibilityChange = () => {
+        if (document.visibilityState === 'visible') {
+            console.log('📱 Page visible - refreshing presence');
+            updatePresenceNow();
+        }
+    };
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    return () => {
+        clearInterval(heartbeat);
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+}, [selectedGame, selectedTeam, currentUser, setupMode, spectatorMode]);
 
             const loadInitialData = async () => {
                 try {
