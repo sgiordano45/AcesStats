@@ -1849,20 +1849,23 @@ useEffect(() => {
                     playHistory: [...prev.playHistory, pitchingChangeRecord]
                 }));
                 
-                // Update Firebase metadata with new pitcher
-                try {
-                    const pitcherKey = isYourTeam 
-                        ? (isHome ? 'homePitcher' : 'awayPitcher')
-                        : (isHome ? 'awayPitcher' : 'homePitcher');
-                    
-                    await window.FirebaseGameTracker.updateGameMetadata(
-                        selectedGame.seasonId,
-                        selectedGame.id,
-                        { [pitcherKey]: { id: newPitcher.id, name: newPitcher.name } }
-                    );
-                    console.log(`✅ Pitcher updated: ${newPitcher.name} now pitching for ${teamName}`);
-                } catch (error) {
-                    console.error('Error updating pitcher:', error);
+                // Update Firebase metadata - ONLY for YOUR team's pitcher
+                // Let opponent control their own pitcher in metadata
+                if (isYourTeam) {
+                    try {
+                        const pitcherKey = isHome ? 'homePitcher' : 'awayPitcher';
+                        
+                        await window.FirebaseGameTracker.updateGameMetadata(
+                            selectedGame.seasonId,
+                            selectedGame.id,
+                            { [pitcherKey]: { id: newPitcher.id, name: newPitcher.name } }
+                        );
+                        console.log(`✅ Pitcher updated: ${newPitcher.name} now pitching for ${teamName}`);
+                    } catch (error) {
+                        console.error('Error updating pitcher:', error);
+                    }
+                } else {
+                    console.log(`ℹ️ Opponent pitcher change recorded locally: ${newPitcher.name}`);
                 }
                 
                 setPendingPitcherChange(null);
@@ -1875,36 +1878,30 @@ useEffect(() => {
 
             // Save initial pitcher selections from modal
             const savePitcherSelections = async (yourPitcherSelection, opponentPitcherSelection) => {
-                // Update local state
+                // Update local state (both pitchers for local tracking/display)
                 if (yourPitcherSelection) setYourPitcher(yourPitcherSelection);
                 if (opponentPitcherSelection) setOpponentPitcher(opponentPitcherSelection);
                 
-                // Update Firebase metadata
+                // Update Firebase metadata - ONLY save YOUR team's pitcher
+                // Let the other team control their own pitcher in metadata
+                // (opponent pitcher is still tracked per-play in opposingPitcher field)
                 try {
-                    const updateData = {};
                     if (yourPitcherSelection) {
-                        updateData[isHome ? 'homePitcher' : 'awayPitcher'] = {
-                            id: yourPitcherSelection.id,
-                            name: yourPitcherSelection.name
+                        const updateData = {
+                            [isHome ? 'homePitcher' : 'awayPitcher']: {
+                                id: yourPitcherSelection.id,
+                                name: yourPitcherSelection.name
+                            }
                         };
-                    }
-                    if (opponentPitcherSelection) {
-                        updateData[isHome ? 'awayPitcher' : 'homePitcher'] = {
-                            id: opponentPitcherSelection.id,
-                            name: opponentPitcherSelection.name
-                        };
-                    }
-                    
-                    if (Object.keys(updateData).length > 0) {
                         await window.FirebaseGameTracker.updateGameMetadata(
                             selectedGame.seasonId,
                             selectedGame.id,
                             updateData
                         );
-                        console.log('✅ Starting pitchers saved');
+                        console.log('✅ Your team pitcher saved to metadata');
                     }
                 } catch (error) {
-                    console.error('Error saving pitcher selections:', error);
+                    console.error('Error saving pitcher selection:', error);
                 }
                 
                 setShowPitcherModal(false);
