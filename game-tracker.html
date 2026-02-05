@@ -2782,6 +2782,71 @@ useEffect(() => {
                 };
             });
 
+            // Calculate opponent pitcher stats from YOUR play history
+            // Each play your batters made has opposingPitcher tagged
+            const opponentPitcherStats = (() => {
+                const pitcherMap = {};
+                
+                const yourTeamPlays = gameState.playHistory.filter(play => 
+                    play.isYourTeam && play.opposingPitcher && play.playType
+                );
+                
+                // Also find pitching change records to get appearance order
+                const pitchingChanges = gameState.playHistory.filter(play => 
+                    play.type === 'pitching-change'
+                );
+                
+                yourTeamPlays.forEach(play => {
+                    const pitcherId = play.opposingPitcher.id;
+                    if (!pitcherMap[pitcherId]) {
+                        pitcherMap[pitcherId] = {
+                            id: pitcherId,
+                            name: play.opposingPitcher.name,
+                            bf: 0,       // Batters faced
+                            hits: 0,
+                            walks: 0,
+                            strikeouts: 0,
+                            outs: 0,     // Raw outs for IP calc
+                            runs: 0,
+                            homeRuns: 0,
+                            firstPlayIndex: yourTeamPlays.indexOf(play)
+                        };
+                    }
+                    
+                    const stats = pitcherMap[pitcherId];
+                    stats.bf++;
+                    
+                    // Hits
+                    if (['single', 'double', 'triple', 'homerun'].includes(play.playType)) {
+                        stats.hits++;
+                        if (play.playType === 'homerun') stats.homeRuns++;
+                    }
+                    
+                    // Walks
+                    if (play.playType === 'walk') stats.walks++;
+                    
+                    // Strikeouts
+                    if (play.playType === 'strikeout') stats.strikeouts++;
+                    
+                    // Outs recorded - use outsAfter vs outsBefore for accuracy
+                    const outsOnPlay = (play.outsAfter || 0) - (play.outsBefore || 0);
+                    if (outsOnPlay > 0) stats.outs += outsOnPlay;
+                    
+                    // Runs allowed
+                    if (play.runsScored > 0) {
+                        stats.runs += play.runsScored;
+                    }
+                });
+                
+                // Convert to array sorted by appearance order, calculate IP
+                return Object.values(pitcherMap)
+                    .sort((a, b) => a.firstPlayIndex - b.firstPlayIndex)
+                    .map(stats => ({
+                        ...stats,
+                        ip: `${Math.floor(stats.outs / 3)}.${stats.outs % 3}`
+                    }));
+            })();
+
 // Live Score Header Component
 const LiveScoreHeader = ({ gameMetadata, yourTeamName, opponentTeamName, isHome }) => {
     if (!gameMetadata) return null;
@@ -3034,6 +3099,91 @@ const RunRemovalModal = ({
                         Cancel
                     </button>
                 </div>
+            </div>
+        </div>
+    );
+};
+
+// Opponent Pitcher Box Score Component
+const PitcherBoxScore = ({ pitcherStats, opponentTeamName }) => {
+    if (!pitcherStats || pitcherStats.length === 0) return null;
+    
+    // Calculate totals
+    const totals = pitcherStats.reduce((acc, p) => ({
+        ip: acc.outs + p.outs,
+        bf: acc.bf + p.bf,
+        hits: acc.hits + p.hits,
+        runs: acc.runs + p.runs,
+        walks: acc.walks + p.walks,
+        strikeouts: acc.strikeouts + p.strikeouts,
+        homeRuns: acc.homeRuns + p.homeRuns,
+        outs: acc.outs + p.outs
+    }), { ip: 0, bf: 0, hits: 0, runs: 0, walks: 0, strikeouts: 0, homeRuns: 0, outs: 0 });
+    
+    const totalIP = `${Math.floor(totals.outs / 3)}.${totals.outs % 3}`;
+    
+    return (
+        <div className="bg-white border border-purple-200 rounded-xl p-4 mt-4">
+            <div className="flex items-center gap-2 mb-3">
+                <span className="text-base">⚾</span>
+                <h3 className="text-sm font-bold text-purple-900">
+                    {opponentTeamName} Pitching
+                </h3>
+            </div>
+            
+            {/* Header row */}
+            <div className="grid gap-1 text-center text-xs mb-1" style={{ gridTemplateColumns: 'minmax(60px, 1fr) repeat(6, 28px)' }}>
+                <div className="text-left text-gray-500 font-semibold">Pitcher</div>
+                <div className="text-gray-500 font-semibold">IP</div>
+                <div className="text-gray-500 font-semibold">H</div>
+                <div className="text-gray-500 font-semibold">R</div>
+                <div className="text-gray-500 font-semibold">BB</div>
+                <div className="text-gray-500 font-semibold">K</div>
+                <div className="text-gray-500 font-semibold">HR</div>
+            </div>
+            
+            {/* Pitcher rows */}
+            <div className="space-y-1">
+                {pitcherStats.map((pitcher, idx) => (
+                    <div 
+                        key={pitcher.id}
+                        className="grid gap-1 text-center text-xs p-1.5 rounded"
+                        style={{ 
+                            gridTemplateColumns: 'minmax(60px, 1fr) repeat(6, 28px)',
+                            background: idx === pitcherStats.length - 1 ? '#faf5ff' : '#f9fafb',
+                            border: idx === pitcherStats.length - 1 ? '1px solid #e9d5ff' : '1px solid transparent'
+                        }}
+                    >
+                        <div className="text-left font-semibold text-gray-900 truncate" title={pitcher.name}>
+                            {pitcher.name.split(' ').pop()}
+                            {idx === pitcherStats.length - 1 && (
+                                <span className="ml-1 text-purple-500 text-xs">●</span>
+                            )}
+                        </div>
+                        <div className="font-bold">{pitcher.ip}</div>
+                        <div className="font-bold">{pitcher.hits}</div>
+                        <div className="font-bold" style={pitcher.runs > 0 ? { color: '#dc2626' } : {}}>{pitcher.runs}</div>
+                        <div className="font-bold">{pitcher.walks}</div>
+                        <div className="font-bold">{pitcher.strikeouts}</div>
+                        <div className="font-bold" style={pitcher.homeRuns > 0 ? { color: '#dc2626' } : {}}>{pitcher.homeRuns}</div>
+                    </div>
+                ))}
+                
+                {/* Totals row if multiple pitchers */}
+                {pitcherStats.length > 1 && (
+                    <div 
+                        className="grid gap-1 text-center text-xs p-1.5 rounded border-t border-gray-300 mt-1 pt-2"
+                        style={{ gridTemplateColumns: 'minmax(60px, 1fr) repeat(6, 28px)' }}
+                    >
+                        <div className="text-left font-bold text-gray-700">Total</div>
+                        <div className="font-bold text-gray-700">{totalIP}</div>
+                        <div className="font-bold text-gray-700">{totals.hits}</div>
+                        <div className="font-bold text-gray-700" style={totals.runs > 0 ? { color: '#dc2626' } : {}}>{totals.runs}</div>
+                        <div className="font-bold text-gray-700">{totals.walks}</div>
+                        <div className="font-bold text-gray-700">{totals.strikeouts}</div>
+                        <div className="font-bold text-gray-700" style={totals.homeRuns > 0 ? { color: '#dc2626' } : {}}>{totals.homeRuns}</div>
+                    </div>
+                )}
             </div>
         </div>
     );
@@ -4158,6 +4308,14 @@ const ViewerOnlyMessage = () => {
                                             ))}
                                         </div>
                                     </div>
+                                )}
+                                
+                                {/* Opponent Pitcher Box Score */}
+                                {!editingLineup && (
+                                    <PitcherBoxScore 
+                                        pitcherStats={opponentPitcherStats}
+                                        opponentTeamName={opponentName || 'Opponent'}
+                                    />
                                 )}
                             </div>
                         </div>
