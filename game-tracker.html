@@ -2019,9 +2019,67 @@ useEffect(() => {
                 newState.outs = 0;
                 newState.bases = { first: null, second: null, third: null };
                 
+                // Capture pre-advance state for end-game checks
+                const currentInning = gameMetadata?.inning || gameState.inning;
+                const homeScore = isHome ? gameState.score.yourTeam : gameState.score.opponent;
+                const awayScore = isHome ? gameState.score.opponent : gameState.score.yourTeam;
+                const runDiff = Math.abs(homeScore - awayScore);
+                
+                // Did top half or bottom half just end?
+                const topHalfJustEnded = (isHome && !gameState.isYourTeamBatting) || (!isHome && gameState.isYourTeamBatting);
+                const bottomHalfJustEnded = !topHalfJustEnded;
+                
+                // Check end-game conditions
+                let endGameReason = null;
+                
+                // After top of inning: home team leads (they don't need to bat)
+                if (topHalfJustEnded && homeScore > awayScore) {
+                    if (currentInning >= 7) {
+                        endGameReason = `End of regulation — ${currentInning} innings complete.\nHome team leads ${homeScore}-${awayScore}.`;
+                    } else if (currentInning >= 5 && runDiff >= 12) {
+                        endGameReason = `Mercy rule — 12-run lead after ${currentInning} innings.\nScore: ${homeScore}-${awayScore} (${runDiff}-run lead).`;
+                    } else if (currentInning >= 4 && runDiff >= 15) {
+                        endGameReason = `Mercy rule — 15-run lead after ${currentInning} innings.\nScore: ${homeScore}-${awayScore} (${runDiff}-run lead).`;
+                    }
+                }
+                
+                // After bottom of inning: check regulation end or mercy
+                if (bottomHalfJustEnded) {
+                    if (currentInning >= 7 && homeScore !== awayScore) {
+                        const leader = homeScore > awayScore ? 'Home' : 'Away';
+                        const winScore = Math.max(homeScore, awayScore);
+                        const loseScore = Math.min(homeScore, awayScore);
+                        endGameReason = `End of regulation — ${currentInning} innings complete.\n${leader} team wins ${winScore}-${loseScore}.`;
+                    } else if (currentInning >= 7 && awayScore === homeScore) {
+                        // Tied after 7 — just inform, don't prompt to end
+                        console.log(`⚾ Tied ${homeScore}-${awayScore} after ${currentInning} — extra innings`);
+                    } else if (runDiff > 0) {
+                        // Mercy checks (either team leading)
+                        if (currentInning >= 5 && runDiff >= 12) {
+                            endGameReason = `Mercy rule — 12-run lead after ${currentInning} innings.\nScore: ${homeScore}-${awayScore} (${runDiff}-run lead).`;
+                        } else if (currentInning >= 4 && runDiff >= 15) {
+                            endGameReason = `Mercy rule — 15-run lead after ${currentInning} innings.\nScore: ${homeScore}-${awayScore} (${runDiff}-run lead).`;
+                        }
+                    }
+                }
+                
+                // If end-game condition met, prompt the tracker
+                if (endGameReason) {
+                    const shouldEnd = window.confirm(
+                        `⚾ Game Over?\n\n${endGameReason}\n\n` +
+                        `${selectedTeam}: ${gameState.score.yourTeam}  |  ${opponentName}: ${gameState.score.opponent}\n\n` +
+                        'End game and save stats?\n(Click Cancel to continue tracking)'
+                    );
+                    
+                    if (shouldEnd) {
+                        endGame();
+                        return;  // Don't advance to next half-inning
+                    }
+                }
+                
                 // Determine which team should bat next based on current state
                 let nextBattingTeam;
-                let nextInning = gameMetadata?.inning || gameState.inning;
+                let nextInning = currentInning;
                 
                 if (newState.isYourTeamBatting) {
                     // Your team just finished batting, opponent bats next
@@ -4097,12 +4155,17 @@ const ViewerOnlyMessage = () => {
 
                             {userCanTrack && gameState.gameActive && !pendingPlay && (
                                 <div className={`grid grid-cols-3 sm:grid-cols-4 gap-2 sm:gap-3 mb-8 ${inningOver ? 'opacity-30 pointer-events-none' : ''}`}>
-                                    {PLAY_TYPES.map(play => (
+                                    {PLAY_TYPES.map(play => {
+                                        const isDisabledAt2Outs = gameState.outs >= 2 && 
+                                            (play.value === 'doubleplay' || play.value === 'sacfly');
+                                        return (
                                         <button
                                             key={play.value}
                                             onClick={() => initiatePlay(play.value)}
-                                            disabled={inningOver}
+                                            disabled={inningOver || isDisabledAt2Outs}
+                                            title={isDisabledAt2Outs ? (play.value === 'doubleplay' ? 'Cannot record DP with 2 outs' : 'Sac fly not possible with 2 outs (use FO)') : ''}
                                             className={`py-5 px-3 sm:p-4 text-lg sm:text-base font-bold border-none rounded-xl cursor-pointer text-white transition-transform hover:scale-105 active:scale-95 ${
+                                                isDisabledAt2Outs ? 'bg-gray-300 cursor-not-allowed opacity-40' :
                                                 play.isHit ? 'bg-green-600 hover:bg-green-700' : 
                                                 play.isOut ? 'bg-red-500 hover:bg-red-600' : 
                                                 'bg-blue-500 hover:bg-blue-600'
@@ -4110,7 +4173,8 @@ const ViewerOnlyMessage = () => {
                                         >
                                             {play.label}
                                         </button>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
                             )}
                         </>
