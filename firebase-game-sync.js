@@ -338,26 +338,20 @@ export async function clearGameState(seasonId, gameId, teamId, clearedBy = null)
     try {
         const gameStateRef = doc(db, 'seasons', seasonId, 'games', gameId, 'gameState', teamId);
         
-        // Replace entire document (not merge) to fully reset
+        // Mark as completed - preserve plays/data for reference, just flag as done
         await setDoc(gameStateRef, {
-            teamId,
-            inning: 1,
-            outs: 0,
-            score: 0,
-            bases: { first: null, second: null, third: null },
-            currentBatter: 0,
-            plays: [],
-            battingOrder: [],
-            gameActive: true,
+            gameActive: false,
             cleared: true,
             clearedAt: serverTimestamp(),
-            metadata: clearedBy ? {
-                lastUpdatedBy: clearedBy.id,
-                lastUpdatedByName: clearedBy.name
-            } : null
-        });
+            ...(clearedBy ? {
+                metadata: {
+                    lastUpdatedBy: clearedBy.id,
+                    lastUpdatedByName: clearedBy.name
+                }
+            } : {})
+        }, { merge: true });
         
-        console.log(`[CLEAR] Game state cleared for team ${teamId}`);
+        console.log(`[CLEAR] Game state marked complete for team ${teamId}`);
     } catch (error) {
         console.error(`Error clearing game state for team ${teamId}:`, error);
         throw error;
@@ -373,7 +367,31 @@ export async function clearGameMetadata(seasonId, gameId) {
     try {
         const metadataRef = doc(db, 'seasons', seasonId, 'games', gameId, 'metadata', 'current');
         
-        // Reset to fresh game state (no clearedAt flag - it persists and causes issues)
+        // Mark game as completed - preserve final scores for reference
+        await setDoc(metadataRef, {
+            gameActive: false,
+            gameCompleted: true,
+            completedAt: serverTimestamp(),
+            lastUpdated: serverTimestamp()
+        }, { merge: true });
+        
+        console.log(`[CLEAR] Game metadata marked complete for game ${gameId}`);
+    } catch (error) {
+        console.error(`Error clearing game metadata:`, error);
+        throw error;
+    }
+}
+
+/**
+ * Hard reset game metadata (for fresh starts / stale data cleanup)
+ * Unlike clearGameMetadata, this wipes scores and resets to defaults
+ * @param {string} seasonId - Season ID
+ * @param {string} gameId - Game ID
+ */
+export async function resetGameMetadata(seasonId, gameId) {
+    try {
+        const metadataRef = doc(db, 'seasons', seasonId, 'games', gameId, 'metadata', 'current');
+        
         await setDoc(metadataRef, {
             inning: 1,
             outs: 0,
@@ -383,12 +401,14 @@ export async function clearGameMetadata(seasonId, gameId) {
             homePitcher: null,
             awayPitcher: null,
             currentBattingTeam: null,
+            gameActive: true,
+            gameCompleted: false,
             lastUpdated: serverTimestamp()
         });
         
-        console.log(`[CLEAR] Game metadata reset for game ${gameId}`);
+        console.log(`[RESET] Game metadata hard reset for game ${gameId}`);
     } catch (error) {
-        console.error(`Error clearing game metadata:`, error);
+        console.error(`Error resetting game metadata:`, error);
         throw error;
     }
 }
@@ -407,8 +427,8 @@ export async function fullGameReset(seasonId, gameId, homeTeam, awayTeam) {
         await clearGameState(seasonId, gameId, homeTeam);
         await clearGameState(seasonId, gameId, awayTeam);
         
-        // Clear shared metadata
-        await clearGameMetadata(seasonId, gameId);
+        // Hard reset shared metadata (wipe scores for fresh start)
+        await resetGameMetadata(seasonId, gameId);
         
         console.log(`[RESET] Full game reset complete for ${homeTeam} vs ${awayTeam}`);
         return { success: true };
