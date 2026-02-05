@@ -1,6 +1,25 @@
 // nav-component.js - Reusable Navigation Component
-// v1.2.0 - Added role-based filtering for auth pages
+// v1.3.0 - Added role-based filtering for auth pages + PWA session persistence
 import { NAV_STRUCTURE, ALL_PAGES, PAGE_CONFIGS, DEFAULT_CONFIG, loadPageVisibility, getFilteredNavStructure, isPageVisible } from './nav-config.js';
+
+// PWA Session Persistence - Remember last visited page
+// When iOS/Android kills the backgrounded PWA, this lets us restore the user's location
+(function() {
+  try {
+    const isPWA = window.matchMedia('(display-mode: standalone)').matches || 
+                  window.navigator.standalone === true;
+    if (isPWA) {
+      const currentPath = window.location.pathname + window.location.search;
+      // Don't save index.html as "last page" — that's the default start_url
+      if (currentPath !== '/' && currentPath !== '/index.html') {
+        localStorage.setItem('pwa_last_page', currentPath);
+        localStorage.setItem('pwa_last_page_ts', Date.now().toString());
+      }
+    }
+  } catch (e) {
+    // Silent fail — localStorage may be unavailable
+  }
+})();
 
 export class NavigationComponent {
   constructor(options = {}) {
