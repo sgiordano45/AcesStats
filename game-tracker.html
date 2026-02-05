@@ -1624,9 +1624,28 @@ useEffect(() => {
                 } else if (play.outs) {
                     autoOuts = play.outs;
                 } else if (play.value === 'fielders_choice') {
-                    // FC: batter reaches first, one runner is out
+                    // FC: advance runners like a single, batter reaches first, one runner is out
+                    // Tracker will X the runner who was thrown out
                     autoOuts = 1;
+                    const runnersToMove = [];
+                    if (newBases.third) runnersToMove.push({ runner: newBases.third, from: 'third' });
+                    if (newBases.second) runnersToMove.push({ runner: newBases.second, from: 'second' });
+                    if (newBases.first) runnersToMove.push({ runner: newBases.first, from: 'first' });
+
                     newBases.first = currentBatter.name;
+                    newBases.second = null;
+                    newBases.third = null;
+
+                    runnersToMove.forEach(({runner, from}) => {
+                        if (from === 'third') {
+                            autoScore++;
+                            scoredRunners.push(runner);
+                        } else if (from === 'second') {
+                            newBases.third = runner;
+                        } else if (from === 'first') {
+                            newBases.second = runner;
+                        }
+                    });
                 }
 
                 setTempBases(newBases);
