@@ -23,12 +23,14 @@ function isInQuietHours(quietHours) {
     return false; // Quiet hours not enabled
   }
   
+  // Get current time in Eastern timezone
   const now = new Date();
-  const currentHour = now.getHours();
-  const currentMinute = now.getMinutes();
+  const easternTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  const currentHour = easternTime.getHours();
+  const currentMinute = easternTime.getMinutes();
   const currentTime = currentHour * 60 + currentMinute;
   
-  // Parse start and end times (format: "HH:MM")
+  // Parse start and end times (format: "HH:MM") - assumed to be in Eastern time
   const [startHour, startMinute] = quietHours.start.split(':').map(Number);
   const [endHour, endMinute] = quietHours.end.split(':').map(Number);
   const startTime = startHour * 60 + startMinute;
@@ -36,7 +38,7 @@ function isInQuietHours(quietHours) {
   
   // Handle cases where quiet hours span midnight
   if (startTime < endTime) {
-    // Normal case: e.g., 22:00 to 23:59
+    // Normal case: e.g., 09:00 to 17:00
     return currentTime >= startTime && currentTime < endTime;
   } else {
     // Spans midnight: e.g., 22:00 to 08:00
@@ -113,10 +115,13 @@ async function getTeamPlayerTokens(teamIds) {
  * Uses linkedTeam field on user documents
  * @param {Array} teamIds - Array of team IDs
  * @param {string} preferenceKey - Key in notificationPreferences to check
+ * @param {Object} [options] - Optional settings
+ * @param {boolean} [options.isGameComplete] - If true, also include users with finalScoreOnly enabled
  * @returns {Array} Array of tokens for users who want this notification type
  */
-async function getTeamPlayerTokensWithPreference(teamIds, preferenceKey) {
+async function getTeamPlayerTokensWithPreference(teamIds, preferenceKey, options = {}) {
   const tokens = [];
+  const { isGameComplete = false } = options;
   
   // Get all users with linkedTeam field
   const usersSnapshot = await db
@@ -148,6 +153,16 @@ async function getTeamPlayerTokensWithPreference(teamIds, preferenceKey) {
         // Check both possible field names for lineup notifications
         preferenceEnabled = prefs.lineupChanges !== false && 
                           prefs.lineupUpdates?.enabled !== false;
+      } else if (preferenceKey === 'scoreUpdates') {
+        // Special handling for score updates - check finalScoreOnly
+        if (prefs.scoreUpdates !== false) {
+          // User wants all score updates
+          preferenceEnabled = true;
+        } else if (isGameComplete && prefs.finalScoreOnly === true) {
+          // User only wants final scores, and this IS a final score
+          preferenceEnabled = true;
+          console.log(`Including ${userDoc.id} - finalScoreOnly enabled for completed game`);
+        }
       } else {
         // For other preferences, check normally
         preferenceEnabled = prefs[preferenceKey] !== false;
@@ -165,9 +180,13 @@ async function getTeamPlayerTokensWithPreference(teamIds, preferenceKey) {
 
 /**
  * Get FCM tokens for users who favorited specified teams
+ * @param {Array} teamIds - Array of team IDs
+ * @param {Object} [options] - Optional settings
+ * @param {boolean} [options.isGameComplete] - If true, also include users with finalScoreOnly enabled
  */
-async function getFavoriteTeamTokens(teamIds) {
+async function getFavoriteTeamTokens(teamIds, options = {}) {
   const tokens = [];
+  const { isGameComplete = false } = options;
   
   const usersSnapshot = await db
     .collection('users')
@@ -176,8 +195,20 @@ async function getFavoriteTeamTokens(teamIds) {
   
   usersSnapshot.forEach(doc => {
     const userData = doc.data();
-    if (userData.notificationsEnabled !== false && 
-        userData.notificationPreferences?.scoreUpdates !== false) {
+    const prefs = userData.notificationPreferences || {};
+    
+    // Check if user wants score updates
+    let wantsScoreUpdates = false;
+    if (prefs.scoreUpdates !== false) {
+      // User wants all score updates
+      wantsScoreUpdates = true;
+    } else if (isGameComplete && prefs.finalScoreOnly === true) {
+      // User only wants final scores, and this IS a final score
+      wantsScoreUpdates = true;
+      console.log(`Including ${doc.id} (favorite) - finalScoreOnly enabled for completed game`);
+    }
+    
+    if (userData.notificationsEnabled !== false && wantsScoreUpdates) {
       const fcmTokens = userData.fcmTokens || [];
       tokens.push(...fcmTokens);
     }
@@ -335,11 +366,14 @@ async function saveNotificationToFeed(userIds, notification) {
  * Get user IDs from tokens (for saving to notification feed)
  * @param {string} teamId - Team to get users for
  * @param {string} [preference] - Optional preference to check
+ * @param {Object} [options] - Optional settings
+ * @param {boolean} [options.isGameComplete] - If true, also include users with finalScoreOnly enabled
  * @returns {Promise<string[]>} Array of user IDs
  */
-async function getTeamUserIds(teamId, preference = null) {
+async function getTeamUserIds(teamId, preference = null, options = {}) {
   const userIds = [];
   const normalizedTeamId = teamId.charAt(0).toUpperCase() + teamId.slice(1).toLowerCase();
+  const { isGameComplete = false } = options;
   
   const usersSnapshot = await db
     .collection('users')
@@ -357,7 +391,20 @@ async function getTeamUserIds(teamId, preference = null) {
     
     // Check specific preference if provided
     if (preference) {
-      const prefEnabled = userData.notificationPreferences?.[preference] !== false;
+      const prefs = userData.notificationPreferences || {};
+      let prefEnabled = false;
+      
+      if (preference === 'scoreUpdates') {
+        // Special handling for score updates - check finalScoreOnly
+        if (prefs.scoreUpdates !== false) {
+          prefEnabled = true;
+        } else if (isGameComplete && prefs.finalScoreOnly === true) {
+          prefEnabled = true;
+        }
+      } else {
+        prefEnabled = prefs[preference] !== false;
+      }
+      
       if (!prefEnabled) continue;
     }
     
@@ -505,16 +552,20 @@ exports.sendScoreUpdate = functions.firestore
     // Check if this was a game completion (winner now set)
     const isGameComplete = !before.winner && after.winner;
     
-    console.log(`⚾ Score update: ${after.homeTeamName} ${after.homeScore} - ${after.awayTeamName} ${after.awayScore}`);
+    console.log(`⚾ Score update: ${after.homeTeamName} ${after.homeScore} - ${after.awayTeamName} ${after.awayScore}${isGameComplete ? ' (FINAL)' : ''}`);
     
-    // Get tokens for both teams
+    // Get tokens for both teams - pass isGameComplete to include finalScoreOnly users
     const teamTokens = await getTeamPlayerTokensWithPreference(
       [after.homeTeamId, after.awayTeamId], 
-      'scoreUpdates'
+      'scoreUpdates',
+      { isGameComplete }
     );
     
     // Also get tokens for users who favorited these teams
-    const favoriteTokens = await getFavoriteTeamTokens([after.homeTeamId, after.awayTeamId]);
+    const favoriteTokens = await getFavoriteTeamTokens(
+      [after.homeTeamId, after.awayTeamId],
+      { isGameComplete }
+    );
     
     const allTokens = [...new Set([...teamTokens, ...favoriteTokens])];
     
@@ -559,9 +610,9 @@ exports.sendScoreUpdate = functions.firestore
     
     await sendToTokens(allTokens, message);
     
-    // Save to notification feed for users on both teams
-    const homeUserIds = await getTeamUserIds(after.homeTeamId, 'scoreUpdates');
-    const awayUserIds = await getTeamUserIds(after.awayTeamId, 'scoreUpdates');
+    // Save to notification feed for users on both teams - pass isGameComplete
+    const homeUserIds = await getTeamUserIds(after.homeTeamId, 'scoreUpdates', { isGameComplete });
+    const awayUserIds = await getTeamUserIds(after.awayTeamId, 'scoreUpdates', { isGameComplete });
     const allUserIds = [...new Set([...homeUserIds, ...awayUserIds])];
     
     await saveNotificationToFeed(allUserIds, {
@@ -592,7 +643,7 @@ exports.checkPlayerMilestone = functions.firestore
     // Hits milestones
     const hitsMilestones = [50, 100, 150, 200, 250, 300];
     for (const milestone of hitsMilestones) {
-      if (before.career?.hits < milestone && after.career?.hits >= milestone) {
+      if ((before.career?.hits || 0) < milestone && (after.career?.hits || 0) >= milestone) {
         milestones.push({
           type: 'hits',
           value: milestone,
@@ -604,7 +655,7 @@ exports.checkPlayerMilestone = functions.firestore
     // Runs milestones
     const runsMilestones = [25, 50, 75, 100, 150, 200];
     for (const milestone of runsMilestones) {
-      if (before.career?.runs < milestone && after.career?.runs >= milestone) {
+      if ((before.career?.runs || 0) < milestone && (after.career?.runs || 0) >= milestone) {
         milestones.push({
           type: 'runs',
           value: milestone,
@@ -616,7 +667,7 @@ exports.checkPlayerMilestone = functions.firestore
     // Games milestones
     const gamesMilestones = [25, 50, 75, 100, 150];
     for (const milestone of gamesMilestones) {
-      if (before.career?.games < milestone && after.career?.games >= milestone) {
+      if ((before.career?.games || 0) < milestone && (after.career?.games || 0) >= milestone) {
         milestones.push({
           type: 'games',
           value: milestone,
@@ -629,26 +680,71 @@ exports.checkPlayerMilestone = functions.firestore
       return null;
     }
     
-    console.log(`🎯 Milestone reached for ${after.playerName}: ${milestones.map(m => `${m.value} ${m.type}`).join(', ')}`);
+    const playerName = after.playerName || after.name || 'Unknown Player';
+    const currentTeam = after.currentTeam || after.team || null;
     
-    // Get the player's user account if linked
-    const playerLinksSnapshot = await db
-      .collection('playerLinks')
-      .where('playerId', '==', playerId)
-      .where('status', '==', 'approved')
-      .limit(1)
-      .get();
+    console.log(`🎯 Milestone reached for ${playerName}: ${milestones.map(m => `${m.value} ${m.type}`).join(', ')}`);
     
-    if (playerLinksSnapshot.empty) {
-      console.log('Player not linked to user account');
-      return null;
+    // Get current season for activity feed
+    const currentSeason = await getCurrentSeason();
+    const seasonId = currentSeason?.id || null;
+    
+    // Process each milestone
+    for (const milestone of milestones) {
+      const milestoneDocId = `${playerId}_${milestone.type}_${milestone.value}`;
+      
+      // Check if this milestone was already awarded (prevents duplicates on re-runs)
+      const existingMilestone = await db.collection('milestones').doc(milestoneDocId).get();
+      
+      if (!existingMilestone.exists) {
+        // Create milestone document - this triggers onMilestoneReached for activity feed
+        await db.collection('milestones').doc(milestoneDocId).set({
+          playerId: playerId,
+          playerName: playerName,
+          playerLegacyId: after.legacyId || playerId,
+          teamId: currentTeam?.toLowerCase() || null,
+          teamName: currentTeam || null,
+          type: milestone.type,
+          value: milestone.value,
+          currentStat: milestone.stat,
+          seasonId: seasonId,
+          achievedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+        
+        console.log(`📝 Created milestone document: ${milestoneDocId}`);
+      } else {
+        console.log(`⏭️ Milestone ${milestoneDocId} already exists, skipping`);
+      }
     }
     
-    const playerLink = playerLinksSnapshot.docs[0].data();
-    const userDoc = await db.collection('users').doc(playerLink.userId).get();
+    // Get the player's user account if linked (for push notification)
+    const playerNameForSearch = after.playerName || after.name || '';
     
-    if (!userDoc.exists) {
-      console.log('User not found');
+    let userDoc = null;
+    let userId = null;
+    
+    // Check if the playerId IS a user ID (auth-based player)
+    const directUserDoc = await db.collection('users').doc(playerId).get();
+    if (directUserDoc.exists && directUserDoc.data().linkedPlayer) {
+      userDoc = directUserDoc;
+      userId = playerId;
+    } else {
+      // Otherwise search for user with linkedPlayer matching this player's name
+      const usersSnapshot = await db
+        .collection('users')
+        .where('linkedPlayer', '==', playerNameForSearch)
+        .limit(1)
+        .get();
+      
+      if (!usersSnapshot.empty) {
+        userDoc = usersSnapshot.docs[0];
+        userId = userDoc.id;
+      }
+    }
+    
+    // If no linked user, we still created the milestone doc for activity feed
+    if (!userDoc || !userDoc.exists) {
+      console.log('Player not linked to user account - milestone recorded but no push notification');
       return null;
     }
     
@@ -667,10 +763,8 @@ exports.checkPlayerMilestone = functions.firestore
       return null;
     }
     
-    // Send notification for each milestone
+    // Send push notification for each milestone
     for (const milestone of milestones) {
-      const typeText = milestone.type.charAt(0).toUpperCase() + milestone.type.slice(1);
-      
       const message = {
         notification: {
           title: `🎯 Milestone Reached!`,
@@ -694,7 +788,7 @@ exports.checkPlayerMilestone = functions.firestore
       await sendToTokens(fcmTokens, message);
       
       // Save to notification feed for this user
-      await saveNotificationToFeed([playerLink.userId], {
+      await saveNotificationToFeed([userId], {
         title: message.notification.title,
         body: message.notification.body,
         type: 'milestone',
@@ -942,10 +1036,26 @@ exports.sendRsvpReminders = functions.pubsub
       
       // Calculate game timing for message
       const gameDate = game.date.toDate();
-      const hoursUntil = Math.round((gameDate - new Date()) / (1000 * 60 * 60));
-      const timeText = hoursUntil < 24 ? 
-        `tomorrow` : 
-        `in ${Math.round(hoursUntil / 24)} days`;
+      const now = new Date();
+      
+      // Compare calendar dates in Eastern time
+      const gameDay = new Date(gameDate.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+      const today = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+      
+      // Reset to midnight for date comparison
+      gameDay.setHours(0, 0, 0, 0);
+      today.setHours(0, 0, 0, 0);
+      
+      const daysDiff = Math.round((gameDay - today) / (1000 * 60 * 60 * 24));
+      
+      let timeText;
+      if (daysDiff === 0) {
+        timeText = 'today';
+      } else if (daysDiff === 1) {
+        timeText = 'tomorrow';
+      } else {
+        timeText = `in ${daysDiff} days`;
+      }
       
       // Determine if this is a playoff game
       const isPlayoff = isPlayoffGame(gameId);
@@ -1190,31 +1300,43 @@ exports.sendCaptainRsvpAlerts = functions.pubsub
     return null;
   });
 // ============================================================================
-// 6. SCHEDULE CHANGES (Triggered when preview details change)
+// 6. SCHEDULE CHANGES (Triggered when game schedule details change)
 // ============================================================================
+// 2026+ UPDATE: Now triggers on games collection instead of previews subcollection
+// All game data (schedule, scores, preview) is now in unified game documents
 
 exports.sendScheduleChange = functions.firestore
-  .document('seasons/{seasonId}/previews/{gameId}')
+  .document('seasons/{seasonId}/games/{gameId}')
   .onUpdate(async (change, context) => {
     const before = change.before.data();
     const after = change.after.data();
     const seasonId = context.params.seasonId;
     const gameId = context.params.gameId;
     
-    // Get the actual game document for team info
-    const gameDoc = await db
-      .collection('seasons')
-      .doc(seasonId)
-      .collection('games')
-      .doc(gameId)
-      .get();
+    // 2026+ UPDATE: Get team info directly from the game document (no separate fetch needed)
+    const game = after;
     
-    if (!gameDoc.exists) {
-      console.log('Game not found');
-      return null;
+    // Helper function to convert 24-hour time to 12-hour format
+    function formatTime12Hour(timeStr) {
+      if (!timeStr || timeStr === 'TBD') return timeStr;
+      
+      // Check if already in 12-hour format (contains AM/PM)
+      if (timeStr.toUpperCase().includes('AM') || timeStr.toUpperCase().includes('PM')) {
+        return timeStr;
+      }
+      
+      // Try to parse 24-hour format (e.g., "18:00" or "18:30")
+      const match = timeStr.match(/^(\d{1,2}):(\d{2})$/);
+      if (match) {
+        let hours = parseInt(match[1], 10);
+        const minutes = match[2];
+        const ampm = hours >= 12 ? 'PM' : 'AM';
+        hours = hours % 12 || 12;
+        return `${hours}:${minutes} ${ampm}`;
+      }
+      
+      return timeStr;
     }
-    
-    const game = gameDoc.data();
     
     // Helper function to format dates and timestamps
     function formatValue(value) {
@@ -1239,7 +1361,7 @@ exports.sendScheduleChange = functions.firestore
       return String(value);
     }
     
-    // Check what changed in the preview
+    // Check what changed - ONLY schedule-related fields (not scores or preview text)
     const changes = [];
     
     // Date changed (handle both Timestamp objects and strings)
@@ -1251,7 +1373,7 @@ exports.sendScheduleChange = functions.firestore
     
     // Time changed
     if (before.time !== after.time) {
-      changes.push(`Time: ${formatValue(before.time)} → ${formatValue(after.time)}`);
+      changes.push(`Time: ${formatTime12Hour(before.time) || 'TBD'} → ${formatTime12Hour(after.time) || 'TBD'}`);
     }
     
     // Location changed
@@ -1265,16 +1387,21 @@ exports.sendScheduleChange = functions.firestore
     }
     
     // Opponent changed (rare but possible)
-    if (before.homeTeam !== after.homeTeam || before.awayTeam !== after.awayTeam) {
+    if (before.homeTeamId !== after.homeTeamId || before.awayTeamId !== after.awayTeamId) {
       changes.push(`Matchup changed`);
     }
     
-    // If nothing relevant changed, don't send notification
+    // If nothing schedule-related changed, don't send notification
+    // (This prevents notifications for score updates, preview text, etc.)
     if (changes.length === 0) {
       return null;
     }
     
-    console.log(`📅 Schedule changed for ${game.homeTeamName} vs ${game.awayTeamName}: ${changes.join(', ')}`);
+    // Get team names (support both naming conventions)
+    const homeTeamName = game.homeTeamName || game["home team"] || game.homeTeamId || 'Home';
+    const awayTeamName = game.awayTeamName || game["away team"] || game.awayTeamId || 'Away';
+    
+    console.log(`📅 Schedule changed for ${homeTeamName} vs ${awayTeamName}: ${changes.join(', ')}`);
     
     // Get tokens for both teams (only those who want schedule change notifications)
     const tokens = await getTeamPlayerTokensWithPreference(
@@ -1294,7 +1421,7 @@ exports.sendScheduleChange = functions.firestore
     const message = {
       notification: {
         title: '📅 Game Schedule Changed',
-        body: `${gameTypeEmoji}${after.homeTeam} vs ${after.awayTeam} - ${changes[0]}`
+        body: `${gameTypeEmoji}${homeTeamName} vs ${awayTeamName} - ${changes[0]}`
       },
       data: {
         type: 'schedule_change',
@@ -2618,93 +2745,72 @@ exports.onGameCompleted = functions.firestore
   });
 
 // ============================================================================
-// 2. MILESTONE REACHED - Career stats cross thresholds
+// 2. MILESTONE REACHED - Triggered when milestone document is created
 // ============================================================================
 
 exports.onMilestoneReached = functions.firestore
-  .document('aggregatedPlayerStats/{playerId}')
-  .onUpdate(async (change, context) => {
-    const before = change.before.data();
-    const after = change.after.data();
-    const playerId = context.params.playerId;
+  .document('milestones/{milestoneId}')
+  .onCreate(async (snapshot, context) => {
+    const milestone = snapshot.data();
+    const milestoneId = context.params.milestoneId;
     
-    if (after.migrated === true) return null;
+    const playerName = milestone.playerName || 'Unknown Player';
+    const playerId = milestone.playerId || milestone.playerLegacyId;
+    const seasonId = milestone.seasonId || null;
     
-    const playerName = after.name || after.displayName || after.playerName || playerId;
+    // Determine icon and title based on milestone type
+    let icon = '🎯';
+    let title = '';
+    let description = '';
     
-    // Get season ID from seasons data
-    let seasonId = null;
-    if (after.seasons && typeof after.seasons === 'object') {
-      const seasonKeys = Object.keys(after.seasons);
-      seasonId = seasonKeys.length > 0 ? seasonKeys[seasonKeys.length - 1] : null;
+    switch (milestone.type) {
+      case 'hits':
+        icon = '🎯';
+        title = `${milestone.value} Career Hits`;
+        description = `${playerName} reached ${milestone.value} career hits!`;
+        break;
+      case 'runs':
+        icon = '🏃';
+        title = `${milestone.value} Career Runs`;
+        description = `${playerName} scored their ${milestone.value}th career run!`;
+        break;
+      case 'games':
+        icon = '📅';
+        title = `${milestone.value} Career Games`;
+        description = `${playerName} played in their ${milestone.value}th game!`;
+        break;
+      default:
+        title = `${milestone.value} ${milestone.type}`;
+        description = `${playerName} reached ${milestone.value} career ${milestone.type}!`;
     }
     
-    // Calculate career totals
-    function getCareerTotal(data, stat) {
-      if (!data.seasons || typeof data.seasons !== 'object') return 0;
-      let total = 0;
-      Object.values(data.seasons).forEach(season => {
-        total += Number(season[stat]) || 0;
-      });
-      return total;
-    }
+    console.log(`🎯 Milestone activity: ${playerName} - ${title}`);
     
-    const beforeHits = getCareerTotal(before, 'hits');
-    const afterHits = getCareerTotal(after, 'hits');
-    const beforeRuns = getCareerTotal(before, 'runs');
-    const afterRuns = getCareerTotal(after, 'runs');
-    const beforeGames = getCareerTotal(before, 'games');
-    const afterGames = getCareerTotal(after, 'games');
-    
-    const milestones = [];
-    
-    // Hits milestones
-    [50, 100, 150, 200, 250, 300, 400, 500].forEach(m => {
-      if (beforeHits < m && afterHits >= m) {
-        milestones.push({ type: 'hits', value: m, stat: afterHits, icon: '🎯',
-          title: `${m} Career Hits`, description: `${playerName} reached ${m} career hits!` });
+    await createActivity({
+      type: 'milestone',
+      seasonId: seasonId,
+      icon: icon,
+      playerId: playerId,
+      playerName: playerName,
+      teamId: milestone.teamId,
+      teamName: milestone.teamName,
+      title: title,
+      description: description,
+      linkUrl: `/player.html?id=${playerId}`,
+      linkText: 'View Player',
+      data: { 
+        milestoneType: milestone.type, 
+        milestoneValue: milestone.value, 
+        currentStat: milestone.currentStat 
+      },
+      share: {
+        type: 'MILESTONE',
+        headline: playerName,
+        subheadline: title.toUpperCase(),
+        stat: String(milestone.value),
+        statLabel: milestone.type.toUpperCase()
       }
     });
-    
-    // Runs milestones
-    [25, 50, 75, 100, 150, 200].forEach(m => {
-      if (beforeRuns < m && afterRuns >= m) {
-        milestones.push({ type: 'runs', value: m, stat: afterRuns, icon: '🏃',
-          title: `${m} Career Runs`, description: `${playerName} scored their ${m}th career run!` });
-      }
-    });
-    
-    // Games milestones
-    [25, 50, 75, 100, 150, 200].forEach(m => {
-      if (beforeGames < m && afterGames >= m) {
-        milestones.push({ type: 'games', value: m, stat: afterGames, icon: '📅',
-          title: `${m} Career Games`, description: `${playerName} played in their ${m}th game!` });
-      }
-    });
-    
-    // Create activity for each milestone
-    for (const milestone of milestones) {
-      console.log(`🎯 Milestone: ${playerName} - ${milestone.title}`);
-      await createActivity({
-        type: 'milestone',
-        seasonId: seasonId,
-        icon: milestone.icon,
-        playerId: playerId,
-        playerName: playerName,
-        title: milestone.title,
-        description: milestone.description,
-        linkUrl: `/player.html?id=${playerId}`,
-        linkText: 'View Player',
-        data: { milestoneType: milestone.type, milestoneValue: milestone.value, currentStat: milestone.stat },
-        share: {
-          type: 'MILESTONE',
-          headline: playerName,
-          subheadline: milestone.title.toUpperCase(),
-          stat: String(milestone.value),
-          statLabel: milestone.type.toUpperCase()
-        }
-      });
-    }
     
     return null;
   });
@@ -2771,67 +2877,51 @@ exports.onBadgeEarned = functions.firestore
   });
 
 // ============================================================================
-// 4. CAREER HIGH - From game-by-game stats
+// 4. CAREER HIGH - Triggered when careerHighs document is created
 // ============================================================================
 
 exports.onCareerHigh = functions.firestore
-  .document('playerStats/{playerLegacyId}/games/{gameDocId}')
+  .document('careerHighs/{docId}')
   .onCreate(async (snapshot, context) => {
-    const stats = snapshot.data();
-    const playerLegacyId = context.params.playerLegacyId;
-    const gameDocId = context.params.gameDocId;
+    const careerHigh = snapshot.data();
+    const docId = context.params.docId;
     
-    const playerName = stats.playerName || playerLegacyId;
-    const seasonId = stats.seasonId || null;
+    const playerName = careerHigh.playerName || 'Unknown Player';
+    const playerId = careerHigh.playerId || careerHigh.playerLegacyId;
+    const seasonId = careerHigh.seasonId || null;
     
-    // Get previous games to find max stats
-    const gamesRef = db.collection('playerStats').doc(playerLegacyId).collection('games');
-    const gamesSnapshot = await gamesRef.get();
+    // Determine the stat type and format
+    const stat = careerHigh.stat || careerHigh.type || 'hits';
+    const value = careerHigh.value || 0;
+    const previous = careerHigh.previousHigh || 0;
     
-    let maxHits = 0, maxRuns = 0;
-    gamesSnapshot.forEach(doc => {
-      if (doc.id !== gameDocId) {
-        const g = doc.data();
-        maxHits = Math.max(maxHits, g.hits || 0);
-        maxRuns = Math.max(maxRuns, g.runs || 0);
-      }
-    });
-    
-    const newHighs = [];
-    if (stats.hits && stats.hits > maxHits && stats.hits >= 3) {
-      newHighs.push({ stat: 'hits', value: stats.hits, previous: maxHits });
-    }
-    if (stats.runs && stats.runs > maxRuns && stats.runs >= 3) {
-      newHighs.push({ stat: 'runs', value: stats.runs, previous: maxRuns });
-    }
-    
-    if (newHighs.length === 0) return null;
-    
-    // Use highest priority (hits > runs)
-    const bestHigh = newHighs.sort((a, b) => {
-      const priority = { hits: 2, runs: 1 };
-      return (priority[b.stat] || 0) - (priority[a.stat] || 0);
-    })[0];
-    
-    console.log(`📈 Career high: ${playerName} - ${bestHigh.value} ${bestHigh.stat}`);
+    console.log(`📈 Career high activity: ${playerName} - ${value} ${stat}`);
     
     await createActivity({
       type: 'career_high',
       seasonId: seasonId,
       icon: '📈',
-      playerId: playerLegacyId,
+      playerId: playerId,
       playerName: playerName,
-      title: `Career High: ${bestHigh.value} ${capitalize(bestHigh.stat)}`,
-      description: `${playerName} set a new single-game record with ${bestHigh.value} ${bestHigh.stat}!`,
-      linkUrl: `/player.html?id=${playerLegacyId}`,
+      teamId: careerHigh.teamId || null,
+      teamName: careerHigh.teamName || null,
+      title: `Career High: ${value} ${capitalize(stat)}`,
+      description: `${playerName} set a new single-game record with ${value} ${stat}!`,
+      linkUrl: `/player.html?id=${playerId}`,
       linkText: 'View Player',
-      data: { stat: bestHigh.stat, value: bestHigh.value, previousHigh: bestHigh.previous, opponent: stats.opponent },
+      data: { 
+        stat: stat, 
+        value: value, 
+        previousHigh: previous, 
+        opponent: careerHigh.opponent || null,
+        gameId: careerHigh.gameId || null
+      },
       share: {
         type: 'CAREER HIGH',
         headline: playerName,
-        subheadline: `${bestHigh.value} ${bestHigh.stat.toUpperCase()} IN A GAME`,
-        stat: String(bestHigh.value),
-        statLabel: bestHigh.stat.toUpperCase()
+        subheadline: `${value} ${stat.toUpperCase()} IN A GAME`,
+        stat: String(value),
+        statLabel: stat.toUpperCase()
       }
     });
     
@@ -2839,55 +2929,51 @@ exports.onCareerHigh = functions.firestore
   });
 
 // ============================================================================
-// 5. HIT STREAK
+// 5. HIT STREAK - Triggered when hitStreaks document is created
 // ============================================================================
 
 exports.onHitStreak = functions.firestore
-  .document('playerStats/{playerLegacyId}/games/{gameDocId}')
+  .document('hitStreaks/{docId}')
   .onCreate(async (snapshot, context) => {
-    const stats = snapshot.data();
-    const playerLegacyId = context.params.playerLegacyId;
+    const streak = snapshot.data();
+    const docId = context.params.docId;
     
-    if (!stats.hits || stats.hits < 1) return null;
+    const playerName = streak.playerName || 'Unknown Player';
+    const playerId = streak.playerId || streak.playerLegacyId;
+    const seasonId = streak.seasonId || null;
+    const streakLength = streak.streakLength || streak.length || 0;
     
-    const playerName = stats.playerName || playerLegacyId;
-    const seasonId = stats.seasonId || null;
-    
-    // Get all games sorted by date
-    const gamesRef = db.collection('playerStats').doc(playerLegacyId).collection('games');
-    const gamesSnapshot = await gamesRef.orderBy('gameDate', 'asc').get();
-    
-    const games = [];
-    gamesSnapshot.forEach(doc => games.push({ id: doc.id, ...doc.data() }));
-    
-    // Calculate current streak from end
-    let currentStreak = 0;
-    for (let i = games.length - 1; i >= 0; i--) {
-      if ((games[i].hits || 0) >= 1) currentStreak++;
-      else break;
+    // Only create activity for notable streaks (5+)
+    if (streakLength < 5) {
+      console.log(`⏭️ Streak of ${streakLength} not notable enough for activity`);
+      return null;
     }
     
-    // Only notable streaks
-    if (![3, 5, 8, 10, 15, 20].includes(currentStreak)) return null;
-    
-    console.log(`🔥 Hit streak: ${playerName} - ${currentStreak} games`);
+    console.log(`🔥 Hit streak activity: ${playerName} - ${streakLength} games`);
     
     await createActivity({
       type: 'streak',
       seasonId: seasonId,
       icon: '🔥',
-      playerId: playerLegacyId,
+      playerId: playerId,
       playerName: playerName,
-      title: `${currentStreak}-Game Hit Streak`,
-      description: `${playerName} has hit safely in ${currentStreak} straight games!`,
-      linkUrl: `/player.html?id=${playerLegacyId}`,
+      teamId: streak.teamId || null,
+      teamName: streak.teamName || null,
+      title: `${streakLength}-Game Hit Streak`,
+      description: `${playerName} has hit safely in ${streakLength} straight games!`,
+      linkUrl: `/player.html?id=${playerId}`,
       linkText: 'View Player',
-      data: { streakType: 'hitting', streakLength: currentStreak },
+      data: { 
+        streakType: 'hitting', 
+        streakLength: streakLength,
+        startDate: streak.startDate || null,
+        endDate: streak.endDate || null
+      },
       share: {
         type: 'HOT STREAK',
         headline: playerName,
-        subheadline: `${currentStreak}-GAME HIT STREAK 🔥`,
-        stat: String(currentStreak),
+        subheadline: `${streakLength}-GAME HIT STREAK 🔥`,
+        stat: String(streakLength),
         statLabel: 'GAMES'
       }
     });
