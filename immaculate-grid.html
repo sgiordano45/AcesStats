@@ -781,7 +781,7 @@ body {
       <ul>
         <li><strong>Select a cell</strong> and guess a player who matches BOTH the row and column criteria.</li>
         <li><strong>Team criteria:</strong> The player must have played at least one game for that team.</li>
-        <li><strong>Stat criteria:</strong> The player must have achieved that stat in any single season.</li>
+        <li><strong>Stat criteria:</strong> The player must have achieved that stat in any single season. This includes "over" thresholds (e.g., 15+ Hits) and "under" thresholds (e.g., Under 10 Hits) — minimum game requirements apply.</li>
         <li>You have <strong>9 guesses</strong> to complete the grid.</li>
         <li><strong>Rarity score:</strong> The fewer people who could fill a cell, the more points you earn!</li>
         <li>A new puzzle is available each day at midnight.</li>
@@ -895,7 +895,7 @@ import {
 // ONE-TIME CACHE RESET (for beta testers)
 // ============================================
 // Increment DATA_VERSION to clear old localStorage data
-const DATA_VERSION = 1;
+const DATA_VERSION = 2;
 const VERSION_KEY = 'acesGrid_dataVersion';
 
 (function checkDataVersion() {
@@ -952,20 +952,31 @@ const TEAM_CATEGORIES = [
   { id: 'team_silver', label: 'Silver', type: 'team', team: 'Silver' },
   { id: 'team_white', label: 'White', type: 'team', team: 'White' },
   { id: 'team_carolina', label: 'Carolina', type: 'team', team: 'Carolina' },
+  { id: 'team_army', label: 'Army', type: 'team', team: 'Army' },
 ];
 
 const STAT_CATEGORIES = [
-  // Season stat thresholds
-  { id: 'hits_15', label: '15+ Hits (Season)', type: 'stat', check: (s) => s.hits >= 15 },
-  { id: 'hits_20', label: '20+ Hits (Season)', type: 'stat', check: (s) => s.hits >= 20 },
-  { id: 'runs_10', label: '10+ Runs (Season)', type: 'stat', check: (s) => s.runs >= 10 },
-  { id: 'runs_15', label: '15+ Runs (Season)', type: 'stat', check: (s) => s.runs >= 15 },
-  { id: 'walks_8', label: '8+ Walks (Season)', type: 'stat', check: (s) => s.walks >= 8 },
-  { id: 'walks_12', label: '12+ Walks (Season)', type: 'stat', check: (s) => s.walks >= 12 },
-  { id: 'games_12', label: '12+ Games (Season)', type: 'stat', check: (s) => s.games >= 12 },
-  { id: 'games_18', label: '18+ Games (Season)', type: 'stat', check: (s) => s.games >= 18 },
-  { id: 'ba_400', label: '.400+ BA (Season)', type: 'stat', check: (s) => s.atBats >= 20 && (s.hits / s.atBats) >= 0.400 },
-  { id: 'ba_450', label: '.450+ BA (Season)', type: 'stat', check: (s) => s.atBats >= 20 && (s.hits / s.atBats) >= 0.450 },
+  // Season stat thresholds - OVER
+  { id: 'hits_15', label: '15+ Hits (Season)', type: 'stat', subtype: 'over', check: (s) => s.hits >= 15 },
+  { id: 'hits_20', label: '20+ Hits (Season)', type: 'stat', subtype: 'over', check: (s) => s.hits >= 20 },
+  { id: 'runs_10', label: '10+ Runs (Season)', type: 'stat', subtype: 'over', check: (s) => s.runs >= 10 },
+  { id: 'runs_15', label: '15+ Runs (Season)', type: 'stat', subtype: 'over', check: (s) => s.runs >= 15 },
+  { id: 'walks_8', label: '8+ Walks (Season)', type: 'stat', subtype: 'over', check: (s) => s.walks >= 8 },
+  { id: 'walks_12', label: '12+ Walks (Season)', type: 'stat', subtype: 'over', check: (s) => s.walks >= 12 },
+  { id: 'games_12', label: '12+ Games (Season)', type: 'stat', subtype: 'over', check: (s) => s.games >= 12 },
+  { id: 'games_18', label: '18+ Games (Season)', type: 'stat', subtype: 'over', check: (s) => s.games >= 18 },
+  { id: 'ba_400', label: '.400+ BA (Season)', type: 'stat', subtype: 'over', check: (s) => s.atBats >= 20 && (s.hits / s.atBats) >= 0.400 },
+  { id: 'ba_450', label: '.450+ BA (Season)', type: 'stat', subtype: 'over', check: (s) => s.atBats >= 20 && (s.hits / s.atBats) >= 0.450 },
+  
+  // Season stat thresholds - UNDER (broadens the player pool!)
+  { id: 'hits_under_10', label: 'Under 10 Hits (Season)', type: 'stat', subtype: 'under', check: (s) => s.games >= 5 && s.hits < 10 },
+  { id: 'hits_under_15', label: 'Under 15 Hits (Season)', type: 'stat', subtype: 'under', check: (s) => s.games >= 8 && s.hits < 15 },
+  { id: 'runs_under_5', label: 'Under 5 Runs (Season)', type: 'stat', subtype: 'under', check: (s) => s.games >= 5 && s.runs < 5 },
+  { id: 'runs_under_8', label: 'Under 8 Runs (Season)', type: 'stat', subtype: 'under', check: (s) => s.games >= 8 && s.runs < 8 },
+  { id: 'walks_under_5', label: 'Under 5 Walks (Season)', type: 'stat', subtype: 'under', check: (s) => s.games >= 5 && s.walks < 5 },
+  { id: 'ba_under_300', label: 'Under .300 BA (Season)', type: 'stat', subtype: 'under', check: (s) => s.atBats >= 20 && (s.hits / s.atBats) < 0.300 },
+  { id: 'ba_under_400', label: 'Under .400 BA (Season)', type: 'stat', subtype: 'under', check: (s) => s.atBats >= 20 && (s.hits / s.atBats) < 0.400 },
+  { id: 'games_under_8', label: 'Under 8 Games (Season)', type: 'stat', subtype: 'under', check: (s) => s.games >= 1 && s.games < 8 },
   
   // Career milestones
   { id: 'seasons_5', label: '5+ Seasons Played', type: 'career', check: (p, nonSubSeasons) => nonSubSeasons.length >= 5 },
@@ -975,6 +986,10 @@ const STAT_CATEGORIES = [
   { id: 'career_runs_50', label: '50+ Career Runs', type: 'career', check: (p) => (p.career?.runs || 0) >= 50 },
   { id: 'career_runs_100', label: '100+ Career Runs', type: 'career', check: (p) => (p.career?.runs || 0) >= 100 },
   { id: 'career_games_50', label: '50+ Career Games', type: 'career', check: (p) => (p.career?.games || 0) >= 50 },
+  
+  // Career milestones - UNDER
+  { id: 'career_hits_under_50', label: 'Under 50 Career Hits', type: 'career', check: (p) => (p.career?.hits || 0) < 50 && (p.career?.games || 0) >= 5 },
+  { id: 'career_games_under_20', label: 'Under 20 Career Games', type: 'career', check: (p) => (p.career?.games || 0) >= 1 && (p.career?.games || 0) < 20 },
   
   // Team history
   { id: 'multi_team', label: 'Played for 3+ Teams', type: 'career', check: (p, nonSubSeasons) => {
@@ -995,6 +1010,7 @@ const STAT_CATEGORIES = [
   // Fun categories
   { id: 'rookie', label: 'Rookie (1st Season)', type: 'career', check: (p, nonSubSeasons) => nonSubSeasons.length === 1 },
   { id: 'veteran_10', label: 'Veteran (10+ Seasons)', type: 'career', check: (p, nonSubSeasons) => nonSubSeasons.length >= 10 },
+  { id: 'two_seasons', label: '2-3 Seasons Only', type: 'career', check: (p, nonSubSeasons) => nonSubSeasons.length >= 2 && nonSubSeasons.length <= 3 },
 ];
 
 // ============================================
@@ -1026,38 +1042,124 @@ function shuffleWithSeed(array, seed) {
 }
 
 // ============================================
-// PUZZLE GENERATION
+// PUZZLE GENERATION (Improved Rotation)
 // ============================================
 function generateDailyPuzzle() {
   const dayNum = getDayNumber();
   const seed = dayNum * 12345;
+  const teamCount = TEAM_CATEGORIES.length; // 11 teams
   
-  // Shuffle categories
-  const shuffledTeams = shuffleWithSeed(TEAM_CATEGORIES, seed);
-  const shuffledStats = shuffleWithSeed(STAT_CATEGORIES, seed + 1000);
+  // ---- TEAM COLUMN SELECTION (spaced rotation) ----
+  // Stagger through the team list so consecutive days don't overlap much.
+  // Each day picks 3 teams that are well-spaced in the list, then the
+  // starting offset rotates by a prime stride to avoid short cycles.
+  const STRIDE = 4; // prime-ish relative to 11, ensures spread
+  const startIdx = (dayNum * STRIDE) % teamCount;
   
-  // Try multiple combinations to find valid puzzle
-  for (let attempt = 0; attempt < 10; attempt++) {
-    const attemptSeed = seed + (attempt * 100);
+  // Space picks ~3-4 apart within the ring of 11 teams
+  const teamSpacing = Math.floor(teamCount / 3); // 3
+  const baseColumns = [
+    TEAM_CATEGORIES[startIdx % teamCount],
+    TEAM_CATEGORIES[(startIdx + teamSpacing) % teamCount],
+    TEAM_CATEGORIES[(startIdx + teamSpacing * 2) % teamCount]
+  ];
+  
+  // ---- ROW SELECTION (balanced category mix) ----
+  // Separate stat categories into pools for variety
+  const overStats = STAT_CATEGORIES.filter(c => c.subtype === 'over');
+  const underStats = STAT_CATEGORIES.filter(c => c.subtype === 'under');
+  const careerStats = STAT_CATEGORIES.filter(c => c.type === 'career');
+  
+  // Each day's rows aim for a mix: at least 1 different subtype when possible
+  // Use day number to rotate through each pool independently
+  const shuffledOver = shuffleWithSeed(overStats, seed + 500);
+  const shuffledUnder = shuffleWithSeed(underStats, seed + 600);
+  const shuffledCareer = shuffleWithSeed(careerStats, seed + 700);
+  
+  // Build a diverse row candidate list based on day rotation
+  // Pattern cycles: [over, under, career], [under, career, over], [career, over, under], etc.
+  const rowPatterns = [
+    [shuffledOver, shuffledUnder, shuffledCareer],
+    [shuffledUnder, shuffledCareer, shuffledOver],
+    [shuffledCareer, shuffledOver, shuffledUnder],
+    [shuffledOver, shuffledCareer, shuffledUnder],
+    [shuffledUnder, shuffledOver, shuffledCareer],
+    [shuffledCareer, shuffledUnder, shuffledOver],
+  ];
+  const patternIdx = dayNum % rowPatterns.length;
+  const todayPattern = rowPatterns[patternIdx];
+  
+  // Pick one category from each pool in the pattern, cycling through each pool
+  const rowCandidates = todayPattern.map((pool, i) => {
+    const poolOffset = Math.floor(dayNum / rowPatterns.length + i) % pool.length;
+    return pool[poolOffset];
+  });
+  
+  // Also build remaining teams (not used in columns) for possible row usage
+  const usedTeamIds = new Set(baseColumns.map(c => c.id));
+  const remainingTeams = TEAM_CATEGORIES.filter(t => !usedTeamIds.has(t.id));
+  const shuffledRemainingTeams = shuffleWithSeed(remainingTeams, seed + 800);
+  
+  // ---- VALIDATION LOOP ----
+  // Try the primary picks first, then fall back with modifications
+  for (let attempt = 0; attempt < 15; attempt++) {
+    let columns, rows;
     
-    // Pick 3 columns (teams)
-    const teamOffset = attempt % 7; // Try different starting positions
-    const columns = [];
-    for (let i = 0; i < 3; i++) {
-      columns.push(shuffledTeams[(teamOffset + i) % shuffledTeams.length]);
+    if (attempt < 3) {
+      // Primary: use the spaced team columns + diverse row pattern
+      columns = [...baseColumns];
+      rows = [...rowCandidates];
+      
+      // On retries, swap one row category for a different pick from same pool
+      if (attempt > 0) {
+        const swapSlot = attempt - 1;
+        const pool = todayPattern[swapSlot];
+        const altOffset = (Math.floor(dayNum / rowPatterns.length) + attempt + swapSlot) % pool.length;
+        rows[swapSlot] = pool[altOffset];
+      }
+    } else if (attempt < 8) {
+      // Secondary: shift team start by 1 and re-pick rows with different offsets
+      const shiftedStart = (startIdx + attempt - 2) % teamCount;
+      columns = [
+        TEAM_CATEGORIES[shiftedStart % teamCount],
+        TEAM_CATEGORIES[(shiftedStart + teamSpacing) % teamCount],
+        TEAM_CATEGORIES[(shiftedStart + teamSpacing * 2) % teamCount]
+      ];
+      
+      // Shuffle all stat categories together and pick 3
+      const allStats = shuffleWithSeed(STAT_CATEGORIES, seed + attempt * 100);
+      rows = allStats.slice(0, 3);
+    } else {
+      // Tertiary: allow a remaining team as a row + 2 stat categories
+      const shiftedStart = (startIdx + attempt) % teamCount;
+      columns = [
+        TEAM_CATEGORIES[shiftedStart % teamCount],
+        TEAM_CATEGORIES[(shiftedStart + teamSpacing) % teamCount],
+        TEAM_CATEGORIES[(shiftedStart + teamSpacing * 2) % teamCount]
+      ];
+      
+      const colIds = new Set(columns.map(c => c.id));
+      const availTeams = TEAM_CATEGORIES.filter(t => !colIds.has(t.id));
+      const shuffledAvail = shuffleWithSeed(availTeams, seed + attempt * 200);
+      const allStats = shuffleWithSeed(STAT_CATEGORIES, seed + attempt * 300);
+      
+      rows = [
+        allStats[0],
+        allStats[1],
+        shuffledAvail[0] // team as a row
+      ];
     }
     
-    // For rows, mix stats and remaining teams
-    const usedTeamIds = new Set(columns.map(c => c.id));
-    const remainingTeams = shuffledTeams.filter(t => !usedTeamIds.has(t.id));
-    const rowCandidates = [...shuffledStats, ...remainingTeams.slice(0, 3)];
-    const shuffledRows = shuffleWithSeed(rowCandidates, attemptSeed + 2000);
+    // Ensure no duplicate categories in rows
+    const rowIds = new Set(rows.map(r => r.id));
+    if (rowIds.size < 3) continue;
     
-    // Try different row offsets
-    const rowOffset = Math.floor(attempt / 2) % (shuffledRows.length - 2);
-    const rows = shuffledRows.slice(rowOffset, rowOffset + 3);
+    // Ensure no row team overlaps with column teams
+    const colTeamIds = new Set(columns.filter(c => c.type === 'team').map(c => c.id));
+    const hasOverlap = rows.some(r => r.type === 'team' && colTeamIds.has(r.id));
+    if (hasOverlap) continue;
     
-    // Validate that each cell has at least one valid answer
+    // Validate every cell has at least 1 valid answer
     const puzzle = { columns, rows, dayNum };
     let valid = true;
     
@@ -1066,7 +1168,7 @@ function generateDailyPuzzle() {
         const validPlayers = findValidPlayers(columns[col], rows[row]);
         if (validPlayers.length === 0) {
           valid = false;
-          console.log(`Invalid cell [${col},${row}]: ${columns[col].label} + ${rows[row].label}`);
+          console.log(`Invalid cell [${col},${row}]: ${columns[col].label} + ${rows[row].label} (attempt ${attempt + 1})`);
           break;
         }
       }
@@ -1081,21 +1183,21 @@ function generateDailyPuzzle() {
     }
   }
   
-  // Final fallback: use most common categories but with day-based offset
-  console.warn('⚠️ Using fallback puzzle after 10 attempts');
-  const fallbackTeamOffset = dayNum % 7;
+  // Final fallback: guaranteed safe combination
+  console.warn('⚠️ Using fallback puzzle after 15 attempts');
+  const fallbackTeamOffset = dayNum % teamCount;
   const fallbackStatOffset = dayNum % 5;
   
   return {
     columns: [
-      TEAM_CATEGORIES[fallbackTeamOffset % TEAM_CATEGORIES.length],
-      TEAM_CATEGORIES[(fallbackTeamOffset + 1) % TEAM_CATEGORIES.length],
-      TEAM_CATEGORIES[(fallbackTeamOffset + 2) % TEAM_CATEGORIES.length]
+      TEAM_CATEGORIES[fallbackTeamOffset % teamCount],
+      TEAM_CATEGORIES[(fallbackTeamOffset + teamSpacing) % teamCount],
+      TEAM_CATEGORIES[(fallbackTeamOffset + teamSpacing * 2) % teamCount]
     ],
     rows: [
       STAT_CATEGORIES[fallbackStatOffset % STAT_CATEGORIES.length],
-      STAT_CATEGORIES[(fallbackStatOffset + 1) % STAT_CATEGORIES.length],
-      STAT_CATEGORIES[(fallbackStatOffset + 2) % STAT_CATEGORIES.length]
+      STAT_CATEGORIES[(fallbackStatOffset + 5) % STAT_CATEGORIES.length],
+      STAT_CATEGORIES[(fallbackStatOffset + 10) % STAT_CATEGORIES.length]
     ],
     dayNum
   };
@@ -1290,14 +1392,11 @@ function renderSearchResults(query) {
   
   resultsContainer.innerHTML = matches.map(player => {
     const name = player.name || player.displayName;
-    const seasons = Object.keys(player.seasons || {}).length;
-    const career = player.career || {};
     
     return `
       <div class="search-result-item" onclick="window.submitGuess('${name.replace(/'/g, "\\'")}')">
         <div>
           <div class="result-name">${name}</div>
-          <div class="result-info">${seasons} seasons • ${career.hits || 0} hits • ${career.runs || 0} runs</div>
         </div>
       </div>
     `;
