@@ -130,6 +130,7 @@
     clearGameState as clearGameStateSync,
     loadGameMetadata as loadGameMetadataSync,
     clearGameMetadata,
+    resetGameMetadata,
     fullGameReset
 } from './firebase-game-sync.js';
 
@@ -434,6 +435,7 @@ function getOrdinalSuffix(num) {
             clearGameStateSync,
             loadGameMetadataSync,
             clearGameMetadata,
+            resetGameMetadata,
             fullGameReset
         };
 
@@ -1335,7 +1337,7 @@ useEffect(() => {
                                 selectedTeam,
                                 selectedGame.seasonId
                             );
-                            await window.FirebaseGameTracker.clearGameMetadata(
+                            await window.FirebaseGameTracker.resetGameMetadata(
                                 selectedGame.seasonId,
                                 selectedGame.id
                             );
@@ -1345,13 +1347,13 @@ useEffect(() => {
                     // Game state was cleared but metadata still has old data - clean it up
                     console.log('🧹 Found stale metadata (gameState cleared but metadata has old scores) - cleaning up...');
                     try {
-                        await window.FirebaseGameTracker.clearGameMetadata(
+                        await window.FirebaseGameTracker.resetGameMetadata(
                             selectedGame.seasonId,
                             selectedGame.id
                         );
-                        console.log('✅ Stale metadata cleared');
+                        console.log('✅ Stale metadata reset');
                     } catch (metaError) {
-                        console.error('❌ Error clearing stale metadata:', metaError);
+                        console.error('❌ Error resetting stale metadata:', metaError);
                     }
                 }
                 
@@ -2163,10 +2165,15 @@ useEffect(() => {
                     `Final Score: ${selectedTeam} ${gameState.score.yourTeam} - ${opponentName} ${gameState.score.opponent}\n` +
                     `Plays Recorded: ${gameState.playHistory.length}\n` +
                     `Players: ${totalPlayers}${removedPlayers.length > 0 ? ` (${removedPlayers.length} left early)` : ''}\n\n` +
-                    'This will save batting stats and clear the game tracker.'
+                    'This will save batting stats and end tracking for your team.'
                 );
                 
-                if (confirmed) {
+                if (!confirmed) return;
+                
+                let saveSuccess = false;
+                
+                // Step 1: Save game results
+                try {
                     if (selectedGame && selectedTeam && currentSeason) {
                         const result = await window.FirebaseGameTracker.saveGameResults(
                             selectedGame.id,
@@ -2176,10 +2183,11 @@ useEffect(() => {
                             battingOrder,
                             isHome,
                             opponentName,
-                            removedPlayers  // Include players who left the game
+                            removedPlayers
                         );
                         
                         if (result.success) {
+                            saveSuccess = true;
                             alert(
                                 '✅ Game Complete!\n\n' +
                                 'Batting stats have been saved:\n' +
@@ -2189,29 +2197,58 @@ useEffect(() => {
                             );
                         }
                     }
-                    
-                    setGameState({ ...gameState, gameActive: false });
-                    
+                } catch (error) {
+                    console.error('Error saving game results:', error);
+                    alert('⚠️ Error saving stats. Your play-by-play data is preserved in Firebase.');
+                }
+                
+                // Step 2: Mark YOUR team's game state as completed (preserve data)
+                try {
                     if (selectedGame && selectedTeam && selectedGame.seasonId) {
-                        // Clear team's game state
                         await window.FirebaseGameTracker.clearGameState(
                             selectedGame.id,
                             selectedTeam,
                             selectedGame.seasonId
                         );
-                        
-                        // Also clear shared metadata
+                        console.log('✅ Team game state marked complete');
+                    }
+                } catch (error) {
+                    console.error('Error clearing game state:', error);
+                }
+                
+                // Step 3: Mark shared metadata as completed (preserve final scores)
+                // Only do this - don't reset scores/inning
+                try {
+                    if (selectedGame?.seasonId) {
                         await window.FirebaseGameTracker.clearGameMetadata(
                             selectedGame.seasonId,
                             selectedGame.id
                         );
+                        console.log('✅ Game metadata marked complete');
                     }
-                    
-                    // Reset local state
-                    setYourPitcher(null);
-                    setOpponentPitcher(null);
-                    setSetupMode(true);
+                } catch (error) {
+                    console.error('Error updating metadata:', error);
                 }
+                
+                // Step 4: Remove presence
+                try {
+                    if (selectedGame?.seasonId && currentUser?.uid) {
+                        await window.FirebaseGameTracker.removePresence(
+                            selectedGame.seasonId,
+                            selectedGame.id,
+                            currentUser.uid
+                        );
+                        console.log('✅ Presence removed');
+                    }
+                } catch (error) {
+                    console.error('Error removing presence:', error);
+                }
+                
+                // Step 5: Always reset local state (even if Firebase ops failed)
+                setGameState({ ...gameState, gameActive: false });
+                setYourPitcher(null);
+                setOpponentPitcher(null);
+                setSetupMode(true);
             };
 
             // Go back to setup screen (with confirmation if game in progress)
