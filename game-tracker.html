@@ -571,8 +571,10 @@ function getOrdinalSuffix(num) {
 			const [pendingPitcherChange, setPendingPitcherChange] = useState(null);  // For confirmation dialog
 			const [showRunRemovalModal, setShowRunRemovalModal] = useState(false);  // For selecting which player's run to remove
 			
-			// Track whether the last state update came from Firebase to prevent save loops
-			const isUpdatingFromFirebase = useRef(false);
+			// Track how many state updates came from Firebase to prevent save loops
+			// Counter instead of boolean: each Firebase-triggered setState increments,
+			// each auto-save useEffect trigger decrements. Saves only when counter is 0.
+			const firebaseUpdateSkipCount = useRef(0);
             
             // Track whether we just resumed from saved state - forces full metadata sync on first callback
             const justResumed = useRef(false);
@@ -672,9 +674,9 @@ useEffect(() => {
 
 // Auto-save game state whenever it changes
 useEffect(() => {
-    // Don't auto-save if this update came from Firebase
-    if (isUpdatingFromFirebase.current) {
-        isUpdatingFromFirebase.current = false; // Reset flag
+    // Don't auto-save if this update came from Firebase (skip counter > 0)
+    if (firebaseUpdateSkipCount.current > 0) {
+        firebaseUpdateSkipCount.current--;
         return;
     }
     
@@ -822,8 +824,20 @@ useEffect(() => {
                     if (hasRealData && isFromAnotherUser) {
                         console.log('📥 Your team updated by', data.metadata?.lastUpdatedByName);
                         
-                        // Set flag to prevent auto-save loop
-                        isUpdatingFromFirebase.current = true;
+                        // Determine if batting order will also update (2 state changes vs 1)
+                        let willUpdateBattingOrder = false;
+                        if (data.battingOrder && battingOrder.length > 0) {
+                            const reconstructed = data.battingOrder.map(id => 
+                                battingOrder.find(p => p.id === id)
+                            ).filter(p => p !== undefined);
+                            if (reconstructed.length > 0) {
+                                willUpdateBattingOrder = true;
+                            }
+                        }
+                        
+                        // Set skip counter BEFORE state updates to prevent auto-save echo
+                        // Each setState/setBattingOrder triggers the auto-save useEffect once
+                        firebaseUpdateSkipCount.current = willUpdateBattingOrder ? 2 : 1;
                         
                         // The data IS the game state (not data.gameState)
                         // Map the Firebase structure to our component's gameState structure
@@ -850,13 +864,11 @@ useEffect(() => {
                         }));
                         
                         // Reconstruct batting order from IDs
-                        if (data.battingOrder && battingOrder.length > 0) {
+                        if (willUpdateBattingOrder) {
                             const reconstructed = data.battingOrder.map(id => 
                                 battingOrder.find(p => p.id === id)
                             ).filter(p => p !== undefined);
-                            if (reconstructed.length > 0) {
-                                setBattingOrder(reconstructed);
-                            }
+                            setBattingOrder(reconstructed);
                         }
                         
                         console.log(`📥 Your team updated by ${data.metadata?.lastUpdatedByName || 'Teammate'}`);
