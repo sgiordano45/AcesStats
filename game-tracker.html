@@ -2134,18 +2134,14 @@ useEffect(() => {
                 setGameState(newState);
                 
                 // Update shared game metadata so both teams know who's batting
+                // IMPORTANT: Only write OUR score field — opponent controls theirs
+                // This prevents race conditions where simultaneous saves overwrite each other
                 try {
-                    // Only use opponent's real-time score if they're actually tracking (have plays)
-                    // Otherwise use our manually-tracked opponent score
-                    const opponentIsTracking = opponentGameState?.isTracking === true;
-                    const opponentScore = opponentIsTracking ? opponentGameState.score : gameState.score.opponent;
-                    
                     await window.FirebaseGameTracker.updateGameMetadata(selectedGame.seasonId, selectedGame.id, {
                         inning: nextInning,
                         outs: 0,
                         currentBattingTeam: nextBattingTeam,
-                        homeScore: isHome ? gameState.score.yourTeam : opponentScore,
-                        awayScore: !isHome ? gameState.score.yourTeam : opponentScore
+                        [isHome ? 'homeScore' : 'awayScore']: gameState.score.yourTeam
                     });
                     console.log(`✅ Half-inning advanced: ${nextBattingTeam} now batting in inning ${nextInning}`);
                 } catch (error) {
