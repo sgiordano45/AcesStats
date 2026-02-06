@@ -1721,12 +1721,19 @@ useEffect(() => {
                 }
             };
 
-            // Un-score a runner (put them back on 3rd base)
+            // Un-score a runner (put them back on 3rd base, or mark out at home for FC)
             const unscoreRunner = (runnerName) => {
                 // Remove from scored runners
                 setRunnersScored(prev => prev.filter(r => r !== runnerName));
                 // Decrement score
                 setTempScore(prev => Math.max(0, prev - 1));
+                
+                // For FC: runner was out at home, don't put back on base
+                // The out is already counted in autoOuts, just remove the run
+                if (pendingPlay?.play?.value === 'fielders_choice') {
+                    return;
+                }
+                
                 // Put runner back on 3rd (if 3rd is empty, otherwise error)
                 setTempBases(prev => {
                     if (prev.third) {
@@ -4120,20 +4127,30 @@ const ViewerOnlyMessage = () => {
                                                 </div>
                                             )}
                                         </div>
-                                        {/* Show who scored with option to un-score */}
+                                        {/* Show who scored with option to un-score (or mark out for FC) */}
                                         {runnersScored.length > 0 && (
                                             <div className="flex flex-wrap gap-1 justify-center">
-                                                {runnersScored.map((runner, idx) => (
-                                                    <button
-                                                        key={idx}
-                                                        onClick={() => unscoreRunner(runner)}
-                                                        className="bg-green-700 hover:bg-amber-600 text-white text-xs px-2 py-1 rounded flex items-center gap-1 transition-colors"
-                                                        title={`Click to put ${runner.split(' ').pop()} back on base`}
-                                                    >
-                                                        <span>⬅</span>
-                                                        <span>{runner.split(' ').pop()}</span>
-                                                    </button>
-                                                ))}
+                                                {runnersScored.map((runner, idx) => {
+                                                    const isFC = pendingPlay?.play?.value === 'fielders_choice';
+                                                    return (
+                                                        <button
+                                                            key={idx}
+                                                            onClick={() => unscoreRunner(runner)}
+                                                            className={`text-white text-xs px-2 py-1 rounded flex items-center gap-1 transition-colors ${
+                                                                isFC 
+                                                                    ? 'bg-red-600 hover:bg-red-700 border-2 border-red-400' 
+                                                                    : 'bg-green-700 hover:bg-amber-600'
+                                                            }`}
+                                                            title={isFC 
+                                                                ? `${runner.split(' ').pop()} out at home` 
+                                                                : `Click to put ${runner.split(' ').pop()} back on base`
+                                                            }
+                                                        >
+                                                            <span>{isFC ? '✕' : '⬅'}</span>
+                                                            <span>{runner.split(' ').pop()}</span>
+                                                        </button>
+                                                    );
+                                                })}
                                             </div>
                                         )}
                                     </div>
