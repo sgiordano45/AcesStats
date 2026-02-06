@@ -757,8 +757,8 @@ useEffect(() => {
             // Check if user can track this team (base permission)
             const canTrack = window.FirebaseGameTracker.canUserTrackTeam(userProfile, selectedTeam);
             setHasTrackPermission(canTrack);
-            // Only enable tracking if user has permission AND is not in spectator mode
-            setUserCanTrack(canTrack && !spectatorMode);
+            // userCanTrack is derived from hasTrackPermission + spectatorMode
+            // and is managed by the dedicated spectatorMode useEffect below
             
             // Check if user can boot others (admins, league staff, scorekeepers)
             const canBoot = userProfile && (
@@ -769,7 +769,7 @@ useEffect(() => {
                 userProfile.specialRoles?.scorekeeper === true
             );
             setCanBootUsers(canBoot);
-            console.log('🔐 User can track:', canTrack, '| Can boot:', canBoot, '| Spectator mode:', spectatorMode);
+            console.log('🔐 User can track:', canTrack, '| Can boot:', canBoot);
             
             // Determine opponent team
             const isHomeTeam = isHome;
@@ -792,15 +792,15 @@ useEffect(() => {
                 return;
             }
             
-            // Update presence with role
-            const role = spectatorMode ? 'viewer' : 'tracker';
+            // Set initial presence as 'tracker'
+            // The dedicated spectatorMode useEffect will correct the role if needed
             await window.FirebaseGameTracker.updatePresence(
                 seasonId,
                 selectedGame.id,
                 currentUser.uid,
                 myTeamId,
                 currentUser.displayName || 'Unknown',
-                role
+                'tracker'
             );
             
             // Subscribe to YOUR team's game state
@@ -1468,8 +1468,7 @@ useEffect(() => {
                         
                         // Initialize shared game metadata
                         // Away team ALWAYS bats first (top of 1st)
-                        // Use lowercase team ID to match comparison format (selectedTeam is lowercase)
-                        const firstBattingTeam = (selectedGame.awayTeamId || selectedGame.awayTeam || '').toLowerCase();
+                        const firstBattingTeam = selectedGame.awayTeam || selectedGame.awayTeamId;
                         await window.FirebaseGameTracker.updateGameMetadata(selectedGame.seasonId, selectedGame.id, {
                             inning: 1,
                             outs: 0,
@@ -2140,14 +2139,13 @@ useEffect(() => {
                 }
                 
                 // Determine which team should bat next based on current state
-                // Use lowercase team names to match comparison format (selectedTeam is lowercase)
                 let nextBattingTeam;
                 let nextInning = currentInning;
                 
                 if (newState.isYourTeamBatting) {
                     // Your team just finished batting, opponent bats next
                     newState.isYourTeamBatting = false;
-                    nextBattingTeam = (opponentTeamId || opponentTeamName || '').toLowerCase();
+                    nextBattingTeam = opponentTeamName;
                     // Increment inning after home team finishes batting (end of full inning)
                     if (isHome) {
                         nextInning += 1;
