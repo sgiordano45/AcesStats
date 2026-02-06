@@ -623,8 +623,8 @@ useEffect(() => {
     
     const unsubscribers = [];
     
-    // Staleness threshold - 10 minutes
-    const STALE_THRESHOLD_MS = 10 * 60 * 1000;
+    // Staleness threshold - 5 minutes (2-min heartbeat means ~2 missed beats)
+    const STALE_THRESHOLD_MS = 5 * 60 * 1000;
     
     games.forEach(game => {
         if (!game.seasonId) return;
@@ -657,8 +657,16 @@ useEffect(() => {
 }, [games, currentSeason]);
 
 // Warn before leaving page with active game in progress
+// Also attempt presence cleanup on page close/navigation
 useEffect(() => {
     const handleBeforeUnload = (e) => {
+        // Best-effort presence cleanup (fire-and-forget, browser may not wait)
+        if (selectedGame?.seasonId && currentUser?.uid && !setupMode) {
+            window.FirebaseGameTracker.removePresence(
+                selectedGame.seasonId, selectedGame.id, currentUser.uid
+            ).catch(() => {});  // Swallow errors — page is closing
+        }
+        
         // Only warn if game is active and has plays recorded
         if (gameState.gameActive && gameState.playHistory.length > 0 && !setupMode) {
             e.preventDefault();
@@ -668,9 +676,23 @@ useEffect(() => {
         }
     };
     
+    // pagehide fires more reliably than beforeunload on mobile/PWA
+    // (iOS Safari, Android Chrome app kills, PWA backgrounding)
+    const handlePageHide = (e) => {
+        if (selectedGame?.seasonId && currentUser?.uid && !setupMode) {
+            window.FirebaseGameTracker.removePresence(
+                selectedGame.seasonId, selectedGame.id, currentUser.uid
+            ).catch(() => {});
+        }
+    };
+    
     window.addEventListener('beforeunload', handleBeforeUnload);
-    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-}, [gameState.gameActive, gameState.playHistory.length, setupMode]);
+    window.addEventListener('pagehide', handlePageHide);
+    return () => {
+        window.removeEventListener('beforeunload', handleBeforeUnload);
+        window.removeEventListener('pagehide', handlePageHide);
+    };
+}, [gameState.gameActive, gameState.playHistory.length, setupMode, selectedGame, currentUser]);
 
 // Auto-save game state whenever it changes
 useEffect(() => {
@@ -757,8 +779,8 @@ useEffect(() => {
             // Check if user can track this team (base permission)
             const canTrack = window.FirebaseGameTracker.canUserTrackTeam(userProfile, selectedTeam);
             setHasTrackPermission(canTrack);
-            // userCanTrack is derived from hasTrackPermission + spectatorMode
-            // and is managed by the dedicated spectatorMode useEffect below
+            // Only enable tracking if user has permission AND is not in spectator mode
+            setUserCanTrack(canTrack && !spectatorMode);
             
             // Check if user can boot others (admins, league staff, scorekeepers)
             const canBoot = userProfile && (
@@ -769,7 +791,7 @@ useEffect(() => {
                 userProfile.specialRoles?.scorekeeper === true
             );
             setCanBootUsers(canBoot);
-            console.log('🔐 User can track:', canTrack, '| Can boot:', canBoot);
+            console.log('🔐 User can track:', canTrack, '| Can boot:', canBoot, '| Spectator mode:', spectatorMode);
             
             // Determine opponent team
             const isHomeTeam = isHome;
@@ -792,15 +814,15 @@ useEffect(() => {
                 return;
             }
             
-            // Set initial presence as 'tracker'
-            // The dedicated spectatorMode useEffect will correct the role if needed
+            // Update presence with role
+            const role = spectatorMode ? 'viewer' : 'tracker';
             await window.FirebaseGameTracker.updatePresence(
                 seasonId,
                 selectedGame.id,
                 currentUser.uid,
                 myTeamId,
                 currentUser.displayName || 'Unknown',
-                'tracker'
+                role
             );
             
             // Subscribe to YOUR team's game state
@@ -1006,8 +1028,8 @@ useEffect(() => {
             
             // Subscribe to presence
             unsubscribePresence = window.FirebaseGameTracker.subscribeToPresence(seasonId, selectedGame.id, (users) => {
-                // Filter out stale users (older than 10 minutes)
-                const STALE_THRESHOLD_MS = 10 * 60 * 1000;
+                // Filter out stale users (older than 5 minutes)
+                const STALE_THRESHOLD_MS = 5 * 60 * 1000;
                 const now = Date.now();
                 const activeUsers = users.filter(u => {
                     if (!u.lastSeen) return false;
