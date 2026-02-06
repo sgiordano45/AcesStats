@@ -2153,12 +2153,63 @@ useEffect(() => {
                 }
             };
 
-            const undoLastPlay = () => {
+            const undoLastPlay = async () => {
                 if (gameState.playHistory.length === 0) return;
 
                 const newHistory = [...gameState.playHistory];
                 const lastPlay = newHistory.pop();
 
+                // --- Handle pitching-change records ---
+                if (lastPlay.type === 'pitching-change') {
+                    // Restore the previous pitcher
+                    const isOurTeam = lastPlay.teamId === selectedTeam;
+                    if (isOurTeam) {
+                        setYourPitcher(lastPlay.oldPitcher); // null if there was no previous pitcher
+                        // Also update Firebase metadata
+                        try {
+                            const pitcherKey = isHome ? 'homePitcher' : 'awayPitcher';
+                            await window.FirebaseGameTracker.updateGameMetadata(
+                                selectedGame.seasonId,
+                                selectedGame.id,
+                                { [pitcherKey]: lastPlay.oldPitcher || null }
+                            );
+                        } catch (error) {
+                            console.error('Error reverting pitcher in metadata:', error);
+                        }
+                    } else {
+                        setOpponentPitcher(lastPlay.oldPitcher);
+                    }
+                    // Only remove the record — no bases/outs/batter changes
+                    setGameState(prev => ({ ...prev, playHistory: newHistory }));
+                    console.log('↩️ Undo: pitching change reverted');
+                    return;
+                }
+
+                // --- Handle manual-run-adjustment records ---
+                if (lastPlay.type === 'manual-run-adjustment') {
+                    const reversedScore = gameState.score.yourTeam - (lastPlay.adjustment || 0);
+                    const newScore = Math.max(0, reversedScore);
+                    
+                    setGameState(prev => ({
+                        ...prev,
+                        score: { ...prev.score, yourTeam: newScore },
+                        playHistory: newHistory
+                    }));
+                    // Update Firebase metadata with reversed score
+                    try {
+                        await window.FirebaseGameTracker.updateGameMetadata(
+                            selectedGame.seasonId,
+                            selectedGame.id,
+                            { [isHome ? 'homeScore' : 'awayScore']: newScore }
+                        );
+                    } catch (error) {
+                        console.error('Error reverting manual score in metadata:', error);
+                    }
+                    console.log(`↩️ Undo: manual run adjustment (${lastPlay.adjustment > 0 ? '+' : ''}${lastPlay.adjustment}) reverted`);
+                    return;
+                }
+
+                // --- Handle regular at-bat play records ---
                 const newState = {
                     ...gameState,
                     bases: { ...lastPlay.basesBefore },
@@ -2183,6 +2234,7 @@ useEffect(() => {
                 }
 
                 setGameState(newState);
+                console.log(`↩️ Undo: ${lastPlay.playLabel || lastPlay.playType} by ${lastPlay.batter}`);
             };
 
             const clearProgress = async () => {
