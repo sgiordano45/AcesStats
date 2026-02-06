@@ -573,6 +573,9 @@ function getOrdinalSuffix(num) {
 			
 			// Track whether the last state update came from Firebase to prevent save loops
 			const isUpdatingFromFirebase = useRef(false);
+            
+            // Track whether we just resumed from saved state - forces full metadata sync on first callback
+            const justResumed = useRef(false);
 
             // Handler to boot/remove a user from presence
             const handleBootUser = async (userId) => {
@@ -933,11 +936,19 @@ useEffect(() => {
                         // Sync outs from metadata ONLY when opponent is batting
                         // When WE are batting, our local outs is authoritative (we're tracking them)
                         // This prevents race conditions where metadata overwrites our just-recorded outs
+                        // EXCEPTION: On resume, always force-sync outs to avoid stale outs from saved state
                         const weAreBatting = shouldWeBeBatting === true || (shouldWeBeBatting === null && prev.isYourTeamBatting);
-                        if (!weAreBatting && data.outs !== undefined && data.outs !== null && prev.outs !== data.outs) {
-                            console.log(`🔄 Outs synced from metadata (opponent batting): ${data.outs}`);
+                        const forceSync = justResumed.current === true;
+                        if ((!weAreBatting || forceSync) && data.outs !== undefined && data.outs !== null && prev.outs !== data.outs) {
+                            console.log(`🔄 Outs synced from metadata${forceSync ? ' (resume force-sync)' : ' (opponent batting)'}: ${data.outs}`);
                             newState.outs = data.outs;
                             changed = true;
+                        }
+                        
+                        // Clear the justResumed flag after first metadata sync
+                        if (justResumed.current) {
+                            justResumed.current = false;
+                            console.log('🔄 Resume sync complete - returning to normal sync mode');
                         }
                         
                         // Update batting state from metadata (AUTHORITATIVE)
@@ -1313,6 +1324,7 @@ useEffect(() => {
                         };
                         
                         setGameState(restoredGameState);
+                        justResumed.current = true;  // Force full metadata sync on first subscription callback
                         setSetupMode(false);
                         console.log('✅ Resumed game from saved state:', restoredGameState);
                         return;
@@ -1851,23 +1863,24 @@ useEffect(() => {
                     playHistory: [...prev.playHistory, pitchingChangeRecord]
                 }));
                 
-                // Update Firebase metadata - ONLY for YOUR team's pitcher
-                // Let opponent control their own pitcher in metadata
-                if (isYourTeam) {
-                    try {
-                        const pitcherKey = isHome ? 'homePitcher' : 'awayPitcher';
-                        
-                        await window.FirebaseGameTracker.updateGameMetadata(
-                            selectedGame.seasonId,
-                            selectedGame.id,
-                            { [pitcherKey]: { id: newPitcher.id, name: newPitcher.name } }
-                        );
-                        console.log(`✅ Pitcher updated: ${newPitcher.name} now pitching for ${teamName}`);
-                    } catch (error) {
-                        console.error('Error updating pitcher:', error);
+                // Update Firebase metadata - save pitcher for BOTH your team and opponent
+                // Both trackers can write both fields; merge:true prevents overwrites
+                try {
+                    let pitcherKey;
+                    if (isYourTeam) {
+                        pitcherKey = isHome ? 'homePitcher' : 'awayPitcher';
+                    } else {
+                        pitcherKey = isHome ? 'awayPitcher' : 'homePitcher';
                     }
-                } else {
-                    console.log(`ℹ️ Opponent pitcher change recorded locally: ${newPitcher.name}`);
+                    
+                    await window.FirebaseGameTracker.updateGameMetadata(
+                        selectedGame.seasonId,
+                        selectedGame.id,
+                        { [pitcherKey]: { id: newPitcher.id, name: newPitcher.name } }
+                    );
+                    console.log(`✅ Pitcher updated in metadata: ${newPitcher.name} now pitching for ${teamName}`);
+                } catch (error) {
+                    console.error('Error updating pitcher:', error);
                 }
                 
                 setPendingPitcherChange(null);
@@ -1884,23 +1897,29 @@ useEffect(() => {
                 if (yourPitcherSelection) setYourPitcher(yourPitcherSelection);
                 if (opponentPitcherSelection) setOpponentPitcher(opponentPitcherSelection);
                 
-                // Update Firebase metadata - ONLY save YOUR team's pitcher
-                // Let the other team control their own pitcher in metadata
-                // (opponent pitcher is still tracked per-play in opposingPitcher field)
+                // Update Firebase metadata - save BOTH pitchers so either tracker can restore them
+                // merge:true ensures we don't overwrite other metadata fields
                 try {
+                    const updateData = {};
                     if (yourPitcherSelection) {
-                        const updateData = {
-                            [isHome ? 'homePitcher' : 'awayPitcher']: {
-                                id: yourPitcherSelection.id,
-                                name: yourPitcherSelection.name
-                            }
+                        updateData[isHome ? 'homePitcher' : 'awayPitcher'] = {
+                            id: yourPitcherSelection.id,
+                            name: yourPitcherSelection.name
                         };
+                    }
+                    if (opponentPitcherSelection) {
+                        updateData[isHome ? 'awayPitcher' : 'homePitcher'] = {
+                            id: opponentPitcherSelection.id,
+                            name: opponentPitcherSelection.name
+                        };
+                    }
+                    if (Object.keys(updateData).length > 0) {
                         await window.FirebaseGameTracker.updateGameMetadata(
                             selectedGame.seasonId,
                             selectedGame.id,
                             updateData
                         );
-                        console.log('✅ Your team pitcher saved to metadata');
+                        console.log('✅ Pitcher selections saved to metadata:', Object.keys(updateData).join(', '));
                     }
                 } catch (error) {
                     console.error('Error saving pitcher selection:', error);
@@ -2134,8 +2153,7 @@ useEffect(() => {
                 setGameState(newState);
                 
                 // Update shared game metadata so both teams know who's batting
-                // IMPORTANT: Only write OUR score field — opponent controls theirs
-                // This prevents race conditions where simultaneous saves overwrite each other
+                // Only write YOUR team's score - let opponent own theirs (merge:true preserves their field)
                 try {
                     await window.FirebaseGameTracker.updateGameMetadata(selectedGame.seasonId, selectedGame.id, {
                         inning: nextInning,
@@ -3894,7 +3912,7 @@ const ViewerOnlyMessage = () => {
                                     {userCanTrack ? (
                                         <>
                                             <div className="text-sm mb-5 opacity-90 italic">
-                                                Opponent batting - click when {selectedTeam} is back at bat
+                                                Advance to let the other team bat
                                             </div>
                                             <button
                                                 onClick={advanceToNextHalfInning}
