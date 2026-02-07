@@ -396,7 +396,7 @@ function getOrdinalSuffix(num) {
                         yourTeam: gameState.score.yourTeam,
                         opponent: gameState.score.opponent
                     },
-                    innings: gameMetadata?.inning || gameState.inning,
+                    innings: gameState.inning,
                     battingStats,
                     playByPlay: gameState.playHistory,
                     completedAt: serverTimestamp()
@@ -623,8 +623,8 @@ useEffect(() => {
     
     const unsubscribers = [];
     
-    // Staleness threshold - 5 minutes (2-min heartbeat means ~2 missed beats)
-    const STALE_THRESHOLD_MS = 5 * 60 * 1000;
+    // Staleness threshold - 10 minutes
+    const STALE_THRESHOLD_MS = 10 * 60 * 1000;
     
     games.forEach(game => {
         if (!game.seasonId) return;
@@ -657,16 +657,8 @@ useEffect(() => {
 }, [games, currentSeason]);
 
 // Warn before leaving page with active game in progress
-// Also attempt presence cleanup on page close/navigation
 useEffect(() => {
     const handleBeforeUnload = (e) => {
-        // Best-effort presence cleanup (fire-and-forget, browser may not wait)
-        if (selectedGame?.seasonId && currentUser?.uid && !setupMode) {
-            window.FirebaseGameTracker.removePresence(
-                selectedGame.seasonId, selectedGame.id, currentUser.uid
-            ).catch(() => {});  // Swallow errors — page is closing
-        }
-        
         // Only warn if game is active and has plays recorded
         if (gameState.gameActive && gameState.playHistory.length > 0 && !setupMode) {
             e.preventDefault();
@@ -676,23 +668,9 @@ useEffect(() => {
         }
     };
     
-    // pagehide fires more reliably than beforeunload on mobile/PWA
-    // (iOS Safari, Android Chrome app kills, PWA backgrounding)
-    const handlePageHide = (e) => {
-        if (selectedGame?.seasonId && currentUser?.uid && !setupMode) {
-            window.FirebaseGameTracker.removePresence(
-                selectedGame.seasonId, selectedGame.id, currentUser.uid
-            ).catch(() => {});
-        }
-    };
-    
     window.addEventListener('beforeunload', handleBeforeUnload);
-    window.addEventListener('pagehide', handlePageHide);
-    return () => {
-        window.removeEventListener('beforeunload', handleBeforeUnload);
-        window.removeEventListener('pagehide', handlePageHide);
-    };
-}, [gameState.gameActive, gameState.playHistory.length, setupMode, selectedGame, currentUser]);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+}, [gameState.gameActive, gameState.playHistory.length, setupMode]);
 
 // Auto-save game state whenever it changes
 useEffect(() => {
@@ -1028,8 +1006,8 @@ useEffect(() => {
             
             // Subscribe to presence
             unsubscribePresence = window.FirebaseGameTracker.subscribeToPresence(seasonId, selectedGame.id, (users) => {
-                // Filter out stale users (older than 5 minutes)
-                const STALE_THRESHOLD_MS = 5 * 60 * 1000;
+                // Filter out stale users (older than 10 minutes)
+                const STALE_THRESHOLD_MS = 10 * 60 * 1000;
                 const now = Date.now();
                 const activeUsers = users.filter(u => {
                     if (!u.lastSeen) return false;
