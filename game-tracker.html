@@ -570,7 +570,6 @@ function getOrdinalSuffix(num) {
 			const [showPitcherModal, setShowPitcherModal] = useState(false);  // Show pitcher selection on game start
 			const [pendingPitcherChange, setPendingPitcherChange] = useState(null);  // For confirmation dialog
 			const [showRunRemovalModal, setShowRunRemovalModal] = useState(false);  // For selecting which player's run to remove
-			const [showRunAddModal, setShowRunAddModal] = useState(false);  // For selecting which player scored (manual add)
 			
 			// Track how many state updates came from Firebase to prevent save loops
 			// Counter instead of boolean: each Firebase-triggered setState increments,
@@ -1649,9 +1648,10 @@ useEffect(() => {
                 } else if (play.outs) {
                     autoOuts = play.outs;
                 } else if (play.value === 'fielders_choice') {
-                    // FC: advance runners like a single, batter reaches first, one runner is out
-                    // Tracker will X the runner who was thrown out
-                    autoOuts = 1;
+                    // FC: batter reaches first, runners advance like a single
+                    // No auto-outs — tracker ❌'s each runner thrown out (each adds 1 out)
+                    // Covers standard FC (1 out) and FC double play (2 outs)
+                    autoOuts = 0;
                     const runnersToMove = [];
                     if (newBases.third) runnersToMove.push({ runner: newBases.third, from: 'third' });
                     if (newBases.second) runnersToMove.push({ runner: newBases.second, from: 'second' });
@@ -1739,27 +1739,21 @@ useEffect(() => {
                 const newBases = { ...tempBases };
                 newBases[base] = null;
                 setTempBases(newBases);
-                // For fielder's choice, removing a runner identifies WHO was out
-                // but doesn't add another out (FC out already counted in autoOuts)
-                if (pendingPlay?.play?.value !== 'fielders_choice') {
+                // Each runner removed = one out
+                // For DP, outs are pre-counted so removal just identifies who
+                if (pendingPlay?.play?.value !== 'doubleplay') {
                     setTempOuts(tempOuts + 1);
                 }
             };
 
-            // Un-score a runner (put them back on 3rd base, or mark out at home for FC)
+            // Un-score a runner (put them back on 3rd base)
             const unscoreRunner = (runnerName) => {
                 // Remove from scored runners
                 setRunnersScored(prev => prev.filter(r => r !== runnerName));
                 // Decrement score
                 setTempScore(prev => Math.max(0, prev - 1));
                 
-                // For FC: runner was out at home, don't put back on base
-                // The out is already counted in autoOuts, just remove the run
-                if (pendingPlay?.play?.value === 'fielders_choice') {
-                    return;
-                }
-                
-                // Put runner back on 3rd (if 3rd is empty, otherwise error)
+                // Put runner back on 3rd (if 3rd is empty, otherwise try 2nd, then 1st)
                 setTempBases(prev => {
                     if (prev.third) {
                         // 3rd is occupied - try 2nd
@@ -2003,46 +1997,38 @@ useEffect(() => {
                     // Removing a run - show modal to select which player
                     setShowRunRemovalModal(true);
                 } else {
-                    // Adding a run - show modal to select which player scored
-                    setShowRunAddModal(true);
-                }
-            };
-
-            // Confirm manual run addition with specific player
-            const confirmRunAddition = async (playerName) => {
-                setShowRunAddModal(false);
-                
-                const newYourScore = gameState.score.yourTeam + 1;
-                const currentInning = gameMetadata?.inning || gameState.inning;
-                
-                const adjustmentRecord = {
-                    type: 'manual-run-adjustment',
-                    inning: currentInning,
-                    isYourTeam: true,
-                    adjustment: 1,
-                    runnerName: playerName,  // Track which player scored
-                    previousScore: gameState.score.yourTeam,
-                    newScore: newYourScore,
-                    reason: `Run added for ${playerName} (manual)`,
-                    timestamp: Date.now()
-                };
-                
-                setGameState(prev => ({
-                    ...prev,
-                    score: { ...prev.score, yourTeam: newYourScore },
-                    playHistory: [...prev.playHistory, adjustmentRecord]
-                }));
-                
-                // Update Firebase
-                try {
-                    await window.FirebaseGameTracker.updateGameMetadata(
-                        selectedGame.seasonId,
-                        selectedGame.id,
-                        { [isHome ? 'homeScore' : 'awayScore']: newYourScore }
-                    );
-                    console.log(`✅ Run added for ${playerName}: ${gameState.score.yourTeam} → ${newYourScore}`);
-                } catch (error) {
-                    console.error('Error updating score:', error);
+                    // Adding a run - add directly with audit trail
+                    const newYourScore = gameState.score.yourTeam + 1;
+                    const currentInning = gameMetadata?.inning || gameState.inning;
+                    
+                    const adjustmentRecord = {
+                        type: 'manual-run-adjustment',
+                        inning: currentInning,
+                        isYourTeam: true,
+                        adjustment: 1,
+                        previousScore: gameState.score.yourTeam,
+                        newScore: newYourScore,
+                        reason: 'Manual run added',
+                        timestamp: Date.now()
+                    };
+                    
+                    setGameState(prev => ({
+                        ...prev,
+                        score: { ...prev.score, yourTeam: newYourScore },
+                        playHistory: [...prev.playHistory, adjustmentRecord]
+                    }));
+                    
+                    // Update Firebase
+                    try {
+                        await window.FirebaseGameTracker.updateGameMetadata(
+                            selectedGame.seasonId,
+                            selectedGame.id,
+                            { [isHome ? 'homeScore' : 'awayScore']: newYourScore }
+                        );
+                        console.log(`✅ Run added manually: ${gameState.score.yourTeam} → ${newYourScore}`);
+                    } catch (error) {
+                        console.error('Error updating score:', error);
+                    }
                 }
             };
 
@@ -3198,82 +3184,6 @@ const RunRemovalModal = ({
     );
 };
 
-// Run Addition Modal - select which player scored
-const RunAddModal = ({ 
-    isOpen, 
-    onClose, 
-    onConfirm, 
-    battingOrder,
-    bases,
-    teamName 
-}) => {
-    if (!isOpen) return null;
-    
-    // Show runners on base first (most likely scorers), then rest of lineup
-    const runnersOnBase = [];
-    if (bases?.third) runnersOnBase.push(bases.third);
-    if (bases?.second) runnersOnBase.push(bases.second);
-    if (bases?.first) runnersOnBase.push(bases.first);
-    
-    const otherPlayers = battingOrder.filter(p => !runnersOnBase.includes(p.name));
-    
-    return (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6">
-                <h2 className="text-xl font-bold mb-2 text-center">➕ Add Run</h2>
-                <p className="text-gray-600 text-sm text-center mb-4">
-                    Select which player scored
-                </p>
-                
-                {runnersOnBase.length > 0 && (
-                    <div className="mb-3">
-                        <p className="text-xs font-semibold text-gray-500 uppercase mb-2">On Base</p>
-                        <div className="space-y-2">
-                            {runnersOnBase.map(name => (
-                                <button
-                                    key={name}
-                                    onClick={() => onConfirm(name)}
-                                    className="w-full text-left p-4 rounded-xl bg-green-50 hover:bg-green-100 active:bg-green-200 transition-colors border-2 border-green-200 hover:border-green-400"
-                                >
-                                    <span className="font-semibold text-gray-800">{name}</span>
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-                )}
-                
-                {otherPlayers.length > 0 && (
-                    <div>
-                        {runnersOnBase.length > 0 && (
-                            <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Other Players</p>
-                        )}
-                        <div className="space-y-2 max-h-48 overflow-y-auto">
-                            {otherPlayers.map(player => (
-                                <button
-                                    key={player.id}
-                                    onClick={() => onConfirm(player.name)}
-                                    className="w-full text-left p-4 rounded-xl bg-gray-50 hover:bg-gray-100 active:bg-gray-200 transition-colors border-2 border-gray-200 hover:border-gray-400"
-                                >
-                                    <span className="font-semibold text-gray-800">{player.name}</span>
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-                )}
-                
-                <div className="flex gap-3 mt-6">
-                    <button
-                        onClick={onClose}
-                        className="flex-1 py-3 px-4 rounded-xl font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors"
-                    >
-                        Cancel
-                    </button>
-                </div>
-            </div>
-        </div>
-    );
-};
-
 // Opponent Pitcher Box Score Component
 const PitcherBoxScore = ({ pitcherStats, opponentTeamName }) => {
     if (!pitcherStats || pitcherStats.length === 0) return null;
@@ -3839,16 +3749,6 @@ const ViewerOnlyMessage = () => {
                         onClose={() => setShowRunRemovalModal(false)}
                         onConfirm={confirmRunRemoval}
                         playersWhoScored={getPlayersWhoScored()}
-                        teamName={selectedTeam}
-                    />
-                    
-                    {/* Run Addition Modal */}
-                    <RunAddModal
-                        isOpen={showRunAddModal}
-                        onClose={() => setShowRunAddModal(false)}
-                        onConfirm={confirmRunAddition}
-                        battingOrder={battingOrder}
-                        bases={gameState.bases}
                         teamName={selectedTeam}
                     />
                     
