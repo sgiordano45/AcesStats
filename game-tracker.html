@@ -396,7 +396,7 @@ function getOrdinalSuffix(num) {
                         yourTeam: gameState.score.yourTeam,
                         opponent: gameState.score.opponent
                     },
-                    innings: gameState.inning,
+                    innings: gameMetadata?.inning || gameState.inning,
                     battingStats,
                     playByPlay: gameState.playHistory,
                     completedAt: serverTimestamp()
@@ -1598,29 +1598,23 @@ useEffect(() => {
                     const isWalk = play.value === 'walk';
                     
                     if (isWalk) {
+                        // Walk: batter takes 1st, runners only advance if FORCED
+                        // Process right-to-left: 3rd can only be forced if 2nd is occupied,
+                        // 2nd can only be forced if 1st is occupied
                         if (newBases.first) {
+                            // Runner on 1st is forced to 2nd
                             if (newBases.second) {
+                                // Runner on 2nd is forced to 3rd
                                 if (newBases.third) {
-                                    // Bases loaded walk - runner from 3rd scores
+                                    // Runner on 3rd is forced home
                                     autoScore++;
                                     scoredRunners.push(newBases.third);
-                                    newBases.third = newBases.second;
-                                    newBases.second = newBases.first;
-                                    newBases.first = currentBatter.name;
-                                } else {
-                                    newBases.third = newBases.second;
-                                    newBases.second = newBases.first;
-                                    newBases.first = currentBatter.name;
                                 }
-                            } else {
-                                const runnerOn3rd = newBases.third;
-                                newBases.second = newBases.first;
-                                newBases.first = currentBatter.name;
-                                newBases.third = runnerOn3rd;
+                                newBases.third = newBases.second;
                             }
-                        } else {
-                            newBases.first = currentBatter.name;
+                            newBases.second = newBases.first;
                         }
+                        newBases.first = currentBatter.name;
                     } else {
                         // Single - runner from 3rd scores
                         const runnersToMove = [];
