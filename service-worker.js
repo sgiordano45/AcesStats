@@ -1,8 +1,8 @@
 // service-worker.js - Unified Service Worker
 // Handles both offline functionality AND Firebase Cloud Messaging
-// Version 2.0.6 - Fix iOS PWA notification tag to prevent silent replacement
+// Version 2.0.7 - Add shared-styles.css, cache bust for Phase 1 refactor
 
-const CACHE_VERSION = 'aces-v2.0.6';
+const CACHE_VERSION = 'aces-v2.0.7';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const DYNAMIC_CACHE = `${CACHE_VERSION}-dynamic`;
 const IMAGE_CACHE = `${CACHE_VERSION}-images`;
@@ -14,6 +14,7 @@ const BASE_PATH = '';
 // JS files now use network-first so updates roll out immediately!
 const STATIC_ASSETS = [
   `${BASE_PATH}/style.css`,
+  `${BASE_PATH}/shared-styles.css`,
   `${BASE_PATH}/mobile-enhancements.css`,
   `${BASE_PATH}/nav-styles.css`
 ];
