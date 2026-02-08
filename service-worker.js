@@ -1,8 +1,8 @@
 // service-worker.js - Unified Service Worker
 // Handles both offline functionality AND Firebase Cloud Messaging
-// Version 2.0.8 - Add shared-styles.css, Phase 1 CSS refactor
+// Version 2.0.9 - Add shared-styles.css, Phase 1 CSS refactor
 
-const CACHE_VERSION = 'aces-v2.0.8';
+const CACHE_VERSION = 'aces-v2.0.9';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const DYNAMIC_CACHE = `${CACHE_VERSION}-dynamic`;
 const IMAGE_CACHE = `${CACHE_VERSION}-images`;
