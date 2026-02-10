@@ -342,6 +342,15 @@ const TEAM_COLORS = {
   gold: '#CFB53B', carolina: '#4b9cd3', army: '#654321'
 };
 
+// Season sort: 2024-summer, 2024-fall, 2025-summer, 2025-fall, etc.
+function seasonSortKey(seasonId) {
+  const parts = seasonId.split('-');
+  const year = parseInt(parts[0]) || 0;
+  const typeOrder = { spring: 0, summer: 1, fall: 2, winter: 3 };
+  const type = (typeOrder[parts[1]] !== undefined) ? typeOrder[parts[1]] : 9;
+  return year * 10 + type;
+}
+
 let allPlayers = [];
 let allSeasons = [];
 let seasonRosters = {}; // { seasonId: { teamName: [playerNames] } }
@@ -357,7 +366,7 @@ async function init() {
     const seasons = await getAllSeasons();
     allSeasons = seasons
       .map(s => ({ id: s.id, name: s.seasonName || s.id, type: s.seasonType || '', ...s }))
-      .sort((a, b) => a.id.localeCompare(b.id));
+      .sort((a, b) => seasonSortKey(a.id) - seasonSortKey(b.id));
     
     // Load all players with season data
     allPlayers = await getAllPlayerStatsOptimized();
@@ -396,7 +405,13 @@ function buildSeasonRosters() {
     
     if (player.seasons && typeof player.seasons === 'object') {
       Object.entries(player.seasons).forEach(([seasonKey, stats]) => {
-        // Extract base season id (e.g., "2025-fall" from "2025-fall-orange")
+        // Skip sub/substitute players - check key suffix AND stats field
+        if (seasonKey.endsWith('-sub')) return;
+        if (stats.sub === 'Yes' || stats.sub === 'yes' || stats.sub === true) return;
+        
+        // Extract base season id and team name
+        // Format: "2025-fall-orange" -> baseId: "2025-fall", team: "orange"
+        // Format: "2025-fall" -> baseId: "2025-fall", team from stats
         const parts = seasonKey.split('-');
         let baseSeasonId, teamName;
         
@@ -505,7 +520,7 @@ function compareRosters(fromId, toId) {
   });
   
   // Check for players who were in an even earlier season (for "returned" detection)
-  const seasonsWithData = allSeasons.filter(s => seasonRosters[s.id]).map(s => s.id).sort();
+  const seasonsWithData = allSeasons.filter(s => seasonRosters[s.id]).map(s => s.id).sort((a, b) => seasonSortKey(a) - seasonSortKey(b));
   const fromIndex = seasonsWithData.indexOf(fromId);
   const earlierPlayers = new Set();
   for (let i = 0; i < fromIndex; i++) {
@@ -695,7 +710,7 @@ function renderTimelineView(comparison, searchTerm, fromId, toId) {
   const container = document.getElementById('timelineView');
   
   // Get all seasons in order for full timeline
-  const seasonsWithData = allSeasons.filter(s => seasonRosters[s.id]).map(s => s.id).sort();
+  const seasonsWithData = allSeasons.filter(s => seasonRosters[s.id]).map(s => s.id).sort((a, b) => seasonSortKey(a) - seasonSortKey(b));
   
   // Get all unique players
   const allPlayerNames = new Set();
