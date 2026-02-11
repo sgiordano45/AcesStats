@@ -109,6 +109,7 @@ export const NAV_STRUCTURE = {
     { id: 'playoff-history', href: 'playoff-history.html', label: 'Playoff History', icon: '🗂️', priority: 3 },
     { id: 'feature-submit', href: 'feature-submit.html', label: 'Submit Feedback', icon: '💡', priority: 3 },
     { id: 'help', href: 'help.html', label: 'Help Center', icon: '📚', priority: 3 },
+    { id: 'roster-tracker', href: 'roster-tracker.html', label: 'Roster Tracker', icon: '📋', priority: 3 },
     // game-preview removed - requires specific game ID parameter
   ],
   
@@ -291,6 +292,10 @@ export const PAGE_CONFIGS = {
 
   'help.html': {
     desktop: ['home']
+  },
+
+  'roster-tracker.html': {
+    desktop: ['home', 'current-season', 'teams', 'players', 'seasons', 'history']
   },
 
   // Auth-specific pages
