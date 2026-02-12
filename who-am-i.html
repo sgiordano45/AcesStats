@@ -863,7 +863,7 @@ import {
 // ============================================
 // VERSION CHECK - Increment to clear old localStorage data
 // ============================================
-const DATA_VERSION = 2;
+const DATA_VERSION = 3;
 const VERSION_KEY = 'acesWhoAmI_dataVersion';
 
 (function checkDataVersion() {
@@ -928,9 +928,11 @@ function seededRandom(seed) {
 }
 
 function getDayNumber() {
-  const start = new Date(LAUNCH_YEAR, LAUNCH_MONTH, LAUNCH_DAY).setHours(0, 0, 0, 0);
-  const now = new Date().setHours(0, 0, 0, 0);
-  const daysSinceLaunch = Math.floor((now - start) / (1000 * 60 * 60 * 24));
+  // Use UTC to avoid timezone edge cases causing same day across midnight
+  const start = new Date(Date.UTC(LAUNCH_YEAR, LAUNCH_MONTH, LAUNCH_DAY));
+  const now = new Date();
+  const nowUTC = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  const daysSinceLaunch = Math.floor((nowUTC - start) / (1000 * 60 * 60 * 24));
   return Math.max(1, daysSinceLaunch + 1);
 }
 
@@ -1071,17 +1073,30 @@ function generateDailyPuzzle() {
   const dayNum = getDayNumber();
   const seed = dayNum * 98735;
   
+  console.log(`[Who Am I] Day #${dayNum}, Seed: ${seed}`);
+  
   // Filter to players with enough data (10+ career games, non-sub seasons)
-  const eligiblePlayers = allPlayers.filter(p => {
-    const seasons = getNonSubSeasons(p);
-    if (seasons.length === 0) return false;
-    const careerGames = p.career?.games || p.careerGames || 0;
-    return careerGames >= 10;
-  });
+  const eligiblePlayers = allPlayers
+    .filter(p => {
+      const seasons = getNonSubSeasons(p);
+      if (seasons.length === 0) return false;
+      const careerGames = p.career?.games || p.careerGames || 0;
+      return careerGames >= 10;
+    })
+    .sort((a, b) => {
+      // Double-ensure consistent order even after filtering
+      const nameA = (a.name || a.playerName || '').toLowerCase();
+      const nameB = (b.name || b.playerName || '').toLowerCase();
+      return nameA.localeCompare(nameB);
+    });
+  
+  console.log(`[Who Am I] ${eligiblePlayers.length} eligible players`);
   
   const shuffled = shuffleWithSeed(eligiblePlayers, seed);
   const player = shuffled[0];
   const clues = generateClues(player);
+  
+  console.log(`[Who Am I] Selected: ${player.name || player.playerName}`);
   
   return {
     dayNum,
@@ -1387,9 +1402,17 @@ async function updateLifetimeStats() {
   }
 }
 
-window.showStats = function() {
+window.showStats = async function() {
   const modal = document.getElementById('statsModal');
-  const stats = getLocalStats();
+  
+  // Load from Firebase first if logged in, otherwise use localStorage
+  let stats;
+  if (currentUser) {
+    stats = await loadStatsFromFirebase();
+  }
+  if (!stats) {
+    stats = getLocalStats();
+  }
   
   document.getElementById('statPlayed').textContent = stats.gamesPlayed;
   document.getElementById('statWins').textContent = stats.wins;
@@ -1690,7 +1713,13 @@ async function init() {
     // Load players
     console.log('Loading player data...');
     const rawPlayers = await getAllPlayerStatsOptimized();
-    allPlayers = rawPlayers.filter(p => p.migrated !== true);
+    allPlayers = rawPlayers
+      .filter(p => p.migrated !== true)
+      .sort((a, b) => {
+        const nameA = (a.name || a.playerName || '').toLowerCase();
+        const nameB = (b.name || b.playerName || '').toLowerCase();
+        return nameA.localeCompare(nameB);
+      });
     playerNames = allPlayers.map(p => p.name || p.playerName).filter(Boolean);
     console.log(`Loaded ${allPlayers.length} players`);
     
