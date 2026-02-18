@@ -1002,7 +1002,8 @@ onAuthStateChanged(auth, async (user) => {
 // ── Load seasons ─────────────────────────────────────────────
 // Minimum season to show in violations — nothing before 2025 Fall
 const MIN_SEASON = { year: 2025, half: 'fall' };
-const SEASON_HALF_ORDER = { summer: 0, spring: 1, fall: 2 };
+// Chronological order within a year: summer comes before fall
+const SEASON_HALF_ORDER = { summer: 0, fall: 1, spring: 2 };
 
 function seasonSortKey(id) {
   const [y, h] = id.split('-');
@@ -1025,8 +1026,9 @@ async function loadSeasons() {
     // Filter to 2025 Fall and later only
     const eligible = allSeasons.filter(s => isSeasonEligible(s.id));
 
-    // Sort newest first
-    eligible.sort((a, b) => seasonSortKey(b.id) - seasonSortKey(a.id));
+    // Sort oldest → newest (left-to-right chronological for buttons)
+    // Within same year: 2026-summer (key 20260) before 2026-fall (key 20261)
+    eligible.sort((a, b) => seasonSortKey(a.id) - seasonSortKey(b.id));
 
     availableSeasons = eligible.map(s => ({
       id: s.id,
@@ -1039,13 +1041,12 @@ async function loadSeasons() {
       availableSeasons = [{ id: '2025-fall', label: '2025 Fall', isActive: false }];
     }
 
-    // Default to active season or most recent
-    const activeEntry = availableSeasons.find(s => s.isActive) || availableSeasons[0];
+    // Default to active season, or most recent (last in the sorted array)
+    const activeEntry = availableSeasons.find(s => s.isActive) || availableSeasons[availableSeasons.length - 1];
     activeSeason = activeEntry?.id || null;
 
   } catch (e) {
     console.error('Error loading seasons:', e);
-    // Graceful fallback — show 2025 fall placeholder
     availableSeasons = [{ id: '2025-fall', label: '2025 Fall', isActive: false }];
     activeSeason = '2025-fall';
   }
@@ -1072,11 +1073,13 @@ function populateSeasonFormSelect() {
   const sel = document.getElementById('violationSeason');
   if (!sel) return;
   sel.innerHTML = '<option value="">Select season...</option>';
-  availableSeasons.forEach(s => {
+  // Form dropdown: newest first for easy selection
+  const forForm = [...availableSeasons].reverse();
+  forForm.forEach(s => {
     const opt = document.createElement('option');
     opt.value = s.id;
     opt.textContent = s.label + (s.isActive ? ' (Current)' : '');
-    if (s.isActive) opt.selected = true;
+    if (s.id === activeSeason) opt.selected = true;
     sel.appendChild(opt);
   });
 }
