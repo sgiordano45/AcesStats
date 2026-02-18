@@ -110,6 +110,7 @@ export const NAV_STRUCTURE = {
     { id: 'feature-submit', href: 'feature-submit.html', label: 'Submit Feedback', icon: '💡', priority: 3 },
     { id: 'help', href: 'help.html', label: 'Help Center', icon: '📚', priority: 3 },
     { id: 'roster-tracker', href: 'roster-tracker.html', label: 'Roster Tracker', icon: '📋', priority: 3 },
+    { id: 'violations', href: 'violations.html', label: 'Wall of Shame', icon: '🏛️', priority: 3 },
     // game-preview removed - requires specific game ID parameter
   ],
   
@@ -296,6 +297,10 @@ export const PAGE_CONFIGS = {
 
   'roster-tracker.html': {
     desktop: ['home', 'current-season', 'teams', 'players', 'seasons', 'history']
+  },
+
+  'violations.html': {
+    desktop: ['home', 'current-season', 'league-rules', 'teams', 'players']
   },
 
   // Auth-specific pages

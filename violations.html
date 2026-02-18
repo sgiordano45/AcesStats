@@ -1000,39 +1000,58 @@ onAuthStateChanged(auth, async (user) => {
 });
 
 // ── Load seasons ─────────────────────────────────────────────
+// Minimum season to show in violations — nothing before 2025 Fall
+const MIN_SEASON = { year: 2025, half: 'fall' };
+const SEASON_HALF_ORDER = { summer: 0, spring: 1, fall: 2 };
+
+function seasonSortKey(id) {
+  const [y, h] = id.split('-');
+  return parseInt(y) * 10 + (SEASON_HALF_ORDER[h] ?? 5);
+}
+
+function isSeasonEligible(id) {
+  return seasonSortKey(id) >= seasonSortKey(`${MIN_SEASON.year}-${MIN_SEASON.half}`);
+}
+
+function formatSeasonLabel(id) {
+  const [year, half] = id.split('-');
+  return `${year} ${half.charAt(0).toUpperCase() + half.slice(1)}`;
+}
+
 async function loadSeasons() {
   try {
-    const seasons = await getAllSeasons();
+    const allSeasons = await getAllSeasons();
 
-    // Sort: newest year first, summer before fall within same year
-    const seasonOrder = { summer: 0, fall: 1, spring: 2 };
-    seasons.sort((a, b) => {
-      const [ay, as_] = a.id.split('-');
-      const [by, bs_] = b.id.split('-');
-      if (by !== ay) return parseInt(by) - parseInt(ay); // desc year
-      return (seasonOrder[as_] ?? 9) - (seasonOrder[bs_] ?? 9);
-    });
-    seasons.reverse(); // newest first
+    // Filter to 2025 Fall and later only
+    const eligible = allSeasons.filter(s => isSeasonEligible(s.id));
 
-    availableSeasons = seasons.map(s => {
-      const [year, half] = s.id.split('-');
-      const label = `${year} ${half.charAt(0).toUpperCase() + half.slice(1)}`;
-      return { id: s.id, label, isActive: s.isActive };
-    });
+    // Sort newest first
+    eligible.sort((a, b) => seasonSortKey(b.id) - seasonSortKey(a.id));
 
-    // Default to active season, or most recent
-    const active = availableSeasons.find(s => s.isActive) || availableSeasons[0];
-    activeSeason = active?.id || null;
+    availableSeasons = eligible.map(s => ({
+      id: s.id,
+      label: formatSeasonLabel(s.id),
+      isActive: s.isActive || false
+    }));
 
-    renderSeasonButtons();
-    populateSeasonFormSelect();
+    // If Firestore has no eligible seasons yet, ensure 2025-fall placeholder exists
+    if (!availableSeasons.length) {
+      availableSeasons = [{ id: '2025-fall', label: '2025 Fall', isActive: false }];
+    }
+
+    // Default to active season or most recent
+    const activeEntry = availableSeasons.find(s => s.isActive) || availableSeasons[0];
+    activeSeason = activeEntry?.id || null;
+
   } catch (e) {
     console.error('Error loading seasons:', e);
-    // Fall back — no season filter
-    availableSeasons = [];
-    activeSeason = null;
-    renderSeasonButtons();
+    // Graceful fallback — show 2025 fall placeholder
+    availableSeasons = [{ id: '2025-fall', label: '2025 Fall', isActive: false }];
+    activeSeason = '2025-fall';
   }
+
+  renderSeasonButtons();
+  populateSeasonFormSelect();
 }
 
 function renderSeasonButtons() {
