@@ -977,7 +977,8 @@ import {
   getUserProfile,
   USER_ROLES,
   isUserCaptain,
-  hasLeagueRole
+  hasLeagueRole,
+  hasSpecialRole
 } from './firebase-auth.js';
 
 import { getAllSeasons } from './firebase-data.js';
@@ -1008,7 +1009,7 @@ onAuthStateChanged(auth, async (user) => {
     const res = await getUserProfile(user.uid);
     if (res.success) {
       userProfile = res.data;
-      canSubmit = isUserCaptain(userProfile) || hasLeagueRole(userProfile);
+      canSubmit = isUserCaptain(userProfile) || hasLeagueRole(userProfile) || hasSpecialRole(userProfile, 'mallCop');
     }
   }
 
@@ -1160,7 +1161,12 @@ function buildCard(v) {
   const initials = (v.offenderName || '?').split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase();
   const sevLabel = SEV_LABELS[sev] || '';
   const date = v.createdAt?.toDate ? v.createdAt.toDate().toLocaleDateString('en-US', {month:'short',day:'numeric',year:'numeric'}) : 'Unknown date';
-  const reporter = v.anonymous ? '🕵️ Anonymous Captain' : (v.reporterName ? `📋 Reported by ${v.reporterName}` : '📋 Captain');
+  const isMallCop = v.isMallCop === true;
+  const reporter = v.anonymous
+    ? (isMallCop ? '🕵️ Anonymous Mall Cop' : '🕵️ Anonymous Captain')
+    : (v.reporterName
+        ? (isMallCop ? `🚔 Mall Cop: ${escHtml(v.reporterName)}` : `📋 Reported by ${escHtml(v.reporterName)}`)
+        : '📋 Captain');
   const laughs = v.reactions?.laugh || 0;
   const shocked = v.reactions?.shocked || 0;
   const thumbs = v.reactions?.thumbs || 0;
@@ -1265,7 +1271,7 @@ window.switchTab = function(tab) {
 // ── Submit ───────────────────────────────────────────────────
 window.handleSubmit = async function(e) {
   e.preventDefault();
-  if (!canSubmit) { showToast('You need captain permissions to submit.', 'error'); return; }
+  if (!canSubmit) { showToast('You need captain or Mall Cop permissions to submit.', 'error'); return; }
 
   const severity = document.querySelector('input[name="severity"]:checked')?.value;
   if (!severity) { showToast('Please select a severity level.', 'error'); return; }
@@ -1282,6 +1288,7 @@ window.handleSubmit = async function(e) {
     const docData = {
       seasonId: document.getElementById('violationSeason').value,
       offenderName: document.getElementById('offenderName').value.trim(),
+      isMallCop: !isUserCaptain(userProfile) && !hasLeagueRole(userProfile) && hasSpecialRole(userProfile, 'mallCop'),
       offenderTeam: document.getElementById('offenderTeam').value,
       ruleViolated: document.getElementById('ruleViolated').value,
       severity: parseInt(severity),
