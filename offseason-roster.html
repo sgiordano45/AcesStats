@@ -958,6 +958,7 @@
     let pastPlayers = []; // Players not in current season
     let unassignedPlayers = []; // Players imported but not yet assigned to teams
     let seasonType = 'fall-to-summer'; // or 'summer-to-fall'
+    let leagueMaxRoster = null; // null = use seasonType fallback
     let draggedPlayer = null;
     let changeLog = [];
     let activeEditors = [];
@@ -1133,6 +1134,7 @@
           unavailablePlayers = data.unavailablePlayers || [];
           unassignedPlayers = data.unassignedPlayers || [];
           seasonType = data.seasonType || 'fall-to-summer';
+          leagueMaxRoster = data.leagueMaxRoster || null;
           
           console.log('🎯 Loaded into memory - teams:', Object.keys(teams).length);
           renderApp();
@@ -1348,6 +1350,7 @@
           unavailablePlayers: unavailablePlayers,
           unassignedPlayers: unassignedPlayers,
           seasonType: seasonType,
+          leagueMaxRoster: leagueMaxRoster || (seasonType === 'fall-to-summer' ? 16 : 14),
           lastModified: serverTimestamp(),
           lastModifiedBy: currentUser.uid,
           lastModifiedByName: userProfile.displayName || currentUser.email
@@ -1524,14 +1527,18 @@
             </div>
             <div class="header-actions">
               <div id="activeEditors"></div>
-              <a href="draft.html" class="btn" id="snakeDraftBtn" style="background:linear-gradient(135deg,#1a1a2e,#2d1a4e);color:#ffd700;border:1px solid rgba(255,215,0,0.4);display:none;text-decoration:none;gap:.4rem;padding:.6rem 1rem;font-size:.82rem;font-weight:700;border-radius:8px;align-items:center;">
-                🐍 <span class="hide-mobile">Snake Draft</span>
-              </a>
+              <div style="display:flex;align-items:center;gap:0.4rem;background:rgba(255,255,255,0.15);border-radius:8px;padding:0.35rem 0.65rem;" title="Max roster size for this season">
+                <label for="maxRosterInput" style="color:white;font-size:0.78rem;font-weight:600;white-space:nowrap;margin:0;">Max Roster</label>
+                <input type="number" id="maxRosterInput" min="10" max="25" step="1"
+                  style="width:48px;padding:0.2rem 0.35rem;border-radius:5px;border:1px solid rgba(255,255,255,0.4);background:rgba(255,255,255,0.9);font-size:0.85rem;font-weight:700;text-align:center;color:#1a1a1a;"
+                  value="${leagueMaxRoster || (seasonType === 'fall-to-summer' ? 16 : 14)}"
+                  title="Max roster size per team this season">
+              </div>
               <button class="btn btn-toggle" id="toggleSeasonBtn">
                 <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
                   <path d="M3 8h18M3 4h18M3 12h18M3 16h18"/>
                 </svg>
-                <span id="seasonTypeText">${seasonType === 'fall-to-summer' ? 'Fall → Summer (16 spots)' : 'Summer → Fall (14 spots)'}</span>
+                <span id="seasonTypeText">${seasonType === 'fall-to-summer' ? 'Fall → Summer' : 'Summer → Fall'} (${leagueMaxRoster || (seasonType === 'fall-to-summer' ? 16 : 14)} spots)</span>
               </button>
               <button class="btn btn-changelog" id="toggleChangelogBtn">
                 <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
@@ -1760,15 +1767,6 @@
     }
     
     function renderUnassigned() {
-      // Show/hide snake draft button
-      const snakeDraftBtn = document.getElementById("snakeDraftBtn");
-      if (snakeDraftBtn) {
-        snakeDraftBtn.style.display = unassignedPlayers.length > 0 ? "inline-flex" : "none";
-        snakeDraftBtn.title = unassignedPlayers.length > 0
-          ? unassignedPlayers.length + " player(s) in draft pool — click to run snake draft"
-          : "No unassigned players to draft";
-      }
-
       const zone = document.getElementById('unassignedZone');
       const grid = document.getElementById('unassignedPlayersGrid');
       const empty = document.getElementById('unassignedEmpty');
@@ -2034,7 +2032,7 @@
             // Create new team if it doesn't exist
             if (!teams[teamName]) {
               teams[teamName] = {
-                maxRoster: seasonType === 'fall-to-summer' ? 16 : 14,
+                maxRoster: leagueMaxRoster || (seasonType === 'fall-to-summer' ? 16 : 14),
                 players: []
               };
               console.log(`✅ Created new team: ${teamName}`);
@@ -2126,7 +2124,7 @@
             // Create new team if it doesn't exist
             if (!teams[teamName]) {
               teams[teamName] = {
-                maxRoster: seasonType === 'fall-to-summer' ? 16 : 14,
+                maxRoster: leagueMaxRoster || (seasonType === 'fall-to-summer' ? 16 : 14),
                 players: []
               };
               console.log(`✅ Created new team: ${teamName}`);
@@ -2183,12 +2181,31 @@
       document.getElementById('toggleSeasonBtn').addEventListener('click', () => {
         seasonType = seasonType === 'fall-to-summer' ? 'summer-to-fall' : 'fall-to-summer';
         
-        Object.keys(teams).forEach(team => {
-          teams[team].maxRoster = seasonType === 'fall-to-summer' ? 16 : 14;
-        });
+        // Only update team maxRoster from seasonType if no custom value is set
+        if (!leagueMaxRoster) {
+          const derived = seasonType === 'fall-to-summer' ? 16 : 14;
+          Object.keys(teams).forEach(team => { teams[team].maxRoster = derived; });
+          document.getElementById('maxRosterInput').value = derived;
+        }
         
         saveRosterChanges();
         logChange('season_type_changed', `changed season type to ${seasonType}`);
+      });
+
+      // Max roster input handler
+      document.getElementById('maxRosterInput').addEventListener('change', () => {
+        const val = parseInt(document.getElementById('maxRosterInput').value);
+        if (isNaN(val) || val < 10 || val > 25) {
+          showToast('Max roster must be between 10 and 25', 'error');
+          document.getElementById('maxRosterInput').value = leagueMaxRoster || (seasonType === 'fall-to-summer' ? 16 : 14);
+          return;
+        }
+        leagueMaxRoster = val;
+        Object.keys(teams).forEach(team => { teams[team].maxRoster = val; });
+        saveRosterChanges();
+        logChange('max_roster_changed', `set max roster size to ${val}`);
+        showToast(`Max roster set to ${val} for all teams`, 'success');
+        renderTeams();
       });
       
       // Save changes
@@ -2242,7 +2259,7 @@
       const info = document.getElementById('rosterSizeInfo');
       
       // Update roster size info based on current season type
-      const maxRoster = seasonType === 'fall-to-summer' ? 16 : 14;
+      const maxRoster = leagueMaxRoster || (seasonType === 'fall-to-summer' ? 16 : 14);
       const seasonLabel = seasonType === 'fall-to-summer' ? 'Fall → Summer' : 'Summer → Fall';
       info.innerHTML = `Max roster will be set to <strong>${maxRoster} players</strong> (${seasonLabel})`;
       
@@ -2272,7 +2289,7 @@
       }
       
       // Create the team
-      const maxRoster = seasonType === 'fall-to-summer' ? 16 : 14;
+      const maxRoster = leagueMaxRoster || (seasonType === 'fall-to-summer' ? 16 : 14);
       teams[teamName] = {
         maxRoster: maxRoster,
         players: []
@@ -2405,7 +2422,7 @@
         
         // Group players by team
         const newTeams = {};
-        const maxRoster = seasonType === 'fall-to-summer' ? 16 : 14;
+        const maxRoster = leagueMaxRoster || (seasonType === 'fall-to-summer' ? 16 : 14);
         
         seasonPlayers.forEach(player => {
           const playerName = player.playerName || player.name || player.id;

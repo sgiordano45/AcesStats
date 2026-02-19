@@ -437,6 +437,7 @@
   let offseasonTeams    = {};   // { teamName: { maxRoster, players[] } }
   let unassignedPlayers = [];   // draft pool from offseasonRosters.unassignedPlayers
   let seasonType        = 'fall-to-summer';
+  let leagueMaxRoster   = null; // set from offseason doc, null = use seasonType fallback
   let participatingTeams = {};  // { teamName: { needsPicks } }
   let draftOrderRound1  = [];
   let snakeOrder        = [];   // [{team, round, pickNum}]
@@ -498,6 +499,7 @@
     offseasonTeams    = d.teams || {};
     unassignedPlayers = d.unassignedPlayers || [];
     seasonType        = d.seasonType || 'fall-to-summer';
+    leagueMaxRoster   = d.leagueMaxRoster || null;
   }
 
   // ── Check for existing draft ───────────────────────────────
@@ -526,7 +528,7 @@
 
   // ── SETUP PHASE ────────────────────────────────────────────
   function renderSetupPhase() {
-    const maxR = seasonType === 'fall-to-summer' ? 16 : 14;
+    const maxR = leagueMaxRoster || (seasonType === 'fall-to-summer' ? 16 : 14);
     document.getElementById('poolCount').textContent  = unassignedPlayers.length;
     document.getElementById('totalTeams').textContent = Object.keys(offseasonTeams).length;
     let open = 0;
@@ -778,7 +780,7 @@
       const ex = t.players||[];
       const np = draftPicks.filter(p=>p.team===name&&p.player);
       const needed = participatingTeams[name]?.needsPicks||0;
-      const pcnt = np.length, tot = ex.length+pcnt, max = t.maxRoster||16;
+      const pcnt = np.length, tot = ex.length+pcnt, max = t.maxRoster||(leagueMaxRoster||(seasonType==='fall-to-summer'?16:14));
       const onClock = name===curTeam, isDone = pcnt>=needed;
       return `
         <div class="rteam ${onClock?'on-clock':''}">
