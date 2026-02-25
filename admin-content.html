@@ -785,6 +785,10 @@
         <span class="icon">📢</span>
         Notifications
       </button>
+      <button class="tab-btn" data-tab="offseason">
+        <span class="icon">🧹</span>
+        Offseason Data
+      </button>
     </div>
 
     <!-- Tab: Documents -->
@@ -1404,6 +1408,54 @@
         </div>
       </div>
     </div>
+
+    <!-- Tab: Offseason Data -->
+    <div class="tab-content" id="tab-offseason">
+      <div class="section">
+        <div class="section-header">
+          🧹 Offseason Data Management
+        </div>
+        <div class="section-content">
+
+          <div class="manual-edit-warning" style="background:#fef3c7; border-left:4px solid #f59e0b; padding:1rem; border-radius:8px; margin-bottom:1.5rem; display:flex; gap:0.75rem; align-items:flex-start;">
+            <span style="font-size:1.3rem;">⚠️</span>
+            <div>
+              <p><strong>Safe to wipe anytime.</strong> The offseason roster planner and draft tool use isolated collections (<code>offseasonRosters</code> and <code>drafts</code>) that are completely separate from live season data. Wiping them will not affect player stats, schedules, or any production data.</p>
+            </div>
+          </div>
+
+          <!-- Offseason Rosters -->
+          <div style="margin-bottom:1.5rem;">
+            <h3 style="font-size:1rem; font-weight:700; color:var(--text-dark); margin-bottom:0.4rem;">📋 Offseason Roster Planner</h3>
+            <p style="color:var(--text-light); font-size:0.9rem; margin-bottom:0.75rem;">Collection: <code>offseasonRosters/current</code> + subcollections (changelog, presence)</p>
+            <div id="offseasonRosterStatus" style="font-size:0.9rem; color:var(--text-light); margin-bottom:0.75rem;">Loading status...</div>
+            <button class="btn btn-danger" onclick="wipeOffseasonRosters()" id="wipeRosterBtn">🗑️ Wipe Offseason Roster Data</button>
+          </div>
+
+          <hr style="border:none; border-top:1px solid var(--border-color); margin:1.5rem 0;">
+
+          <!-- Draft -->
+          <div style="margin-bottom:1.5rem;">
+            <h3 style="font-size:1rem; font-weight:700; color:var(--text-dark); margin-bottom:0.4rem;">🎯 Draft Tool</h3>
+            <p style="color:var(--text-light); font-size:0.9rem; margin-bottom:0.75rem;">Collection: <code>drafts/current</code></p>
+            <div id="draftStatus" style="font-size:0.9rem; color:var(--text-light); margin-bottom:0.75rem;">Loading status...</div>
+            <button class="btn btn-danger" onclick="wipeDraft()" id="wipeDraftBtn">🗑️ Wipe Draft Data</button>
+          </div>
+
+          <hr style="border:none; border-top:1px solid var(--border-color); margin:1.5rem 0;">
+
+          <!-- Sandbox Seasons -->
+          <div>
+            <h3 style="font-size:1rem; font-weight:700; color:var(--text-dark); margin-bottom:0.4rem;">🧪 Sandbox Seasons (Setup Wizard Test Data)</h3>
+            <p style="color:var(--text-light); font-size:0.9rem; margin-bottom:0.75rem;">Any seasons whose ID starts with <code>sandbox-</code>, created while testing the Season Setup Wizard.</p>
+            <div id="sandboxSeasonStatus" style="font-size:0.9rem; color:var(--text-light); margin-bottom:0.75rem;">Loading status...</div>
+            <button class="btn btn-danger" onclick="wipeSandboxSeasons()" id="wipeSandboxBtn">🗑️ Wipe Sandbox Seasons</button>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
   </div>
 </div>
 
@@ -1603,6 +1655,10 @@
           } else if (displayEl) {
             displayEl.textContent = 'no active season found';
           }
+        }
+
+        if (tabId === 'offseason') {
+          loadOffseasonDataStatus();
         }
       });
     });
@@ -2617,6 +2673,135 @@
       console.error('Error loading announcements:', error);
       listEl.innerHTML = '<div class="empty-state">Error loading announcements</div>';
     }
+  };
+
+  // ========================================
+  // OFFSEASON DATA MANAGEMENT
+  // ========================================
+
+  async function loadOffseasonDataStatus() {
+    // Offseason Rosters
+    try {
+      const rosterDoc = await getDoc(doc(db, 'offseasonRosters', 'current'));
+      const el = document.getElementById('offseasonRosterStatus');
+      if (rosterDoc.exists()) {
+        const d = rosterDoc.data();
+        const teamCount = d.teams ? Object.keys(d.teams).length : 0;
+        const modified = d.lastModified?.toDate ? d.lastModified.toDate().toLocaleDateString() : 'unknown';
+        el.innerHTML = `✅ Document exists — <strong>${teamCount} teams</strong>, last modified <strong>${modified}</strong>`;
+        el.style.color = '#16a34a';
+      } else {
+        el.textContent = 'No data — collection is empty.';
+        el.style.color = 'var(--text-light)';
+      }
+    } catch (e) {
+      document.getElementById('offseasonRosterStatus').textContent = 'Error reading status: ' + e.message;
+    }
+
+    // Draft
+    try {
+      const draftDoc = await getDoc(doc(db, 'drafts', 'current'));
+      const el = document.getElementById('draftStatus');
+      if (draftDoc.exists()) {
+        const d = draftDoc.data();
+        const pickCount = d.picks ? d.picks.length : 0;
+        const status = d.status || 'unknown';
+        el.innerHTML = `✅ Document exists — <strong>${pickCount} picks</strong>, status: <strong>${status}</strong>`;
+        el.style.color = '#16a34a';
+      } else {
+        el.textContent = 'No data — collection is empty.';
+        el.style.color = 'var(--text-light)';
+      }
+    } catch (e) {
+      document.getElementById('draftStatus').textContent = 'Error reading status: ' + e.message;
+    }
+
+    // Sandbox Seasons
+    try {
+      const seasonsSnap = await getDocs(collection(db, 'seasons'));
+      const sandboxSeasons = seasonsSnap.docs.filter(d => d.id.startsWith('sandbox-'));
+      const el = document.getElementById('sandboxSeasonStatus');
+      if (sandboxSeasons.length > 0) {
+        el.innerHTML = `⚠️ Found <strong>${sandboxSeasons.length} sandbox season(s)</strong>: ${sandboxSeasons.map(d => `<code>${d.id}</code>`).join(', ')}`;
+        el.style.color = '#b45309';
+      } else {
+        el.textContent = 'No sandbox seasons found.';
+        el.style.color = 'var(--text-light)';
+      }
+    } catch (e) {
+      document.getElementById('sandboxSeasonStatus').textContent = 'Error reading status: ' + e.message;
+    }
+  }
+
+  async function deleteSubcollectionDocs(parentPath, subcollectionName) {
+    try {
+      const snap = await getDocs(collection(db, parentPath, subcollectionName));
+      await Promise.all(snap.docs.map(d => deleteDoc(d.ref)));
+    } catch (e) {
+      // Subcollection may not exist — ignore
+    }
+  }
+
+  window.wipeOffseasonRosters = async function() {
+    if (!confirm('⚠️ This will delete offseasonRosters/current and all its subcollections (changelog, presence).\n\nThis is safe — it does NOT affect live season data.\n\nProceed?')) return;
+    const btn = document.getElementById('wipeRosterBtn');
+    btn.disabled = true;
+    btn.textContent = 'Wiping...';
+    try {
+      await deleteSubcollectionDocs('offseasonRosters/current', 'changelog');
+      await deleteSubcollectionDocs('offseasonRosters/current', 'presence');
+      await deleteDoc(doc(db, 'offseasonRosters', 'current'));
+      showToast('✅ Offseason roster data wiped successfully.', 'success');
+      const el = document.getElementById('offseasonRosterStatus');
+      el.textContent = 'No data — collection is empty.';
+      el.style.color = 'var(--text-light)';
+    } catch (e) {
+      showToast('Error wiping roster data: ' + e.message, 'error');
+    }
+    btn.disabled = false;
+    btn.textContent = '🗑️ Wipe Offseason Roster Data';
+  };
+
+  window.wipeDraft = async function() {
+    if (!confirm('⚠️ This will delete drafts/current.\n\nThis is safe — it does NOT affect live season data.\n\nProceed?')) return;
+    const btn = document.getElementById('wipeDraftBtn');
+    btn.disabled = true;
+    btn.textContent = 'Wiping...';
+    try {
+      await deleteDoc(doc(db, 'drafts', 'current'));
+      showToast('✅ Draft data wiped successfully.', 'success');
+      const el = document.getElementById('draftStatus');
+      el.textContent = 'No data — collection is empty.';
+      el.style.color = 'var(--text-light)';
+    } catch (e) {
+      showToast('Error wiping draft data: ' + e.message, 'error');
+    }
+    btn.disabled = false;
+    btn.textContent = '🗑️ Wipe Draft Data';
+  };
+
+  window.wipeSandboxSeasons = async function() {
+    if (!confirm('⚠️ This will delete all seasons whose ID starts with "sandbox-", including all their games subcollections.\n\nProceed?')) return;
+    const btn = document.getElementById('wipeSandboxBtn');
+    btn.disabled = true;
+    btn.textContent = 'Wiping...';
+    try {
+      const seasonsSnap = await getDocs(collection(db, 'seasons'));
+      const sandboxDocs = seasonsSnap.docs.filter(d => d.id.startsWith('sandbox-'));
+      for (const seasonDoc of sandboxDocs) {
+        const gamesSnap = await getDocs(collection(db, 'seasons', seasonDoc.id, 'games'));
+        await Promise.all(gamesSnap.docs.map(g => deleteDoc(g.ref)));
+        await deleteDoc(seasonDoc.ref);
+      }
+      showToast(`✅ Deleted ${sandboxDocs.length} sandbox season(s).`, 'success');
+      const el = document.getElementById('sandboxSeasonStatus');
+      el.textContent = 'No sandbox seasons found.';
+      el.style.color = 'var(--text-light)';
+    } catch (e) {
+      showToast('Error wiping sandbox seasons: ' + e.message, 'error');
+    }
+    btn.disabled = false;
+    btn.textContent = '🗑️ Wipe Sandbox Seasons';
   };
 
   window.showToast = showToast;
