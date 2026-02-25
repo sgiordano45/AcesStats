@@ -281,8 +281,48 @@
       margin-bottom: 0.5rem;
     }
 
+    .team-card .team-logo-img {
+      width: 60px;
+      height: 60px;
+      object-fit: contain;
+      margin-bottom: 0.5rem;
+      display: block;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    .team-card .team-logo-img.logo-error {
+      display: none;
+    }
+
+    .team-card .team-logo-fallback {
+      font-size: 2rem;
+      margin-bottom: 0.5rem;
+      display: none;
+    }
+
+    .team-card .team-logo-fallback.show {
+      display: block;
+    }
+
     .team-card .team-name {
       font-weight: 600;
+    }
+
+    .team-card.new-team {
+      border-style: dashed;
+      background: #fafafa;
+    }
+
+    .team-card.new-team:hover {
+      background: #f0f9ff;
+      border-color: #0ea5e9;
+    }
+
+    .team-card.new-team.selected {
+      background: #e0f2fe;
+      border-color: #0284c7;
+      border-style: solid;
     }
 
     .team-card .team-check {
@@ -504,11 +544,12 @@
   <header class="header">
     <h1>🏆 Season Setup Wizard</h1>
     <p>Create a new season for Mountainside Aces</p>
+    <button id="sandboxToggleBtn" onclick="toggleSandboxMode()" style="margin-top:0.75rem; background:rgba(255,255,255,0.15); border:2px solid rgba(255,255,255,0.4); color:white; padding:0.4rem 1rem; border-radius:20px; cursor:pointer; font-size:0.85rem; font-weight:600;">🧪 Test in Sandbox Mode</button>
   </header>
 
   <!-- Sandbox Mode Banner -->
   <div id="sandboxBanner" style="display:none; background:#f59e0b; color:#1c1917; padding:0.75rem 1.5rem; text-align:center; font-weight:700; font-size:1rem; letter-spacing:0.02em;">
-    🧪 SANDBOX MODE — All data will be saved under <code style="background:rgba(0,0,0,0.15); padding:0.1rem 0.4rem; border-radius:4px;">seasons/sandbox-*</code> and will NOT affect production. <a href="admin-content.html#offseason" style="color:#1c1917; text-decoration:underline;">Wipe sandbox data</a>
+    🧪 SANDBOX MODE — Data saves as <code style="background:rgba(0,0,0,0.15); padding:0.1rem 0.4rem; border-radius:4px;">seasons/sandbox-*</code> and will NOT affect production. <a href="admin-content.html" style="color:#1c1917; text-decoration:underline;">Wipe sandbox data</a> &nbsp;·&nbsp; <button onclick="toggleSandboxMode()" style="background:rgba(0,0,0,0.15); border:none; color:#1c1917; padding:0.2rem 0.6rem; border-radius:12px; cursor:pointer; font-weight:700; font-size:0.9rem;">✕ Exit Sandbox</button>
   </div>
 
   <div class="container">
@@ -895,13 +936,50 @@
     const auth = getAuth();
 
     // Sandbox mode — activated via ?sandbox=true in URL
-    const SANDBOX_MODE = new URLSearchParams(window.location.search).get('sandbox') === 'true';
-    if (SANDBOX_MODE) {
-      document.getElementById('sandboxBanner').style.display = 'block';
+    let SANDBOX_MODE = new URLSearchParams(window.location.search).get('sandbox') === 'true';
+
+    function applySandboxUI() {
+      const banner = document.getElementById('sandboxBanner');
+      const toggleBtn = document.getElementById('sandboxToggleBtn');
+      const checkbox = document.getElementById('setActive');
+      const hint = document.getElementById('setActiveHint');
+      const createBtn = document.getElementById('createSeasonBtn');
+
+      if (SANDBOX_MODE) {
+        banner.style.display = 'block';
+        toggleBtn.textContent = '✕ Exit Sandbox Mode';
+        toggleBtn.style.background = 'rgba(245,158,11,0.3)';
+        if (checkbox) { checkbox.checked = false; checkbox.disabled = true; }
+        if (hint) hint.textContent = '⛔ Disabled in sandbox mode — sandbox seasons are never set as active.';
+        if (createBtn) createBtn.textContent = '🧪 Create Sandbox Season';
+      } else {
+        banner.style.display = 'none';
+        toggleBtn.textContent = '🧪 Test in Sandbox Mode';
+        toggleBtn.style.background = 'rgba(255,255,255,0.15)';
+        if (checkbox) { checkbox.disabled = false; }
+        if (hint) hint.textContent = 'This will deactivate any currently active season';
+        if (createBtn) createBtn.textContent = '🏆 Create Season';
+      }
     }
 
+    window.toggleSandboxMode = function() {
+      SANDBOX_MODE = !SANDBOX_MODE;
+      applySandboxUI();
+      // Re-render season ID preview if visible
+      const previewEl = document.getElementById('seasonIdPreview');
+      if (previewEl && previewEl.textContent) {
+        const base = previewEl.textContent.replace(/^sandbox-/, '');
+        previewEl.textContent = getSandboxSeasonId(base);
+      }
+    };
+
+    // Apply on load (handles ?sandbox=true URL param)
+    applySandboxUI();
+
     function getSandboxSeasonId(baseId) {
-      return SANDBOX_MODE ? `sandbox-${baseId}` : baseId;
+      // Strip any existing sandbox- prefix before re-applying
+      const clean = baseId.replace(/^sandbox-/, '');
+      return SANDBOX_MODE ? `sandbox-${clean}` : clean;
     }
 
     // State
@@ -942,16 +1020,8 @@
 
       // Show wizard
       document.getElementById('wizardContent').classList.remove('hidden');
-
-      // Apply sandbox mode restrictions to the UI
-      if (SANDBOX_MODE) {
-        const checkbox = document.getElementById('setActive');
-        checkbox.checked = false;
-        checkbox.disabled = true;
-        document.getElementById('setActiveHint').textContent = '⛔ Disabled in sandbox mode — sandbox seasons are never set as active.';
-        document.getElementById('createSeasonBtn').textContent = '🧪 Create Sandbox Season';
-      }
-
+      // Re-apply sandbox UI now that step 4 elements (setActive, createSeasonBtn) exist in DOM
+      applySandboxUI();
       await loadTeams();
       setupEventListeners();
     });
@@ -979,21 +1049,89 @@
       const teamEmojis = {
         'White': '⚪', 'Blue': '🔵', 'Orange': '🟠', 'Green': '🟢',
         'Red': '🔴', 'Purple': '🟣', 'Yellow': '🟡', 'Black': '⚫',
-        'Gray': '⬜', 'Pink': '🩷'
+        'Gold': '🟡', 'Silver': '⚪', 'Army': '🟢', 'Carolina': '🔵', 'Teal': '🩵'
       };
 
-      grid.innerHTML = allTeams.map(team => {
+      // Filter out Kings — they are not an active team
+      const activeTeams = allTeams.filter(team => {
+        const name = (team.name || team.id).toLowerCase();
+        return name !== 'kings';
+      });
+
+      const teamCards = activeTeams.map(team => {
         const name = team.name || team.id;
         const emoji = teamEmojis[name] || '⚾';
+        const logoPath = `logos/${name.toLowerCase().replace(/\s+/g, '_')}.png`;
         return `
           <div class="team-card" data-team-id="${team.id}" onclick="toggleTeam('${team.id}')">
-            <div class="team-emoji">${emoji}</div>
+            <img src="${logoPath}"
+                 alt="${name} Logo"
+                 class="team-logo-img"
+                 onerror="this.classList.add('logo-error'); this.nextElementSibling.classList.add('show');">
+            <div class="team-logo-fallback">${emoji}</div>
             <div class="team-name">${name}</div>
             <div class="team-check">✓</div>
           </div>
         `;
       }).join('');
+
+      // New team card always at the end
+      const newTeamCard = `
+        <div class="team-card new-team" data-team-id="__new__" onclick="toggleNewTeam(this)">
+          <div class="team-emoji">➕</div>
+          <div class="team-name" id="newTeamDisplayName">New Team</div>
+          <input type="text" id="newTeamNameInput"
+                 placeholder="Team name..."
+                 style="display:none; width:100%; margin-top:0.4rem; padding:0.3rem 0.5rem; border:1px solid #cbd5e0; border-radius:6px; font-size:0.85rem; text-align:center;"
+                 onclick="event.stopPropagation()"
+                 oninput="updateNewTeamName(this.value)">
+          <div class="team-check">✓</div>
+        </div>
+      `;
+
+      grid.innerHTML = teamCards + newTeamCard;
     }
+
+    window.toggleNewTeam = function(card) {
+      const input = document.getElementById('newTeamNameInput');
+      const display = document.getElementById('newTeamDisplayName');
+      const isSelected = card.classList.contains('selected');
+
+      if (!isSelected) {
+        // Select it and show input
+        card.classList.add('selected');
+        input.style.display = 'block';
+        display.style.display = 'none';
+        input.focus();
+        // Add placeholder to selectedTeams
+        if (!selectedTeams.includes('__new__')) {
+          selectedTeams.push('__new__');
+        }
+      } else {
+        // Deselect
+        card.classList.remove('selected');
+        input.style.display = 'none';
+        display.style.display = 'block';
+        input.value = '';
+        display.textContent = 'New Team';
+        selectedTeams = selectedTeams.filter(t => t !== '__new__');
+      }
+      updateTeamCount();
+    };
+
+    window.updateNewTeamName = function(value) {
+      const display = document.getElementById('newTeamDisplayName');
+      display.textContent = value.trim() || 'New Team';
+    };
+
+    // Override selectAllTeams to exclude new team card from auto-select
+    window.selectAllTeams = function() {
+      selectedTeams = allTeams
+        .filter(t => (t.name || t.id).toLowerCase() !== 'kings')
+        .map(t => t.id);
+      document.querySelectorAll('.team-card:not(.new-team)').forEach(card => card.classList.add('selected'));
+      updateTeamCount();
+    };
 
     window.toggleTeam = function(teamId) {
       const card = document.querySelector(`.team-card[data-team-id="${teamId}"]`);
@@ -1010,15 +1148,16 @@
       updateTeamCount();
     };
 
-    window.selectAllTeams = function() {
-      selectedTeams = allTeams.map(t => t.id);
-      document.querySelectorAll('.team-card').forEach(card => card.classList.add('selected'));
-      updateTeamCount();
-    };
-
     window.deselectAllTeams = function() {
       selectedTeams = [];
-      document.querySelectorAll('.team-card').forEach(card => card.classList.remove('selected'));
+      document.querySelectorAll('.team-card').forEach(card => {
+        card.classList.remove('selected');
+      });
+      // Reset new team input
+      const input = document.getElementById('newTeamNameInput');
+      const display = document.getElementById('newTeamDisplayName');
+      if (input) { input.style.display = 'none'; input.value = ''; }
+      if (display) { display.style.display = 'block'; display.textContent = 'New Team'; }
       updateTeamCount();
     };
 
@@ -1225,9 +1364,23 @@
       }
     }
 
+    // Resolve selectedTeams — replaces __new__ placeholder with the typed team name
+    function resolveSelectedTeams() {
+      return selectedTeams.map(id => {
+        if (id === '__new__') {
+          const name = document.getElementById('newTeamNameInput')?.value.trim();
+          return name || 'New Team';
+        }
+        // Return the display name for known teams
+        const team = allTeams.find(t => t.id === id);
+        return team ? (team.name || team.id) : id;
+      });
+    }
+
     function populateReview() {
       const seasonId = getSandboxSeasonId(`${seasonConfig.year}-${seasonConfig.type}`);
       const displayName = seasonConfig.name || `${seasonConfig.year} ${seasonConfig.type.charAt(0).toUpperCase() + seasonConfig.type.slice(1)}`;
+      const resolvedTeams = resolveSelectedTeams();
 
       document.getElementById('reviewSeasonId').textContent = seasonId;
       document.getElementById('reviewSeasonName').textContent = displayName;
@@ -1235,8 +1388,8 @@
       document.getElementById('reviewEndDate').textContent = seasonConfig.endDate ? new Date(seasonConfig.endDate).toLocaleDateString() : 'TBD';
       document.getElementById('reviewLocation').textContent = seasonConfig.location;
 
-      document.getElementById('reviewTeamCount').textContent = selectedTeams.length;
-      document.getElementById('reviewTeamsList').textContent = selectedTeams.join(', ');
+      document.getElementById('reviewTeamCount').textContent = resolvedTeams.length;
+      document.getElementById('reviewTeamsList').textContent = resolvedTeams.join(', ');
 
       document.getElementById('reviewTotalGames').textContent = scheduleData.length;
       if (scheduleData.length > 0) {
@@ -1269,7 +1422,7 @@
           startDate: new Date(seasonConfig.startDate),
           endDate: seasonConfig.endDate ? new Date(seasonConfig.endDate) : null,
           defaultLocation: seasonConfig.location,
-          teams: selectedTeams,
+          teams: resolveSelectedTeams(),
           isActive: setActive,
           playoffFormat: seasonConfig.type === 'fall' ? 'single-elimination' : 'double-elimination',
           gamesPerTeam: Math.round(scheduleData.length * 2 / selectedTeams.length),
