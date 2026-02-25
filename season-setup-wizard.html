@@ -506,6 +506,11 @@
     <p>Create a new season for Mountainside Aces</p>
   </header>
 
+  <!-- Sandbox Mode Banner -->
+  <div id="sandboxBanner" style="display:none; background:#f59e0b; color:#1c1917; padding:0.75rem 1.5rem; text-align:center; font-weight:700; font-size:1rem; letter-spacing:0.02em;">
+    🧪 SANDBOX MODE — All data will be saved under <code style="background:rgba(0,0,0,0.15); padding:0.1rem 0.4rem; border-radius:4px;">seasons/sandbox-*</code> and will NOT affect production. <a href="admin-content.html#offseason" style="color:#1c1917; text-decoration:underline;">Wipe sandbox data</a>
+  </div>
+
   <div class="container">
     <!-- Auth Check -->
     <div id="authCheck" class="card">
@@ -802,12 +807,12 @@
             <p>This will create a new season document and import all games. The season will NOT be set as active automatically.</p>
           </div>
 
-          <div class="form-group">
+          <div class="form-group" id="setActiveGroup">
             <label class="checkbox-item">
               <input type="checkbox" id="setActive">
               Set this season as the current active season
             </label>
-            <div class="form-hint">This will deactivate any currently active season</div>
+            <div class="form-hint" id="setActiveHint">This will deactivate any currently active season</div>
           </div>
 
           <button class="btn btn-success" onclick="createSeason()" id="createSeasonBtn" style="width: 100%; justify-content: center; padding: 1rem;">
@@ -840,15 +845,25 @@
           </div>
 
           <h4 style="margin: 1.5rem 0 1rem;">Next Steps</h4>
-          <ul style="margin-left: 1.5rem; color: var(--text-light);">
-            <li>Review the schedule in <a href="current-season.html">Current Season</a></li>
-            <li>Set up team rosters in <a href="offseason-roster.html">Roster Management</a></li>
-            <li>Announce the season to players</li>
-          </ul>
-
-          <div class="btn-group" style="margin-top: 2rem;">
-            <a href="offseason.html" class="btn btn-secondary">← Back to Offseason Hub</a>
-            <a href="current-season.html" class="btn btn-primary">View Season →</a>
+          <div id="nextStepsProduction">
+            <ul style="margin-left: 1.5rem; color: var(--text-light);">
+              <li>Review the schedule in <a href="current-season.html">Current Season</a></li>
+              <li>Set up team rosters in <a href="offseason-roster.html">Roster Management</a></li>
+              <li>Announce the season to players</li>
+            </ul>
+            <div class="btn-group" style="margin-top: 2rem;">
+              <a href="offseason.html" class="btn btn-secondary">← Back to Offseason Hub</a>
+              <a href="current-season.html" class="btn btn-primary">View Season →</a>
+            </div>
+          </div>
+          <div id="nextStepsSandbox" style="display:none;">
+            <div style="background:#fef3c7; border:1px solid #f59e0b; border-radius:8px; padding:1rem; margin-bottom:1rem;">
+              <strong>🧪 Sandbox test complete!</strong> Your data was saved under <code>seasons/sandbox-*</code> in Firestore. It will not appear in the live site. When you're done testing, use the <a href="admin-content.html">Admin Content page → Offseason Data tab</a> to wipe sandbox seasons.
+            </div>
+            <div class="btn-group" style="margin-top: 1rem;">
+              <a href="offseason.html" class="btn btn-secondary">← Back to Offseason Hub</a>
+              <button class="btn btn-primary" onclick="window.location.reload()">🔄 Run Another Test</button>
+            </div>
           </div>
         </div>
 
@@ -878,6 +893,16 @@
     import { getUserProfile, USER_ROLES } from './firebase-auth.js';
 
     const auth = getAuth();
+
+    // Sandbox mode — activated via ?sandbox=true in URL
+    const SANDBOX_MODE = new URLSearchParams(window.location.search).get('sandbox') === 'true';
+    if (SANDBOX_MODE) {
+      document.getElementById('sandboxBanner').style.display = 'block';
+    }
+
+    function getSandboxSeasonId(baseId) {
+      return SANDBOX_MODE ? `sandbox-${baseId}` : baseId;
+    }
 
     // State
     let currentStep = 1;
@@ -917,6 +942,16 @@
 
       // Show wizard
       document.getElementById('wizardContent').classList.remove('hidden');
+
+      // Apply sandbox mode restrictions to the UI
+      if (SANDBOX_MODE) {
+        const checkbox = document.getElementById('setActive');
+        checkbox.checked = false;
+        checkbox.disabled = true;
+        document.getElementById('setActiveHint').textContent = '⛔ Disabled in sandbox mode — sandbox seasons are never set as active.';
+        document.getElementById('createSeasonBtn').textContent = '🧪 Create Sandbox Season';
+      }
+
       await loadTeams();
       setupEventListeners();
     });
@@ -1036,7 +1071,7 @@
       seasonConfig.location = document.getElementById('defaultLocation').value;
 
       if (seasonConfig.type) {
-        const seasonId = `${seasonConfig.year}-${seasonConfig.type}`;
+        const seasonId = getSandboxSeasonId(`${seasonConfig.year}-${seasonConfig.type}`);
         document.getElementById('seasonIdPreview').textContent = seasonId;
         document.getElementById('seasonInfoPreview').classList.remove('hidden');
 
@@ -1191,7 +1226,7 @@
     }
 
     function populateReview() {
-      const seasonId = `${seasonConfig.year}-${seasonConfig.type}`;
+      const seasonId = getSandboxSeasonId(`${seasonConfig.year}-${seasonConfig.type}`);
       const displayName = seasonConfig.name || `${seasonConfig.year} ${seasonConfig.type.charAt(0).toUpperCase() + seasonConfig.type.slice(1)}`;
 
       document.getElementById('reviewSeasonId').textContent = seasonId;
@@ -1219,9 +1254,10 @@
       document.getElementById('publishProgress').classList.remove('hidden');
 
       try {
-        const seasonId = `${seasonConfig.year}-${seasonConfig.type}`;
-        const displayName = seasonConfig.name || `${seasonConfig.year} ${seasonConfig.type.charAt(0).toUpperCase() + seasonConfig.type.slice(1)}`;
-        const setActive = document.getElementById('setActive').checked;
+        const seasonId = getSandboxSeasonId(`${seasonConfig.year}-${seasonConfig.type}`);
+        const displayName = (SANDBOX_MODE ? '[SANDBOX] ' : '') + (seasonConfig.name || `${seasonConfig.year} ${seasonConfig.type.charAt(0).toUpperCase() + seasonConfig.type.slice(1)}`);
+        // In sandbox mode, never set as active season
+        const setActive = SANDBOX_MODE ? false : document.getElementById('setActive').checked;
 
         // Step 1: Create season document
         document.getElementById('progressText').textContent = 'Creating season document...';
@@ -1311,6 +1347,12 @@
         
         document.getElementById('finalGamesCreated').textContent = gameCount;
         document.getElementById('finalTeamsSetup').textContent = selectedTeams.length;
+
+        // Show the appropriate next steps for sandbox vs production
+        if (SANDBOX_MODE) {
+          document.getElementById('nextStepsProduction').style.display = 'none';
+          document.getElementById('nextStepsSandbox').style.display = 'block';
+        }
 
       } catch (error) {
         console.error('Error creating season:', error);
