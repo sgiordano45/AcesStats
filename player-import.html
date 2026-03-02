@@ -379,10 +379,12 @@
       </div>
       <div class="export-preview" id="exportPreview"></div>
       <div class="export-btns">
+        <button class="btn btn-success" id="pushBtn" onclick="pushToOffseasonRoster()">🚀 Push to Offseason Roster</button>
         <button class="btn btn-primary" onclick="exportJSON()">💾 Export JSON</button>
         <button class="btn btn-secondary" onclick="exportCSV()">📄 Export CSV</button>
         <button class="btn btn-secondary" onclick="copyClipboard()">📋 Copy Text</button>
       </div>
+      <p id="pushStatus" style="margin-top:10px; font-size:0.85rem; font-weight:600; display:none;"></p>
     </div>
 
   </div><!-- /page-container -->
@@ -395,6 +397,12 @@
 
   <script type="module">
     import { getAllPlayerStatsOptimized } from './firebase-data.js';
+    import { db } from './firebase-data.js';
+    import {
+      doc, getDoc, updateDoc, setDoc, arrayUnion
+    } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+
+    const OFFSEASON_DOC_ID = 'current';
 
     // ── State ─────────────────────────────────────────────────────────────────
     let leaguePlayers  = [];
@@ -800,6 +808,124 @@
     window.copyClipboard = function() {
       navigator.clipboard.writeText(document.getElementById('exportPreview').textContent)
         .then(() => alert('Copied to clipboard!'));
+    };
+
+    // ── Push to Offseason Roster ──────────────────────────────────────────────
+    window.pushToOffseasonRoster = async function() {
+      const confirmed = results.filter(r => r.status === 'confirmed');
+      const newPlayers = results.filter(r => r.status === 'new');
+      const total = confirmed.length + newPlayers.length;
+
+      if (total === 0) {
+        alert('No confirmed or new players to push. Confirm some matches first.');
+        return;
+      }
+
+      const pending = results.filter(r => r.status === 'pending').length;
+      const msg = pending > 0
+        ? `Push ${total} players to Offseason Roster?\n\n⚠️ ${pending} players are still pending and will NOT be pushed.\n\nThey can be added later by re-running the import.`
+        : `Push ${total} players to Offseason Roster?`;
+
+      if (!confirm(msg)) return;
+
+      const btn = document.getElementById('pushBtn');
+      const status = document.getElementById('pushStatus');
+      btn.disabled = true;
+      btn.textContent = '⏳ Pushing…';
+      status.style.display = 'block';
+      status.style.color = '#975a16';
+      status.textContent = 'Connecting to Firebase…';
+
+      try {
+        const offseasonRef = doc(db, 'offseasonRosters', OFFSEASON_DOC_ID);
+        const snap = await getDoc(offseasonRef);
+
+        // Build player objects matching offseason-roster's expected shape
+        const now = new Date().toISOString();
+
+        const playersToAdd = [
+          ...confirmed.map(r => ({
+            id: r.selected.id,
+            name: r.selected.name,
+            ba: '.000',         // offseason-roster will enrich from Firebase stats
+            acesBPI: '0.0',
+            lastTeam: r.selected.currentTeam || null,
+            importedAt: now,
+            isNew: false
+          })),
+          ...newPlayers.map(r => ({
+            id: r.importName.toLowerCase().replace(/\s+/g, '_'),
+            name: r.importName,
+            ba: '.000',
+            acesBPI: '0.0',
+            lastTeam: null,
+            importedAt: now,
+            isNew: true
+          }))
+        ];
+
+        // Deduplicate against existing unassigned players and team rosters
+        let existingIds = new Set();
+
+        if (snap.exists()) {
+          const data = snap.data();
+
+          // Collect IDs already in unassignedPlayers
+          (data.unassignedPlayers || []).forEach(p => existingIds.add(p.id));
+
+          // Collect IDs already on teams
+          Object.values(data.teams || {}).forEach(team => {
+            (team.players || []).forEach(p => existingIds.add(p.id));
+          });
+        }
+
+        const newEntries  = playersToAdd.filter(p => !existingIds.has(p.id));
+        const dupeCount   = playersToAdd.length - newEntries.length;
+
+        if (newEntries.length === 0) {
+          status.style.color = '#975a16';
+          status.textContent = `⚠️ All ${dupeCount} players already exist in Offseason Roster — nothing pushed.`;
+          btn.disabled = false;
+          btn.textContent = '🚀 Push to Offseason Roster';
+          return;
+        }
+
+        status.textContent = `Writing ${newEntries.length} players…`;
+
+        if (snap.exists()) {
+          // Append to existing unassignedPlayers array
+          const existing = snap.data().unassignedPlayers || [];
+          await updateDoc(offseasonRef, {
+            unassignedPlayers: [...existing, ...newEntries]
+          });
+        } else {
+          // Doc doesn't exist yet — create minimal shell so offseason-roster can expand it
+          await setDoc(offseasonRef, {
+            teams: {},
+            unassignedPlayers: newEntries,
+            unavailablePlayers: [],
+            seasonType: 'fall-to-summer'
+          });
+        }
+
+        status.style.color = '#276843';
+        let msg2 = `✅ ${newEntries.length} player${newEntries.length > 1 ? 's' : ''} pushed to Offseason Roster!`;
+        if (dupeCount > 0) msg2 += ` (${dupeCount} skipped — already present)`;
+        status.textContent = msg2;
+
+        btn.textContent = '✅ Pushed!';
+        setTimeout(() => {
+          btn.disabled = false;
+          btn.textContent = '🚀 Push to Offseason Roster';
+        }, 3000);
+
+      } catch (err) {
+        console.error('❌ Push error:', err);
+        status.style.color = '#9b2c2c';
+        status.textContent = `❌ Error: ${err.message}`;
+        btn.disabled = false;
+        btn.textContent = '🚀 Push to Offseason Roster';
+      }
     };
 
     function dl(content, filename, type) {
