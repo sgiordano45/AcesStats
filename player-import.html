@@ -875,21 +875,33 @@
         ];
 
         // Deduplicate against existing unassigned players and team rosters
-        let existingIds = new Set();
+        // Must check BOTH id AND name because legacy profiles use snake_case id
+        // while authenticated profiles may use a different id but same display name
+        let existingIds   = new Set();
+        let existingNames = new Set(); // normalized lowercase for name-based dedup
 
         if (snap.exists()) {
           const data = snap.data();
 
-          // Collect IDs already in unassignedPlayers
-          (data.unassignedPlayers || []).forEach(p => existingIds.add(p.id));
+          // Collect from unassignedPlayers
+          (data.unassignedPlayers || []).forEach(p => {
+            existingIds.add(p.id);
+            if (p.name) existingNames.add(p.name.toLowerCase().trim());
+          });
 
-          // Collect IDs already on teams
+          // Collect from all team rosters
           Object.values(data.teams || {}).forEach(team => {
-            (team.players || []).forEach(p => existingIds.add(p.id));
+            (team.players || []).forEach(p => {
+              existingIds.add(p.id);
+              if (p.name) existingNames.add(p.name.toLowerCase().trim());
+            });
           });
         }
 
-        const newEntries  = playersToAdd.filter(p => !existingIds.has(p.id));
+        const newEntries  = playersToAdd.filter(p =>
+          !existingIds.has(p.id) &&
+          !existingNames.has(p.name.toLowerCase().trim())
+        );
         const dupeCount   = playersToAdd.length - newEntries.length;
 
         if (newEntries.length === 0) {
