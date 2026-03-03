@@ -3113,6 +3113,196 @@ exports.getCurrentStandings = functions.https.onRequest(async (req, res) => {
 });
 
 // ============================================================================
+// CALLABLE: Send Mass Email via Resend
+// Setup: firebase functions:secrets:set RESEND_API_KEY
+// Deploy: firebase deploy --only functions:sendMassEmail
+// ============================================================================
+
+exports.sendMassEmail = functions
+  .runWith({ secrets: ['RESEND_API_KEY'] })
+  .https.onCall(async (data, context) => {
+  // ── Auth check ────────────────────────────────────────────────────────────
+  if (!context.auth) {
+    throw new functions.https.HttpsError(
+      'unauthenticated',
+      'You must be signed in to send emails.'
+    );
+  }
+
+  const userId = context.auth.uid;
+  const userDoc = await db.collection('users').doc(userId).get();
+
+  if (!userDoc.exists) {
+    throw new functions.https.HttpsError('permission-denied', 'User profile not found.');
+  }
+
+  const userData = userDoc.data();
+  const userRole = userData.role || userData.userRole || 'fan';
+
+  if (!['admin', 'league-staff'].includes(userRole)) {
+    throw new functions.https.HttpsError(
+      'permission-denied',
+      'Only admins and league staff can send mass emails.'
+    );
+  }
+
+  // ── Validate payload ──────────────────────────────────────────────────────
+  const { subject, body, fromName, replyTo, recipients, audienceLabel } = data;
+
+  if (!subject || !body) {
+    throw new functions.https.HttpsError('invalid-argument', 'Subject and body are required.');
+  }
+
+  if (!replyTo || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(replyTo)) {
+    throw new functions.https.HttpsError('invalid-argument', 'A valid reply-to email address is required.');
+  }
+
+  if (!recipients || recipients.length === 0) {
+    throw new functions.https.HttpsError('invalid-argument', 'No recipients provided.');
+  }
+
+  if (recipients.length > 500) {
+    throw new functions.https.HttpsError('invalid-argument', 'Cannot send to more than 500 recipients at once.');
+  }
+
+  // ── Load Resend config ────────────────────────────────────────────────────
+  const apiKey = process.env.RESEND_API_KEY;
+  const fromEmail = 'noreply@acessoftballreference.com';
+
+  if (!apiKey) {
+    throw new functions.https.HttpsError(
+      'failed-precondition',
+      'Resend API key not configured. Run: firebase functions:secrets:set RESEND_API_KEY'
+    );
+  }
+
+  // ── Build email content ───────────────────────────────────────────────────
+  const htmlBody = buildEmailHtml(body, fromName || 'Mountainside Aces');
+  const textBody = body.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+
+  const emailList = recipients
+    .map(r => typeof r === 'string' ? r : r.email)
+    .filter(Boolean);
+
+  const senderName = fromName || 'Mountainside Aces';
+
+  // ── Send via Resend in batches of 50 ─────────────────────────────────────
+  const BATCH_SIZE = 50;
+  let sentCount = 0;
+  const errors = [];
+
+  console.log(`📧 Sending "${subject}" to ${emailList.length} recipients (${audienceLabel || 'All Members'})`);
+
+  for (let i = 0; i < emailList.length; i += BATCH_SIZE) {
+    const batch = emailList.slice(i, i + BATCH_SIZE);
+    const batchNum = Math.floor(i / BATCH_SIZE) + 1;
+
+    try {
+      const res = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          from: `${senderName} <${fromEmail}>`,
+          to: batch,
+          reply_to: replyTo,
+          subject: subject,
+          html: htmlBody,
+          text: textBody
+        })
+      });
+
+      if (!res.ok) {
+        const errText = await res.text();
+        console.error(`❌ Resend batch ${batchNum} failed (${res.status}):`, errText);
+        errors.push(`Batch ${batchNum}: ${errText}`);
+      } else {
+        sentCount += batch.length;
+        console.log(`✅ Batch ${batchNum} sent (${batch.length} emails)`);
+      }
+    } catch (err) {
+      console.error(`❌ Resend batch ${batchNum} threw:`, err.message);
+      errors.push(`Batch ${batchNum}: ${err.message}`);
+    }
+  }
+
+  if (sentCount === 0) {
+    throw new functions.https.HttpsError(
+      'internal',
+      `All batches failed. First error: ${errors[0] || 'Unknown error'}`
+    );
+  }
+
+  // ── Log campaign to Firestore ─────────────────────────────────────────────
+  const campaignRef = await db.collection('emailCampaigns').add({
+    subject,
+    audienceLabel: audienceLabel || 'All Members',
+    sentCount,
+    totalRecipients: emailList.length,
+    sentBy: userData.displayName || userId,
+    sentByUid: userId,
+    replyTo,
+    fromName: senderName,
+    errors: errors.length > 0 ? errors : null,
+    sentAt: admin.firestore.FieldValue.serverTimestamp()
+  });
+
+  console.log(`✅ Mass email complete: "${subject}" → ${sentCount}/${emailList.length} delivered. Campaign: ${campaignRef.id}`);
+
+  return {
+    success: true,
+    sentCount,
+    totalRecipients: emailList.length,
+    campaignId: campaignRef.id,
+    partialErrors: errors.length > 0 ? errors : null
+  };
+});
+
+/**
+ * Build branded HTML email template
+ */
+function buildEmailHtml(body, fromName) {
+  const isHtml = /<[a-z][\s\S]*>/i.test(body);
+  const formattedBody = isHtml ? body : body.replace(/\n/g, '<br>');
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin:0;padding:0;background:#f7fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f7fafc;padding:32px 16px;">
+    <tr><td align="center">
+      <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,0.08);">
+        <tr>
+          <td style="background:linear-gradient(135deg,#2d5016 0%,#1a6b4a 100%);padding:28px 32px;text-align:center;">
+            <div style="font-size:28px;margin-bottom:6px;">⚾</div>
+            <div style="color:#ffffff;font-size:20px;font-weight:800;letter-spacing:0.5px;">MOUNTAINSIDE ACES</div>
+            <div style="color:rgba(255,255,255,0.75);font-size:13px;margin-top:4px;">Recreational Softball League</div>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:32px 36px;color:#2d3748;font-size:15px;line-height:1.8;">
+            ${formattedBody}
+          </td>
+        </tr>
+        <tr>
+          <td style="background:#f8fafc;padding:20px 36px;border-top:1px solid #e2e8f0;text-align:center;font-size:12px;color:#a0aec0;">
+            You're receiving this because you're a member of Mountainside Aces.<br>
+            Questions? Reply to this email or visit <a href="https://acessoftballreference.com" style="color:#2d5016;">acessoftballreference.com</a>
+          </td>
+        </tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+}
+
+// ============================================================================
 // CALLABLE: Manual Standings Recalculation (Admin only)
 // ============================================================================
 
