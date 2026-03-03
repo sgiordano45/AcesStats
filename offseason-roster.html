@@ -2379,18 +2379,13 @@
       const seasonLabel = `${selectedSeason.year} ${selectedSeason.season.charAt(0).toUpperCase() + selectedSeason.season.slice(1)}`;
       
       // Confirm the action
-      const hasImports = unassignedPlayers.length > 0;
       const confirmed = confirm(
         `⚠️ Load rosters from ${seasonLabel}?\n\n` +
         `This will:\n` +
-        `• Replace all current team rosters with ${seasonLabel} teams\n` +
-        (hasImports
-          ? `• Cross-reference your ${unassignedPlayers.length} imported players\n` +
-            `• Move non-returning players to Unavailable\n` +
-            `• Keep only brand-new players in Unassigned\n`
-          : `• Keep your unassigned players pool\n` +
-            `• Keep unavailable players list\n`) +
-        `\nThis is intended to kick off roster planning. Continue?`
+        `• Replace all current team rosters\n` +
+        `• Keep your unassigned players pool\n` +
+        `• Keep unavailable players list\n\n` +
+        `This is intended to kick off roster planning. Continue?`
       );
       
       if (!confirmed) {
@@ -2457,67 +2452,64 @@
         
         console.log(`✅ Built ${Object.keys(newTeams).length} teams from ${seasonLabel}`);
         
-        // Build a set of confirmed 2026 player names from the unassigned pool
-        // (player-import pushes confirmed returners + new players here)
+        // Cross-reference against unassigned pool (player-import confirmed list)
         const confirmedNames = new Set(
-          unassignedPlayers.map(p => p.name.toLowerCase().trim())
+          unassignedPlayers.map(p => (p.name || '').toLowerCase().trim())
         );
         const hasImportData = confirmedNames.size > 0;
+        console.log('Import cross-ref: ' + confirmedNames.size + ' confirmed names in unassigned');
 
-        // If we have import data, filter teams and move non-returners to unavailable
         if (hasImportData) {
           const notReturning = [];
-
           Object.keys(newTeams).forEach(teamName => {
-            const returning = [];
+            const keep = [];
             newTeams[teamName].players.forEach(player => {
-              if (confirmedNames.has(player.name.toLowerCase().trim())) {
-                returning.push(player);
+              if (confirmedNames.has((player.name || '').toLowerCase().trim())) {
+                keep.push(player);
               } else {
                 notReturning.push(player);
               }
             });
-            newTeams[teamName].players = returning;
+            newTeams[teamName].players = keep;
           });
 
-          // Move non-returners to unavailable (merge, no duplicates by name)
+          // Move non-returners to unavailable (no dupes by name)
           const existingUnavailNames = new Set(
-            unavailablePlayers.map(p => p.name.toLowerCase().trim())
+            unavailablePlayers.map(p => (p.name || '').toLowerCase().trim())
           );
           notReturning.forEach(p => {
-            if (!existingUnavailNames.has(p.name.toLowerCase().trim())) {
+            if (!existingUnavailNames.has((p.name || '').toLowerCase().trim())) {
               unavailablePlayers.push(p);
             }
           });
+          console.log(notReturning.length + ' non-returners moved to Unavailable');
 
-          // Remove confirmed returners from unassigned — they're now on teams
-          const teamPlayerNames = new Set();
-          Object.values(newTeams).forEach(team => {
-            team.players.forEach(p => teamPlayerNames.add(p.name.toLowerCase().trim()));
-          });
-          unassignedPlayers = unassignedPlayers.filter(p =>
-            !teamPlayerNames.has(p.name.toLowerCase().trim())
+          // Remove placed returners from unassigned -- only new players remain
+          const placedNames = new Set();
+          Object.values(newTeams).forEach(team =>
+            team.players.forEach(p => placedNames.add((p.name || '').toLowerCase().trim()))
           );
-
-          console.log(`✅ Filtered: ${notReturning.length} moved to Unavailable, ${unassignedPlayers.length} remain in Unassigned (new players)`);
+          const beforeCount = unassignedPlayers.length;
+          unassignedPlayers = unassignedPlayers.filter(p =>
+            !placedNames.has((p.name || '').toLowerCase().trim())
+          );
+          console.log('Unassigned: ' + beforeCount + ' -> ' + unassignedPlayers.length);
         }
 
-        // Replace teams (keep updated unassigned and unavailable)
+        // Replace teams
         teams = newTeams;
-        
+
         // Save changes
         await saveRosterChanges();
-        await logChange('season_loaded', `loaded rosters from ${seasonLabel} (${seasonPlayers.length} players)${hasImportData ? `, filtered against ${confirmedNames.size} confirmed imports` : ''}`);
-        
+        await logChange('season_loaded', 'loaded rosters from ' + seasonLabel + ' (' + seasonPlayers.length + ' players)' + (hasImportData ? ', cross-referenced imports' : ''));
+
         // Re-render
         renderTeams();
         renderUnassignedPlayers();
         populateTeamSelectDropdown();
 
-        const filterMsg = hasImportData
-          ? ` · ${unassignedPlayers.length} new players in Unassigned`
-          : '';
-        showToast(`Loaded ${seasonPlayers.length} players from ${seasonLabel}!${filterMsg} ✅`, 'success');
+        const filterNote = hasImportData ? ' - ' + unassignedPlayers.length + ' new player(s) in Unassigned' : '';
+        showToast('Loaded ' + seasonPlayers.length + ' players from ' + seasonLabel + '!' + filterNote, 'success');
         
       } catch (error) {
         console.error('Error loading season:', error);
