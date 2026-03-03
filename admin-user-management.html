@@ -10,6 +10,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="stylesheet" href="mobile-enhancements.css">
 <link rel="stylesheet" href="nav-styles.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
   :root {
     --primary-color: #2d5016;
@@ -1263,6 +1264,96 @@
       </div>
     </div>
 
+    <!-- Email Bulk Update Section -->
+    <div class="section" id="emailImportSection">
+      <div class="section-header" style="background: linear-gradient(135deg, #0369a1 0%, #0284c7 100%);">
+        📧 Bulk Email Update (Non-Auth Players)
+      </div>
+      <div class="section-content">
+        <p style="color: var(--text-light); margin-bottom: 1rem;">
+          Upload a CSV or Excel file with player names and email addresses to update <code>aggregatedPlayerStats</code> records for players who have not yet authenticated. Auth users' emails are managed by Firebase Auth and will be skipped automatically.
+        </p>
+
+        <!-- Expected Format Info -->
+        <div style="background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 8px; padding: 1rem; margin-bottom: 1.25rem; font-size: 0.88rem;">
+          <strong>📋 Expected file format:</strong> Any CSV or Excel (.xlsx/.xls) with at least two columns — one for <em>player name</em> and one for <em>email</em>. Column headers are flexible; you'll map them after upload.<br>
+          <span style="color: var(--text-light);">Example headers: Name / Email &nbsp;·&nbsp; Player / Address &nbsp;·&nbsp; Full Name / Email Address</span>
+        </div>
+
+        <!-- Upload Zone -->
+        <div class="upload-zone" id="emailUploadZone" onclick="document.getElementById('emailFileInput').click()" style="border: 2px dashed #7dd3fc; border-radius: 12px; padding: 36px 20px; text-align: center; cursor: pointer; background: #f0f9ff; margin-bottom: 1rem; transition: border-color 0.2s, background 0.2s;">
+          <div style="font-size: 2.5rem; margin-bottom: 8px;">📧</div>
+          <p style="margin: 0; color: var(--text-light);"><strong style="color: #0369a1;">Click to upload</strong> or drag &amp; drop</p>
+          <p style="margin: 4px 0 0; font-size: 0.8rem; color: var(--text-light);">CSV, XLSX, or XLS</p>
+          <input type="file" id="emailFileInput" accept=".csv,.xlsx,.xls" style="display:none;">
+        </div>
+
+        <!-- Column Mapping -->
+        <div id="emailColumnConfig" style="display:none; background: white; border: 1px solid var(--border-color); border-radius: 12px; padding: 1.25rem 1.5rem; margin-bottom: 1rem;">
+          <h3 style="margin: 0 0 1rem; font-size: 1rem;">🗂️ Map Columns</h3>
+          <div style="display: flex; gap: 1.5rem; flex-wrap: wrap;">
+            <div style="display: flex; align-items: center; gap: 0.75rem;">
+              <label style="font-weight: 600; font-size: 0.9rem; min-width: 100px;">Player Name:</label>
+              <select id="emailNameCol" style="border: 1px solid var(--border-color); border-radius: 8px; padding: 7px 12px; font-size: 0.9rem;"></select>
+            </div>
+            <div style="display: flex; align-items: center; gap: 0.75rem;">
+              <label style="font-weight: 600; font-size: 0.9rem; min-width: 100px;">Email:</label>
+              <select id="emailEmailCol" style="border: 1px solid var(--border-color); border-radius: 8px; padding: 7px 12px; font-size: 0.9rem;"></select>
+            </div>
+          </div>
+          <div style="margin-top: 1rem; display: flex; align-items: center; gap: 0.75rem;">
+            <label style="font-size: 0.85rem; color: var(--text-light);">Match threshold:</label>
+            <select id="emailMatchThreshold" style="border: 1px solid var(--border-color); border-radius: 8px; padding: 6px 10px; font-size: 0.85rem;">
+              <option value="0.85">Strict (85%+)</option>
+              <option value="0.70" selected>Normal (70%+)</option>
+              <option value="0.55">Loose (55%+)</option>
+            </select>
+            <button onclick="runEmailMatch()" style="background: #0369a1; color: white; border: none; border-radius: 8px; padding: 8px 18px; font-size: 0.9rem; font-weight: 600; cursor: pointer;">🔍 Preview Matches</button>
+          </div>
+        </div>
+
+        <!-- Match Preview Table -->
+        <div id="emailMatchPreview" style="display:none;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; flex-wrap: wrap; gap: 0.5rem;">
+            <h3 style="margin: 0; font-size: 1rem;">📊 Match Preview</h3>
+            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;" id="emailMatchStats"></div>
+          </div>
+          <div style="overflow-x: auto; border-radius: 10px; border: 1px solid var(--border-color);">
+            <table style="width: 100%; border-collapse: collapse; font-size: 0.88rem;">
+              <thead>
+                <tr style="background: #f8fafc;">
+                  <th style="padding: 10px 14px; text-align: left; border-bottom: 2px solid var(--border-color); white-space: nowrap;">
+                    <input type="checkbox" id="selectAllEmailMatches" onchange="toggleAllEmailRows(this.checked)" style="margin-right: 6px; accent-color: #0369a1;">
+                    Include
+                  </th>
+                  <th style="padding: 10px 14px; text-align: left; border-bottom: 2px solid var(--border-color);">File Name</th>
+                  <th style="padding: 10px 14px; text-align: left; border-bottom: 2px solid var(--border-color);">Matched Player</th>
+                  <th style="padding: 10px 14px; text-align: left; border-bottom: 2px solid var(--border-color);">Confidence</th>
+                  <th style="padding: 10px 14px; text-align: left; border-bottom: 2px solid var(--border-color);">New Email</th>
+                  <th style="padding: 10px 14px; text-align: left; border-bottom: 2px solid var(--border-color);">Current Email</th>
+                  <th style="padding: 10px 14px; text-align: left; border-bottom: 2px solid var(--border-color);">Status</th>
+                </tr>
+              </thead>
+              <tbody id="emailMatchTableBody"></tbody>
+            </table>
+          </div>
+          <div style="margin-top: 1.25rem; display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center;">
+            <button onclick="executeEmailUpdate(false)" id="emailUpdateBtn" style="background: #16a34a; color: white; border: none; border-radius: 8px; padding: 10px 22px; font-size: 0.95rem; font-weight: 700; cursor: pointer;">
+              ✅ Apply Selected Updates
+            </button>
+            <button onclick="executeEmailUpdate(true)" style="background: #d97706; color: white; border: none; border-radius: 8px; padding: 10px 22px; font-size: 0.95rem; font-weight: 600; cursor: pointer;">
+              🧪 Test Mode (No Writes)
+            </button>
+            <button onclick="resetEmailImport()" style="background: white; color: var(--text-dark); border: 1px solid var(--border-color); border-radius: 8px; padding: 10px 16px; font-size: 0.9rem; cursor: pointer;">
+              ✕ Reset
+            </button>
+            <span id="emailUpdateStatus" style="font-size: 0.88rem; color: var(--text-light);"></span>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
     <!-- Output Console -->
     <div class="section">
       <div class="section-header">📋 Operation Log</div>
@@ -1516,6 +1607,10 @@
     if (stats.issues > 0) {
       log(`  - Issues detected: ${stats.issues}`, 'warning');
     }
+    // Expose for email bulk update tool
+    window._emailAllPlayers = allPlayers;
+    window._fbDb = db;
+    window._fbFirestore = { doc, updateDoc };
   }
 
   function calculateStats() {
@@ -3179,6 +3274,268 @@
       searchPlayers();
     }
   });
+</script>
+
+<!-- ============================================
+     EMAIL BULK UPDATE LOGIC
+     ============================================ -->
+<script>
+(function() {
+  // ── State ──────────────────────────────────────────────
+  let emailFileRows   = [];   // Raw rows from file
+  let emailMatchRows  = [];   // [{fileRow, matched, score, skip}]
+
+  // ── Levenshtein similarity (0-1) ──────────────────────
+  function similarity(a, b) {
+    a = (a || '').toLowerCase().trim();
+    b = (b || '').toLowerCase().trim();
+    if (a === b) return 1;
+    if (!a || !b) return 0;
+    const la = a.length, lb = b.length;
+    const dp = Array.from({length: la + 1}, (_, i) => [i]);
+    for (let j = 1; j <= lb; j++) dp[0][j] = j;
+    for (let i = 1; i <= la; i++) {
+      for (let j = 1; j <= lb; j++) {
+        dp[i][j] = a[i-1] === b[j-1]
+          ? dp[i-1][j-1]
+          : 1 + Math.min(dp[i-1][j], dp[i][j-1], dp[i-1][j-1]);
+      }
+    }
+    return 1 - dp[la][lb] / Math.max(la, lb);
+  }
+
+  // ── File Upload ────────────────────────────────────────
+  const zone  = document.getElementById('emailUploadZone');
+  const input = document.getElementById('emailFileInput');
+
+  zone.addEventListener('dragover',  e => { e.preventDefault(); zone.style.background = '#e0f2fe'; });
+  zone.addEventListener('dragleave', () => { zone.style.background = '#f0f9ff'; });
+  zone.addEventListener('drop', e => {
+    e.preventDefault(); zone.style.background = '#f0f9ff';
+    handleEmailFile(e.dataTransfer.files[0]);
+  });
+  input.addEventListener('change', () => { if (input.files[0]) handleEmailFile(input.files[0]); });
+
+  function handleEmailFile(file) {
+    if (!file) return;
+    const ext = file.name.split('.').pop().toLowerCase();
+    const reader = new FileReader();
+    reader.onload = e => {
+      try {
+        let rows;
+        if (ext === 'csv') {
+          rows = parseCSV(e.target.result);
+        } else {
+          const wb = XLSX.read(new Uint8Array(e.target.result), {type: 'array'});
+          rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {defval: ''});
+        }
+        if (!rows || rows.length === 0) { alert('No rows found in file.'); return; }
+        emailFileRows = rows;
+        populateColumnSelects(Object.keys(rows[0]));
+        document.getElementById('emailColumnConfig').style.display = 'block';
+        document.getElementById('emailMatchPreview').style.display = 'none';
+        zone.innerHTML = `<div style="font-size:2rem;">✅</div><p style="margin:0;color:#0369a1;font-weight:600;">${file.name} loaded — ${rows.length} rows</p>`;
+      } catch(err) {
+        alert('Error reading file: ' + err.message);
+      }
+    };
+    if (ext === 'csv') reader.readAsText(file);
+    else reader.readAsArrayBuffer(file);
+  }
+
+  function parseCSV(text) {
+    const lines = text.split(/\r?\n/).filter(l => l.trim());
+    const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g,''));
+    return lines.slice(1).map(line => {
+      const vals = line.split(',').map(v => v.trim().replace(/^"|"$/g,''));
+      const obj = {};
+      headers.forEach((h, i) => obj[h] = vals[i] || '');
+      return obj;
+    });
+  }
+
+  function populateColumnSelects(cols) {
+    ['emailNameCol','emailEmailCol'].forEach(id => {
+      const sel = document.getElementById(id);
+      sel.innerHTML = cols.map(c => `<option value="${c}">${c}</option>`).join('');
+    });
+    // Auto-guess columns
+    const nameCandidates = ['name','player','full name','player name'];
+    const emailCandidates = ['email','email address','e-mail','address'];
+    const guess = (candidates) => cols.find(c => candidates.includes(c.toLowerCase())) || cols[0];
+    document.getElementById('emailNameCol').value  = guess(nameCandidates);
+    document.getElementById('emailEmailCol').value = guess(emailCandidates);
+  }
+
+  // ── Match Logic ────────────────────────────────────────
+  window.runEmailMatch = function() {
+    const nameCol     = document.getElementById('emailNameCol').value;
+    const emailCol    = document.getElementById('emailEmailCol').value;
+    const threshold   = parseFloat(document.getElementById('emailMatchThreshold').value);
+
+    if (!emailFileRows.length) { alert('No file loaded.'); return; }
+
+    // Gather non-auth aggregated players from the already-loaded allPlayers
+    // allPlayers is defined in the module scope — access via window if exposed, else re-query
+    const candidates = (typeof allPlayers !== 'undefined' ? allPlayers : (window._emailAllPlayers || []))
+      .filter(p => !p._isAuthUser && !p._isMigrated);
+
+    if (candidates.length === 0) {
+      alert('No non-auth player records loaded yet. Please load players first (scroll up and use the search section, or reload the page).');
+      return;
+    }
+
+    emailMatchRows = emailFileRows.map(row => {
+      const fileName  = (row[nameCol] || '').trim();
+      const newEmail  = (row[emailCol] || '').trim().toLowerCase();
+      if (!fileName || !newEmail) return { fileRow: row, fileName, newEmail, matched: null, score: 0, skip: true, skipReason: 'Missing name or email' };
+
+      // Find best match
+      let best = null, bestScore = 0;
+      candidates.forEach(p => {
+        const pName = (p.name || p.displayName || '').trim();
+        const s = similarity(fileName, pName);
+        if (s > bestScore) { bestScore = s; best = p; }
+      });
+
+      const isAuthUser  = best && best._isAuthUser;
+      const sameEmail   = best && (best.email || '').toLowerCase() === newEmail;
+      const skip        = bestScore < threshold || isAuthUser;
+
+      return {
+        fileRow: row, fileName, newEmail,
+        matched: best || null,
+        score: bestScore,
+        skip,
+        skipReason: bestScore < threshold ? `Low confidence (${Math.round(bestScore*100)}%)` : isAuthUser ? 'Auth user — skipped' : null,
+        sameEmail
+      };
+    });
+
+    renderMatchTable();
+  };
+
+  function renderMatchTable() {
+    const tbody = document.getElementById('emailMatchTableBody');
+    const stats = { matched: 0, skipped: 0, noChange: 0 };
+
+    tbody.innerHTML = emailMatchRows.map((r, i) => {
+      const conf     = Math.round(r.score * 100);
+      const confColor = conf >= 85 ? '#16a34a' : conf >= 70 ? '#d97706' : '#dc2626';
+      const currentEmail = r.matched ? (r.matched.email || '<em style="color:#aaa">none</em>') : '—';
+      let statusBadge, checked = false;
+
+      if (r.skip && r.skipReason === 'Auth user — skipped') {
+        statusBadge = '<span style="background:#ede9fe;color:#7c3aed;padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:600;">AUTH USER</span>';
+      } else if (r.skip) {
+        statusBadge = `<span style="background:#fee2e2;color:#dc2626;padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:600;">NO MATCH</span>`;
+        stats.skipped++;
+      } else if (r.sameEmail) {
+        statusBadge = '<span style="background:#f0fdf4;color:#16a34a;padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:600;">NO CHANGE</span>';
+        stats.noChange++;
+      } else {
+        statusBadge = '<span style="background:#dbeafe;color:#1d4ed8;padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:600;">UPDATE</span>';
+        checked = true;
+        stats.matched++;
+      }
+
+      const rowBg = r.skip ? '#fef2f2' : r.sameEmail ? '#f0fdf4' : 'white';
+
+      return `<tr style="background:${rowBg}; border-bottom: 1px solid #f0f0f0;">
+        <td style="padding:9px 14px; text-align:center;">
+          <input type="checkbox" class="email-row-check" data-idx="${i}"
+            ${checked ? 'checked' : ''} ${r.skip || r.sameEmail ? 'disabled' : ''}
+            style="accent-color:#0369a1; width:16px; height:16px;">
+        </td>
+        <td style="padding:9px 14px; font-weight:500;">${r.fileName}</td>
+        <td style="padding:9px 14px; color:#374151;">${r.matched ? (r.matched.name || r.matched.displayName || r.matched.id) : '<em style="color:#aaa">—</em>'}</td>
+        <td style="padding:9px 14px; font-weight:700; color:${confColor};">${r.matched ? conf + '%' : '—'}</td>
+        <td style="padding:9px 14px; color:#0369a1;">${r.newEmail}</td>
+        <td style="padding:9px 14px; color:var(--text-light); font-size:0.85rem;">${currentEmail}</td>
+        <td style="padding:9px 14px;">${statusBadge}</td>
+      </tr>`;
+    }).join('');
+
+    const statsHtml = [
+      `<span style="background:#dbeafe;color:#1d4ed8;padding:4px 12px;border-radius:20px;font-size:0.82rem;font-weight:600;">✏️ ${stats.matched} to update</span>`,
+      `<span style="background:#dcfce7;color:#16a34a;padding:4px 12px;border-radius:20px;font-size:0.82rem;font-weight:600;">✅ ${stats.noChange} no change</span>`,
+      `<span style="background:#fee2e2;color:#dc2626;padding:4px 12px;border-radius:20px;font-size:0.82rem;font-weight:600;">⚠️ ${stats.skipped} unmatched</span>`,
+    ].join('');
+    document.getElementById('emailMatchStats').innerHTML = statsHtml;
+    document.getElementById('emailMatchPreview').style.display = 'block';
+    document.getElementById('selectAllEmailMatches').checked = true;
+  }
+
+  window.toggleAllEmailRows = function(checked) {
+    document.querySelectorAll('.email-row-check:not(:disabled)').forEach(cb => cb.checked = checked);
+  };
+
+  // ── Execute Updates ────────────────────────────────────
+  window.executeEmailUpdate = async function(testMode) {
+    const checkedIdxs = [...document.querySelectorAll('.email-row-check:checked')]
+      .map(cb => parseInt(cb.dataset.idx));
+
+    if (checkedIdxs.length === 0) { alert('No rows selected.'); return; }
+
+    const btn    = document.getElementById('emailUpdateBtn');
+    const status = document.getElementById('emailUpdateStatus');
+    btn.disabled = true;
+    status.textContent = testMode ? '🧪 Running test...' : '⏳ Applying updates...';
+
+    let updated = 0, errors = 0;
+
+    for (const idx of checkedIdxs) {
+      const r = emailMatchRows[idx];
+      if (!r || !r.matched || r.skip) continue;
+      const playerId = r.matched.id;
+      const newEmail = r.newEmail;
+      log(`${testMode ? '[TEST] ' : ''}Updating ${r.matched.name || playerId} → ${newEmail}`, 'info');
+      if (!testMode) {
+        try {
+          // Use the already-imported db from the module scope via window
+          const { doc, updateDoc } = window._fbFirestore;
+          await updateDoc(doc(window._fbDb, 'aggregatedPlayerStats', playerId), {
+            email: newEmail,
+            emailUpdatedAt: new Date().toISOString(),
+            emailUpdatedBy: 'bulk-import'
+          });
+          // Also update in-memory allPlayers so subsequent re-matches reflect change
+          r.matched.email = newEmail;
+          updated++;
+          log(`  ✅ Updated ${r.matched.name || playerId}`, 'success');
+        } catch(err) {
+          errors++;
+          log(`  ❌ Error updating ${playerId}: ${err.message}`, 'error');
+        }
+      } else {
+        updated++;
+      }
+    }
+
+    status.textContent = testMode
+      ? `🧪 Test complete: ${updated} would update, ${errors} errors`
+      : `✅ Done: ${updated} updated, ${errors} errors`;
+    btn.disabled = false;
+
+    if (!testMode) {
+      showToast(`Email update complete: ${updated} updated, ${errors} errors`, errors ? 'warning' : 'success');
+      renderMatchTable(); // Refresh to reflect "no change" for updated rows
+    }
+  };
+
+  window.resetEmailImport = function() {
+    emailFileRows  = [];
+    emailMatchRows = [];
+    document.getElementById('emailColumnConfig').style.display  = 'none';
+    document.getElementById('emailMatchPreview').style.display  = 'none';
+    document.getElementById('emailFileInput').value = '';
+    document.getElementById('emailUploadZone').innerHTML = `
+      <div style="font-size:2.5rem;margin-bottom:8px;">📧</div>
+      <p style="margin:0;color:var(--text-light);"><strong style="color:#0369a1;">Click to upload</strong> or drag &amp; drop</p>
+      <p style="margin:4px 0 0;font-size:0.8rem;color:var(--text-light);">CSV, XLSX, or XLS</p>`;
+    document.getElementById('emailUpdateStatus').textContent = '';
+  };
+})();
 </script>
 
 <script type="module">
