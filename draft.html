@@ -287,7 +287,7 @@
 <div class="phase active" id="phaseSetup">
   <div class="setup-container">
     <div class="setup-hero">
-      <h2>🐍 Snake Draft Setup</h2>
+      <h2>🏆 Draft Room</h2>
       <p>Players from the unassigned pool (imported via Roster Import) will be drafted onto participating teams</p>
     </div>
 
@@ -552,10 +552,11 @@
 
     // Teams grid
     document.getElementById('teamsSetupGrid').innerHTML = Object.entries(offseasonTeams).map(([name, t]) => {
-      const cur = (t.players||[]).length, max = t.maxRoster||maxR, open = max-cur, full = open<=0;
-      return `
-        <div class="team-setup-card ${full?'full':''}" id="tc-${escId(name)}"
-             onclick="${full?'':`toggleTeam(${JSON.stringify(name)},${open})`}">
+        const cur = (t.players||[]).length, max = t.maxRoster||maxR, open = max-cur, full = open<=0;
+              const safeName = name.replace(/'/g, "\\'");
+              return `
+                <div class="team-setup-card ${full?'full':''}" id="tc-${escId(name)}"
+                     onclick="${full?'':`toggleTeam('${safeName}',${open})`}">
           <div class="checkmark">✓</div>
           <div class="tname-row">
             <div class="tdot" style="background:${tColor(name)}"></div>
@@ -567,7 +568,7 @@
             <label>Picks needed:</label>
             <input type="number" id="ni-${escId(name)}" value="${open}" min="1" max="${open}"
               onclick="event.stopPropagation()"
-              onchange="updateNeeds(${JSON.stringify(name)},this.value)">
+              onchange="updateNeeds('${safeName}',this.value)">
           </div>
         </div>`;
     }).join('');
@@ -579,7 +580,8 @@
     if (card.classList.contains('selected')) {
       delete participatingTeams[name]; card.classList.remove('selected');
     } else {
-      participatingTeams[name] = { needsPicks: maxOpen, startsInRound: 1 }; card.classList.add('selected');
+        participatingTeams[name] = { needsPicks: maxOpen, startsInRound: 1 }; card.classList.add('selected');
+
     }
     syncDraftOrder(); updateSetupUI();
   };
@@ -587,11 +589,10 @@
   window.updateNeeds = (name, val) => {
     if (participatingTeams[name]) { participatingTeams[name].needsPicks = Math.max(1,parseInt(val)||1); renderOrderList(); }
   };
-
-  window.updateStartRound = (name, val) => {
-    if (participatingTeams[name]) { participatingTeams[name].startsInRound = Math.max(1,parseInt(val)||1); renderOrderList(); }
-  };
-
+    window.updateStartRound = (name, val) => {
+        if (participatingTeams[name]) { participatingTeams[name].startsInRound = Math.max(1,parseInt(val)||1); renderOrderList(); }
+      };
+    
   function syncDraftOrder() {
     draftOrderRound1 = draftOrderRound1.filter(t => participatingTeams[t]);
     Object.keys(participatingTeams).forEach(t => { if (!draftOrderRound1.includes(t)) draftOrderRound1.push(t); });
@@ -605,30 +606,30 @@
     if (n>=1) renderOrderList();
   }
 
-  function renderOrderList() {
-    document.getElementById('draftOrderList').innerHTML = draftOrderRound1.map((name,i) => {
-      const picks = participatingTeams[name]?.needsPicks||1;
-      const startR = participatingTeams[name]?.startsInRound||1;
-      const safeName = name.replace(/'/g,"\\'");
-      return `
-        <li class="doi" draggable="true"
-            ondragstart="dragStart(event,${i})" ondragover="dragOver(event)"
-            ondrop="dropOrder(event,${i})" ondragleave="dragLeave(event)">
-          <span class="doi-num">${i+1}</span>
-          <span class="doi-handle">⠿</span>
-          ${tDot(name)}
-          <span class="doi-name" style="color:${tColor(name)}">${name}</span>
-          <span class="doi-picks">${picks} pick${picks!==1?'s':''}</span>
-          <span style="display:flex;align-items:center;gap:.35rem;margin-left:.5rem;">
-            <span style="font-size:.68rem;color:var(--text-muted);white-space:nowrap">starts R</span>
-            <input type="number" value="${startR}" min="1" max="20"
-              style="width:42px;background:var(--bg-deep);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:.2rem .4rem;font-size:.8rem;text-align:center;"
-              onclick="event.stopPropagation()"
-              onchange="updateStartRound('${safeName}',this.value)">
-          </span>
-        </li>`;
-    }).join('');
-  }
+    function renderOrderList() {
+        document.getElementById('draftOrderList').innerHTML = draftOrderRound1.map((name,i) => {
+          const picks  = participatingTeams[name]?.needsPicks||1;
+          const startR = participatingTeams[name]?.startsInRound||1;
+          const safeName = name.replace(/'/g,"\\'");
+          return `
+            <li class="doi" draggable="true"
+                ondragstart="dragStart(event,${i})" ondragover="dragOver(event)"
+                ondrop="dropOrder(event,${i})" ondragleave="dragLeave(event)">
+              <span class="doi-num">${i+1}</span>
+              <span class="doi-handle">⠿</span>
+              ${tDot(name)}
+              <span class="doi-name" style="color:${tColor(name)}">${name}</span>
+              <span class="doi-picks">${picks} pick${picks!==1?'s':''}</span>
+              <span style="display:flex;align-items:center;gap:.35rem;margin-left:.5rem;">
+                <span style="font-size:.68rem;color:var(--text-muted);white-space:nowrap">starts R</span>
+                <input type="number" value="${startR}" min="1" max="20"
+                  style="width:42px;background:var(--bg-deep);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:.2rem .4rem;font-size:.8rem;text-align:center;"
+                  onclick="event.stopPropagation()"
+                  onchange="updateStartRound('${safeName}',this.value)">
+              </span>
+            </li>`;
+        }).join('');
+      }
 
   let dragFromIdx = null;
   window.dragStart = (e,i)  => { dragFromIdx=i; e.dataTransfer.effectAllowed='move'; };
@@ -658,14 +659,14 @@
     const maxP = Math.max(...Object.values(participatingTeams).map(t=>t.needsPicks));
     snakeOrder = [];
     for (let r=0; r<maxP; r++) {
-      draftOrderRound1.forEach(team => {
-        const t = participatingTeams[team];
-        if (!t) return;
-        const needed = t.needsPicks||0;
-        const startsIn = t.startsInRound||1;
-        if (r+1 < startsIn) return; // team hasn't entered the draft yet
-        if (snakeOrder.filter(p=>p.team===team).length < needed) snakeOrder.push({team, round:r+1});
-      });
+        draftOrderRound1.forEach(team => {
+                const t = participatingTeams[team];
+                if (!t) return;
+                const needed   = t.needsPicks||0;
+                const startsIn = t.startsInRound||1;
+                if (r+1 < startsIn) return;
+                if (snakeOrder.filter(p=>p.team===team).length < needed) snakeOrder.push({team, round:r+1});
+              });
     }
     snakeOrder = snakeOrder.map((p,i)=>({...p,pickNum:i+1}));
   }
@@ -746,7 +747,7 @@
       const hasBa  = p.ba  && p.ba!=='.000';
       const hasBpi = p.acesBPI && p.acesBPI!=='0.0';
       return `
-        <div class="pcard" onclick="openPickModal(${JSON.stringify(p.id)})">
+              <div class="pcard" onclick="openPickModal('${p.id}')">
           <div class="pavatar">${p.name.charAt(0)}</div>
           <div class="pinfo">
             <div class="pname">${p.name}</div>
@@ -756,7 +757,7 @@
               <div class="mpill">${p.isNew?'<span style="color:var(--blue)">New</span>':'Returning'}</div>
             </div>
           </div>
-          ${!done?`<button class="draft-btn" onclick="event.stopPropagation();openPickModal(${JSON.stringify(p.id)})">Draft ▶</button>`:''}
+        ${!done?`<button class="draft-btn" onclick="event.stopPropagation();openPickModal('${p.id}')">Draft ▶</button>`:''}
         </div>`;
     }).join('');
   }
@@ -846,11 +847,11 @@
     clearTimer();
     const cur = snakeOrder[currentPickIndex];
     const rec = {
-      pickIndex:currentPickIndex, pickNum:cur.pickNum, round:cur.round, team,
-      player:{id:player.id,name:player.name,ba:player.ba||'.000',acesBPI:player.acesBPI||'0.0',isNew:player.isNew||false,source:player.source||''},
-      skipped:false, timestamp:serverTimestamp(),
-      pickedBy:currentUser.uid, pickedByName:userProfile?.displayName||currentUser.email
-    };
+          pickIndex:currentPickIndex, pickNum:cur.pickNum, round:cur.round, team,
+          player:{id:player.id,name:player.name,ba:player.ba||'.000',acesBPI:player.acesBPI||'0.0',isNew:player.isNew||false,source:player.source||''},
+          skipped:false, timestamp:new Date().toISOString(),
+          pickedBy:currentUser.uid, pickedByName:userProfile?.displayName||currentUser.email
+        };
     const newPicks = [...draftPicks, rec], newIdx = currentPickIndex+1;
     try {
       await updateDoc(doc(db,'drafts',DRAFT_ID), {picks:newPicks, currentPickIndex:newIdx, lastModified:serverTimestamp()});
@@ -865,7 +866,7 @@
     const cur = snakeOrder[currentPickIndex];
     if (!confirm(`Skip ${cur.team}'s pick #${cur.pickNum}? They will lose this pick.`)) return;
     clearTimer();
-    const rec = {pickIndex:currentPickIndex,pickNum:cur.pickNum,round:cur.round,team:cur.team,player:null,skipped:true,timestamp:serverTimestamp(),pickedBy:currentUser.uid};
+    const rec = {pickIndex:currentPickIndex,pickNum:cur.pickNum,round:cur.round,team:cur.team,player:null,skipped:true,timestamp:new Date().toISOString(),pickedBy:currentUser.uid};
     const newPicks=[...draftPicks,rec], newIdx=currentPickIndex+1;
     try {
       await updateDoc(doc(db,'drafts',DRAFT_ID),{picks:newPicks,currentPickIndex:newIdx,lastModified:serverTimestamp()});
@@ -930,7 +931,7 @@
       await addDoc(collection(db,'offseasonRosters',OFFSEASON_ID,'changelog'), {
         userId:currentUser.uid, userName:userProfile?.displayName||currentUser.email,
         action:'draft_completed',
-        details:`Snake draft completed — ${drafted} player${drafted!==1?'s':''} drafted across ${Object.keys(participatingTeams).length} teams`,
+        details:`Draft completed — ${drafted} player${drafted!==1?'s':''} drafted across ${Object.keys(participatingTeams).length} teams`,
         timestamp:serverTimestamp()
       });
 
