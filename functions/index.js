@@ -3186,46 +3186,42 @@ exports.sendMassEmail = functions
 
   const senderName = fromName || 'Mountainside Aces';
 
-  // ── Send via Resend in batches of 50 ─────────────────────────────────────
-  const BATCH_SIZE = 50;
   let sentCount = 0;
   const errors = [];
 
-  console.log(`📧 Sending "${subject}" to ${emailList.length} recipients (${audienceLabel || 'All Members'})`);
+  // Always BCC — all recipients are hidden from each other, no reply-all
+  // "To" is the sender's own email, pulled from their user doc
+  console.log(`📧 Sending "${subject}" BCC to ${emailList.length} recipients (${audienceLabel || 'All Members'})`);
 
-  for (let i = 0; i < emailList.length; i += BATCH_SIZE) {
-    const batch = emailList.slice(i, i + BATCH_SIZE);
-    const batchNum = Math.floor(i / BATCH_SIZE) + 1;
+  try {
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        from: `${senderName} <${fromEmail}>`,
+        to: [userData.email],
+        bcc: emailList,
+        reply_to: replyTo,
+        subject: subject,
+        html: htmlBody,
+        text: textBody
+      })
+    });
 
-    try {
-      const res = await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          from: `${senderName} <${fromEmail}>`,
-          to: batch,
-          reply_to: replyTo,
-          subject: subject,
-          html: htmlBody,
-          text: textBody
-        })
-      });
-
-      if (!res.ok) {
-        const errText = await res.text();
-        console.error(`❌ Resend batch ${batchNum} failed (${res.status}):`, errText);
-        errors.push(`Batch ${batchNum}: ${errText}`);
-      } else {
-        sentCount += batch.length;
-        console.log(`✅ Batch ${batchNum} sent (${batch.length} emails)`);
-      }
-    } catch (err) {
-      console.error(`❌ Resend batch ${batchNum} threw:`, err.message);
-      errors.push(`Batch ${batchNum}: ${err.message}`);
+    if (!res.ok) {
+      const errText = await res.text();
+      console.error(`❌ Resend BCC send failed (${res.status}):`, errText);
+      errors.push(errText);
+    } else {
+      sentCount = emailList.length;
+      console.log(`✅ BCC send successful (${emailList.length} recipients)`);
     }
+  } catch (err) {
+    console.error('❌ Resend BCC send threw:', err.message);
+    errors.push(err.message);
   }
 
   if (sentCount === 0) {
@@ -3239,6 +3235,7 @@ exports.sendMassEmail = functions
   const campaignRef = await db.collection('emailCampaigns').add({
     subject,
     audienceLabel: audienceLabel || 'All Members',
+    sendMode: 'bcc',
     sentCount,
     totalRecipients: emailList.length,
     sentBy: userData.displayName || userId,
