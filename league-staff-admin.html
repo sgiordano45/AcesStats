@@ -1470,57 +1470,6 @@
   .email-api-ok      { background: #dcfce7; color: #166534; }
   .email-api-error   { background: #fee2e2; color: #991b1b; }
 
-  .email-send-mode-group {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 0.75rem;
-  }
-
-  .email-send-mode-option {
-    cursor: pointer;
-  }
-
-  .email-send-mode-option input[type="radio"] {
-    display: none;
-  }
-
-  .email-send-mode-card {
-    border: 2px solid var(--border-color);
-    border-radius: 10px;
-    padding: 0.875rem 1rem;
-    background: white;
-    transition: all 0.2s ease;
-  }
-
-  .email-send-mode-option:hover .email-send-mode-card {
-    border-color: var(--staff-color);
-    background: #f0f9ff;
-  }
-
-  .email-send-mode-option.selected .email-send-mode-card {
-    border-color: var(--staff-color);
-    background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
-  }
-
-  .email-send-mode-title {
-    font-weight: 700;
-    font-size: 0.95rem;
-    margin-bottom: 0.35rem;
-    color: var(--text-dark);
-  }
-
-  .email-send-mode-desc {
-    font-size: 0.78rem;
-    color: var(--text-light);
-    line-height: 1.5;
-  }
-
-  @media (max-width: 600px) {
-    .email-send-mode-group {
-      grid-template-columns: 1fr;
-    }
-  }
-
   .email-send-result {
     border-radius: 8px;
     padding: 1rem 1.25rem;
@@ -2020,25 +1969,7 @@
                 <div class="hint">Replies from members go to this address.</div>
               </div>
 
-              <div class="form-group">
-                <label>Send Mode</label>
-                <div class="email-send-mode-group">
-                  <label class="email-send-mode-option" id="modeIndividualLabel">
-                    <input type="radio" name="emailSendMode" id="modeIndividual" value="individual" checked onchange="updateSendModeUI()">
-                    <div class="email-send-mode-card">
-                      <div class="email-send-mode-title">✉️ Individual</div>
-                      <div class="email-send-mode-desc">One email per recipient. Best deliverability. Counts against daily limit (100/day on free tier).</div>
-                    </div>
-                  </label>
-                  <label class="email-send-mode-option" id="modeBccLabel">
-                    <input type="radio" name="emailSendMode" id="modeBcc" value="bcc" onchange="updateSendModeUI()">
-                    <div class="email-send-mode-card">
-                      <div class="email-send-mode-title">📨 BCC All</div>
-                      <div class="email-send-mode-desc">Single email, all recipients BCC'd. Counts as 1 send — works on free tier for 165 recipients. &quot;To&quot; line uses your account email automatically.</div>
-                    </div>
-                  </label>
-                </div>
-              </div>
+
 
               <div class="form-group">
                 <label>Subject Line</label>
@@ -2062,7 +1993,7 @@
               <div class="btn-group">
                 <button class="btn btn-secondary" onclick="toggleEmailPreview()">👁️ Toggle Preview</button>
                 <button class="btn btn-success" id="sendEmailBtn" onclick="sendMassEmail()" style="flex:1; justify-content:center;">
-                  📤 Send to League
+                  📨 Send BCC to League
                 </button>
               </div>
 
@@ -4081,16 +4012,6 @@
     await loadEmailHistory();
   }
 
-  window.updateSendModeUI = function() {
-    const mode = document.querySelector('input[name="emailSendMode"]:checked')?.value || 'individual';
-    const individualLabel = document.getElementById('modeIndividualLabel');
-    const bccLabel = document.getElementById('modeBccLabel');
-    if (individualLabel) individualLabel.classList.toggle('selected', mode === 'individual');
-    if (bccLabel) bccLabel.classList.toggle('selected', mode === 'bcc');
-    const btn = document.getElementById('sendEmailBtn');
-    if (btn) btn.innerHTML = mode === 'bcc' ? '📨 Send BCC to League' : '📤 Send to League';
-  };
-
   function renderEmailTeamChips() {
     const wrap = document.getElementById('emailTeamChips');
     wrap.innerHTML = EMAIL_TEAMS.map(t => `
@@ -4184,7 +4105,7 @@
     const body      = document.getElementById('emailBody').value.trim();
     const fromName  = document.getElementById('emailFromName').value.trim() || 'Mountainside Aces';
     const replyTo   = document.getElementById('emailReplyTo').value.trim();
-    const sendMode  = document.querySelector('input[name="emailSendMode"]:checked')?.value || 'individual';
+    const sendMode  = 'bcc'; // Always BCC — keeps recipients private, no reply-all
 
     if (!subject) { showToast('Subject line is required', 'error'); return; }
     if (!body)    { showToast('Email body is required', 'error'); return; }
@@ -4210,12 +4131,13 @@
       : audience === 'linked' ? 'Linked Players'
       : 'Teams: ' + emailSelectedTeams.join(', ');
 
-    const modeLabel = sendMode === 'bcc' ? 'BCC mode (1 send, free tier safe)' : 'Individual mode';
-    if (!confirm(`Send "${subject}" to ${recipients.length} recipients (${audienceLabel})?\n\nMode: ${modeLabel}`)) return;
+    if (!confirm(`Send "${subject}" to ${recipients.length} recipients (${audienceLabel})?
+
+All recipients will be BCC'd.`)) return;
 
     btn.disabled = true;
     const orig = btn.innerHTML;
-    btn.innerHTML = sendMode === 'bcc' ? `⏳ Sending BCC to ${recipients.length} recipients...` : `⏳ Sending to ${recipients.length} recipients...`;
+    btn.innerHTML = `⏳ Sending to ${recipients.length} recipients...`;
     statusEl.style.display = 'none';
 
     try {
