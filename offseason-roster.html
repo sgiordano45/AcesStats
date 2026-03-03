@@ -672,6 +672,11 @@
       font-weight: 600;
     }
 
+    .unassigned-zone.drag-over {
+      border-color: #2b6cb0 !important;
+      background: #ebf8ff !important;
+    }
+
     .empty-unassigned {
       text-align: center;
       padding: 2rem;
@@ -1491,8 +1496,16 @@
           changeDescription = `moved ${player.name} from Unavailable to ${toTeam}`;
         }
       }
+      // Handle drop from team to unassigned
+      else if (toTeam === 'unassigned' && fromTeam !== 'unassigned') {
+        if (teams[fromTeam]) {
+          teams[fromTeam].players = teams[fromTeam].players.filter(p => p.id !== player.id);
+        }
+        unassignedPlayers.push({ ...player, importedAt: player.importedAt || new Date().toISOString() });
+        changeDescription = `moved ${player.name} from ${fromTeam} to Unassigned`;
+      }
       // Handle drop between teams
-      else if (fromTeam !== toTeam && teams[toTeam].players.length < teams[toTeam].maxRoster) {
+      else if (fromTeam !== toTeam && teams[toTeam] && teams[toTeam].players.length < teams[toTeam].maxRoster) {
         teams[fromTeam].players = teams[fromTeam].players.filter(p => p.id !== player.id);
         teams[toTeam].players.push(player);
         changeDescription = `moved ${player.name} from ${fromTeam} to ${toTeam}`;
@@ -1678,7 +1691,7 @@
             </div>
 
             <!-- Unassigned Players Zone (from roster import) -->
-            <div id="unassignedZone" class="unassigned-zone" style="${unassignedPlayers.length > 0 ? 'display: block;' : 'display: none;'}" data-team="unassigned">
+            <div id="unassignedZone" class="unassigned-zone" style="display: block;" data-team="unassigned">
               <h3>📋 Unassigned Players</h3>
               <p class="zone-subtitle">New players from roster import - drag to assign to teams</p>
               <div id="unassignedEmpty" class="empty-unassigned" style="${unassignedPlayers.length === 0 ? 'display: block;' : 'display: none;'}">
@@ -1800,6 +1813,25 @@
     }
     
     function setupUnassignedDrag() {
+      var unassignedZone = document.getElementById('unassignedZone');
+      if (unassignedZone) {
+        unassignedZone.addEventListener('dragover', function(e) {
+          e.preventDefault();
+          unassignedZone.classList.add('drag-over');
+        });
+        unassignedZone.addEventListener('dragleave', function(e) {
+          if (!unassignedZone.contains(e.relatedTarget)) {
+            unassignedZone.classList.remove('drag-over');
+          }
+        });
+        unassignedZone.addEventListener('drop', function(e) {
+          e.preventDefault();
+          unassignedZone.classList.remove('drag-over');
+          handleDrop('unassigned');
+          renderTeams();
+          renderUnassigned();
+        });
+      }
       document.querySelectorAll('#unassignedPlayersGrid .player-card').forEach(card => {
         card.addEventListener('dragstart', (e) => {
           const playerId = e.target.dataset.playerId;
@@ -1933,6 +1965,8 @@
           e.preventDefault();
           const toTeam = e.currentTarget.dataset.team;
           handleDrop(toTeam);
+          renderTeams();
+          renderUnassigned();
         });
       });
     }
@@ -2505,7 +2539,7 @@
 
         // Re-render
         renderTeams();
-        renderUnassignedPlayers();
+        renderUnassigned();
         populateTeamSelectDropdown();
 
         const filterNote = hasImportData ? ' - ' + unassignedPlayers.length + ' new player(s) in Unassigned' : '';
