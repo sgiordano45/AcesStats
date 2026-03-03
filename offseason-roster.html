@@ -672,11 +672,6 @@
       font-weight: 600;
     }
 
-    .unassigned-zone.drag-over {
-      border-color: #2b6cb0 !important;
-      background: #ebf8ff !important;
-    }
-
     .empty-unassigned {
       text-align: center;
       padding: 2rem;
@@ -1496,16 +1491,8 @@
           changeDescription = `moved ${player.name} from Unavailable to ${toTeam}`;
         }
       }
-      // Handle drop from team to unassigned
-      else if (toTeam === 'unassigned' && fromTeam !== 'unassigned') {
-        if (teams[fromTeam]) {
-          teams[fromTeam].players = teams[fromTeam].players.filter(p => p.id !== player.id);
-        }
-        unassignedPlayers.push({ ...player, importedAt: player.importedAt || new Date().toISOString() });
-        changeDescription = `moved ${player.name} from ${fromTeam} to Unassigned`;
-      }
       // Handle drop between teams
-      else if (fromTeam !== toTeam && teams[toTeam] && teams[toTeam].players.length < teams[toTeam].maxRoster) {
+      else if (fromTeam !== toTeam && teams[toTeam].players.length < teams[toTeam].maxRoster) {
         teams[fromTeam].players = teams[fromTeam].players.filter(p => p.id !== player.id);
         teams[toTeam].players.push(player);
         changeDescription = `moved ${player.name} from ${fromTeam} to ${toTeam}`;
@@ -1691,7 +1678,7 @@
             </div>
 
             <!-- Unassigned Players Zone (from roster import) -->
-            <div id="unassignedZone" class="unassigned-zone" style="display: block;" data-team="unassigned">
+            <div id="unassignedZone" class="unassigned-zone" style="${unassignedPlayers.length > 0 ? 'display: block;' : 'display: none;'}" data-team="unassigned">
               <h3>📋 Unassigned Players</h3>
               <p class="zone-subtitle">New players from roster import - drag to assign to teams</p>
               <div id="unassignedEmpty" class="empty-unassigned" style="${unassignedPlayers.length === 0 ? 'display: block;' : 'display: none;'}">
@@ -1813,27 +1800,6 @@
     }
     
     function setupUnassignedDrag() {
-      // Make the zone itself a drop target for players dragged from teams
-      const unassignedZone = document.getElementById('unassignedZone');
-      if (unassignedZone) {
-        unassignedZone.addEventListener('dragover', (e) => {
-          e.preventDefault();
-          unassignedZone.classList.add('drag-over');
-        });
-        unassignedZone.addEventListener('dragleave', (e) => {
-          if (!unassignedZone.contains(e.relatedTarget)) {
-            unassignedZone.classList.remove('drag-over');
-          }
-        });
-        unassignedZone.addEventListener('drop', (e) => {
-          e.preventDefault();
-          unassignedZone.classList.remove('drag-over');
-          handleDrop('unassigned');
-          renderUnassignedPlayers();
-          renderTeams();
-        });
-      }
-
       document.querySelectorAll('#unassignedPlayersGrid .player-card').forEach(card => {
         card.addEventListener('dragstart', (e) => {
           const playerId = e.target.dataset.playerId;
@@ -1967,8 +1933,6 @@
           e.preventDefault();
           const toTeam = e.currentTarget.dataset.team;
           handleDrop(toTeam);
-          renderTeams();
-          renderUnassignedPlayers();
         });
       });
     }
@@ -2415,13 +2379,18 @@
       const seasonLabel = `${selectedSeason.year} ${selectedSeason.season.charAt(0).toUpperCase() + selectedSeason.season.slice(1)}`;
       
       // Confirm the action
+      const hasImports = unassignedPlayers.length > 0;
       const confirmed = confirm(
         `⚠️ Load rosters from ${seasonLabel}?\n\n` +
         `This will:\n` +
-        `• Replace all current team rosters\n` +
-        `• Keep your unassigned players pool\n` +
-        `• Keep unavailable players list\n\n` +
-        `This is intended to kick off roster planning. Continue?`
+        `• Replace all current team rosters with ${seasonLabel} teams\n` +
+        (hasImports
+          ? `• Cross-reference your ${unassignedPlayers.length} imported players\n` +
+            `• Move non-returning players to Unavailable\n` +
+            `• Keep only brand-new players in Unassigned\n`
+          : `• Keep your unassigned players pool\n` +
+            `• Keep unavailable players list\n`) +
+        `\nThis is intended to kick off roster planning. Continue?`
       );
       
       if (!confirmed) {
@@ -2488,18 +2457,67 @@
         
         console.log(`✅ Built ${Object.keys(newTeams).length} teams from ${seasonLabel}`);
         
-        // Replace teams (keep unassigned and unavailable)
+        // Build a set of confirmed 2026 player names from the unassigned pool
+        // (player-import pushes confirmed returners + new players here)
+        const confirmedNames = new Set(
+          unassignedPlayers.map(p => p.name.toLowerCase().trim())
+        );
+        const hasImportData = confirmedNames.size > 0;
+
+        // If we have import data, filter teams and move non-returners to unavailable
+        if (hasImportData) {
+          const notReturning = [];
+
+          Object.keys(newTeams).forEach(teamName => {
+            const returning = [];
+            newTeams[teamName].players.forEach(player => {
+              if (confirmedNames.has(player.name.toLowerCase().trim())) {
+                returning.push(player);
+              } else {
+                notReturning.push(player);
+              }
+            });
+            newTeams[teamName].players = returning;
+          });
+
+          // Move non-returners to unavailable (merge, no duplicates by name)
+          const existingUnavailNames = new Set(
+            unavailablePlayers.map(p => p.name.toLowerCase().trim())
+          );
+          notReturning.forEach(p => {
+            if (!existingUnavailNames.has(p.name.toLowerCase().trim())) {
+              unavailablePlayers.push(p);
+            }
+          });
+
+          // Remove confirmed returners from unassigned — they're now on teams
+          const teamPlayerNames = new Set();
+          Object.values(newTeams).forEach(team => {
+            team.players.forEach(p => teamPlayerNames.add(p.name.toLowerCase().trim()));
+          });
+          unassignedPlayers = unassignedPlayers.filter(p =>
+            !teamPlayerNames.has(p.name.toLowerCase().trim())
+          );
+
+          console.log(`✅ Filtered: ${notReturning.length} moved to Unavailable, ${unassignedPlayers.length} remain in Unassigned (new players)`);
+        }
+
+        // Replace teams (keep updated unassigned and unavailable)
         teams = newTeams;
         
         // Save changes
         await saveRosterChanges();
-        await logChange('season_loaded', `loaded rosters from ${seasonLabel} (${seasonPlayers.length} players)`);
+        await logChange('season_loaded', `loaded rosters from ${seasonLabel} (${seasonPlayers.length} players)${hasImportData ? `, filtered against ${confirmedNames.size} confirmed imports` : ''}`);
         
         // Re-render
         renderTeams();
+        renderUnassignedPlayers();
         populateTeamSelectDropdown();
-        
-        showToast(`Loaded ${seasonPlayers.length} players from ${seasonLabel}! ✅`, 'success');
+
+        const filterMsg = hasImportData
+          ? ` · ${unassignedPlayers.length} new players in Unassigned`
+          : '';
+        showToast(`Loaded ${seasonPlayers.length} players from ${seasonLabel}!${filterMsg} ✅`, 'success');
         
       } catch (error) {
         console.error('Error loading season:', error);
