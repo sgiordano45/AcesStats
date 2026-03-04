@@ -1193,29 +1193,13 @@
               <div class="form-group">
                 <label>Team</label>
                 <select id="newUserTeam">
-                  <option value="">Select team...</option>
-                  <option value="Black">Black</option>
-                  <option value="Blue">Blue</option>
-                  <option value="Green">Green</option>
-                  <option value="Red">Red</option>
-                  <option value="White">White</option>
-                  <option value="Orange">Orange</option>
-                  <option value="Silver">Silver</option>
-                  <option value="Purple">Purple</option>
-                  <option value="Gold">Gold</option>
-                  <option value="Carolina">Carolina</option>
-                  <option value="Army">Army</option>
+                  <option value="">Loading teams...</option>
                 </select>
               </div>
               <div class="form-group">
                 <label>Document ID (auto-generated)</label>
                 <input type="text" id="newUserLegacyId" readonly style="background: #e2e8f0; cursor: not-allowed; font-family: monospace;">
                 <div class="hint">Matches playerStats format for aggregation</div>
-              </div>
-              <div class="form-group">
-                <label>Email <span style="color: var(--text-light); font-weight: normal;">(optional)</span></label>
-                <input type="email" id="newUserEmail" placeholder="player@example.com">
-                <div class="hint">Stored on profile — helps player link their account later</div>
               </div>
               <button class="btn btn-success" onclick="createSingleUser()">
                 ✅ Create User
@@ -1230,18 +1214,7 @@
               <div class="form-group">
                 <label>Team for All Players</label>
                 <select id="bulkUserTeam">
-                  <option value="">Select team...</option>
-                  <option value="Black">Black</option>
-                  <option value="Blue">Blue</option>
-                  <option value="Green">Green</option>
-                  <option value="Red">Red</option>
-                  <option value="White">White</option>
-                  <option value="Orange">Orange</option>
-                  <option value="Silver">Silver</option>
-                  <option value="Purple">Purple</option>
-                  <option value="Gold">Gold</option>
-                  <option value="Carolina">Carolina</option>
-                  <option value="Army">Army</option>
+                  <option value="">Loading teams...</option>
                 </select>
               </div>
               <div class="form-group">
@@ -1279,17 +1252,6 @@
                 <input type="text" id="userSearchInput" placeholder="Search by name..." style="width: 200px;" oninput="filterUserList()">
                 <select id="userTeamFilter" style="width: 150px;" onchange="filterUserList()">
                   <option value="">All Teams</option>
-                  <option value="Black">Black</option>
-                  <option value="Blue">Blue</option>
-                  <option value="Green">Green</option>
-                  <option value="Red">Red</option>
-                  <option value="White">White</option>
-                  <option value="Orange">Orange</option>
-                  <option value="Silver">Silver</option>
-                  <option value="Purple">Purple</option>
-                  <option value="Gold">Gold</option>
-                  <option value="Carolina">Carolina</option>
-                  <option value="Army">Army</option>
                 </select>
                 <button class="btn btn-secondary" onclick="loadPlaceholderUsers()">🔄 Refresh</button>
               </div>
@@ -1583,6 +1545,7 @@
 
   async function initialize() {
     await loadSeasons();
+    await loadTeamDropdowns();
     setupTabs();
     setupUserManagementListeners();
     setupDocumentUpload();
@@ -1604,6 +1567,25 @@
         const legacyId = generateLegacyId(nameInput.value);
         document.getElementById('newUserLegacyId').value = legacyId;
       });
+    }
+  }
+
+  async function loadTeamDropdowns() {
+    try {
+      const teamsSnapshot = await getDocs(collection(db, 'teams'));
+      const teams = teamsSnapshot.docs
+        .map(doc => ({ id: doc.id, name: doc.data().name || doc.id.charAt(0).toUpperCase() + doc.id.slice(1) }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+
+      const teamOptions = teams.map(t => `<option value="${t.name}">${t.name}</option>`).join('');
+
+      document.getElementById('newUserTeam').innerHTML = `<option value="">Select team...</option>${teamOptions}`;
+      document.getElementById('bulkUserTeam').innerHTML = `<option value="">Select team...</option>${teamOptions}`;
+      document.getElementById('userTeamFilter').innerHTML = `<option value="">All Teams</option>${teamOptions}`;
+
+    } catch (error) {
+      console.error('Error loading teams:', error);
+      showToast('Error loading teams from Firebase', 'error');
     }
   }
 
@@ -2253,7 +2235,6 @@
     const name = document.getElementById('newUserName').value.trim();
     const team = document.getElementById('newUserTeam').value;
     const legacyId = document.getElementById('newUserLegacyId').value;
-    const email = document.getElementById('newUserEmail').value.trim();
 
     if (!name || !team || !legacyId) {
       showToast('Please fill in name and team', 'warning');
@@ -2273,39 +2254,29 @@
         return;
       }
 
-      const userDoc = {
+      await setDoc(doc(db, 'users', legacyId), {
         displayName: name,
-        name: name,
         linkedTeam: team,
         userType: 'player',
-        role: 'player',
         isPlaceholder: true,
         createdAt: serverTimestamp(),
         createdBy: currentUser.uid
-      };
-      if (email) userDoc.email = email;
+      });
 
-      await setDoc(doc(db, 'users', legacyId), userDoc);
-
-      const statsDoc = {
+      await setDoc(doc(db, 'aggregatedPlayerStats', legacyId), {
         name: name,
         currentTeam: team,
         seasons: {
           [activeSeason.id]: { team: team, games: 0 }
         },
         career: { games: 0 },
-        isPlaceholder: true,
         createdAt: serverTimestamp()
-      };
-      if (email) statsDoc.email = email;
-
-      await setDoc(doc(db, 'aggregatedPlayerStats', legacyId), statsDoc);
+      });
 
       showToast(`Created user: ${name}`, 'success');
       document.getElementById('newUserName').value = '';
       document.getElementById('newUserTeam').value = '';
       document.getElementById('newUserLegacyId').value = '';
-      document.getElementById('newUserEmail').value = '';
 
     } catch (error) {
       console.error('Error creating user:', error);
