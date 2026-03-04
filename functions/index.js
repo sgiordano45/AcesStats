@@ -3177,7 +3177,7 @@ exports.sendMassEmail = functions
   }
 
   // ── Build email content ───────────────────────────────────────────────────
-  const htmlBody = buildEmailHtml(body, fromName || 'Mountainside Aces');
+  const htmlBody = buildEmailHtml(body, fromName || 'Mountainside Aces', userId);
   const textBody = body.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
 
   const emailList = recipients
@@ -3257,12 +3257,28 @@ exports.sendMassEmail = functions
   };
 });
 
-/**
- * Build branded HTML email template
- */
-function buildEmailHtml(body, fromName) {
+// UID for the Supreme Leader — special email template
+const SUPREME_LEADER_UID = '62UYGWPYtkdlqOiaIHtj6CYW1uf1';
+const SUPREME_LEADER_PHOTO = 'https://firebasestorage.googleapis.com/v0/b/acessoftballreference-84791.firebasestorage.app/o/email-assets%2Fd7e5219a-b681-444b-bb0c-2b96a053b620.jpeg?alt=media&token=4dbc5405-db99-47d2-b2c3-10d2d2183aa9';
+
+function buildEmailHtml(body, fromName, senderId) {
   const isHtml = /<[a-z][\s\S]*>/i.test(body);
   const formattedBody = isHtml ? body : body.replace(/\n/g, '<br>');
+  const isSupremeLeader = senderId === SUPREME_LEADER_UID;
+
+  const supremeLeaderPrefix = isSupremeLeader
+    ? '<tr><td style="padding:16px 36px 0;text-align:center;">' +
+      '<div style="display:inline-block;background:linear-gradient(135deg,#7b341e 0%,#c05621 100%);color:#fff;font-size:11px;font-weight:800;letter-spacing:2px;padding:5px 14px;border-radius:20px;text-transform:uppercase;">Official Communication</div>' +
+      '<div style="margin-top:10px;font-size:14px;font-style:italic;color:#744210;font-weight:600;">— From the Desk of the Supreme Leader —</div>' +
+      '</td></tr>'
+    : '';
+
+  const supremeLeaderPhoto = isSupremeLeader
+    ? '<tr><td style="padding:24px 36px 8px;text-align:center;">' +
+      '<img src="' + SUPREME_LEADER_PHOTO + '" alt="The Supreme Leader" style="width:100%;max-width:480px;border-radius:10px;display:block;margin:0 auto;" />' +
+      '<div style="margin-top:8px;font-size:11px;color:#a0aec0;font-style:italic;">The Supreme Leader — Mountainside Aces</div>' +
+      '</td></tr>'
+    : '';
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -3281,11 +3297,13 @@ function buildEmailHtml(body, fromName) {
             <div style="color:rgba(255,255,255,0.75);font-size:13px;margin-top:4px;">Recreational Softball League</div>
           </td>
         </tr>
+        ${supremeLeaderPrefix}
         <tr>
           <td style="padding:32px 36px;color:#2d3748;font-size:15px;line-height:1.8;">
             ${formattedBody}
           </td>
         </tr>
+        ${supremeLeaderPhoto}
         <tr>
           <td style="background:#f8fafc;padding:20px 36px;border-top:1px solid #e2e8f0;text-align:center;font-size:12px;color:#a0aec0;">
             You're receiving this because you're a member of Mountainside Aces.<br>
