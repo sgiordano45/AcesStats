@@ -1201,6 +1201,11 @@
                 <input type="text" id="newUserLegacyId" readonly style="background: #e2e8f0; cursor: not-allowed; font-family: monospace;">
                 <div class="hint">Matches playerStats format for aggregation</div>
               </div>
+              <div class="form-group">
+                <label>Email <span style="color: var(--text-light); font-weight: normal;">(optional)</span></label>
+                <input type="email" id="newUserEmail" placeholder="player@example.com">
+                <div class="hint">Stored on profile — helps player link their account later</div>
+              </div>
               <button class="btn btn-success" onclick="createSingleUser()">
                 ✅ Create User
               </button>
@@ -2235,6 +2240,7 @@
     const name = document.getElementById('newUserName').value.trim();
     const team = document.getElementById('newUserTeam').value;
     const legacyId = document.getElementById('newUserLegacyId').value;
+    const email = document.getElementById('newUserEmail').value.trim();
 
     if (!name || !team || !legacyId) {
       showToast('Please fill in name and team', 'warning');
@@ -2254,29 +2260,39 @@
         return;
       }
 
-      await setDoc(doc(db, 'users', legacyId), {
+      const userDoc = {
         displayName: name,
+        name: name,
         linkedTeam: team,
         userType: 'player',
+        role: 'player',
         isPlaceholder: true,
         createdAt: serverTimestamp(),
         createdBy: currentUser.uid
-      });
+      };
+      if (email) userDoc.email = email;
 
-      await setDoc(doc(db, 'aggregatedPlayerStats', legacyId), {
+      await setDoc(doc(db, 'users', legacyId), userDoc);
+
+      const statsDoc = {
         name: name,
         currentTeam: team,
         seasons: {
           [activeSeason.id]: { team: team, games: 0 }
         },
         career: { games: 0 },
+        isPlaceholder: true,
         createdAt: serverTimestamp()
-      });
+      };
+      if (email) statsDoc.email = email;
+
+      await setDoc(doc(db, 'aggregatedPlayerStats', legacyId), statsDoc);
 
       showToast(`Created user: ${name}`, 'success');
       document.getElementById('newUserName').value = '';
       document.getElementById('newUserTeam').value = '';
       document.getElementById('newUserLegacyId').value = '';
+      document.getElementById('newUserEmail').value = '';
 
     } catch (error) {
       console.error('Error creating user:', error);
