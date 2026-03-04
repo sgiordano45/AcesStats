@@ -7,7 +7,7 @@
       --team-black: #1a1a1a; --team-green: #2d7d32; --team-red: #d32f2f;
       --team-blue: #1976d2; --team-white: #343a40; --team-orange: #f57c00;
       --team-silver: #757575; --team-purple: #7b1fa2; --team-gold: #CFB53B;
-      --team-carolina: #4b9cd3; --team-army: #654321;
+      --team-carolina: #4b9cd3; --team-army: #654321; --team-teal: #008080;
     }
     
     /* Text colors - for inline team names */
@@ -22,6 +22,7 @@
     .team-text-gold { color: var(--team-gold) !important; font-weight: 600 !important; }
     .team-text-carolina { color: var(--team-carolina) !important; font-weight: 600 !important; }
     .team-text-army { color: var(--team-army) !important; font-weight: 600 !important; }
+    .team-text-teal { color: var(--team-teal) !important; font-weight: 600 !important; }
     
     /* Badge styles - for tags and labels */
     .team-badge-black { background: var(--team-black) !important; color: white !important; padding: 2px 8px; border-radius: 12px; font-size: 0.85em; }
@@ -35,6 +36,7 @@
     .team-badge-gold { background: var(--team-gold) !important; color: white !important; padding: 2px 8px; border-radius: 12px; font-size: 0.85em; }
     .team-badge-carolina { background: var(--team-carolina) !important; color: white !important; padding: 2px 8px; border-radius: 12px; font-size: 0.85em; }
     .team-badge-army { background: var(--team-army) !important; color: white !important; padding: 2px 8px; border-radius: 12px; font-size: 0.85em; }
+    .team-badge-teal { background: var(--team-teal) !important; color: white !important; padding: 2px 8px; border-radius: 12px; font-size: 0.85em; }
     
     /* Primary colors - for headers, buttons, highlights */
     .team-primary-black { background: var(--team-black) !important; color: white !important; }
@@ -48,6 +50,7 @@
     .team-primary-gold { background: var(--team-gold) !important; color: white !important; }
     .team-primary-carolina { background: var(--team-carolina) !important; color: white !important; }
     .team-primary-army { background: var(--team-army) !important; color: white !important; }
+    .team-primary-teal { background: var(--team-teal) !important; color: white !important; }
     
     /* Light backgrounds - for content sections */
     .team-light-black { background: #f5f5f5 !important; color: var(--team-black) !important; border-left: 4px solid var(--team-black) !important; }
@@ -61,6 +64,7 @@
     .team-light-gold { background: #faf8e8 !important; color: #8b7e2b !important; border-left: 4px solid var(--team-gold) !important; }
     .team-light-carolina { background: #e6f3ff !important; color: #1e3a5f !important; border-left: 4px solid var(--team-carolina) !important; }
     .team-light-army { background: #f0ebda !important; color: #3d2914 !important; border-left: 4px solid var(--team-army) !important; }
+    .team-light-teal { background: #e0f2f1 !important; color: #004d40 !important; border-left: 4px solid var(--team-teal) !important; }
   `;
   
   // Add CSS to page
@@ -78,7 +82,8 @@
       'purple': 'team-text-purple', 
       'gold': 'team-text-gold',
       'carolina': 'team-text-carolina', 
-      'army': 'team-text-army'
+      'army': 'team-text-army',
+      'teal': 'team-text-teal'
     };
     
     let styledCount = 0;
@@ -153,7 +158,7 @@
     if (!element || !teamName) return;
     
     const team = teamName.toLowerCase().trim();
-    const validTeams = ['black', 'green', 'red', 'blue', 'white', 'orange', 'silver', 'purple', 'gold', 'carolina', 'army'];
+    const validTeams = ['black', 'green', 'red', 'blue', 'white', 'orange', 'silver', 'purple', 'gold', 'carolina', 'army', 'teal'];
     
     if (!validTeams.includes(team)) {
       console.warn('Unknown team:', team);
