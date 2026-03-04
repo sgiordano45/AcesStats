@@ -346,6 +346,15 @@
   </div>
 </div>
 
+<!-- WAITING PHASE (view-only users before draft starts) -->
+<div class="phase" id="phaseWaiting">
+  <div style="max-width:500px;margin:6rem auto;text-align:center;padding:2rem;">
+    <div style="font-size:64px;margin-bottom:1rem;">⏳</div>
+    <h2 style="font-family:'Bebas Neue',sans-serif;font-size:2.5rem;letter-spacing:2px;color:var(--accent);margin-bottom:.75rem;">Draft Not Started</h2>
+    <p style="color:var(--text-muted);">The draft hasn't begun yet. Check back soon — this page will update automatically when it goes live.</p>
+  </div>
+</div>
+
 <!-- DRAFT PHASE -->
 <div class="phase" id="phaseDraft">
   <div class="draft-layout">
@@ -362,7 +371,7 @@
           <span>⏱</span>
           <div class="timer-disp" id="timerDisp">60</div>
         </div>
-        <button class="btn btn-secondary btn-sm" id="skipBtn" onclick="skipPick()">Skip ⏭</button>
+        <button class="btn btn-secondary btn-sm" id="skipBtn" onclick="skipPick()" style="display:none">Skip ⏭</button>
         <button class="btn btn-green btn-sm" id="completeBtn" style="display:none" onclick="completeDraft()">✅ Complete Draft</button>
       </div>
     </div>
@@ -433,7 +442,7 @@
   const DRAFT_ID     = 'current';
 
   // ── State ──────────────────────────────────────────────────
-  let currentUser = null, userProfile = null, hasPermission = false;
+  let currentUser = null, userProfile = null, canView = false, canPick = false;
   let offseasonTeams    = {};   // { teamName: { maxRoster, players[] } }
   let unassignedPlayers = [];   // draft pool from offseasonRosters.unassignedPlayers
   let seasonType        = 'fall-to-summer';
@@ -466,11 +475,12 @@
         userProfile = ud.data();
         const role = userProfile.role || '';
         const tr   = userProfile.teamRoles || {};
-        hasPermission = ['league-staff','admin'].includes(role) ||
+        canView = true;
+        canPick = ['league-staff','admin'].includes(role) ||
           Object.values(tr).some(r => ['captain','team-staff'].includes(r?.role) && r?.status==='active');
       }
     } catch(e) { console.error(e); }
-    if (!hasPermission) { showAuthGate(); return; }
+    if (!canView) { showAuthGate(); return; }
     document.getElementById('mainHeader').style.display = 'flex';
     try {
       await loadOffseasonData();
@@ -511,7 +521,8 @@
       if (d.status === 'complete')  { restoreState(d); showPhase('phaseComplete'); renderCompletePage(); return; }
     }
     renderSetupPhase();
-    showPhase('phaseSetup');
+    showPhase(canPick ? 'phaseSetup' : 'phaseWaiting');
+    if (!canPick) subscribeToLiveDraft(); // watch for draft to start
   }
 
   function restoreState(d) {
@@ -691,7 +702,7 @@
   function activateDraftUI() {
     document.getElementById('liveBadge').style.display='flex';
     document.getElementById('roundBadge').style.display='inline';
-    document.getElementById('resetDraftBtn').style.display='inline-flex';
+    if (canPick) document.getElementById('resetDraftBtn').style.display='inline-flex';
   }
 
   // ── LIVE SUBSCRIPTION ──────────────────────────────────────
@@ -701,6 +712,9 @@
       if (!snap.exists()) return;
       const d = snap.data(), prev = currentPickIndex;
       draftPicks=d.picks||[]; currentPickIndex=d.currentPickIndex||0;
+      if (d.status==='active' && !document.getElementById('phaseDraft').classList.contains('active')) {
+        restoreState(d); activateDraftUI(); showPhase('phaseDraft'); renderDraftPhase(); return;
+      }
       if (d.status==='complete') { clearTimer(); showPhase('phaseComplete'); renderCompletePage(); return; }
       if (prev!==currentPickIndex) renderDraftPhase();
     });
@@ -714,8 +728,8 @@
 
   function renderClockBar() {
     const done = currentPickIndex >= snakeOrder.length;
-    document.getElementById('completeBtn').style.display = done ? 'inline-flex' : 'none';
-    document.getElementById('skipBtn').style.display     = done ? 'none' : 'inline-flex';
+    document.getElementById('completeBtn').style.display = done && canPick ? 'inline-flex' : 'none';
+    document.getElementById('skipBtn').style.display     = done || !canPick ? 'none' : 'inline-flex';
     if (done) {
       const t=document.getElementById('clockTeam'); t.textContent='ALL PICKS COMPLETE'; t.style.color='var(--green)';
       clearTimer(); return;
@@ -747,7 +761,7 @@
       const hasBa  = p.ba  && p.ba!=='.000';
       const hasBpi = p.acesBPI && p.acesBPI!=='0.0';
       return `
-              <div class="pcard" onclick="openPickModal('${p.id}')">
+              <div class="pcard" onclick="${canPick ? `openPickModal('${p.id}')` : ''}" style="${canPick ? '' : 'cursor:default'}">
           <div class="pavatar">${p.name.charAt(0)}</div>
           <div class="pinfo">
             <div class="pname">${p.name}</div>
@@ -757,7 +771,7 @@
               <div class="mpill">${p.isNew?'<span style="color:var(--blue)">New</span>':'Returning'}</div>
             </div>
           </div>
-        ${!done?`<button class="draft-btn" onclick="event.stopPropagation();openPickModal('${p.id}')">Draft ▶</button>`:''}
+        ${canPick && !done?`<button class="draft-btn" onclick="event.stopPropagation();openPickModal('${p.id}')">Draft ▶</button>`:''}
         </div>`;
     }).join('');
   }
