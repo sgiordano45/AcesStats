@@ -1138,7 +1138,7 @@
 
 <script type="module">
   import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
-  import { doc, getDoc, getDocs, updateDoc, collection, query, where, serverTimestamp, orderBy, limit, startAfter } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+  import { doc, getDoc, getDocs, updateDoc, collection, query, where, serverTimestamp, orderBy, limit, startAfter, arrayUnion, arrayRemove } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
   import { app, db } from './firebase-data.js';
   import { USER_ROLES, getUserProfile } from './firebase-auth.js';
   
@@ -1785,6 +1785,33 @@
   };
 
   // Save user role
+  async function syncCaptainToTeamDocs(userId, newTeamRoles, oldTeamRoles) {
+    // For each team, determine if captain status changed and update teams/{teamId}.captainIds
+    const allTeamKeys = new Set([
+      ...Object.keys(newTeamRoles),
+      ...Object.keys(oldTeamRoles)
+    ]);
+
+    for (const teamKey of allTeamKeys) {
+      const teamId = teamKey.toLowerCase(); // teams collection uses lowercase IDs
+      const newRole = newTeamRoles[teamKey];
+      const oldRole = oldTeamRoles[teamKey];
+
+      const wasCaptain = oldRole?.role === 'captain' && oldRole?.status === 'active';
+      const isCaptain = newRole?.role === 'captain' && newRole?.status === 'active';
+
+      if (isCaptain && !wasCaptain) {
+        // Promoted to captain — add to captainIds
+        await updateDoc(doc(db, 'teams', teamId), { captainIds: arrayUnion(userId) });
+        console.log(`✅ Added ${userId} to teams/${teamId} captainIds`);
+      } else if (!isCaptain && wasCaptain) {
+        // Removed from captain — remove from captainIds
+        await updateDoc(doc(db, 'teams', teamId), { captainIds: arrayRemove(userId) });
+        console.log(`✅ Removed ${userId} from teams/${teamId} captainIds`);
+      }
+    }
+  }
+
   window.saveUserRole = async function() {
     if (!selectedUser) return;
 
@@ -1903,6 +1930,9 @@
       });
 
       await updateDoc(userRef, updates);
+
+      // Sync captainIds on each affected team doc
+      await syncCaptainToTeamDocs(selectedUser.id, teamRoles, existingTeamRoles);
 
       showToast(`Roles updated for ${selectedUser.displayName || selectedUser.email}`, 'success');
       closeEditor();
