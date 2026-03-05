@@ -856,11 +856,7 @@ input:checked + .toggle-slider::before { transform: translateX(18px); }
           <div class="form-group">
             <label class="form-label" for="offenderTeam">Player's Team *</label>
             <select class="form-control" id="offenderTeam" required>
-              <option value="">Select team...</option>
-              <option>Green</option><option>Gold</option><option>White</option>
-              <option>Blue</option><option>Black</option><option>Red</option>
-              <option>Silver</option><option>Orange</option><option>Purple</option>
-              <option>Army</option><option>Carolina</option>
+              <option value="">Loading teams...</option>
             </select>
           </div>
         </div>
@@ -1013,12 +1009,38 @@ let availableSeasons = [];   // [{id, label}] sorted newest first
 let activeSeason = null;     // currently selected season ID (null = All Time)
 
 // ── Team color map ──────────────────────────────────────────
-const TEAM_COLORS = {
-  Green:'team-green', Gold:'team-gold', White:'team-white', Blue:'team-blue',
-  Black:'team-black', Red:'team-red', Silver:'team-silver', Orange:'team-orange',
-  Purple:'team-purple', Army:'team-army', Carolina:'team-carolina'
-};
+// Determine if a hex color is light (needs dark text)
+function isLightColor(hex) {
+  const c = hex.replace('#','');
+  const r = parseInt(c.substr(0,2),16), g = parseInt(c.substr(2,2),16), b = parseInt(c.substr(4,2),16);
+  return (r*299 + g*587 + b*114) / 1000 > 160;
+}
 
+ — key: team name, value: hex color string
+let TEAM_COLORS = {};
+
+async function loadTeams() {
+  try {
+    const snap = await getDocs(collection(db, 'teams'));
+    const active = [];
+    snap.forEach(d => {
+      const t = d.data();
+      if (t.active === true) {
+        active.push({ name: t.name, color: t.color || '#1a202c' });
+        TEAM_COLORS[t.name] = t.color || '#1a202c';
+      }
+    });
+    active.sort((a, b) => a.name.localeCompare(b.name));
+
+    const sel = document.getElementById('offenderTeam');
+    sel.innerHTML = '<option value="">Select team...</option>' +
+      active.map(t => `<option value="${escHtml(t.name)}">${escHtml(t.name)}</option>`).join('');
+  } catch (e) {
+    console.error('Error loading teams:', e);
+    document.getElementById('offenderTeam').innerHTML =
+      '<option value="">Error loading teams</option>';
+  }
+}
 const SEV_LABELS = {1:'😇 Minor Slip',2:'🙄 Classic Move',3:'😤 That\'s a Foul',4:'😱 Egregious',5:'💀 Hall of Shame'};
 
 // ── Auth ────────────────────────────────────────────────────
@@ -1037,6 +1059,7 @@ onAuthStateChanged(auth, async (user) => {
     document.getElementById('tabSubmit').style.display = '';
   }
 
+  await loadTeams();
   await loadSeasons();
   await loadViolations();
   document.getElementById('loadingOverlay').classList.add('hidden');
@@ -1183,7 +1206,8 @@ function renderFeed(violations) {
 
 function buildCard(v) {
   const sev = parseInt(v.severity) || 1;
-  const teamClass = TEAM_COLORS[v.offenderTeam] || 'team-black';
+  const teamColor = TEAM_COLORS[v.offenderTeam] || '#1a202c';
+  const teamTextColor = isLightColor(teamColor) ? '#2d3748' : 'white';
   const initials = (v.offenderName || '?').split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase();
   const sevLabel = SEV_LABELS[sev] || '';
   const date = v.createdAt?.toDate ? v.createdAt.toDate().toLocaleDateString('en-US', {month:'short',day:'numeric',year:'numeric'}) : 'Unknown date';
@@ -1204,7 +1228,7 @@ function buildCard(v) {
       <div class="violation-avatar">${initials}</div>
       <div class="violation-meta">
         <div class="violation-name">${escHtml(v.offenderName || 'Unknown Player')}</div>
-        <span class="violation-team-badge ${teamClass}">${escHtml(v.offenderTeam || '')}</span>
+        <span class="violation-team-badge" style="background:${teamColor};color:${teamTextColor}">${escHtml(v.offenderTeam || '')}</span>
       </div>
       <div class="violation-right">
         <span class="severity-badge sev-badge-${sev}">${sevLabel}</span>
@@ -1248,12 +1272,13 @@ function renderShameBoard(violations) {
   const medals = ['🥇','🥈','🥉'];
   list.innerHTML = sorted.slice(0, 20).map((p, i) => {
     const rank = i < 3 ? medals[i] : `#${i+1}`;
-    const teamClass = TEAM_COLORS[p.team] || '';
+    const pTeamColor = TEAM_COLORS[p.team] || '#1a202c';
+    const pTeamText = isLightColor(pTeamColor) ? '#2d3748' : 'white';
     return `<div class="shame-entry">
       <div class="shame-rank rank-${i+1}">${rank}</div>
       <div class="shame-player">
         <div class="shame-player-name">${escHtml(p.name)}</div>
-        <div class="shame-player-team"><span class="violation-team-badge ${teamClass}" style="font-size:0.65rem;padding:0.15rem 0.5rem">${escHtml(p.team||'')}</span></div>
+        <div class="shame-player-team"><span class="violation-team-badge" style="background:${pTeamColor};color:${pTeamText};font-size:0.65rem;padding:0.15rem 0.5rem">${escHtml(p.team||'')}</span></div>
       </div>
       <div class="shame-count">
         <div class="count">${p.count}</div>
