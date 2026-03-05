@@ -439,6 +439,7 @@
   import { doc, getDoc, updateDoc, setDoc, onSnapshot, serverTimestamp, collection, addDoc }
     from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
   import { db } from './firebase-data.js';
+  import { getImpersonatedUser, injectImpersonationBanner } from './admin-impersonate.js';
 
   const auth = getAuth();
   const OFFSEASON_ID = 'current';
@@ -476,7 +477,13 @@
       const ud = await getDoc(doc(db, 'users', user.uid));
       if (ud.exists()) {
         userProfile = ud.data();
-        const role = userProfile.role || '';
+        // Override with impersonated user if view-as is active
+        const impersonated = getImpersonatedUser();
+        if (impersonated) {
+          userProfile = { ...impersonated, role: impersonated.role || impersonated.userRole };
+          injectImpersonationBanner();
+        }
+        const role = userProfile.role || userProfile.userRole || '';
         const tr   = userProfile.teamRoles || {};
         canView = true;
         canPick = ['league-staff','admin'].includes(role) ||
