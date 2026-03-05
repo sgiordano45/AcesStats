@@ -785,6 +785,8 @@
     document.getElementById('playerList').innerHTML = pool.map(p => {
       const hasBa  = p.ba  && p.ba!=='.000';
       const hasBpi = p.acesBPI && p.acesBPI!=='0.0';
+      const linkedPlayer = p.linkedTo ? unassignedPlayers.find(x => x.id === p.linkedTo) : null;
+      const linkedName   = linkedPlayer ? linkedPlayer.name : null;
       return `
               <div class="pcard" onclick="${canPick ? `openPickModal('${p.id}')` : ''}" style="${canPick ? '' : 'cursor:default'}">
           <div class="pavatar">${p.name.charAt(0)}</div>
@@ -794,6 +796,7 @@
               ${hasBa  ? `<div class="mpill">BA <span>${p.ba}</span></div>` : ''}
               ${hasBpi ? `<div class="mpill">BPI <span>${p.acesBPI}</span></div>` : ''}
               <div class="mpill">${p.isNew?'<span style="color:var(--blue)">New</span>':'Returning'}</div>
+              ${linkedName ? `<div class="mpill" style="background:rgba(255,107,53,.12);border:1px solid rgba(255,107,53,.4);color:var(--accent2)">🔗 +${linkedName}</div>` : ''}
             </div>
           </div>
         ${canPick && !done?`<button class="draft-btn" onclick="event.stopPropagation();openPickModal('${p.id}')">Draft ▶</button>`:''}
@@ -875,8 +878,12 @@
     const cur = snakeOrder[currentPickIndex];
     pendingPick = {player:p, team:cur.team};
     document.getElementById('modalPname').textContent = p.name;
+    const linkedPlayer = p.linkedTo ? unassignedPlayers.find(x => x.id === p.linkedTo) : null;
+    const buddyHtml = linkedPlayer && !draftedIds().has(linkedPlayer.id)
+      ? `<div style="margin-top:.75rem;padding:.6rem .9rem;border-radius:8px;background:rgba(255,107,53,.12);border:1px solid rgba(255,107,53,.4);color:var(--accent2);font-size:.85rem;">🔗 <strong>${linkedPlayer.name}</strong> will also be added to <strong style="color:${tColor(cur.team)}">${cur.team}</strong></div>`
+      : '';
     document.getElementById('modalInfo').innerHTML =
-      `Pick #${cur.pickNum} · Round ${cur.round} · For <strong style="color:${tColor(cur.team)}">${cur.team}</strong>`;
+      `Pick #${cur.pickNum} · Round ${cur.round} · For <strong style="color:${tColor(cur.team)}">${cur.team}</strong>${buddyHtml}`;
     document.getElementById('pickModal').classList.remove('hidden');
   };
   window.closeModal   = () => { document.getElementById('pickModal').classList.add('hidden'); pendingPick=null; };
@@ -891,11 +898,27 @@
           skipped:false, timestamp:new Date().toISOString(),
           pickedBy:currentUser.uid, pickedByName:userProfile?.displayName||currentUser.email
         };
-    const newPicks = [...draftPicks, rec], newIdx = currentPickIndex+1;
+    let newPicks = [...draftPicks, rec];
+    let newIdx   = currentPickIndex + 1;
+
+    // Auto-draft linked buddy if present and not already drafted
+    const linkedPlayer = player.linkedTo ? unassignedPlayers.find(x => x.id === player.linkedTo) : null;
+    if (linkedPlayer && !draftedIds().has(linkedPlayer.id)) {
+      const buddyRec = {
+        pickIndex: -1, pickNum: cur.pickNum, round: cur.round, team,
+        player: {id:linkedPlayer.id, name:linkedPlayer.name, ba:linkedPlayer.ba||'.000', acesBPI:linkedPlayer.acesBPI||'0.0', isNew:linkedPlayer.isNew||false, source:linkedPlayer.source||''},
+        skipped: false, autoLinked: true, linkedFrom: player.name,
+        timestamp: new Date().toISOString(),
+        pickedBy: currentUser.uid, pickedByName: userProfile?.displayName||currentUser.email
+      };
+      newPicks = [...newPicks, buddyRec];
+    }
+
     try {
       await updateDoc(doc(db,'drafts',DRAFT_ID), {picks:newPicks, currentPickIndex:newIdx, lastModified:serverTimestamp()});
       draftPicks=newPicks; currentPickIndex=newIdx;
-      toast(`${player.name} → ${team} ✅`,'success'); renderDraftPhase();
+      const buddyMsg = linkedPlayer && !draftedIds().has(linkedPlayer.id) ? ` · 🔗 ${linkedPlayer.name} auto-added` : '';
+      toast(`${player.name} → ${team} ✅${buddyMsg}`,'success'); renderDraftPhase();
     } catch(e) { console.error(e); toast('Error saving pick: '+e.message,'error'); }
   }
 
