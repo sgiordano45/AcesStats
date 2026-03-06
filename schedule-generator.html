@@ -806,6 +806,13 @@
                 <strong>🎉 Opening Day — 6 Games, All Teams Play</strong>
                 <p style="margin-top: 0.5rem;">Opening Day is generated specially with <strong>6 games starting at 3:45 PM ET</strong>. 5 teams play single games (3:45–7:45 PM) and 1 team plays a doubleheader (7:45 &amp; 8:45 PM), so all 11 teams participate on Opening Day.</p>
               </div>
+              <div class="form-group" style="margin-bottom: 1rem;">
+                <label for="openingDayDHTeam">Which team plays the Opening Day DH?</label>
+                <select id="openingDayDHTeam" style="width: 100%; padding: 0.75rem; border: 2px solid var(--border-color); border-radius: 8px; font-size: 1rem;">
+                  <option value="">— Select teams in Step 2 first —</option>
+                </select>
+                <p style="font-size: 0.85rem; color: var(--text-light); margin-top: 0.4rem;">This team will play two games on Opening Day (7:45 &amp; 8:45 PM ET).</p>
+              </div>
               <div class="form-group">
                 <label>How to handle the odd team each week?</label>
                 <div style="display: flex; flex-direction: column; gap: 0.75rem; margin-top: 0.5rem;">
@@ -1142,6 +1149,7 @@
       // Summer-specific
       summerGamesPerTeam: 20,
       summerNumTeams: 10,
+      openingDayDHTeam: null,     // team ID for 11-team opening day DH
       oddTeamFormat: 'bye',       // 'bye' or 'doubleDH'
       gameDays: [0, 1, 2, 3, 4]  // 0=Sun(Opening Day), 1=Mon, 2=Tue, 3=Wed, 4=Thu (day-of-week indices)
     };
@@ -1202,6 +1210,11 @@
       document.querySelectorAll('input[name="oddTeamFormat"]').forEach(radio => {
         radio.addEventListener('change', validateStep1);
       });
+
+      document.getElementById('openingDayDHTeam').addEventListener('change', (e) => {
+        scheduleConfig.openingDayDHTeam = e.target.value || null;
+        validateStep1();
+      });
     }
 
     function validateStep1() {
@@ -1215,7 +1228,8 @@
 
         if (numTeams === '11') {
           const oddFormat = document.querySelector('input[name="oddTeamFormat"]:checked');
-          valid = valid && !!oddFormat;
+          const dhTeam = document.getElementById('openingDayDHTeam').value;
+          valid = valid && !!oddFormat && !!dhTeam;
         }
       }
 
@@ -1494,6 +1508,19 @@
         warning.style.display = 'none';
         nextBtn.disabled = false;
       }
+
+      updateOpeningDayDHDropdown();
+    }
+
+    function updateOpeningDayDHDropdown() {
+      const sel = document.getElementById('openingDayDHTeam');
+      if (!sel) return;
+      const teams = scheduleConfig.selectedTeams;
+      const prev = scheduleConfig.openingDayDHTeam;
+      sel.innerHTML = teams.length === 0
+        ? '<option value="">— Select teams in Step 2 first —</option>'
+        : '<option value="">— Select a team —</option>' +
+          teams.map(t => `<option value="${t.id}"${t.id === prev ? ' selected' : ''}>${t.name}</option>`).join('');
     }
 
     window.nextStep = function() {
@@ -1557,6 +1584,10 @@
         
         const oddRadio = document.querySelector('input[name="oddTeamFormat"]:checked');
         scheduleConfig.oddTeamFormat = oddRadio ? oddRadio.value : 'bye';
+
+        if (scheduleConfig.summerNumTeams === 11) {
+          scheduleConfig.openingDayDHTeam = document.getElementById('openingDayDHTeam').value || null;
+        }
 
         // Collect selected weekdays (always include Sunday=0 for Opening Day)
         const checkedDays = [];
@@ -1850,10 +1881,11 @@
         openingDayGames++;
       }
 
-      // For 11 teams: the one remaining team plays a DH on Opening Day (slots 5 & 6)
+      // For 11 teams: the selected team plays a DH on Opening Day (slots 5 & 6)
       if (numTeams === 11) {
         const allTeamIds = scheduleConfig.selectedTeams.map(t => t.id);
-        const dhTeamId = allTeamIds.find(id => !teamsPlayedOpeningDay.has(id));
+        const dhTeamId = scheduleConfig.openingDayDHTeam
+          || allTeamIds.find(id => !teamsPlayedOpeningDay.has(id)); // fallback if not set
         if (dhTeamId) {
           console.log(`🎯 11-team Opening Day: team ${dhTeamId} plays DH`);
           // Find a DH pair for this team
