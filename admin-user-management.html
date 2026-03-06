@@ -1264,6 +1264,41 @@
       </div>
     </div>
 
+    <!-- Repair Orphaned Stats Section -->
+    <div class="section" id="repairOrphanSection">
+      <div class="section-header" style="background: linear-gradient(135deg, #7f1d1d 0%, #991b1b 100%); color: white;">
+        🔧 Repair Orphaned Stats (Auth UID → Legacy ID)
+      </div>
+      <div class="section-content">
+        <div class="warning-box" style="margin-bottom: 1rem;">
+          <strong>⚠️ What this does:</strong> Finds <code>playerStats</code> documents stored under a Firebase auth UID
+          (caused by a merge bug now fixed). Moves seasons/games to the correct legacy snake_case path, then deletes the orphaned UID doc.
+          Run the Aggregator afterward.
+        </div>
+        <div style="display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem;">
+          <button class="btn-info" onclick="scanOrphanedStats()">🔍 Scan for Orphaned Stats</button>
+          <button class="btn-warning" id="repairTestBtn" onclick="repairOrphanedStats(true)" style="display:none;">🧪 Test Repair</button>
+          <button class="btn-danger" id="repairBtn" onclick="repairOrphanedStats(false)" style="display:none;">⚡ Execute Repair</button>
+        </div>
+        <div id="repairPreview" style="display:none;">
+          <table style="width:100%; border-collapse:collapse; font-size:0.9rem; margin-bottom:1rem;">
+            <thead>
+              <tr style="background:#f1f5f9;">
+                <th style="padding:8px 12px; text-align:left; border-bottom:2px solid #e2e8f0;">Auth UID (orphaned path)</th>
+                <th style="padding:8px 12px; text-align:left; border-bottom:2px solid #e2e8f0;">Player Name</th>
+                <th style="padding:8px 12px; text-align:left; border-bottom:2px solid #e2e8f0;">Legacy ID (target path)</th>
+                <th style="padding:8px 12px; text-align:center; border-bottom:2px solid #e2e8f0;">Seasons</th>
+                <th style="padding:8px 12px; text-align:center; border-bottom:2px solid #e2e8f0;">Games</th>
+              </tr>
+            </thead>
+            <tbody id="repairTableBody"></tbody>
+          </table>
+          <p id="repairSummary" style="color: var(--text-light); font-size:0.85rem;"></p>
+        </div>
+        <div id="repairOutput" style="background:#1e293b; color:#a5f3fc; padding:1rem; border-radius:8px; font-family:monospace; font-size:13px; line-height:1.7; white-space:pre-wrap; max-height:300px; overflow-y:auto; display:none;"></div>
+      </div>
+    </div>
+
     <!-- Email Bulk Update Section -->
     <div class="section" id="emailImportSection">
       <div class="section-header" style="background: linear-gradient(135deg, #0369a1 0%, #0284c7 100%);">
@@ -3279,6 +3314,196 @@
       searchPlayers();
     }
   });
+
+  // ============================================
+  // REPAIR ORPHANED STATS
+  // ============================================
+
+  let orphanedEntries = []; // { uid, playerName, legacyId, seasonCount, gameCount }
+
+  function isFirebaseUID(id) {
+    // Firebase UIDs are 28 chars, alphanumeric, no underscores
+    return id.length >= 20 && !/[_\s]/.test(id);
+  }
+
+  function repairLog(msg, type = '') {
+    const el = document.getElementById('repairOutput');
+    el.style.display = 'block';
+    const colors = { success: '#4ade80', error: '#f87171', warning: '#fbbf24', info: '#38bdf8' };
+    const color = colors[type] || '#a5f3fc';
+    el.innerHTML += `<span style="color:${color}">${msg}</span>\n`;
+    el.scrollTop = el.scrollHeight;
+  }
+
+  window.scanOrphanedStats = async function() {
+    orphanedEntries = [];
+    document.getElementById('repairOutput').style.display = 'none';
+    document.getElementById('repairOutput').innerHTML = '';
+    document.getElementById('repairPreview').style.display = 'none';
+    document.getElementById('repairTestBtn').style.display = 'none';
+    document.getElementById('repairBtn').style.display = 'none';
+
+    repairLog('Scanning playerStats for orphaned UID-based documents...', 'info');
+
+    try {
+      // Load all users so we can resolve UID → linkedPlayer
+      const usersSnap = await getDocs(collection(db, 'users'));
+      const uidToLinkedPlayer = {};
+      usersSnap.forEach(d => {
+        const data = d.data();
+        if (data.linkedPlayer) uidToLinkedPlayer[d.id] = data.linkedPlayer;
+      });
+
+      // Get top-level playerStats docs via collectionGroup on seasons,
+      // then extract unique parent IDs
+      const seasonsSnap = await getDocs(collectionGroup(db, 'seasons'));
+      const parentIds = new Set();
+      seasonsSnap.forEach(d => {
+        const parts = d.ref.path.split('/');
+        if (parts[0] === 'playerStats') parentIds.add(parts[1]);
+      });
+
+      // Also check games subcollection
+      const gamesSnap = await getDocs(collectionGroup(db, 'games'));
+      gamesSnap.forEach(d => {
+        const parts = d.ref.path.split('/');
+        if (parts[0] === 'playerStats') parentIds.add(parts[1]);
+      });
+
+      repairLog(`Found ${parentIds.size} unique playerStats parent IDs`, 'info');
+
+      for (const pid of parentIds) {
+        if (!isFirebaseUID(pid)) continue; // skip legacy snake_case IDs
+
+        const linkedPlayer = uidToLinkedPlayer[pid];
+        if (!linkedPlayer) {
+          repairLog(`⚠️  ${pid} — looks like a UID but no linkedPlayer found in users/`, 'warning');
+          continue;
+        }
+
+        const legacyId = linkedPlayer.toLowerCase().replace(/\./g, '').replace(/\s+/g, '_');
+
+        // Count seasons and games under this UID
+        const sSnap = await getDocs(collection(db, 'playerStats', pid, 'seasons'));
+        const gSnap = await getDocs(collection(db, 'playerStats', pid, 'games'));
+
+        orphanedEntries.push({
+          uid: pid,
+          playerName: linkedPlayer,
+          legacyId,
+          seasonDocs: sSnap.docs,
+          gameDocs: gSnap.docs
+        });
+
+        repairLog(`  Found: ${pid} → "${linkedPlayer}" (legacy: ${legacyId}) — ${sSnap.size} seasons, ${gSnap.size} games`, 'warning');
+      }
+
+      if (orphanedEntries.length === 0) {
+        repairLog('✅ No orphaned stats found. Nothing to repair.', 'success');
+        return;
+      }
+
+      // Build preview table
+      const tbody = document.getElementById('repairTableBody');
+      tbody.innerHTML = orphanedEntries.map(e => `
+        <tr style="border-bottom:1px solid #f0f0f0;">
+          <td style="padding:8px 12px; font-family:monospace; font-size:0.8rem; color:#64748b;">${e.uid}</td>
+          <td style="padding:8px 12px; font-weight:600;">${e.playerName}</td>
+          <td style="padding:8px 12px; font-family:monospace; font-size:0.85rem; color:#7c3aed;">${e.legacyId}</td>
+          <td style="padding:8px 12px; text-align:center;">${e.seasonDocs.length}</td>
+          <td style="padding:8px 12px; text-align:center;">${e.gameDocs.length}</td>
+        </tr>
+      `).join('');
+
+      document.getElementById('repairSummary').textContent =
+        `${orphanedEntries.length} player(s) with orphaned stats found. Review above, then use Test or Execute.`;
+      document.getElementById('repairPreview').style.display = 'block';
+      document.getElementById('repairTestBtn').style.display = 'inline-flex';
+      document.getElementById('repairBtn').style.display = 'inline-flex';
+
+    } catch (err) {
+      repairLog(`❌ Scan failed: ${err.message}`, 'error');
+      console.error(err);
+    }
+  };
+
+  window.repairOrphanedStats = async function(testMode) {
+    if (orphanedEntries.length === 0) {
+      showToast('Run scan first', 'warning');
+      return;
+    }
+
+    const confirmMsg = testMode
+      ? 'Run repair in TEST MODE? (No changes will be saved)'
+      : `Move stats for ${orphanedEntries.length} player(s) from UID paths to legacy paths and delete orphaned docs?\n\nRun the Aggregator afterward.`;
+    if (!confirm(confirmMsg)) return;
+
+    document.getElementById('repairTestBtn').disabled = true;
+    document.getElementById('repairBtn').disabled = true;
+    document.getElementById('repairOutput').innerHTML = '';
+
+    repairLog(`${'═'.repeat(50)}`, 'info');
+    repairLog(testMode ? '🧪 TEST MODE — no writes' : '⚡ EXECUTING REPAIR', 'info');
+    repairLog(`${'═'.repeat(50)}`, 'info');
+
+    let totalMoved = 0, totalDeleted = 0, errors = 0;
+
+    for (const entry of orphanedEntries) {
+      repairLog(`\nPlayer: ${entry.playerName}`, 'info');
+      repairLog(`  From: playerStats/${entry.uid}/`, 'warning');
+      repairLog(`  To:   playerStats/${entry.legacyId}/`, 'info');
+
+      try {
+        // Move seasons
+        for (const seasonDoc of entry.seasonDocs) {
+          const seasonId = seasonDoc.id;
+          repairLog(`  → season: ${seasonId}`, 'info');
+          if (!testMode) {
+            await setDoc(doc(db, 'playerStats', entry.legacyId, 'seasons', seasonId), {
+              ...seasonDoc.data(),
+              repairedFrom: entry.uid,
+              repairedAt: new Date().toISOString()
+            });
+            await deleteDoc(doc(db, 'playerStats', entry.uid, 'seasons', seasonId));
+          }
+          totalMoved++;
+        }
+
+        // Move games
+        for (const gameDoc of entry.gameDocs) {
+          const gameId = gameDoc.id;
+          repairLog(`  → game: ${gameId}`, 'info');
+          if (!testMode) {
+            await setDoc(doc(db, 'playerStats', entry.legacyId, 'games', gameId), {
+              ...gameDoc.data(),
+              repairedFrom: entry.uid,
+              repairedAt: new Date().toISOString()
+            });
+            await deleteDoc(doc(db, 'playerStats', entry.uid, 'games', gameId));
+          }
+          totalMoved++;
+          totalDeleted++;
+        }
+
+        repairLog(`  ✅ ${entry.playerName} — ${entry.seasonDocs.length} seasons, ${entry.gameDocs.length} games moved`, 'success');
+
+      } catch (err) {
+        repairLog(`  ❌ Error on ${entry.playerName}: ${err.message}`, 'error');
+        errors++;
+      }
+    }
+
+    repairLog(`\n${'═'.repeat(50)}`, 'info');
+    repairLog(testMode
+      ? `🧪 Test complete: ${totalMoved} docs would move, ${errors} errors`
+      : `✅ Done: ${totalMoved} docs moved, ${errors} errors`, errors ? 'warning' : 'success');
+    repairLog(`Remember to run the Aggregator to rebuild career totals!`, 'warning');
+
+    document.getElementById('repairTestBtn').disabled = false;
+    document.getElementById('repairBtn').disabled = false;
+
+    if (!testMode) showToast(`Repair complete: ${totalMoved} docs moved, ${errors} errors`, errors ? 'warning' : 'success');
+  };
 </script>
 
 <script>
