@@ -3343,59 +3343,40 @@
     document.getElementById('repairTestBtn').style.display = 'none';
     document.getElementById('repairBtn').style.display = 'none';
 
-    repairLog('Scanning playerStats for orphaned UID-based documents...', 'info');
+    repairLog('Scanning for orphaned stats — checking auth users with linkedPlayer...', 'info');
 
     try {
-      // Load all users so we can resolve UID → linkedPlayer
+      // Load all users, find auth users (UID-based IDs) who have linkedPlayer set
       const usersSnap = await getDocs(collection(db, 'users'));
-      const uidToLinkedPlayer = {};
+      const candidates = [];
       usersSnap.forEach(d => {
         const data = d.data();
-        if (data.linkedPlayer) uidToLinkedPlayer[d.id] = data.linkedPlayer;
-      });
-
-      // Get top-level playerStats docs via collectionGroup on seasons,
-      // then extract unique parent IDs
-      const seasonsSnap = await getDocs(collectionGroup(db, 'seasons'));
-      const parentIds = new Set();
-      seasonsSnap.forEach(d => {
-        const parts = d.ref.path.split('/');
-        if (parts[0] === 'playerStats') parentIds.add(parts[1]);
-      });
-
-      // Also check games subcollection
-      const gamesSnap = await getDocs(collectionGroup(db, 'games'));
-      gamesSnap.forEach(d => {
-        const parts = d.ref.path.split('/');
-        if (parts[0] === 'playerStats') parentIds.add(parts[1]);
-      });
-
-      repairLog(`Found ${parentIds.size} unique playerStats parent IDs`, 'info');
-
-      for (const pid of parentIds) {
-        if (!isFirebaseUID(pid)) continue; // skip legacy snake_case IDs
-
-        const linkedPlayer = uidToLinkedPlayer[pid];
-        if (!linkedPlayer) {
-          repairLog(`⚠️  ${pid} — looks like a UID but no linkedPlayer found in users/`, 'warning');
-          continue;
+        // Auth users: Firebase UID (long alphanumeric, no underscores) + has linkedPlayer
+        if (isFirebaseUID(d.id) && data.linkedPlayer) {
+          candidates.push({ uid: d.id, linkedPlayer: data.linkedPlayer });
         }
+      });
 
-        const legacyId = linkedPlayer.toLowerCase().replace(/\./g, '').replace(/\s+/g, '_');
+      repairLog(`Found ${candidates.length} auth users with linkedPlayer — checking each for orphaned playerStats...`, 'info');
 
-        // Count seasons and games under this UID
-        const sSnap = await getDocs(collection(db, 'playerStats', pid, 'seasons'));
-        const gSnap = await getDocs(collection(db, 'playerStats', pid, 'games'));
+      for (const c of candidates) {
+        const legacyId = c.linkedPlayer.toLowerCase().replace(/\./g, '').replace(/\s+/g, '_');
+
+        // Check if playerStats/{uid}/seasons has any docs
+        const sSnap = await getDocs(collection(db, 'playerStats', c.uid, 'seasons'));
+        const gSnap = await getDocs(collection(db, 'playerStats', c.uid, 'games'));
+
+        if (sSnap.empty && gSnap.empty) continue; // nothing orphaned here
 
         orphanedEntries.push({
-          uid: pid,
-          playerName: linkedPlayer,
+          uid: c.uid,
+          playerName: c.linkedPlayer,
           legacyId,
           seasonDocs: sSnap.docs,
           gameDocs: gSnap.docs
         });
 
-        repairLog(`  Found: ${pid} → "${linkedPlayer}" (legacy: ${legacyId}) — ${sSnap.size} seasons, ${gSnap.size} games`, 'warning');
+        repairLog(`  ⚠️  ${c.uid} → "${c.linkedPlayer}" (legacy: ${legacyId}) — ${sSnap.size} seasons, ${gSnap.size} games`, 'warning');
       }
 
       if (orphanedEntries.length === 0) {
