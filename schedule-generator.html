@@ -1687,38 +1687,12 @@
         finalSchedule.push(...rrPass([...teams], false));
         finalSchedule.push(...rrPass([...teams], true));
 
-        // Build 11 extra singles from pass 3, ensuring every team gets exactly 2 extras.
-        // The DH team’s 2 extras must be a single matchup (will become the OD DH pair).
-        const dhTeamId = scheduleConfig.openingDayDHTeam;
+        // 11 extra singles so every team goes from 20 base games to exactly 22.
+        // Pick 11 matchups from pass 3 where each team appears exactly twice.
         const extraCount = new Map(teams.map(t => [t.id, 0]));
         const extras = [];
         const pass3 = rrPass([...teams], false);
 
-        // First, find one matchup for the DH team (its 2 extras come from this one pair)
-        if (dhTeamId) {
-          for (const g of pass3) {
-            if (g.home.id === dhTeamId || g.away.id === dhTeamId) {
-              const h = extraCount.get(g.home.id), a = extraCount.get(g.away.id);
-              if (h < 2 && a < 2) {
-                extras.push(g);
-                extraCount.set(g.home.id, h + 1);
-                extraCount.set(g.away.id, a + 1);
-                // DH team now has 1 extra; needs 1 more from a different matchup
-                // but both extras must be with the same opponent (they form the OD DH pair).
-                // Find the same matchup in pass 1 or 2 to use as game2.
-                // Actually: the OD DH pair is already in finalSchedule as two base games.
-                // We just need to mark those games; we do NOT need to add them to extras.
-                // So DH team’s extras = 0 additional singles needed here (the 2 OD games handle it).
-                extraCount.set(g.home.id, 2); // mark as done
-                extraCount.set(g.away.id, 2);
-                extras.pop(); // remove — OD DH already counts
-                break;
-              }
-            }
-          }
-        }
-
-        // Now fill remaining extras: each of the 10 non-DH teams needs 2 extras
         for (const g of pass3) {
           if (extras.length >= 11) break;
           const h = extraCount.get(g.home.id) || 0;
@@ -1733,6 +1707,7 @@
         finalSchedule.push(...extras);
         console.log(`📋 11-team pool: 110 base + ${extras.length} extras = ${finalSchedule.length} total`);
 
+
         // Verify per-team counts
         const counts = Object.fromEntries(
           teams.map(t => [t.name, finalSchedule.filter(g => g.home.id === t.id || g.away.id === t.id).length])
@@ -1741,7 +1716,36 @@
       }
 
       console.log(`📋 Final pool: ${finalSchedule.length} games`);
-    };
+
+      // Assign dates and times
+      if (scheduleConfig.seasonType === 'fall') {
+        assignFallSchedule(finalSchedule);
+      } else {
+        assignSummerSchedule(finalSchedule);
+      }
+
+      scheduleConfig.generatedSchedule = finalSchedule;
+
+      displaySchedule(finalSchedule);
+
+      const weeksNeeded = scheduleConfig.seasonType === 'fall'
+        ? Math.ceil(gamesPerTeam)
+        : Math.ceil(gamesPerTeam / 2);
+
+      document.getElementById('totalGames').textContent = finalSchedule.length;
+      document.getElementById('weeksNeeded').textContent = weeksNeeded;
+      document.getElementById('avgGamesPerTeam').textContent = gamesPerTeam;
+
+      const balanceScore = calculateBalanceScore(finalSchedule, teams);
+      document.getElementById('homeAwayBalance').innerHTML =
+        `${balanceScore}% <span class="balance-indicator ${getBalanceClass(balanceScore)}">${getBalanceLabel(balanceScore)}</span>`;
+
+      document.getElementById('generationStatus').style.display = 'block';
+      document.getElementById('schedulePreview').style.display = 'block';
+      document.getElementById('regenerateBtn').style.display = 'inline-flex';
+      document.getElementById('step4Buttons').style.display = 'flex';
+    }
+
     function assignFallSchedule(schedule) {
       // Fall: Sundays only, 5 time slots, each team plays once per Sunday
       const startDate = new Date(scheduleConfig.startDate);
