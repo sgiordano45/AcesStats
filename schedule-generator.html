@@ -2000,9 +2000,9 @@
       const regularNights = [0, 1, 2, 3, 4]; // Sun–Thu
       let weekNum = 2;
       const totalTarget = 127;
-      let emptyWeeks = 0; // track consecutive weeks with 0 DHs
+      let lastScheduledWeekNum = 1; // track the last week that had games
 
-      while (out.length < totalTarget && weekNum < 30 && emptyWeeks < 2) {
+      while (out.length < totalTarget && weekNum < 30) {
         // Check if we have enough games left for at least 1 DH
         const gamesRemaining = totalTarget - out.length;
         if (gamesRemaining < 2) break;
@@ -2058,11 +2058,9 @@
         }
 
         if (weekDHs.length === 0) {
-          emptyWeeks++;
-          // Don't increment weekNum — no games this week, try again with same week
-          continue;
+          // No more DH pairs available, exit to final week handler
+          break;
         }
-        emptyWeeks = 0;
 
         // Schedule the DHs on Sun–Thu
         for (let p = 0; p < weekDHs.length; p++) {
@@ -2085,17 +2083,20 @@
         }
 
         console.log(`📅 Week ${weekNum}: ${weekDHs.length} DHs, bye=${teams.find(t=>t.id===byeTeamId)?.name}`);
+        lastScheduledWeekNum = weekNum;
         weekNum++;
       }
 
       // ── STEP 4: Truncated final week — mop up remaining games ──────────────
       // Schedule whatever's left as DHs and/or singles to hit 127
+      // Use the week immediately after the last scheduled week
+      const finalWeekNum = lastScheduledWeekNum + 1;
       const remaining2 = totalTarget - out.length;
-      console.log(`📅 Final week ${weekNum}: ${remaining2} games remaining to schedule`);
+      console.log(`📅 Final week ${finalWeekNum}: ${remaining2} games remaining to schedule`);
 
       if (remaining2 > 0) {
         const finalWeekBase = new Date(openingDay);
-        finalWeekBase.setDate(finalWeekBase.getDate() + (weekNum - 1) * 7);
+        finalWeekBase.setDate(finalWeekBase.getDate() + (finalWeekNum - 1) * 7);
 
         let nightIdx = 0;
         let gamesScheduled = 0;
@@ -2118,7 +2119,7 @@
               const g = dhGames[gi];
               g.date = new Date(d);
               g.time = dhTimeSlots[gi];
-              g.week = weekNum;
+              g.week = finalWeekNum;
               g.isDoubleHeader = true;
               g.dhGame = gi + 1;
               g.isFinalWeek = true;
@@ -2146,7 +2147,7 @@
           const d = getWeekDate(finalWeekBase, nightDay);
           sg.date = new Date(d);
           sg.time = dhTimeSlots[0];
-          sg.week = weekNum;
+          sg.week = finalWeekNum;
           sg.isDoubleHeader = false;
           sg.isFinalWeek = true;
           out.push(sg);
@@ -2156,7 +2157,7 @@
           nightIdx++;
         }
 
-        console.log(`📅 Final week ${weekNum}: scheduled ${gamesScheduled} games (DHs + singles)`);
+        console.log(`📅 Final week ${finalWeekNum}: scheduled ${gamesScheduled} games (DHs + singles)`);
       }
 
       // ── STEP 5: Validation ─────────────────────────────────────────────────
