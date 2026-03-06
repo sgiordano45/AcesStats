@@ -359,9 +359,11 @@
       if (!user) {
         showAlert('❌ You must be signed in.', 'error');
         document.querySelector('.card').style.display = 'none';
+        console.error('❌ No user authenticated');
         return;
       }
 
+      console.log('✅ User authenticated:', user.email);
       currentUser = user;
       await loadSeasons();
       await loadOffseasonRosters();
@@ -419,9 +421,20 @@
         if (snapshot.exists()) {
           offseasonRostersData = snapshot.data();
           console.log('✅ Loaded offseasonRosters:', offseasonRostersData);
+          console.log('📋 Teams found:', Object.keys(offseasonRostersData.teams || {}).join(', '));
+          
+          // Log first team structure for debugging
+          const firstTeamName = Object.keys(offseasonRostersData.teams || {})[0];
+          if (firstTeamName) {
+            console.log(`📊 First team (${firstTeamName}) structure:`, offseasonRostersData.teams[firstTeamName]);
+          }
+        } else {
+          console.error('❌ offseasonRosters/current does not exist');
+          showAlert('❌ offseasonRosters/current document not found', 'error');
         }
       } catch (error) {
         console.error('Error loading offseason rosters:', error);
+        showAlert('❌ Error loading offseason rosters: ' + error.message, 'error');
       }
     }
 
@@ -514,22 +527,39 @@
       for (let i = 0; i < teamNames.length; i++) {
         const teamName = teamNames[i];
         const team = teams[teamName];
-        const players = team.players || [];
+        
+        // Handle different possible structures
+        let players = [];
+        if (Array.isArray(team.players)) {
+          players = team.players;
+        } else if (Array.isArray(team)) {
+          players = team;
+        } else if (team.roster && Array.isArray(team.roster)) {
+          players = team.roster;
+        } else {
+          console.warn(`⚠️ Unknown structure for team ${teamName}:`, team);
+          failed++;
+          resultHTML += `<div style="padding: 0.75rem; background: #fff5f5; border-left: 4px solid #f56565; border-radius: 4px; margin-bottom: 0.5rem;">❌ <strong>${teamName}</strong> - Unknown data structure</div>`;
+          continue;
+        }
 
         try {
           const batch = writeBatch(db);
           const docRef = doc(db, 'rosters', selectedSeason, teamName);
 
+          // Ensure all players have required fields
+          const cleanedPlayers = players.map(p => ({
+            id: p.id || p.playerId || '',
+            name: p.name || '',
+            number: p.number || null,
+            position: p.position || '-',
+            bats: p.bats || '-',
+            throws: p.throws || '-',
+            captain: p.captain === true || p.captain === 'Yes'
+          })).filter(p => p.name); // Filter out players with no name
+
           batch.set(docRef, {
-            players: players.map(p => ({
-              id: p.id || p.playerId || '',
-              name: p.name || '',
-              number: p.number || null,
-              position: p.position || '-',
-              bats: p.bats || '-',
-              throws: p.throws || '-',
-              captain: p.captain === true || p.captain === 'Yes'
-            })),
+            players: cleanedPlayers,
             teamName: teamName,
             seasonId: selectedSeason,
             createdAt: new Date().toISOString(),
@@ -539,10 +569,13 @@
           await batch.commit();
           successful++;
 
-          resultHTML += `<div style="padding: 0.75rem; background: #e6fffa; border-left: 4px solid #48bb78; border-radius: 4px; margin-bottom: 0.5rem;">✅ <strong>${teamName}</strong> - ${players.length} players</div>`;
+          resultHTML += `<div style="padding: 0.75rem; background: #e6fffa; border-left: 4px solid #48bb78; border-radius: 4px; margin-bottom: 0.5rem;">✅ <strong>${teamName}</strong> - ${cleanedPlayers.length} players</div>`;
+          console.log(`✅ Synced ${teamName}: ${cleanedPlayers.length} players`);
         } catch (error) {
           failed++;
-          resultHTML += `<div style="padding: 0.75rem; background: #fff5f5; border-left: 4px solid #f56565; border-radius: 4px; margin-bottom: 0.5rem;">❌ <strong>${teamName}</strong> - ${error.message}</div>`;
+          console.error(`❌ Error syncing ${teamName}:`, error);
+          const errorDetail = error.code || error.message || 'Unknown error';
+          resultHTML += `<div style="padding: 0.75rem; background: #fff5f5; border-left: 4px solid #f56565; border-radius: 4px; margin-bottom: 0.5rem;">❌ <strong>${teamName}</strong> - ${errorDetail}<br><small style="opacity: 0.7;">${error.message}</small></div>`;
         }
 
         const progress = ((i + 1) / teamNames.length) * 100;
