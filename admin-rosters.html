@@ -309,7 +309,7 @@
     <a href="offseason.html" class="header-back">← Offseason Hub</a>
     <div class="header-content">
       <h1>👥 Roster Assignment</h1>
-      <p>Bulk-assign players to teams by updating their <code>linkedTeam</code> via CSV upload</p>
+      <p>Bulk-assign players to teams by updating their <code>linkedTeam</code> or <code>currentTeam</code> (legacy) via CSV upload</p>
     </div>
     <div class="header-badge" id="userBadge" style="display:none;"></div>
   </div>
@@ -337,40 +337,7 @@
       <!-- Step 1: Season / Team Context -->
       <div class="card">
         <h2>⚙️ Team Context</h2>
-
-        <!-- Source toggle -->
-        <div style="margin-bottom:1.25rem;">
-          <label style="font-size:0.85rem; font-weight:500; color:var(--text-light); display:block; margin-bottom:0.5rem;">Data Source</label>
-          <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
-            <button id="srcCsvBtn"
-              onclick="setSource('csv')"
-              class="btn btn-primary btn-sm"
-              style="border-radius:20px;">
-              📄 CSV Upload
-            </button>
-            <button id="srcOffseasonBtn"
-              onclick="setSource('offseason')"
-              class="btn btn-secondary btn-sm"
-              style="border-radius:20px;">
-              🗂 Offseason Roster
-            </button>
-          </div>
-        </div>
-
-        <!-- Offseason roster picker (shown when source=offseason) -->
-        <div id="offseasonSourcePanel" style="display:none;">
-          <div class="alert info" style="margin-bottom:1rem;">
-            <strong>Offseason Roster Mode</strong>
-            <span>Pulls player→team assignments directly from the <code>offseasonRosters/current</code> document — no CSV needed.</span>
-          </div>
-          <button class="btn btn-primary" onclick="loadOffseasonRoster()">
-            <span class="spinner" id="offseasonSpinner" style="display:none;">⚾</span>
-            🗂 Load Offseason Roster
-          </button>
-          <div id="offseasonLoadResult" style="margin-top:0.75rem; font-size:0.88rem; color:var(--text-light);"></div>
-        </div>
-
-        <p id="csvSourceHint" style="font-size:0.9rem; color:var(--text-light); margin-bottom:1rem;">
+        <p style="font-size:0.9rem; color:var(--text-light); margin-bottom:1rem;">
           Optionally select a season to validate team names against its roster. If left blank, any team name will be accepted.
         </p>
         <div class="season-row">
@@ -388,7 +355,7 @@
       </div>
 
       <!-- Step 2: Upload CSV -->
-      <div class="card" id="csvUploadCard">
+      <div class="card">
         <h2>📂 Upload Roster CSV</h2>
 
         <div class="alert info" style="margin-bottom:1rem;">
@@ -495,11 +462,10 @@ Matt Leonardelli,Green</pre>
 
     // ── State ──────────────────────────────────────────────
     let currentUser   = null;
-    let allUsers      = [];           // all non-migrated user docs
+    let allUsers      = [];           // all user docs (migrated + non-migrated)
     let seasonTeams   = [];           // teams from selected season (strings)
     let csvRows       = [];           // parsed + matched rows
     let runLog        = [];           // history of apply runs
-    let dataSource    = 'csv';        // 'csv' | 'offseason'
 
     // ── Nav ────────────────────────────────────────────────
     NavigationComponent.init('navPlaceholder');
@@ -579,7 +545,14 @@ Matt Leonardelli,Green</pre>
         allUsers = [];
         snap.forEach(d => {
           const data = d.data();
-          if (!data.migrated) allUsers.push({ docId: d.id, ...data });
+          // Legacy accounts use currentTeam; regular accounts use linkedTeam
+          const isLegacy = data.migrated === true;
+          allUsers.push({
+            docId: d.id,
+            isLegacy,
+            teamField: isLegacy ? 'currentTeam' : 'linkedTeam',
+            ...data
+          });
         });
         document.getElementById('applyStatus').textContent = `${allUsers.length} user profiles loaded.`;
         setTimeout(() => { document.getElementById('applyStatus').textContent = ''; }, 3000);
@@ -653,83 +626,6 @@ Matt Leonardelli,Green</pre>
       document.getElementById('previewSearch').addEventListener('input', renderTable);
       document.getElementById('previewFilter').addEventListener('change', renderTable);
     }
-
-    // ── Source Toggle ─────────────────────────────────────
-    window.setSource = function(src) {
-      dataSource = src;
-      const csvCard      = document.getElementById('csvUploadCard');
-      const offPanel     = document.getElementById('offseasonSourcePanel');
-      const csvHint      = document.getElementById('csvSourceHint');
-      const srcCsvBtn    = document.getElementById('srcCsvBtn');
-      const srcOffBtn    = document.getElementById('srcOffseasonBtn');
-
-      if (src === 'offseason') {
-        csvCard.style.display   = 'none';
-        offPanel.style.display  = 'block';
-        csvHint.style.display   = 'none';
-        srcCsvBtn.className     = 'btn btn-secondary btn-sm';
-        srcOffBtn.className     = 'btn btn-primary btn-sm';
-        srcCsvBtn.style.borderRadius  = '20px';
-        srcOffBtn.style.borderRadius  = '20px';
-      } else {
-        csvCard.style.display   = '';
-        offPanel.style.display  = 'none';
-        csvHint.style.display   = '';
-        srcCsvBtn.className     = 'btn btn-primary btn-sm';
-        srcOffBtn.className     = 'btn btn-secondary btn-sm';
-        srcCsvBtn.style.borderRadius  = '20px';
-        srcOffBtn.style.borderRadius  = '20px';
-        // Clear any offseason-loaded rows when switching back
-        csvRows = [];
-        document.getElementById('previewCard').classList.add('hidden');
-        document.getElementById('offseasonLoadResult').textContent = '';
-      }
-    };
-
-    // ── Offseason Roster Loader ────────────────────────────
-    window.loadOffseasonRoster = async function() {
-      const resultEl  = document.getElementById('offseasonLoadResult');
-      const spinner   = document.getElementById('offseasonSpinner');
-      resultEl.textContent = '';
-      spinner.style.display = 'inline-block';
-
-      try {
-        const offseasonDoc = await getDoc(doc(db, 'offseasonRosters', 'current'));
-        if (!offseasonDoc.exists()) {
-          resultEl.innerHTML = '<span style="color:var(--error-color);">❌ No offseason roster document found (offseasonRosters/current).</span>';
-          spinner.style.display = 'none';
-          return;
-        }
-
-        const data  = offseasonDoc.data();
-        const teams = data.teams || {};
-        const raw   = [];
-
-        Object.entries(teams).forEach(([teamName, teamData]) => {
-          const players = Array.isArray(teamData.players) ? teamData.players : [];
-          players.forEach(p => {
-            const name = p.name || p.playerName || p.id || '';
-            if (name) raw.push({ csvName: name, csvTeam: teamName });
-          });
-        });
-
-        spinner.style.display = 'none';
-
-        if (raw.length === 0) {
-          resultEl.innerHTML = '<span style="color:var(--warning-color);">⚠️ Offseason roster is empty — no players found.</span>';
-          return;
-        }
-
-        csvRows = raw;
-        resultEl.innerHTML = `<span style="color:var(--success-color);">✅ Loaded <strong>${raw.length}</strong> players across <strong>${Object.keys(teams).length}</strong> teams.</span>`;
-        matchAndRender();
-
-      } catch (err) {
-        spinner.style.display = 'none';
-        console.error('Error loading offseason roster:', err);
-        resultEl.innerHTML = `<span style="color:var(--error-color);">❌ Error: ${err.message}</span>`;
-      }
-    };
 
     // ── CSV Parsing ────────────────────────────────────────
     function readCsv(file) {
@@ -811,10 +707,14 @@ Matt Leonardelli,Green</pre>
         let matched = allUsers.find(u => (u.linkedPlayer || '').toLowerCase() === nameLower);
         if (!matched) matched = allUsers.find(u => (u.displayName || '').toLowerCase() === nameLower);
 
+        // Determine which field holds the team for this user
+        const teamField = matched ? (matched.teamField || 'linkedTeam') : 'linkedTeam';
+        const existingTeam = matched ? (matched[teamField] || '') : '';
+
         let status;
         if (useTeamValidation && !resolvedTeam) status = 'unknown-team';
         else if (!matched) status = 'no-user';
-        else if ((matched.linkedTeam || '').toLowerCase() === (resolvedTeam || '').toLowerCase()) status = 'already-set';
+        else if (existingTeam.toLowerCase() === (resolvedTeam || '').toLowerCase()) status = 'already-set';
         else status = 'will-update';
 
         return {
@@ -822,7 +722,9 @@ Matt Leonardelli,Green</pre>
           resolvedTeam,
           matchedDoc:  matched ? matched.docId : null,
           matchedName: matched ? (matched.displayName || matched.linkedPlayer || matched.docId) : null,
-          currentTeam: matched ? (matched.linkedTeam || '—') : null,
+          isLegacy:    matched ? (matched.isLegacy || false) : false,
+          teamField,
+          currentTeam: matched ? (existingTeam || '—') : null,
           status
         };
       });
@@ -895,8 +797,12 @@ Matt Leonardelli,Green</pre>
           <td style="color:var(--text-light);">
             ${row.matchedName || '—'}
             ${row.matchedDoc ? `<br><small style="font-size:0.72rem;font-family:monospace;">${row.matchedDoc}</small>` : ''}
+            ${row.isLegacy ? `<br><span style="font-size:0.72rem;background:#fef3c7;color:#92400e;padding:0.1rem 0.4rem;border-radius:10px;font-weight:600;">legacy</span>` : ''}
           </td>
-          <td style="color:var(--text-light);">${row.currentTeam || '—'}</td>
+          <td style="color:var(--text-light);">
+            ${row.currentTeam || '—'}
+            ${row.teamField && row.matchedDoc ? `<br><small style="font-size:0.7rem;color:#a0aec0;">(${row.teamField})</small>` : ''}
+          </td>
           <td>${badgeMap[row.status]}</td>
         </tr>
       `).join('');
@@ -928,9 +834,10 @@ Matt Leonardelli,Green</pre>
         document.getElementById('progressFill').style.width = pct + '%';
 
         try {
+          const fieldToUpdate = row.teamField || 'linkedTeam';
           await updateDoc(doc(db, 'users', row.matchedDoc), {
-            linkedTeam: row.resolvedTeam,
-            updatedAt:  serverTimestamp()
+            [fieldToUpdate]: row.resolvedTeam,
+            updatedAt:       serverTimestamp()
           });
           row.status = 'already-set';
           successCount++;
@@ -950,7 +857,7 @@ Matt Leonardelli,Green</pre>
 
       const resultDiv = document.getElementById('applyResult');
       if (failCount === 0) {
-        resultDiv.innerHTML = `<div class="alert success">✅ Successfully updated <strong>${successCount}</strong> player${successCount !== 1 ? 's' : ''}' linkedTeam.</div>`;
+        resultDiv.innerHTML = `<div class="alert success">✅ Successfully updated <strong>${successCount}</strong> player${successCount !== 1 ? 's' : ''} (linkedTeam / currentTeam).</div>`;
         applyBtn.style.display = 'none'; // nothing left to update
       } else {
         resultDiv.innerHTML = `
@@ -970,7 +877,6 @@ Matt Leonardelli,Green</pre>
       document.getElementById('previewCard').classList.add('hidden');
       document.getElementById('parseError').classList.add('hidden');
       document.getElementById('unknownTeamsAlert').classList.add('hidden');
-      document.getElementById('offseasonLoadResult').textContent = '';
     };
 
     // ── Log ────────────────────────────────────────────────
