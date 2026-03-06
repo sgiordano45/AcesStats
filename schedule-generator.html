@@ -1639,17 +1639,22 @@
 
       console.log(`🎯 Generating: ${numTeams} teams × ${gamesPerTeam} games`);
 
-      // Standard round-robin pass (n-1 rounds, each team plays every other team once)
+      // Round-robin pass. For odd team counts, inserts a BYE so every real team
+      // plays exactly (numTeams - 1) games per pass (sits out once vs BYE).
+      // For even team counts, every team plays (numTeams - 1) games per pass.
       function rrPass(arr, flip) {
-        const n = arr.length;
+        const withBye = arr.length % 2 !== 0 ? [...arr, { id: 'BYE' }] : [...arr];
+        const n = withBye.length;
         const games = [];
-        const a = [...arr];
+        const a = [...withBye];
         for (let r = 0; r < n - 1; r++) {
           for (let i = 0; i < n / 2; i++) {
             const h = a[i], aw = a[n - 1 - i];
-            games.push(flip ? { home: aw, away: h } : { home: h, away: aw });
+            if (h.id !== 'BYE' && aw.id !== 'BYE') {
+              games.push(flip ? { home: aw, away: h } : { home: h, away: aw });
+            }
           }
-          a.splice(1, 0, a.pop()); // rotate keeping [0] fixed
+          a.splice(1, 0, a.pop());
         }
         return games;
       }
@@ -1657,52 +1662,41 @@
       let finalSchedule = [];
 
       if (numTeams % 2 === 0) {
-        // ── EVEN teams ────────────────────────────────────────────────────────
-        // Each full pass = (n-1) games per team.  For 10 teams: 2 passes = 18 games... 
-        // Actually for gamesPerTeam=22 with 10 teams we need 22/(n-1)=22/9 passes — not integer.
-        // So run full passes until we have enough, then trim to exact totalGames.
+        // EVEN teams: run passes until we reach totalGames, then trim
         const totalGames = (numTeams * gamesPerTeam) / 2;
         let pass = 0;
         while (finalSchedule.length < totalGames) {
-          finalSchedule.push(...rrPass([...teams], pass % 2 === 1));
+          finalSchedule.push(...rrPass(teams, pass % 2 === 1));
           pass++;
-          if (pass > 20) break; // safety
+          if (pass > 20) break;
         }
         finalSchedule = finalSchedule.slice(0, totalGames);
 
       } else {
-        // ── ODD teams (11) ────────────────────────────────────────────────────
-        // Target: every team plays exactly gamesPerTeam (22) games.
-        // Math: 11 × 22 = 242 team-appearances = 121 total games.
-        // Pass1 + Pass2 = 110 games (each team plays every other team exactly twice = 20 games).
-        // Need 11 more singles so every team gets exactly +2 → 22 total.
-        // Solution: a Hamiltonian cycle on the 11 teams gives exactly 11 edges
-        // where every node (team) appears exactly twice. ✓
+        // ODD teams (11): 
+        // Pass1 + Pass2 (with BYE) = 110 games, every team at exactly 20, all 55 matchups x2
+        // + 11 Hamiltonian cycle extras = 121 total, every team exactly 22
+        finalSchedule.push(...rrPass(teams, false));
+        finalSchedule.push(...rrPass(teams, true));
 
-        // Pass 1 + Pass 2 = 110 base games
-        finalSchedule.push(...rrPass([...teams], false));
-        finalSchedule.push(...rrPass([...teams], true));
-
-        // 11 extras via Hamiltonian cycle: teams[0]-teams[1]-...-teams[10]-teams[0]
-        // Every team appears in exactly 2 of these edges.
-        const n11 = teams.length; // 11
-        for (let i = 0; i < n11; i++) {
-          const home = teams[i];
-          const away = teams[(i + 1) % n11];
-          finalSchedule.push({ home, away });
+        // Hamiltonian cycle: teams[0]-[1]-[2]-...-[10]-[0]
+        // Every team appears in exactly 2 edges → +2 games each → 22 total
+        for (let i = 0; i < numTeams; i++) {
+          finalSchedule.push({ home: teams[i], away: teams[(i + 1) % numTeams] });
         }
 
-        // Verify every team has exactly 22 games
+        // Verify
         const counts = Object.fromEntries(
           teams.map(t => [t.name, finalSchedule.filter(g => g.home.id === t.id || g.away.id === t.id).length])
         );
         const vals = Object.values(counts);
         const mn = Math.min(...vals), mx = Math.max(...vals);
-        console.log(`📋 Pool: ${finalSchedule.length} games (need 121). Per-team min=${mn} max=${mx}`);
+        console.log(`📋 Pool: ${finalSchedule.length} games. Per-team: min=${mn} max=${mx}`);
         if (finalSchedule.length !== 121 || mn !== 22 || mx !== 22) {
           console.error('❌ Pool imbalance!', counts);
         }
       }
+
       console.log(`📋 Final pool: ${finalSchedule.length} games`);
 
       // Assign dates and times
@@ -1713,7 +1707,6 @@
       }
 
       scheduleConfig.generatedSchedule = finalSchedule;
-
       displaySchedule(finalSchedule);
 
       const weeksNeeded = scheduleConfig.seasonType === 'fall'
@@ -1733,6 +1726,7 @@
       document.getElementById('regenerateBtn').style.display = 'inline-flex';
       document.getElementById('step4Buttons').style.display = 'flex';
     }
+
 
     function assignFallSchedule(schedule) {
       // Fall: Sundays only, 5 time slots, each team plays once per Sunday
@@ -1932,8 +1926,8 @@
           byeIndex++;
         }
 
-        // For 11 teams include Sunday as an extra DH night; for 10 teams weeknights only
-        const nights = numTeams === 11 ? [0, ...weeknightDays] : weeknightDays;
+        // One DH per weeknight — bye team sits out this week
+        const nights = weeknightDays;
 
         for (const dayOfWeek of nights) {
           const d = new Date(currentDate);
@@ -1981,8 +1975,7 @@
           }
         }
 
-        const scheduled = dhPairs.filter(p => !p.scheduled).length;
-        if (scheduled === dhPairs.filter(p => !p.scheduled).length && weekUsed.size === 0) {
+        if (weekUsed.size === 0) {
           console.warn('⚠️ No progress this week, stopping');
           break;
         }
