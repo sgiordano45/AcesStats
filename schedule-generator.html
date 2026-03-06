@@ -804,14 +804,7 @@
               </div>
               <div class="info-card" style="margin-bottom: 1rem;">
                 <strong>🎉 Opening Day — 6 Games, All Teams Play</strong>
-                <p style="margin-top: 0.5rem;">Opening Day is generated specially with <strong>6 games starting at 3:45 PM ET</strong>. 5 teams play single games (3:45–7:45 PM) and 1 team plays a doubleheader (7:45 &amp; 8:45 PM), so all 11 teams participate on Opening Day.</p>
-              </div>
-              <div class="form-group" style="margin-bottom: 1rem;">
-                <label for="openingDayDHTeam">Which team plays the Opening Day DH?</label>
-                <select id="openingDayDHTeam" style="width: 100%; padding: 0.75rem; border: 2px solid var(--border-color); border-radius: 8px; font-size: 1rem;">
-                  <option value="">— Select teams in Step 2 first —</option>
-                </select>
-                <p style="font-size: 0.85rem; color: var(--text-light); margin-top: 0.4rem;">This team will play two games on Opening Day (7:45 &amp; 8:45 PM ET).</p>
+                <p style="margin-top: 0.5rem;">Opening Day is generated specially with <strong>6 games starting at 3:45 PM ET</strong>. 5 teams play single games (3:45–7:45 PM) and 1 team plays a doubleheader (7:45 &amp; 8:45 PM), so all 11 teams participate on Opening Day. You'll select the DH team in Step 3.</p>
               </div>
               <div class="form-group">
                 <label>How to handle the odd team each week?</label>
@@ -971,6 +964,15 @@
             <div class="time-slots-container" id="timeSlotContainer">
               <!-- Time slots will be dynamically populated -->
             </div>
+          </div>
+
+          <!-- Opening Day DH Team (11-team summer only) -->
+          <div class="form-group" id="openingDayDHGroup" style="display: none;">
+            <label for="openingDayDHTeam">Opening Day DH Team</label>
+            <select id="openingDayDHTeam" style="width: 100%; padding: 0.75rem; border: 2px solid var(--border-color); border-radius: 8px; font-size: 1rem;">
+              <option value="">— Select a team —</option>
+            </select>
+            <p style="font-size: 0.85rem; color: var(--text-light); margin-top: 0.4rem;">This team will play two games on Opening Day (7:45 &amp; 8:45 PM ET). All other teams play one game.</p>
           </div>
 
           <!-- Team Scheduling Restrictions -->
@@ -1210,11 +1212,6 @@
       document.querySelectorAll('input[name="oddTeamFormat"]').forEach(radio => {
         radio.addEventListener('change', validateStep1);
       });
-
-      document.getElementById('openingDayDHTeam').addEventListener('change', (e) => {
-        scheduleConfig.openingDayDHTeam = e.target.value || null;
-        validateStep1();
-      });
     }
 
     function validateStep1() {
@@ -1228,8 +1225,7 @@
 
         if (numTeams === '11') {
           const oddFormat = document.querySelector('input[name="oddTeamFormat"]:checked');
-          const dhTeam = document.getElementById('openingDayDHTeam').value;
-          valid = valid && !!oddFormat && !!dhTeam;
+          valid = valid && !!oddFormat;
         }
       }
 
@@ -1508,25 +1504,28 @@
         warning.style.display = 'none';
         nextBtn.disabled = false;
       }
-
-      updateOpeningDayDHDropdown();
-    }
-
-    function updateOpeningDayDHDropdown() {
-      const sel = document.getElementById('openingDayDHTeam');
-      if (!sel) return;
-      const teams = scheduleConfig.selectedTeams;
-      const prev = scheduleConfig.openingDayDHTeam;
-      sel.innerHTML = teams.length === 0
-        ? '<option value="">— Select teams in Step 2 first —</option>'
-        : '<option value="">— Select a team —</option>' +
-          teams.map(t => `<option value="${t.id}"${t.id === prev ? ' selected' : ''}>${t.name}</option>`).join('');
     }
 
     window.nextStep = function() {
       if (currentStep === 2) {
         // Populate team dropdowns in restrictions when moving to step 3
         populateRestrictionTeams();
+
+        // Populate opening day DH team dropdown for 11-team summer
+        const numTeams = parseInt(document.getElementById('summerNumTeams').value) || 10;
+        const dhGroup = document.getElementById('openingDayDHGroup');
+        const dhSel   = document.getElementById('openingDayDHTeam');
+        if (scheduleConfig.seasonType === 'summer' && numTeams === 11) {
+          dhGroup.style.display = 'block';
+          const prev = scheduleConfig.openingDayDHTeam;
+          dhSel.innerHTML = '<option value="">— Select a team —</option>' +
+            scheduleConfig.selectedTeams.map(t =>
+              `<option value="${t.id}"${t.id === prev ? ' selected' : ''}>${t.name}</option>`
+            ).join('');
+        } else {
+          dhGroup.style.display = 'none';
+          dhSel.innerHTML = '<option value="">— Select a team —</option>';
+        }
       }
       
       if (currentStep === 3) {
@@ -1588,7 +1587,6 @@
         if (scheduleConfig.summerNumTeams === 11) {
           scheduleConfig.openingDayDHTeam = document.getElementById('openingDayDHTeam').value || null;
         }
-
         // Collect selected weekdays (always include Sunday=0 for Opening Day)
         const checkedDays = [];
         document.querySelectorAll('#weekdaySelector input[type="checkbox"]:checked').forEach(cb => {
