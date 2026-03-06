@@ -803,32 +803,12 @@
               </div>
               <div class="info-card" style="margin-bottom: 1rem;">
                 <strong>📅 Weekly Structure — 5 DHs + 1 Bye</strong>
-                <p style="margin-top: 0.5rem;">Each week: <strong>5 double headers</strong> across 5 weeknights (10 games), with 1 team on a rotating bye. The DH team gets the week 1 bye (since they play 2 on Opening Day). Final week has 5 single games instead of DHs.</p>
+                <p style="margin-top: 0.5rem;">Each week: <strong>5 double headers</strong> Sunday through Thursday (10 games), with 1 team on a rotating bye. Week 1 DHs are Mon–Thu only (Opening Day takes Sunday). The DH team gets the week 1 bye. Final week has 5 single games instead of DHs.</p>
               </div>
               <!-- Hidden radio auto-set to bye -->
               <input type="radio" name="oddTeamFormat" value="bye" id="oddBye" checked style="display: none;">
 
-              <div class="form-group">
-                <label>Weekdays Available for Games</label>
-                <p style="font-size: 0.9rem; color: var(--text-light); margin-bottom: 0.75rem;">Opening Day is always Sunday. Select which additional weekdays are available for DHs (need at least 5):</p>
-                <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;" id="weekdaySelector">
-                  <label class="weekday-btn" data-day="1">
-                    <input type="checkbox" value="1" checked> Mon
-                  </label>
-                  <label class="weekday-btn" data-day="2">
-                    <input type="checkbox" value="2" checked> Tue
-                  </label>
-                  <label class="weekday-btn" data-day="3">
-                    <input type="checkbox" value="3" checked> Wed
-                  </label>
-                  <label class="weekday-btn" data-day="4">
-                    <input type="checkbox" value="4" checked> Thu
-                  </label>
-                  <label class="weekday-btn" data-day="5">
-                    <input type="checkbox" value="5"> Fri
-                  </label>
-                </div>
-              </div>
+              <!-- Game days are hardcoded: Sun-Thu for weeks 2+, Mon-Thu for week 1 (OD takes Sunday) -->
             </div>
 
             <!-- 10-team info -->
@@ -1572,13 +1552,8 @@
         if (scheduleConfig.summerNumTeams === 11) {
           scheduleConfig.openingDayDHTeam = document.getElementById('openingDayDHTeam').value || null;
         }
-        // Collect selected weekdays (always include Sunday=0 for Opening Day)
-        const checkedDays = [];
-        document.querySelectorAll('#weekdaySelector input[type="checkbox"]:checked').forEach(cb => {
-          checkedDays.push(parseInt(cb.value));
-        });
-        // Sort and prepend Sunday (0) - Opening Day always Sunday
-        scheduleConfig.gameDays = [0, ...checkedDays.sort((a, b) => a - b)];
+        // Game days: Sun-Thu hardcoded
+        scheduleConfig.gameDays = [0, 1, 2, 3, 4];
       }
     }
 
@@ -1586,7 +1561,7 @@
       const gamesPerTeam = scheduleConfig.seasonType === 'summer' 
         ? scheduleConfig.summerGamesPerTeam 
         : 12;
-      const gameDays = scheduleConfig.seasonType === 'fall' ? 'Sundays' : 'Sun + selected weeknights';
+      const gameDays = scheduleConfig.seasonType === 'fall' ? 'Sundays' : 'Sun–Thu';
       
       let restrictionsText = '';
       if (scheduleConfig.teamRestrictions.length > 0) {
@@ -1601,7 +1576,7 @@
         const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
         const dayList = scheduleConfig.gameDays.map(d => dayNames[d]).join(', ');
         const oddInfo = scheduleConfig.summerNumTeams === 11
-          ? ` • 11 teams (${scheduleConfig.oddTeamFormat === 'bye' ? 'bye week rotation' : 'double-DH rotation'})`
+          ? ` • 11 teams (bye week rotation)`
           : ' • 10 teams (Opening Day + weekly DHs)';
         summerExtra = `<br>Game days: ${dayList}${oddInfo}`;
       }
@@ -1968,9 +1943,12 @@
         }
 
         // Assign dates/times
+        // Week 1 (w=0): Mon-Thu only (Sunday is Opening Day)
+        // Weeks 2+ (w>=1): Sun-Thu
+        const nightsThisWeek = w === 0 ? weeknightDays : [0, 1, 2, 3, 4];
         for (let p = 0; p < weekDHs.length; p++) {
           const dh = weekDHs[p];
-          const nightDay = weeknightDays[p % weeknightDays.length];
+          const nightDay = nightsThisWeek[p % nightsThisWeek.length];
           const d = getWeekDate(weekBase, nightDay);
 
           dh.game1.date = new Date(d); dh.game1.time = dhTimeSlots[0];
