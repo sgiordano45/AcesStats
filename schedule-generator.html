@@ -802,6 +802,10 @@
                 <strong>⚠️ 11 Teams — Odd Number Configuration</strong>
                 <p style="margin-top: 0.5rem;">With 11 teams, every week one team must either sit out or play an extra game. Choose how to handle this:</p>
               </div>
+              <div class="info-card" style="margin-bottom: 1rem;">
+                <strong>🎉 Opening Day — 6 Games, All Teams Play</strong>
+                <p style="margin-top: 0.5rem;">Opening Day is generated specially with <strong>6 games starting at 3:45 PM ET</strong>. 5 teams play single games (3:45–7:45 PM) and 1 team plays a doubleheader (7:45 &amp; 8:45 PM), so all 11 teams participate on Opening Day.</p>
+              </div>
               <div class="form-group">
                 <label>How to handle the odd team each week?</label>
                 <div style="display: flex; flex-direction: column; gap: 0.75rem; margin-top: 0.5rem;">
@@ -848,10 +852,10 @@
               <div class="info-card">
                 <strong>☀️ 10-Team Summer Schedule:</strong>
                 <ul style="margin-left: 1.5rem; margin-top: 0.5rem;">
-                  <li><strong>Opening Day (Sunday):</strong> 5 single games, all teams play once</li>
+                  <li><strong>Opening Day (Sunday):</strong> 5 single games starting at 3:45 PM ET — all teams play once</li>
                   <li><strong>Week 1 Mon–Thu:</strong> 4 DHs (8 teams get a DH, 2 teams rest)</li>
                   <li><strong>Week 2+:</strong> Sun–Thu — each team plays 1 DH per week (5 DHs/night)</li>
-                  <li><strong>DH Time Slots:</strong> 7:00 PM and 8:00 PM</li>
+                  <li><strong>DH Time Slots:</strong> 7:45 PM and 8:45 PM</li>
                 </ul>
               </div>
             </div>
@@ -1235,7 +1239,7 @@
       } else if (seasonType === 'summer') {
         gamesPerWeekGroup.style.display = 'none'; // No longer needed - fixed at 2 games/week
         // Summer: Sun-Thu evening slots (7pm & 8pm for double headers)
-        const summerSlots = ['7:00 PM', '8:00 PM'];
+        const summerSlots = ['7:45 PM', '8:45 PM'];
         container.innerHTML = summerSlots.map(slot => `
           <div class="time-slot selected" data-time="${slot}" onclick="toggleTimeSlot(this)">
             ${slot}
@@ -1759,8 +1763,8 @@
 
     function assignSummerSchedule(schedule) {
       const startDate = new Date(scheduleConfig.startDate);
-      const dhTimeSlots = ['7:00 PM', '8:00 PM'];
-      const openingDaySlots = ['5:00 PM', '6:00 PM', '7:00 PM', '8:00 PM', '9:00 PM'];
+      const dhTimeSlots = ['7:45 PM', '8:45 PM'];
+      const openingDaySlots = ['3:45 PM', '4:45 PM', '5:45 PM', '6:45 PM', '7:45 PM', '8:45 PM'];
       const numTeams = scheduleConfig.summerNumTeams || 10;
       const oddTeamFormat = scheduleConfig.oddTeamFormat || 'bye';
       // gameDays[0] is always 0 (Sunday = Opening Day)
@@ -1807,12 +1811,15 @@
       let weekNumber = 1;
 
       // ===== OPENING DAY (Sunday) =====
+      // 10 teams: 5 single games (all teams play once)
+      // 11 teams: 5 single games + 1 DH (6 games total, all 11 teams play, 1 team plays twice)
       const teamsPlayedOpeningDay = new Set();
       let openingDayGames = 0;
-      const openingDayTarget = Math.floor(numTeams / 2); // 5 for 10 teams, 5 for 11 teams
+      // 10 teams → 5 singles; 11 teams → 5 singles (fills 10 teams), then 1 DH for the remaining team
+      const openingDaySinglesTarget = Math.floor(numTeams / 2); // 5 for both 10 and 11 teams
 
       for (const game of singleGames) {
-        if (openingDayGames >= openingDayTarget) break;
+        if (openingDayGames >= openingDaySinglesTarget) break;
         if (teamsPlayedOpeningDay.has(game.home.id) || teamsPlayedOpeningDay.has(game.away.id)) continue;
         game.date = new Date(openingDay);
         game.time = openingDaySlots[openingDayGames];
@@ -1827,7 +1834,7 @@
       }
 
       for (const dh of doubleHeaderPairs) {
-        if (openingDayGames >= openingDayTarget) break;
+        if (openingDayGames >= openingDaySinglesTarget) break;
         if (dh.scheduled) continue;
         if (teamsPlayedOpeningDay.has(dh.team1) || teamsPlayedOpeningDay.has(dh.team2)) continue;
         dh.game1.date = new Date(openingDay);
@@ -1843,13 +1850,37 @@
         openingDayGames++;
       }
 
-      // For 11 teams: one team didn't play Opening Day — track it
-      const allTeamIds = scheduleConfig.selectedTeams.map(t => t.id);
-      const byeTeamOpeningDay = numTeams === 11 
-        ? allTeamIds.find(id => !teamsPlayedOpeningDay.has(id))
-        : null;
-      if (byeTeamOpeningDay) {
-        console.log(`🎯 11-team Opening Day: team ${byeTeamOpeningDay} has bye`);
+      // For 11 teams: the one remaining team plays a DH on Opening Day (slots 5 & 6)
+      if (numTeams === 11) {
+        const allTeamIds = scheduleConfig.selectedTeams.map(t => t.id);
+        const dhTeamId = allTeamIds.find(id => !teamsPlayedOpeningDay.has(id));
+        if (dhTeamId) {
+          console.log(`🎯 11-team Opening Day: team ${dhTeamId} plays DH`);
+          // Find a DH pair for this team
+          const dhPair = doubleHeaderPairs.find(dh =>
+            !dh.scheduled && (dh.team1 === dhTeamId || dh.team2 === dhTeamId)
+          );
+          if (dhPair) {
+            dhPair.game1.date = new Date(openingDay);
+            dhPair.game1.time = openingDaySlots[openingDayGames];       // slot 5
+            dhPair.game1.week = weekNumber;
+            dhPair.game1.isDoubleHeader = true;
+            dhPair.game1.dhGame = 1;
+            dhPair.game1.isOpeningDay = true;
+            scheduledGames.push(dhPair.game1);
+            dhPair.game2.date = new Date(openingDay);
+            dhPair.game2.time = openingDaySlots[openingDayGames + 1];   // slot 6
+            dhPair.game2.week = weekNumber;
+            dhPair.game2.isDoubleHeader = true;
+            dhPair.game2.dhGame = 2;
+            dhPair.game2.isOpeningDay = true;
+            scheduledGames.push(dhPair.game2);
+            dhPair.scheduled = true;
+            teamsPlayedOpeningDay.add(dhPair.team1);
+            teamsPlayedOpeningDay.add(dhPair.team2);
+            openingDayGames += 2;
+          }
+        }
       }
 
       console.log(`🎉 Opening Day: ${openingDayGames} games scheduled`);
