@@ -1287,8 +1287,8 @@
                 <th style="padding:8px 12px; text-align:left; border-bottom:2px solid #e2e8f0;">Auth UID (orphaned path)</th>
                 <th style="padding:8px 12px; text-align:left; border-bottom:2px solid #e2e8f0;">Player Name</th>
                 <th style="padding:8px 12px; text-align:left; border-bottom:2px solid #e2e8f0;">Legacy ID (target path)</th>
-                <th style="padding:8px 12px; text-align:center; border-bottom:2px solid #e2e8f0;">Seasons</th>
-                <th style="padding:8px 12px; text-align:center; border-bottom:2px solid #e2e8f0;">Games</th>
+                <th style="padding:8px 12px; text-align:center; border-bottom:2px solid #e2e8f0;">Seasons (bat/pitch)</th>
+                <th style="padding:8px 12px; text-align:center; border-bottom:2px solid #e2e8f0;">Games (bat/pitch)</th>
               </tr>
             </thead>
             <tbody id="repairTableBody"></tbody>
@@ -3357,26 +3357,30 @@
         }
       });
 
-      repairLog(`Found ${candidates.length} auth users with linkedPlayer — checking each for orphaned playerStats...`, 'info');
+      repairLog(`Found ${candidates.length} auth users with linkedPlayer — checking each for orphaned playerStats/pitchingStats...`, 'info');
 
       for (const c of candidates) {
         const legacyId = c.linkedPlayer.toLowerCase().replace(/\./g, '').replace(/\s+/g, '_');
 
-        // Check if playerStats/{uid}/seasons has any docs
-        const sSnap = await getDocs(collection(db, 'playerStats', c.uid, 'seasons'));
-        const gSnap = await getDocs(collection(db, 'playerStats', c.uid, 'games'));
+        // Check playerStats/{uid} and pitchingStats/{uid}
+        const sSnap  = await getDocs(collection(db, 'playerStats',  c.uid, 'seasons'));
+        const gSnap  = await getDocs(collection(db, 'playerStats',  c.uid, 'games'));
+        const psSnap = await getDocs(collection(db, 'pitchingStats', c.uid, 'seasons'));
+        const pgSnap = await getDocs(collection(db, 'pitchingStats', c.uid, 'games'));
 
-        if (sSnap.empty && gSnap.empty) continue; // nothing orphaned here
+        if (sSnap.empty && gSnap.empty && psSnap.empty && pgSnap.empty) continue;
 
         orphanedEntries.push({
           uid: c.uid,
           playerName: c.linkedPlayer,
           legacyId,
           seasonDocs: sSnap.docs,
-          gameDocs: gSnap.docs
+          gameDocs: gSnap.docs,
+          pitchingSeasonDocs: psSnap.docs,
+          pitchingGameDocs: pgSnap.docs
         });
 
-        repairLog(`  ⚠️  ${c.uid} → "${c.linkedPlayer}" (legacy: ${legacyId}) — ${sSnap.size} seasons, ${gSnap.size} games`, 'warning');
+        repairLog(`  ⚠️  ${c.uid} → "${c.linkedPlayer}" (legacy: ${legacyId}) — batting: ${sSnap.size} seasons, ${gSnap.size} games | pitching: ${psSnap.size} seasons, ${pgSnap.size} games`, 'warning');
       }
 
       if (orphanedEntries.length === 0) {
@@ -3391,8 +3395,8 @@
           <td style="padding:8px 12px; font-family:monospace; font-size:0.8rem; color:#64748b;">${e.uid}</td>
           <td style="padding:8px 12px; font-weight:600;">${e.playerName}</td>
           <td style="padding:8px 12px; font-family:monospace; font-size:0.85rem; color:#7c3aed;">${e.legacyId}</td>
-          <td style="padding:8px 12px; text-align:center;">${e.seasonDocs.length}</td>
-          <td style="padding:8px 12px; text-align:center;">${e.gameDocs.length}</td>
+          <td style="padding:8px 12px; text-align:center;">${e.seasonDocs.length} / ${e.pitchingSeasonDocs.length}</td>
+          <td style="padding:8px 12px; text-align:center;">${e.gameDocs.length} / ${e.pitchingGameDocs.length}</td>
         </tr>
       `).join('');
 
@@ -3435,10 +3439,10 @@
       repairLog(`  To:   playerStats/${entry.legacyId}/`, 'info');
 
       try {
-        // Move seasons
+        // Move batting seasons
         for (const seasonDoc of entry.seasonDocs) {
           const seasonId = seasonDoc.id;
-          repairLog(`  → season: ${seasonId}`, 'info');
+          repairLog(`  → batting season: ${seasonId}`, 'info');
           if (!testMode) {
             await setDoc(doc(db, 'playerStats', entry.legacyId, 'seasons', seasonId), {
               ...seasonDoc.data(),
@@ -3450,10 +3454,10 @@
           totalMoved++;
         }
 
-        // Move games
+        // Move batting games
         for (const gameDoc of entry.gameDocs) {
           const gameId = gameDoc.id;
-          repairLog(`  → game: ${gameId}`, 'info');
+          repairLog(`  → batting game: ${gameId}`, 'info');
           if (!testMode) {
             await setDoc(doc(db, 'playerStats', entry.legacyId, 'games', gameId), {
               ...gameDoc.data(),
@@ -3463,10 +3467,39 @@
             await deleteDoc(doc(db, 'playerStats', entry.uid, 'games', gameId));
           }
           totalMoved++;
-          totalDeleted++;
         }
 
-        repairLog(`  ✅ ${entry.playerName} — ${entry.seasonDocs.length} seasons, ${entry.gameDocs.length} games moved`, 'success');
+        // Move pitching seasons
+        for (const seasonDoc of entry.pitchingSeasonDocs) {
+          const seasonId = seasonDoc.id;
+          repairLog(`  → pitching season: ${seasonId}`, 'info');
+          if (!testMode) {
+            await setDoc(doc(db, 'pitchingStats', entry.legacyId, 'seasons', seasonId), {
+              ...seasonDoc.data(),
+              repairedFrom: entry.uid,
+              repairedAt: new Date().toISOString()
+            });
+            await deleteDoc(doc(db, 'pitchingStats', entry.uid, 'seasons', seasonId));
+          }
+          totalMoved++;
+        }
+
+        // Move pitching games
+        for (const gameDoc of entry.pitchingGameDocs) {
+          const gameId = gameDoc.id;
+          repairLog(`  → pitching game: ${gameId}`, 'info');
+          if (!testMode) {
+            await setDoc(doc(db, 'pitchingStats', entry.legacyId, 'games', gameId), {
+              ...gameDoc.data(),
+              repairedFrom: entry.uid,
+              repairedAt: new Date().toISOString()
+            });
+            await deleteDoc(doc(db, 'pitchingStats', entry.uid, 'games', gameId));
+          }
+          totalMoved++;
+        }
+
+        repairLog(`  ✅ ${entry.playerName} — ${entry.seasonDocs.length} batting seasons, ${entry.gameDocs.length} batting games, ${entry.pitchingSeasonDocs.length} pitching seasons, ${entry.pitchingGameDocs.length} pitching games moved`, 'success');
 
       } catch (err) {
         repairLog(`  ❌ Error on ${entry.playerName}: ${err.message}`, 'error');
