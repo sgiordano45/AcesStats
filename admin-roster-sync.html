@@ -456,12 +456,27 @@
         return;
       }
 
+      console.log('🔍 Starting preview with teams:', teamNames);
+      console.log('📊 Full teams object:', teams);
+
       let totalPlayers = 0;
       let previewHTML = '';
 
       for (const teamName of teamNames) {
         const team = teams[teamName];
-        const players = team.players || [];
+        console.log(`\n📋 Processing team: ${teamName}`, team);
+        
+        let players = [];
+        if (Array.isArray(team?.players)) {
+          players = team.players;
+          console.log(`  ✅ Found players array: ${players.length} players`);
+        } else if (Array.isArray(team)) {
+          players = team;
+          console.log(`  ✅ Team is array: ${players.length} players`);
+        } else {
+          console.warn(`  ⚠️ Unknown structure for ${teamName}:`, Object.keys(team || {}));
+        }
+        
         totalPlayers += players.length;
 
         const playerHTML = players
@@ -545,7 +560,9 @@
 
         try {
           const batch = writeBatch(db);
-          const docRef = doc(db, 'rosters', selectedSeason, teamName);
+          // Fix: rosters collection with document ID as "{seasonId}-{teamName}"
+          const docId = `${selectedSeason}-${teamName}`;
+          const docRef = doc(db, 'rosters', docId);
 
           // Ensure all players have required fields
           const cleanedPlayers = players.map(p => ({
@@ -570,7 +587,7 @@
           successful++;
 
           resultHTML += `<div style="padding: 0.75rem; background: #e6fffa; border-left: 4px solid #48bb78; border-radius: 4px; margin-bottom: 0.5rem;">✅ <strong>${teamName}</strong> - ${cleanedPlayers.length} players</div>`;
-          console.log(`✅ Synced ${teamName}: ${cleanedPlayers.length} players`);
+          console.log(`✅ Synced ${teamName}: ${cleanedPlayers.length} players to rosters/${docId}`);
         } catch (error) {
           failed++;
           console.error(`❌ Error syncing ${teamName}:`, error);
