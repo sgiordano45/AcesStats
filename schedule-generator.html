@@ -1853,9 +1853,34 @@
       }
 
       // Pull N games for a matchup from pool
+      // For DHs (count=2), ensures game1 and game2 have opposite home/away
       function pullGames(team1Id, team2Id, count) {
         const key = [team1Id, team2Id].sort().join('|');
         const available = pool.get(key) || [];
+        if (count === 2 && available.length >= 2) {
+          // Find one game with each home/away orientation
+          let g1 = null, g1Idx = -1, g2 = null, g2Idx = -1;
+          for (let i = 0; i < available.length; i++) {
+            const g = available[i];
+            if (!g1 && g.home.id === team1Id) { g1 = g; g1Idx = i; }
+            else if (!g1 && g.home.id === team2Id) { g1 = g; g1Idx = i; }
+          }
+          if (g1) {
+            for (let i = 0; i < available.length; i++) {
+              if (i === g1Idx) continue;
+              const g = available[i];
+              if (g.home.id !== g1.home.id) { g2 = g; g2Idx = i; break; }
+            }
+          }
+          if (g1 && g2) {
+            // Remove in reverse index order to avoid shift issues
+            const indices = [g1Idx, g2Idx].sort((a, b) => b - a);
+            indices.forEach(i => available.splice(i, 1));
+            return [g1, g2];
+          }
+          // Fallback: just pull first 2 (same orientation)
+          return available.splice(0, 2);
+        }
         return available.splice(0, count);
       }
 
@@ -2039,8 +2064,15 @@
           if (teamOpts[c.id2] !== undefined) teamOpts[c.id2]++;
         }
 
-        // Sort: most constrained teams first
+        // Sort priority:
+        // 1. Matchups with exactly 2 games first (use before they become orphans)
+        // 2. Among same count, most constrained teams first
         candidates.sort((a, b) => {
+          // Exactly-2 matchups get priority (they'll become orphans if not used now)
+          const aUrgent = a.count === 2 ? 0 : 1;
+          const bUrgent = b.count === 2 ? 0 : 1;
+          if (aUrgent !== bUrgent) return aUrgent - bUrgent;
+          // Then most constrained teams
           const aMin = Math.min(teamOpts[a.id1] || 0, teamOpts[a.id2] || 0);
           const bMin = Math.min(teamOpts[b.id1] || 0, teamOpts[b.id2] || 0);
           return aMin - bMin;
@@ -2087,77 +2119,95 @@
         weekNum++;
       }
 
-      // ── STEP 4: Truncated final week — mop up remaining games ──────────────
+      // ── STEP 4: Final weeks — mop up remaining games ─────────────────────
       // Schedule whatever's left as DHs and/or singles to hit 127
-      // Use the week immediately after the last scheduled week
-      const finalWeekNum = lastScheduledWeekNum + 1;
+      // Spread across weeks if needed (max ~10 games per week like regular weeks)
       const remaining2 = totalTarget - out.length;
-      console.log(`📅 Final week ${finalWeekNum}: ${remaining2} games remaining to schedule`);
+      console.log(`📅 Final weeks starting at ${lastScheduledWeekNum + 1}: ${remaining2} games remaining`);
 
       if (remaining2 > 0) {
-        const finalWeekBase = new Date(openingDay);
-        finalWeekBase.setDate(finalWeekBase.getDate() + (finalWeekNum - 1) * 7);
+        let fwNum = lastScheduledWeekNum + 1;
+        let gamesLeft = remaining2;
 
-        let nightIdx = 0;
-        let gamesScheduled = 0;
+        while (gamesLeft > 0 && fwNum < lastScheduledWeekNum + 10) {
+          const fwBase = new Date(openingDay);
+          fwBase.setDate(fwBase.getDate() + (fwNum - 1) * 7);
 
-        // First pass: schedule DHs for teams needing 2+ more games
-        const finalPaired = new Set();
-        const teamsNeedingGames = () => shuffle(teams.filter(t => gamesPlayed[t.id] < targetGames[t.id]));
+          let nightIdx = 0;
+          let weekGames = 0;
+          const weekTeamGames = {}; // track games per team this week
+          teams.forEach(t => { weekTeamGames[t.id] = 0; });
 
-        for (const t1 of teamsNeedingGames()) {
-          if (finalPaired.has(t1.id)) continue;
-          if (gamesScheduled + 2 > remaining2) break;
-          const needed1 = targetGames[t1.id] - gamesPlayed[t1.id];
-          if (needed1 < 2) continue;
+          // First: schedule DHs for teams needing 2+ more games
+          const weekPaired = new Set();
+          const teamsNeedingDH = shuffle(teams.filter(t =>
+            (targetGames[t.id] - gamesPlayed[t.id]) >= 2
+          ));
 
-          const dhGames = pullDHForTeam(t1.id, finalPaired);
-          if (dhGames) {
-            const nightDay = regularNights[nightIdx % regularNights.length];
-            const d = getWeekDate(finalWeekBase, nightDay);
-            for (let gi = 0; gi < dhGames.length; gi++) {
-              const g = dhGames[gi];
-              g.date = new Date(d);
-              g.time = dhTimeSlots[gi];
-              g.week = finalWeekNum;
-              g.isDoubleHeader = true;
-              g.dhGame = gi + 1;
-              g.isFinalWeek = true;
-              out.push(g);
-              gamesPlayed[g.home.id]++;
-              gamesPlayed[g.away.id]++;
-              gamesScheduled++;
+          for (const t1 of teamsNeedingDH) {
+            if (weekPaired.has(t1.id)) continue;
+            if (weekTeamGames[t1.id] >= 2) continue; // max 1 DH per team per week
+            if (weekGames + 2 > 10) break; // max ~10 games per week
+            if (gamesLeft - weekGames < 2) break;
+
+            const dhGames = pullDHForTeam(t1.id, weekPaired);
+            if (dhGames) {
+              const nightDay = regularNights[nightIdx % regularNights.length];
+              const d = getWeekDate(fwBase, nightDay);
+              for (let gi = 0; gi < dhGames.length; gi++) {
+                const g = dhGames[gi];
+                g.date = new Date(d);
+                g.time = dhTimeSlots[gi];
+                g.week = fwNum;
+                g.isDoubleHeader = true;
+                g.dhGame = gi + 1;
+                g.isFinalWeek = true;
+                out.push(g);
+                gamesPlayed[g.home.id]++;
+                gamesPlayed[g.away.id]++;
+                weekTeamGames[g.home.id]++;
+                weekTeamGames[g.away.id]++;
+                weekGames++;
+              }
+              weekPaired.add(t1.id);
+              const otherId = dhGames[0].home.id === t1.id ? dhGames[0].away.id : dhGames[0].home.id;
+              weekPaired.add(otherId);
+              nightIdx++;
             }
-            finalPaired.add(t1.id);
-            const otherId = dhGames[0].home.id === t1.id ? dhGames[0].away.id : dhGames[0].home.id;
-            finalPaired.add(otherId);
+          }
+
+          // Second: fill with singles (1 per night, no team plays twice in singles)
+          let singleSafety = 0;
+          while (weekGames < 10 && weekGames < gamesLeft && singleSafety < 30) {
+            singleSafety++;
+            const needMore = teams.find(t =>
+              gamesPlayed[t.id] < targetGames[t.id] && weekTeamGames[t.id] < 2
+            );
+            if (!needMore) break;
+            const sg = pullSingleForTeam(needMore.id, null);
+            if (!sg) break;
+            const nightDay = regularNights[nightIdx % regularNights.length];
+            const d = getWeekDate(fwBase, nightDay);
+            sg.date = new Date(d);
+            sg.time = dhTimeSlots[0];
+            sg.week = fwNum;
+            sg.isDoubleHeader = false;
+            sg.isFinalWeek = true;
+            out.push(sg);
+            gamesPlayed[sg.home.id]++;
+            gamesPlayed[sg.away.id]++;
+            weekTeamGames[sg.home.id]++;
+            weekTeamGames[sg.away.id]++;
+            weekGames++;
             nightIdx++;
           }
-        }
 
-        // Second pass: fill remaining with singles
-        let singleSafety = 0;
-        while (gamesScheduled < remaining2 && singleSafety < 50) {
-          singleSafety++;
-          const needMore = teams.find(t => gamesPlayed[t.id] < targetGames[t.id]);
-          if (!needMore) break;
-          const sg = pullSingleForTeam(needMore.id, null);
-          if (!sg) break;
-          const nightDay = regularNights[nightIdx % regularNights.length];
-          const d = getWeekDate(finalWeekBase, nightDay);
-          sg.date = new Date(d);
-          sg.time = dhTimeSlots[0];
-          sg.week = finalWeekNum;
-          sg.isDoubleHeader = false;
-          sg.isFinalWeek = true;
-          out.push(sg);
-          gamesPlayed[sg.home.id]++;
-          gamesPlayed[sg.away.id]++;
-          gamesScheduled++;
-          nightIdx++;
-        }
+          gamesLeft = totalTarget - out.length;
+          console.log(`📅 Final week ${fwNum}: scheduled ${weekGames} games, ${gamesLeft} remaining`);
 
-        console.log(`📅 Final week ${finalWeekNum}: scheduled ${gamesScheduled} games (DHs + singles)`);
+          if (weekGames === 0) break; // safety: no progress
+          fwNum++;
+        }
       }
 
       // ── STEP 5: Validation ─────────────────────────────────────────────────
