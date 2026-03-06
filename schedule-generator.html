@@ -1636,59 +1636,84 @@
         : 12;
       const teams = scheduleConfig.selectedTeams;
       const numTeams = teams.length;
+      const isOddTeams = numTeams % 2 !== 0;
 
-      // Calculate total games needed
-      const totalGames = (numTeams * gamesPerTeam) / 2;
-      
-      console.log(`🎯 Generating schedule: ${numTeams} teams, ${gamesPerTeam} games each = ${totalGames} total games`);
+      console.log(`🎯 Generating schedule: ${numTeams} teams, ${gamesPerTeam} games each`);
 
-      // Generate round-robin schedule
-      const schedule = [];
-      const teamArray = [...teams];
-      
-      // If odd number of teams, add a "BYE"
-      if (numTeams % 2 !== 0) {
-        teamArray.push({ id: 'bye', name: 'BYE' });
+      // Helper: run one full round-robin pass, returning game objects
+      function roundRobinPass(teamArray, flip) {
+        const n = teamArray.length;
+        const passGames = [];
+        const arr = [...teamArray];
+        for (let round = 0; round < n - 1; round++) {
+          for (let i = 0; i < n / 2; i++) {
+            const a = arr[i];
+            const b = arr[n - 1 - i];
+            if (a.id !== 'bye' && b.id !== 'bye') {
+              passGames.push(flip ? { home: b, away: a } : { home: a, away: b });
+            }
+          }
+          const last = arr.pop();
+          arr.splice(1, 0, last);
+        }
+        return passGames;
       }
 
-      const n = teamArray.length;
-      // With odd teams + BYE, each round produces (n/2 - 1) real games.
-      // Run enough rounds so total real games >= totalGames before slicing.
-      const gamesPerRound = n / 2 - (numTeams % 2 !== 0 ? 1 : 0);
-      const roundsNeeded = Math.ceil(totalGames / gamesPerRound);
-      const rounds = Math.max(gamesPerTeam, roundsNeeded);
+      let finalSchedule = [];
 
-      // Round-robin algorithm
-      for (let round = 0; round < rounds; round++) {
-        const roundGames = [];
-        
-        for (let i = 0; i < n / 2; i++) {
-          const home = teamArray[i];
-          const away = teamArray[n - 1 - i];
-          
-          if (home.id !== 'bye' && away.id !== 'bye') {
-            // Alternate home/away each round
-            if (round % 2 === 0) {
-              roundGames.push({ home, away });
-            } else {
-              roundGames.push({ home: away, away: home });
-            }
+      if (!isOddTeams) {
+        // EVEN TEAMS (e.g. 10): run enough round-robin passes for each team to reach gamesPerTeam
+        const passesNeeded = gamesPerTeam / (numTeams - 1);
+        const teamArray = [...teams];
+        for (let p = 0; p < passesNeeded; p++) {
+          finalSchedule.push(...roundRobinPass(teamArray, p % 2 === 1));
+        }
+      } else {
+        // ODD TEAMS (e.g. 11): target every team plays exactly gamesPerTeam games.
+        // With 11 teams, gamesPerTeam=22: C(11,2)=55 pairs x2=110 base games + 11 singles = 121 total.
+        // Each team needs exactly 2 extra single-game matchups to go from 20 to 22.
+        // EXCEPT the Opening Day DH team -- its 2 extras are the OD DH pair (already scheduled there).
+        const teamArray = [...teams];
+
+        // Two full passes = every team plays every other team twice = 110 games, each team at 20
+        finalSchedule.push(...roundRobinPass(teamArray, false));
+        finalSchedule.push(...roundRobinPass(teamArray, true));
+
+        // 11 extra singles: each team appears exactly twice in this pool (2 extra games each = 22 total)
+        const extraGames = [];
+        const extraCount = new Map(teams.map(t => [t.id, 0]));
+        const pass3 = roundRobinPass(teamArray, false);
+
+        // Greedy: pick games where both teams still need extras, prefer DH team gets its 2 early
+        const dhTeamId = scheduleConfig.openingDayDHTeam;
+        // Sort so DH team matchups come first (those 2 will become the Opening Day DH)
+        const sortedPass3 = [...pass3].sort((a, b) => {
+          const aHasDH = (a.home.id === dhTeamId || a.away.id === dhTeamId) ? -1 : 1;
+          const bHasDH = (b.home.id === dhTeamId || b.away.id === dhTeamId) ? -1 : 1;
+          return aHasDH - bHasDH;
+        });
+
+        for (const game of sortedPass3) {
+          if (extraGames.length >= 11) break;
+          const h = extraCount.get(game.home.id) || 0;
+          const a = extraCount.get(game.away.id) || 0;
+          if (h < 2 && a < 2) {
+            extraGames.push(game);
+            extraCount.set(game.home.id, h + 1);
+            extraCount.set(game.away.id, a + 1);
           }
         }
 
-        // Rotate teams (keep first team fixed)
-        const last = teamArray.pop();
-        teamArray.splice(1, 0, last);
+        finalSchedule.push(...extraGames);
+        console.log(`📋 11-team: 110 base + ${extraGames.length} extras = ${finalSchedule.length} total`);
 
-        schedule.push(...roundGames);
+        const counts = Object.fromEntries(
+          teams.map(t => [t.name, finalSchedule.filter(g => g.home.id === t.id || g.away.id === t.id).length])
+        );
+        console.log('📊 Per-team counts:', counts);
       }
-      
-      console.log(`📋 Round-robin generated ${schedule.length} games`);
 
-      // Trim to exact number of games needed
-      const finalSchedule = schedule.slice(0, totalGames);
-      
-      console.log(`✂️ Trimmed to ${finalSchedule.length} games`);
+      console.log(`📋 Game pool: ${finalSchedule.length} games`);
 
       // Assign dates and times based on season type
       if (scheduleConfig.seasonType === 'fall') {
