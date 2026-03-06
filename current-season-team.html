@@ -1262,6 +1262,25 @@
     
   console.log('✅ Imports successful!');
 
+  // Fetch roster for a specific team from the centralized rosters collection
+  async function getRosterForTeam(seasonId, teamName) {
+    try {
+      const rosterRef = doc(db, 'rosters', seasonId, teamName);
+      const rosterDoc = await getDoc(rosterRef);
+      
+      if (rosterDoc.exists()) {
+        console.log(`✅ Loaded roster for ${teamName} from rosters/${seasonId}/${teamName}`);
+        return rosterDoc.data();
+      } else {
+        console.log(`⚠️ No roster found for ${teamName} in rosters/${seasonId}/${teamName}`);
+        return null;
+      }
+    } catch (error) {
+      console.error('❌ Error loading roster:', error);
+      return null;
+    }
+  }
+
   // Mobile menu toggle
   function toggleMobileMenu() {
     const menu = document.getElementById('mobileNavMenu');
@@ -1305,8 +1324,9 @@
         `${currentSeasonData.year} ${capitalize(currentSeasonData.season)} Season Performance`;
       
       // Fetch all data
-      const [games, batting, pitching] = await Promise.all([
+      const [games, rosterDoc, batting, pitching] = await Promise.all([
         getSeasonGames(seasonId),
+        getRosterForTeam(seasonId, teamName),
         getSeasonPlayerStatsOptimized(seasonId),
         getSeasonPitchingStatsOptimized(seasonId)
       ]);
@@ -1341,27 +1361,62 @@
       
       console.log('✅ Mapped games:', allGames.length);
       
-      // Map batting data - filter for this specific team
-      playerData = (batting || [])
-        .filter(p => {
-          const playerTeam = p.team || p.currentTeam || "";
-          return playerTeam.toLowerCase() === teamName.toLowerCase();
-        })
-        .map(p => ({
-          id: p.id || p.playerId,
-          name: p.playerName || p.name || p.id,
-          team: teamName,
-          games: Number(p.games) || 0,
-          atBats: Number(p.atBats) || 0,
-          hits: Number(p.hits) || 0,
-          runs: Number(p.runs) || 0,
-          walks: Number(p.walks) || 0,
-          acesBPI: p.acesBPI || "N/A",
-          battingAverage: p.battingAverage || 0,
-          onBasePercentage: p.onBasePercentage || 0
-        }));
-      
-      console.log(`✅ Filtered to ${playerData.length} players on team ${teamName}`);
+      // Use rosters collection as source of truth for team composition
+      // Fall back to batting stats if rosters collection is empty (backwards compatibility)
+      if (rosterDoc && rosterDoc.players && rosterDoc.players.length > 0) {
+        console.log(`✅ Loading from rosters collection: ${rosterDoc.players.length} players`);
+        
+        // Map roster data with stats lookup
+        playerData = rosterDoc.players.map(rosterPlayer => {
+          // Find matching stats for this player (by id or name)
+          const statsRecord = (batting || []).find(b => 
+            (b.id && b.id === rosterPlayer.id) || 
+            (b.playerId && b.playerId === rosterPlayer.id) ||
+            (b.playerName && b.playerName === rosterPlayer.name) ||
+            (b.name && b.name === rosterPlayer.name)
+          );
+          
+          return {
+            id: rosterPlayer.id,
+            name: rosterPlayer.name,
+            team: teamName,
+            games: (statsRecord && Number(statsRecord.games)) || 0,
+            atBats: (statsRecord && Number(statsRecord.atBats)) || 0,
+            hits: (statsRecord && Number(statsRecord.hits)) || 0,
+            runs: (statsRecord && Number(statsRecord.runs)) || 0,
+            walks: (statsRecord && Number(statsRecord.walks)) || 0,
+            acesBPI: (statsRecord && statsRecord.acesBPI) || "N/A",
+            battingAverage: (statsRecord && statsRecord.battingAverage) || 0,
+            onBasePercentage: (statsRecord && statsRecord.onBasePercentage) || 0
+          };
+        });
+        
+        console.log(`✅ Loaded ${playerData.length} players from rosters collection with stats`);
+      } else {
+        console.log('⚠️ Rosters collection empty, falling back to batting stats');
+        
+        // Fallback to batting stats (for backwards compatibility)
+        playerData = (batting || [])
+          .filter(p => {
+            const playerTeam = p.team || p.currentTeam || "";
+            return playerTeam.toLowerCase() === teamName.toLowerCase();
+          })
+          .map(p => ({
+            id: p.id || p.playerId,
+            name: p.playerName || p.name || p.id,
+            team: teamName,
+            games: Number(p.games) || 0,
+            atBats: Number(p.atBats) || 0,
+            hits: Number(p.hits) || 0,
+            runs: Number(p.runs) || 0,
+            walks: Number(p.walks) || 0,
+            acesBPI: p.acesBPI || "N/A",
+            battingAverage: p.battingAverage || 0,
+            onBasePercentage: p.onBasePercentage || 0
+          }));
+        
+        console.log(`✅ Filtered to ${playerData.length} players on team ${teamName} from batting stats`);
+      }
       
       // Fetch additional player info for baseball cards (photos, position, etc.)
       await loadPlayerExtraInfo();
