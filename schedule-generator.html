@@ -1673,48 +1673,35 @@
       } else {
         // ── ODD teams (11) ────────────────────────────────────────────────────
         // Target: every team plays exactly gamesPerTeam (22) games.
-        // 11 teams × 22 = 242 team-game slots = 121 total games.
-        // C(11,2) = 55 unique matchups.
-        // 55 × 2 = 110 "base" games  (pass1 + pass2) — each team at 20 games.
-        // 11 "extra" singles needed so each team gets +2 more = 22 total.
-        // Each extra single uses 2 team-slots, 11 extras = 22 slots / 11 teams = 2 extras per team. ✓
-        //
-        // Opening Day DH team already gets its 2 extras on Opening Day (the OD DH pair).
-        // The other 10 teams each get their 2 extras as single games in the final week.
-        // So: 1 extra matchup for the DH team + 10 extra matchups for the others = 11. ✓
+        // Math: 11 × 22 = 242 team-appearances = 121 total games.
+        // Pass1 + Pass2 = 110 games (each team plays every other team exactly twice = 20 games).
+        // Need 11 more singles so every team gets exactly +2 → 22 total.
+        // Solution: a Hamiltonian cycle on the 11 teams gives exactly 11 edges
+        // where every node (team) appears exactly twice. ✓
 
         // Pass 1 + Pass 2 = 110 base games
         finalSchedule.push(...rrPass([...teams], false));
         finalSchedule.push(...rrPass([...teams], true));
 
-        // 11 extra singles so every team goes from 20 base games to exactly 22.
-        // Pick 11 matchups from pass 3 where each team appears exactly twice.
-        const extraCount = new Map(teams.map(t => [t.id, 0]));
-        const extras = [];
-        const pass3 = rrPass([...teams], false);
-
-        for (const g of pass3) {
-          if (extras.length >= 11) break;
-          const h = extraCount.get(g.home.id) || 0;
-          const a = extraCount.get(g.away.id) || 0;
-          if (h < 2 && a < 2) {
-            extras.push(g);
-            extraCount.set(g.home.id, h + 1);
-            extraCount.set(g.away.id, a + 1);
-          }
+        // 11 extras via Hamiltonian cycle: teams[0]-teams[1]-...-teams[10]-teams[0]
+        // Every team appears in exactly 2 of these edges.
+        const n11 = teams.length; // 11
+        for (let i = 0; i < n11; i++) {
+          const home = teams[i];
+          const away = teams[(i + 1) % n11];
+          finalSchedule.push({ home, away });
         }
 
-        finalSchedule.push(...extras);
-        console.log(`📋 11-team pool: 110 base + ${extras.length} extras = ${finalSchedule.length} total`);
-
-
-        // Verify per-team counts
+        // Verify every team has exactly 22 games
         const counts = Object.fromEntries(
           teams.map(t => [t.name, finalSchedule.filter(g => g.home.id === t.id || g.away.id === t.id).length])
         );
-        console.log('📊 Per-team counts:', counts);
-      }
-
+        const vals = Object.values(counts);
+        const mn = Math.min(...vals), mx = Math.max(...vals);
+        console.log(`📋 Pool: ${finalSchedule.length} games (need 121). Per-team min=${mn} max=${mx}`);
+        if (finalSchedule.length !== 121 || mn !== 22 || mx !== 22) {
+          console.error('❌ Pool imbalance!', counts);
+        }
       console.log(`📋 Final pool: ${finalSchedule.length} games`);
 
       // Assign dates and times
