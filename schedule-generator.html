@@ -804,7 +804,7 @@
               </div>
               <div class="info-card" style="margin-bottom: 1rem;">
                 <strong>🎉 Opening Day — 6 Games, All Teams Play</strong>
-                <p style="margin-top: 0.5rem;">Opening Day is generated specially with <strong>6 games starting at 3:45 PM ET</strong>. 5 teams play single games (3:45–7:45 PM) and 1 team plays a doubleheader (7:45 &amp; 8:45 PM), so all 11 teams participate on Opening Day. You'll select the DH team in Step 3.</p>
+                <p style="margin-top: 0.5rem;">Opening Day is generated specially with <strong>6 games starting at 3:45 PM ET</strong>. All 11 teams play a single game (3:45–7:45 PM), then the DH team plays one additional game at 8:45 PM. You'll select the DH team in Step 3.</p>
               </div>
               <div class="form-group">
                 <label>How to handle the odd team each week?</label>
@@ -972,7 +972,7 @@
             <select id="openingDayDHTeam" style="width: 100%; padding: 0.75rem; border: 2px solid var(--border-color); border-radius: 8px; font-size: 1rem;">
               <option value="">— Select a team —</option>
             </select>
-            <p style="font-size: 0.85rem; color: var(--text-light); margin-top: 0.4rem;">This team will play two games on Opening Day (7:45 &amp; 8:45 PM ET). All other teams play one game.</p>
+            <p style="font-size: 0.85rem; color: var(--text-light); margin-top: 0.4rem;">This team plays their normal single game in one of the 3:45–7:45 PM slots, then plays one additional game at 8:45 PM. All other teams play one game only.</p>
           </div>
 
           <!-- Team Scheduling Restrictions -->
@@ -1631,124 +1631,116 @@
     }
 
     window.generateSchedule = function() {
-      const gamesPerTeam = scheduleConfig.seasonType === 'summer' 
-        ? scheduleConfig.summerGamesPerTeam 
+      const gamesPerTeam = scheduleConfig.seasonType === 'summer'
+        ? scheduleConfig.summerGamesPerTeam
         : 12;
       const teams = scheduleConfig.selectedTeams;
       const numTeams = teams.length;
-      const isOddTeams = numTeams % 2 !== 0;
 
-      console.log(`🎯 Generating schedule: ${numTeams} teams, ${gamesPerTeam} games each`);
+      console.log(`🎯 Generating: ${numTeams} teams × ${gamesPerTeam} games`);
 
-      // Helper: run one full round-robin pass, returning game objects
-      function roundRobinPass(teamArray, flip) {
-        const n = teamArray.length;
-        const passGames = [];
-        const arr = [...teamArray];
-        for (let round = 0; round < n - 1; round++) {
+      // Standard round-robin pass (n-1 rounds, each team plays every other team once)
+      function rrPass(arr, flip) {
+        const n = arr.length;
+        const games = [];
+        const a = [...arr];
+        for (let r = 0; r < n - 1; r++) {
           for (let i = 0; i < n / 2; i++) {
-            const a = arr[i];
-            const b = arr[n - 1 - i];
-            if (a.id !== 'bye' && b.id !== 'bye') {
-              passGames.push(flip ? { home: b, away: a } : { home: a, away: b });
-            }
+            const h = a[i], aw = a[n - 1 - i];
+            games.push(flip ? { home: aw, away: h } : { home: h, away: aw });
           }
-          const last = arr.pop();
-          arr.splice(1, 0, last);
+          a.splice(1, 0, a.pop()); // rotate keeping [0] fixed
         }
-        return passGames;
+        return games;
       }
 
       let finalSchedule = [];
 
-      if (!isOddTeams) {
-        // EVEN TEAMS (e.g. 10): run enough round-robin passes for each team to reach gamesPerTeam
-        const passesNeeded = gamesPerTeam / (numTeams - 1);
-        const teamArray = [...teams];
-        for (let p = 0; p < passesNeeded; p++) {
-          finalSchedule.push(...roundRobinPass(teamArray, p % 2 === 1));
+      if (numTeams % 2 === 0) {
+        // ── EVEN teams ────────────────────────────────────────────────────────
+        // Each full pass = (n-1) games per team.  For 10 teams: 2 passes = 18 games... 
+        // Actually for gamesPerTeam=22 with 10 teams we need 22/(n-1)=22/9 passes — not integer.
+        // So run full passes until we have enough, then trim to exact totalGames.
+        const totalGames = (numTeams * gamesPerTeam) / 2;
+        let pass = 0;
+        while (finalSchedule.length < totalGames) {
+          finalSchedule.push(...rrPass([...teams], pass % 2 === 1));
+          pass++;
+          if (pass > 20) break; // safety
         }
+        finalSchedule = finalSchedule.slice(0, totalGames);
+
       } else {
-        // ODD TEAMS (e.g. 11): target every team plays exactly gamesPerTeam games.
-        // With 11 teams, gamesPerTeam=22: C(11,2)=55 pairs x2=110 base games + 11 singles = 121 total.
-        // Each team needs exactly 2 extra single-game matchups to go from 20 to 22.
-        // EXCEPT the Opening Day DH team -- its 2 extras are the OD DH pair (already scheduled there).
-        const teamArray = [...teams];
+        // ── ODD teams (11) ────────────────────────────────────────────────────
+        // Target: every team plays exactly gamesPerTeam (22) games.
+        // 11 teams × 22 = 242 team-game slots = 121 total games.
+        // C(11,2) = 55 unique matchups.
+        // 55 × 2 = 110 "base" games  (pass1 + pass2) — each team at 20 games.
+        // 11 "extra" singles needed so each team gets +2 more = 22 total.
+        // Each extra single uses 2 team-slots, 11 extras = 22 slots / 11 teams = 2 extras per team. ✓
+        //
+        // Opening Day DH team already gets its 2 extras on Opening Day (the OD DH pair).
+        // The other 10 teams each get their 2 extras as single games in the final week.
+        // So: 1 extra matchup for the DH team + 10 extra matchups for the others = 11. ✓
 
-        // Two full passes = every team plays every other team twice = 110 games, each team at 20
-        finalSchedule.push(...roundRobinPass(teamArray, false));
-        finalSchedule.push(...roundRobinPass(teamArray, true));
+        // Pass 1 + Pass 2 = 110 base games
+        finalSchedule.push(...rrPass([...teams], false));
+        finalSchedule.push(...rrPass([...teams], true));
 
-        // 11 extra singles: each team appears exactly twice in this pool (2 extra games each = 22 total)
-        const extraGames = [];
-        const extraCount = new Map(teams.map(t => [t.id, 0]));
-        const pass3 = roundRobinPass(teamArray, false);
-
-        // Greedy: pick games where both teams still need extras, prefer DH team gets its 2 early
+        // Build 11 extra singles from pass 3, ensuring every team gets exactly 2 extras.
+        // The DH team’s 2 extras must be a single matchup (will become the OD DH pair).
         const dhTeamId = scheduleConfig.openingDayDHTeam;
-        // Sort so DH team matchups come first (those 2 will become the Opening Day DH)
-        const sortedPass3 = [...pass3].sort((a, b) => {
-          const aHasDH = (a.home.id === dhTeamId || a.away.id === dhTeamId) ? -1 : 1;
-          const bHasDH = (b.home.id === dhTeamId || b.away.id === dhTeamId) ? -1 : 1;
-          return aHasDH - bHasDH;
-        });
+        const extraCount = new Map(teams.map(t => [t.id, 0]));
+        const extras = [];
+        const pass3 = rrPass([...teams], false);
 
-        for (const game of sortedPass3) {
-          if (extraGames.length >= 11) break;
-          const h = extraCount.get(game.home.id) || 0;
-          const a = extraCount.get(game.away.id) || 0;
-          if (h < 2 && a < 2) {
-            extraGames.push(game);
-            extraCount.set(game.home.id, h + 1);
-            extraCount.set(game.away.id, a + 1);
+        // First, find one matchup for the DH team (its 2 extras come from this one pair)
+        if (dhTeamId) {
+          for (const g of pass3) {
+            if (g.home.id === dhTeamId || g.away.id === dhTeamId) {
+              const h = extraCount.get(g.home.id), a = extraCount.get(g.away.id);
+              if (h < 2 && a < 2) {
+                extras.push(g);
+                extraCount.set(g.home.id, h + 1);
+                extraCount.set(g.away.id, a + 1);
+                // DH team now has 1 extra; needs 1 more from a different matchup
+                // but both extras must be with the same opponent (they form the OD DH pair).
+                // Find the same matchup in pass 1 or 2 to use as game2.
+                // Actually: the OD DH pair is already in finalSchedule as two base games.
+                // We just need to mark those games; we do NOT need to add them to extras.
+                // So DH team’s extras = 0 additional singles needed here (the 2 OD games handle it).
+                extraCount.set(g.home.id, 2); // mark as done
+                extraCount.set(g.away.id, 2);
+                extras.pop(); // remove — OD DH already counts
+                break;
+              }
+            }
           }
         }
 
-        finalSchedule.push(...extraGames);
-        console.log(`📋 11-team: 110 base + ${extraGames.length} extras = ${finalSchedule.length} total`);
+        // Now fill remaining extras: each of the 10 non-DH teams needs 2 extras
+        for (const g of pass3) {
+          if (extras.length >= 11) break;
+          const h = extraCount.get(g.home.id) || 0;
+          const a = extraCount.get(g.away.id) || 0;
+          if (h < 2 && a < 2) {
+            extras.push(g);
+            extraCount.set(g.home.id, h + 1);
+            extraCount.set(g.away.id, a + 1);
+          }
+        }
 
+        finalSchedule.push(...extras);
+        console.log(`📋 11-team pool: 110 base + ${extras.length} extras = ${finalSchedule.length} total`);
+
+        // Verify per-team counts
         const counts = Object.fromEntries(
           teams.map(t => [t.name, finalSchedule.filter(g => g.home.id === t.id || g.away.id === t.id).length])
         );
         console.log('📊 Per-team counts:', counts);
       }
 
-      console.log(`📋 Game pool: ${finalSchedule.length} games`);
-
-      // Assign dates and times based on season type
-      if (scheduleConfig.seasonType === 'fall') {
-        assignFallSchedule(finalSchedule);
-      } else {
-        assignSummerSchedule(finalSchedule);
-      }
-
-      scheduleConfig.generatedSchedule = finalSchedule;
-
-      // Display schedule
-      displaySchedule(finalSchedule);
-
-      // Update stats
-      // Summer: 2 games per team per week (1 DH), so ~12 weeks for 23 games
-      // Fall: 1 game per team per week
-      const weeksNeeded = scheduleConfig.seasonType === 'fall' 
-        ? Math.ceil(gamesPerTeam) 
-        : Math.ceil(gamesPerTeam / 2); // Summer: 2 games per week (1 DH)
-        
-      document.getElementById('totalGames').textContent = finalSchedule.length;
-      document.getElementById('weeksNeeded').textContent = weeksNeeded;
-      document.getElementById('avgGamesPerTeam').textContent = gamesPerTeam;
-      
-      // Calculate balance score
-      const balanceScore = calculateBalanceScore(finalSchedule, teams);
-      document.getElementById('homeAwayBalance').innerHTML = 
-        `${balanceScore}% <span class="balance-indicator ${getBalanceClass(balanceScore)}">${getBalanceLabel(balanceScore)}</span>`;
-
-      // Show success message
-      document.getElementById('generationStatus').style.display = 'block';
-      document.getElementById('schedulePreview').style.display = 'block';
-      document.getElementById('regenerateBtn').style.display = 'inline-flex';
-      document.getElementById('step4Buttons').style.display = 'flex';
-    }
+      console.log(`📋 Final pool: ${finalSchedule.length} games`);
 
     function assignFallSchedule(schedule) {
       // Fall: Sundays only, 5 time slots, each team plays once per Sunday
@@ -1820,325 +1812,232 @@
     }
 
     function assignSummerSchedule(schedule) {
-      const startDate = new Date(scheduleConfig.startDate);
       const dhTimeSlots = ['7:45 PM', '8:45 PM'];
-      const openingDaySlots = ['3:45 PM', '4:45 PM', '5:45 PM', '6:45 PM', '7:45 PM', '8:45 PM'];
+      // Opening Day slots: 5 singles (3:45–7:45) then DH team (7:45 & 8:45 — intentional overlap per design)
+      const openingDaySlots = ['3:45 PM', '4:45 PM', '5:45 PM', '6:45 PM', '7:45 PM'];
       const numTeams = scheduleConfig.summerNumTeams || 10;
       const oddTeamFormat = scheduleConfig.oddTeamFormat || 'bye';
-      // gameDays[0] is always 0 (Sunday = Opening Day)
-      // gameDays[1..] are the weeknight indices (1=Mon, 2=Tue, etc.)
       const weeknightDays = (scheduleConfig.gameDays || [0,1,2,3,4]).filter(d => d !== 0);
 
-      // Find next Sunday for Opening Day
-      let currentDate = new Date(startDate);
-      while (currentDate.getDay() !== 0) {
-        currentDate.setDate(currentDate.getDate() + 1);
-      }
+      // Find Opening Day (first Sunday >= startDate)
+      let currentDate = new Date(scheduleConfig.startDate);
+      while (currentDate.getDay() !== 0) currentDate.setDate(currentDate.getDate() + 1);
       const openingDay = new Date(currentDate);
 
-      console.log(`📊 Summer schedule: ${numTeams} teams, ${schedule.length} games, weeknights: ${weeknightDays}`);
-      console.log(`🎉 Opening Day: ${openingDay.toDateString()}`);
+      console.log(`📊 Summer: ${numTeams} teams, ${schedule.length} games, OD: ${openingDay.toDateString()}`);
 
-      // Group games into DH pairs and singles
-      const matchupGames = new Map();
-      schedule.forEach(game => {
-        const matchupKey = [game.home.id, game.away.id].sort().join('-');
-        if (!matchupGames.has(matchupKey)) matchupGames.set(matchupKey, []);
-        matchupGames.get(matchupKey).push(game);
-      });
+      // ── STEP 1: Split game pool into DH pairs and singles ──────────────────
+      // A matchup that appears exactly twice becomes a DH pair.
+      // A matchup that appears once (the 11 extras) stays a single.
+      const matchupMap = new Map();
+      for (const g of schedule) {
+        const key = [g.home.id, g.away.id].sort().join('|');
+        if (!matchupMap.has(key)) matchupMap.set(key, []);
+        matchupMap.get(key).push(g);
+      }
 
-      const singleGames = [];
-      const doubleHeaderPairs = [];
-      matchupGames.forEach((games) => {
-        for (let i = 0; i < games.length; i += 2) {
-          if (i + 1 < games.length) {
-            doubleHeaderPairs.push({
-              game1: games[i], game2: games[i + 1],
-              team1: games[i].home.id, team2: games[i].away.id,
-              scheduled: false
-            });
-          } else {
-            singleGames.push(games[i]);
-          }
+      const dhPairs = [];   // { game1, game2, team1, team2, scheduled }
+      const singles = [];   // games played only once against that opponent
+
+      matchupMap.forEach(games => {
+        if (games.length >= 2) {
+          // First two become the DH pair
+          dhPairs.push({ game1: games[0], game2: games[1], team1: games[0].home.id, team2: games[0].away.id, scheduled: false });
+          // Any 3rd game (shouldn't happen but safety) goes to singles
+          for (let i = 2; i < games.length; i++) singles.push(games[i]);
+        } else {
+          singles.push(games[0]);
         }
       });
 
-      console.log(`📊 ${singleGames.length} single games, ${doubleHeaderPairs.length} DH pairs`);
+      console.log(`📋 ${dhPairs.length} DH pairs, ${singles.length} singles`);
 
-      const scheduledGames = [];
+      const out = [];
       let weekNumber = 1;
 
-      // ===== OPENING DAY (Sunday) =====
-      // 10 teams: 5 single games (all teams play once)
-      // 11 teams: 5 single games + 1 DH (6 games total, all 11 teams play, 1 team plays twice)
-      const teamsPlayedOpeningDay = new Set();
-      let openingDayGames = 0;
-      // 10 teams → 5 singles; 11 teams → 5 singles (fills 10 teams), then 1 DH for the remaining team
-      const openingDaySinglesTarget = Math.floor(numTeams / 2); // 5 for both 10 and 11 teams
+      // ── STEP 2: Opening Day ────────────────────────────────────────────────
+      // All 11 teams play on Opening Day:
+      //   5 singles (3:45-7:45 PM) cover ALL 11 teams including the DH team
+      //   1 extra single at 8:45 PM: DH team plays again vs a different opponent
+      // e.g: 3:45 Blue-Green, 4:45 Gold-Teal, 5:45 Orange-Red, 6:45 Carolina-Black,
+      //      7:45 Silver-Purple(DH team), 8:45 Army-Purple(DH team)
+      const odTeamsUsed = new Set();
+      const dhTeamId = numTeams === 11 ? (scheduleConfig.openingDayDHTeam || null) : null;
 
-      for (const game of singleGames) {
-        if (openingDayGames >= openingDaySinglesTarget) break;
-        if (teamsPlayedOpeningDay.has(game.home.id) || teamsPlayedOpeningDay.has(game.away.id)) continue;
-        game.date = new Date(openingDay);
-        game.time = openingDaySlots[openingDayGames];
-        game.week = weekNumber;
-        game.isDoubleHeader = false;
-        game.isOpeningDay = true;
-        game.scheduled = true;
-        scheduledGames.push(game);
-        teamsPlayedOpeningDay.add(game.home.id);
-        teamsPlayedOpeningDay.add(game.away.id);
-        openingDayGames++;
+      // Schedule 5 singles (slots 0-4: 3:45-7:45 PM) covering all teams including DH team
+      let odSlot = 0;
+      const remainingSingles = [...singles];
+      for (let i = 0; i < remainingSingles.length && odSlot < 5; i++) {
+        const g = remainingSingles[i];
+        if (odTeamsUsed.has(g.home.id) || odTeamsUsed.has(g.away.id)) continue;
+        g.date = new Date(openingDay);
+        g.time = openingDaySlots[odSlot++];
+        g.week = weekNumber;
+        g.isDoubleHeader = false;
+        g.isOpeningDay = true;
+        g.scheduled = true;
+        out.push(g);
+        odTeamsUsed.add(g.home.id);
+        odTeamsUsed.add(g.away.id);
+        remainingSingles.splice(i--, 1);
       }
 
-      for (const dh of doubleHeaderPairs) {
-        if (openingDayGames >= openingDaySinglesTarget) break;
-        if (dh.scheduled) continue;
-        if (teamsPlayedOpeningDay.has(dh.team1) || teamsPlayedOpeningDay.has(dh.team2)) continue;
-        dh.game1.date = new Date(openingDay);
-        dh.game1.time = openingDaySlots[openingDayGames];
-        dh.game1.week = weekNumber;
-        dh.game1.isDoubleHeader = false;
-        dh.game1.isOpeningDay = true;
-        scheduledGames.push(dh.game1);
-        singleGames.push(dh.game2);
-        dh.scheduled = true;
-        teamsPlayedOpeningDay.add(dh.team1);
-        teamsPlayedOpeningDay.add(dh.team2);
-        openingDayGames++;
-      }
-
-      // For 11 teams: the selected team plays a DH on Opening Day (slots 5 & 6)
-      if (numTeams === 11) {
-        const allTeamIds = scheduleConfig.selectedTeams.map(t => t.id);
-        const dhTeamId = scheduleConfig.openingDayDHTeam
-          || allTeamIds.find(id => !teamsPlayedOpeningDay.has(id)); // fallback if not set
-        if (dhTeamId) {
-          console.log(`🎯 11-team Opening Day: team ${dhTeamId} plays DH`);
-          // Find a DH pair for this team
-          const dhPair = doubleHeaderPairs.find(dh =>
-            !dh.scheduled && (dh.team1 === dhTeamId || dh.team2 === dhTeamId)
-          );
-          if (dhPair) {
-            dhPair.game1.date = new Date(openingDay);
-            dhPair.game1.time = dhTimeSlots[0];   // 7:45 PM
-            dhPair.game1.week = weekNumber;
-            dhPair.game1.isDoubleHeader = true;
-            dhPair.game1.dhGame = 1;
-            dhPair.game1.isOpeningDay = true;
-            scheduledGames.push(dhPair.game1);
-            dhPair.game2.date = new Date(openingDay);
-            dhPair.game2.time = dhTimeSlots[1];   // 8:45 PM
-            dhPair.game2.week = weekNumber;
-            dhPair.game2.isDoubleHeader = true;
-            dhPair.game2.dhGame = 2;
-            dhPair.game2.isOpeningDay = true;
-            scheduledGames.push(dhPair.game2);
-            dhPair.scheduled = true;
-            teamsPlayedOpeningDay.add(dhPair.team1);
-            teamsPlayedOpeningDay.add(dhPair.team2);
-            openingDayGames += 2;
-          }
+      // For 11 teams: DH team plays one extra single at 8:45 PM vs a different opponent
+      if (numTeams === 11 && dhTeamId) {
+        const extraIdx = remainingSingles.findIndex(g =>
+          g.home.id === dhTeamId || g.away.id === dhTeamId
+        );
+        if (extraIdx !== -1) {
+          const g = remainingSingles[extraIdx];
+          g.date = new Date(openingDay);
+          g.time = '8:45 PM';
+          g.week = weekNumber;
+          g.isDoubleHeader = false;
+          g.isOpeningDay = true;
+          g.scheduled = true;
+          out.push(g);
+          remainingSingles.splice(extraIdx, 1);
         }
       }
 
-      console.log(`🎉 Opening Day: ${openingDayGames} games scheduled`);
+      console.log(`🎉 Opening Day: ${out.length} games`);
 
-      // ===== WEEK 1 WEEKNIGHTS =====
-      // For 10 teams: Mon-Thu 4 DHs (8 teams get DH week 1, 2 rest)
-      // For 11 teams: distribute available DH nights across weeknight days
-      const teamsWithDHWeek1 = new Set();
-      let week1DHCount = 0;
-      const week1DHMax = weeknightDays.length; // One DH per available night
-
-      for (let i = 0; i < weeknightDays.length; i++) {
-        const dayOfWeek = weeknightDays[i];
-        const nightDate = new Date(openingDay);
-        // Find the correct date for this day of week in the same week
-        const diff = dayOfWeek - nightDate.getDay(); // diff will be positive (Mon=1,Tue=2 etc vs Sun=0)
-        nightDate.setDate(nightDate.getDate() + diff);
-
-        // For 11 teams with doubleDH format: allow one team to play twice this week
-        for (const dh of doubleHeaderPairs) {
-          if (dh.scheduled) continue;
-          if (teamsWithDHWeek1.has(dh.team1) || teamsWithDHWeek1.has(dh.team2)) continue;
-          dh.game1.date = new Date(nightDate);
-          dh.game1.time = dhTimeSlots[0];
-          dh.game1.week = weekNumber;
-          dh.game1.isDoubleHeader = true;
-          dh.game1.dhGame = 1;
-          scheduledGames.push(dh.game1);
-          dh.game2.date = new Date(nightDate);
-          dh.game2.time = dhTimeSlots[1];
-          dh.game2.week = weekNumber;
-          dh.game2.isDoubleHeader = true;
-          dh.game2.dhGame = 2;
-          scheduledGames.push(dh.game2);
-          dh.scheduled = true;
-          teamsWithDHWeek1.add(dh.team1);
-          teamsWithDHWeek1.add(dh.team2);
-          week1DHCount++;
-          break;
+      // ── STEP 3: Week 1 weeknights ─────────────────────────────────────────
+      // One DH per available weeknight, no team plays twice
+      const week1Used = new Set();
+      for (const dayOfWeek of weeknightDays) {
+        const d = new Date(openingDay);
+        d.setDate(d.getDate() + (dayOfWeek - d.getDay()));
+        for (const pair of dhPairs) {
+          if (pair.scheduled) continue;
+          if (week1Used.has(pair.team1) || week1Used.has(pair.team2)) continue;
+          pair.game1.date = new Date(d); pair.game1.time = dhTimeSlots[0];
+          pair.game1.week = weekNumber; pair.game1.isDoubleHeader = true; pair.game1.dhGame = 1;
+          pair.game2.date = new Date(d); pair.game2.time = dhTimeSlots[1];
+          pair.game2.week = weekNumber; pair.game2.isDoubleHeader = true; pair.game2.dhGame = 2;
+          out.push(pair.game1, pair.game2);
+          pair.scheduled = true;
+          week1Used.add(pair.team1);
+          week1Used.add(pair.team2);
+          break; // one DH per night
         }
       }
-      console.log(`📅 Week 1 weeknights: ${week1DHCount} DHs scheduled`);
 
-      // ===== WEEK 2+: Weekly DHs =====
+      // ── STEP 4: Subsequent weeks ──────────────────────────────────────────
       weekNumber = 2;
-      currentDate = new Date(openingDay);
-      currentDate.setDate(currentDate.getDate() + 7); // Move to next Sunday
-
-      // For 11-team bye rotation: track which team is on bye each week
-      let byeTeamIndex = 0;
+      let byeIndex = 0;
       const teamsList = scheduleConfig.selectedTeams;
 
-      while (doubleHeaderPairs.some(dh => !dh.scheduled)) {
-        const teamsPlayedThisWeek = new Set();
-        let weekDHCount = 0;
+      while (dhPairs.some(p => !p.scheduled)) {
+        currentDate = new Date(openingDay);
+        currentDate.setDate(currentDate.getDate() + weekNumber * 7);
 
-        // 11-team: determine bye or doubleDH team this week
-        let byeTeamThisWeek = null;
-        let doubleDHTeamThisWeek = null;
+        const weekUsed = new Set();
+        let byeTeam = null;
 
-        if (numTeams === 11) {
-          if (oddTeamFormat === 'bye') {
-            byeTeamThisWeek = teamsList[byeTeamIndex % teamsList.length].id;
-            byeTeamIndex++;
-            console.log(`📅 Week ${weekNumber}: bye team = ${byeTeamThisWeek}`);
-          } else {
-            // doubleDH: find a team that has unscheduled pairs and allow them to play twice
-            doubleDHTeamThisWeek = null; // will be determined dynamically below
-          }
+        if (numTeams === 11 && oddTeamFormat === 'bye') {
+          byeTeam = teamsList[byeIndex % teamsList.length].id;
+          byeIndex++;
         }
 
-        // Schedule Sunday DH first (if 11 teams, use Sunday as extra DH night)
-        // For 10 teams: Sunday is rest (next week's Opening Day equiv handled by weekly pattern)
-        // For 11 teams: Sunday can host 1 DH (the "extra" night)
-        const allNights = numTeams === 11 
-          ? [0, ...weeknightDays]   // Include Sunday for 11-team weeks
-          : weeknightDays;          // Only weeknights for 10-team
+        // For 11 teams include Sunday as an extra DH night; for 10 teams weeknights only
+        const nights = numTeams === 11 ? [0, ...weeknightDays] : weeknightDays;
 
-        for (const dayOfWeek of allNights) {
-          const nightDate = new Date(currentDate);
-          // currentDate is already set to Sunday of this week
-          const diff = dayOfWeek - nightDate.getDay();
-          nightDate.setDate(nightDate.getDate() + (diff < 0 ? diff + 7 : diff));
+        for (const dayOfWeek of nights) {
+          const d = new Date(currentDate);
+          const diff = dayOfWeek - d.getDay();
+          d.setDate(d.getDate() + (diff < 0 ? diff + 7 : diff));
 
-          for (const dh of doubleHeaderPairs) {
-            if (dh.scheduled) continue;
-            // Skip bye team
-            if (byeTeamThisWeek && (dh.team1 === byeTeamThisWeek || dh.team2 === byeTeamThisWeek)) continue;
-            if (teamsPlayedThisWeek.has(dh.team1) || teamsPlayedThisWeek.has(dh.team2)) continue;
-
-            dh.game1.date = new Date(nightDate);
-            dh.game1.time = dhTimeSlots[0];
-            dh.game1.week = weekNumber;
-            dh.game1.isDoubleHeader = true;
-            dh.game1.dhGame = 1;
-            scheduledGames.push(dh.game1);
-
-            dh.game2.date = new Date(nightDate);
-            dh.game2.time = dhTimeSlots[1];
-            dh.game2.week = weekNumber;
-            dh.game2.isDoubleHeader = true;
-            dh.game2.dhGame = 2;
-            scheduledGames.push(dh.game2);
-
-            dh.scheduled = true;
-            teamsPlayedThisWeek.add(dh.team1);
-            teamsPlayedThisWeek.add(dh.team2);
-            weekDHCount++;
+          for (const pair of dhPairs) {
+            if (pair.scheduled) continue;
+            if (byeTeam && (pair.team1 === byeTeam || pair.team2 === byeTeam)) continue;
+            if (weekUsed.has(pair.team1) || weekUsed.has(pair.team2)) continue;
+            pair.game1.date = new Date(d); pair.game1.time = dhTimeSlots[0];
+            pair.game1.week = weekNumber; pair.game1.isDoubleHeader = true; pair.game1.dhGame = 1;
+            pair.game2.date = new Date(d); pair.game2.time = dhTimeSlots[1];
+            pair.game2.week = weekNumber; pair.game2.isDoubleHeader = true; pair.game2.dhGame = 2;
+            out.push(pair.game1, pair.game2);
+            pair.scheduled = true;
+            weekUsed.add(pair.team1);
+            weekUsed.add(pair.team2);
             break;
           }
         }
 
-        // For 11 teams doubleDH format: one team can play a second DH this week
+        // doubleDH: allow one team to play an extra DH this week
         if (numTeams === 11 && oddTeamFormat === 'doubleDH') {
-          // Find an unscheduled DH and schedule it even if one team already played
-          for (const extraNight of weeknightDays) {
-            let foundExtra = false;
-            const extraDate = new Date(currentDate);
-            const diff = extraNight - extraDate.getDay();
-            extraDate.setDate(extraDate.getDate() + (diff < 0 ? diff + 7 : diff));
-
-            for (const dh of doubleHeaderPairs) {
-              if (dh.scheduled) continue;
-              // Allow one team to play twice — but not both teams already played
-              const team1Played = teamsPlayedThisWeek.has(dh.team1);
-              const team2Played = teamsPlayedThisWeek.has(dh.team2);
-              if (team1Played && team2Played) continue; // Both already played, skip
-
-              // Only schedule this as the "extra" DH — mark with doubleDH flag
-              dh.game1.date = new Date(extraDate);
-              dh.game1.time = dhTimeSlots[0];
-              dh.game1.week = weekNumber;
-              dh.game1.isDoubleHeader = true;
-              dh.game1.dhGame = 1;
-              dh.game1.isExtraDH = true;
-              scheduledGames.push(dh.game1);
-
-              dh.game2.date = new Date(extraDate);
-              dh.game2.time = dhTimeSlots[1];
-              dh.game2.week = weekNumber;
-              dh.game2.isDoubleHeader = true;
-              dh.game2.dhGame = 2;
-              dh.game2.isExtraDH = true;
-              scheduledGames.push(dh.game2);
-
-              dh.scheduled = true;
-              teamsPlayedThisWeek.add(dh.team1);
-              teamsPlayedThisWeek.add(dh.team2);
-              weekDHCount++;
-              foundExtra = true;
+          for (const dayOfWeek of weeknightDays) {
+            const d = new Date(currentDate);
+            const diff = dayOfWeek - d.getDay();
+            d.setDate(d.getDate() + (diff < 0 ? diff + 7 : diff));
+            let found = false;
+            for (const pair of dhPairs) {
+              if (pair.scheduled) continue;
+              if (weekUsed.has(pair.team1) && weekUsed.has(pair.team2)) continue;
+              pair.game1.date = new Date(d); pair.game1.time = dhTimeSlots[0];
+              pair.game1.week = weekNumber; pair.game1.isDoubleHeader = true; pair.game1.dhGame = 1; pair.game1.isExtraDH = true;
+              pair.game2.date = new Date(d); pair.game2.time = dhTimeSlots[1];
+              pair.game2.week = weekNumber; pair.game2.isDoubleHeader = true; pair.game2.dhGame = 2; pair.game2.isExtraDH = true;
+              out.push(pair.game1, pair.game2);
+              pair.scheduled = true;
+              weekUsed.add(pair.team1);
+              weekUsed.add(pair.team2);
+              found = true;
               break;
             }
-            if (foundExtra) break;
+            if (found) break;
           }
         }
 
-        console.log(`📅 Week ${weekNumber}: ${weekDHCount} DHs scheduled`);
-
-        if (weekDHCount === 0) {
-          console.warn('⚠️ No more DHs could be scheduled');
+        const scheduled = dhPairs.filter(p => !p.scheduled).length;
+        if (scheduled === dhPairs.filter(p => !p.scheduled).length && weekUsed.size === 0) {
+          console.warn('⚠️ No progress this week, stopping');
           break;
         }
 
-        currentDate.setDate(currentDate.getDate() + 7);
         weekNumber++;
-
-        if (weekNumber > 30) {
-          console.warn('⚠️ Reached 30 weeks, stopping');
-          break;
-        }
+        if (weekNumber > 30) { console.warn('⚠️ Safety stop at 30 weeks'); break; }
       }
 
-      // Schedule any remaining single games
-      const remainingSingles = singleGames.filter(g => !g.scheduled);
+      // ── STEP 5: Final week — remaining singles ──────────────────────────────
+      // These are the "extra" single games for 11-team schedule
+      // Schedule them on weeknights of the next available week, one per night
       if (remainingSingles.length > 0) {
-        console.log(`📋 ${remainingSingles.length} remaining single games to schedule`);
-        for (const game of remainingSingles) {
-          if (game.scheduled) continue;
-          game.date = new Date(currentDate);
-          game.time = dhTimeSlots[0];
-          game.week = weekNumber;
-          game.isDoubleHeader = false;
-          game.scheduled = true;
-          scheduledGames.push(game);
-          currentDate.setDate(currentDate.getDate() + 1);
+        const finalWeekBase = new Date(openingDay);
+        finalWeekBase.setDate(finalWeekBase.getDate() + weekNumber * 7);
+        let nightIdx = 0;
+        const finalNights = [...weeknightDays];
+        for (const g of remainingSingles) {
+          if (g.scheduled) continue;
+          const d = new Date(finalWeekBase);
+          const dayOfWeek = finalNights[nightIdx % finalNights.length];
+          const diff = dayOfWeek - d.getDay();
+          d.setDate(d.getDate() + (diff < 0 ? diff + 7 : diff));
+          // advance week if needed to avoid stacking
+          if (nightIdx > 0 && nightIdx % finalNights.length === 0) {
+            finalWeekBase.setDate(finalWeekBase.getDate() + 7);
+          }
+          g.date = new Date(d);
+          g.time = dhTimeSlots[0]; // 7:45 PM
+          g.week = weekNumber + Math.floor(nightIdx / finalNights.length);
+          g.isDoubleHeader = false;
+          g.scheduled = true;
+          out.push(g);
+          nightIdx++;
         }
       }
 
+      // ── STEP 6: Write back into schedule array, sort, number ──────────────
       schedule.length = 0;
-      scheduledGames.forEach(game => schedule.push(game));
+      out.forEach(g => schedule.push(g));
 
-      const allSlots = [...openingDaySlots, ...dhTimeSlots];
+      const slotOrder = ['3:45 PM', '4:45 PM', '5:45 PM', '6:45 PM', '7:45 PM', '8:45 PM'];
       schedule.sort((a, b) => {
-        const dateCompare = a.date - b.date;
-        if (dateCompare !== 0) return dateCompare;
-        return allSlots.indexOf(a.time) - allSlots.indexOf(b.time);
+        const dc = a.date - b.date;
+        if (dc !== 0) return dc;
+        return slotOrder.indexOf(a.time) - slotOrder.indexOf(b.time);
       });
-
-      schedule.forEach((game, idx) => { game.gameNumber = idx + 1; });
+      schedule.forEach((g, i) => { g.gameNumber = i + 1; });
 
       console.log(`✅ Final: ${schedule.length} games over ${weekNumber} weeks`);
     }
