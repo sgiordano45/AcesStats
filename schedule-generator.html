@@ -1881,22 +1881,7 @@
 
       console.log(`📅 Wk1 sit: ${sit3.map(t => t.name).join(', ')}`);
       console.log(`📅 Double-bye (wk12 DH): ${doubleBye.map(t => t.name).join(' vs ')}`);
-
-      // Bye rotation for weeks 2-11 (10 entries)
-      const byeRotation = [];
-      const sbShuf = shuffle(singleBye);
-      byeRotation.push(doubleBye[0].id);  // Wk2
-      byeRotation.push(sbShuf[0].id);     // Wk3
-      byeRotation.push(doubleBye[1].id);  // Wk4
-      byeRotation.push(sbShuf[1].id);     // Wk5
-      byeRotation.push(sbShuf[2].id);     // Wk6
-      byeRotation.push(sbShuf[3].id);     // Wk7
-      byeRotation.push(doubleBye[0].id);  // Wk8 (2nd bye)
-      byeRotation.push(sbShuf[4].id);     // Wk9
-      byeRotation.push(doubleBye[1].id);  // Wk10 (2nd bye)
-      byeRotation.push(sbShuf[5].id);     // Wk11
-
-      console.log(`📅 Byes: ${byeRotation.map((id, i) => `Wk${i+2}=${teams.find(t=>t.id===id)?.name}`).join(', ')}`);
+      console.log(`📅 Single-bye: ${singleBye.map(t => t.name).join(', ')}`);
 
       // Helper to schedule a DH pair
       function scheduleDH(dh, date, weekNum) {
@@ -1940,52 +1925,71 @@
       // ── STEP 4: Wks 2–11 — 5 DHs Sun–Thu, 1 bye ─────────────────────────
       const regularNights = [0, 1, 2, 3, 4];
 
+      // Track bye counts to enforce: sit3 get 0 byes, singleBye get 1, doubleBye get 2
+      const byesTaken = Object.fromEntries(teams.map(t => [t.id, 0]));
+      const maxByes = {};
+      sit3.forEach(t => { maxByes[t.id] = 0; });
+      singleBye.forEach(t => { maxByes[t.id] = 1; });
+      doubleBye.forEach(t => { maxByes[t.id] = 2; });
+
       for (let w = 0; w < 10; w++) {
         const weekNum = w + 2;
         const weekBase = new Date(openingDay);
         weekBase.setDate(weekBase.getDate() + (weekNum - 1) * 7);
-        const byeTeamId = byeRotation[w];
-        const activeIds = new Set(teams.filter(t => t.id !== byeTeamId).map(t => t.id));
 
-        // Build candidates
-        const candidates = [];
-        for (const [key, pairs] of dhByKey) {
-          if (pairs.length === 0) continue;
-          const [id1, id2] = key.split('|');
-          if (activeIds.has(id1) && activeIds.has(id2)) {
-            candidates.push({ key, id1, id2, remaining: pairs.length });
+        // Smart bye: try each eligible team, pick the one that yields 5 DHs
+        // Eligible = hasn't used all their byes yet
+        const byeEligible = teams.filter(t => byesTaken[t.id] < maxByes[t.id]);
+        // Also consider teams that already maxed byes as fallback
+        const allCandidates = [...shuffle(byeEligible), ...shuffle(teams.filter(t => byesTaken[t.id] >= maxByes[t.id]))];
+
+        let bestBye = null, bestDHs = [], bestCount = -1;
+
+        for (const byeCandidate of allCandidates) {
+          const activeIds = new Set(teams.filter(t => t.id !== byeCandidate.id).map(t => t.id));
+          const testCandidates = [];
+          for (const [key, pairs] of dhByKey) {
+            if (pairs.length === 0) continue;
+            const [id1, id2] = key.split('|');
+            if (activeIds.has(id1) && activeIds.has(id2)) {
+              testCandidates.push({ key, id1, id2, remaining: pairs.length });
+            }
           }
+          const tO = {};
+          teams.forEach(t => { tO[t.id] = 0; });
+          for (const c of testCandidates) { tO[c.id1]++; tO[c.id2]++; }
+          testCandidates.sort((a, b) => {
+            if (a.remaining !== b.remaining) return a.remaining - b.remaining;
+            return Math.min(tO[a.id1], tO[a.id2]) - Math.min(tO[b.id1], tO[b.id2]);
+          });
+          const testPaired = new Set();
+          const testDHs = [];
+          for (const c of testCandidates) {
+            if (testPaired.has(c.id1) || testPaired.has(c.id2)) continue;
+            testDHs.push(c);
+            testPaired.add(c.id1); testPaired.add(c.id2);
+            if (testDHs.length >= 5) break;
+          }
+          if (testDHs.length > bestCount) {
+            bestCount = testDHs.length;
+            bestDHs = testDHs;
+            bestBye = byeCandidate;
+          }
+          if (testDHs.length === 5 && byesTaken[byeCandidate.id] < maxByes[byeCandidate.id]) break;
         }
 
-        // Sort: fewest remaining first (use-or-lose), then most constrained
-        const tOpts = {};
-        teams.forEach(t => { tOpts[t.id] = 0; });
-        for (const c of candidates) { tOpts[c.id1]++; tOpts[c.id2]++; }
-        candidates.sort((a, b) => {
-          if (a.remaining !== b.remaining) return a.remaining - b.remaining;
-          return Math.min(tOpts[a.id1], tOpts[a.id2]) - Math.min(tOpts[b.id1], tOpts[b.id2]);
-        });
+        byesTaken[bestBye.id]++;
 
-        // Greedy match 5 DHs
-        const weekPaired = new Set();
-        const weekDHs = [];
-        for (const c of candidates) {
-          if (weekPaired.has(c.id1) || weekPaired.has(c.id2)) continue;
-          weekDHs.push(c);
-          weekPaired.add(c.id1); weekPaired.add(c.id2);
-          if (weekDHs.length >= 5) break;
-        }
-
-        for (let p = 0; p < weekDHs.length; p++) {
-          const c = weekDHs[p];
+        for (let p = 0; p < bestDHs.length; p++) {
+          const c = bestDHs[p];
           const dh = dhByKey.get(c.key).shift();
           scheduleDH(dh, getWeekDate(weekBase, regularNights[p]), weekNum);
         }
 
-        if (weekDHs.length < 5) {
-          console.warn(`⚠️ Week ${weekNum}: only ${weekDHs.length} DHs`);
+        if (bestDHs.length < 5) {
+          console.warn(`⚠️ Week ${weekNum}: only ${bestDHs.length} DHs`);
         }
-        console.log(`📅 Week ${weekNum}: ${weekDHs.length} DHs, bye=${teams.find(t=>t.id===byeTeamId)?.name}`);
+        console.log(`📅 Week ${weekNum}: ${bestDHs.length} DHs, bye=${bestBye.name}`);
       }
 
       // ── STEP 5: Wk12 — Sun 1 DH + Mon–Thu 8 singles (2/night) ────────────
