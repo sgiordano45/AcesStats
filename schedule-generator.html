@@ -2043,29 +2043,59 @@
         }
       }
 
-      // Mon–Thu: 8 singles, 2 per night
-      // Track singles played per team across wk12+wk13 — each team must play exactly 2 singles total
+      // ── STEP 5: Wk12 + Wk13 — schedule all 11 singles ───────────────────────
+      // Strategy: pre-select 3 non-conflicting singles for wk13 Sunday first,
+      // then schedule the remaining 8 across wk12 Mon–Thu (4 nights × 2).
+      // This guarantees all 11 are placed with no same-night team conflicts.
       const singlesPerTeam = Object.fromEntries(teams.map(t => [t.id, 0]));
-      const wk12Nights = [1, 2, 3, 4];
-      const wk12Used = {};
-      teams.forEach(t => { wk12Used[t.id] = 0; });
-      // Account for DH teams already scheduled in week 12
-      out.filter(g => g.week === 12).forEach(g => {
-        wk12Used[g.home.id]++; wk12Used[g.away.id]++;
-      });
 
+      // Find 3 singles for wk13 that involve 6 distinct teams (no shared teams)
+      let wk13Indices = null;
+      outer: for (let i = 0; i < singles.length - 2; i++) {
+        for (let j = i + 1; j < singles.length - 1; j++) {
+          for (let k = j + 1; k < singles.length; k++) {
+            const teams3 = [
+              singles[i].home.id, singles[i].away.id,
+              singles[j].home.id, singles[j].away.id,
+              singles[k].home.id, singles[k].away.id
+            ];
+            if (new Set(teams3).size === 6) {
+              wk13Indices = [i, j, k];
+              break outer;
+            }
+          }
+        }
+      }
+      if (!wk13Indices) {
+        console.error('❌ Could not find 3 non-conflicting singles for wk13');
+        wk13Indices = [0, 1, 2]; // fallback
+      }
+
+      const wk13Singles = wk13Indices.map(i => singles[i]);
+      const wk12Singles = singles.filter((_, i) => !wk13Indices.includes(i));
+
+      // Schedule wk12 singles: 4 nights × 2 games, no same-night team conflicts
+      // Sort most-constrained first (teams appearing most in remaining singles)
+
+      const teamFreq = {};
+      teams.forEach(t => { teamFreq[t.id] = 0; });
+      wk12Singles.forEach(g => { teamFreq[g.home.id]++; teamFreq[g.away.id]++; });
+      wk12Singles.sort((a, b) =>
+        (teamFreq[b.home.id] + teamFreq[b.away.id]) - (teamFreq[a.home.id] + teamFreq[a.away.id])
+      );
+
+      const wk12Nights = [1, 2, 3, 4];
       let singlesScheduled = 0;
+      const wk12Remaining = [...wk12Singles];
+
       for (const nightDay of wk12Nights) {
         const d = getWeekDate(wk12Base, nightDay);
-        let nightGames = 0;
         const playingTonight = new Set();
-        for (let si = singles.length - 1; si >= 0 && nightGames < 2; si--) {
-          const g = singles[si];
-          // Skip if team already played in wk12 (DH), already has 2 singles, or plays twice tonight
-          if (wk12Used[g.home.id] >= 2 || wk12Used[g.away.id] >= 2) continue;
-          if (singlesPerTeam[g.home.id] >= 2 || singlesPerTeam[g.away.id] >= 2) continue;
+        let nightGames = 0;
+        for (let si = wk12Remaining.length - 1; si >= 0 && nightGames < 2; si--) {
+          const g = wk12Remaining[si];
           if (playingTonight.has(g.home.id) || playingTonight.has(g.away.id)) continue;
-          singles.splice(si, 1);
+          wk12Remaining.splice(si, 1);
           g.date = new Date(d);
           g.time = nightGames === 0 ? '7:45 PM' : '8:45 PM';
           g.week = 12;
@@ -2073,40 +2103,33 @@
           g.isFinalWeek = true;
           out.push(g);
           gamesPlayed[g.home.id]++; gamesPlayed[g.away.id]++;
-          wk12Used[g.home.id]++; wk12Used[g.away.id]++;
           singlesPerTeam[g.home.id]++; singlesPerTeam[g.away.id]++;
           playingTonight.add(g.home.id); playingTonight.add(g.away.id);
           singlesScheduled++;
           nightGames++;
         }
       }
+      if (wk12Remaining.length > 0) {
+        console.warn(`⚠️ Wk12: ${wk12Remaining.length} singles could not be placed`);
+      }
       console.log(`📅 Wk12: 1 DH + ${singlesScheduled} singles`);
 
-      // ── STEP 6: Wk13 — remaining singles on Sunday (up to 3) ─────────────
+      // ── STEP 6: Wk13 — 3 pre-selected singles on Sunday ──────────────────
       const wk13Base = new Date(openingDay);
       wk13Base.setDate(wk13Base.getDate() + 12 * 7);
       const wk13Sunday = getWeekDate(wk13Base, 0);
 
-      let wk13Count = 0;
-      const playingWk13 = new Set();
-      for (let si = singles.length - 1; si >= 0 && wk13Count < 3; si--) {
-        const g = singles[si];
-        // Skip if either team already has 2 singles, or plays twice on wk13 Sunday
-        if (singlesPerTeam[g.home.id] >= 2 || singlesPerTeam[g.away.id] >= 2) continue;
-        if (playingWk13.has(g.home.id) || playingWk13.has(g.away.id)) continue;
-        singles.splice(si, 1);
+      wk13Singles.forEach((g, idx) => {
         g.date = new Date(wk13Sunday);
-        g.time = openingDaySlots[wk13Count];
+        g.time = openingDaySlots[idx];
         g.week = 13;
         g.isDoubleHeader = false;
         g.isFinalWeek = true;
         out.push(g);
         gamesPlayed[g.home.id]++; gamesPlayed[g.away.id]++;
         singlesPerTeam[g.home.id]++; singlesPerTeam[g.away.id]++;
-        playingWk13.add(g.home.id); playingWk13.add(g.away.id);
-        wk13Count++;
-      }
-      console.log(`📅 Wk13: ${wk13Count} singles`);
+      });
+      console.log(`📅 Wk13: ${wk13Singles.length} singles`);
 
       // Warn if any team doesn't have exactly 2 singles
       const singlesCheck = teams.every(t => singlesPerTeam[t.id] === 2);
