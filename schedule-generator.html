@@ -1777,7 +1777,7 @@
       const odDHTeamId = numTeams === 11 ? (scheduleConfig.openingDayDHTeam || null) : null;
       const teams = scheduleConfig.selectedTeams;
 
-      console.log(`📊 Summer 11-team: pool=${schedule.length} games, OD: ${openingDay.toDateString()}, OD DH team: ${odDHTeamId}`);
+      console.log(`📊 Summer 11-team: pool=${schedule.length} games, OD: ${openingDay.toDateString()}`);
 
       // ── Helpers ────────────────────────────────────────────────────────────
       function getWeekDate(weekBase, dayOfWeek) {
@@ -1796,10 +1796,7 @@
         return a;
       }
 
-      // ── STEP 0: Separate pool into DH pairs and singles ───────────────────
-      // Matchups with 2+ games → DH pair (take 2). Extras → singles.
-      // From the pool: 55 matchups × 2 = 110 (DH pairs) + 11 Hamiltonian = 121.
-      // Matchups with 2 games → 1 DH pair. Matchups with 3 → 1 DH pair + 1 single.
+      // ── STEP 0: Separate pool into 55 DH pairs + 11 singles ──────────────
       const matchupMap = new Map();
       for (const g of schedule) {
         const key = [g.home.id, g.away.id].sort().join('|');
@@ -1807,81 +1804,50 @@
         matchupMap.get(key).push(g);
       }
 
-      const dhPool = new Map();  // key → [game1, game2] pairs available
-      const singles = [];        // individual games for finals week
+      const singles = [];
+      const dhByKey = new Map(); // key → array of { game1, game2, id1, id2 }
 
       matchupMap.forEach((games, key) => {
-        const pairs = [];
-        let i = 0;
-        // Try to pair games with opposite home/away
-        const used = new Set();
-        const homeGroups = {};
-        games.forEach((g, idx) => {
-          const hid = g.home.id;
-          if (!homeGroups[hid]) homeGroups[hid] = [];
-          homeGroups[hid].push(idx);
-        });
-        const orientations = Object.keys(homeGroups);
-        if (orientations.length === 2) {
-          // Pair one from each orientation
-          const [o1, o2] = orientations;
-          const min = Math.min(homeGroups[o1].length, homeGroups[o2].length);
-          for (let j = 0; j < min; j++) {
-            pairs.push([games[homeGroups[o1][j]], games[homeGroups[o2][j]]]);
-            used.add(homeGroups[o1][j]);
-            used.add(homeGroups[o2][j]);
-          }
-        }
-        // Any remaining unpaired games
-        const remaining = games.filter((g, idx) => !used.has(idx));
-        // Pair remaining in twos
-        for (let j = 0; j + 1 < remaining.length; j += 2) {
-          pairs.push([remaining[j], remaining[j + 1]]);
-        }
-        // Odd one out → single
-        if (remaining.length % 2 === 1) {
-          singles.push(remaining[remaining.length - 1]);
-        }
-
-        if (pairs.length > 0) {
-          dhPool.set(key, pairs);
-        }
-      });
-
-      // Flatten DH pool for easy access
-      const allDHPairs = [];
-      dhPool.forEach((pairs, key) => {
         const [id1, id2] = key.split('|');
-        pairs.forEach(p => allDHPairs.push({ game1: p[0], game2: p[1], id1, id2 }));
+        const asHome1 = games.filter(g => g.home.id === id1);
+        const asHome2 = games.filter(g => g.home.id === id2);
+        const pairCount = Math.min(asHome1.length, asHome2.length);
+        const unpaired = [];
+
+        const pairs = [];
+        for (let i = 0; i < pairCount; i++) {
+          pairs.push({ game1: asHome1[i], game2: asHome2[i], id1, id2 });
+        }
+        for (let i = pairCount; i < asHome1.length; i++) unpaired.push(asHome1[i]);
+        for (let i = pairCount; i < asHome2.length; i++) unpaired.push(asHome2[i]);
+        while (unpaired.length >= 2) {
+          pairs.push({ game1: unpaired.shift(), game2: unpaired.shift(), id1, id2 });
+        }
+        if (unpaired.length === 1) singles.push(unpaired[0]);
+        if (pairs.length > 0) dhByKey.set(key, pairs);
       });
 
-      console.log(`📋 ${allDHPairs.length} DH pairs (${allDHPairs.length * 2} games), ${singles.length} singles = ${allDHPairs.length * 2 + singles.length} total`);
+      console.log(`📋 DH pairs: ${[...dhByKey.values()].reduce((s, a) => s + a.length, 0)}, singles: ${singles.length}`);
 
       const out = [];
       const gamesPlayed = Object.fromEntries(teams.map(t => [t.id, 0]));
+      const dhPlayed = Object.fromEntries(teams.map(t => [t.id, 0]));
 
-      // ── STEP 1: Opening Day — 6 singles ────────────────────────────────────
-      // All 11 teams play. OD DH team plays 2 (vs different opponents).
+      // ── STEP 1: Opening Day — 6 singles (NEW games, not from pool) ────────
       console.log(`🎉 Scheduling Opening Day...`);
-
-      const nonODDH = shuffle(teams.filter(t => t.id !== odDHTeamId));
+      const nonPurple = shuffle(teams.filter(t => t.id !== odDHTeamId));
+      const purpleTeam = teams.find(t => t.id === odDHTeamId);
       const odGames = [];
 
-      // Pair OD DH team with first opponent
-      const oppA = nonODDH[0];
-      const remaining9 = nonODDH.slice(1);
-
-      // 4 games pairing remaining 8 teams
-      for (let i = 0; i < remaining9.length - 1; i += 2) {
-        odGames.push({ home: remaining9[i], away: remaining9[i + 1] });
+      // 4 games pairing 8 non-Purple teams
+      for (let i = 0; i < nonPurple.length - 1; i += 2) {
+        odGames.push({ home: nonPurple[i], away: nonPurple[i + 1] });
       }
-      // Last unpaired team + OD DH team = game 5
-      const oppB = remaining9[remaining9.length - 1];
-      // OD DH team games
-      odGames.push({ home: teams.find(t => t.id === odDHTeamId), away: oppA });
-      odGames.push({ home: oppB, away: teams.find(t => t.id === odDHTeamId) });
+      // Game 5: Purple vs first non-Purple
+      odGames.push({ home: purpleTeam, away: nonPurple[0] });
+      // Game 6: last non-Purple vs Purple
+      odGames.push({ home: nonPurple[nonPurple.length - 1], away: purpleTeam });
 
-      // Assign OD dates/times (these are NEW games, not from pool)
       for (let i = 0; i < odGames.length; i++) {
         const g = odGames[i];
         g.date = new Date(openingDay);
@@ -1895,247 +1861,231 @@
       }
       console.log(`🎉 Opening Day: ${odGames.length} games`);
 
-      // ── STEP 2: Opening Week Mon–Thu — 4 DHs ──────────────────────────────
-      // 8 teams play, 3 sit (OD DH team + 2 others)
-      const wk1SitTeams = new Set([odDHTeamId]);
-      for (const t of shuffle(nonODDH)) {
-        if (wk1SitTeams.size >= 3) break;
-        wk1SitTeams.add(t.id);
+      // ── STEP 2: Plan bye rotation (deterministic) ─────────────────────────
+      // Wk1: 4 DHs, 8 teams play, 3 sit (Purple + 2 = "sit3")
+      // Wks 2-11: 10 weeks, 10 byes:
+      //   sit3 (3 teams): 0 byes → play all 10 → 10 DHs total ✓
+      //   6 wk1-active: 1 bye each → 9 active + 1 wk1 = 10 DHs ✓
+      //   2 wk1-active "double-bye": 2 byes each → 8 active + 1 wk1 = 9 DHs
+      // Wk12 Sun: 1 DH for the 2 double-bye teams → both reach 10 ✓
+
+      const wk1SitIds = new Set([odDHTeamId]);
+      const shuffledNP = shuffle(nonPurple);
+      wk1SitIds.add(shuffledNP[0].id);
+      wk1SitIds.add(shuffledNP[1].id);
+
+      const wk1Active = shuffle(teams.filter(t => !wk1SitIds.has(t.id)));
+      const sit3 = teams.filter(t => wk1SitIds.has(t.id));
+      const doubleBye = [wk1Active[0], wk1Active[1]];
+      const singleBye = wk1Active.slice(2); // 6 teams
+
+      console.log(`📅 Wk1 sit: ${sit3.map(t => t.name).join(', ')}`);
+      console.log(`📅 Double-bye (wk12 DH): ${doubleBye.map(t => t.name).join(' vs ')}`);
+
+      // Bye rotation for weeks 2-11 (10 entries)
+      const byeRotation = [];
+      const sbShuf = shuffle(singleBye);
+      byeRotation.push(doubleBye[0].id);  // Wk2
+      byeRotation.push(sbShuf[0].id);     // Wk3
+      byeRotation.push(doubleBye[1].id);  // Wk4
+      byeRotation.push(sbShuf[1].id);     // Wk5
+      byeRotation.push(sbShuf[2].id);     // Wk6
+      byeRotation.push(sbShuf[3].id);     // Wk7
+      byeRotation.push(doubleBye[0].id);  // Wk8 (2nd bye)
+      byeRotation.push(sbShuf[4].id);     // Wk9
+      byeRotation.push(doubleBye[1].id);  // Wk10 (2nd bye)
+      byeRotation.push(sbShuf[5].id);     // Wk11
+
+      console.log(`📅 Byes: ${byeRotation.map((id, i) => `Wk${i+2}=${teams.find(t=>t.id===id)?.name}`).join(', ')}`);
+
+      // Helper to schedule a DH pair
+      function scheduleDH(dh, date, weekNum) {
+        dh.game1.date = new Date(date); dh.game1.time = dhTimeSlots[0];
+        dh.game1.week = weekNum; dh.game1.isDoubleHeader = true; dh.game1.dhGame = 1;
+        dh.game2.date = new Date(date); dh.game2.time = dhTimeSlots[1];
+        dh.game2.week = weekNum; dh.game2.isDoubleHeader = true; dh.game2.dhGame = 2;
+        out.push(dh.game1, dh.game2);
+        gamesPlayed[dh.game1.home.id]++; gamesPlayed[dh.game1.away.id]++;
+        gamesPlayed[dh.game2.home.id]++; gamesPlayed[dh.game2.away.id]++;
+        dhPlayed[dh.id1]++; dhPlayed[dh.id2]++;
       }
 
-      const wk1ActiveTeams = shuffle(teams.filter(t => !wk1SitTeams.has(t.id)));
-      console.log(`📅 Wk1 sit: ${[...wk1SitTeams].map(id => teams.find(t => t.id === id)?.name).join(', ')}`);
-
-      // Pair 8 active teams into 4 DHs
-      const wk1Nights = [1, 2, 3, 4]; // Mon–Thu
+      // ── STEP 3: Wk1 Mon–Thu — 4 DHs ───────────────────────────────────────
+      const wk1Nights = [1, 2, 3, 4];
       const wk1Paired = new Set();
       let wk1Count = 0;
 
-      for (const t1 of wk1ActiveTeams) {
-        if (wk1Paired.has(t1.id) || wk1Count >= 4) continue;
-        for (const t2 of wk1ActiveTeams) {
-          if (t2.id === t1.id || wk1Paired.has(t2.id)) continue;
-          const key = [t1.id, t2.id].sort().join('|');
-          const pairs = dhPool.get(key);
-          if (pairs && pairs.length > 0) {
-            const pair = pairs.shift();
-            const nightDay = wk1Nights[wk1Count];
-            const d = getWeekDate(openingDay, nightDay);
-            pair[0].date = new Date(d); pair[0].time = dhTimeSlots[0];
-            pair[0].week = 1; pair[0].isDoubleHeader = true; pair[0].dhGame = 1;
-            pair[1].date = new Date(d); pair[1].time = dhTimeSlots[1];
-            pair[1].week = 1; pair[1].isDoubleHeader = true; pair[1].dhGame = 2;
-            out.push(pair[0], pair[1]);
-            gamesPlayed[pair[0].home.id]++; gamesPlayed[pair[0].away.id]++;
-            gamesPlayed[pair[1].home.id]++; gamesPlayed[pair[1].away.id]++;
-            // Remove from allDHPairs
-            const idx = allDHPairs.findIndex(p => p.game1 === pair[0] && p.game2 === pair[1]);
-            if (idx !== -1) allDHPairs.splice(idx, 1);
-            wk1Paired.add(t1.id); wk1Paired.add(t2.id);
-            wk1Count++;
-            break;
+      for (let n = 0; n < 4; n++) {
+        for (const t1 of shuffle(wk1Active)) {
+          if (wk1Paired.has(t1.id)) continue;
+          let found = false;
+          for (const t2 of shuffle(wk1Active)) {
+            if (t2.id === t1.id || wk1Paired.has(t2.id)) continue;
+            const key = [t1.id, t2.id].sort().join('|');
+            const pairs = dhByKey.get(key);
+            if (pairs && pairs.length > 0) {
+              const dh = pairs.shift();
+              scheduleDH(dh, getWeekDate(openingDay, wk1Nights[n]), 1);
+              wk1Paired.add(t1.id); wk1Paired.add(t2.id);
+              wk1Count++;
+              found = true;
+              break;
+            }
           }
+          if (found) break;
         }
       }
       console.log(`📅 Wk1: ${wk1Count} DHs`);
 
-      // ── STEP 3: 10 regular weeks — 5 DHs Sun–Thu, 1 bye ───────────────────
-      const regularNights = [0, 1, 2, 3, 4]; // Sun–Thu
-
-      // Build remaining DH pool indexed by matchup key for fast lookup
-      // Rebuild after wk1 removals
-      const remainingDH = new Map();
-      for (const dh of allDHPairs) {
-        const key = [dh.id1, dh.id2].sort().join('|');
-        if (!remainingDH.has(key)) remainingDH.set(key, []);
-        remainingDH.get(key).push(dh);
-      }
-
-      let lastWeekNum = 1;
+      // ── STEP 4: Wks 2–11 — 5 DHs Sun–Thu, 1 bye ─────────────────────────
+      const regularNights = [0, 1, 2, 3, 4];
 
       for (let w = 0; w < 10; w++) {
         const weekNum = w + 2;
         const weekBase = new Date(openingDay);
         weekBase.setDate(weekBase.getDate() + (weekNum - 1) * 7);
+        const byeTeamId = byeRotation[w];
+        const activeIds = new Set(teams.filter(t => t.id !== byeTeamId).map(t => t.id));
 
-        // Smart bye: try all candidates, pick the one yielding 5 DHs
-        const sortedByGames = shuffle([...teams]).sort((a, b) => gamesPlayed[b.id] - gamesPlayed[a.id]);
-        let bestBye = null, bestDHs = [], bestCount = -1;
-
-        for (const byeCandidate of sortedByGames) {
-          const activeIds = new Set(teams.filter(t => t.id !== byeCandidate.id).map(t => t.id));
-          const testCandidates = [];
-
-          for (const [key, pairs] of remainingDH) {
-            if (pairs.length === 0) continue;
-            const [id1, id2] = key.split('|');
-            if (activeIds.has(id1) && activeIds.has(id2)) {
-              testCandidates.push({ key, id1, id2, pairCount: pairs.length, totalPool: pairs.length });
-            }
-          }
-
-          // Sort: exactly-1-pair matchups first (urgent), then constrained
-          const testOpts = {};
-          teams.forEach(t => { testOpts[t.id] = 0; });
-          for (const c of testCandidates) { testOpts[c.id1]++; testOpts[c.id2]++; }
-
-          testCandidates.sort((a, b) => {
-            const aU = a.totalPool === 1 ? 0 : 1;
-            const bU = b.totalPool === 1 ? 0 : 1;
-            if (aU !== bU) return aU - bU;
-            return Math.min(testOpts[a.id1], testOpts[a.id2]) - Math.min(testOpts[b.id1], testOpts[b.id2]);
-          });
-
-          const testPaired = new Set();
-          const testDHs = [];
-          for (const c of testCandidates) {
-            if (testPaired.has(c.id1) || testPaired.has(c.id2)) continue;
-            testDHs.push(c);
-            testPaired.add(c.id1); testPaired.add(c.id2);
-            if (testDHs.length >= 5) break;
-          }
-
-          if (testDHs.length > bestCount ||
-              (testDHs.length === bestCount && gamesPlayed[byeCandidate.id] > gamesPlayed[bestBye?.id])) {
-            bestCount = testDHs.length;
-            bestDHs = testDHs;
-            bestBye = byeCandidate;
-          }
-          if (testDHs.length === 5 && byeCandidate.id === sortedByGames[0].id) break;
-        }
-
-        if (bestCount === 0) {
-          console.warn(`⚠️ Week ${weekNum}: no DHs possible, stopping`);
-          break;
-        }
-
-        // Schedule the DHs
-        for (let p = 0; p < bestDHs.length; p++) {
-          const dh = bestDHs[p];
-          const pairs = remainingDH.get(dh.key);
-          const pair = pairs.shift();
-          const nightDay = regularNights[p];
-          const d = getWeekDate(weekBase, nightDay);
-
-          pair.game1.date = new Date(d); pair.game1.time = dhTimeSlots[0];
-          pair.game1.week = weekNum; pair.game1.isDoubleHeader = true; pair.game1.dhGame = 1;
-          pair.game2.date = new Date(d); pair.game2.time = dhTimeSlots[1];
-          pair.game2.week = weekNum; pair.game2.isDoubleHeader = true; pair.game2.dhGame = 2;
-          out.push(pair.game1, pair.game2);
-          gamesPlayed[pair.game1.home.id]++; gamesPlayed[pair.game1.away.id]++;
-          gamesPlayed[pair.game2.home.id]++; gamesPlayed[pair.game2.away.id]++;
-        }
-
-        console.log(`📅 Week ${weekNum}: ${bestDHs.length} DHs, bye=${bestBye.name}`);
-        lastWeekNum = weekNum;
-      }
-
-      // ── STEP 4: Week 12 — 1 DH (Sun) + 8 singles (Mon–Thu, 2/night) ──────
-      const wk12Num = lastWeekNum + 1;
-      const wk12Base = new Date(openingDay);
-      wk12Base.setDate(wk12Base.getDate() + (wk12Num - 1) * 7);
-      console.log(`📅 Week ${wk12Num}: displaced DH + 8 singles`);
-
-      // Sunday DH: find a remaining DH pair for teams that need games most
-      const needsDH = shuffle(teams).sort((a, b) =>
-        (22 - (gamesPlayed[a.id] - (a.id === odDHTeamId ? 2 : 1))) -
-        (22 - (gamesPlayed[b.id] - (b.id === odDHTeamId ? 2 : 1)))
-      );
-
-      let wk12DHScheduled = false;
-      for (const t1 of needsDH) {
-        if (wk12DHScheduled) break;
-        for (const [key, pairs] of remainingDH) {
+        // Build candidates
+        const candidates = [];
+        for (const [key, pairs] of dhByKey) {
           if (pairs.length === 0) continue;
           const [id1, id2] = key.split('|');
-          if (id1 === t1.id || id2 === t1.id) {
-            const pair = pairs.shift();
-            const d = getWeekDate(wk12Base, 0); // Sunday
-            pair.game1.date = new Date(d); pair.game1.time = dhTimeSlots[0];
-            pair.game1.week = wk12Num; pair.game1.isDoubleHeader = true; pair.game1.dhGame = 1;
-            pair.game2.date = new Date(d); pair.game2.time = dhTimeSlots[1];
-            pair.game2.week = wk12Num; pair.game2.isDoubleHeader = true; pair.game2.dhGame = 2;
-            out.push(pair.game1, pair.game2);
-            gamesPlayed[pair.game1.home.id]++; gamesPlayed[pair.game1.away.id]++;
-            gamesPlayed[pair.game2.home.id]++; gamesPlayed[pair.game2.away.id]++;
-            wk12DHScheduled = true;
+          if (activeIds.has(id1) && activeIds.has(id2)) {
+            candidates.push({ key, id1, id2, remaining: pairs.length });
+          }
+        }
+
+        // Sort: fewest remaining first (use-or-lose), then most constrained
+        const tOpts = {};
+        teams.forEach(t => { tOpts[t.id] = 0; });
+        for (const c of candidates) { tOpts[c.id1]++; tOpts[c.id2]++; }
+        candidates.sort((a, b) => {
+          if (a.remaining !== b.remaining) return a.remaining - b.remaining;
+          return Math.min(tOpts[a.id1], tOpts[a.id2]) - Math.min(tOpts[b.id1], tOpts[b.id2]);
+        });
+
+        // Greedy match 5 DHs
+        const weekPaired = new Set();
+        const weekDHs = [];
+        for (const c of candidates) {
+          if (weekPaired.has(c.id1) || weekPaired.has(c.id2)) continue;
+          weekDHs.push(c);
+          weekPaired.add(c.id1); weekPaired.add(c.id2);
+          if (weekDHs.length >= 5) break;
+        }
+
+        for (let p = 0; p < weekDHs.length; p++) {
+          const c = weekDHs[p];
+          const dh = dhByKey.get(c.key).shift();
+          scheduleDH(dh, getWeekDate(weekBase, regularNights[p]), weekNum);
+        }
+
+        if (weekDHs.length < 5) {
+          console.warn(`⚠️ Week ${weekNum}: only ${weekDHs.length} DHs`);
+        }
+        console.log(`📅 Week ${weekNum}: ${weekDHs.length} DHs, bye=${teams.find(t=>t.id===byeTeamId)?.name}`);
+      }
+
+      // ── STEP 5: Wk12 — Sun 1 DH + Mon–Thu 8 singles (2/night) ────────────
+      const wk12Base = new Date(openingDay);
+      wk12Base.setDate(wk12Base.getDate() + 11 * 7); // week 12
+
+      // Sunday DH: double-bye teams play each other
+      const dbKey = [doubleBye[0].id, doubleBye[1].id].sort().join('|');
+      let dbPairs = dhByKey.get(dbKey);
+      if (dbPairs && dbPairs.length > 0) {
+        scheduleDH(dbPairs.shift(), getWeekDate(wk12Base, 0), 12);
+        console.log(`📅 Wk12 Sun: DH ${doubleBye[0].name} vs ${doubleBye[1].name}`);
+      } else {
+        // Fallback: find any remaining DH for each double-bye team
+        console.warn(`⚠️ No ${doubleBye[0].name} vs ${doubleBye[1].name} DH, finding alternatives`);
+        for (const [key, pairs] of dhByKey) {
+          if (pairs.length === 0) continue;
+          const [id1, id2] = key.split('|');
+          if (id1 === doubleBye[0].id || id2 === doubleBye[0].id ||
+              id1 === doubleBye[1].id || id2 === doubleBye[1].id) {
+            scheduleDH(pairs.shift(), getWeekDate(wk12Base, 0), 12);
             break;
           }
         }
       }
 
-      // Mon–Thu: 2 singles per night = 8 singles
-      // Use the singles pool (11 available from Hamiltonian cycle)
-      const wk12Nights = [1, 2, 3, 4]; // Mon–Thu
-      let singlesScheduled = 0;
-      const wk12TeamGames = {}; // max 2 games per team this week
-      teams.forEach(t => { wk12TeamGames[t.id] = 0; });
-      // Count DH team games already
-      if (wk12DHScheduled) {
-        const lastTwo = out.slice(-2);
-        lastTwo.forEach(g => { wk12TeamGames[g.home.id]++; wk12TeamGames[g.away.id]++; });
-      }
+      // Mon–Thu: 8 singles, 2 per night
+      const wk12Nights = [1, 2, 3, 4];
+      const wk12Used = {};
+      teams.forEach(t => { wk12Used[t.id] = 0; });
+      // Account for DH teams
+      out.filter(g => g.week === 12).forEach(g => {
+        wk12Used[g.home.id]++; wk12Used[g.away.id]++;
+      });
 
+      let singlesScheduled = 0;
       for (const nightDay of wk12Nights) {
         const d = getWeekDate(wk12Base, nightDay);
         let nightGames = 0;
         for (let si = singles.length - 1; si >= 0 && nightGames < 2; si--) {
           const g = singles[si];
-          if (wk12TeamGames[g.home.id] >= 2 || wk12TeamGames[g.away.id] >= 2) continue;
+          if (wk12Used[g.home.id] >= 2 || wk12Used[g.away.id] >= 2) continue;
           singles.splice(si, 1);
           g.date = new Date(d);
           g.time = nightGames === 0 ? '7:45 PM' : '8:45 PM';
-          g.week = wk12Num;
+          g.week = 12;
           g.isDoubleHeader = false;
           g.isFinalWeek = true;
           out.push(g);
           gamesPlayed[g.home.id]++; gamesPlayed[g.away.id]++;
-          wk12TeamGames[g.home.id]++; wk12TeamGames[g.away.id]++;
+          wk12Used[g.home.id]++; wk12Used[g.away.id]++;
           singlesScheduled++;
           nightGames++;
         }
       }
-      console.log(`📅 Week ${wk12Num}: 1 DH + ${singlesScheduled} singles`);
+      console.log(`📅 Wk12: 1 DH + ${singlesScheduled} singles`);
 
-      // ── STEP 5: Week 13 — 3 singles on Sunday ─────────────────────────────
-      const wk13Num = wk12Num + 1;
+      // ── STEP 6: Wk13 — 3 singles on Sunday ───────────────────────────────
       const wk13Base = new Date(openingDay);
-      wk13Base.setDate(wk13Base.getDate() + (wk13Num - 1) * 7);
+      wk13Base.setDate(wk13Base.getDate() + 12 * 7);
       const wk13Sunday = getWeekDate(wk13Base, 0);
-      console.log(`📅 Week ${wk13Num}: 3 singles on Sunday`);
 
       let wk13Count = 0;
       for (let si = singles.length - 1; si >= 0 && wk13Count < 3; si--) {
         const g = singles[si];
         singles.splice(si, 1);
         g.date = new Date(wk13Sunday);
-        g.time = openingDaySlots[wk13Count]; // reuse 3:45, 4:45, 5:45
-        g.week = wk13Num;
+        g.time = openingDaySlots[wk13Count];
+        g.week = 13;
         g.isDoubleHeader = false;
         g.isFinalWeek = true;
         out.push(g);
         gamesPlayed[g.home.id]++; gamesPlayed[g.away.id]++;
         wk13Count++;
       }
-      console.log(`📅 Week ${wk13Num}: ${wk13Count} singles scheduled`);
+      console.log(`📅 Wk13: ${wk13Count} singles`);
 
-      // ── STEP 6: Validation ─────────────────────────────────────────────────
+      // ── STEP 7: Validation ─────────────────────────────────────────────────
       console.log(`\n📊 === SCHEDULE VALIDATION ===`);
-      console.log(`Total games scheduled: ${out.length} (expected 127)`);
-      // Per-team: 22 from pool + OD extras (Purple gets 2 OD, others get 1)
+      console.log(`Total games: ${out.length} (expected 127)`);
       let allGood = true;
       for (const t of teams) {
-        const count = gamesPlayed[t.id];
-        const expectedOD = t.id === odDHTeamId ? 2 : 1;
-        const expected = 22 + expectedOD; // 24 for Purple, 23 for others
-        const status = count === expected ? '✅' : '❌';
-        if (count !== expected) allGood = false;
-        console.log(`  ${status} ${t.name}: ${count}/${expected} games (${expectedOD} OD + ${count - expectedOD} season)`);
+        const total = gamesPlayed[t.id];
+        const dhs = dhPlayed[t.id];
+        const odCount = t.id === odDHTeamId ? 2 : 1;
+        const expectedTotal = 22 + odCount;
+        const dhOk = dhs === 10;
+        const totalOk = total === expectedTotal;
+        const status = (dhOk && totalOk) ? '✅' : '❌';
+        if (!dhOk || !totalOk) allGood = false;
+        console.log(`  ${status} ${t.name}: ${total}/${expectedTotal} total, ${dhs}/10 DHs, ${odCount} OD`);
       }
-      if (!allGood) console.error('❌ Some teams did not hit their target!');
-      if (singles.length > 0) console.warn(`⚠️ ${singles.length} singles left unused`);
+      if (!allGood) console.error('❌ Validation failed!');
+      if (singles.length > 0) console.warn(`⚠️ ${singles.length} singles unused`);
 
-      // ── STEP 7: Write back, sort, number ───────────────────────────────────
+      let leftoverDH = 0;
+      dhByKey.forEach(p => { leftoverDH += p.length; });
+      if (leftoverDH > 0) console.warn(`⚠️ ${leftoverDH} DH pairs unused`);
+
+      // ── STEP 8: Write back, sort, number ───────────────────────────────────
       schedule.length = 0;
       out.forEach(g => schedule.push(g));
 
