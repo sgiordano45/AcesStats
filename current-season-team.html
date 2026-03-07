@@ -1265,28 +1265,18 @@
   // Fetch roster for a specific team from the centralized rosters collection
   async function getRosterForTeam(seasonId, teamName) {
     try {
-      // Try exact match first
-      let docId = `${seasonId}-${teamName}`;
-      let rosterRef = doc(db, 'rosters', docId);
-      let rosterDoc = await getDoc(rosterRef);
+      // Document ID format: "{seasonId}-{teamName}" (always lowercase)
+      const docId = `${seasonId}-${teamName.toLowerCase()}`;
+      const rosterRef = doc(db, 'rosters', docId);
+      const rosterDoc = await getDoc(rosterRef);
       
       if (rosterDoc.exists()) {
         console.log(`✅ Loaded roster for ${teamName} from rosters/${docId}`);
         return rosterDoc.data();
+      } else {
+        console.log(`⚠️ No roster found for ${teamName} in rosters/${docId}`);
+        return null;
       }
-      
-      // Fall back to lowercase match (for backwards compatibility with old naming)
-      docId = `${seasonId}-${teamName.toLowerCase()}`;
-      rosterRef = doc(db, 'rosters', docId);
-      rosterDoc = await getDoc(rosterRef);
-      
-      if (rosterDoc.exists()) {
-        console.log(`✅ Loaded roster for ${teamName} (case-insensitive) from rosters/${docId}`);
-        return rosterDoc.data();
-      }
-      
-      console.log(`⚠️ No roster found for ${teamName} in rosters/${seasonId}-${teamName}`);
-      return null;
     } catch (error) {
       console.error('❌ Error loading roster:', error);
       return null;
@@ -1390,6 +1380,7 @@
           
           return {
             id: rosterPlayer.id,
+            authId: rosterPlayer.authId, // Add authId for profile linking
             name: rosterPlayer.name,
             team: teamName,
             games: (statsRecord && Number(statsRecord.games)) || 0,
@@ -1994,7 +1985,7 @@
                 </table>
               </div>
               
-              <a href="player.html?id=${encodeURIComponent(player.id)}" class="mini-card-back-link" onclick="event.stopPropagation();">
+              <a href="player.html?id=${encodeURIComponent(player.authId || player.id)}" class="mini-card-back-link" onclick="event.stopPropagation();">
                 View Full Profile →
               </a>
               
