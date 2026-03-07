@@ -1833,20 +1833,32 @@
       const gamesPlayed = Object.fromEntries(teams.map(t => [t.id, 0]));
       const dhPlayed = Object.fromEntries(teams.map(t => [t.id, 0]));
 
-      // ── STEP 1: Opening Day — 6 singles (NEW games, not from pool) ────────
+      // ── STEP 1: Opening Day — 6 games (NEW games, not from pool) ────────────
+      // Structure: 4 games pairing 8 non-Purple teams (each plays 1x),
+      //            2 games where Purple plays the remaining 2 non-Purple teams.
+      // Result: every non-Purple team plays exactly 1 OD game; Purple plays 2.
+      if (!odDHTeamId) {
+        console.error('❌ No Opening Day DH team selected — cannot generate 11-team schedule.');
+        return;
+      }
       console.log(`🎉 Scheduling Opening Day...`);
       const nonPurple = shuffle(teams.filter(t => t.id !== odDHTeamId));
       const purpleTeam = teams.find(t => t.id === odDHTeamId);
       const odGames = [];
 
-      // 4 games pairing 8 non-Purple teams
-      for (let i = 0; i < nonPurple.length - 1; i += 2) {
-        odGames.push({ home: nonPurple[i], away: nonPurple[i + 1] });
+      // Last 2 in shuffled list become Purple's opponents (they don't get paired below)
+      const purpleOpp1 = nonPurple[8];
+      const purpleOpp2 = nonPurple[9];
+      const pairableTeams = nonPurple.slice(0, 8);
+
+      // 4 games pairing the 8 pairable non-Purple teams
+      for (let i = 0; i < pairableTeams.length; i += 2) {
+        odGames.push({ home: pairableTeams[i], away: pairableTeams[i + 1] });
       }
-      // Game 5: Purple vs first non-Purple
-      odGames.push({ home: purpleTeam, away: nonPurple[0] });
-      // Game 6: last non-Purple vs Purple
-      odGames.push({ home: nonPurple[nonPurple.length - 1], away: purpleTeam });
+      // Game 5: Purple vs purpleOpp1
+      odGames.push({ home: purpleTeam, away: purpleOpp1 });
+      // Game 6: purpleOpp2 vs Purple (flip home/away for variety)
+      odGames.push({ home: purpleOpp2, away: purpleTeam });
 
       for (let i = 0; i < odGames.length; i++) {
         const g = odGames[i];
@@ -2017,10 +2029,12 @@
       }
 
       // Mon–Thu: 8 singles, 2 per night
+      // Track singles played per team across wk12+wk13 — each team must play exactly 2 singles total
+      const singlesPerTeam = Object.fromEntries(teams.map(t => [t.id, 0]));
       const wk12Nights = [1, 2, 3, 4];
       const wk12Used = {};
       teams.forEach(t => { wk12Used[t.id] = 0; });
-      // Account for DH teams
+      // Account for DH teams already scheduled in week 12
       out.filter(g => g.week === 12).forEach(g => {
         wk12Used[g.home.id]++; wk12Used[g.away.id]++;
       });
@@ -2031,7 +2045,9 @@
         let nightGames = 0;
         for (let si = singles.length - 1; si >= 0 && nightGames < 2; si--) {
           const g = singles[si];
+          // Skip if team already played in wk12 (DH) or already has 2 singles
           if (wk12Used[g.home.id] >= 2 || wk12Used[g.away.id] >= 2) continue;
+          if (singlesPerTeam[g.home.id] >= 2 || singlesPerTeam[g.away.id] >= 2) continue;
           singles.splice(si, 1);
           g.date = new Date(d);
           g.time = nightGames === 0 ? '7:45 PM' : '8:45 PM';
@@ -2041,13 +2057,14 @@
           out.push(g);
           gamesPlayed[g.home.id]++; gamesPlayed[g.away.id]++;
           wk12Used[g.home.id]++; wk12Used[g.away.id]++;
+          singlesPerTeam[g.home.id]++; singlesPerTeam[g.away.id]++;
           singlesScheduled++;
           nightGames++;
         }
       }
       console.log(`📅 Wk12: 1 DH + ${singlesScheduled} singles`);
 
-      // ── STEP 6: Wk13 — 3 singles on Sunday ───────────────────────────────
+      // ── STEP 6: Wk13 — remaining singles on Sunday (up to 3) ─────────────
       const wk13Base = new Date(openingDay);
       wk13Base.setDate(wk13Base.getDate() + 12 * 7);
       const wk13Sunday = getWeekDate(wk13Base, 0);
@@ -2055,6 +2072,8 @@
       let wk13Count = 0;
       for (let si = singles.length - 1; si >= 0 && wk13Count < 3; si--) {
         const g = singles[si];
+        // Skip if either team already has 2 singles scheduled
+        if (singlesPerTeam[g.home.id] >= 2 || singlesPerTeam[g.away.id] >= 2) continue;
         singles.splice(si, 1);
         g.date = new Date(wk13Sunday);
         g.time = openingDaySlots[wk13Count];
@@ -2063,9 +2082,16 @@
         g.isFinalWeek = true;
         out.push(g);
         gamesPlayed[g.home.id]++; gamesPlayed[g.away.id]++;
+        singlesPerTeam[g.home.id]++; singlesPerTeam[g.away.id]++;
         wk13Count++;
       }
       console.log(`📅 Wk13: ${wk13Count} singles`);
+
+      // Warn if any team doesn't have exactly 2 singles
+      const singlesCheck = teams.every(t => singlesPerTeam[t.id] === 2);
+      if (!singlesCheck) {
+        console.warn('⚠️ Singles distribution off:', Object.fromEntries(teams.map(t => [t.name, singlesPerTeam[t.id]])));
+      }
 
       // ── STEP 7: Validation ─────────────────────────────────────────────────
       console.log(`\n📊 === SCHEDULE VALIDATION ===`);
@@ -2074,13 +2100,16 @@
       for (const t of teams) {
         const total = gamesPlayed[t.id];
         const dhs = dhPlayed[t.id];
+        const singles2 = singlesPerTeam[t.id];
         const odCount = t.id === odDHTeamId ? 2 : 1;
+        // Regular season: 20 DH games (10 DHs) + 2 singles = 22. Plus OD games.
         const expectedTotal = 22 + odCount;
         const dhOk = dhs === 10;
+        const singlesOk = singles2 === 2;
         const totalOk = total === expectedTotal;
-        const status = (dhOk && totalOk) ? '✅' : '❌';
-        if (!dhOk || !totalOk) allGood = false;
-        console.log(`  ${status} ${t.name}: ${total}/${expectedTotal} total, ${dhs}/10 DHs, ${odCount} OD`);
+        const status = (dhOk && singlesOk && totalOk) ? '✅' : '❌';
+        if (!dhOk || !singlesOk || !totalOk) allGood = false;
+        console.log(`  ${status} ${t.name}: ${total}/${expectedTotal} total, ${dhs}/10 DHs, ${singles2}/2 singles, ${odCount} OD`);
       }
       if (!allGood) console.error('❌ Validation failed!');
       if (singles.length > 0) console.warn(`⚠️ ${singles.length} singles unused`);
