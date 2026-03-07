@@ -1650,9 +1650,11 @@
         finalSchedule.push(...rrPass(teams, true));     // 55 games, each team plays 10
 
         // Hamiltonian cycle: teams[0]-[1]-[2]-...-[10]-[0]
-        // Every team appears in exactly 2 edges → +2 games each → 22 total
+        // Every team appears in exactly 2 edges → +2 games each → 22 total.
+        // Tagged as isSingle=true so Step 0 in assignSummerSchedule never pairs
+        // them into DHs — they go directly into the singles pool.
         for (let i = 0; i < numTeams; i++) {
-          finalSchedule.push({ home: teams[i], away: teams[(i + 1) % numTeams] });
+          finalSchedule.push({ home: teams[i], away: teams[(i + 1) % numTeams], isSingle: true });
         }
 
         // Verify pool
@@ -1797,14 +1799,26 @@
       }
 
       // ── STEP 0: Separate pool into 55 DH pairs + 11 singles ──────────────
-      const matchupMap = new Map();
+      // Games tagged isSingle (Hamiltonian cycle) go directly to singles pool.
+      // The remaining 110 round-robin games are paired into 55 DH pairs.
+      const singles = [];
+      const dhPool = [];
       for (const g of schedule) {
+        if (g.isSingle) {
+          singles.push(g);
+        } else {
+          dhPool.push(g);
+        }
+      }
+      console.log(`📋 Pre-tagged singles: ${singles.length} (expect 11), DH pool: ${dhPool.length} (expect 110)`);
+
+      const matchupMap = new Map();
+      for (const g of dhPool) {
         const key = [g.home.id, g.away.id].sort().join('|');
         if (!matchupMap.has(key)) matchupMap.set(key, []);
         matchupMap.get(key).push(g);
       }
 
-      const singles = [];
       const dhByKey = new Map(); // key → array of { game1, game2, id1, id2 }
 
       matchupMap.forEach((games, key) => {
@@ -1823,6 +1837,7 @@
         while (unpaired.length >= 2) {
           pairs.push({ game1: unpaired.shift(), game2: unpaired.shift(), id1, id2 });
         }
+        // Any leftover unpaired round-robin games also become singles
         if (unpaired.length === 1) singles.push(unpaired[0]);
         if (pairs.length > 0) dhByKey.set(key, pairs);
       });
@@ -2043,11 +2058,13 @@
       for (const nightDay of wk12Nights) {
         const d = getWeekDate(wk12Base, nightDay);
         let nightGames = 0;
+        const playingTonight = new Set();
         for (let si = singles.length - 1; si >= 0 && nightGames < 2; si--) {
           const g = singles[si];
-          // Skip if team already played in wk12 (DH) or already has 2 singles
+          // Skip if team already played in wk12 (DH), already has 2 singles, or plays twice tonight
           if (wk12Used[g.home.id] >= 2 || wk12Used[g.away.id] >= 2) continue;
           if (singlesPerTeam[g.home.id] >= 2 || singlesPerTeam[g.away.id] >= 2) continue;
+          if (playingTonight.has(g.home.id) || playingTonight.has(g.away.id)) continue;
           singles.splice(si, 1);
           g.date = new Date(d);
           g.time = nightGames === 0 ? '7:45 PM' : '8:45 PM';
@@ -2058,6 +2075,7 @@
           gamesPlayed[g.home.id]++; gamesPlayed[g.away.id]++;
           wk12Used[g.home.id]++; wk12Used[g.away.id]++;
           singlesPerTeam[g.home.id]++; singlesPerTeam[g.away.id]++;
+          playingTonight.add(g.home.id); playingTonight.add(g.away.id);
           singlesScheduled++;
           nightGames++;
         }
@@ -2070,10 +2088,12 @@
       const wk13Sunday = getWeekDate(wk13Base, 0);
 
       let wk13Count = 0;
+      const playingWk13 = new Set();
       for (let si = singles.length - 1; si >= 0 && wk13Count < 3; si--) {
         const g = singles[si];
-        // Skip if either team already has 2 singles scheduled
+        // Skip if either team already has 2 singles, or plays twice on wk13 Sunday
         if (singlesPerTeam[g.home.id] >= 2 || singlesPerTeam[g.away.id] >= 2) continue;
+        if (playingWk13.has(g.home.id) || playingWk13.has(g.away.id)) continue;
         singles.splice(si, 1);
         g.date = new Date(wk13Sunday);
         g.time = openingDaySlots[wk13Count];
@@ -2083,6 +2103,7 @@
         out.push(g);
         gamesPlayed[g.home.id]++; gamesPlayed[g.away.id]++;
         singlesPerTeam[g.home.id]++; singlesPerTeam[g.away.id]++;
+        playingWk13.add(g.home.id); playingWk13.add(g.away.id);
         wk13Count++;
       }
       console.log(`📅 Wk13: ${wk13Count} singles`);
