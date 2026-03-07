@@ -565,16 +565,36 @@
           const docRef = doc(db, 'rosters', docId);
 
           // Ensure all players have required fields
-          const cleanedPlayers = players.map(p => ({
-            id: p.id || p.playerId || '',
-            authId: p.authId || p.uid || '', // User's auth ID if linked
-            name: p.name || '',
-            number: p.number || null,
-            position: p.position || '-',
-            bats: p.bats || '-',
-            throws: p.throws || '-',
-            captain: p.captain === true || p.captain === 'Yes'
-          })).filter(p => p.name); // Filter out players with no name
+          // Look up authId from users collection by linkedPlayer name
+          const cleanedPlayers = await Promise.all(players.map(async (p) => {
+            let authId = p.authId || p.uid || '';
+            
+            // If no authId, try to find it by looking up linkedPlayer in users collection
+            if (!authId && p.name) {
+              try {
+                const usersRef = collection(db, 'users');
+                const q = query(usersRef, where('linkedPlayer', '==', p.name));
+                const snapshot = await getDocs(q);
+                if (!snapshot.empty) {
+                  authId = snapshot.docs[0].id;
+                  console.log(`  ✅ Found authId for ${p.name}: ${authId}`);
+                }
+              } catch (e) {
+                console.warn(`  ⚠️ Could not lookup authId for ${p.name}`);
+              }
+            }
+            
+            return {
+              id: p.id || p.playerId || '',
+              authId: authId,
+              name: p.name || '',
+              number: p.number || null,
+              position: p.position || '-',
+              bats: p.bats || '-',
+              throws: p.throws || '-',
+              captain: p.captain === true || p.captain === 'Yes'
+            };
+          })).then(ps => ps.filter(p => p.name)); // Filter out players with no name
 
           batch.set(docRef, {
             players: cleanedPlayers,
