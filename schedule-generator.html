@@ -1910,6 +1910,17 @@
       console.log(`📅 Double-bye (wk12 DH): ${doubleBye.map(t => t.name).join(' vs ')}`);
       console.log(`📅 Single-bye: ${singleBye.map(t => t.name).join(', ')}`);
 
+      // ── RESERVE the doubleBye mutual DH for Week 12 Sunday ────────────────
+      // Pull it out of dhByKey NOW so weeks 1-11 greedy scheduler can't consume it.
+      const dbKey = [doubleBye[0].id, doubleBye[1].id].sort().join('|');
+      const dbPairs = dhByKey.get(dbKey);
+      let reservedDoubleBye = null;
+      if (dbPairs && dbPairs.length > 0) {
+        reservedDoubleBye = dbPairs.shift(); // remove from pool
+        console.log(`🔒 Reserved Wk12 DH: ${doubleBye[0].name} vs ${doubleBye[1].name}`);
+      } else {
+        console.warn(`⚠️ No ${doubleBye[0].name} vs ${doubleBye[1].name} DH pair found to reserve!`);
+      }
       // Helper to schedule a DH pair
       function scheduleDH(dh, date, weekNum) {
         dh.game1.date = new Date(date); dh.game1.time = dhTimeSlots[0];
@@ -2023,24 +2034,12 @@
       const wk12Base = new Date(openingDay);
       wk12Base.setDate(wk12Base.getDate() + 11 * 7); // week 12
 
-      // Sunday DH: double-bye teams play each other
-      const dbKey = [doubleBye[0].id, doubleBye[1].id].sort().join('|');
-      let dbPairs = dhByKey.get(dbKey);
-      if (dbPairs && dbPairs.length > 0) {
-        scheduleDH(dbPairs.shift(), getWeekDate(wk12Base, 0), 12);
+      // Sunday DH: use the reserved double-bye pair
+      if (reservedDoubleBye) {
+        scheduleDH(reservedDoubleBye, getWeekDate(wk12Base, 0), 12);
         console.log(`📅 Wk12 Sun: DH ${doubleBye[0].name} vs ${doubleBye[1].name}`);
       } else {
-        // Fallback: find any remaining DH for each double-bye team
-        console.warn(`⚠️ No ${doubleBye[0].name} vs ${doubleBye[1].name} DH, finding alternatives`);
-        for (const [key, pairs] of dhByKey) {
-          if (pairs.length === 0) continue;
-          const [id1, id2] = key.split('|');
-          if (id1 === doubleBye[0].id || id2 === doubleBye[0].id ||
-              id1 === doubleBye[1].id || id2 === doubleBye[1].id) {
-            scheduleDH(pairs.shift(), getWeekDate(wk12Base, 0), 12);
-            break;
-          }
-        }
+        console.error(`❌ No reserved DH for Wk12 Sunday — double-bye teams will be short a DH`);
       }
 
       // ── STEP 5: Wk12 + Wk13 — schedule all 11 singles ───────────────────────
