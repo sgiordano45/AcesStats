@@ -926,10 +926,24 @@
 
       // Bye weeks
       const allWeeks = [...new Set(schedule.map(g => parseInt(g.week)))].sort((a, b) => a - b);
-      const teamWeeks = new Set(schedule.filter(g => g.homeTeam === analyzerTeam || g.awayTeam === analyzerTeam).map(g => parseInt(g.week)));
-      const byeWeeks = allWeeks.filter(w => !teamWeeks.has(w));
+
+      // For week 1: find the Opening Day date (earliest Sunday / earliest date in week 1)
+      const wk1Games = schedule.filter(g => parseInt(g.week) === 1);
+      const wk1Dates = wk1Games.map(g => parseDateToISO(g.date)).filter(Boolean).sort();
+      const odDate = wk1Dates[0]; // earliest date in week 1 = Opening Day
+
+      const isWeekBye = w => {
+        const teamGamesThisWeek = schedule.filter(g =>
+          parseInt(g.week) === w && (g.homeTeam === analyzerTeam || g.awayTeam === analyzerTeam)
+        );
+        if (w !== 1) return teamGamesThisWeek.length === 0;
+        // Week 1: bye if team has no games, or only OD games (on the OD date)
+        const nonODGames = teamGamesThisWeek.filter(g => parseDateToISO(g.date) !== odDate);
+        return nonODGames.length === 0;
+      };
+
+      const byeWeeks = allWeeks.filter(w => isWeekBye(w));
       const byeEl = document.getElementById('aByeWeeks');
-      const byeSection = document.getElementById('aByeWeeksSection');
       if (byeWeeks.length === 0) {
         byeEl.innerHTML = `<span style="color:var(--text-light);font-size:0.9rem;">No bye weeks</span>`;
       } else {
