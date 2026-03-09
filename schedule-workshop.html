@@ -1036,19 +1036,25 @@
       // Helper: compute per-team day variance across the whole schedule
       function teamDayVariance(sched) {
         const counts = {};
+        const leagueDays = new Set();
         sched.forEach(g => {
           const iso = getISO(g);
           if (!iso) return;
           const d = dayIdx(iso);
+          leagueDays.add(d);
           [g.homeTeam, g.awayTeam].forEach(t => {
             if (!counts[t]) counts[t] = Array(7).fill(0);
             counts[t][d]++;
           });
         });
+        // Only score days the league actually plays on
+        const activeDays = [...leagueDays];
         let totalVariance = 0;
         Object.values(counts).forEach(arr => {
-          const mean = arr.reduce((a, b) => a + b, 0) / arr.filter(x => x > 0).length || 1;
-          arr.forEach(v => { if (v > 0) totalVariance += (v - mean) ** 2; });
+          const vals = activeDays.map(d => arr[d]);
+          const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
+          // Include zeros — missing a day entirely is penalized
+          vals.forEach(v => { totalVariance += (v - mean) ** 2; });
         });
         return totalVariance;
       }
