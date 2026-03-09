@@ -486,10 +486,12 @@
 
           <div class="export-actions">
             <button class="btn btn-secondary" onclick="balanceDays()" id="balanceDaysBtn" style="display:none;">⚖️ Balance Days</button>
+            <button class="btn btn-secondary" onclick="balanceByes()" id="balanceByesBtn" style="display:none;">📅 Balance Byes</button>
             <button class="btn btn-primary" onclick="downloadCSV()">💾 Download CSV</button>
             <button class="btn btn-secondary" onclick="exportToFirebase()">☁️ Export to Firebase</button>
           </div>
           <div id="balanceStatus" style="font-size:0.85rem;color:var(--secondary-color);margin-top:0.4rem;"></div>
+          <div id="balanceByesStatus" style="font-size:0.85rem;color:var(--secondary-color);margin-top:0.2rem;"></div>
           <div id="exportStatus"></div>
         </div>
 
@@ -608,6 +610,7 @@
             `<div class="alert success"><strong>✓ Loaded</strong> ${schedule.length} games from ${file.name}</div>`;
           document.getElementById('workshopContent').classList.remove('hidden');
           document.getElementById('balanceDaysBtn').style.display = '';
+          document.getElementById('balanceByesBtn').style.display = '';
           analyzerTeam = Array.from(teams).sort()[0];
           renderAll();
         } catch (err) {
@@ -925,7 +928,9 @@
           }).join('');
 
       // Bye weeks
-      const allWeeks = [...new Set(schedule.map(g => parseInt(g.week)))].sort((a, b) => a - b);
+      const allWeeks = [...new Set(schedule.map(g => parseInt(g.week)))]
+        .filter(w => w >= 1 && w <= 11)
+        .sort((a, b) => a - b);
 
       // For week 1: find the Opening Day date (earliest Sunday / earliest date in week 1)
       const wk1Games = schedule.filter(g => parseInt(g.week) === 1);
@@ -1168,6 +1173,169 @@
       statusEl.textContent = totalSwaps > 0
         ? `✅ Balanced — ${totalSwaps} swap${totalSwaps !== 1 ? 's' : ''} made across ${passes} pass${passes !== 1 ? 'es' : ''}`
         : `✅ Already balanced — no swaps needed`;
+    };
+
+    // ══════════════════════════════════════════
+    // BALANCE BYES
+    // ══════════════════════════════════════════
+    window.balanceByes = function() {
+      const statusEl = document.getElementById('balanceByesStatus');
+      statusEl.textContent = 'Balancing bye weeks...';
+
+      const getISO  = g => parseDateToISO(g.date);
+      const dayOfISO = iso => new Date(iso + 'T12:00:00').getDay(); // 0=Sun
+
+      // Build a map of week → anchor dates by day-of-week
+      // e.g. weekDates[3][1] = '2026-06-08' means week 3's Monday is June 8
+      function buildWeekDateMap() {
+        const map = {}; // map[week][dayIdx] = iso
+        schedule.forEach(g => {
+          const wk = parseInt(g.week);
+          if (wk < 2 || wk > 11) return;
+          const iso = getISO(g);
+          if (!iso) return;
+          if (!map[wk]) map[wk] = {};
+          const d = dayOfISO(iso);
+          if (!map[wk][d]) map[wk][d] = iso;
+        });
+        return map;
+      }
+
+      // Get DH pairs for weeks 2-11: { week, dayIdx, idxs[] }
+      function getDHPairsWithDay() {
+        const byDateWeek = {};
+        schedule.forEach((g, i) => {
+          const wk = parseInt(g.week);
+          if (wk < 2 || wk > 11) return;
+          const iso = getISO(g);
+          if (!iso) return;
+          const key = `${wk}|${iso}`;
+          if (!byDateWeek[key]) byDateWeek[key] = { week: wk, iso, dayIdx: dayOfISO(iso), idxs: [] };
+          byDateWeek[key].idxs.push(i);
+        });
+        return Object.values(byDateWeek).filter(p => p.idxs.length >= 2);
+      }
+
+      // Compute bye week spread score — sum of squared gaps between consecutive bye weeks per team
+      // Lower = better spread. Also penalize back-to-back byes heavily.
+      function byeSpreadScore(sched) {
+        const allWeeks = [...new Set(sched.map(g => parseInt(g.week)))]
+          .filter(w => w >= 1 && w <= 11)
+          .sort((a, b) => a - b);
+        const wk1Games = sched.filter(g => parseInt(g.week) === 1);
+        const wk1Dates = wk1Games.map(g => parseDateToISO(g.date)).filter(Boolean).sort();
+        const odDate   = wk1Dates[0];
+
+        const teamByes = {};
+        const allTeams = [...new Set(sched.flatMap(g => [g.homeTeam, g.awayTeam]))];
+
+        allTeams.forEach(team => {
+          const isWeekBye = w => {
+            const tg = sched.filter(g => parseInt(g.week) === w && (g.homeTeam === team || g.awayTeam === team));
+            if (w !== 1) return tg.length === 0;
+            return tg.filter(g => parseDateToISO(g.date) !== odDate).length === 0;
+          };
+          teamByes[team] = allWeeks.filter(w => isWeekBye(w));
+        });
+
+        let score = 0;
+        Object.values(teamByes).forEach(byes => {
+          if (byes.length < 2) return;
+          // Penalize back-to-back byes heavily, reward even spread
+          for (let i = 1; i < byes.length; i++) {
+            const gap = byes[i] - byes[i - 1];
+            if (gap === 1) score += 100; // back-to-back = very bad
+            else score += Math.max(0, 4 - gap) * 10; // gaps < 4 weeks still penalized
+          }
+        });
+        return score;
+      }
+
+      // Check if swapping two pairs across weeks would cause a double-booking
+      // (a team already has a game in the target week on that day)
+      function wouldDoubleBook(pairA, pairB, weekDateMap) {
+        // pairA moving to pairB's week, pairB moving to pairA's week
+        const teamsA = new Set(pairA.idxs.flatMap(i => [schedule[i].homeTeam, schedule[i].awayTeam]));
+        const teamsB = new Set(pairB.idxs.flatMap(i => [schedule[i].homeTeam, schedule[i].awayTeam]));
+
+        const newIsoForA = weekDateMap[pairB.week]?.[pairA.dayIdx];
+        const newIsoForB = weekDateMap[pairA.week]?.[pairB.dayIdx];
+
+        if (!newIsoForA || !newIsoForB) return true; // target week doesn't have that day — skip
+
+        // Check if any team in pairA already has a game in pairB's week (excluding pairB itself)
+        for (const team of teamsA) {
+          const conflict = schedule.some((g, i) =>
+            !pairB.idxs.includes(i) &&
+            parseInt(g.week) === pairB.week &&
+            parseDateToISO(g.date) === newIsoForA &&
+            (g.homeTeam === team || g.awayTeam === team)
+          );
+          if (conflict) return true;
+        }
+        // Check if any team in pairB already has a game in pairA's week (excluding pairA itself)
+        for (const team of teamsB) {
+          const conflict = schedule.some((g, i) =>
+            !pairA.idxs.includes(i) &&
+            parseInt(g.week) === pairA.week &&
+            parseDateToISO(g.date) === newIsoForB &&
+            (g.homeTeam === team || g.awayTeam === team)
+          );
+          if (conflict) return true;
+        }
+        return false;
+      }
+
+      let improved = true;
+      let passes = 0;
+      let totalSwaps = 0;
+
+      while (improved && passes < 20) {
+        improved = false;
+        passes++;
+        const weekDateMap = buildWeekDateMap();
+        const pairs = getDHPairsWithDay();
+
+        for (let a = 0; a < pairs.length; a++) {
+          for (let b = a + 1; b < pairs.length; b++) {
+            const pA = pairs[a];
+            const pB = pairs[b];
+            if (pA.week === pB.week) continue; // same week, nothing to do
+            if (pA.dayIdx !== pB.dayIdx) continue; // different day — keep same day of week
+
+            if (wouldDoubleBook(pA, pB, weekDateMap)) continue;
+
+            const newIsoA = weekDateMap[pB.week]?.[pA.dayIdx];
+            const newIsoB = weekDateMap[pA.week]?.[pB.dayIdx];
+            if (!newIsoA || !newIsoB) continue;
+
+            const before = byeSpreadScore(schedule);
+
+            // Apply swap
+            pA.idxs.forEach(i => { schedule[i].date = formatDate(newIsoA); schedule[i].week = pB.week; });
+            pB.idxs.forEach(i => { schedule[i].date = formatDate(newIsoB); schedule[i].week = pA.week; });
+
+            const after = byeSpreadScore(schedule);
+
+            if (after < before - 0.001) {
+              improved = true;
+              totalSwaps++;
+              // Update pair references
+              pairs[a] = { ...pA, week: pB.week, iso: newIsoA };
+              pairs[b] = { ...pB, week: pA.week, iso: newIsoB };
+            } else {
+              // Revert
+              pA.idxs.forEach(i => { schedule[i].date = formatDate(pA.iso); schedule[i].week = pA.week; });
+              pB.idxs.forEach(i => { schedule[i].date = formatDate(pB.iso); schedule[i].week = pB.week; });
+            }
+          }
+        }
+      }
+
+      renderAll();
+      statusEl.textContent = totalSwaps > 0
+        ? `✅ Byes balanced — ${totalSwaps} swap${totalSwaps !== 1 ? 's' : ''} across ${passes} pass${passes !== 1 ? 'es' : ''}`
+        : `✅ Bye weeks already well spread — no swaps needed`;
     };
 
   </script>
