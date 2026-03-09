@@ -935,13 +935,15 @@
             </div>
           </div>
 
-          <!-- Opening Day DH Team (11-team summer only) -->
-          <div class="form-group" id="openingDayDHGroup" style="display: none;">
-            <label for="openingDayDHTeam">Opening Day DH Team</label>
-            <select id="openingDayDHTeam" style="width: 100%; padding: 0.75rem; border: 2px solid var(--border-color); border-radius: 8px; font-size: 1rem;">
-              <option value="">— Select a team —</option>
-            </select>
-            <p style="font-size: 0.85rem; color: var(--text-light); margin-top: 0.4rem;">This team plays 2 games on Opening Day (vs different opponents) and sits opening week Mon–Thu. They play 12 total DHs (24 games). All other teams play 11 DHs + 1 OD single (23 games).</p>
+          <!-- Opening Day Matchups (11-team summer only) -->
+          <div class="form-group" id="openingDayMatchupsGroup" style="display: none;">
+            <label>🎉 Opening Day Match-ups</label>
+            <p style="font-size: 0.9rem; color: var(--text-light); margin-bottom: 1rem;">
+              Select all 6 Opening Day match-ups. Each team must appear exactly once — whichever team you assign to two games will automatically become the Opening Day DH team (sits Mon–Thu opening week).
+            </p>
+            <div id="odMatchupRows" style="display: flex; flex-direction: column; gap: 0.6rem;"></div>
+            <div id="odDHTeamBanner" style="display:none; margin-top:0.75rem; padding:0.6rem 0.9rem; background:#e8f4e8; border:1px solid #c3e6cb; border-radius:8px; font-size:0.9rem; color:var(--primary-color); font-weight:600;"></div>
+            <p id="odMatchupValidationMsg" style="font-size: 0.85rem; color: var(--error-red); margin-top: 0.5rem; display: none;"></p>
           </div>
 
           <!-- Team Scheduling Restrictions -->
@@ -1120,7 +1122,7 @@
       // Summer-specific
       summerGamesPerTeam: 22,
       summerNumTeams: 10,
-      openingDayDHTeam: null,     // team ID for 11-team opening day DH
+      openingDayMatchups: null,   // array of 6 {home, away} pairs for opening day (DH team derived from whichever appears twice)
       oddTeamFormat: 'bye',       // 'bye' or 'doubleDH'
       gameDays: [0, 1, 2, 3, 4]  // 0=Sun(Opening Day), 1=Mon, 2=Tue, 3=Wed, 4=Thu (day-of-week indices)
     };
@@ -1481,20 +1483,14 @@
         // Populate team dropdowns in restrictions when moving to step 3
         populateRestrictionTeams();
 
-        // Populate opening day DH team dropdown for 11-team summer
+        // Populate opening day matchup rows for 11-team summer
         const numTeams = parseInt(document.getElementById('summerNumTeams').value) || 10;
-        const dhGroup = document.getElementById('openingDayDHGroup');
-        const dhSel   = document.getElementById('openingDayDHTeam');
+        const matchupsGroup = document.getElementById('openingDayMatchupsGroup');
         if (scheduleConfig.seasonType === 'summer' && numTeams === 11) {
-          dhGroup.style.display = 'block';
-          const prev = scheduleConfig.openingDayDHTeam;
-          dhSel.innerHTML = '<option value="">— Select a team —</option>' +
-            scheduleConfig.selectedTeams.map(t =>
-              `<option value="${t.id}"${t.id === prev ? ' selected' : ''}>${t.name}</option>`
-            ).join('');
+          matchupsGroup.style.display = 'block';
+          renderODMatchupRows();
         } else {
-          dhGroup.style.display = 'none';
-          dhSel.innerHTML = '<option value="">— Select a team —</option>';
+          matchupsGroup.style.display = 'none';
         }
       }
       
@@ -1540,6 +1536,97 @@
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
 
+    window.renderODMatchupRows = function() {
+      const container = document.getElementById('odMatchupRows');
+      const teams = scheduleConfig.selectedTeams;
+      const allOptions = teams.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
+
+      const rowStyle = 'display:flex;align-items:center;gap:0.5rem;background:#f8fafc;padding:0.6rem 0.75rem;border-radius:8px;border:1px solid var(--border-color);';
+      const selStyle = 'flex:1;padding:0.5rem;border:1px solid var(--border-color);border-radius:6px;font-size:0.9rem;';
+      const vsStyle = 'font-weight:700;color:var(--text-light);font-size:0.85rem;white-space:nowrap;';
+      const labelStyle = 'font-size:0.8rem;font-weight:600;color:var(--text-light);min-width:2.5rem;';
+
+      // Preserve existing selections if rows already built
+      const existingHome = [...document.querySelectorAll('.od-home-sel')].map(s => s.value);
+      const existingAway = [...document.querySelectorAll('.od-away-sel')].map(s => s.value);
+
+      let html = '';
+      for (let i = 1; i <= 6; i++) {
+        html += `<div style="${rowStyle}">
+          <span style="${labelStyle}">G${i}</span>
+          <select class="od-home-sel" data-game="${i}" style="${selStyle}" onchange="validateODMatchups()">
+            <option value="">— Home —</option>${allOptions}
+          </select>
+          <span style="${vsStyle}">vs</span>
+          <select class="od-away-sel" data-game="${i}" style="${selStyle}" onchange="validateODMatchups()">
+            <option value="">— Away —</option>${allOptions}
+          </select>
+        </div>`;
+      }
+      container.innerHTML = html;
+
+      // Restore previous selections
+      const homeSelects = document.querySelectorAll('.od-home-sel');
+      const awaySelects = document.querySelectorAll('.od-away-sel');
+      existingHome.forEach((v, i) => { if (homeSelects[i] && v) homeSelects[i].value = v; });
+      existingAway.forEach((v, i) => { if (awaySelects[i] && v) awaySelects[i].value = v; });
+
+      validateODMatchups();
+    }
+
+    window.validateODMatchups = function() {
+      const msg = document.getElementById('odMatchupValidationMsg');
+      const banner = document.getElementById('odDHTeamBanner');
+      const usedCount = {};
+      let allFilled = true;
+
+      document.querySelectorAll('.od-home-sel').forEach(s => { if (!s.value) allFilled = false; else usedCount[s.value] = (usedCount[s.value] || 0) + 1; });
+      document.querySelectorAll('.od-away-sel').forEach(s => { if (!s.value) allFilled = false; else usedCount[s.value] = (usedCount[s.value] || 0) + 1; });
+
+      // Hide banner until valid
+      banner.style.display = 'none';
+
+      if (!allFilled) {
+        msg.textContent = 'Please select all teams for each game.';
+        msg.style.display = 'block';
+        return false;
+      }
+
+      // Exactly one team should appear twice (DH team), all others exactly once
+      const teams = scheduleConfig.selectedTeams;
+      const appearsThrice = Object.entries(usedCount).filter(([,c]) => c > 2).map(([id]) => teams.find(t => t.id === id)?.name).filter(Boolean);
+      if (appearsThrice.length) {
+        msg.textContent = `Team(s) appear more than twice: ${appearsThrice.join(', ')}. Only one team can play two OD games.`;
+        msg.style.display = 'block';
+        return false;
+      }
+      const dhCandidates = Object.entries(usedCount).filter(([,c]) => c === 2).map(([id]) => id);
+      if (dhCandidates.length > 1) {
+        const names = dhCandidates.map(id => teams.find(t => t.id === id)?.name).filter(Boolean);
+        msg.textContent = `Multiple teams appear twice (${names.join(', ')}). Only one team can be the Opening Day DH team.`;
+        msg.style.display = 'block';
+        return false;
+      }
+      if (dhCandidates.length === 0) {
+        msg.textContent = 'No team appears twice — one team must play 2 Opening Day games as the DH team.';
+        msg.style.display = 'block';
+        return false;
+      }
+      const missing = teams.filter(t => !usedCount[t.id]).map(t => t.name);
+      if (missing.length) {
+        msg.textContent = `Missing team(s): ${missing.join(', ')}`;
+        msg.style.display = 'block';
+        return false;
+      }
+
+      // Valid — show which team is the DH team
+      const dhTeam = teams.find(t => t.id === dhCandidates[0]);
+      banner.textContent = `✅ ${dhTeam.name} is the Opening Day DH team (plays 2 games, sits Mon–Thu opening week)`;
+      banner.style.display = 'block';
+      msg.style.display = 'none';
+      return true;
+    }
+
     function captureParameters() {
       scheduleConfig.startDate = document.getElementById('startDate').value;
       scheduleConfig.gamesPerWeek = parseInt(document.getElementById('gamesPerWeek').value) || 4;
@@ -1555,7 +1642,28 @@
         scheduleConfig.oddTeamFormat = oddRadio ? oddRadio.value : 'bye';
 
         if (scheduleConfig.summerNumTeams === 11) {
-          scheduleConfig.openingDayDHTeam = document.getElementById('openingDayDHTeam').value || null;
+          // Capture matchups and derive the DH team (whichever appears twice)
+          if (validateODMatchups()) {
+            const teams = scheduleConfig.selectedTeams;
+            const homeSelects = document.querySelectorAll('.od-home-sel');
+            const awaySelects = document.querySelectorAll('.od-away-sel');
+            const matchups = [];
+            const usedCount = {};
+            homeSelects.forEach((s, i) => {
+              const home = teams.find(t => t.id === s.value);
+              const away = teams.find(t => t.id === awaySelects[i].value);
+              matchups.push({ home, away });
+              usedCount[s.value] = (usedCount[s.value] || 0) + 1;
+              usedCount[awaySelects[i].value] = (usedCount[awaySelects[i].value] || 0) + 1;
+            });
+            scheduleConfig.openingDayMatchups = matchups;
+            // Derive DH team
+            const dhId = Object.entries(usedCount).find(([,c]) => c === 2)?.[0] || null;
+            scheduleConfig.openingDayDHTeam = dhId;
+          } else {
+            scheduleConfig.openingDayMatchups = null;
+            scheduleConfig.openingDayDHTeam = null;
+          }
         }
         // Game days: Sun-Thu hardcoded
         scheduleConfig.gameDays = [0, 1, 2, 3, 4];
@@ -1848,32 +1956,33 @@
       const gamesPlayed = Object.fromEntries(teams.map(t => [t.id, 0]));
       const dhPlayed = Object.fromEntries(teams.map(t => [t.id, 0]));
 
-      // ── STEP 1: Opening Day — 6 games (NEW games, not from pool) ────────────
-      // Structure: 4 games pairing 8 non-Purple teams (each plays 1x),
-      //            2 games where Purple plays the remaining 2 non-Purple teams.
-      // Result: every non-Purple team plays exactly 1 OD game; Purple plays 2.
+      // ── STEP 1: Opening Day — 6 games ────────────────────────────────────────
       if (!odDHTeamId) {
         console.error('❌ No Opening Day DH team selected — cannot generate 11-team schedule.');
         return;
       }
       console.log(`🎉 Scheduling Opening Day...`);
-      const nonPurple = shuffle(teams.filter(t => t.id !== odDHTeamId));
       const purpleTeam = teams.find(t => t.id === odDHTeamId);
+      const nonPurple = teams.filter(t => t.id !== odDHTeamId);
       const odGames = [];
 
-      // Last 2 in shuffled list become Purple's opponents (they don't get paired below)
-      const purpleOpp1 = nonPurple[8];
-      const purpleOpp2 = nonPurple[9];
-      const pairableTeams = nonPurple.slice(0, 8);
-
-      // 4 games pairing the 8 pairable non-Purple teams
-      for (let i = 0; i < pairableTeams.length; i += 2) {
-        odGames.push({ home: pairableTeams[i], away: pairableTeams[i + 1] });
+      if (scheduleConfig.openingDayMatchups && scheduleConfig.openingDayMatchups.length === 6) {
+        // Use user-defined matchups
+        scheduleConfig.openingDayMatchups.forEach(m => odGames.push({ home: m.home, away: m.away }));
+        console.log(`🎉 Opening Day: using user-defined matchups`);
+      } else {
+        // Fallback: random shuffle
+        const shuffledNP = shuffle([...nonPurple]);
+        const purpleOpp1 = shuffledNP[8];
+        const purpleOpp2 = shuffledNP[9];
+        const pairableTeams = shuffledNP.slice(0, 8);
+        for (let i = 0; i < pairableTeams.length; i += 2) {
+          odGames.push({ home: pairableTeams[i], away: pairableTeams[i + 1] });
+        }
+        odGames.push({ home: purpleTeam, away: purpleOpp1 });
+        odGames.push({ home: purpleOpp2, away: purpleTeam });
+        console.log(`🎉 Opening Day: using randomized matchups (no user selection)`);
       }
-      // Game 5: Purple vs purpleOpp1
-      odGames.push({ home: purpleTeam, away: purpleOpp1 });
-      // Game 6: purpleOpp2 vs Purple (flip home/away for variety)
-      odGames.push({ home: purpleOpp2, away: purpleTeam });
 
       for (let i = 0; i < odGames.length; i++) {
         const g = odGames[i];
