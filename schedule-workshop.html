@@ -485,9 +485,11 @@
           </div>
 
           <div class="export-actions">
+            <button class="btn btn-secondary" onclick="balanceDays()" id="balanceDaysBtn" style="display:none;">⚖️ Balance Days</button>
             <button class="btn btn-primary" onclick="downloadCSV()">💾 Download CSV</button>
             <button class="btn btn-secondary" onclick="exportToFirebase()">☁️ Export to Firebase</button>
           </div>
+          <div id="balanceStatus" style="font-size:0.85rem;color:var(--secondary-color);margin-top:0.4rem;"></div>
           <div id="exportStatus"></div>
         </div>
 
@@ -599,6 +601,7 @@
           document.getElementById('importStatus').innerHTML =
             `<div class="alert success"><strong>✓ Loaded</strong> ${schedule.length} games from ${file.name}</div>`;
           document.getElementById('workshopContent').classList.remove('hidden');
+          document.getElementById('balanceDaysBtn').style.display = '';
           analyzerTeam = Array.from(teams).sort()[0];
           renderAll();
         } catch (err) {
@@ -1015,6 +1018,116 @@
           `<div class="alert error"><strong>✗ Error:</strong> ${err.message}</div>`;
         btn.disabled = false; btn.textContent = '☁️ Export to Firebase';
       }
+    };
+
+    // ══════════════════════════════════════════
+    // BALANCE DAYS
+    // ══════════════════════════════════════════
+    window.balanceDays = function() {
+      const statusEl = document.getElementById('balanceStatus');
+      statusEl.textContent = 'Balancing...';
+
+      // Helper: get ISO date string from game
+      const getISO = g => parseDateToISO(g.date);
+
+      // Helper: day index (0=Sun) from ISO string
+      const dayIdx = iso => new Date(iso + 'T12:00:00').getDay();
+
+      // Helper: compute per-team day variance across the whole schedule
+      function teamDayVariance(sched) {
+        const counts = {};
+        sched.forEach(g => {
+          const iso = getISO(g);
+          if (!iso) return;
+          const d = dayIdx(iso);
+          [g.homeTeam, g.awayTeam].forEach(t => {
+            if (!counts[t]) counts[t] = Array(7).fill(0);
+            counts[t][d]++;
+          });
+        });
+        let totalVariance = 0;
+        Object.values(counts).forEach(arr => {
+          const mean = arr.reduce((a, b) => a + b, 0) / arr.filter(x => x > 0).length || 1;
+          arr.forEach(v => { if (v > 0) totalVariance += (v - mean) ** 2; });
+        });
+        return totalVariance;
+      }
+
+      // Group schedule into DH pairs by date (same date = a pair)
+      // Only consider weeks 2-11
+      function getDHPairs(sched) {
+        const byDate = {};
+        sched.forEach((g, i) => {
+          const wk = parseInt(g.week);
+          if (wk < 2 || wk > 11) return;
+          const iso = getISO(g);
+          if (!iso) return;
+          if (!byDate[iso]) byDate[iso] = [];
+          byDate[iso].push(i);
+        });
+        // Return groups of 2+ games sharing a date (DH pairs)
+        return Object.entries(byDate).filter(([, idxs]) => idxs.length >= 2);
+      }
+
+      // Group DH pairs by week number
+      function pairsByWeek(sched) {
+        const weeks = {};
+        getDHPairs(sched).forEach(([iso, idxs]) => {
+          const wk = sched[idxs[0]].week;
+          if (!weeks[wk]) weeks[wk] = [];
+          weeks[wk].push({ iso, idxs });
+        });
+        return weeks;
+      }
+
+      let improved = true;
+      let passes = 0;
+      let totalSwaps = 0;
+
+      while (improved && passes < 20) {
+        improved = false;
+        passes++;
+        const weeks = pairsByWeek(schedule);
+
+        for (const [, pairs] of Object.entries(weeks)) {
+          // Try every combination of 2 pairs in this week
+          for (let a = 0; a < pairs.length; a++) {
+            for (let b = a + 1; b < pairs.length; b++) {
+              const pairA = pairs[a];
+              const pairB = pairs[b];
+              if (pairA.iso === pairB.iso) continue; // same date, nothing to swap
+
+              const before = teamDayVariance(schedule);
+
+              // Swap dates of the two pairs
+              const newDateA = pairB.iso;
+              const newDateB = pairA.iso;
+              pairA.idxs.forEach(i => { schedule[i].date = formatDate(newDateA); });
+              pairB.idxs.forEach(i => { schedule[i].date = formatDate(newDateB); });
+
+              const after = teamDayVariance(schedule);
+
+              if (after < before - 0.001) {
+                // Keep swap — it helped
+                improved = true;
+                totalSwaps++;
+                // Update iso references for subsequent iterations
+                pairs[a] = { iso: newDateA, idxs: pairA.idxs };
+                pairs[b] = { iso: newDateB, idxs: pairB.idxs };
+              } else {
+                // Revert
+                pairA.idxs.forEach(i => { schedule[i].date = formatDate(pairA.iso); });
+                pairB.idxs.forEach(i => { schedule[i].date = formatDate(pairB.iso); });
+              }
+            }
+          }
+        }
+      }
+
+      renderAll();
+      statusEl.textContent = totalSwaps > 0
+        ? `✅ Balanced — ${totalSwaps} swap${totalSwaps !== 1 ? 's' : ''} made across ${passes} pass${passes !== 1 ? 'es' : ''}`
+        : `✅ Already balanced — no swaps needed`;
     };
 
   </script>
