@@ -1099,6 +1099,176 @@
       grid-template-columns: repeat(2, 1fr);
     }
   }
+
+  /* Calendar Button */
+  .calendar-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(255,255,255,0.15);
+    color: white;
+    border: 1px solid rgba(255,255,255,0.4);
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s;
+    white-space: nowrap;
+  }
+  .calendar-btn:hover { background: rgba(255,255,255,0.25); }
+
+  .calendar-container {
+    position: relative;
+    display: inline-block;
+  }
+
+  .calendar-dropdown {
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    background: white;
+    border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+    min-width: 210px;
+    z-index: 1000;
+    overflow: hidden;
+  }
+
+  .calendar-dropdown-content { padding: 6px 0; }
+
+  .calendar-option {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 10px 16px;
+    background: none;
+    border: none;
+    font-size: 0.9rem;
+    color: #2d3748;
+    cursor: pointer;
+    text-align: left;
+    transition: background 0.15s;
+  }
+  .calendar-option:hover { background: #f0f4f0; }
+
+  .calendar-modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 9000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+
+  .calendar-modal-content {
+    background: white;
+    border-radius: 14px;
+    padding: 28px;
+    max-width: 500px;
+    width: 100%;
+    position: relative;
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+
+  .calendar-modal-close {
+    position: absolute;
+    top: 12px;
+    right: 16px;
+    background: none;
+    border: none;
+    font-size: 1.4rem;
+    cursor: pointer;
+    color: #718096;
+    line-height: 1;
+  }
+
+  .calendar-modal-content h3 { color: #2d5016; margin-bottom: 10px; }
+
+  .calendar-url-box {
+    display: flex;
+    gap: 8px;
+    margin: 14px 0;
+  }
+
+  .calendar-url-box input {
+    flex: 1;
+    padding: 8px 10px;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    font-size: 0.82rem;
+    color: #4a5568;
+    background: #f8fafc;
+  }
+
+  .calendar-url-box .copy-btn {
+    padding: 8px 14px;
+    background: #2d5016;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .calendar-url-box .copy-btn:hover { background: #1a6b4a; }
+
+  .calendar-instructions details {
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    margin-bottom: 6px;
+    overflow: hidden;
+  }
+  .calendar-instructions summary {
+    padding: 10px 14px;
+    cursor: pointer;
+    background: #f8fafc;
+    font-size: 0.9rem;
+    list-style: none;
+  }
+  .calendar-instructions summary::-webkit-details-marker { display: none; }
+  .calendar-instructions details[open] summary { background: #e6f0e0; color: #2d5016; }
+  .calendar-instructions ol { padding: 10px 14px 10px 30px; font-size: 0.88rem; }
+  .calendar-instructions li { margin-bottom: 4px; }
+
+  .calendar-note {
+    margin-top: 14px;
+    font-size: 0.85rem;
+    color: #718096;
+    background: #fffbeb;
+    border: 1px solid #f59e0b;
+    border-radius: 8px;
+    padding: 10px 14px;
+  }
+
+  .calendar-toast {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    background: #2d5016;
+    color: white;
+    padding: 10px 20px;
+    border-radius: 20px;
+    font-size: 0.9rem;
+    opacity: 0;
+    transition: all 0.3s;
+    z-index: 9999;
+    pointer-events: none;
+  }
+  .calendar-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  .section-header-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
 </style>
 </head>
 <body>
@@ -1210,7 +1380,10 @@
   <!-- Team Schedule -->
   <div class="section">
     <div class="section-header">
-      📅 Season Schedule & Results
+      <div class="section-header-row">
+        <span>📅 Season Schedule & Results</span>
+        <div class="calendar-container" id="calendar-container"></div>
+      </div>
     </div>
     <div class="section-content">
       <div class="table-container">
@@ -1426,6 +1599,9 @@
       
       // Initialize page
       initializePage();
+
+      // Init calendar button now that teamName is set
+      document.dispatchEvent(new Event('calendarReady'));
       
       // Setup click outside to close flipped cards
       setupCardFlipHandlers();
@@ -2125,6 +2301,169 @@
 
     tbody.innerHTML = scheduleHTML;
   }
+
+  // ── CALENDAR SUBSCRIPTION ──────────────────────────────────────────────────
+  const CALENDAR_FUNCTION_URL = 'https://us-central1-acessoftballreference-84791.cloudfunctions.net/calendar';
+
+  function initCalendarButton() {
+    const container = document.getElementById('calendar-container');
+    if (!container || !teamName) return;
+
+    container.innerHTML = `
+      <button class="calendar-btn" id="calendarBtn">🗓️ Add to Calendar</button>
+      <div class="calendar-dropdown" id="calendarDropdown" style="display:none;">
+        <div class="calendar-dropdown-content">
+          <button class="calendar-option" data-action="subscribe">🔗 Subscribe (auto-updates)</button>
+          <button class="calendar-option" data-action="download">⬇️ Download .ics file</button>
+          <button class="calendar-option" data-action="google">📆 Add to Google Calendar</button>
+          <button class="calendar-option" data-action="copy">📋 Copy URL</button>
+        </div>
+      </div>
+    `;
+
+    const btn = document.getElementById('calendarBtn');
+    const dropdown = document.getElementById('calendarDropdown');
+
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      dropdown.style.display = dropdown.style.display === 'none' ? 'block' : 'none';
+    });
+
+    document.addEventListener('click', () => { dropdown.style.display = 'none'; });
+
+    container.querySelectorAll('.calendar-option').forEach(opt => {
+      opt.addEventListener('click', () => {
+        dropdown.style.display = 'none';
+        handleCalendarAction(opt.dataset.action);
+      });
+    });
+  }
+
+  function getCalendarUrl() {
+    return `${CALENDAR_FUNCTION_URL}?team=${encodeURIComponent(teamName.toLowerCase())}`;
+  }
+
+  function handleCalendarAction(action) {
+    const url = getCalendarUrl();
+    switch (action) {
+      case 'subscribe':
+        showSubscribeModal(url);
+        break;
+      case 'download':
+        window.open(url, '_blank');
+        break;
+      case 'google':
+        const webcalUrl = url.replace('https://', 'webcal://');
+        window.open(`https://calendar.google.com/calendar/r?cid=${encodeURIComponent(webcalUrl)}`, '_blank');
+        break;
+      case 'copy':
+        copyCalendarUrl(url);
+        break;
+    }
+  }
+
+  function showSubscribeModal(url) {
+    const modal = document.createElement('div');
+    modal.className = 'calendar-modal';
+    modal.innerHTML = `
+      <div class="calendar-modal-content">
+        <button class="calendar-modal-close">&times;</button>
+        <h3>📅 Subscribe to ${teamName} Schedule</h3>
+        <p>Copy this URL and add it as a subscription in your calendar app:</p>
+        <div class="calendar-url-box">
+          <input type="text" value="${url}" readonly id="calendarUrlInput">
+          <button class="copy-btn" id="copyUrlBtn">Copy</button>
+        </div>
+        <div class="calendar-instructions">
+          <h4 style="margin: 1rem 0 0.5rem;">Instructions:</h4>
+          <details>
+            <summary><strong>📱 iPhone / iOS Calendar</strong></summary>
+            <ol>
+              <li>Go to Settings → Calendar → Accounts</li>
+              <li>Tap "Add Account" → "Other"</li>
+              <li>Tap "Add Subscribed Calendar"</li>
+              <li>Paste the URL above</li>
+              <li>Tap "Next" then "Save"</li>
+            </ol>
+          </details>
+          <details>
+            <summary><strong>📆 Google Calendar</strong></summary>
+            <ol>
+              <li>Open Google Calendar on the web</li>
+              <li>Click the + next to "Other calendars"</li>
+              <li>Select "From URL"</li>
+              <li>Paste the URL above</li>
+              <li>Click "Add calendar"</li>
+            </ol>
+          </details>
+          <details>
+            <summary><strong>📧 Outlook</strong></summary>
+            <ol>
+              <li>Go to Calendar view</li>
+              <li>Click "Add calendar" → "From Internet"</li>
+              <li>Paste the URL above</li>
+              <li>Click "OK"</li>
+            </ol>
+          </details>
+          <details>
+            <summary><strong>🍎 Mac Calendar</strong></summary>
+            <ol>
+              <li>Open Calendar app</li>
+              <li>File → New Calendar Subscription</li>
+              <li>Paste the URL above</li>
+              <li>Click "Subscribe"</li>
+            </ol>
+          </details>
+        </div>
+        <p class="calendar-note">
+          <strong>Note:</strong> Subscribed calendars auto-update! Any schedule changes will appear automatically within an hour.
+        </p>
+      </div>
+    `;
+    document.body.appendChild(modal);
+    modal.querySelector('.calendar-modal-close').addEventListener('click', () => modal.remove());
+    modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+    modal.querySelector('#copyUrlBtn').addEventListener('click', () => {
+      const input = modal.querySelector('#calendarUrlInput');
+      input.select();
+      navigator.clipboard.writeText(input.value).then(() => {
+        modal.querySelector('#copyUrlBtn').textContent = 'Copied!';
+        setTimeout(() => { modal.querySelector('#copyUrlBtn').textContent = 'Copy'; }, 2000);
+      });
+    });
+  }
+
+  async function copyCalendarUrl(url) {
+    try {
+      await navigator.clipboard.writeText(url);
+      showCalendarToast('Calendar URL copied to clipboard!');
+    } catch {
+      const input = document.createElement('input');
+      input.value = url;
+      document.body.appendChild(input);
+      input.select();
+      document.execCommand('copy');
+      document.body.removeChild(input);
+      showCalendarToast('Calendar URL copied to clipboard!');
+    }
+  }
+
+  function showCalendarToast(message) {
+    const toast = document.createElement('div');
+    toast.className = 'calendar-toast';
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    requestAnimationFrame(() => {
+      toast.classList.add('show');
+      setTimeout(() => {
+        toast.classList.remove('show');
+        setTimeout(() => toast.remove(), 300);
+      }, 2500);
+    });
+  }
+
+  // Init calendar button after teamName is set (called at end of loadPageData)
+  document.addEventListener('calendarReady', initCalendarButton);
 </script>
 <script type="module">
   import { NavigationComponent } from './nav-component.js';
