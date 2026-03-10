@@ -88,11 +88,17 @@
     
     let styledCount = 0;
 
-    // ── NEW: explicitly-tagged elements via data-team attribute ──
+    // ── Explicitly-tagged elements via data-team attribute ──
+    // Matches any color keyword found within the full team name value
+    // e.g. data-team="Aces White" → matches "white", data-team="Green" → matches "green"
     document.querySelectorAll('[data-team]').forEach(element => {
-      const team = element.dataset.team.toLowerCase().trim();
-      if (teams[team]) {
-        element.classList.add(teams[team]);
+      const teamValue = element.dataset.team.toLowerCase().trim();
+      const matchedColor = Object.keys(teams).find(color => {
+        // Match: exact, or color appears as a whole word within the team name
+        return teamValue === color || new RegExp('\\b' + color + '\\b').test(teamValue);
+      });
+      if (matchedColor) {
+        element.classList.add(teams[matchedColor]);
         styledCount++;
       }
     });
