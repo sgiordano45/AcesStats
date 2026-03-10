@@ -1,4 +1,4 @@
-// TEAM COLORS - Enhanced Version with All Formatting Options
+// TEAM COLORS - Enhanced Version with All Formatting Options (v2.1)
 (function() {
   // Create CSS styles
   const style = document.createElement('style');
@@ -15,7 +15,7 @@
     .team-text-green { color: var(--team-green) !important; font-weight: 600 !important; }
     .team-text-red { color: var(--team-red) !important; font-weight: 600 !important; }
     .team-text-blue { color: var(--team-blue) !important; font-weight: 600 !important; }
-    .team-text-white { color: var(--team-white) !important; font-weight: 600 !important; text-shadow: 1px 1px 2px rgba(255,255,255,0.8); }
+    .team-text-white { color: var(--team-white) !important; font-weight: 600 !important; }
     .team-text-orange { color: var(--team-orange) !important; font-weight: 600 !important; }
     .team-text-silver { color: var(--team-silver) !important; font-weight: 600 !important; }
     .team-text-purple { color: var(--team-purple) !important; font-weight: 600 !important; }
@@ -90,18 +90,21 @@
 
     // ── Explicitly-tagged elements via data-team attribute ──
     // Matches any color keyword found within the full team name value
-    // e.g. data-team="Aces White" → matches "white", data-team="Green" → matches "green"
+    let dataTeamCount = 0;
     document.querySelectorAll('[data-team]').forEach(element => {
+      // Skip if already colored
+      if ([...element.classList].some(c => c.startsWith('team-text-'))) return;
       const teamValue = element.dataset.team.toLowerCase().trim();
       const matchedColor = Object.keys(teams).find(color => {
-        // Match: exact, or color appears as a whole word within the team name
         return teamValue === color || new RegExp('\\b' + color + '\\b').test(teamValue);
       });
       if (matchedColor) {
         element.classList.add(teams[matchedColor]);
         styledCount++;
+        dataTeamCount++;
       }
     });
+    if (dataTeamCount > 0) console.log(`🎨 Team colors: applied to ${dataTeamCount} [data-team] elements`);
     
     // Search all text elements for automatic text coloring
     document.querySelectorAll('*').forEach(element => {
