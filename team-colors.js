@@ -87,6 +87,15 @@
     };
     
     let styledCount = 0;
+
+    // ── NEW: explicitly-tagged elements via data-team attribute ──
+    document.querySelectorAll('[data-team]').forEach(element => {
+      const team = element.dataset.team.toLowerCase().trim();
+      if (teams[team]) {
+        element.classList.add(teams[team]);
+        styledCount++;
+      }
+    });
     
     // Search all text elements for automatic text coloring
     document.querySelectorAll('*').forEach(element => {
