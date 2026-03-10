@@ -511,6 +511,30 @@
     color: #1e40af;
   }
 
+  /* Manual Edit Warning */
+  .manual-edit-warning {
+    display: flex;
+    gap: 1rem;
+    align-items: flex-start;
+    background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+    border: 2px solid var(--warning-color);
+    border-radius: 12px;
+    padding: 1rem 1.25rem;
+    margin-bottom: 1.5rem;
+    font-size: 0.9rem;
+    color: #92400e;
+  }
+
+  .manual-edit-warning .icon {
+    font-size: 1.5rem;
+    flex-shrink: 0;
+  }
+
+  .badge-locked {
+    background: #fef3c7;
+    color: #92400e;
+  }
+
   /* Editor Panel */
   .editor-panel {
     background: #f8fafc;
@@ -1545,26 +1569,28 @@
           📅 League Schedule Editor
         </div>
         <div class="section-content">
+          <div class="manual-edit-warning">
+            <span class="icon">&#9888;&#65039;</span>
+            <div>
+              <p><strong>Manual Edit Protection:</strong> When you save changes here, the game will be marked as "manually edited". This prevents the weekly update script from overwriting your changes to date, time, or team assignments. Score updates will still be allowed.</p>
+            </div>
+          </div>
+
           <div class="season-selector">
             <label>Season:</label>
             <select id="scheduleSeasonSelect" onchange="loadGames()">
               <option value="">Loading seasons...</option>
             </select>
-            <button class="btn btn-secondary" onclick="loadGames()">🔄 Refresh</button>
+            <button class="btn btn-secondary" onclick="loadGames()">&#128260; Refresh</button>
           </div>
 
-          <div class="form-row">
-            <div style="flex: 1;">
-              <label style="font-weight: 600; margin-bottom: 0.5rem; display: block;">Select Game to Edit:</label>
-              <div class="item-list" id="gameList">
-                <div class="empty-state">Select a season to load games</div>
-              </div>
-            </div>
+          <div class="item-list" id="gameList">
+            <div class="empty-state">Select a season to load games</div>
           </div>
 
           <div class="editor-panel" id="gameEditor">
             <div class="no-selection">
-              <div class="icon">📋</div>
+              <div class="icon">&#128203;</div>
               <p>Select a game from the list to edit its schedule</p>
             </div>
           </div>
@@ -3353,19 +3379,22 @@
 
     container.innerHTML = gamesCache.map(game => {
       const dateStr = formatDate(game.date);
-      const timeStr = formatTime(game.date);
+      const homeTeam = capitalize(game.homeTeamName || game.homeTeamId);
+      const awayTeam = capitalize(game.awayTeamName || game.awayTeamId);
+      const score = game.homeScore !== undefined ? `${game.awayScore || 0} - ${game.homeScore || 0}` : 'TBD';
+      const gameType = (game.gameType || game.game_type || 'regular').toLowerCase();
       const status = game.status || (game.homeScore !== undefined ? 'completed' : 'scheduled');
       
       return `
         <div class="item-row ${selectedGame?.id === game.id ? 'selected' : ''}" onclick="selectGame('${game.id}')">
           <div class="item-info">
-            <div class="item-title">${capitalize(game.homeTeamId || game.homeTeamName)} vs ${capitalize(game.awayTeamId || game.awayTeamName)}</div>
-            <div class="item-subtitle">${dateStr} at ${timeStr}</div>
+            <div class="item-title">${awayTeam} @ ${homeTeam}</div>
+            <div class="item-subtitle">${dateStr} &bull; ${score} &bull; ${capitalize(gameType)}</div>
           </div>
           <div class="item-badges">
-            <span class="badge badge-${status === 'completed' ? 'completed' : status === 'cancelled' ? 'inactive' : 'active'}">
-              ${status}
-            </span>
+            ${status === 'completed' ? '<span class="badge badge-completed">Final</span>' : ''}
+            ${game.manuallyEdited ? '<span class="badge badge-locked">Locked</span>' : ''}
+            ${gameType === 'playoff' ? '<span class="badge badge-active">Playoff</span>' : ''}
           </div>
         </div>
       `;
@@ -3385,77 +3414,170 @@
     if (!selectedGame) {
       editor.innerHTML = `
         <div class="no-selection">
-          <div class="icon">📋</div>
+          <div class="icon">&#128203;</div>
           <p>Select a game from the list to edit its schedule</p>
         </div>
       `;
+      editor.classList.remove('active');
       return;
     }
 
-    const gameDate = selectedGame.date?.seconds 
-      ? new Date(selectedGame.date.seconds * 1000).toISOString().slice(0, 16)
-      : '';
+    const homeTeam = capitalize(selectedGame.homeTeamName || selectedGame.homeTeamId);
+    const awayTeam = capitalize(selectedGame.awayTeamName || selectedGame.awayTeamId);
+
+    let dateValue = '';
+    let timeValue = '';
+    if (selectedGame.date?.seconds) {
+      const d = new Date(selectedGame.date.seconds * 1000);
+      dateValue = d.toISOString().split('T')[0];
+      timeValue = d.toTimeString().slice(0, 5);
+    }
+
+    const TEAMS = ['Black', 'Green', 'Red', 'Blue', 'White', 'Orange', 'Silver', 'Purple', 'Gold', 'Carolina', 'Army', 'Teal'];
+    const teamOptions = TEAMS.map(t => `<option value="${t.toLowerCase()}">${t}</option>`).join('');
+    const gameType = (selectedGame.gameType || selectedGame.game_type || 'regular').toLowerCase();
 
     editor.classList.add('active');
     editor.innerHTML = `
-      <h3 style="margin-bottom: 1rem;">Edit Game: ${capitalize(selectedGame.homeTeamId)} vs ${capitalize(selectedGame.awayTeamId)}</h3>
-      <div class="game-form">
+      <h3 style="margin-bottom: 1rem;">&#9999;&#65039; Edit Game: ${awayTeam} @ ${homeTeam}</h3>
+      
+      ${selectedGame.manuallyEdited ? `
+        <div class="manual-edit-warning">
+          <span class="icon">&#128274;</span>
+          <div>
+            <p><strong>This game is locked.</strong> It was previously manually edited.</p>
+          </div>
+        </div>
+      ` : ''}
+      
+      <div class="form-row">
         <div class="form-group">
-          <label>Date & Time</label>
-          <input type="datetime-local" id="editGameDate" value="${gameDate}">
+          <label>Game Date</label>
+          <input type="date" id="gameDateInput" value="${dateValue}">
         </div>
         <div class="form-group">
-          <label>Status</label>
-          <select id="editGameStatus">
-            <option value="scheduled" ${selectedGame.status === 'scheduled' ? 'selected' : ''}>Scheduled</option>
-            <option value="completed" ${selectedGame.status === 'completed' ? 'selected' : ''}>Completed</option>
-            <option value="cancelled" ${selectedGame.status === 'cancelled' ? 'selected' : ''}>Cancelled</option>
-            <option value="postponed" ${selectedGame.status === 'postponed' ? 'selected' : ''}>Postponed</option>
+          <label>Game Time</label>
+          <input type="time" id="gameTimeInput" value="${timeValue}">
+        </div>
+      </div>
+      
+      <div class="form-row">
+        <div class="form-group">
+          <label>Away Team</label>
+          <select id="awayTeamSelect">${teamOptions}</select>
+        </div>
+        <div class="form-group">
+          <label>Home Team</label>
+          <select id="homeTeamSelect">${teamOptions}</select>
+        </div>
+      </div>
+      
+      <div class="form-row">
+        <div class="form-group">
+          <label>Away Score</label>
+          <input type="number" id="awayScoreInput" value="${selectedGame.awayScore ?? 0}" min="0">
+        </div>
+        <div class="form-group">
+          <label>Home Score</label>
+          <input type="number" id="homeScoreInput" value="${selectedGame.homeScore ?? 0}" min="0">
+        </div>
+      </div>
+      
+      <div class="form-row">
+        <div class="form-group">
+          <label>Game Type</label>
+          <select id="gameTypeSelect">
+            <option value="regular" ${gameType === 'regular' ? 'selected' : ''}>Regular Season</option>
+            <option value="playoff" ${gameType === 'playoff' ? 'selected' : ''}>Playoff</option>
           </select>
         </div>
         <div class="form-group">
-          <label>Location</label>
-          <input type="text" id="editGameLocation" value="${selectedGame.location || ''}" placeholder="e.g., Field A">
-        </div>
-        <div class="form-group">
-          <label>Notes</label>
-          <textarea id="editGameNotes" rows="2" placeholder="Optional notes...">${selectedGame.notes || ''}</textarea>
+          <label>Status</label>
+          <select id="gameStatusSelect">
+            <option value="scheduled" ${selectedGame.status === 'scheduled' ? 'selected' : ''}>Scheduled</option>
+            <option value="in_progress" ${selectedGame.status === 'in_progress' ? 'selected' : ''}>In Progress</option>
+            <option value="completed" ${selectedGame.status === 'completed' ? 'selected' : ''}>Completed</option>
+            <option value="postponed" ${selectedGame.status === 'postponed' ? 'selected' : ''}>Postponed</option>
+            <option value="cancelled" ${selectedGame.status === 'cancelled' ? 'selected' : ''}>Cancelled</option>
+          </select>
         </div>
       </div>
+      
+      <div class="form-row">
+        <div class="form-group">
+          <label>Round <span style="color: var(--text-light); font-weight: normal;">(for playoffs)</span></label>
+          <input type="text" id="gameRoundInput" value="${selectedGame.round || ''}" placeholder="e.g. Semifinals, Finals">
+        </div>
+      </div>
+      
+      <div class="checkbox-group">
+        <input type="checkbox" id="forfeitCheck" ${selectedGame.forfeit ? 'checked' : ''}>
+        <label for="forfeitCheck">Game was a forfeit</label>
+      </div>
+      
+      <div class="checkbox-group">
+        <input type="checkbox" id="manualEditCheck" ${selectedGame.manuallyEdited ? 'checked' : ''}>
+        <label for="manualEditCheck">Mark as manually edited (lock from script overwrites)</label>
+      </div>
+      
       <div class="btn-group">
-        <button class="btn btn-success" onclick="saveGameChanges()">💾 Save Changes</button>
+        <button class="btn btn-success" onclick="saveGameChanges()">&#128190; Save Changes</button>
         <button class="btn btn-secondary" onclick="cancelGameEdit()">Cancel</button>
       </div>
     `;
+
+    setTimeout(() => {
+      document.getElementById('awayTeamSelect').value = selectedGame.awayTeamId || '';
+      document.getElementById('homeTeamSelect').value = selectedGame.homeTeamId || '';
+    }, 0);
   }
 
   window.saveGameChanges = async function() {
     if (!selectedGame) return;
 
-    const dateInput = document.getElementById('editGameDate').value;
-    const status = document.getElementById('editGameStatus').value;
-    const location = document.getElementById('editGameLocation').value;
-    const notes = document.getElementById('editGameNotes').value;
+    const dateInput = document.getElementById('gameDateInput').value;
+    const timeInput = document.getElementById('gameTimeInput').value;
+    const awayTeamId = document.getElementById('awayTeamSelect').value;
+    const homeTeamId = document.getElementById('homeTeamSelect').value;
+    const awayScore = parseInt(document.getElementById('awayScoreInput').value) || 0;
+    const homeScore = parseInt(document.getElementById('homeScoreInput').value) || 0;
+    const gameType = document.getElementById('gameTypeSelect').value;
+    const status = document.getElementById('gameStatusSelect').value;
+    const round = document.getElementById('gameRoundInput').value.trim() || null;
+    const forfeit = document.getElementById('forfeitCheck').checked;
+    const manuallyEdited = document.getElementById('manualEditCheck').checked;
+
+    if (!dateInput || !awayTeamId || !homeTeamId) {
+      showToast('Please fill in date and both team fields', 'warning');
+      return;
+    }
 
     try {
+      const dateTime = new Date(`${dateInput}T${timeInput || '00:00'}`);
       const gameRef = doc(db, 'seasons', selectedGame.seasonId, 'games', selectedGame.id);
       
-      const updates = {
+      await updateDoc(gameRef, {
+        date: Timestamp.fromDate(dateTime),
+        time: timeInput || null,
+        awayTeamId,
+        homeTeamId,
+        awayTeamName: capitalize(awayTeamId),
+        homeTeamName: capitalize(homeTeamId),
+        awayScore,
+        homeScore,
+        gameType,
+        game_type: gameType,
         status,
-        location,
-        notes,
+        round,
+        forfeit,
+        manuallyEdited: true,
         lastModified: serverTimestamp(),
         lastModifiedBy: currentUser.uid
-      };
+      });
 
-      if (dateInput) {
-        updates.date = Timestamp.fromDate(new Date(dateInput));
-      }
-
-      await updateDoc(gameRef, updates);
-      
       showToast('Game updated successfully!', 'success');
-      loadGames();
+      await loadGames();
+      cancelGameEdit();
       
     } catch (error) {
       console.error('Error saving game:', error);
@@ -3465,6 +3587,7 @@
 
   window.cancelGameEdit = function() {
     selectedGame = null;
+    document.getElementById('gameEditor').classList.remove('active');
     renderGameEditor();
     renderGameList();
   };
