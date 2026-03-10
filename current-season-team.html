@@ -1101,6 +1101,57 @@
   }
 
   /* Calendar Button */
+  .calendar-strip {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    background: #f0f6ea;
+    border: 1px solid #c6ddb8;
+    border-radius: 12px;
+    padding: 0.85rem 1.25rem;
+    margin-bottom: 1.5rem;
+    flex-wrap: wrap;
+  }
+
+  .calendar-strip-label {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--primary-color);
+    white-space: nowrap;
+  }
+
+  .calendar-strip-buttons {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+
+  .cal-strip-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: white;
+    color: var(--primary-color);
+    border: 1px solid #b8d4a8;
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+    white-space: nowrap;
+  }
+  .cal-strip-btn:hover {
+    background: var(--primary-color);
+    color: white;
+    border-color: var(--primary-color);
+  }
+
+  .cal-copy-confirm {
+    color: #16a34a !important;
+    border-color: #16a34a !important;
+  }
+
   .calendar-btn {
     display: inline-flex;
     align-items: center;
@@ -1375,13 +1426,21 @@
     </div>
   </div>
 
+  <!-- Calendar Export Strip -->
+  <div class="calendar-strip" id="calendar-strip">
+    <span class="calendar-strip-label">🗓️ Add team schedule to your calendar:</span>
+    <div class="calendar-strip-buttons">
+      <button class="cal-strip-btn" id="calBtnGoogle">📆 Google Calendar</button>
+      <button class="cal-strip-btn" id="calBtnApple">📱 Apple / iPhone</button>
+      <button class="cal-strip-btn" id="calBtnDownload">⬇️ Download .ics</button>
+      <button class="cal-strip-btn" id="calBtnCopy">📋 Copy URL</button>
+    </div>
+  </div>
+
   <!-- Team Schedule -->
   <div class="section">
     <div class="section-header">
-      <div class="section-header-row">
-        <span>📅 Season Schedule & Results</span>
-        <div class="calendar-container" id="calendar-container"></div>
-      </div>
+      📅 Season Schedule & Results
     </div>
     <div class="section-content">
       <div class="table-container">
@@ -1476,7 +1535,6 @@
   if (!teamName) {
     document.body.innerHTML = '<div class="page-container"><h1>Error: Team not specified</h1><p><a href="current-season.html">Return to current season</a></p></div>';
   } else {
-    initCalendarButton();
     loadTeamData();
   }
 
@@ -2298,75 +2356,52 @@
     tbody.innerHTML = scheduleHTML;
   }
 
-  // ── CALENDAR SUBSCRIPTION ──────────────────────────────────────────────────
+  // ── CALENDAR STRIP ─────────────────────────────────────────────────────────
   const CALENDAR_FUNCTION_URL = 'https://us-central1-acessoftballreference-84791.cloudfunctions.net/calendar';
-
-  function initCalendarButton() {
-    const container = document.getElementById('calendar-container');
-    if (!container || !teamName) return;
-
-    container.innerHTML = `
-      <button class="calendar-btn" id="calendarBtn">🗓️ Add to Calendar</button>
-      <div class="calendar-dropdown" id="calendarDropdown" style="display:none;">
-        <div class="calendar-dropdown-content">
-          <button class="calendar-option" data-action="subscribe">🔗 Subscribe (auto-updates)</button>
-          <button class="calendar-option" data-action="download">⬇️ Download .ics file</button>
-          <button class="calendar-option" data-action="google">📆 Add to Google Calendar</button>
-          <button class="calendar-option" data-action="copy">📋 Copy URL</button>
-        </div>
-      </div>
-    `;
-
-    const btn = document.getElementById('calendarBtn');
-    const dropdown = document.getElementById('calendarDropdown');
-
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const isHidden = dropdown.style.display === 'none';
-      if (isHidden) {
-        const rect = btn.getBoundingClientRect();
-        dropdown.style.top = (rect.bottom + 6) + 'px';
-        dropdown.style.left = Math.max(8, rect.right - 210) + 'px';
-        dropdown.style.display = 'block';
-      } else {
-        dropdown.style.display = 'none';
-      }
-    });
-
-    document.addEventListener('click', (e) => {
-      if (!container.contains(e.target)) dropdown.style.display = 'none';
-    });
-
-    container.querySelectorAll('.calendar-option').forEach(opt => {
-      opt.addEventListener('click', () => {
-        dropdown.style.display = 'none';
-        handleCalendarAction(opt.dataset.action);
-      });
-    });
-  }
 
   function getCalendarUrl() {
     return `${CALENDAR_FUNCTION_URL}?team=${encodeURIComponent(teamName.toLowerCase())}`;
   }
 
-  function handleCalendarAction(action) {
+  // Wire up strip buttons immediately — no async dependency
+  (function initCalendarStrip() {
     const url = getCalendarUrl();
-    switch (action) {
-      case 'subscribe':
-        showSubscribeModal(url);
-        break;
-      case 'download':
-        window.open(url, '_blank');
-        break;
-      case 'google':
-        const webcalUrl = url.replace('https://', 'webcal://');
-        window.open(`https://calendar.google.com/calendar/r?cid=${encodeURIComponent(webcalUrl)}`, '_blank');
-        break;
-      case 'copy':
-        copyCalendarUrl(url);
-        break;
-    }
-  }
+    const webcalUrl = url.replace('https://', 'webcal://');
+
+    document.getElementById('calBtnGoogle').addEventListener('click', () => {
+      window.open(`https://calendar.google.com/calendar/r?cid=${encodeURIComponent(webcalUrl)}`, '_blank');
+    });
+
+    document.getElementById('calBtnApple').addEventListener('click', () => {
+      showSubscribeModal(url);
+    });
+
+    document.getElementById('calBtnDownload').addEventListener('click', () => {
+      window.open(url, '_blank');
+    });
+
+    document.getElementById('calBtnCopy').addEventListener('click', () => {
+      const btn = document.getElementById('calBtnCopy');
+      navigator.clipboard.writeText(url).then(() => {
+        btn.textContent = '✅ Copied!';
+        btn.classList.add('cal-copy-confirm');
+        setTimeout(() => {
+          btn.textContent = '📋 Copy URL';
+          btn.classList.remove('cal-copy-confirm');
+        }, 2000);
+      }).catch(() => {
+        // Fallback
+        const input = document.createElement('input');
+        input.value = url;
+        document.body.appendChild(input);
+        input.select();
+        document.execCommand('copy');
+        document.body.removeChild(input);
+        btn.textContent = '✅ Copied!';
+        setTimeout(() => { btn.textContent = '📋 Copy URL'; }, 2000);
+      });
+    });
+  })();
 
   function showSubscribeModal(url) {
     const modal = document.createElement('div');
@@ -2438,37 +2473,6 @@
       });
     });
   }
-
-  async function copyCalendarUrl(url) {
-    try {
-      await navigator.clipboard.writeText(url);
-      showCalendarToast('Calendar URL copied to clipboard!');
-    } catch {
-      const input = document.createElement('input');
-      input.value = url;
-      document.body.appendChild(input);
-      input.select();
-      document.execCommand('copy');
-      document.body.removeChild(input);
-      showCalendarToast('Calendar URL copied to clipboard!');
-    }
-  }
-
-  function showCalendarToast(message) {
-    const toast = document.createElement('div');
-    toast.className = 'calendar-toast';
-    toast.textContent = message;
-    document.body.appendChild(toast);
-    requestAnimationFrame(() => {
-      toast.classList.add('show');
-      setTimeout(() => {
-        toast.classList.remove('show');
-        setTimeout(() => toast.remove(), 300);
-      }, 2500);
-    });
-  }
-
-  // Calendar button is initialized immediately after teamName is set (above)
 </script>
 <script type="module">
   import { NavigationComponent } from './nav-component.js';
