@@ -68,7 +68,7 @@ export const NAV_STRUCTURE = {
   // Tier 1: PRIMARY - Core pages (always visible on desktop)
   primary: [
     { id: 'home', href: 'index.html', label: 'Home', icon: '🏠', priority: 1 },
-    { id: 'current-season', href: 'current-season.html', label: 'Current Season', icon: '🍂', priority: 1 },
+    { id: 'current-season', href: 'current-season.html', label: 'Current Season', icon: '☀️', priority: 1 },
     { id: 'activity', href: 'activity.html', label: 'Activity Feed', icon: '📣', priority: 1 },
     { id: 'league-rules', href: 'league-rules.html', label: 'League Rules', icon: '⚖️', priority: 1 },
     { id: 'batting', href: 'batting.html', label: 'Batting Stats', icon: '⚾', priority: 1, class: 'batting' },
@@ -223,7 +223,7 @@ export const PAGE_CONFIGS = {
   },
 
   'trophy-case.html': {
-    desktop: ['home', 'champions', 'awards', 'leaders', 'players']
+    desktop: ['home', 'current-season', 'champions', 'awards', 'leaders', 'players']
   },
 
   'milestones.html': {
