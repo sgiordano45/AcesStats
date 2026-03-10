@@ -1449,6 +1449,7 @@
           <thead>
             <tr>
               <th>Date</th>
+              <th>Time</th>
               <th>Opponent</th>
               <th>H/A</th>
               <th>Score</th>
@@ -1457,7 +1458,7 @@
             </tr>
           </thead>
           <tbody>
-            <tr><td colspan="6" class="loading">Loading schedule...</td></tr>
+            <tr><td colspan="7" class="loading">Loading schedule...</td></tr>
           </tbody>
         </table>
       </div>
@@ -1587,7 +1588,8 @@
           date: dateString,
           year: currentSeasonData.year.toString(),
           season: capitalize(currentSeasonData.season),
-          forfeit: g.forfeit ? "Yes" : "No"
+          forfeit: g.forfeit ? "Yes" : "No",
+          time: g.time || ""
         };
       });
       
@@ -1767,6 +1769,18 @@
 
   function parseGameDate(dateStr) {
     return new Date(dateStr);
+  }
+
+  function parseTimeMinutes(timeStr) {
+    if (!timeStr) return 9999;
+    const match = timeStr.match(/(\d+):(\d+)\s*(AM|PM)/i);
+    if (!match) return 9999;
+    let hours = parseInt(match[1]);
+    const mins = parseInt(match[2]);
+    const meridiem = match[3].toUpperCase();
+    if (meridiem === 'PM' && hours !== 12) hours += 12;
+    if (meridiem === 'AM' && hours === 12) hours = 0;
+    return hours * 60 + mins;
   }
 
   function initializePage() {
@@ -2292,12 +2306,14 @@
     );
 
     if (teamGames.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="6" class="no-data">No games found for current season</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="7" class="no-data">No games found for current season</td></tr>';
       return;
     }
 
     const sortedGames = [...teamGames].sort((a, b) => {
-      return parseGameDate(a.date) - parseGameDate(b.date);
+      const dateDiff = parseGameDate(a.date) - parseGameDate(b.date);
+      if (dateDiff !== 0) return dateDiff;
+      return parseTimeMinutes(a.time) - parseTimeMinutes(b.time);
     });
 
     const scheduleHTML = sortedGames.map(game => {
@@ -2344,6 +2360,7 @@
       return `
         <tr class="${rowClass}">
           <td>${game.date}</td>
+          <td style="text-align: center; white-space: nowrap;">${game.time || '—'}</td>
           <td>${opponent}</td>
           <td style="text-align: center;">${homeAwayText}</td>
           <td style="text-align: center;">${scoreDisplay}</td>

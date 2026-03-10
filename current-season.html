@@ -1235,6 +1235,18 @@
         return new Date(dateStr);
       }
 
+      function parseTimeMinutes(timeStr) {
+        if (!timeStr) return 9999;
+        const match = timeStr.match(/(\d+):(\d+)\s*(AM|PM)/i);
+        if (!match) return 9999;
+        let hours = parseInt(match[1]);
+        const mins = parseInt(match[2]);
+        const meridiem = match[3].toUpperCase();
+        if (meridiem === 'PM' && hours !== 12) hours += 12;
+        if (meridiem === 'AM' && hours === 12) hours = 0;
+        return hours * 60 + mins;
+      }
+
       function updateSeasonSummary(games) {
         const teams = new Set();
         const completedGames = games.filter(g =>
@@ -1833,7 +1845,9 @@
             // Games without dates go to the end
             if (!a.date || a.date.trim() === "") return 1;
             if (!b.date || b.date.trim() === "") return -1;
-            return parseGameDate(a.date) - parseGameDate(b.date);
+            const dateDiff = parseGameDate(a.date) - parseGameDate(b.date);
+            if (dateDiff !== 0) return dateDiff;
+            return parseTimeMinutes(a.time) - parseTimeMinutes(b.time);
           });
 
         console.log('📅 Found', upcomingGames.length, 'upcoming games:', upcomingGames.map(g => `${g["home team"]} vs ${g["away team"]} (${g.date || 'TBD'})`));
@@ -1888,7 +1902,11 @@
         
         const completedGames = games
           .filter(g => parseGameDate(g.date) < today && g.winner && g.winner.trim() !== "")
-          .sort((a, b) => parseGameDate(b.date) - parseGameDate(a.date));
+          .sort((a, b) => {
+            const dateDiff = parseGameDate(b.date) - parseGameDate(a.date);
+            if (dateDiff !== 0) return dateDiff;
+            return parseTimeMinutes(b.time) - parseTimeMinutes(a.time);
+          });
 
         if (completedGames.length === 0) {
           resultsElement.innerHTML =
