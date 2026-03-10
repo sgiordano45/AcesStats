@@ -1005,6 +1005,9 @@
           <div class="search-box">
             <input type="text" id="playerSearch" placeholder="Search by player name...">
           </div>
+          <select class="filter-select" id="seasonFilter">
+            <option value="">Loading seasons...</option>
+          </select>
           <select class="filter-select" id="teamFilter">
             <option value="">All Teams</option>
             <option value="crushers">Crushers</option>
@@ -1062,6 +1065,7 @@
       getDocs, 
       getDoc
     } from './firebase-config.js';
+    import { getCurrentSeason } from './firebase-data.js';
     import { NavigationComponent } from './nav-component.js';
     import { 
       BADGE_DEFINITIONS, 
@@ -1073,7 +1077,49 @@
     // State
     let badgeData = null;
     let allPlayerBadges = {};
-    let currentSeasonId = '2025-fall'; // Default to partial data season for testing
+    let currentSeasonId = null;
+
+    // ============================================
+    // SEASON SETUP
+    // ============================================
+
+    // ---- ADD NEW BADGE-SUPPORTED SEASONS HERE ----
+    const BADGE_SEASONS = [
+      { id: '2026-summer', label: '2026 Summer' },
+      { id: '2025-fall',   label: '2025 Fall (Partial)' }
+    ];
+    // ------------------------------------------------
+
+    async function initSeasons() {
+      try {
+        const activeSeason = await getCurrentSeason();
+        if (activeSeason) {
+          currentSeasonId = activeSeason.id;
+        }
+
+        const select = document.getElementById('seasonFilter');
+        select.innerHTML = '';
+
+        BADGE_SEASONS.forEach(s => {
+          const opt = document.createElement('option');
+          opt.value = s.id;
+          opt.textContent = s.label + (s.id === currentSeasonId ? ' (Current)' : '');
+          if (s.id === currentSeasonId) opt.selected = true;
+          select.appendChild(opt);
+        });
+
+        // If active season isn't in the list, fall back to first entry
+        if (!currentSeasonId || !BADGE_SEASONS.find(s => s.id === currentSeasonId)) {
+          currentSeasonId = BADGE_SEASONS[0].id;
+          select.value = currentSeasonId;
+        }
+
+      } catch (error) {
+        console.error('Error loading seasons:', error);
+        // Fallback: just use first season in list
+        currentSeasonId = BADGE_SEASONS[0].id;
+      }
+    }
 
     // ============================================
     // DATA LOADING (READ-ONLY)
@@ -1491,6 +1537,13 @@
       console.log('Search query:', query);
     });
 
+    document.getElementById('seasonFilter')?.addEventListener('change', function(e) {
+      currentSeasonId = e.target.value;
+      badgeData = null;
+      allPlayerBadges = {};
+      loadBadgeData();
+    });
+
     document.getElementById('teamFilter')?.addEventListener('change', function(e) {
       // TODO: Filter displayed badges by team
       console.log('Team filter:', e.target.value);
@@ -1549,7 +1602,8 @@
     // INITIALIZE
     // ============================================
 
-    document.addEventListener('DOMContentLoaded', () => {
+    document.addEventListener('DOMContentLoaded', async () => {
+      await initSeasons();
       loadBadgeData();
     });
   </script>
