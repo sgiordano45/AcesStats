@@ -280,6 +280,139 @@
       color: #718096;
       margin-top: 0.5rem;
     }
+
+    .section-divider {
+      border: none;
+      border-top: 2px dashed var(--border-color);
+      margin: 2rem 0;
+    }
+
+    .authid-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+      margin-top: 1rem;
+    }
+
+    .authid-table th {
+      background: var(--primary-color);
+      color: white;
+      padding: 0.65rem 0.75rem;
+      text-align: left;
+      font-weight: 600;
+    }
+
+    .authid-table td {
+      padding: 0.6rem 0.75rem;
+      border-bottom: 1px solid var(--border-color);
+      vertical-align: middle;
+    }
+
+    .authid-table tr:hover td {
+      background: #f7fafc;
+    }
+
+    .authid-table tr.has-match td {
+      background: #f0fff4;
+    }
+
+    .authid-table tr.already-set td {
+      background: #f7fafc;
+      color: #a0aec0;
+    }
+
+    .tag-missing {
+      display: inline-block;
+      background: #fff5f5;
+      color: #c53030;
+      border: 1px solid #feb2b2;
+      border-radius: 4px;
+      padding: 2px 8px;
+      font-size: 0.8rem;
+      font-weight: 600;
+    }
+
+    .tag-found {
+      display: inline-block;
+      background: #e6fffa;
+      color: #22543d;
+      border: 1px solid #9ae6b4;
+      border-radius: 4px;
+      padding: 2px 8px;
+      font-size: 0.8rem;
+      font-weight: 600;
+    }
+
+    .tag-set {
+      display: inline-block;
+      background: #ebf8ff;
+      color: #2b6cb0;
+      border: 1px solid #90cdf4;
+      border-radius: 4px;
+      padding: 2px 8px;
+      font-size: 0.8rem;
+    }
+
+    .uid-text {
+      font-family: monospace;
+      font-size: 0.78rem;
+      color: #4a5568;
+      word-break: break-all;
+    }
+
+    .btn-patch {
+      background: #3182ce;
+      color: white;
+      padding: 0.35rem 0.75rem;
+      font-size: 0.82rem;
+      border-radius: 6px;
+      border: none;
+      cursor: pointer;
+      font-weight: 600;
+    }
+
+    .btn-patch:hover { background: #2b6cb0; }
+    .btn-patch:disabled { background: #cbd5e0; cursor: not-allowed; }
+
+    .btn-patch-all {
+      background: #2b6cb0;
+      color: white;
+    }
+
+    .btn-patch-all:hover { background: #2c5282; }
+    .btn-patch-all:disabled { background: #cbd5e0; cursor: not-allowed; }
+
+    .authid-summary {
+      display: flex;
+      gap: 1rem;
+      flex-wrap: wrap;
+      margin: 1rem 0;
+    }
+
+    .authid-stat {
+      background: #f7fafc;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 0.75rem 1.25rem;
+      text-align: center;
+      min-width: 100px;
+    }
+
+    .authid-stat .val {
+      font-size: 1.6rem;
+      font-weight: 800;
+      color: var(--primary-color);
+    }
+
+    .authid-stat .lbl {
+      font-size: 0.8rem;
+      color: #718096;
+      margin-top: 2px;
+    }
+
+    #authidAlert {
+      margin-top: 1rem;
+    }
   </style>
 </head>
 <body>
@@ -328,11 +461,55 @@
       </div>
       <div id="resultList" style="margin-top: 1.5rem;"></div>
     </div>
+
+    <!-- ==================== BACKFILL AUTH IDs ==================== -->
+    <hr class="section-divider">
+
+    <div class="card">
+      <h2>🔑 Backfill Auth IDs</h2>
+      <div class="info-box">
+        <strong>What this does:</strong> Scans <code>rosters/{seasonId}-{teamName}</code> docs for players missing an <code>authId</code>, queries <code>/users</code> by <code>linkedPlayer</code> name, and writes the UID back into the roster entry.<br><br>
+        <strong>Use when:</strong> A player signed up <em>after</em> rosters were synced and their auth account isn't reflected in the roster doc.
+      </div>
+
+      <div class="form-group">
+        <label for="authidSeasonSelect">Select Season:</label>
+        <select id="authidSeasonSelect">
+          <option value="">-- Select a season --</option>
+        </select>
+      </div>
+
+      <div id="authidAlert" class="alert"></div>
+
+      <div class="button-group">
+        <button class="btn-primary" id="authidScanBtn" disabled>🔍 Scan for Missing Auth IDs</button>
+        <button class="btn-secondary btn-patch-all" id="authidPatchAllBtn" disabled>⚡ Patch All Found</button>
+      </div>
+    </div>
+
+    <div class="card" id="authidResultCard" style="display: none;">
+      <h2>🔎 Scan Results</h2>
+      <div class="authid-summary" id="authidSummary"></div>
+      <div style="overflow-x: auto;">
+        <table class="authid-table" id="authidTable">
+          <thead>
+            <tr>
+              <th>Player</th>
+              <th>Team</th>
+              <th>Current Auth ID</th>
+              <th>Match Found</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="authidTableBody"></tbody>
+        </table>
+      </div>
+    </div>
   </div>
 
   <script type="module">
     import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
-    import { getFirestore, collection, getDocs, doc, getDoc, writeBatch, query, where } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
+    import { getFirestore, collection, getDocs, doc, getDoc, updateDoc, writeBatch, query, where } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
     import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js';
     
     // Firebase config
@@ -633,6 +810,292 @@
       alert.className = `alert show alert-${type}`;
       setTimeout(() => alert.classList.remove('show'), 5000);
     }
+
+    // ==================== BACKFILL AUTH IDs ====================
+
+    // Populate the second season dropdown once seasons are loaded
+    async function populateAuthidSeasonSelect() {
+      try {
+        const seasonsRef = collection(db, 'seasons');
+        const snapshot = await getDocs(seasonsRef);
+        const select = document.getElementById('authidSeasonSelect');
+        select.innerHTML = '<option value="">-- Select a season --</option>';
+
+        const seasons = [];
+        snapshot.forEach(docSnap => {
+          const data = docSnap.data();
+          seasons.push({
+            id: docSnap.id,
+            name: `${data.year} ${data.season.charAt(0).toUpperCase() + data.season.slice(1)}`,
+            data
+          });
+        });
+
+        seasons.sort((a, b) => {
+          if (b.data.year !== a.data.year) return b.data.year - a.data.year;
+          const seasonOrder = { summer: 0, fall: 1, winter: 2, spring: 3 };
+          return seasonOrder[a.data.season] - seasonOrder[b.data.season];
+        });
+
+        seasons.forEach(season => {
+          const option = document.createElement('option');
+          option.value = season.id;
+          option.textContent = season.name;
+          select.appendChild(option);
+        });
+
+        select.addEventListener('change', (e) => {
+          const val = e.target.value;
+          document.getElementById('authidScanBtn').disabled = !val;
+          document.getElementById('authidPatchAllBtn').disabled = true;
+          document.getElementById('authidResultCard').style.display = 'none';
+        });
+      } catch (error) {
+        console.error('Error populating authid season select:', error);
+      }
+    }
+
+    // Store scan results so patch-all can use them
+    let scanResults = []; // { rosterDocId, playerIndex, playerName, team, foundUid }
+
+    function showAuthidAlert(message, type) {
+      const alert = document.getElementById('authidAlert');
+      alert.textContent = message;
+      alert.className = `alert show alert-${type}`;
+      setTimeout(() => alert.classList.remove('show'), 6000);
+    }
+
+    document.getElementById('authidScanBtn').addEventListener('click', async () => {
+      const seasonId = document.getElementById('authidSeasonSelect').value;
+      if (!seasonId) return;
+
+      document.getElementById('authidScanBtn').disabled = true;
+      document.getElementById('authidScanBtn').textContent = 'Scanning...';
+      scanResults = [];
+
+      try {
+        // Find all roster docs for this season: ID starts with "{seasonId}-"
+        const rostersRef = collection(db, 'rosters');
+        const snapshot = await getDocs(rostersRef);
+
+        const rosterDocs = [];
+        snapshot.forEach(docSnap => {
+          if (docSnap.id.startsWith(seasonId + '-')) {
+            rosterDocs.push({ id: docSnap.id, data: docSnap.data() });
+          }
+        });
+
+        if (rosterDocs.length === 0) {
+          showAuthidAlert('No roster docs found for this season. Run Roster Sync first.', 'warning');
+          document.getElementById('authidScanBtn').disabled = false;
+          document.getElementById('authidScanBtn').textContent = 'Scan for Missing Auth IDs';
+          return;
+        }
+
+        // Pre-load all users who have linkedPlayer set — one query
+        const usersRef = collection(db, 'users');
+        const usersSnap = await getDocs(usersRef);
+        const linkedPlayerMap = {}; // name (lowercase) -> uid
+        usersSnap.forEach(u => {
+          const d = u.data();
+          if (d.linkedPlayer) {
+            linkedPlayerMap[d.linkedPlayer.toLowerCase().trim()] = u.id;
+          }
+        });
+
+        const tableBody = document.getElementById('authidTableBody');
+        tableBody.innerHTML = '';
+
+        let totalPlayers = 0;
+        let alreadySet = 0;
+        let missingNoMatch = 0;
+        let missingWithMatch = 0;
+
+        for (const rosterDoc of rosterDocs) {
+          const teamName = rosterDoc.data.teamName || rosterDoc.id.replace(seasonId + '-', '');
+          const players = rosterDoc.data.players || [];
+
+          players.forEach((player, idx) => {
+            totalPlayers++;
+            const hasAuthId = !!(player.authId && player.authId.trim());
+            const nameKey = (player.name || '').toLowerCase().trim();
+            const foundUid = linkedPlayerMap[nameKey] || null;
+
+            if (hasAuthId) {
+              alreadySet++;
+              const tr = document.createElement('tr');
+              tr.className = 'already-set';
+              tr.innerHTML = `
+                <td>${player.name || '—'}</td>
+                <td>${teamName}</td>
+                <td><span class="tag-set uid-text">${player.authId}</span></td>
+                <td>—</td>
+                <td style="color:#a0aec0; font-size:0.82rem;">Already set</td>
+              `;
+              tableBody.appendChild(tr);
+              return;
+            }
+
+            // Missing authId
+            if (foundUid) {
+              missingWithMatch++;
+              scanResults.push({ rosterDocId: rosterDoc.id, playerIndex: idx, playerName: player.name, team: teamName, foundUid });
+
+              const tr = document.createElement('tr');
+              tr.className = 'has-match';
+              tr.id = `authid-row-${rosterDoc.id}-${idx}`;
+              tr.innerHTML = `
+                <td><strong>${player.name || '—'}</strong></td>
+                <td>${teamName}</td>
+                <td><span class="tag-missing">Missing</span></td>
+                <td><span class="tag-found">Found</span> <span class="uid-text">${foundUid}</span></td>
+                <td>
+                  <button class="btn-patch" onclick="patchSingle('${rosterDoc.id}', ${idx}, '${foundUid}', this)">
+                    Patch
+                  </button>
+                </td>
+              `;
+              tableBody.appendChild(tr);
+            } else {
+              missingNoMatch++;
+              const tr = document.createElement('tr');
+              tr.id = `authid-row-${rosterDoc.id}-${idx}`;
+              tr.innerHTML = `
+                <td>${player.name || '—'}</td>
+                <td>${teamName}</td>
+                <td><span class="tag-missing">Missing</span></td>
+                <td style="color:#a0aec0; font-size:0.85rem;">No account found</td>
+                <td style="color:#a0aec0; font-size:0.82rem;">—</td>
+              `;
+              tableBody.appendChild(tr);
+            }
+          });
+        }
+
+        document.getElementById('authidSummary').innerHTML = `
+          <div class="authid-stat"><div class="val">${totalPlayers}</div><div class="lbl">Total Players</div></div>
+          <div class="authid-stat"><div class="val">${alreadySet}</div><div class="lbl">Auth ID Set</div></div>
+          <div class="authid-stat" style="border-color:#9ae6b4;"><div class="val" style="color:#276749;">${missingWithMatch}</div><div class="lbl">Match Found</div></div>
+          <div class="authid-stat" style="border-color:#feb2b2;"><div class="val" style="color:#c53030;">${missingNoMatch}</div><div class="lbl">No Account</div></div>
+        `;
+
+        document.getElementById('authidResultCard').style.display = 'block';
+        document.getElementById('authidPatchAllBtn').disabled = missingWithMatch === 0;
+
+        if (missingWithMatch > 0) {
+          showAuthidAlert(`Scan complete. ${missingWithMatch} player(s) can be patched.`, 'success');
+        } else {
+          showAuthidAlert(`Scan complete. No missing Auth IDs with a matching account found.`, 'warning');
+        }
+
+      } catch (error) {
+        console.error('Scan error:', error);
+        showAuthidAlert('Error during scan: ' + error.message, 'error');
+      }
+
+      document.getElementById('authidScanBtn').disabled = false;
+      document.getElementById('authidScanBtn').textContent = 'Scan for Missing Auth IDs';
+    });
+
+    // Patch a single player row
+    window.patchSingle = async function(rosterDocId, playerIndex, foundUid, btn) {
+      btn.disabled = true;
+      btn.textContent = 'Patching...';
+
+      try {
+        const docRef = doc(db, 'rosters', rosterDocId);
+        const docSnap = await getDoc(docRef);
+        if (!docSnap.exists()) throw new Error('Roster doc not found');
+
+        const data = docSnap.data();
+        const players = [...(data.players || [])];
+        players[playerIndex] = { ...players[playerIndex], authId: foundUid };
+        await updateDoc(docRef, { players, updatedAt: new Date().toISOString() });
+
+        btn.textContent = 'Patched';
+        btn.style.background = '#48bb78';
+
+        const row = document.getElementById(`authid-row-${rosterDocId}-${playerIndex}`);
+        if (row) {
+          row.className = 'already-set';
+          const actionCell = row.cells[4];
+          if (actionCell) actionCell.innerHTML = '<span style="color:#48bb78; font-weight:600; font-size:0.85rem;">Done</span>';
+          const currentCell = row.cells[2];
+          if (currentCell) currentCell.innerHTML = `<span class="tag-set uid-text">${foundUid}</span>`;
+        }
+
+      } catch (error) {
+        console.error('Patch error:', error);
+        btn.textContent = 'Error';
+        btn.style.background = '#f56565';
+        btn.disabled = false;
+        showAuthidAlert('Error patching: ' + error.message, 'error');
+      }
+    };
+
+    // Patch all matched players
+    document.getElementById('authidPatchAllBtn').addEventListener('click', async () => {
+      if (scanResults.length === 0) return;
+
+      document.getElementById('authidPatchAllBtn').disabled = true;
+      document.getElementById('authidPatchAllBtn').textContent = 'Patching...';
+
+      // Group by rosterDocId to minimize reads
+      const grouped = {};
+      scanResults.forEach(r => {
+        if (!grouped[r.rosterDocId]) grouped[r.rosterDocId] = [];
+        grouped[r.rosterDocId].push(r);
+      });
+
+      let successCount = 0;
+      let errorCount = 0;
+
+      for (const [rosterDocId, entries] of Object.entries(grouped)) {
+        try {
+          const docRef = doc(db, 'rosters', rosterDocId);
+          const docSnap = await getDoc(docRef);
+          if (!docSnap.exists()) { errorCount += entries.length; continue; }
+
+          const data = docSnap.data();
+          const players = [...(data.players || [])];
+
+          entries.forEach(e => {
+            players[e.playerIndex] = { ...players[e.playerIndex], authId: e.foundUid };
+          });
+
+          await updateDoc(docRef, { players, updatedAt: new Date().toISOString() });
+
+          entries.forEach(e => {
+            const row = document.getElementById(`authid-row-${rosterDocId}-${e.playerIndex}`);
+            if (row) {
+              row.className = 'already-set';
+              const actionCell = row.cells[4];
+              if (actionCell) actionCell.innerHTML = '<span style="color:#48bb78; font-weight:600; font-size:0.85rem;">Done</span>';
+              const currentCell = row.cells[2];
+              if (currentCell) currentCell.innerHTML = `<span class="tag-set uid-text">${e.foundUid}</span>`;
+              const matchCell = row.cells[3];
+              if (matchCell) matchCell.innerHTML = '—';
+            }
+          });
+
+          successCount += entries.length;
+        } catch (error) {
+          console.error('Patch all error for', rosterDocId, error);
+          errorCount += entries.length;
+        }
+      }
+
+      scanResults = [];
+
+      const msg = successCount > 0
+        ? `Patched ${successCount} player(s) successfully.${errorCount > 0 ? ` ${errorCount} failed.` : ''}`
+        : `All patches failed. Check console for details.`;
+      showAuthidAlert(msg, errorCount === 0 ? 'success' : 'warning');
+      document.getElementById('authidPatchAllBtn').textContent = 'Patch All Found';
+    });
+
+    // Kick off second dropdown population after auth is confirmed
+    populateAuthidSeasonSelect();
   </script>
   <script type="module">
     import { NavigationComponent } from './nav-component.js';
