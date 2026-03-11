@@ -1173,30 +1173,15 @@ async function loadTeamRoster(teamId) {
   try {
     console.log('🔍 Loading roster for team:', teamId);
 
-    const seasonPlayers = await getSeasonPlayerStatsOptimized(currentSeason.id);
-    
-    // Case-insensitive matching
-    const teamIdLower = teamId.toLowerCase();
-    const filteredPlayers = seasonPlayers.filter(p => {
-      return (p.team || '').toLowerCase() === teamIdLower && !p.migrated;
-    });
+    const rosterPlayers = await window.FirebaseRoster.getTeamRosterDoc(teamId, currentSeason.id);
 
-    const players = filteredPlayers.map(player => {
-      const name = player.name || player.playerName;
-      
-      let legacyId;
-      if (player.isAuthUser && player.linkedPlayer) {
-        legacyId = player.linkedPlayer.toLowerCase().replace(/\./g, '').replace(/\s+/g, '_');
-      } else {
-        legacyId = player.playerId;
-      }
-      
+    const players = rosterPlayers.map(player => {
       return {
         id: player.playerId,
-        legacyId: legacyId,
-        name: name,
-        displayName: name,
-        linkedPlayer: player.linkedPlayer || null,
+        legacyId: player.legacyId,
+        name: player.name,
+        displayName: player.name,
+        linkedPlayer: player.isAuthUser ? player.name : null,
         isAuthUser: player.isAuthUser || false
       };
     });

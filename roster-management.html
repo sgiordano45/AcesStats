@@ -593,34 +593,29 @@ function RosterManagement({ currentUser }) {
 
   async function loadTeamData() {
     try {
-      const seasonPlayers = await window.FirebaseRoster.getSeasonPlayerStatsOptimized(currentSeason.id);
-      
-      const filteredPlayers = seasonPlayers.filter(p => {
-        return p.team === selectedTeam && !p.migrated;
-      });
+      const rosterPlayers = await window.FirebaseRoster.getTeamRosterDoc(selectedTeam, currentSeason.id);
       
       const myProfile = userProfile;
       
-      const formattedPlayersPromises = filteredPlayers.map(async (player, index) => {
-        const name = player.name || player.playerName;
+      const formattedPlayersPromises = rosterPlayers.map(async (player, index) => {
+        const name = player.name;
         const nameParts = name.trim().split(' ');
         const avatar = nameParts.length > 1 ?
           (nameParts[0][0] + nameParts[nameParts.length - 1][0]).toUpperCase() :
           name.substring(0, 2).toUpperCase();
         
-        const battingAvg = player.battingAverage ? player.battingAverage.toFixed(3) : '.000';
         const isCurrentUser = myProfile?.linkedPlayer === name;
         
-        let jerseyNum = (index + 1);
-        let isCaptain = false;
+        let jerseyNum = player.number ? parseInt(player.number) || (index + 1) : (index + 1);
+        let isCaptain = player.isCaptain || false;
         
         try {
           const playerProfile = await window.FirebaseRoster.getUserProfile(player.playerId);
           if (playerProfile.success && playerProfile.data) {
             if (playerProfile.data.number) {
-              jerseyNum = parseInt(playerProfile.data.number) || (index + 1);
+              jerseyNum = parseInt(playerProfile.data.number) || jerseyNum;
             }
-            isCaptain = playerProfile.data.isCaptain || false;
+            isCaptain = playerProfile.data.isCaptain || isCaptain;
           }
         } catch (error) {
           console.warn(`Could not load profile for ${name}:`, error);
@@ -631,7 +626,7 @@ function RosterManagement({ currentUser }) {
           name,
           jersey: jerseyNum,
           avatar,
-          battingAvg,
+          battingAvg: '.000',
           isCaptain: isCaptain,
           isMe: isCurrentUser
         };

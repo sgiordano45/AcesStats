@@ -473,6 +473,60 @@ export async function isAllFieldingFinalized(gameId, teamId) {
 
 
 // ========================================
+// ROSTER DOC FUNCTIONS
+// ========================================
+
+/**
+ * Get team roster from /rosters/{seasonId}-{teamName} document
+ * This is the primary roster source — works before any stats exist for a season
+ * @param {string} teamId - Team name (e.g., "Teal", "Army") — case insensitive
+ * @param {string} seasonId - Season ID (e.g., "2026-summer")
+ * @returns {Array} Array of player objects
+ */
+export async function getTeamRosterDoc(teamId, seasonId) {
+  try {
+    const teamLower = teamId.toLowerCase();
+    const docId = `${seasonId}-${teamLower}`;
+    const rosterRef = doc(db, 'rosters', docId);
+    const snap = await getDoc(rosterRef);
+
+    if (!snap.exists()) {
+      console.warn(`No roster doc found at rosters/${docId}`);
+      return [];
+    }
+
+    const data = snap.data();
+    const players = (data.players || []).map(p => {
+      // For auth users where id === authId, use authId as playerId
+      // For legacy users, id is snake_case name
+      const playerId = p.id || p.authId || '';
+      const legacyId = (p.authId && p.id === p.authId) ? null : p.id;
+
+      return {
+        id: playerId,
+        playerId: playerId,
+        legacyId: legacyId || playerId,
+        authId: p.authId || '',
+        name: p.name || '',
+        isCaptain: p.captain || false,
+        number: p.number || null,
+        position: p.position || '-',
+        bats: p.bats || '-',
+        throws: p.throws || '-',
+        isAuthUser: !!(p.authId && p.authId !== '')
+      };
+    });
+
+    console.log(`Loaded ${players.length} players from rosters/${docId}`);
+    return players;
+
+  } catch (error) {
+    console.error('Error loading team roster doc:', error);
+    return [];
+  }
+}
+
+// ========================================
 // GAMES FUNCTIONS
 // ========================================
 
