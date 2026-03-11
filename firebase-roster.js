@@ -496,16 +496,18 @@ export async function getTeamRosterDoc(teamId, seasonId) {
     }
 
     const data = snap.data();
+
+    // roster doc always stores id as snake_case legacy ID for everyone
+    // authId is the Firebase UID for linked auth users, empty string for legacy-only
     const players = (data.players || []).map(p => {
-      // For auth users where id === authId, use authId as playerId
-      // For legacy users, id is snake_case name
-      const playerId = p.id || p.authId || '';
-      const legacyId = (p.authId && p.id === p.authId) ? null : p.id;
+      const isAuthUser = !!(p.authId && p.authId !== '');
+      const legacyId = p.id || ''; // Always snake_case (e.g. "steve_giordano")
+      const playerId = isAuthUser ? p.authId : legacyId; // UID for auth users, legacyId otherwise
 
       return {
         id: playerId,
         playerId: playerId,
-        legacyId: legacyId || playerId,
+        legacyId: legacyId,
         authId: p.authId || '',
         name: p.name || '',
         isCaptain: p.captain || false,
@@ -513,7 +515,7 @@ export async function getTeamRosterDoc(teamId, seasonId) {
         position: p.position || '-',
         bats: p.bats || '-',
         throws: p.throws || '-',
-        isAuthUser: !!(p.authId && p.authId !== '')
+        isAuthUser: isAuthUser
       };
     });
 
