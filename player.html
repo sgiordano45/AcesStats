@@ -3347,24 +3347,35 @@
     // Create a toast notification instead of blocking alert
     showPrintTip(tip);
     
-    // Make the card container visible before printing — browsers can fail to
-    // render elements that are display:none even if @media print shows them.
-    // We show it, print, then hide it again after the dialog closes.
+    // The card container has display:none in CSS, AND preGenerateCardImage() may
+    // have set an inline style="display:none" on it. Inline styles override @media
+    // print stylesheets, so we must remove the inline style entirely before printing.
     const cardContainer = document.getElementById('baseballCardContainer');
     const pageContainer = document.querySelector('.page-container');
     
     setTimeout(() => {
-      // Show card, hide main page content
-      if (cardContainer) cardContainer.style.display = 'block';
+      // Remove any inline display style so @media print CSS can take over,
+      // then also force-show it in case the browser still needs a hint.
+      if (cardContainer) {
+        cardContainer.style.removeProperty('display');
+        cardContainer.style.removeProperty('position');
+        cardContainer.style.removeProperty('left');
+        cardContainer.style.removeProperty('top');
+        cardContainer.style.display = 'block';
+      }
       if (pageContainer) pageContainer.style.display = 'none';
       
       // Let browser reflow before opening print dialog
-      setTimeout(() => {
-        window.print();
-        // Restore after print dialog closes
-        if (cardContainer) cardContainer.style.display = '';
-        if (pageContainer) pageContainer.style.display = '';
-      }, 150);
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          window.print();
+          // Restore after print dialog closes
+          if (cardContainer) {
+            cardContainer.style.removeProperty('display');
+          }
+          if (pageContainer) pageContainer.style.removeProperty('display');
+        });
+      });
     }, 100);
   }
   
@@ -3426,7 +3437,12 @@
         html2canvas(cardBack, opts)
       ]);
       
-      cardContainer.style.display = 'none';
+      // Remove inline styles rather than setting display:none — an inline
+      // display:none overrides @media print stylesheets and breaks printing.
+      cardContainer.style.removeProperty('display');
+      cardContainer.style.removeProperty('position');
+      cardContainer.style.removeProperty('left');
+      cardContainer.style.removeProperty('top');
       
       // Combine
       const gap = 40;
