@@ -3330,55 +3330,61 @@
       alert('Player data is still loading. Please wait a moment and try again.');
       return;
     }
-    
-    // Show a brief tip about enabling background graphics
-    const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
-    const isChrome = /chrome/i.test(navigator.userAgent) && !/edg/i.test(navigator.userAgent);
-    
-    let tip = '';
-    if (isChrome) {
-      tip = 'Tip: In the print dialog, click "More settings" and check "Background graphics" for full color printing.';
-    } else if (isSafari) {
-      tip = 'Tip: In the print dialog, check "Print backgrounds" for full color printing.';
-    } else {
-      tip = 'Tip: Enable "Print backgrounds" or "Background graphics" in your print settings for full color.';
-    }
-    
-    // Create a toast notification instead of blocking alert
-    showPrintTip(tip);
-    
-    // The card container has display:none in CSS, AND preGenerateCardImage() may
-    // have set an inline style="display:none" on it. Inline styles override @media
-    // print stylesheets, so we must remove the inline style entirely before printing.
+
+    // Grab the fully-populated card HTML
     const cardContainer = document.getElementById('baseballCardContainer');
-    const pageContainer = document.querySelector('.page-container');
-    
-    setTimeout(() => {
-      // Remove any inline display style so @media print CSS can take over,
-      // then also force-show it in case the browser still needs a hint.
-      if (cardContainer) {
-        cardContainer.style.removeProperty('display');
-        cardContainer.style.removeProperty('position');
-        cardContainer.style.removeProperty('left');
-        cardContainer.style.removeProperty('top');
-        cardContainer.style.display = 'block';
-      }
-      if (pageContainer) pageContainer.style.display = 'none';
-      
-      // Let browser reflow before opening print dialog
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          // Restore visibility only after the print dialog fully closes
-          function afterPrint() {
-            if (cardContainer) cardContainer.style.removeProperty('display');
-            if (pageContainer) pageContainer.style.removeProperty('display');
-            window.removeEventListener('afterprint', afterPrint);
-          }
-          window.addEventListener('afterprint', afterPrint);
-          window.print();
+    const cardHTML = cardContainer.innerHTML;
+
+    // Extract all card-related CSS from the page's stylesheets as text
+    // (grabbing the full <style> block so we don't have to duplicate it)
+    const styleSheets = Array.from(document.styleSheets);
+    let cssText = '';
+    styleSheets.forEach(sheet => {
+      try {
+        Array.from(sheet.cssRules || []).forEach(rule => {
+          cssText += rule.cssText + '\n';
         });
-      });
-    }, 100);
+      } catch (e) { /* cross-origin sheet, skip */ }
+    });
+
+    const printWindow = window.open('', '_blank', 'width=900,height=700');
+    if (!printWindow) {
+      alert('Pop-up blocked. Please allow pop-ups for this site and try again.');
+      return;
+    }
+
+    printWindow.document.write(`<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Player Card</title>
+  <style>
+    ${cssText}
+    /* Override: show card, hide everything else */
+    body { margin: 0; padding: 0.25in; background: white; }
+    .baseball-card-container { display: block !important; }
+    * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+    @media print {
+      body { padding: 0; }
+      .baseball-card-container { display: block !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="baseball-card-container">
+    ${cardHTML}
+  </div>
+  <script>
+    window.onload = function() {
+      window.print();
+      window.onafterprint = function() { window.close(); };
+      // Fallback close for browsers that don't fire onafterprint
+      setTimeout(function() { window.close(); }, 10000);
+    };
+  <\/script>
+</body>
+</html>`);
+    printWindow.document.close();
   }
   
   function showPrintTip(message) {
