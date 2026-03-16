@@ -1349,7 +1349,8 @@ exports.sendScheduleChange = functions.firestore
           return date.toLocaleDateString('en-US', { 
             month: 'short', 
             day: 'numeric',
-            year: 'numeric'
+            year: 'numeric',
+            timeZone: 'America/New_York'
           });
         } catch (error) {
           console.error('Error formatting timestamp:', error);
@@ -1609,28 +1610,36 @@ exports.sendAnnouncement = functions.https.onCall(async (data, context) => {
   const result = await sendToTokens(tokens, message);
   
   // Save to notification feed for targeted users only
-  await saveNotificationToFeed(targetUserIds, {
-    title: `${emoji} ${title}`,
-    body: body,
-    type: 'announcement',
-    link: clickAction,
-    metadata: { sentBy: userId, sentByName: userData.displayName || 'League Admin', priority: priority || 'normal' }
-  });
-  
+  try {
+    await saveNotificationToFeed(targetUserIds, {
+      title: `${emoji} ${title}`,
+      body: body,
+      type: 'announcement',
+      link: clickAction,
+      metadata: { sentBy: userId, sentByName: userData.displayName || 'League Admin', priority: priority || 'normal' }
+    });
+  } catch (feedErr) {
+    console.error('⚠️ Failed to save to notification feeds:', feedErr.message);
+  }
+
   // Log the announcement to Firestore for history
-  await db.collection('announcements').add({
-    title: title,
-    body: body,
-    link: link || null,
-    priority: priority || 'normal',
-    sentBy: userId,
-    sentByName: userData.displayName || 'League Admin',
-    sentAt: admin.firestore.FieldValue.serverTimestamp(),
-    recipientCount: result.successCount,
-    failureCount: result.failureCount,
-    targetedUserCount: targetUserIds.length,
-    wasFiltered: recipientUserIds && recipientUserIds.length > 0
-  });
+  try {
+    await db.collection('announcements').add({
+      title: title,
+      body: body,
+      link: link || null,
+      priority: priority || 'normal',
+      sentBy: userId,
+      sentByName: userData.displayName || 'League Admin',
+      sentAt: admin.firestore.FieldValue.serverTimestamp(),
+      recipientCount: result.successCount,
+      failureCount: result.failureCount,
+      targetedUserCount: targetUserIds.length,
+      wasFiltered: !!(recipientUserIds && recipientUserIds.length > 0)
+    });
+  } catch (firestoreErr) {
+    console.error('⚠️ Failed to log announcement to Firestore:', firestoreErr.message);
+  }
   
   console.log(`✅ Announcement sent: ${result.successCount} success, ${result.failureCount} failed (targeted ${targetUserIds.length} users)`);
   
@@ -2256,28 +2265,49 @@ function generateGameEvent(game, seasonId, teamFilter) {
   const homeTeam = game.homeTeamName || game['home team'] || capitalize(game.homeTeamId || 'TBD');
   const awayTeam = game.awayTeamName || game['away team'] || capitalize(game.awayTeamId || 'TBD');
   
-  // Parse date
-  let gameDate;
+  // Parse date - extract year/month/day components directly to avoid UTC timezone issues.
+  // new Date("4/27/2026") creates a local date, but setHours() on it in a UTC Cloud Function
+  // environment causes evening games (7:45 PM / 8:45 PM ET) to roll over to the next UTC day.
+  let dateYear, dateMonth, dateDay;
   if (game.date?.seconds) {
-    gameDate = new Date(game.date.seconds * 1000);
+    // Firestore Timestamp - convert to Eastern local date components
+    const ts = new Date(game.date.seconds * 1000);
+    const eastern = new Date(ts.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+    dateYear = eastern.getFullYear();
+    dateMonth = eastern.getMonth();
+    dateDay = eastern.getDate();
   } else if (game.date) {
-    gameDate = new Date(game.date);
+    // String date like "4/27/2026" or "Mon 4/27/2026" — strip day-of-week prefix if present
+    const cleaned = String(game.date).replace(/^[A-Za-z]{2,3}\s+/, '');
+    const parts = cleaned.split(/[\/\-]/);
+    if (parts.length >= 3) {
+      dateMonth = parseInt(parts[0], 10) - 1;
+      dateDay = parseInt(parts[1], 10);
+      dateYear = parseInt(parts[2], 10);
+    } else {
+      return null;
+    }
   } else {
     return null; // Skip games without dates
   }
-  
+
   // Parse time if available
-  let startTime = '10:00'; // Default morning game
+  let startHours = 10, startMinutes = 0; // Default morning game
   if (game.time) {
-    startTime = parseTimeString(game.time);
+    const parsedTime = parseTimeString(game.time);
+    const tp = parsedTime.split(':').map(Number);
+    startHours = tp[0];
+    startMinutes = tp[1];
   }
-  
-  // Set game time
-  const [hours, minutes] = startTime.split(':').map(Number);
-  gameDate.setHours(hours, minutes, 0, 0);
-  
-  // Game end time (assume 1.5 hour games)
-  const endDate = new Date(gameDate.getTime() + 90 * 60 * 1000);
+
+  // Build iCal date strings directly from local components — never mutate a UTC Date object
+  const pad = n => String(n).padStart(2, '0');
+  const startIcal = `${dateYear}${pad(dateMonth + 1)}${pad(dateDay)}T${pad(startHours)}${pad(startMinutes)}00`;
+  const endTotalMinutes = startHours * 60 + startMinutes + 60;
+  const endHoursNorm = Math.floor(endTotalMinutes / 60) % 24;
+  const endMinutes = endTotalMinutes % 60;
+  const endDay = (Math.floor(endTotalMinutes / 60) >= 24) ? dateDay + 1 : dateDay;
+  const endIcal = `${dateYear}${pad(dateMonth + 1)}${pad(endDay)}T${pad(endHoursNorm)}${pad(endMinutes)}00`;
   
   // Generate unique ID
   const uid = `${game.id || generateUID()}-${seasonId}@mountainsideaces.com`;
@@ -2313,8 +2343,8 @@ function generateGameEvent(game, seasonId, teamFilter) {
   lines.push('BEGIN:VEVENT');
   lines.push(`UID:${uid}`);
   lines.push(`DTSTAMP:${formatICalDate(new Date())}`);
-  lines.push(`DTSTART;TZID=${LEAGUE_CONFIG.timezone}:${formatICalDateLocal(gameDate)}`);
-  lines.push(`DTEND;TZID=${LEAGUE_CONFIG.timezone}:${formatICalDateLocal(endDate)}`);
+  lines.push(`DTSTART;TZID=${LEAGUE_CONFIG.timezone}:${startIcal}`);
+  lines.push(`DTEND;TZID=${LEAGUE_CONFIG.timezone}:${endIcal}`);
   lines.push(`SUMMARY:${escapeICalText(summary)}`);
   lines.push(`LOCATION:${escapeICalText(location)}`);
   lines.push(`DESCRIPTION:${escapeICalText(description)}`);
@@ -3137,9 +3167,14 @@ exports.sendMassEmail = functions
   }
 
   const userData = userDoc.data();
-  const userRole = userData.role || userData.userRole || 'fan';
+  const isEmailAdmin = userData.isAdmin === true ||
+                       userData.userRole === 'admin' ||
+                       userData.role === 'admin' ||
+                       userData.userRole === 'league-staff' ||
+                       userData.role === 'league-staff' ||
+                       userData.isLeagueStaff === true;
 
-  if (!['admin', 'league-staff'].includes(userRole)) {
+  if (!isEmailAdmin) {
     throw new functions.https.HttpsError(
       'permission-denied',
       'Only admins and league staff can send mass emails.'
@@ -3180,48 +3215,66 @@ exports.sendMassEmail = functions
   const htmlBody = buildEmailHtml(body, fromName || 'Mountainside Aces', userId);
   const textBody = body.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
 
-  const emailList = recipients
-    .map(r => typeof r === 'string' ? r : r.email)
-    .filter(Boolean);
+  // Deduplicate, normalize, and exclude sender (they get a copy via the "to" field)
+  const emailList = [...new Set(
+    recipients
+      .map(r => typeof r === 'string' ? r : r.email)
+      .filter(Boolean)
+      .map(e => e.toLowerCase().trim())
+  )].filter(e => e !== (userData.email || '').toLowerCase().trim());
 
   const senderName = fromName || 'Mountainside Aces';
 
   let sentCount = 0;
   const errors = [];
 
-  // Always BCC — all recipients are hidden from each other, no reply-all
-  // "To" is the sender's own email, pulled from their user doc
-  console.log(`📧 Sending "${subject}" BCC to ${emailList.length} recipients (${audienceLabel || 'All Members'})`);
+  // Always BCC — Resend limits BCC to 50 per call, so chunk into batches
+  // "To" is the sender's own email on the first batch; subsequent batches use a silent to
+  const BCC_BATCH_SIZE = 44; // 44 BCC + 1 "to" = 45 total, safely under Resend limit
+  const batches = [];
+  for (let i = 0; i < emailList.length; i += BCC_BATCH_SIZE) {
+    batches.push(emailList.slice(i, i + BCC_BATCH_SIZE));
+  }
 
-  try {
-    const res = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        from: `${senderName} <${fromEmail}>`,
-        to: [userData.email],
-        bcc: emailList,
-        reply_to: replyTo,
-        subject: subject,
-        html: htmlBody,
-        text: textBody
-      })
-    });
+  const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-    if (!res.ok) {
-      const errText = await res.text();
-      console.error(`❌ Resend BCC send failed (${res.status}):`, errText);
-      errors.push(errText);
-    } else {
-      sentCount = emailList.length;
-      console.log(`✅ BCC send successful (${emailList.length} recipients)`);
+  console.log(`📧 Sending "${subject}" BCC to ${emailList.length} recipients in ${batches.length} batch(es) (${audienceLabel || 'All Members'})`);
+
+  for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+    if (batchIndex > 0) await sleep(1000); // Rate limit: Resend allows 2 req/sec
+    const batchBcc = batches[batchIndex];
+    const toField = [userData.email];
+
+    try {
+      const res = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          from: `${senderName} <${fromEmail}>`,
+          to: toField,
+          bcc: batchBcc,
+          reply_to: replyTo,
+          subject: subject,
+          html: htmlBody,
+          text: textBody
+        })
+      });
+
+      if (!res.ok) {
+        const errText = await res.text();
+        console.error(`❌ Resend BCC batch ${batchIndex + 1} failed (${res.status}):`, errText);
+        errors.push(`Batch ${batchIndex + 1}: ${errText}`);
+      } else {
+        sentCount += batchBcc.length;
+        console.log(`✅ BCC batch ${batchIndex + 1}/${batches.length} sent (${batchBcc.length} recipients)`);
+      }
+    } catch (err) {
+      console.error(`❌ Resend BCC batch ${batchIndex + 1} threw:`, err.message);
+      errors.push(`Batch ${batchIndex + 1}: ${err.message}`);
     }
-  } catch (err) {
-    console.error('❌ Resend BCC send threw:', err.message);
-    errors.push(err.message);
   }
 
   if (sentCount === 0) {
