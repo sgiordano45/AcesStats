@@ -155,7 +155,7 @@ export const PAGE_CONFIGS = {
   },
   
   'current-season.html': {
-    desktop: ['home', 'current-season', 'league-rules', 'weekend-preview', 'playoffs','clinching','projections', 'batting', 'pitching', 'teams', 'players']
+    desktop: ['home', 'current-season', 'league-rules', 'weekend-preview', 'playoffs','clinching','projections', 'batting', 'pitching']
   },
   
   'league-rules.html': {
