@@ -413,6 +413,52 @@
     #authidAlert {
       margin-top: 1rem;
     }
+
+    /* ===== Fix Roster IDs tool ===== */
+    .idfix-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.88rem;
+      margin-top: 1rem;
+    }
+    .idfix-table th {
+      background: var(--primary-color);
+      color: white;
+      padding: 0.65rem 0.75rem;
+      text-align: left;
+      font-weight: 600;
+    }
+    .idfix-table td {
+      padding: 0.6rem 0.75rem;
+      border-bottom: 1px solid var(--border-color);
+      vertical-align: middle;
+    }
+    .idfix-table tr:hover td { background: #f7fafc; }
+    .idfix-table tr.idfix-clean td { background: #f7fafc; color: #a0aec0; }
+    .idfix-table tr.idfix-fixable td { background: #fffaf0; }
+    .idfix-table tr.idfix-manual td { background: #fff5f5; }
+    .tag-uid-bad {
+      display: inline-block;
+      background: #fff5f5; color: #c53030;
+      border: 1px solid #feb2b2;
+      border-radius: 4px; padding: 2px 8px;
+      font-size: 0.78rem; font-weight: 600;
+    }
+    .tag-clean {
+      display: inline-block;
+      background: #e6fffa; color: #22543d;
+      border: 1px solid #9ae6b4;
+      border-radius: 4px; padding: 2px 8px;
+      font-size: 0.78rem; font-weight: 600;
+    }
+    .tag-manual {
+      display: inline-block;
+      background: #fff5f5; color: #c53030;
+      border: 1px solid #feb2b2;
+      border-radius: 4px; padding: 2px 8px;
+      font-size: 0.78rem; font-weight: 600;
+    }
+    #idfixAlert { margin-top: 1rem; }
   </style>
 </head>
 <body>
@@ -502,6 +548,48 @@
             </tr>
           </thead>
           <tbody id="authidTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ==================== FIX ROSTER IDs ==================== -->
+    <hr class="section-divider">
+
+    <div class="card">
+      <h2>&#x1F527; Fix Roster Player IDs</h2>
+      <div class="info-box">
+        <strong>What this does:</strong> Scans all roster docs for the selected season and detects players where the <code>id</code> field contains an Auth UID instead of a legacy snake_case ID (e.g. <code>ralph_pombo</code>). For each bad entry it looks up <code>linkedPlayer</code> on the user doc to recover the correct legacy ID, then writes it back &mdash; moving the UID to <code>authId</code>.<br><br>
+        <strong>Use when:</strong> Players were added via Auth UID rather than their legacy player ID, causing mismatches with batting orders and stats lookups.
+      </div>
+      <div class="form-group">
+        <label for="idfixSeasonSelect">Select Season:</label>
+        <select id="idfixSeasonSelect">
+          <option value="">-- Select a season --</option>
+        </select>
+      </div>
+      <div id="idfixAlert" class="alert"></div>
+      <div class="button-group">
+        <button class="btn-primary" id="idfixScanBtn" disabled>&#x1F50D; Scan for ID Issues</button>
+        <button class="btn-secondary btn-patch-all" id="idfixFixAllBtn" disabled>&#x26A1; Fix All Resolvable</button>
+      </div>
+    </div>
+
+    <div class="card" id="idfixResultCard" style="display: none;">
+      <h2>&#x1F50E; ID Scan Results</h2>
+      <div class="authid-summary" id="idfixSummary"></div>
+      <div style="overflow-x: auto;">
+        <table class="idfix-table" id="idfixTable">
+          <thead>
+            <tr>
+              <th>Player</th>
+              <th>Team</th>
+              <th>Current id field</th>
+              <th>Current authId</th>
+              <th>Proposed Fix</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="idfixTableBody"></tbody>
         </table>
       </div>
     </div>
@@ -1097,6 +1185,343 @@
     // Kick off second dropdown population after auth is confirmed
     populateAuthidSeasonSelect();
   </script>
+
+  <script type="module">
+    import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
+    import { getFirestore, collection, getDocs, doc, getDoc, updateDoc } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
+    import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js';
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyCAEWkrTcprzJ2KPPJu-vFJPvYOVU4ky20",
+      authDomain: "acessoftballreference-84791.firebaseapp.com",
+      projectId: "acessoftballreference-84791",
+      storageBucket: "acessoftballreference-84791.firebasestorage.app",
+      messagingSenderId: "777699560175",
+      appId: "1:777699560175:web:4092b422e7d7116352e91a",
+      measurementId: "G-1F8JKZH6DZ"
+    };
+
+    const app3 = initializeApp(firebaseConfig, 'idfix');
+    const db3 = getFirestore(app3);
+    const auth3 = getAuth(app3);
+
+    // Auth UIDs have no underscores and are 28 chars of alphanumeric
+    function isAuthUid(str) {
+      if (!str) return false;
+      return str.length > 20 && !str.includes('_');
+    }
+
+    function showIdfixAlert(message, type) {
+      const el = document.getElementById('idfixAlert');
+      el.textContent = message;
+      el.className = `alert show alert-${type}`;
+      setTimeout(() => el.classList.remove('show'), 6000);
+    }
+
+    async function populateIdfixSeasonSelect() {
+      try {
+        const snapshot = await getDocs(collection(db3, 'seasons'));
+        const select = document.getElementById('idfixSeasonSelect');
+        select.innerHTML = '<option value="">-- Select a season --</option>';
+
+        const seasons = [];
+        snapshot.forEach(d => {
+          const data = d.data();
+          seasons.push({ id: d.id, name: `${data.year} ${data.season.charAt(0).toUpperCase() + data.season.slice(1)}`, data });
+        });
+        seasons.sort((a, b) => {
+          if (b.data.year !== a.data.year) return b.data.year - a.data.year;
+          const order = { summer: 0, fall: 1, winter: 2, spring: 3 };
+          return order[a.data.season] - order[b.data.season];
+        });
+        seasons.forEach(s => {
+          const opt = document.createElement('option');
+          opt.value = s.id;
+          opt.textContent = s.name;
+          select.appendChild(opt);
+        });
+
+        select.addEventListener('change', (e) => {
+          document.getElementById('idfixScanBtn').disabled = !e.target.value;
+          document.getElementById('idfixFixAllBtn').disabled = true;
+          document.getElementById('idfixResultCard').style.display = 'none';
+        });
+      } catch (err) {
+        console.error('Error loading seasons for ID fix tool:', err);
+      }
+    }
+
+    // Holds fixable entries for fix-all
+    let idfixResults = [];
+
+    document.getElementById('idfixScanBtn').addEventListener('click', async () => {
+      const seasonId = document.getElementById('idfixSeasonSelect').value;
+      if (!seasonId) return;
+
+      const scanBtn = document.getElementById('idfixScanBtn');
+      scanBtn.disabled = true;
+      scanBtn.textContent = 'Scanning...';
+      idfixResults = [];
+
+      try {
+        // Load all roster docs for this season
+        const rostersSnap = await getDocs(collection(db3, 'rosters'));
+        const rosterDocs = [];
+        rostersSnap.forEach(d => {
+          if (d.id.startsWith(seasonId + '-')) rosterDocs.push({ id: d.id, data: d.data() });
+        });
+
+        if (rosterDocs.length === 0) {
+          showIdfixAlert('No roster docs found for this season. Run Roster Sync first.', 'warning');
+          scanBtn.disabled = false;
+          scanBtn.textContent = 'Scan for ID Issues';
+          return;
+        }
+
+        // Pre-load all users: build UID -> linkedPlayer map
+        const usersSnap = await getDocs(collection(db3, 'users'));
+        const uidToLegacyId = {};
+        usersSnap.forEach(u => {
+          const d = u.data();
+          if (d.linkedPlayer) uidToLegacyId[u.id] = d.linkedPlayer;
+        });
+
+        const tableBody = document.getElementById('idfixTableBody');
+        tableBody.innerHTML = '';
+
+        let countClean = 0;
+        let countFixable = 0;
+        let countManual = 0;
+
+        for (const rosterDoc of rosterDocs) {
+          const teamName = rosterDoc.data.teamName || rosterDoc.id.replace(seasonId + '-', '');
+          const players = rosterDoc.data.players || [];
+
+          players.forEach((player, idx) => {
+            const currentId = player.id || '';
+            const currentAuthId = player.authId || '';
+            const rowKey = `idfix-${rosterDoc.id}-${idx}`;
+
+            if (!isAuthUid(currentId)) {
+              // id looks like a legacy snake_case ID — clean
+              countClean++;
+              const tr = document.createElement('tr');
+              tr.className = 'idfix-clean';
+              tr.innerHTML = `
+                <td>${player.name || '—'}</td>
+                <td>${teamName}</td>
+                <td><span class="tag-clean uid-text">${currentId || '(empty)'}</span></td>
+                <td><span class="uid-text" style="color:#a0aec0;">${currentAuthId ? currentAuthId.substring(0, 14) + '...' : '—'}</span></td>
+                <td>—</td>
+                <td style="color:#a0aec0; font-size:0.82rem;">Clean</td>
+              `;
+              tableBody.appendChild(tr);
+              return;
+            }
+
+            // id IS an Auth UID — try to recover legacy ID from linkedPlayer
+            const legacyId = uidToLegacyId[currentId];
+            const correctAuthId = currentId; // the UID belongs in authId
+
+            if (legacyId) {
+              countFixable++;
+              idfixResults.push({
+                rosterDocId: rosterDoc.id,
+                playerIndex: idx,
+                playerName: player.name,
+                team: teamName,
+                correctLegacyId: legacyId,
+                correctAuthId
+              });
+
+              const tr = document.createElement('tr');
+              tr.className = 'idfix-fixable';
+              tr.id = rowKey;
+              tr.innerHTML = `
+                <td><strong>${player.name || '—'}</strong></td>
+                <td>${teamName}</td>
+                <td><span class="tag-uid-bad uid-text">${currentId.substring(0, 16)}...</span></td>
+                <td><span class="uid-text" style="color:#a0aec0;">${currentAuthId ? currentAuthId.substring(0, 14) + '...' : '—'}</span></td>
+                <td>
+                  <div style="font-size:0.8rem; line-height:1.7;">
+                    <div>id &rarr; <strong>${legacyId}</strong></div>
+                    <div style="color:#718096;">authId &rarr; <span class="uid-text">${correctAuthId.substring(0, 14)}...</span></div>
+                  </div>
+                </td>
+                <td>
+                  <button class="btn-patch"
+                    data-doc="${rosterDoc.id}"
+                    data-idx="${idx}"
+                    data-legacy="${legacyId}"
+                    data-auth="${correctAuthId}">
+                    Fix
+                  </button>
+                </td>
+              `;
+              tableBody.appendChild(tr);
+            } else {
+              // UID in id field but no linkedPlayer mapping exists — needs manual fix
+              countManual++;
+              const tr = document.createElement('tr');
+              tr.className = 'idfix-manual';
+              tr.id = rowKey;
+              tr.innerHTML = `
+                <td><strong>${player.name || '—'}</strong></td>
+                <td>${teamName}</td>
+                <td><span class="tag-uid-bad uid-text">${currentId.substring(0, 16)}...</span></td>
+                <td><span class="uid-text" style="color:#a0aec0;">${currentAuthId ? currentAuthId.substring(0, 14) + '...' : '—'}</span></td>
+                <td><span class="tag-manual">No linkedPlayer found</span></td>
+                <td style="color:#c53030; font-size:0.82rem;">Manual fix needed</td>
+              `;
+              tableBody.appendChild(tr);
+            }
+          });
+        }
+
+        // Wire up individual Fix buttons (event delegation)
+        tableBody.addEventListener('click', (e) => {
+          const btn = e.target.closest('.btn-patch[data-doc]');
+          if (!btn) return;
+          idfixSingle(btn.dataset.doc, parseInt(btn.dataset.idx), btn.dataset.legacy, btn.dataset.auth, btn);
+        });
+
+        document.getElementById('idfixSummary').innerHTML = `
+          <div class="authid-stat" style="border-color:#9ae6b4;">
+            <div class="val" style="color:#276749;">${countClean}</div>
+            <div class="lbl">Clean</div>
+          </div>
+          <div class="authid-stat" style="border-color:#f6e05e;">
+            <div class="val" style="color:#b7791f;">${countFixable}</div>
+            <div class="lbl">Auto-Fixable</div>
+          </div>
+          <div class="authid-stat" style="border-color:#feb2b2;">
+            <div class="val" style="color:#c53030;">${countManual}</div>
+            <div class="lbl">Manual Review</div>
+          </div>
+        `;
+
+        document.getElementById('idfixResultCard').style.display = 'block';
+        document.getElementById('idfixFixAllBtn').disabled = countFixable === 0;
+
+        if (countFixable > 0) {
+          showIdfixAlert(`Found ${countFixable} player(s) with Auth UIDs in the id field that can be fixed automatically.`, 'success');
+        } else if (countManual > 0) {
+          showIdfixAlert(`No auto-fixable issues, but ${countManual} player(s) need manual review (no linkedPlayer on their account).`, 'warning');
+        } else {
+          showIdfixAlert('All roster IDs look clean.', 'success');
+        }
+
+      } catch (err) {
+        console.error('ID fix scan error:', err);
+        showIdfixAlert('Error during scan: ' + err.message, 'error');
+      }
+
+      scanBtn.disabled = false;
+      scanBtn.textContent = 'Scan for ID Issues';
+    });
+
+    async function idfixSingle(rosterDocId, playerIndex, legacyId, authUid, btn) {
+      btn.disabled = true;
+      btn.textContent = 'Fixing...';
+      try {
+        const docRef = doc(db3, 'rosters', rosterDocId);
+        const docSnap = await getDoc(docRef);
+        if (!docSnap.exists()) throw new Error('Roster doc not found');
+
+        const players = [...(docSnap.data().players || [])];
+        players[playerIndex] = { ...players[playerIndex], id: legacyId, authId: authUid };
+        await updateDoc(docRef, { players, updatedAt: new Date().toISOString() });
+
+        btn.textContent = 'Fixed';
+        btn.style.background = '#48bb78';
+        btn.disabled = true;
+
+        const row = document.getElementById(`idfix-${rosterDocId}-${playerIndex}`);
+        if (row) {
+          row.className = 'idfix-clean';
+          row.cells[2].innerHTML = `<span class="tag-clean uid-text">${legacyId}</span>`;
+          row.cells[3].innerHTML = `<span class="uid-text" style="color:#a0aec0;">${authUid.substring(0, 14)}...</span>`;
+          row.cells[4].innerHTML = '—';
+          row.cells[5].innerHTML = '<span style="color:#48bb78; font-weight:600; font-size:0.85rem;">Done</span>';
+        }
+
+        // Remove from idfixResults so fix-all skips it
+        idfixResults = idfixResults.filter(r => !(r.rosterDocId === rosterDocId && r.playerIndex === playerIndex));
+        document.getElementById('idfixFixAllBtn').disabled = idfixResults.length === 0;
+
+        console.log(`Fixed ${players[playerIndex]?.name}: id=${legacyId}, authId=${authUid}`);
+      } catch (err) {
+        console.error('idfixSingle error:', err);
+        btn.textContent = 'Error';
+        btn.style.background = '#f56565';
+        btn.disabled = false;
+        showIdfixAlert('Error fixing player: ' + err.message, 'error');
+      }
+    }
+
+    document.getElementById('idfixFixAllBtn').addEventListener('click', async () => {
+      if (idfixResults.length === 0) return;
+
+      const fixAllBtn = document.getElementById('idfixFixAllBtn');
+      fixAllBtn.disabled = true;
+      fixAllBtn.textContent = 'Fixing...';
+
+      // Group by rosterDocId to minimise reads/writes
+      const grouped = {};
+      idfixResults.forEach(r => {
+        if (!grouped[r.rosterDocId]) grouped[r.rosterDocId] = [];
+        grouped[r.rosterDocId].push(r);
+      });
+
+      let successCount = 0;
+      let errorCount = 0;
+
+      for (const [rosterDocId, entries] of Object.entries(grouped)) {
+        try {
+          const docRef = doc(db3, 'rosters', rosterDocId);
+          const docSnap = await getDoc(docRef);
+          if (!docSnap.exists()) { errorCount += entries.length; continue; }
+
+          const players = [...(docSnap.data().players || [])];
+          entries.forEach(e => {
+            players[e.playerIndex] = { ...players[e.playerIndex], id: e.correctLegacyId, authId: e.correctAuthId };
+          });
+
+          await updateDoc(docRef, { players, updatedAt: new Date().toISOString() });
+
+          entries.forEach(e => {
+            const row = document.getElementById(`idfix-${rosterDocId}-${e.playerIndex}`);
+            if (row) {
+              row.className = 'idfix-clean';
+              row.cells[2].innerHTML = `<span class="tag-clean uid-text">${e.correctLegacyId}</span>`;
+              row.cells[3].innerHTML = `<span class="uid-text" style="color:#a0aec0;">${e.correctAuthId.substring(0, 14)}...</span>`;
+              row.cells[4].innerHTML = '—';
+              row.cells[5].innerHTML = '<span style="color:#48bb78; font-weight:600; font-size:0.85rem;">Done</span>';
+            }
+          });
+
+          successCount += entries.length;
+          console.log(`Fixed ${entries.length} player(s) in ${rosterDocId}`);
+        } catch (err) {
+          console.error('idfixAll error for', rosterDocId, err);
+          errorCount += entries.length;
+        }
+      }
+
+      idfixResults = [];
+
+      const msg = successCount > 0
+        ? `Fixed ${successCount} player(s) successfully.${errorCount > 0 ? ` ${errorCount} failed.` : ''}`
+        : 'All fixes failed. Check console for details.';
+      showIdfixAlert(msg, errorCount === 0 ? 'success' : 'warning');
+      fixAllBtn.textContent = 'Fix All Resolvable';
+    });
+
+    onAuthStateChanged(auth3, async (user) => {
+      if (user) await populateIdfixSeasonSelect();
+    });
+  </script>
+
   <script type="module">
     import { NavigationComponent } from './nav-component.js';
   </script>
