@@ -558,7 +558,7 @@
     <div class="card">
       <h2>&#x1F527; Fix Roster Player IDs</h2>
       <div class="info-box">
-        <strong>What this does:</strong> Scans all roster docs for the selected season and detects players where the <code>id</code> field contains an Auth UID instead of a legacy snake_case ID (e.g. <code>ralph_pombo</code>). For each bad entry it looks up <code>linkedPlayer</code> on the user doc to recover the correct legacy ID, then writes it back &mdash; moving the UID to <code>authId</code>.<br><br>
+        <strong>What this does:</strong> Scans all roster docs for the selected season and detects players where the <code>id</code> field contains an Auth UID instead of a legacy snake_case ID (e.g. <code>ralph_pombo</code>). For each bad entry it looks up <code>mergedFromProfile</code> on the user doc to recover the correct legacy ID, then writes it back &mdash; moving the UID to <code>authId</code>.<br><br>
         <strong>Use when:</strong> Players were added via Auth UID rather than their legacy player ID, causing mismatches with batting orders and stats lookups.
       </div>
       <div class="form-group">
@@ -1269,12 +1269,19 @@
           return;
         }
 
-        // Pre-load all users: build UID -> linkedPlayer map
+        // Pre-load all users: build UID -> legacy snake_case ID map
+        // mergedFromProfile is already snake_case (e.g. "ralph_pombo")
+        // Fall back to converting linkedPlayer display name if mergedFromProfile missing
         const usersSnap = await getDocs(collection(db3, 'users'));
         const uidToLegacyId = {};
         usersSnap.forEach(u => {
           const d = u.data();
-          if (d.linkedPlayer) uidToLegacyId[u.id] = d.linkedPlayer;
+          if (d.mergedFromProfile) {
+            uidToLegacyId[u.id] = d.mergedFromProfile;
+          } else if (d.linkedPlayer) {
+            // Convert "Ralph Pombo" -> "ralph_pombo" as fallback
+            uidToLegacyId[u.id] = d.linkedPlayer.trim().toLowerCase().replace(/\s+/g, '_');
+          }
         });
 
         const tableBody = document.getElementById('idfixTableBody');
