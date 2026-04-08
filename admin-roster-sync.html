@@ -459,6 +459,53 @@
       font-size: 0.78rem; font-weight: 600;
     }
     #idfixAlert { margin-top: 1rem; }
+
+    /* ===== Jersey Number Sync tool ===== */
+    .jersey-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.88rem;
+      margin-top: 1rem;
+    }
+    .jersey-table th {
+      background: var(--primary-color);
+      color: white;
+      padding: 0.65rem 0.75rem;
+      text-align: left;
+      font-weight: 600;
+    }
+    .jersey-table td {
+      padding: 0.6rem 0.75rem;
+      border-bottom: 1px solid var(--border-color);
+      vertical-align: middle;
+    }
+    .jersey-table tr:hover td { background: #f7fafc; }
+    .jersey-table tr.jersey-clean td { background: #f7fafc; color: #a0aec0; }
+    .jersey-table tr.jersey-update td { background: #fffaf0; }
+    .jersey-table tr.jersey-no-account td { background: #f7fafc; color: #a0aec0; }
+    .tag-jersey-new {
+      display: inline-block;
+      background: #e6fffa; color: #22543d;
+      border: 1px solid #9ae6b4;
+      border-radius: 4px; padding: 2px 8px;
+      font-size: 0.82rem; font-weight: 700;
+    }
+    .tag-jersey-old {
+      display: inline-block;
+      background: #fff5f5; color: #c53030;
+      border: 1px solid #feb2b2;
+      border-radius: 4px; padding: 2px 8px;
+      font-size: 0.82rem;
+      text-decoration: line-through;
+    }
+    .tag-jersey-same {
+      display: inline-block;
+      background: #ebf8ff; color: #2b6cb0;
+      border: 1px solid #90cdf4;
+      border-radius: 4px; padding: 2px 8px;
+      font-size: 0.82rem;
+    }
+    #jerseyAlert { margin-top: 1rem; }
   </style>
 </head>
 <body>
@@ -590,6 +637,47 @@
             </tr>
           </thead>
           <tbody id="idfixTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ==================== JERSEY NUMBER SYNC ==================== -->
+    <hr class="section-divider">
+
+    <div class="card">
+      <h2>&#x1F4DF; Sync Jersey Numbers from User Profiles</h2>
+      <div class="info-box">
+        <strong>What this does:</strong> Scans roster docs for the selected season and looks up each player's <code>number</code> field from their user profile doc. For players with an <code>authId</code> it fetches directly by UID; for legacy-only players it queries by <code>mergedFromProfile</code>. Shows a preview of all changes before writing.<br><br>
+        <strong>Use when:</strong> Players have updated their jersey number in their profile and you want those numbers reflected in the roster doc (used by game tracker, roster management, etc.)
+      </div>
+      <div class="form-group">
+        <label for="jerseySeasonSelect">Select Season:</label>
+        <select id="jerseySeasonSelect">
+          <option value="">-- Select a season --</option>
+        </select>
+      </div>
+      <div id="jerseyAlert" class="alert"></div>
+      <div class="button-group">
+        <button class="btn-primary" id="jerseyScanBtn" disabled>&#x1F50D; Scan Jersey Numbers</button>
+        <button class="btn-secondary btn-patch-all" id="jerseyUpdateAllBtn" disabled>&#x26A1; Update All Changed</button>
+      </div>
+    </div>
+
+    <div class="card" id="jerseyResultCard" style="display: none;">
+      <h2>&#x1F4CB; Jersey Scan Results</h2>
+      <div class="authid-summary" id="jerseySummary"></div>
+      <div style="overflow-x: auto;">
+        <table class="jersey-table" id="jerseyTable">
+          <thead>
+            <tr>
+              <th>Player</th>
+              <th>Team</th>
+              <th>Roster #</th>
+              <th>Profile #</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="jerseyTableBody"></tbody>
         </table>
       </div>
     </div>
@@ -1517,6 +1605,319 @@
 
     onAuthStateChanged(auth3, async (user) => {
       if (user) await populateIdfixSeasonSelect();
+    });
+  </script>
+
+  <script type="module">
+    import { getApp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
+    import { getFirestore, collection, getDocs, doc, getDoc, updateDoc, query, where } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
+    import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js';
+
+    const appJ = getApp();
+    const dbJ = getFirestore(appJ);
+    const authJ = getAuth(appJ);
+
+    function showJerseyAlert(message, type) {
+      const el = document.getElementById('jerseyAlert');
+      el.textContent = message;
+      el.className = `alert show alert-${type}`;
+      setTimeout(() => el.classList.remove('show'), 6000);
+    }
+
+    async function populateJerseySeasonSelect() {
+      try {
+        const snapshot = await getDocs(collection(dbJ, 'seasons'));
+        const select = document.getElementById('jerseySeasonSelect');
+        select.innerHTML = '<option value="">-- Select a season --</option>';
+
+        const seasons = [];
+        snapshot.forEach(d => {
+          const data = d.data();
+          seasons.push({ id: d.id, name: `${data.year} ${data.season.charAt(0).toUpperCase() + data.season.slice(1)}`, data });
+        });
+        seasons.sort((a, b) => {
+          if (b.data.year !== a.data.year) return b.data.year - a.data.year;
+          const order = { summer: 0, fall: 1, winter: 2, spring: 3 };
+          return order[a.data.season] - order[b.data.season];
+        });
+        seasons.forEach(s => {
+          const opt = document.createElement('option');
+          opt.value = s.id;
+          opt.textContent = s.name;
+          select.appendChild(opt);
+        });
+
+        select.addEventListener('change', (e) => {
+          document.getElementById('jerseyScanBtn').disabled = !e.target.value;
+          document.getElementById('jerseyUpdateAllBtn').disabled = true;
+          document.getElementById('jerseyResultCard').style.display = 'none';
+        });
+      } catch (err) {
+        console.error('Error loading seasons for jersey tool:', err);
+      }
+    }
+
+    // Holds rows that have a changed number
+    let jerseyUpdateResults = [];
+
+    document.getElementById('jerseyScanBtn').addEventListener('click', async () => {
+      const seasonId = document.getElementById('jerseySeasonSelect').value;
+      if (!seasonId) return;
+
+      const scanBtn = document.getElementById('jerseyScanBtn');
+      scanBtn.disabled = true;
+      scanBtn.textContent = 'Scanning...';
+      jerseyUpdateResults = [];
+
+      try {
+        // Load all roster docs for this season
+        const rostersSnap = await getDocs(collection(dbJ, 'rosters'));
+        const rosterDocs = [];
+        rostersSnap.forEach(d => {
+          if (d.id.startsWith(seasonId + '-')) rosterDocs.push({ id: d.id, data: d.data() });
+        });
+
+        if (rosterDocs.length === 0) {
+          showJerseyAlert('No roster docs found for this season. Run Roster Sync first.', 'warning');
+          scanBtn.disabled = false;
+          scanBtn.textContent = 'Scan Jersey Numbers';
+          return;
+        }
+
+        // Pre-load all users into a map keyed two ways:
+        //   authIdMap[uid]        -> { number }
+        //   legacyIdMap[legacyId] -> { number }   (via mergedFromProfile)
+        const usersSnap = await getDocs(collection(dbJ, 'users'));
+        const authIdMap = {};
+        const legacyIdMap = {};
+        usersSnap.forEach(u => {
+          const d = u.data();
+          const num = d.number ? String(d.number).trim() : null;
+          if (num) {
+            authIdMap[u.id] = num;
+            if (d.mergedFromProfile) legacyIdMap[d.mergedFromProfile] = num;
+          }
+        });
+
+        const tableBody = document.getElementById('jerseyTableBody');
+        tableBody.innerHTML = '';
+
+        let countSame = 0;
+        let countUpdate = 0;
+        let countNoAccount = 0;
+
+        for (const rosterDoc of rosterDocs) {
+          const teamName = rosterDoc.data.teamName || rosterDoc.id.replace(seasonId + '-', '');
+          const players = rosterDoc.data.players || [];
+
+          players.forEach((player, idx) => {
+            const rowKey = `jersey-${rosterDoc.id}-${idx}`;
+            const rosterNum = player.number ? String(player.number).trim() : null;
+
+            // Try to find profile number — authId first, then legacy id
+            const profileNum = (player.authId && authIdMap[player.authId])
+              || (player.id && legacyIdMap[player.id])
+              || null;
+
+            if (!profileNum) {
+              // No user account or no number set in profile
+              countNoAccount++;
+              const tr = document.createElement('tr');
+              tr.className = 'jersey-no-account';
+              tr.innerHTML = `
+                <td>${player.name || '—'}</td>
+                <td>${teamName}</td>
+                <td>${rosterNum ? `<span class="tag-jersey-same">#${rosterNum}</span>` : '<span style="color:#a0aec0;">—</span>'}</td>
+                <td style="color:#a0aec0; font-size:0.82rem;">No profile #</td>
+                <td style="color:#a0aec0; font-size:0.82rem;">—</td>
+              `;
+              tableBody.appendChild(tr);
+              return;
+            }
+
+            if (rosterNum === profileNum) {
+              // Already in sync
+              countSame++;
+              const tr = document.createElement('tr');
+              tr.className = 'jersey-clean';
+              tr.innerHTML = `
+                <td>${player.name || '—'}</td>
+                <td>${teamName}</td>
+                <td><span class="tag-jersey-same">#${rosterNum}</span></td>
+                <td><span class="tag-jersey-same">#${profileNum}</span></td>
+                <td style="color:#a0aec0; font-size:0.82rem;">In sync</td>
+              `;
+              tableBody.appendChild(tr);
+              return;
+            }
+
+            // Number differs — needs update
+            countUpdate++;
+            jerseyUpdateResults.push({
+              rosterDocId: rosterDoc.id,
+              playerIndex: idx,
+              playerName: player.name,
+              team: teamName,
+              oldNumber: rosterNum,
+              newNumber: profileNum
+            });
+
+            const tr = document.createElement('tr');
+            tr.className = 'jersey-update';
+            tr.id = rowKey;
+            tr.innerHTML = `
+              <td><strong>${player.name || '—'}</strong></td>
+              <td>${teamName}</td>
+              <td>${rosterNum ? `<span class="tag-jersey-old">#${rosterNum}</span>` : '<span style="color:#a0aec0;">—</span>'}</td>
+              <td><span class="tag-jersey-new">#${profileNum}</span></td>
+              <td>
+                <button class="btn-patch"
+                  data-doc="${rosterDoc.id}"
+                  data-idx="${idx}"
+                  data-num="${profileNum}">
+                  Update
+                </button>
+              </td>
+            `;
+            tableBody.appendChild(tr);
+          });
+        }
+
+        // Wire up individual Update buttons
+        tableBody.addEventListener('click', (e) => {
+          const btn = e.target.closest('.btn-patch[data-doc]');
+          if (!btn) return;
+          jerseyUpdateSingle(btn.dataset.doc, parseInt(btn.dataset.idx), btn.dataset.num, btn);
+        });
+
+        document.getElementById('jerseySummary').innerHTML = `
+          <div class="authid-stat" style="border-color:#9ae6b4;">
+            <div class="val" style="color:#276749;">${countSame}</div>
+            <div class="lbl">In Sync</div>
+          </div>
+          <div class="authid-stat" style="border-color:#f6e05e;">
+            <div class="val" style="color:#b7791f;">${countUpdate}</div>
+            <div class="lbl">Need Update</div>
+          </div>
+          <div class="authid-stat" style="border-color:#e2e8f0;">
+            <div class="val" style="color:#718096;">${countNoAccount}</div>
+            <div class="lbl">No Profile #</div>
+          </div>
+        `;
+
+        document.getElementById('jerseyResultCard').style.display = 'block';
+        document.getElementById('jerseyUpdateAllBtn').disabled = countUpdate === 0;
+
+        if (countUpdate > 0) {
+          showJerseyAlert(`Found ${countUpdate} player(s) with jersey numbers to update.`, 'success');
+        } else {
+          showJerseyAlert('All jersey numbers are already in sync.', 'success');
+        }
+
+      } catch (err) {
+        console.error('Jersey scan error:', err);
+        showJerseyAlert('Error during scan: ' + err.message, 'error');
+      }
+
+      scanBtn.disabled = false;
+      scanBtn.textContent = 'Scan Jersey Numbers';
+    });
+
+    async function jerseyUpdateSingle(rosterDocId, playerIndex, newNumber, btn) {
+      btn.disabled = true;
+      btn.textContent = 'Updating...';
+      try {
+        const docRef = doc(dbJ, 'rosters', rosterDocId);
+        const docSnap = await getDoc(docRef);
+        if (!docSnap.exists()) throw new Error('Roster doc not found');
+
+        const players = [...(docSnap.data().players || [])];
+        players[playerIndex] = { ...players[playerIndex], number: newNumber };
+        await updateDoc(docRef, { players, updatedAt: new Date().toISOString() });
+
+        btn.textContent = 'Updated';
+        btn.style.background = '#48bb78';
+        btn.disabled = true;
+
+        const row = document.getElementById(`jersey-${rosterDocId}-${playerIndex}`);
+        if (row) {
+          row.className = 'jersey-clean';
+          row.cells[2].innerHTML = `<span class="tag-jersey-same">#${newNumber}</span>`;
+          row.cells[3].innerHTML = `<span class="tag-jersey-same">#${newNumber}</span>`;
+          row.cells[4].innerHTML = '<span style="color:#48bb78; font-weight:600; font-size:0.85rem;">Done</span>';
+        }
+
+        jerseyUpdateResults = jerseyUpdateResults.filter(
+          r => !(r.rosterDocId === rosterDocId && r.playerIndex === playerIndex)
+        );
+        document.getElementById('jerseyUpdateAllBtn').disabled = jerseyUpdateResults.length === 0;
+
+      } catch (err) {
+        console.error('jerseyUpdateSingle error:', err);
+        btn.textContent = 'Error';
+        btn.style.background = '#f56565';
+        btn.disabled = false;
+        showJerseyAlert('Error updating player: ' + err.message, 'error');
+      }
+    }
+
+    document.getElementById('jerseyUpdateAllBtn').addEventListener('click', async () => {
+      if (jerseyUpdateResults.length === 0) return;
+
+      const updateAllBtn = document.getElementById('jerseyUpdateAllBtn');
+      updateAllBtn.disabled = true;
+      updateAllBtn.textContent = 'Updating...';
+
+      // Group by rosterDocId to minimise reads/writes
+      const grouped = {};
+      jerseyUpdateResults.forEach(r => {
+        if (!grouped[r.rosterDocId]) grouped[r.rosterDocId] = [];
+        grouped[r.rosterDocId].push(r);
+      });
+
+      let successCount = 0;
+      let errorCount = 0;
+
+      for (const [rosterDocId, entries] of Object.entries(grouped)) {
+        try {
+          const docRef = doc(dbJ, 'rosters', rosterDocId);
+          const docSnap = await getDoc(docRef);
+          if (!docSnap.exists()) { errorCount += entries.length; continue; }
+
+          const players = [...(docSnap.data().players || [])];
+          entries.forEach(e => {
+            players[e.playerIndex] = { ...players[e.playerIndex], number: e.newNumber };
+          });
+
+          await updateDoc(docRef, { players, updatedAt: new Date().toISOString() });
+
+          entries.forEach(e => {
+            const row = document.getElementById(`jersey-${rosterDocId}-${e.playerIndex}`);
+            if (row) {
+              row.className = 'jersey-clean';
+              row.cells[2].innerHTML = `<span class="tag-jersey-same">#${e.newNumber}</span>`;
+              row.cells[3].innerHTML = `<span class="tag-jersey-same">#${e.newNumber}</span>`;
+              row.cells[4].innerHTML = '<span style="color:#48bb78; font-weight:600; font-size:0.85rem;">Done</span>';
+            }
+          });
+
+          successCount += entries.length;
+        } catch (err) {
+          console.error('jerseyUpdateAll error for', rosterDocId, err);
+          errorCount += entries.length;
+        }
+      }
+
+      jerseyUpdateResults = [];
+      const msg = successCount > 0
+        ? `Updated ${successCount} player(s).${errorCount > 0 ? ` ${errorCount} failed.` : ''}`
+        : 'All updates failed. Check console for details.';
+      showJerseyAlert(msg, errorCount === 0 ? 'success' : 'warning');
+      updateAllBtn.textContent = 'Update All Changed';
+    });
+
+    onAuthStateChanged(authJ, async (user) => {
+      if (user) await populateJerseySeasonSelect();
     });
   </script>
 
