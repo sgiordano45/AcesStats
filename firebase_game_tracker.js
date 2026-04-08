@@ -197,3 +197,61 @@ export async function hasLineupBeenSet(gameId, teamName) {
     return false;
   }
 }
+
+/**
+ * Get team roster from rosters collection for use in game tracker.
+ * Uses rosters/{seasonId}-{teamName} as single source of truth —
+ * works before any stats exist (new season, missed game 1, etc.)
+ *
+ * Returns players shaped for game-tracker's battingOrder/players state:
+ *   id       — legacy snake_case ID (e.g. "ralph_pombo") — matches batting order storage
+ *   authId   — Firebase Auth UID (for permission checks)
+ *   name     — display name (e.g. "Ralph Pombo")
+ *   number   — jersey number string, or '' if not set
+ *   position — position string
+ *   avatar   — 2-char initials for display
+ *   battingAvg — '.000' placeholder (stats come from aggregatedPlayerStats, not roster)
+ *
+ * @param {string} teamName - Team name (e.g. "Teal", "Army") — case insensitive
+ * @param {string} seasonId - Season ID (e.g. "2026-summer")
+ * @returns {Promise<Array>} Array of player objects
+ */
+export async function getTeamRosterForTracker(teamName, seasonId) {
+  try {
+    const docId = `${seasonId}-${teamName.toLowerCase()}`;
+    const rosterRef = doc(db, 'rosters', docId);
+    const snap = await getDoc(rosterRef);
+
+    if (!snap.exists()) {
+      console.warn(`getTeamRosterForTracker: no roster doc at rosters/${docId}`);
+      return [];
+    }
+
+    const players = (snap.data().players || [])
+      .filter(p => p.name) // skip empty entries
+      .map((p, index) => {
+        const name = p.name.trim();
+        const nameParts = name.split(' ');
+        const avatar = nameParts.length > 1
+          ? (nameParts[0][0] + nameParts[nameParts.length - 1][0]).toUpperCase()
+          : name.substring(0, 2).toUpperCase();
+
+        return {
+          id: p.id || '',           // snake_case legacy ID — matches lineups/ batting order
+          authId: p.authId || '',   // Firebase Auth UID
+          name,
+          number: p.number ? String(p.number) : '',
+          position: p.position || 'IF/OF',
+          avatar,
+          battingAvg: '.000'        // placeholder — tracker doesn't need live avg
+        };
+      });
+
+    console.log(`getTeamRosterForTracker: loaded ${players.length} players from rosters/${docId}`);
+    return players;
+
+  } catch (error) {
+    console.error('getTeamRosterForTracker error:', error);
+    return [];
+  }
+}
