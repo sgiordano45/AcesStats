@@ -117,6 +117,7 @@
         import { getCurrentUser, onAuthChange, getUserProfile } from './firebase-auth.js';
         import { getCurrentSeason, getAllTeams, getSeasonPlayerStatsOptimized } from './firebase-data.js';
         import { getUpcomingTeamGames, getBattingOrder } from './firebase-roster.js';
+        import { getTeamRosterForTracker } from './firebase_game_tracker.js';
         import { doc, setDoc, getDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
         import { db } from './firebase-data.js';
 		
@@ -418,6 +419,7 @@ function getOrdinalSuffix(num) {
             getCurrentSeason,
             getAllTeams,
             getSeasonPlayerStatsOptimized,
+            getTeamRosterForTracker,
             getUpcomingTeamGames,
             getBattingOrder,
             saveGameState: (gameId, teamId, teamName, gameState, battingOrder, userInfo, seasonId, gameObj) => 
@@ -708,22 +710,10 @@ const loadOpponentRoster = async (opponentTeam) => {
     try {
         console.log('📄 Loading opponent roster for:', opponentTeam);
         
-        const seasonPlayers = await window.FirebaseGameTracker.getSeasonPlayerStatsOptimized(
+        const formattedOppPlayers = await window.FirebaseGameTracker.getTeamRosterForTracker(
+            opponentTeam,
             currentSeason.id
         );
-        
-        const oppPlayers = seasonPlayers.filter(p => 
-            p.team?.toLowerCase() === opponentTeam.toLowerCase() && !p.migrated
-        );
-        
-        const formattedOppPlayers = oppPlayers.map((player, index) => {
-            const name = player.name || player.playerName;
-            return {
-                id: player.playerId || player.id,
-                name,
-                number: player.number || (index + 1).toString()
-            };
-        });
         
         setOpponentPlayers(formattedOppPlayers);
         console.log('✅ Opponent roster loaded:', formattedOppPlayers.length, 'players');
@@ -1144,47 +1134,12 @@ useEffect(() => {
                 try {
                     console.log('📄 Loading team data for:', selectedTeam);
                     
-                    const seasonPlayers = await window.FirebaseGameTracker.getSeasonPlayerStatsOptimized(
+                    const formattedPlayers = await window.FirebaseGameTracker.getTeamRosterForTracker(
+                        selectedTeam,
                         currentSeason.id
                     );
                     
-                    const teamPlayers = seasonPlayers.filter(p => 
-                        p.team?.toLowerCase() === selectedTeam.toLowerCase() && !p.migrated
-                    );
-                    
-                    console.log('📊 Team players:', teamPlayers.length);
-                    
-                    const formattedPlayersPromises = teamPlayers.map(async (player, index) => {
-                        const name = player.name || player.playerName;
-                        const nameParts = name.trim().split(' ');
-                        const avatar = nameParts.length > 1
-                            ? (nameParts[0][0] + nameParts[nameParts.length - 1][0]).toUpperCase()
-                            : name.substring(0, 2).toUpperCase();
-                        
-                        let jerseyNum = player.number || (index + 1);
-                        
-                        // Try to get the player's profile for accurate jersey number
-                        try {
-                            const playerProfile = await window.FirebaseGameTracker.getUserProfile(player.playerId || player.id);
-                            if (playerProfile.success && playerProfile.data?.number) {
-                                jerseyNum = parseInt(playerProfile.data.number) || jerseyNum;
-                            }
-                        } catch (error) {
-                            console.warn(`Could not load profile for ${name}:`, error);
-                        }
-                        
-                        return {
-                            id: player.playerId || player.id,
-                            name,
-                            number: jerseyNum.toString(),
-                            position: player.position || 'IF/OF',
-                            avatar,
-                            battingAvg: player.battingAverage ? player.battingAverage.toFixed(3) : '.000'
-                        };
-                    });
-                    
-                    const formattedPlayers = await Promise.all(formattedPlayersPromises);
-                    
+                    console.log('📊 Team players from roster:', formattedPlayers.length);
                     setPlayers(formattedPlayers);
                     
                     const upcomingGames = await window.FirebaseGameTracker.getUpcomingTeamGames(
@@ -1311,7 +1266,7 @@ useEffect(() => {
                         // Restore batting order from saved player IDs
                         const savedBattingOrderIds = savedState.battingOrder || [];
                         const orderedPlayers = savedBattingOrderIds
-                            .map(playerId => players.find(p => p.id === playerId))
+                            .map(playerId => players.find(p => p.id === playerId || p.authId === playerId))
                             .filter(p => p !== null && p !== undefined);
                         
                         if (orderedPlayers.length > 0) {
@@ -1399,7 +1354,7 @@ useEffect(() => {
                     
                     if (battingOrderIds && battingOrderIds.length > 0) {
                         const orderedPlayers = battingOrderIds
-                            .map(playerId => players.find(p => p.id === playerId))
+                            .map(playerId => players.find(p => p.id === playerId || p.authId === playerId))
                             .filter(p => p !== null && p !== undefined);
                         
                         if (orderedPlayers.length > 0) {
