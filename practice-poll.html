@@ -717,48 +717,55 @@ function PracticePollApp() {
   const [saving, setSaving]               = useState(false);
   const [error, setError]                 = useState(null);
 
-  // --- auth init ---
+  // --- auth init (mirrors roster-management pattern) ---
   useEffect(() => {
-    window.PollApp_onAuthReady = async (user, profile) => {
-      document.getElementById('loadingOverlay').classList.add('hidden');
-      if (!user) {
-        window.location.href = 'signin.html?redirect=practice-poll.html';
-        return;
-      }
-      setCurrentUser(user);
-      setUserProfile(profile);
+    window.PollApp_init = async (user) => {
+      try {
+        setCurrentUser(user);
 
-      // Determine which teams this user can see
-      const cTeams = [];
-      if (profile.userRole === 'admin' || profile.userRole === 'league-staff') {
-        // admins see all — we'll load all teams from firebase-data
-        const allTeams = window.PollFirebase?.allTeams || [];
-        allTeams.forEach(t => cTeams.push({ id: t, label: capitalize(t) + ' Team' }));
-      } else {
-        // captains
-        if (profile.teamRoles) {
-          Object.entries(profile.teamRoles).forEach(([teamId, role]) => {
-            if ((role.role === 'captain' || role.role === 'team-staff') && role.status === 'active') {
-              cTeams.push({ id: teamId, label: capitalize(teamId) + ' Team' });
-            }
-          });
+        const [seasonData, teamsData, profileResult] = await Promise.all([
+          window.PollFirebase.getCurrentSeason(),
+          window.PollFirebase.getAllTeams(),
+          window.PollFirebase.getUserProfile(user.uid)
+        ]);
+
+        const profile = profileResult?.success ? profileResult.data : (profileResult || {});
+        setUserProfile(profile);
+
+        const allTeamIds = teamsData.map(t => t.name || t.id || t).filter(Boolean).sort();
+        const cTeams = [];
+        const role = profile.userRole || profile.role;
+
+        if (role === 'admin' || role === 'league-staff') {
+          allTeamIds.forEach(t => cTeams.push({ id: t.toLowerCase(), label: capitalize(t) + ' Team' }));
+        } else {
+          if (profile.teamRoles) {
+            Object.entries(profile.teamRoles).forEach(([teamId, teamRole]) => {
+              if ((teamRole.role === 'captain' || teamRole.role === 'team-staff') && teamRole.status === 'active') {
+                cTeams.push({ id: teamId, label: capitalize(teamId) + ' Team' });
+              }
+            });
+          }
+          if (profile.isCaptain && profile.linkedTeam && !cTeams.find(t => t.id === profile.linkedTeam)) {
+            cTeams.push({ id: profile.linkedTeam, label: capitalize(profile.linkedTeam) + ' Team' });
+          }
         }
-        if (profile.isCaptain && profile.linkedTeam && !cTeams.find(t => t.id === profile.linkedTeam)) {
-          cTeams.push({ id: profile.linkedTeam, label: capitalize(profile.linkedTeam) + ' Team' });
-        }
+        setCaptainTeams(cTeams);
+
+        const pTeam = profile.linkedTeam || null;
+        setPlayerTeam(pTeam);
+        setActiveTeam(cTeams[0]?.id || pTeam);
+
+      } catch(e) {
+        console.error('Poll init error:', e);
+        setError('Failed to load. Please refresh.');
+      } finally {
+        document.getElementById('loadingOverlay').classList.add('hidden');
+        setLoading(false);
       }
-      setCaptainTeams(cTeams);
-
-      // Player's own team
-      const pTeam = profile.linkedTeam || null;
-      setPlayerTeam(pTeam);
-
-      // Default active team: captain's first team OR player's team
-      const defaultTeam = cTeams[0]?.id || pTeam;
-      setActiveTeam(defaultTeam);
-
-      setLoading(false);
     };
+
+    if (window.pollCurrentUser) window.PollApp_init(window.pollCurrentUser);
   }, []);
 
   // Load polls when activeTeam changes
@@ -1146,33 +1153,22 @@ async function getRoster(seasonId, teamId) {
   }
 }
 
-// Expose to React
+// Expose to React (mirrors roster-management window.FirebaseRoster pattern)
 window.PollFirebase = {
   createPoll, getPolls, getResponses, saveResponse,
   confirmSlot, closePoll, deletePoll, getRoster,
-  get currentSeason() { return currentSeasonId; },
-  allTeams: []
+  getCurrentSeason, getAllTeams, getUserProfile,
+  get currentSeason() { return currentSeasonId; }
 };
 
-// Load all teams for admin
-try {
-  const teams = await getAllTeams();
-  window.PollFirebase.allTeams = teams.map(t => t.teamId || t.id || t).filter(Boolean);
-} catch(e) {}
-
-// Auth
-onAuthChange(async (user) => {
-  if (!user) {
-    if (window.PollApp_onAuthReady) window.PollApp_onAuthReady(null, null);
-    return;
-  }
-  try {
-    const profile = await getUserProfile(user.uid);
-    await resolveCurrentSeason();
-    if (window.PollApp_onAuthReady) window.PollApp_onAuthReady(user, profile || {});
-  } catch(e) {
-    console.error('Auth error:', e);
-    if (window.PollApp_onAuthReady) window.PollApp_onAuthReady(user, {});
+// Auth — just set window.pollCurrentUser and trigger React init
+onAuthChange((user) => {
+  console.log('Poll auth state changed:', user ? user.email : 'No user');
+  if (user) {
+    window.pollCurrentUser = user;
+    if (window.PollApp_init) window.PollApp_init(user);
+  } else {
+    window.location.href = 'signin.html';
   }
 });
 </script>
