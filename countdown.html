@@ -294,7 +294,10 @@ body.screenshot-mode #card-target { border-radius: 20px; box-shadow: none; }
 </div>
 
 <script type="module">
-import { auth, db, doc, getDoc } from './firebase-config.js';
+import { auth } from './firebase-auth.js';
+import { db } from './firebase-config.js';
+import { onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
+import { doc, getDoc } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
 import {
   getAllPlayerStatsOptimized,
   getAllSeasons,
@@ -331,17 +334,41 @@ let screenshotOn = false;
 /* -------------------------------------------------------
    AUTH
 ------------------------------------------------------- */
-auth.onAuthStateChanged(async (user) => {
+onAuthStateChanged(auth, async (user) => {
   if (!user) {
     document.getElementById('auth-gate').innerHTML =
       '<p>Please <a href="signin.html">sign in</a> to access this tool.</p>';
     return;
   }
 
-  const snap = await getDoc(doc(db, 'users', user.uid));
-  if (!snap.exists() || !snap.data().isAdmin) {
+  try {
+    const snap = await getDoc(doc(db, 'users', user.uid));
+    if (!snap.exists()) {
+      document.getElementById('auth-gate').innerHTML =
+        '<p style="color:#f85149">No user profile found.</p>';
+      return;
+    }
+
+    const profile  = snap.data();
+    const userRole = (profile.userRole || '').toLowerCase();
+    const userType = (profile.userType || '').toLowerCase();
+    const role     = (profile.role     || '').toLowerCase();
+
+    const authorized =
+      profile.isAdmin === true ||
+      userRole === 'admin' || userRole === 'staff' ||
+      userType === 'admin' || userType === 'league-staff' ||
+      role     === 'admin' || role     === 'staff' || role === 'league-staff';
+
+    if (!authorized) {
+      document.getElementById('auth-gate').innerHTML =
+        '<p style="color:#f85149">Admin access required.</p>';
+      return;
+    }
+  } catch (err) {
+    console.error('Auth check failed:', err);
     document.getElementById('auth-gate').innerHTML =
-      '<p style="color:#f85149">Admin access required.</p>';
+      '<p style="color:#f85149">Authorization error. Check console.</p>';
     return;
   }
 
