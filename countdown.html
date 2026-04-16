@@ -297,7 +297,7 @@ body.screenshot-mode #card-target { border-radius: 20px; box-shadow: none; }
 import { auth } from './firebase-auth.js';
 import { db } from './firebase-config.js';
 import { onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
-import { doc, getDoc } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+import { doc, getDoc, collection, getDocs } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
 import {
   getAllPlayerStatsOptimized,
   getAllSeasons,
@@ -314,11 +314,11 @@ const DAY_META = {
   10: { title: 'The League by the Numbers', sub: 'Every season, every game, by the numbers' },
   9:  { title: 'Championship Roll Call',    sub: 'Every champion, every season' },
   8:  { title: 'All-Time Hit Kings',        sub: 'Best with the bat, career totals' },
-  7:  { title: 'RBI Machines',              sub: 'Who brought them home' },
+  7:  { title: 'Walk Kings',                 sub: 'God rested on the 7th day \u2014 and so did these guys at the plate' },
   6:  { title: 'The Iron Men',              sub: 'Most games played in Aces history' },
   5:  { title: 'Batting Legends',           sub: 'Best career averages (min 50 AB)' },
   4:  { title: 'Peak Performance',          sub: 'Best single-season batting average' },
-  3:  { title: 'Home Run Club',             sub: 'Going yard in Aces history' },
+  3:  { title: 'Run Scorers',                sub: 'All-time runs scored in Aces history' },
   2:  { title: 'AcesBPI All-Stars',         sub: "The league's own metric — best single-season" },
   1:  { title: 'Tomorrow It Begins',        sub: 'The wait is almost over' },
   0:  { title: 'Opening Day Is Here!',      sub: '2026 Summer Season \u2014 Play Ball!' },
@@ -489,16 +489,29 @@ async function loadData() {
     }
 
     // Career totals (sum across players)
-    let totalHits = 0, totalRuns = 0, totalHR = 0;
+    let totalHits = 0, totalRuns = 0;
     const uniqueNames = new Set();
     players.forEach(p => {
       uniqueNames.add(p.name);
       totalHits += Number(p.careerHits)     || sumField(p, 'hits');
       totalRuns += Number(p.careerRuns)     || sumField(p, 'runs');
-      totalHR   += Number(p.careerHomeRuns) || Number(p.careerHR) || sumField(p, 'homeRuns');
     });
 
     const completedGames = allGames.filter(g => g.winner && g.winner !== '' && !g._active).length;
+
+    // Load champions directly from /champions collection
+    const champSnap = await getDocs(collection(db, 'champions'));
+    const champions = champSnap.docs
+      .map(d => {
+        const data = d.data();
+        const sid  = data.seasonId || d.id;
+        const parts = sid.split('-');
+        const label = parts.length >= 2
+          ? `${parts[0]} ${titleCase(parts[1])}`
+          : sid;
+        return { label, champion: data.team, runnerUp: data.runnerUp, _sid: sid };
+      })
+      .sort((a, b) => b._sid.localeCompare(a._sid)); // most recent first
 
     leagueData = {
       seasons,
@@ -509,13 +522,10 @@ async function loadData() {
         uniquePlayers: uniqueNames.size,
         totalHits,
         totalRuns,
-        totalHR,
       },
-      champions: computeChampions(allGames),
-      leaders:   computeLeaders(players),
+      champions,
+      leaders: computeLeaders(players),
     };
-
-    console.log('Countdown data loaded:', leagueData.totals);
   } catch (err) {
     console.error('Error loading countdown data:', err);
   }
@@ -533,44 +543,15 @@ function careerVal(p, careerKey, seasonKey) {
 }
 
 /* -------------------------------------------------------
-   CHAMPION COMPUTATION
-------------------------------------------------------- */
-function computeChampions(allGames) {
-  // Group playoff games by season, find team with most wins
-  const bySeasonId = {};
-  allGames.forEach(g => {
-    if (g._active) return;
-    const type = g.game_type || g.gameType || '';
-    if (type !== 'Playoff') return;
-    if (!bySeasonId[g._sid]) bySeasonId[g._sid] = { label: g._label, wins: {} };
-    const w = g.winner;
-    if (w && w !== 'Tie') {
-      bySeasonId[g._sid].wins[w] = (bySeasonId[g._sid].wins[w] || 0) + 1;
-    }
-  });
-
-  return Object.entries(bySeasonId)
-    .map(([sid, data]) => {
-      const sorted = Object.entries(data.wins).sort((a,b) => b[1] - a[1]);
-      return sorted.length ? { label: data.label, champion: sorted[0][0] } : null;
-    })
-    .filter(Boolean)
-    .reverse(); // most recent first
-}
-
-/* -------------------------------------------------------
    LEADER COMPUTATION
 ------------------------------------------------------- */
 function computeLeaders(players) {
   const top = (arr, n = 5) => arr.filter(x => x.value > 0).sort((a,b) => b.value - a.value).slice(0, n);
 
   const careerHits  = top(players.map(p => ({ name: p.name, value: careerVal(p,'careerHits','hits') })));
-  const careerRBI   = top(players.map(p => ({ name: p.name, value: careerVal(p,'careerRBI','rbi') })));
+  const careerWalks = top(players.map(p => ({ name: p.name, value: careerVal(p,'careerWalks','walks') })));
   const careerGames = top(players.map(p => ({ name: p.name, value: careerVal(p,'careerGames','games') })));
-  const careerHR    = top(players.map(p => ({
-    name: p.name,
-    value: careerVal(p,'careerHomeRuns','homeRuns') || careerVal(p,'careerHR','homeRuns')
-  })));
+  const careerRuns  = top(players.map(p => ({ name: p.name, value: careerVal(p,'careerRuns','runs') })));
 
   // Career BA (min 50 AB)
   const careerBA = players.map(p => {
@@ -601,7 +582,7 @@ function computeLeaders(players) {
   bpiList.sort((a,b)   => b.value - a.value);
 
   return {
-    careerHits, careerRBI, careerGames, careerHR, careerBA,
+    careerHits, careerWalks, careerGames, careerRuns, careerBA,
     singleSeasonBA: ssBA.slice(0,5),
     topBPI: bpiList.slice(0,5),
   };
@@ -710,12 +691,12 @@ ${hero(10,'The League by the Numbers',`${totals.seasons} seasons of Mountainside
     return shell(8, `${hero(8,'All-Time Hit Kings','Career totals \u2014 all seasons','\u{1F3CF}')}<div class="ac-content">${rows}</div>`);
   }
 
-  /* DAY 7 — RBI */
+  /* DAY 7 — Walks */
   if (d === 7) {
-    const rows = leaders.careerRBI.length
-      ? leaders.careerRBI.map((p,i) => rankRow(i, p.name, fmt(p.value)+' RBI')).join('')
+    const rows = leaders.careerWalks.length
+      ? leaders.careerWalks.map((p,i) => rankRow(i, p.name, fmt(p.value)+' BB')).join('')
       : '<p style="opacity:0.5;font-size:0.82rem;padding:8px">Data loading\u2026</p>';
-    return shell(7, `${hero(7,'RBI Machines','Who brought them home, career totals','\u{1F4AA}')}<div class="ac-content">${rows}</div>`);
+    return shell(7, `${hero(7,'Walk Kings','God rested on the 7th day \u2014 and so did these guys at the plate','\u{1F6B6}')}<div class="ac-content">${rows}</div>`);
   }
 
   /* DAY 6 — Iron Men */
@@ -742,12 +723,12 @@ ${hero(10,'The League by the Numbers',`${totals.seasons} seasons of Mountainside
     return shell(4, `${hero(4,'Peak Performance','Best single-season batting average','\u2B50')}<div class="ac-content">${rows}</div>`);
   }
 
-  /* DAY 3 — Home Runs */
+  /* DAY 3 — Career Runs */
   if (d === 3) {
-    const rows = leaders.careerHR.length
-      ? leaders.careerHR.map((p,i) => rankRow(i, p.name, fmt(p.value)+' HR')).join('')
-      : '<p style="opacity:0.5;font-size:0.82rem;padding:8px">HR data coming soon\u2026</p>';
-    return shell(3, `${hero(3,'Home Run Club','Going yard in Aces history','\u{1F4A5}')}<div class="ac-content">${rows}</div>`);
+    const rows = leaders.careerRuns.length
+      ? leaders.careerRuns.map((p,i) => rankRow(i, p.name, fmt(p.value)+' R')).join('')
+      : '<p style="opacity:0.5;font-size:0.82rem;padding:8px">Data loading\u2026</p>';
+    return shell(3, `${hero(3,'Run Scorers','All-time runs scored in Aces history','\u{1F3C3}')}<div class="ac-content">${rows}</div>`);
   }
 
   /* DAY 2 — AcesBPI */
@@ -832,7 +813,6 @@ function buildCaption(d) {
   const UP  = '\u{1F4C8}';
   const MUS = '\u{1F4AA}';
   const BAT = '\u{1F3CF}';
-  const POP = '\u{1F4A5}';
   const BRN = '\u{1F9E0}';
 
   if (d === 10) {
@@ -850,8 +830,8 @@ function buildCaption(d) {
   }
 
   if (d === 7) {
-    const lines = leaders.careerRBI.map((p,i) => `${i+1}. ${p.name} \u2014 ${fmt(p.value)} RBI`).join('\n');
-    return `${MUS} 7 DAYS TO OPENING DAY ${MUS}\n\nThe RBI leaders \u2014 guys who bring them home:\n\n${lines}\n\nWho\u2019s driving in runs this summer?\n\n${URL}`;
+    const lines = leaders.careerWalks.map((p,i) => `${i+1}. ${p.name} \u2014 ${fmt(p.value)} BB`).join('\n');
+    return `\u{1F6B6} 7 DAYS TO OPENING DAY \u{1F6B6}\n\nGod rested on the 7th day \u2014 and these guys took their base.\n\nAll-time walk leaders:\n\n${lines}\n\nPatience is a skill. See you Sunday.\n\n${URL}`;
   }
 
   if (d === 6) {
@@ -870,11 +850,8 @@ function buildCaption(d) {
   }
 
   if (d === 3) {
-    if (!leaders.careerHR.length) {
-      return `${POP} 3 DAYS TO OPENING DAY ${POP}\n\nThe Home Run Club is growing\u2026\n\nCheck out who\u2019s in the club at:\n\n${URL}`;
-    }
-    const lines = leaders.careerHR.map((p,i) => `${i+1}. ${p.name} \u2014 ${fmt(p.value)} HR`).join('\n');
-    return `${POP} 3 DAYS TO OPENING DAY ${POP}\n\nThe Home Run Club \u2014 all-time leaders:\n\n${lines}\n\nWho\u2019s going yard first this summer?\n\n${URL}`;
+    const lines = leaders.careerRuns.map((p,i) => `${i+1}. ${p.name} \u2014 ${fmt(p.value)} R`).join('\n');
+    return `\u{1F3C3} 3 DAYS TO OPENING DAY \u{1F3C3}\n\nAll-time run scorers in Aces history:\n\n${lines}\n\nWho crosses home first in 2026 Summer?\n\n${URL}`;
   }
 
   if (d === 2) {
