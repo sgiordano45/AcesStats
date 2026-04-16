@@ -314,7 +314,7 @@ const DAY_META = {
   4:  { title: 'Peak Performance',          sub: 'Best single-season batting average' },
   3:  { title: 'Run Scorers',                sub: 'All-time runs scored in Aces history' },
   2:  { title: 'AcesBPI All-Stars',         sub: "The league's own metric — best single-season" },
-  1:  { title: 'Tomorrow It Begins',        sub: 'The wait is almost over' },
+  1:  { title: 'Milestone Watch',             sub: 'Who is knocking on the door entering 2026' },
   0:  { title: 'Opening Day Is Here!',      sub: '2026 Summer Season \u2014 Play Ball!' },
 };
 
@@ -550,7 +550,8 @@ async function loadData() {
         totalRuns,
       },
       champions,
-      leaders: computeLeaders(players),
+      leaders:    computeLeaders(players),
+      milestones: computeMilestones(players),
     };
   } catch (err) {
     console.error('Error loading countdown data:', err);
@@ -611,6 +612,52 @@ function computeLeaders(players) {
     careerHits, careerWalks, careerGames, careerRuns, careerBA,
     singleSeasonBA: ssBA.slice(0,5),
     topBPI: bpiList.slice(0,5),
+  };
+}
+
+/* -------------------------------------------------------
+   MILESTONE COMPUTATION
+------------------------------------------------------- */
+function computeMilestones(players) {
+  const HIT_MARKS  = [100, 200, 300, 400];
+  const RUN_MARKS  = [50, 100, 150, 200];
+  const WALK_MARKS = [50, 100, 150, 200];
+
+  const hitsApproaching  = [];
+  const runsApproaching  = [];
+  const walksApproaching = [];
+
+  players.forEach(p => {
+    const career = p.career || {};
+    const hits   = Number(career.hits  || p.careerHits  || 0);
+    const runs   = Number(career.runs  || p.careerRuns  || 0);
+    const walks  = Number(career.walks || p.careerWalks || 0);
+    const name   = p.name;
+    const team   = p.currentTeam || p.team || '';
+
+    const check = (val, marks, bucket) => {
+      for (const m of marks) {
+        const threshold = Math.ceil(m * 0.9); // within 10%
+        if (val >= threshold && val < m) {
+          bucket.push({ name, team, current: val, milestone: m, gap: m - val });
+          break;
+        }
+      }
+    };
+
+    check(hits,  HIT_MARKS,  hitsApproaching);
+    check(runs,  RUN_MARKS,  runsApproaching);
+    check(walks, WALK_MARKS, walksApproaching);
+  });
+
+  hitsApproaching.sort((a,b)  => a.gap - b.gap);
+  runsApproaching.sort((a,b)  => a.gap - b.gap);
+  walksApproaching.sort((a,b) => a.gap - b.gap);
+
+  return {
+    hits:  hitsApproaching.slice(0, 5),
+    runs:  runsApproaching.slice(0, 4),
+    walks: walksApproaching.slice(0, 4),
   };
 }
 
@@ -766,35 +813,37 @@ ${hero(10,'The League by the Numbers',`${totals.seasons} seasons of Mountainside
     return shell(2, `${hero(2,'AcesBPI All-Stars',"The Aces\u2019 own composite offensive metric",'\u{1F9E0}')}<div class="ac-content">${rows}${note}</div>`);
   }
 
-  /* DAY 1 — Hype */
+  /* DAY 1 — Milestone Watch */
   if (d === 1) {
-    const top = leaders.careerHits[0];
-    const nextGame = fmt(totals.games + 1);
-    const nextSzn  = totals.seasons + 1;
-    const body = `
-<div class="ac-hero" style="padding:8px 20px 14px">
-  <div class="ac-day-num" style="font-size:2.9rem;line-height:1.1">TOMORROW<br>IT BEGINS</div>
-  <div class="ac-sub" style="font-size:0.82rem;opacity:0.85;font-weight:700;margin-top:10px">2026 Summer Season starts Sunday, April 26</div>
-</div>
-<div class="ac-divider"></div>
-<div class="ac-content" style="justify-content:center;gap:12px;padding-top:16px">
-  <div style="display:flex;gap:10px">
-    <div style="flex:1;text-align:center;padding:14px 8px;border-radius:12px;background:rgba(255,255,255,0.1)">
-      <div style="font-size:2.2rem;font-weight:900">${nextSzn}</div>
-      <div style="font-size:0.68rem;opacity:0.7;font-weight:600;margin-top:2px;line-height:1.3">Season in<br>Aces History</div>
-    </div>
-    <div style="flex:1;text-align:center;padding:14px 8px;border-radius:12px;background:rgba(255,255,255,0.1)">
-      <div style="font-size:2.2rem;font-weight:900">${nextGame}</div>
-      <div style="font-size:0.68rem;opacity:0.7;font-weight:600;margin-top:2px;line-height:1.3">Game About<br>to Be Played</div>
-    </div>
-    <div style="flex:1;text-align:center;padding:14px 8px;border-radius:12px;background:rgba(255,255,255,0.1)">
-      <div style="font-size:2.2rem;font-weight:900">${fmt(totals.uniquePlayers)}</div>
-      <div style="font-size:0.68rem;opacity:0.7;font-weight:600;margin-top:2px;line-height:1.3">Players in<br>Aces History</div>
-    </div>
+    const ms = leagueData.milestones;
+
+    const milestoneRow = (p, stat) => {
+      const pct = Math.round((p.current / p.milestone) * 100);
+      return `<div class="ac-rank" style="flex-direction:column;align-items:stretch;gap:4px;padding:8px 11px">
+  <div style="display:flex;align-items:center;gap:8px">
+    <span class="ac-rank-name">${p.name}</span>
+    <span style="font-size:0.64rem;opacity:0.5;font-weight:600">${p.team}</span>
+    <span class="ac-rank-val" style="margin-left:auto">${p.current} / ${p.milestone} ${stat}</span>
   </div>
-  ${top ? `<div style="text-align:center;font-size:0.75rem;opacity:0.6;font-weight:600;padding:4px 8px;line-height:1.6">All-time hit leader: ${top.name} (${fmt(top.value)} hits)</div>` : ''}
+  <div style="height:4px;border-radius:2px;background:rgba(255,255,255,0.12);overflow:hidden">
+    <div style="height:100%;width:${pct}%;background:rgba(255,255,255,0.55);border-radius:2px"></div>
+  </div>
+  <div style="font-size:0.62rem;opacity:0.45;font-weight:700">${p.gap} away from ${p.milestone}</div>
 </div>`;
-    return shell(1, body);
+    };
+
+    const hitRows  = ms.hits.map(p  => milestoneRow(p, 'H')).join('');
+    const runRows  = ms.runs.map(p  => milestoneRow(p, 'R')).join('');
+    const walkRows = ms.walks.map(p => milestoneRow(p, 'BB')).join('');
+
+    const section = (label, rows) => rows
+      ? `<div style="font-size:0.6rem;font-weight:800;text-transform:uppercase;letter-spacing:0.1em;opacity:0.45;padding:2px 2px 1px">${label}</div>${rows}`
+      : '';
+
+    const allRows = section('Hits', hitRows) + section('Runs', runRows) + section('Walks', walkRows);
+    const empty   = !ms.hits.length && !ms.runs.length && !ms.walks.length;
+
+    return shell(1, `${hero(1,'Milestone Watch',"Who's knocking on the door entering 2026",'\u{1F3AF}')}<div class="ac-content" style="gap:5px;overflow:hidden">${empty ? '<p style="opacity:0.4;font-size:0.82rem">No players currently within 10% of a milestone.</p>' : allRows}</div>`);
   }
 
   /* DAY 0 — Opening Day */
@@ -889,8 +938,13 @@ function buildCaption(d) {
   }
 
   if (d === 1) {
-    const top = leaders.careerHits[0];
-    return `${FIR} 1 DAY TO OPENING DAY ${FIR}\n\nTomorrow it begins.\n\nSeason ${totals.seasons+1} of Mountainside Aces softball. Game ${fmt(totals.games+1)} in league history.\n\n${fmt(totals.seasons)} seasons. ${fmt(totals.games)} games. ${fmt(totals.uniquePlayers)} players. Countless memories.\n\nSee you Sunday. ${BB}\n\n${URL}`;
+    const ms = leagueData.milestones;
+    const lines = [];
+    if (ms.hits.length)  lines.push('Hits:\n'  + ms.hits.map(p  => `  ${p.name} \u2014 ${p.current}/${p.milestone} (${p.gap} away)`).join('\n'));
+    if (ms.runs.length)  lines.push('Runs:\n'  + ms.runs.map(p  => `  ${p.name} \u2014 ${p.current}/${p.milestone} (${p.gap} away)`).join('\n'));
+    if (ms.walks.length) lines.push('Walks:\n' + ms.walks.map(p => `  ${p.name} \u2014 ${p.current}/${p.milestone} (${p.gap} away)`).join('\n'));
+    const body = lines.length ? lines.join('\n\n') : 'No players currently within 10% of a milestone.';
+    return `\u{1F3AF} 1 DAY TO OPENING DAY \u{1F3AF}\n\nHistory is within reach. These players enter 2026 Summer knocking on the door:\n\n${body}\n\nWho gets there first this season?\n\n${URL}`;
   }
 
   if (d === 0) {
