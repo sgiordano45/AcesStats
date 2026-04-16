@@ -101,16 +101,9 @@ body {
   color: #8b949e; cursor: pointer; transition: all 0.15s;
 }
 .btn:hover { border-color: #58a6ff; color: #58a6ff; }
-.btn-screenshot { border-color: #6e40c9; color: #a371f7; }
-.btn-screenshot:hover { background: #6e40c9; color: #fff; }
-
-/* Screenshot mode */
-body.screenshot-mode .admin-header,
-body.screenshot-mode .day-nav-bar,
-body.screenshot-mode .caption-column,
-body.screenshot-mode .card-actions { display: none !important; }
-body.screenshot-mode .main-wrap { justify-content: center; padding: 0; min-height: 100vh; align-items: center; }
-body.screenshot-mode #card-target { border-radius: 20px; box-shadow: none; }
+.btn-download { border-color: #6e40c9; color: #a371f7; }
+.btn-download:hover { background: #6e40c9; color: #fff; }
+.btn-download.working { background: #6e40c9; color: #fff; opacity: 0.7; cursor: wait; }
 
 /* CAPTION COLUMN */
 .caption-column { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 14px; }
@@ -274,7 +267,7 @@ body.screenshot-mode #card-target { border-radius: 20px; box-shadow: none; }
         <button class="btn" onclick="shiftDay(-1)">&#8592; Prev</button>
         <button class="btn" onclick="goToday()">Today</button>
         <button class="btn" onclick="shiftDay(1)">Next &#8594;</button>
-        <button class="btn btn-screenshot" id="ssBtn" onclick="toggleScreenshot()">Screenshot</button>
+        <button class="btn btn-download" id="dlBtn" onclick="downloadCard()">Download PNG</button>
       </div>
     </div>
 
@@ -293,6 +286,7 @@ body.screenshot-mode #card-target { border-radius: 20px; box-shadow: none; }
   </div>
 </div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script type="module">
 import { auth } from './firebase-auth.js';
 import { db } from './firebase-config.js';
@@ -329,7 +323,6 @@ const DAY_META = {
 ------------------------------------------------------- */
 let currentDay  = null;
 let leagueData  = null;
-let screenshotOn = false;
 
 /* -------------------------------------------------------
    AUTH
@@ -444,10 +437,38 @@ window.goToday = () => {
   renderDay(currentDay);
 };
 
-window.toggleScreenshot = () => {
-  screenshotOn = !screenshotOn;
-  document.body.classList.toggle('screenshot-mode', screenshotOn);
-  document.getElementById('ssBtn').textContent = screenshotOn ? 'Exit Screenshot' : 'Screenshot';
+window.downloadCard = async () => {
+  const btn = document.getElementById('dlBtn');
+  btn.textContent = 'Rendering\u2026';
+  btn.classList.add('working');
+  btn.disabled = true;
+
+  try {
+    const card = document.getElementById('card-target');
+    const canvas = await html2canvas(card, {
+      scale: 3,           // 3x = ~1170x1800px — crisp on mobile
+      useCORS: true,
+      backgroundColor: null,
+      logging: false,
+    });
+
+    const link = document.createElement('a');
+    const meta = DAY_META[currentDay] || {};
+    const filename = currentDay === 0
+      ? 'aces-opening-day.png'
+      : `aces-day-${currentDay}-${meta.title.toLowerCase().replace(/[^a-z0-9]+/g,'-')}.png`;
+
+    link.download = filename;
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+  } catch (err) {
+    console.error('Download failed:', err);
+    alert('Download failed \u2014 check console for details.');
+  } finally {
+    btn.textContent = 'Download PNG';
+    btn.classList.remove('working');
+    btn.disabled = false;
+  }
 };
 
 window.copyCaption = async () => {
