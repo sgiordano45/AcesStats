@@ -224,6 +224,7 @@ body {
 /* =====================================================
    THEME GRADIENTS (one per day)
    ===================================================== */
+.th-11 { background: linear-gradient(148deg,#1a0a2e 0%,#6b21a8 55%,#1a0a2e 100%); color:#f3e8ff; }
 .th-10 { background: linear-gradient(148deg,#0c1c40 0%,#1a3978 55%,#0c1530 100%); color:#dde9ff; }
 .th-9  { background: linear-gradient(148deg,#2b1500 0%,#894409 55%,#2b1500 100%); color:#fff3d0; }
 .th-8  { background: linear-gradient(148deg,#081a0c 0%,#145530 55%,#081a0c 100%); color:#d5f7df; }
@@ -302,9 +303,10 @@ import {
    CONFIG
 ------------------------------------------------------- */
 const OPENING_DAY = new Date('2026-04-26T00:00:00');
-const ALL_DAYS    = [10,9,8,7,6,5,4,3,2,1,0];
+const ALL_DAYS    = [11,10,9,8,7,6,5,4,3,2,1,0];
 
 const DAY_META = {
+  11: { title: 'Top 10 Pauls',              sub: 'The most important ranking in league history' },
   10: { title: 'The League by the Numbers', sub: 'Every season, every game, by the numbers' },
   9:  { title: 'All-Time Hit Kings',        sub: 'Best with the bat, career totals' },
   8:  { title: 'Walk Kings',                sub: 'God rested on the 7th day \u2014 and so did these guys at the plate' },
@@ -407,7 +409,7 @@ function buildNav() {
     const btn = document.createElement('button');
     btn.className = 'day-chip' + (d === today ? ' is-today' : '');
     btn.id        = `chip-${d}`;
-    btn.textContent = d === 0 ? 'Opening Day' : `Day ${d}`;
+    btn.textContent = d === 0 ? 'Opening Day' : d === 11 ? '\u{1F3B2} Bonus' : `Day ${d}`;
     btn.onclick   = () => { currentDay = d; renderDay(d); };
     nav.appendChild(btn);
   });
@@ -576,17 +578,17 @@ function computeLeaders(players) {
   const top = (arr, n = 5) => arr.filter(x => x.value > 0).sort((a,b) => b.value - a.value).slice(0, n);
 
   const careerHits  = top(players.map(p => ({ name: p.name, value: careerVal(p,'careerHits','hits') })), 10);
-  const careerWalks = top(players.map(p => ({ name: p.name, value: careerVal(p,'careerWalks','walks') })), 10);
-  const careerGames = top(players.map(p => ({ name: p.name, value: careerVal(p,'careerGames','games') })), 10);
-  const careerRuns  = top(players.map(p => ({ name: p.name, value: careerVal(p,'careerRuns','runs') })), 10);
+  const careerWalks = top(players.map(p => ({ name: p.name, value: careerVal(p,'careerWalks','walks') })));
+  const careerGames = top(players.map(p => ({ name: p.name, value: careerVal(p,'careerGames','games') })));
+  const careerRuns  = top(players.map(p => ({ name: p.name, value: careerVal(p,'careerRuns','runs') })));
 
   // Career BA (min 50 AB)
   const careerBA = players.map(p => {
     const ab = careerVal(p,'careerAtBats','atBats');
     const h  = careerVal(p,'careerHits','hits');
-    if (ab < 150) return null;
+    if (ab < 50) return null;
     return { name: p.name, value: h / ab, ab };
-  }).filter(Boolean).sort((a,b) => b.value - a.value).slice(0,10);
+  }).filter(Boolean).sort((a,b) => b.value - a.value).slice(0,5);
 
   // Best single-season BA (min 15 AB) & AcesBPI (min 15 AB)
   const ssBA  = [];
@@ -608,10 +610,22 @@ function computeLeaders(players) {
   ssBA.sort((a,b)      => b.value - a.value);
   bpiList.sort((a,b)   => b.value - a.value);
 
+  // The Pauls
+  const topPauls = players
+    .filter(p => (p.name || '').trim().toLowerCase().startsWith('paul'))
+    .map(p => ({
+      name: p.name,
+      team: p.currentTeam || p.team || '',
+      value: careerVal(p,'careerHits','hits'),
+    }))
+    .sort((a,b) => b.value - a.value)
+    .slice(0, 10);
+
   return {
     careerHits, careerWalks, careerGames, careerRuns, careerBA,
     singleSeasonBA: ssBA.slice(0,10),
     topBPI: bpiList.slice(0,10),
+    topPauls,
   };
 }
 
@@ -667,7 +681,7 @@ function computeMilestones(players) {
 function renderDay(d) {
   refreshNav(d);
   const meta = DAY_META[d] || {};
-  const lbl  = d === 0 ? 'Opening Day' : `Day ${d}`;
+  const lbl  = d === 0 ? 'Opening Day' : d === 11 ? '\u{1F3B2} Bonus Day' : `Day ${d}`;
   document.getElementById('dayTitle').textContent = `${lbl}: ${meta.title}`;
   document.getElementById('daySub').textContent   = `${dayDate(d)} \u2022 ${meta.sub}`;
 
@@ -734,6 +748,16 @@ function champRow(label, champ) {
 function buildCard(d) {
   const { totals, champions, leaders } = leagueData;
 
+  /* DAY 11 — Top 10 Pauls */
+  if (d === 11) {
+    const pauls = leagueData.leaders.topPauls;
+    const rows = pauls.length
+      ? pauls.map((p,i) => rankRow(i, p.name, fmt(p.value)+' H', p.team)).join('')
+      : '<p style="opacity:0.5;font-size:0.82rem;padding:8px">Searching for Pauls\u2026</p>';
+    const footer = `<div style="margin-top:auto;padding:4px 2px 0;font-size:0.62rem;opacity:0.35;text-align:center;font-weight:700">Ranked by career hits \u2014 the only metric that matters for Pauls</div>`;
+    return shell(11, `${hero(11,'Top 10 Pauls','The most important ranking in league history','\u{1F3C6}')}<div class="ac-content">${rows}${footer}</div>`);
+  }
+
   /* DAY 10 — League by the Numbers */
   if (d === 10) {
     const body = `
@@ -777,7 +801,7 @@ ${hero(10,'The League by the Numbers',`${totals.seasons} seasons of Mountainside
     const rows = leaders.careerBA.length
       ? leaders.careerBA.map((p,i) => rankRow(i, p.name, ba(p.value), fmt(p.ab)+' AB')).join('')
       : '<p style="opacity:0.5;font-size:0.82rem;padding:8px">Data loading\u2026</p>';
-    return shell(6, `${hero(6,'Batting Legends','Best career averages (min 150 AB)','\u{1F4C8}')}<div class="ac-content">${rows}</div>`);
+    return shell(6, `${hero(6,'Batting Legends','Best career averages (min 50 AB)','\u{1F4C8}')}<div class="ac-content">${rows}</div>`);
   }
 
   /* DAY 5 — Single-Season BA */
@@ -890,6 +914,15 @@ function buildCaption(d) {
   const BAT = '\u{1F3CF}';
   const BRN = '\u{1F9E0}';
 
+  if (d === 11) {
+    const pauls = leagueData.leaders.topPauls;
+    if (!pauls.length) {
+      return `\u{1F3B2} BONUS DAY \u{1F3B2}\n\nWe searched the entire Aces roster for Pauls.\n\nWe found none. This is both a statistical anomaly and a personal failing.\n\n${URL}`;
+    }
+    const lines = pauls.map((p,i) => `${i+1}. ${p.name}${p.team ? ' (' + p.team + ')' : ''} \u2014 ${fmt(p.value)} career hits`).join('\n');
+    return `\u{1F3B2} BONUS DAY \u{1F3B2}\n\nBefore the real countdown begins, we need to address the most pressing question in Aces history.\n\nThe definitive Paul Power Rankings:\n\n${lines}\n\nThis is the content we\u2019re here for.\n\n${URL}`;
+  }
+
   if (d === 10) {
     return `${BB} 10 DAYS TO OPENING DAY ${BB}\n\nThe Mountainside Aces are back \u2014 and the numbers don\u2019t lie.\n\n${UP} ${fmt(totals.seasons)} seasons of Aces softball\n${BB} ${fmt(totals.games)} games played all-time\n\u{1F465} ${fmt(totals.uniquePlayers)} players who\u2019ve worn the uniform\n${BAT} ${fmt(totals.totalHits)} career hits\n\u{1F3C3} ${fmt(totals.totalRuns)} runs scored\n\nSeason ${totals.seasons+1} starts Sunday. Let\u2019s add to the legacy.\n\n${URL}`;
   }
@@ -911,7 +944,7 @@ function buildCaption(d) {
 
   if (d === 6) {
     const lines = leaders.careerBA.map((p,i) => `${i+1}. ${p.name} \u2014 ${fba(p.value)} avg (${fmt(p.ab)} AB)`).join('\n');
-    return `${UP} 6 DAYS TO OPENING DAY ${UP}\n\nBest career batting averages in Aces history (min 150 AB):\n\n${lines}\n\nWho keeps their average elite in 2026?\n\n${URL}`;
+    return `${UP} 6 DAYS TO OPENING DAY ${UP}\n\nBest career batting averages in Aces history (min 50 AB):\n\n${lines}\n\nWho keeps their average elite in 2026?\n\n${URL}`;
   }
 
   if (d === 5) {
