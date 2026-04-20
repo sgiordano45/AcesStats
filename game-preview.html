@@ -1170,7 +1170,7 @@ body {
             if (snap.exists()) {
               rosterPlayers[team] = (snap.data().players || [])
                 .filter(p => p.id)
-                .map(p => ({ id: p.id, name: p.name || p.id }));
+                .map(p => ({ id: p.id, name: p.name || p.id, authId: p.authId || null }));
               console.log(`Roster loaded for ${team}: ${rosterPlayers[team].length} players`);
             } else {
               rosterPlayers[team] = [];
@@ -1181,35 +1181,39 @@ body {
           }
         }));
 
-        // 2) Collect all rostered player IDs across both teams
-        const allRosteredIds = [...new Set([
-          ...(rosterPlayers[homeTeam] || []).map(p => p.id),
-          ...(rosterPlayers[awayTeam] || []).map(p => p.id)
-        ])];
+        // 2) Collect all rostered players across both teams (need full objects for authId)
+        const allRosteredPlayers = [...new Map([
+          ...(rosterPlayers[homeTeam] || []),
+          ...(rosterPlayers[awayTeam] || [])
+        ].map(p => [p.id, p])).values()];
 
-        if (allRosteredIds.length === 0) return;
+        if (allRosteredPlayers.length === 0) return;
 
         // 3) Batch fetch splits and career docs in parallel
-        await Promise.all(allRosteredIds.map(async (pid) => {
+        await Promise.all(allRosteredPlayers.map(async (rp) => {
           try {
             const [splitsSnap, careerSnap] = await Promise.all([
-              getDoc(doc(db, 'aggregatedPlayerStats2025Splits', pid)),
-              getDoc(doc(db, 'aggregatedPlayerStats', pid))
+              getDoc(doc(db, 'aggregatedPlayerStats2025Splits', rp.id)),
+              getDoc(doc(db, 'aggregatedPlayerStats', rp.id))
             ]);
             if (splitsSnap.exists()) {
-              splitsCache[pid] = splitsSnap.data();
+              splitsCache[rp.id] = splitsSnap.data();
             }
-            if (careerSnap.exists()) {
-              const d = careerSnap.data();
-              if (!d.migrated && d.career) {
-                careerBPICache[pid] = {
-                  acesBPI: (typeof d.career.acesBPI === 'number') ? d.career.acesBPI : null,
-                  atBats:  (typeof d.career.atBats  === 'number') ? d.career.atBats  : 0
-                };
-              }
+
+            // Career: if legacy doc is migrated, fall back to authId doc
+            let careerData = careerSnap.exists() ? careerSnap.data() : null;
+            if ((!careerData || careerData.migrated === true) && rp.authId) {
+              const authSnap = await getDoc(doc(db, 'aggregatedPlayerStats', rp.authId));
+              if (authSnap.exists()) careerData = authSnap.data();
+            }
+            if (careerData && !careerData.migrated && careerData.career) {
+              careerBPICache[rp.id] = {
+                acesBPI: (typeof careerData.career.acesBPI === 'number') ? careerData.career.acesBPI : null,
+                atBats:  (typeof careerData.career.atBats  === 'number') ? careerData.career.atBats  : 0
+              };
             }
           } catch (e) {
-            console.warn(`Metadata fetch failed for ${pid}:`, e);
+            console.warn(`Metadata fetch failed for ${rp.id}:`, e);
           }
         }));
 
@@ -1291,7 +1295,7 @@ body {
                 <div class="player-stat"><span class="player-stat-label">AVG</span><span class="player-stat-value">${avg}</span></div>
                 <div class="player-stat"><span class="player-stat-label">Hits</span><span class="player-stat-value">${hits}</span></div>
                 <div class="player-stat"><span class="player-stat-label">Runs</span><span class="player-stat-value">${runs}</span></div>
-                <div class="player-stat"><span class="player-stat-label">BPI</span><span class="player-stat-value">${bpiVal}</span></div>
+                <div class="player-stat"><span class="player-stat-label">AcesBPI</span><span class="player-stat-value">${bpiVal}</span></div>
               </div>`;
           }
 
@@ -1302,7 +1306,7 @@ body {
             careerHtml = `
               <div class="player-stat-group-label">Career</div>
               <div class="player-stats">
-                <div class="player-stat"><span class="player-stat-label">BPI</span><span class="player-stat-value">${c.acesBPI.toFixed(2)}</span></div>
+                <div class="player-stat"><span class="player-stat-label">AcesBPI</span><span class="player-stat-value">${c.acesBPI.toFixed(2)}</span></div>
                 <div class="player-stat"><span class="player-stat-label">AB</span><span class="player-stat-value">${c.atBats}</span></div>
               </div>`;
           }
