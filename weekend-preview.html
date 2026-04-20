@@ -778,7 +778,10 @@ body {
 import {
   getCurrentSeason,
   getSeasonGames,
-  getAllPlayerStatsOptimized
+  getAllPlayerStatsOptimized,
+  db,
+  doc,
+  getDoc
 } from './firebase-data.js';
 
 // DIAGNOSTIC CODE - ADD THIS:
@@ -795,6 +798,8 @@ setTimeout(() => {
 let allGames = [];
 let playerData = [];
 let currentSeasonData = null;
+let splitsCache = {};  // { playerId: { vsOpponent: { TeamName: { games, battingAverage, onBasePercentage } } } }
+let rosterIds   = {};  // { teamName: Set<playerId> }
 const today = new Date();
 today.setHours(0, 0, 0, 0); // Set to start of today
 
@@ -899,21 +904,25 @@ async function loadWeekendData() {
         matchingKeys.forEach(seasonKey => {
           const seasonStats = p.seasons[seasonKey];
           playerData.push({
+            id: p.id || p.playerId || '',
             name: p.name || p.displayName || p.id,
             team: seasonStats.team || p.currentTeam || "",
             year: currentSeasonData.year.toString(),
             season: capitalize(currentSeasonData.season),
             sub: "No",
             atBats: Number(seasonStats.atBats) || 0,
-            AcesWar: seasonStats.acesBPI || seasonStats.AcesBPI || seasonStats.AcesWar || "N/A"
+            AcesWar: seasonStats.acesBPI || seasonStats.AcesBPI || seasonStats.AcesWar || "N/A",
+            careerAcesBPI: (typeof p.career?.acesBPI === 'number') ? p.career.acesBPI : null,
+            careerAtBats:  (typeof p.career?.atBats  === 'number') ? p.career.atBats  : 0
           });
         });
       }
     });
     
     console.log(`✅ Mapped: ${allGames.length} games, ${playerData.length} player records`);
-    
-    
+
+    await loadRostersAndSplits();
+
     generateWeekendPreview();
     
   } catch (error) {
@@ -1143,30 +1152,84 @@ function getTeamColor(teamName) {
   return teamColors[teamName] || null;
 }
 
-function getTopPlayers(teamName) {
+async function loadRostersAndSplits() {
+  // Collect unique teams from all loaded games
+  const teams = new Set();
+  allGames.forEach(g => {
+    if (g['home team']) teams.add(g['home team']);
+    if (g['away team']) teams.add(g['away team']);
+  });
+
+  const seasonId = currentSeasonData.id;
+
+  // Fetch all rosters in parallel
+  await Promise.all([...teams].map(async (team) => {
+    try {
+      const docId = `${seasonId}-${team.toLowerCase()}`;
+      const snap = await getDoc(doc(db, 'rosters', docId));
+      rosterIds[team] = snap.exists()
+        ? new Set((snap.data().players || []).map(p => p.id).filter(Boolean))
+        : new Set();
+    } catch (e) {
+      rosterIds[team] = new Set();
+    }
+  }));
+
+  // Collect all rostered player IDs
+  const allRosteredIds = [...new Set(
+    Object.values(rosterIds).flatMap(s => [...s])
+  )];
+
+  // Batch fetch splits for all rostered players
+  await Promise.all(allRosteredIds.map(async (pid) => {
+    if (splitsCache[pid]) return;
+    try {
+      const snap = await getDoc(doc(db, 'aggregatedPlayerStats2025Splits', pid));
+      if (snap.exists()) splitsCache[pid] = snap.data();
+    } catch (e) { /* silent */ }
+  }));
+
+  console.log(`Rosters loaded for ${Object.keys(rosterIds).length} teams, splits for ${Object.keys(splitsCache).length} players`);
+}
+
+function getTopPlayers(teamName, opponentTeam) {
   if (!playerData || playerData.length === 0) return [];
-  
-  const teamGames = allGames.filter(g =>
-    g.winner &&
-    g.winner.trim() !== "" &&
-    (g["home team"] === teamName || g["away team"] === teamName)
-  );
-  
-  const teamGamesPlayed = teamGames.length;
+
+  const roster = rosterIds[teamName] || new Set();
+  const teamPlayers = playerData.filter(p => p.team === teamName && roster.has(p.id));
+
+  // Stage 1 — vs-opponent OBP, >= 2 games
+  if (opponentTeam) {
+    const vsOppCandidates = teamPlayers.map(p => {
+      const vsOpp = splitsCache[p.id]?.vsOpponent?.[opponentTeam];
+      return (vsOpp && vsOpp.games >= 2)
+        ? { ...p, _rank: vsOpp.onBasePercentage || 0 }
+        : null;
+    }).filter(Boolean).sort((a, b) => b._rank - a._rank).slice(0, 3);
+
+    if (vsOppCandidates.length > 0) return vsOppCandidates.map(p => p.name);
+  }
+
+  // Stage 2 — season AcesBPI with 2 × team games played AB threshold
+  const teamGamesPlayed = allGames.filter(g =>
+    g.winner && g.winner.trim() !== '' &&
+    (g['home team'] === teamName || g['away team'] === teamName)
+  ).length;
   const minAtBats = teamGamesPlayed * 2;
-  
-  const teamPlayers = playerData.filter(player =>
-    player.team === teamName &&
-    player.sub === "No" &&
-    player.AcesWar !== "N/A" &&
-    typeof player.AcesWar === 'number' &&
-    player.atBats >= minAtBats
-  );
-  
-  return teamPlayers
+
+  const seasonCandidates = teamPlayers
+    .filter(p => typeof p.AcesWar === 'number' && p.AcesWar !== 'N/A' && p.atBats >= minAtBats)
     .sort((a, b) => b.AcesWar - a.AcesWar)
+    .slice(0, 3);
+
+  if (seasonCandidates.length > 0) return seasonCandidates.map(p => p.name);
+
+  // Stage 3 — career AcesBPI, min 20 career ABs
+  return teamPlayers
+    .filter(p => typeof p.careerAcesBPI === 'number' && p.careerAtBats >= 20)
+    .sort((a, b) => b.careerAcesBPI - a.careerAcesBPI)
     .slice(0, 3)
-    .map(player => player.name);
+    .map(p => p.name);
 }
 
 async function loadWeatherData() {
@@ -1543,8 +1606,8 @@ function createGameCard(game) {
     }
   }
 
-  const homeTopPlayers = getTopPlayers(homeTeam);
-  const awayTopPlayers = getTopPlayers(awayTeam);
+  const homeTopPlayers = getTopPlayers(homeTeam, awayTeam);
+  const awayTopPlayers = getTopPlayers(awayTeam, homeTeam);
   
   let keyPlayersHtml = '';
   if (homeTopPlayers.length > 0 || awayTopPlayers.length > 0) {

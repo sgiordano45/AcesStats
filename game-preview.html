@@ -487,6 +487,17 @@ body {
   color: var(--text-light);
 }
 
+.player-stat-group-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--text-light);
+  margin-top: 0.65rem;
+  padding-top: 0.5rem;
+  border-top: 1px dashed var(--border-color);
+}
+
 /* History Table */
 .history-table {
   width: 100%;
@@ -710,12 +721,19 @@ body {
         getSeasonPitchingStatsOptimized,
         getSeasonGames,
         getCurrentSeason,
-        getAllSeasons
+        getAllSeasons,
+        db,
+        doc,
+        getDoc
       } from './firebase-data.js';
 
       let allGames = [];
       let playerData = [];
       let pitchingData = [];
+      let splitsCache    = {};  // { playerId: vsOpponent data }
+      let careerBPICache = {};  // { playerId: { acesBPI, atBats } }
+      let rosterIds      = {};  // { teamName: Set<playerId> }
+      let currentSeasonId = '';
       
       // 2026+ UPDATE: Store current game's preview data directly (no separate previewData array)
       let currentGamePreview = null;
@@ -766,6 +784,7 @@ body {
           // Get current season from Firebase
           const currentSeasonData = await getCurrentSeason();
           const seasonId = currentSeasonData.id;
+          currentSeasonId = seasonId;
           
           console.log(`📅 Game season: ${seasonId}`);
           
@@ -931,7 +950,10 @@ body {
           if (allGames.length > 0) {
             console.log('🔍 Sample game data:', allGames[0]);
           }
-          
+
+          // Load rosters, splits, and career BPI for both teams
+          await loadPlayerMetadata(targetHomeTeam, targetAwayTeam);
+
           generateGamePreview();
           
         } catch (error) {
@@ -1112,42 +1134,172 @@ body {
         return { wins, losses, ties, winPct };
       }
 
+      // ── Roster / splits / career loader ──────────────────────────────────
+      async function loadPlayerMetadata(homeTeam, awayTeam) {
+        const teams = [homeTeam, awayTeam];
+
+        // 1) Fetch both rosters
+        await Promise.all(teams.map(async (team) => {
+          try {
+            const docId = `${currentSeasonId}-${team.toLowerCase()}`;
+            const snap = await getDoc(doc(db, 'rosters', docId));
+            if (snap.exists()) {
+              const players = snap.data().players || [];
+              rosterIds[team] = new Set(players.map(p => p.id).filter(Boolean));
+              console.log(`Roster loaded for ${team}: ${rosterIds[team].size} players`);
+            } else {
+              rosterIds[team] = new Set();
+            }
+          } catch (e) {
+            console.warn(`Roster fetch failed for ${team}:`, e);
+            rosterIds[team] = new Set();
+          }
+        }));
+
+        // 2) Collect all rostered player IDs across both teams
+        const allRosteredIds = [...new Set([
+          ...Array.from(rosterIds[homeTeam] || []),
+          ...Array.from(rosterIds[awayTeam] || [])
+        ])];
+
+        if (allRosteredIds.length === 0) return;
+
+        // 3) Batch fetch splits and career docs in parallel
+        await Promise.all(allRosteredIds.map(async (pid) => {
+          try {
+            const [splitsSnap, careerSnap] = await Promise.all([
+              getDoc(doc(db, 'aggregatedPlayerStats2025Splits', pid)),
+              getDoc(doc(db, 'aggregatedPlayerStats', pid))
+            ]);
+            if (splitsSnap.exists()) {
+              splitsCache[pid] = splitsSnap.data();
+            }
+            if (careerSnap.exists()) {
+              const d = careerSnap.data();
+              if (!d.migrated && d.career) {
+                careerBPICache[pid] = {
+                  acesBPI: (typeof d.career.acesBPI === 'number') ? d.career.acesBPI : null,
+                  atBats:  (typeof d.career.atBats  === 'number') ? d.career.atBats  : 0
+                };
+              }
+            }
+          } catch (e) {
+            console.warn(`Metadata fetch failed for ${pid}:`, e);
+          }
+        }));
+
+        console.log(`Metadata loaded — splits: ${Object.keys(splitsCache).length}, career: ${Object.keys(careerBPICache).length}`);
+      }
+
+      // ── Cascade: returns top 3 player objects for a team ─────────────────
+      function getTopPlayersCascade(teamName, opponentTeam) {
+        const roster = rosterIds[teamName] || new Set();
+
+        // Only consider players on the current roster
+        const teamPlayers = playerData.filter(p => {
+          const team = p.team || p.currentTeam || '';
+          const pid  = p.id || p.playerId;
+          return team === teamName && roster.has(pid);
+        });
+
+        // Stage 1 — vs-opponent OBP, >= 2 games in splits
+        const vsOppCandidates = teamPlayers.map(p => {
+          const pid   = p.id || p.playerId;
+          const vsOpp = splitsCache[pid]?.vsOpponent?.[opponentTeam];
+          if (!vsOpp || vsOpp.games < 2) return null;
+          return { ...p, _rankValue: vsOpp.onBasePercentage || 0 };
+        }).filter(Boolean).sort((a, b) => b._rankValue - a._rankValue).slice(0, 3);
+
+        if (vsOppCandidates.length > 0) return vsOppCandidates;
+
+        // Stage 2 — season AcesBPI, 2 × team games played AB threshold
+        const teamGamesPlayed = allGames.filter(g =>
+          g.winner && g.winner.trim() !== '' &&
+          (g['home team'] === teamName || g['away team'] === teamName)
+        ).length;
+        const minAB = teamGamesPlayed * 2;
+
+        const seasonCandidates = teamPlayers
+          .filter(p => typeof p.acesBPI === 'number' && p.acesBPI !== 'N/A' &&
+                       (p.atBats || 0) >= minAB)
+          .sort((a, b) => (b.acesBPI || 0) - (a.acesBPI || 0))
+          .slice(0, 3);
+
+        if (seasonCandidates.length > 0) return seasonCandidates;
+
+        // Stage 3 — career AcesBPI, min 20 career ABs
+        return teamPlayers.map(p => {
+          const pid    = p.id || p.playerId;
+          const career = careerBPICache[pid];
+          if (!career || career.atBats < 20 || career.acesBPI === null) return null;
+          return { ...p, _careerBPI: career.acesBPI };
+        }).filter(Boolean)
+          .sort((a, b) => b._careerBPI - a._careerBPI)
+          .slice(0, 3);
+      }
+
+      // ── Player card: shows all available data rows ────────────────────────
       function generateKeyPlayers(homeTeam, awayTeam) {
-        // Get top players by AcesBPI for each team
-        const getTopPlayers = (teamName) => {
-          return playerData
-            .filter(p => {
-              const team = p.team || p.currentTeam || "";
-              return team === teamName && p.acesBPI !== undefined && p.acesBPI !== "N/A";
-            })
-            .sort((a, b) => (parseFloat(b.acesBPI) || 0) - (parseFloat(a.acesBPI) || 0))
-            .slice(0, 3);
-        };
+        const homeTopPlayers = getTopPlayersCascade(homeTeam, awayTeam);
+        const awayTopPlayers = getTopPlayersCascade(awayTeam, homeTeam);
 
-        const homeTopPlayers = getTopPlayers(homeTeam);
-        const awayTopPlayers = getTopPlayers(awayTeam);
+        const teamGamesPlayed = (teamName) => allGames.filter(g =>
+          g.winner && g.winner.trim() !== '' &&
+          (g['home team'] === teamName || g['away team'] === teamName)
+        ).length;
 
-        function createPlayerCard(player, opponentTeam) {
-          const avg = player.average !== undefined ? `.${Math.round(player.average * 1000).toString().padStart(3, '0')}` :
-                      player.avg !== undefined ? `.${Math.round(player.avg * 1000).toString().padStart(3, '0')}` : 'N/A';
-          const hits = player.hits || 0;
-          const runs = player.runs || 0;
-          const acesBPI = player.acesBPI !== undefined ? parseFloat(player.acesBPI).toFixed(2) : 'N/A';
+        function createPlayerCard(player, opponentTeam, teamName) {
+          const pid = player.id || player.playerId;
 
-          // Calculate vs opponent stats from historical games
-          const vsOpponentGames = allGames.filter(g =>
-            ((g["home team"] === player.team && g["away team"] === opponentTeam) ||
-             (g["away team"] === player.team && g["home team"] === opponentTeam)) &&
-            g.winner && g.winner.trim() !== ""
-          );
+          // Format helpers
+          const fmtAvg = (val) => {
+            const n = parseFloat(val);
+            return isNaN(n) ? 'N/A' : `.${Math.round(n * 1000).toString().padStart(3, '0')}`;
+          };
 
-          let vsOpponentHtml = '';
-          if (vsOpponentGames.length > 0) {
-            vsOpponentHtml = `
-              <div class="vs-opponent-stats">
-                <em>vs ${opponentTeam}: ${vsOpponentGames.length} career games</em>
-              </div>
-            `;
+          // ── Season row ── show if player has ABs this season
+          let seasonHtml = '';
+          const seasonAB = player.atBats || 0;
+          if (seasonAB > 0) {
+            const avg    = fmtAvg(player.average ?? player.avg);
+            const hits   = player.hits || 0;
+            const runs   = player.runs || 0;
+            const bpiVal = typeof player.acesBPI === 'number' ? player.acesBPI.toFixed(2) : 'N/A';
+            seasonHtml = `
+              <div class="player-stat-group-label">Season</div>
+              <div class="player-stats">
+                <div class="player-stat"><span class="player-stat-label">AVG</span><span class="player-stat-value">${avg}</span></div>
+                <div class="player-stat"><span class="player-stat-label">Hits</span><span class="player-stat-value">${hits}</span></div>
+                <div class="player-stat"><span class="player-stat-label">Runs</span><span class="player-stat-value">${runs}</span></div>
+                <div class="player-stat"><span class="player-stat-label">BPI</span><span class="player-stat-value">${bpiVal}</span></div>
+              </div>`;
+          }
+
+          // ── Career row ── show if >= 20 career ABs
+          let careerHtml = '';
+          const career = careerBPICache[pid];
+          if (career && career.atBats >= 20 && career.acesBPI !== null) {
+            careerHtml = `
+              <div class="player-stat-group-label">Career</div>
+              <div class="player-stats">
+                <div class="player-stat"><span class="player-stat-label">BPI</span><span class="player-stat-value">${career.acesBPI.toFixed(2)}</span></div>
+                <div class="player-stat"><span class="player-stat-label">AB</span><span class="player-stat-value">${career.atBats}</span></div>
+              </div>`;
+          }
+
+          // ── vs Opponent row ── show if >= 2 games in splits
+          let vsHtml = '';
+          const vsOpp = splitsCache[pid]?.vsOpponent?.[opponentTeam];
+          if (vsOpp && vsOpp.games >= 2) {
+            const vsAvg = fmtAvg(vsOpp.battingAverage);
+            const vsOBP = fmtAvg(vsOpp.onBasePercentage);
+            vsHtml = `
+              <div class="player-stat-group-label">vs ${opponentTeam}</div>
+              <div class="player-stats">
+                <div class="player-stat"><span class="player-stat-label">G</span><span class="player-stat-value">${vsOpp.games}</span></div>
+                <div class="player-stat"><span class="player-stat-label">AVG</span><span class="player-stat-value">${vsAvg}</span></div>
+                <div class="player-stat"><span class="player-stat-label">OBP</span><span class="player-stat-value">${vsOBP}</span></div>
+              </div>`;
           }
 
           return `
@@ -1155,52 +1307,30 @@ body {
               <div class="player-header">
                 <span class="player-name">${player.name}</span>
               </div>
-              <div class="player-stats">
-                <div class="player-stat">
-                  <span class="player-stat-label">AVG</span>
-                  <span class="player-stat-value">${avg}</span>
-                </div>
-                <div class="player-stat">
-                  <span class="player-stat-label">Hits</span>
-                  <span class="player-stat-value">${hits}</span>
-                </div>
-                <div class="player-stat">
-                  <span class="player-stat-label">Runs</span>
-                  <span class="player-stat-value">${runs}</span>
-                </div>
-                <div class="player-stat">
-                  <span class="player-stat-label">AcesBPI</span>
-                  <span class="player-stat-value">${acesBPI}</span>
-                </div>
-              </div>
-              ${vsOpponentHtml}
-            </div>
-          `;
+              ${seasonHtml}
+              ${careerHtml}
+              ${vsHtml}
+            </div>`;
         }
 
         const awayPlayersHtml = awayTopPlayers.length > 0
-          ? awayTopPlayers.map(p => createPlayerCard(p, homeTeam)).join('')
-          : '<div class="no-data">No qualified players found</div>';
-          
-        const homePlayersHtml = homeTopPlayers.length > 0
-          ? homeTopPlayers.map(p => createPlayerCard(p, awayTeam)).join('')
+          ? awayTopPlayers.map(p => createPlayerCard(p, homeTeam, awayTeam)).join('')
           : '<div class="no-data">No qualified players found</div>';
 
-        const keyPlayersHtml = `
+        const homePlayersHtml = homeTopPlayers.length > 0
+          ? homeTopPlayers.map(p => createPlayerCard(p, awayTeam, homeTeam)).join('')
+          : '<div class="no-data">No qualified players found</div>';
+
+        document.getElementById('keyPlayersComparison').innerHTML = `
           <div class="team-stats">
             <h4>${awayTeam} Top Players</h4>
             ${awayPlayersHtml}
           </div>
-
           <div class="vs-label">VS</div>
-
           <div class="team-stats">
             <h4>${homeTeam} Top Players</h4>
             ${homePlayersHtml}
-          </div>
-        `;
-
-        document.getElementById('keyPlayersComparison').innerHTML = keyPlayersHtml;
+          </div>`;
       }
 
       function generateHeadToHeadRecord(homeTeam, awayTeam) {
