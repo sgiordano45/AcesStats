@@ -867,6 +867,10 @@
         <span class="icon">📢</span>
         Banners
       </button>
+      <button class="tab-btn hidden" data-tab="media" id="tabBtnMedia">
+        <span class="icon">📺</span>
+        Media Hub
+      </button>
     </div>
 
     <!-- Tab: Eulogies -->
@@ -1014,6 +1018,36 @@
         </div>
       </div>
     </div>
+
+    <!-- Tab: Media Hub -->
+    <div class="tab-content" id="tab-media">
+      <div class="section">
+        <div class="section-header">
+          📺 Media Hub Manager
+        </div>
+        <div class="section-content">
+          <p style="color: var(--text-light); margin-bottom: 1.5rem;">
+            Manage the YouTube channels, playlists, highlight videos, and podcast links shown on the Media Hub page. Changes go live immediately.
+          </p>
+
+          <div class="btn-group" style="margin-bottom: 1.5rem;">
+            <button class="btn btn-secondary" onclick="loadMediaChannels()">🔄 Refresh</button>
+            <button class="btn btn-primary" onclick="showNewMediaForm()">➕ Add Entry</button>
+          </div>
+
+          <div class="item-list" id="mediaList">
+            <div class="empty-state">Loading media entries...</div>
+          </div>
+
+          <div class="editor-panel" id="mediaEditor">
+            <div class="no-selection">
+              <div class="icon">📺</div>
+              <p>Select an entry to edit or click "Add Entry" to create a new one</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -1053,6 +1087,7 @@
     eulogist: false,
     photographer: false,
     oddsmaker: false,
+    mediaManager: false,
     isAdmin: false,
     isLeagueStaff: false
   };
@@ -1120,6 +1155,7 @@
       userRoles.eulogist = hasSpecialRole(userProfile, 'eulogist');
       userRoles.photographer = hasSpecialRole(userProfile, 'photographer');
       userRoles.oddsmaker = hasSpecialRole(userProfile, 'oddsmaker');
+      userRoles.mediaManager = hasSpecialRole(userProfile, 'mediaManager');
       
       // Check for admin/league-staff (they get access to everything)
       const userRole = (userProfile.userRole || '').toLowerCase();
@@ -1132,6 +1168,7 @@
       const hasAccess = userRoles.eulogist || 
                         userRoles.photographer || 
                         userRoles.oddsmaker || 
+                        userRoles.mediaManager ||
                         userRoles.isAdmin || 
                         userRoles.isLeagueStaff;
 
@@ -1167,6 +1204,7 @@
     if (userRoles.eulogist) badgesHtml.push('<span class="role-badge">✍️ Eulogist</span>');
     if (userRoles.photographer) badgesHtml.push('<span class="role-badge">📸 Photographer</span>');
     if (userRoles.oddsmaker) badgesHtml.push('<span class="role-badge">🎲 Oddsmaker</span>');
+    if (userRoles.mediaManager) badgesHtml.push('<span class="role-badge">📺 Media Manager</span>');
     
     document.getElementById('userRoleBadges').innerHTML = badgesHtml.join('');
   }
@@ -1177,16 +1215,19 @@
     const canSeePhotos = userRoles.photographer || userRoles.isAdmin || userRoles.isLeagueStaff;
     const canSeeOdds = userRoles.oddsmaker || userRoles.isAdmin || userRoles.isLeagueStaff;
     const canSeeBanners = userRoles.isAdmin || userRoles.isLeagueStaff;
+    const canSeeMedia = userRoles.mediaManager || userRoles.isAdmin || userRoles.isLeagueStaff;
 
     const eulogiesTab = document.getElementById('tabBtnEulogies');
     const photosTab = document.getElementById('tabBtnPhotos');
     const oddsTab = document.getElementById('tabBtnOdds');
     const bannersTab = document.getElementById('tabBtnBanners');
+    const mediaTab = document.getElementById('tabBtnMedia');
 
     if (canSeeEulogies) eulogiesTab.classList.remove('hidden');
     if (canSeePhotos) photosTab.classList.remove('hidden');
     if (canSeeOdds) oddsTab.classList.remove('hidden');
     if (canSeeBanners) bannersTab.classList.remove('hidden');
+    if (canSeeMedia) mediaTab.classList.remove('hidden');
 
     // Set first visible tab as active
     let firstTab = null;
@@ -1194,6 +1235,7 @@
     else if (canSeePhotos) firstTab = 'photos';
     else if (canSeeOdds) firstTab = 'odds';
     else if (canSeeBanners) firstTab = 'banners';
+    else if (canSeeMedia) firstTab = 'media';
 
     if (firstTab) {
       document.querySelector(`[data-tab="${firstTab}"]`).classList.add('active');
@@ -1247,6 +1289,11 @@
     // Load photos if photographer
     if (userRoles.photographer || userRoles.isAdmin || userRoles.isLeagueStaff) {
       await loadMyPhotos();
+    }
+
+    // Load media channels if media manager
+    if (userRoles.mediaManager || userRoles.isAdmin || userRoles.isLeagueStaff) {
+      await loadMediaChannels();
     }
   }
 
@@ -2137,6 +2184,290 @@ ${previewUrl}`;
         <p>Select a banner to edit or click "Add Banner" to create a new one</p>
       </div>
     `;
+  };
+
+  // ========================================
+  // MEDIA HUB TAB
+  // ========================================
+
+  let mediaCache = [];
+  let selectedMedia = null;
+
+  const MEDIA_TYPES = [
+    { value: 'youtube_channel',  label: 'YouTube Channel' },
+    { value: 'youtube_playlist', label: 'YouTube Playlist' },
+    { value: 'highlight',        label: 'Single Video / Highlight' },
+    { value: 'podcast',          label: 'Podcast' },
+  ];
+
+  const MEDIA_TEAMS = ['League', 'Black', 'Green', 'Red', 'Blue', 'White', 'Orange', 'Silver', 'Purple', 'Gold', 'Carolina', 'Army'];
+
+  window.loadMediaChannels = async function() {
+    const listEl = document.getElementById('mediaList');
+    if (!listEl) return;
+    listEl.innerHTML = '<div class="empty-state">Loading media entries...</div>';
+
+    try {
+      const snap = await getDocs(query(collection(db, 'mediaChannels'), orderBy('order', 'asc')));
+      mediaCache = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+      if (mediaCache.length === 0) {
+        listEl.innerHTML = '<div class="empty-state">No entries yet. Click "Add Entry" to create one.</div>';
+        return;
+      }
+
+      const TYPE_LABELS = {
+        youtube_channel:  'YouTube Channel',
+        youtube_playlist: 'Playlist',
+        highlight:        'Highlight',
+        podcast:          'Podcast',
+      };
+
+      listEl.innerHTML = mediaCache.map((item, idx) => {
+        const activeClass = item.active !== false ? 'badge-preview' : '';
+        const activeText  = item.active !== false ? 'Active' : 'Inactive';
+        const typeLabel   = TYPE_LABELS[item.type] || item.type || '—';
+        const team        = item.team || 'League';
+        return `
+          <div class="item-row" data-idx="${idx}" onclick="selectMedia(${idx})">
+            <div class="item-info">
+              <div class="item-title">${item.title || '(Untitled)'}</div>
+              <div class="item-subtitle">${typeLabel} &bull; ${team} &bull; Order: ${item.order ?? '—'}</div>
+            </div>
+            <div class="item-badges">
+              <span class="badge ${activeClass}">${activeText}</span>
+            </div>
+          </div>`;
+      }).join('');
+
+    } catch (err) {
+      console.error('Error loading media channels:', err);
+      listEl.innerHTML = '<div class="empty-state">Error loading entries.</div>';
+      showToast('Error loading media entries', 'error');
+    }
+  };
+
+  window.selectMedia = function(idx) {
+    selectedMedia = mediaCache[idx];
+    document.querySelectorAll('#mediaList .item-row').forEach((row, i) => {
+      row.classList.toggle('selected', i === idx);
+    });
+    renderMediaEditor(false);
+  };
+
+  window.showNewMediaForm = function() {
+    selectedMedia = null;
+    document.querySelectorAll('#mediaList .item-row').forEach(r => r.classList.remove('selected'));
+    renderMediaEditor(true);
+  };
+
+  function renderMediaEditor(isNew) {
+    const el = document.getElementById('mediaEditor');
+    el.classList.add('active');
+
+    const typeOptions = MEDIA_TYPES.map(t =>
+      `<option value="${t.value}" ${!isNew && selectedMedia?.type === t.value ? 'selected' : ''}>${t.label}</option>`
+    ).join('');
+
+    const teamOptions = MEDIA_TEAMS.map(t =>
+      `<option value="${t}" ${!isNew && selectedMedia?.team === t ? 'selected' : ''}>${t}</option>`
+    ).join('');
+
+    const v = isNew ? {} : (selectedMedia || {});
+
+    el.innerHTML = `
+      <h3>${isNew ? '➕ New Media Entry' : '✏️ Edit Media Entry'}</h3>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>Type</label>
+          <select id="mediaTypeInput" onchange="toggleMediaFields()">
+            ${typeOptions}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Team</label>
+          <select id="mediaTeamInput">${teamOptions}</select>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Title</label>
+        <input type="text" id="mediaTitleInput" value="${v.title || ''}" placeholder="e.g. Green Team Highlights">
+      </div>
+
+      <div class="form-group">
+        <label>Description <span style="font-weight:400;color:var(--text-light)">(optional)</span></label>
+        <textarea id="mediaDescInput" style="min-height:80px;">${v.description || ''}</textarea>
+      </div>
+
+      <!-- YouTube Channel fields -->
+      <div id="mediaFieldsChannel">
+        <div class="form-group">
+          <label>Channel URL</label>
+          <input type="url" id="mediaChannelUrlInput" value="${v.channelUrl || ''}" placeholder="https://www.youtube.com/@handle">
+          <div class="hint">Full YouTube channel URL — opens in a new tab</div>
+        </div>
+        <div class="form-group">
+          <label>Team Color Override <span style="font-weight:400;color:var(--text-light)">(optional hex)</span></label>
+          <input type="text" id="mediaTeamColorInput" value="${v.teamColor || ''}" placeholder="#2d7d32 — leave blank to auto-derive from team">
+        </div>
+      </div>
+
+      <!-- Playlist / Highlight embed fields -->
+      <div id="mediaFieldsEmbed">
+        <div class="form-group">
+          <label>YouTube ID</label>
+          <input type="text" id="mediaEmbedIdInput" value="${v.embedId || ''}" placeholder="">
+          <div class="hint" id="embedIdHint">For playlists: the ID after <code>?list=</code> in the URL. For highlights: the ID after <code>?v=</code>.</div>
+        </div>
+      </div>
+
+      <!-- Podcast fields -->
+      <div id="mediaFieldsPodcast">
+        <div class="form-group">
+          <label>Spotify Show ID <span style="font-weight:400;color:var(--text-light)">(optional)</span></label>
+          <input type="text" id="mediaSpotifyIdInput" value="${v.spotifyShowId || ''}" placeholder="ID after open.spotify.com/show/">
+        </div>
+        <div class="form-group">
+          <label>Apple Podcasts URL <span style="font-weight:400;color:var(--text-light)">(optional)</span></label>
+          <input type="url" id="mediaAppleUrlInput" value="${v.applePodcastsUrl || ''}" placeholder="https://podcasts.apple.com/...">
+        </div>
+        <div class="form-group">
+          <label>Generic Podcast URL <span style="font-weight:400;color:var(--text-light)">(fallback if no Spotify/Apple)</span></label>
+          <input type="url" id="mediaPodcastUrlInput" value="${v.podcastUrl || ''}" placeholder="https://...">
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>Sort Order</label>
+          <input type="number" id="mediaOrderInput" value="${v.order ?? 10}" min="1" max="999">
+          <div class="hint">Lower numbers appear first within each section</div>
+        </div>
+        <div class="form-group">
+          <div class="checkbox-group" style="margin-top:1.75rem;">
+            <input type="checkbox" id="mediaActiveCheck" ${v.active !== false ? 'checked' : ''}>
+            <label for="mediaActiveCheck">Active (visible on Media Hub)</label>
+          </div>
+        </div>
+      </div>
+
+      <div class="btn-group">
+        <button class="btn btn-success" onclick="saveMedia(${isNew})">💾 ${isNew ? 'Create' : 'Save Changes'}</button>
+        ${!isNew ? `<button class="btn btn-danger" onclick="deleteMedia()">🗑️ Delete</button>` : ''}
+        <button class="btn btn-secondary" onclick="clearMediaSelection()">Cancel</button>
+      </div>
+    `;
+
+    // Show correct fields for current type
+    toggleMediaFields();
+  }
+
+  window.toggleMediaFields = function() {
+    const type = document.getElementById('mediaTypeInput')?.value;
+    if (!type) return;
+
+    const showChannel  = type === 'youtube_channel';
+    const showEmbed    = type === 'youtube_playlist' || type === 'highlight';
+    const showPodcast  = type === 'podcast';
+
+    document.getElementById('mediaFieldsChannel').style.display = showChannel ? 'block' : 'none';
+    document.getElementById('mediaFieldsEmbed').style.display   = showEmbed   ? 'block' : 'none';
+    document.getElementById('mediaFieldsPodcast').style.display = showPodcast ? 'block' : 'none';
+
+    // Update embed ID hint for playlist vs highlight
+    const hintEl = document.getElementById('embedIdHint');
+    if (hintEl) {
+      hintEl.innerHTML = type === 'youtube_playlist'
+        ? 'Playlist ID — the part after <code>?list=</code> in the YouTube playlist URL'
+        : 'Video ID — the part after <code>?v=</code> in the YouTube video URL';
+    }
+  };
+
+  window.saveMedia = async function(isNew) {
+    const type  = document.getElementById('mediaTypeInput').value;
+    const team  = document.getElementById('mediaTeamInput').value;
+    const title = document.getElementById('mediaTitleInput').value.trim();
+    const desc  = document.getElementById('mediaDescInput').value.trim();
+    const order = parseInt(document.getElementById('mediaOrderInput').value) || 10;
+    const active = document.getElementById('mediaActiveCheck').checked;
+
+    if (!title) { showToast('Please enter a title', 'warning'); return; }
+
+    const data = {
+      type, team, title,
+      description: desc || null,
+      order, active,
+      lastUpdated: serverTimestamp(),
+      lastUpdatedBy: currentUser.uid,
+    };
+
+    // Type-specific fields
+    if (type === 'youtube_channel') {
+      const url   = document.getElementById('mediaChannelUrlInput').value.trim();
+      const color = document.getElementById('mediaTeamColorInput').value.trim();
+      if (!url) { showToast('Please enter a channel URL', 'warning'); return; }
+      data.channelUrl = url;
+      data.teamColor  = color || null;
+    } else if (type === 'youtube_playlist' || type === 'highlight') {
+      const embedId = document.getElementById('mediaEmbedIdInput').value.trim();
+      if (!embedId) { showToast('Please enter a YouTube ID', 'warning'); return; }
+      data.embedId = embedId;
+    } else if (type === 'podcast') {
+      data.spotifyShowId   = document.getElementById('mediaSpotifyIdInput').value.trim() || null;
+      data.applePodcastsUrl = document.getElementById('mediaAppleUrlInput').value.trim() || null;
+      data.podcastUrl      = document.getElementById('mediaPodcastUrlInput').value.trim() || null;
+      if (!data.spotifyShowId && !data.applePodcastsUrl && !data.podcastUrl) {
+        showToast('Please enter at least one podcast link', 'warning');
+        return;
+      }
+    }
+
+    // Remove null fields — Firestore rejects undefined but accepts null;
+    // however keeping nulls is fine for clearing old values on edit
+    try {
+      if (isNew) {
+        data.createdAt = serverTimestamp();
+        data.createdBy = currentUser.uid;
+        await addDoc(collection(db, 'mediaChannels'), data);
+        showToast('Media entry created!', 'success');
+      } else {
+        await updateDoc(doc(db, 'mediaChannels', selectedMedia.id), data);
+        showToast('Media entry updated!', 'success');
+      }
+      await loadMediaChannels();
+      clearMediaSelection();
+    } catch (err) {
+      console.error('Error saving media entry:', err);
+      showToast('Error saving: ' + err.message, 'error');
+    }
+  };
+
+  window.deleteMedia = async function() {
+    if (!selectedMedia) return;
+    if (!confirm(`Delete "${selectedMedia.title}"? This cannot be undone.`)) return;
+    try {
+      await deleteDoc(doc(db, 'mediaChannels', selectedMedia.id));
+      showToast('Entry deleted', 'success');
+      await loadMediaChannels();
+      clearMediaSelection();
+    } catch (err) {
+      console.error('Error deleting media entry:', err);
+      showToast('Error deleting: ' + err.message, 'error');
+    }
+  };
+
+  window.clearMediaSelection = function() {
+    selectedMedia = null;
+    document.querySelectorAll('#mediaList .item-row').forEach(r => r.classList.remove('selected'));
+    const el = document.getElementById('mediaEditor');
+    el.classList.remove('active');
+    el.innerHTML = `
+      <div class="no-selection">
+        <div class="icon">📺</div>
+        <p>Select an entry to edit or click "Add Entry" to create a new one</p>
+      </div>`;
   };
 
   // ========================================
