@@ -103,6 +103,7 @@ export const NAV_STRUCTURE = {
     { id: 'charts', href: 'charts.html', label: 'Performance Charts', icon: '📊', priority: 3 },
     { id: 'query-stats', href: 'query-stats.html', label: 'Stats Query Tool', icon: '🔍', priority: 3 },
     { id: 'pictures', href: 'pictures.html', label: 'Gallery', icon: '📷', priority: 3 },
+    { id: 'media', href: 'media.html', label: 'Media Hub', icon: '📺', priority: 3 },
     { id: 'rule-proposal', href: 'rule-proposals.html', label: 'Rule Proposals', icon: '📋', priority: 3 },
     { id: 'rule-review', href: 'rule-review.html', label: 'Rule Review', icon: '📝', priority: 3 },
     { id: 'champ-preview', href: 'championship-preview.html', label: 'Championship Preview', icon: '🎊', priority: 3 },
@@ -338,6 +339,10 @@ export const PAGE_CONFIGS = {
 
   'aces-wrapped.html': {
     desktop: []
+  },
+
+  'media.html': {
+    desktop: ['home', 'pictures', 'media']
   },
 
   // Signin page (handles both signin and signup) - minimal nav
