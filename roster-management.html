@@ -1111,6 +1111,41 @@ const saveLineupData = async (type, data, inning = null) => {
     }
   };
 
+  const resetDefense = async () => {
+    if (!isCaptain) return;
+    const confirmMsg = fieldingFinalized[selectedGame]
+      ? 'This will clear ALL fielding positions and bench assignments for all innings, and unfinalize the defense. Are you sure?'
+      : 'This will clear ALL fielding positions and bench assignments for all innings. Are you sure?';
+    if (!confirm(confirmMsg)) return;
+
+    try {
+      setSavingLineup(true);
+
+      // Clear Firestore for all 7 innings
+      for (let inning = 1; inning <= 7; inning++) {
+        await window.FirebaseRoster.saveFieldingPositions(selectedGame, selectedTeam, inning, {}, currentUser.uid);
+        await window.FirebaseRoster.saveBenchPlayers(selectedGame, selectedTeam, inning, [], currentUser.uid);
+      }
+
+      // Unfinalize if needed
+      if (fieldingFinalized[selectedGame]) {
+        await window.FirebaseRoster.unfinalizeFieldingPositions(selectedGame, selectedTeam, currentUser.uid);
+        setFieldingFinalized(prev => ({ ...prev, [selectedGame]: false }));
+      }
+
+      // Clear local state
+      setFieldingPositions(prev => ({ ...prev, [selectedGame]: {} }));
+      setBenchPlayers(prev => ({ ...prev, [selectedGame]: {} }));
+
+      alert('Defense reset. All positions and bench assignments cleared.');
+    } catch (error) {
+      console.error('Error resetting defense:', error);
+      alert('Failed to reset defense. Please try again.');
+    } finally {
+      setSavingLineup(false);
+    }
+  };
+
   const copyFromPreviousInning = (targetInning) => {
     if (!isCaptain || targetInning === 1) return;
     
@@ -2978,6 +3013,44 @@ const printDefensiveRotation = () => {
                             ✅ Fielding positions finalized - Team has been notified
                           </div>
                         )}
+                      </div>
+                    )}
+
+                    {/* Reset Defense Button */}
+                    {isCaptain && selectedGame && (
+                      <div style={{ marginTop: '0.75rem' }}>
+                        <button
+                          onClick={resetDefense}
+                          disabled={savingLineup}
+                          style={{
+                            width: '100%',
+                            padding: '0.75rem 2rem',
+                            background: savingLineup ? '#e5e7eb' : 'transparent',
+                            color: savingLineup ? '#9ca3af' : '#dc2626',
+                            border: '2px solid ' + (savingLineup ? '#e5e7eb' : '#dc2626'),
+                            borderRadius: '12px',
+                            fontSize: '0.95rem',
+                            fontWeight: '600',
+                            cursor: savingLineup ? 'not-allowed' : 'pointer',
+                            transition: 'all 0.2s ease',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '0.5rem'
+                          }}
+                          onMouseEnter={(e) => {
+                            if (!savingLineup) {
+                              e.currentTarget.style.background = '#fef2f2';
+                            }
+                          }}
+                          onMouseLeave={(e) => {
+                            if (!savingLineup) {
+                              e.currentTarget.style.background = 'transparent';
+                            }
+                          }}
+                        >
+                          {savingLineup ? 'Working...' : 'Reset Defense'}
+                        </button>
                       </div>
                     )}
 
