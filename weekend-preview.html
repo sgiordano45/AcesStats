@@ -1345,92 +1345,103 @@ function cacheWeatherData(current, forecast) {
   }
 }
 
-function displayWeather(currentWeather, forecastData, isStale = false) {
-  const condition = currentWeather.weather[0].main;
-  const description = currentWeather.weather[0].description;
-  const temp = Math.round(currentWeather.main.temp);
-  const humidity = currentWeather.main.humidity;
-  const windSpeed = Math.round(currentWeather.wind.speed);
+function displayWeather(current, forecast, isStale = false) {
+  const weatherIcon = getWeatherIcon(current.weather[0].main);
   
-  // Get daily forecasts (noon each day)
   const dailyForecasts = [];
   const processedDates = new Set();
+  let sundayWeather = null;
   
-  forecastData.list.forEach(item => {
+  forecast.list.forEach(item => {
     const date = new Date(item.dt * 1000);
-    const dateKey = date.toDateString();
-    const hour = date.getHours();
+    const dateString = date.toDateString();
     
-    // Skip today
-    if (dateKey === today.toDateString()) return;
+    if (date.getDay() === 0 && !sundayWeather) {
+      sundayWeather = item.weather[0].main.toLowerCase();
+    }
     
-    // Get forecast closest to noon for each day
-    if (!processedDates.has(dateKey) && hour >= 11 && hour <= 14) {
-      processedDates.add(dateKey);
+    if (dateString !== today.toDateString() && !processedDates.has(dateString) && dailyForecasts.length < 3) {
+      processedDates.add(dateString);
       dailyForecasts.push({
-        date: date,
+        day: date.toLocaleDateString('en-US', { weekday: 'short' }),
         temp: Math.round(item.main.temp),
-        tempMin: Math.round(item.main.temp_min),
-        condition: item.weather[0].main
+        description: item.weather[0].description,
+        icon: getWeatherIcon(item.weather[0].main)
       });
     }
   });
+
+  let weatherImageSrc, weatherImageAlt;
   
-  // Limit to 4 days
-  const forecastDays = dailyForecasts.slice(0, 4);
-  
-  // Determine weather image
-  let weatherImage = 'misc/sunny.jpg';
-  let imageLabel = 'Clear skies expected';
-  const checkCondition = forecastOverride || condition.toLowerCase();
-  
-  if (checkCondition.includes('rain') || checkCondition.includes('drizzle')) {
-    weatherImage = 'misc/rainy.jpg';
-    imageLabel = 'Rain in forecast';
-  } else if (checkCondition.includes('cloud') || checkCondition.includes('overcast')) {
-    weatherImage = 'misc/cloudy.jpg';
-    imageLabel = 'Cloudy conditions';
-  } else if (checkCondition.includes('storm') || checkCondition.includes('thunder')) {
-    weatherImage = 'misc/stormy.jpg';
-    imageLabel = 'Storms possible';
+  if (forecastOverride) {
+    if (forecastOverride === 'rain') {
+      weatherImageSrc = 'rainyweather.jpg';
+      weatherImageAlt = 'Rainy weather';
+    } else if (forecastOverride === 'sunny') {
+      weatherImageSrc = 'sunnyweather.png';
+      weatherImageAlt = 'Sunny weather';
+    } else {
+      const weatherCondition = sundayWeather || current.weather[0].main.toLowerCase();
+      const isRainyWeather = weatherCondition.includes('rain') ||
+                            weatherCondition.includes('thunderstorm') ||
+                            weatherCondition.includes('storm');
+      weatherImageSrc = isRainyWeather ? 'rainyweather.jpg' : 'sunnyweather.png';
+      weatherImageAlt = isRainyWeather ? 'Rainy weather' : 'Sunny weather';
+    }
+  } else {
+    const weatherCondition = sundayWeather || current.weather[0].main.toLowerCase();
+    const isRainyWeather = weatherCondition.includes('rain') ||
+                          weatherCondition.includes('thunderstorm') ||
+                          weatherCondition.includes('storm');
+    weatherImageSrc = isRainyWeather ? 'rainyweather.jpg' : 'sunnyweather.png';
+    weatherImageAlt = isRainyWeather ? 'Rainy weather' : 'Sunny weather';
   }
-  
+
   const staleWarning = isStale ? `
-    <div class="weather-status">
-      ⚠️ Showing cached data - could not refresh
+    <div style="background: rgba(255, 193, 7, 0.2); padding: 0.75rem; border-radius: 8px; margin-bottom: 1rem; font-size: 0.9rem; color: #856404; text-align: center; font-weight: 600;">
+      ⚠️ Showing recent weather data - current conditions may vary
     </div>
   ` : '';
-  
-  document.getElementById('weatherModule').innerHTML = `
+
+  const weatherHTML = `
     <div class="weather-header">
-      <span class="weather-icon">${getWeatherIcon(condition)}</span>
+      <span class="weather-icon">${weatherIcon}</span>
       <h3>Weather for Mountainside, NJ</h3>
     </div>
+    ${staleWarning}
     <div class="weather-content">
       <div class="weather-image-section">
-        <div class="weather-image-label">${imageLabel}</div>
-        <img src="${weatherImage}" alt="Weather" class="weather-image" onerror="this.style.display='none'">
+        <div class="weather-image-label">Weather Bear Gameday Forecast</div>
+        <img class="weather-image" 
+             src="${weatherImageSrc}" 
+             alt="${weatherImageAlt}"
+             onerror="this.style.display='none'">
       </div>
+      
       <div class="current-weather">
-        <div class="temperature">${temp}°F</div>
-        <div class="weather-condition">${description}</div>
+        <div class="temperature">${Math.round(current.main.temp)}°F</div>
+        <div class="weather-description">${current.weather[0].description}</div>
         <div class="weather-details">
-          <span>💧 ${humidity}%</span>
-          <span>💨 ${windSpeed} mph</span>
+          Feels like ${Math.round(current.main.feels_like)}°F<br>
+          Humidity: ${current.main.humidity}%<br>
+          Wind: ${Math.round(current.wind?.speed || 0)} mph
         </div>
       </div>
-      <div class="weather-forecast">
-        ${forecastDays.map(day => `
-          <div class="forecast-day">
-            <div class="day-name">${day.date.toLocaleDateString('en-US', { weekday: 'short' })}</div>
-            <div class="day-icon">${getWeatherIcon(day.condition)}</div>
-            <div class="day-temp">${day.temp}°</div>
+      
+      <div class="forecast">
+        ${dailyForecasts.map(day => `
+          <div class="forecast-item">
+            <div class="forecast-day">${day.day}</div>
+            <div class="weather-icon">${day.icon}</div>
+            <div class="forecast-temp">${day.temp}°F</div>
+            <div class="forecast-desc">${day.description}</div>
           </div>
         `).join('')}
       </div>
     </div>
-    ${staleWarning}
   `;
+
+  document.getElementById('weatherModule').innerHTML = weatherHTML;
 }
 
 function getWeatherIcon(condition) {
