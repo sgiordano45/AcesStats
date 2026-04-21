@@ -312,6 +312,39 @@
   .empty-icon { font-size: 3rem; margin-bottom: 0.75rem; }
   .empty-state p { margin: 0; font-size: 0.95rem; }
 
+  /* ── Embedded video card (playlist & highlight) ── */
+  .embed-wrapper {
+    position: relative;
+    width: 100%;
+    padding-bottom: 56.25%; /* 16:9 */
+    background: #000;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+  .embed-wrapper iframe {
+    position: absolute;
+    inset: 0;
+    width: 100%; height: 100%;
+    border: none;
+  }
+  .embed-card-footer {
+    padding: 0.75rem 1.1rem;
+    border-top: 1px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    flex-shrink: 0;
+  }
+  .embed-title {
+    font-size: 0.88rem;
+    font-weight: 700;
+    color: var(--text-dark);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
   /* ── Admin hint ───────────────────────────── */
   .admin-hint {
     background: linear-gradient(135deg, #fffbea, #fef3c7);
@@ -357,9 +390,11 @@
   <div class="filters-nav"></div>
 
   <div class="admin-hint" id="adminHint">
-    Add content via Firestore collection <code>mediaChannels</code>.
-    YouTube channel fields: <code>type:"youtube_channel"</code>, <code>title</code>, <code>team</code>, <code>description</code>, <code>channelUrl</code>, <code>teamColor</code> (hex, optional), <code>active</code>, <code>order</code>.
-    Podcast fields: <code>type:"podcast"</code>, <code>title</code>, <code>team</code>, <code>description</code>, <code>spotifyShowId</code>, <code>applePodcastsUrl</code>, <code>podcastUrl</code> (generic fallback), <code>active</code>, <code>order</code>.
+    Add content via Firestore collection <code>mediaChannels</code>. All types use <code>title</code>, <code>team</code>, <code>description</code>, <code>active</code>, <code>order</code>.<br>
+    <code>youtube_channel</code>: + <code>channelUrl</code>, <code>teamColor</code> (hex, optional).<br>
+    <code>youtube_playlist</code>: + <code>embedId</code> (playlist ID from ?list= in URL).<br>
+    <code>highlight</code>: + <code>embedId</code> (video ID from ?v= in URL).<br>
+    <code>podcast</code>: + <code>spotifyShowId</code>, <code>applePodcastsUrl</code>, <code>podcastUrl</code>.
   </div>
 
   <div id="pageContent">
@@ -466,6 +501,60 @@ function ytCard(item) {
   return el;
 }
 
+// Build a YouTube playlist embed card
+function playlistCard(item) {
+  const color = teamColor(item);
+  const team  = (item.team || 'League').trim();
+  const tagBg = color + '22';
+  const src   = `https://www.youtube.com/embed/videoseries?list=${encodeURIComponent(item.embedId)}&rel=0`;
+
+  const el = document.createElement('div');
+  el.className = 'media-card';
+  el.innerHTML = `
+    <div class="embed-wrapper">
+      <iframe src="${src}" title="${esc(item.title)}"
+        allowfullscreen
+        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+        loading="lazy"></iframe>
+    </div>
+    <div class="embed-card-footer">
+      <span class="embed-title">${esc(item.title)}</span>
+      <div style="display:flex;align-items:center;gap:0.5rem;flex-shrink:0;">
+        <span class="team-tag" style="background:${tagBg};color:${color};">${esc(team)}</span>
+        <span class="type-label">Playlist</span>
+      </div>
+    </div>
+  `;
+  return el;
+}
+
+// Build a single YouTube highlight embed card
+function highlightCard(item) {
+  const color = teamColor(item);
+  const team  = (item.team || 'League').trim();
+  const tagBg = color + '22';
+  const src   = `https://www.youtube.com/embed/${encodeURIComponent(item.embedId)}?rel=0`;
+
+  const el = document.createElement('div');
+  el.className = 'media-card';
+  el.innerHTML = `
+    <div class="embed-wrapper">
+      <iframe src="${src}" title="${esc(item.title)}"
+        allowfullscreen
+        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+        loading="lazy"></iframe>
+    </div>
+    <div class="embed-card-footer">
+      <span class="embed-title">${esc(item.title)}</span>
+      <div style="display:flex;align-items:center;gap:0.5rem;flex-shrink:0;">
+        <span class="team-tag" style="background:${tagBg};color:${color};">${esc(team)}</span>
+        <span class="type-label">Highlight</span>
+      </div>
+    </div>
+  `;
+  return el;
+}
+
 // Build a podcast card
 function podcastCard(item) {
   const hasSpotify = !!item.spotifyShowId;
@@ -536,44 +625,33 @@ function render(items) {
     return;
   }
 
-  const podcasts = items.filter(i => i.type === 'podcast');
-  const channels = items.filter(i => i.type === 'youtube_channel');
+  const podcasts   = items.filter(i => i.type === 'podcast');
+  const channels   = items.filter(i => i.type === 'youtube_channel');
+  const playlists  = items.filter(i => i.type === 'youtube_playlist');
+  const highlights = items.filter(i => i.type === 'highlight');
 
-  // Podcast section — shown first
-  if (podcasts.length) {
+  function buildSection(icon, title, itemList, cardFn) {
     const sec = document.createElement('div');
     const hdr = document.createElement('div');
     hdr.className = 'section-header';
     hdr.innerHTML = `
-      <span class="section-icon">&#127897;</span>
-      <h2>Podcast</h2>
-      <span class="section-count">${podcasts.length} show${podcasts.length !== 1 ? 's' : ''}</span>
+      <span class="section-icon">${icon}</span>
+      <h2>${title}</h2>
+      <span class="section-count">${itemList.length} item${itemList.length !== 1 ? 's' : ''}</span>
     `;
     sec.appendChild(hdr);
     const grid = document.createElement('div');
     grid.className = 'card-grid';
-    podcasts.forEach(item => grid.appendChild(podcastCard(item)));
+    itemList.forEach(item => grid.appendChild(cardFn(item)));
     sec.appendChild(grid);
     root.appendChild(sec);
   }
 
-  // YouTube channels section
-  if (channels.length) {
-    const sec = document.createElement('div');
-    const hdr = document.createElement('div');
-    hdr.className = 'section-header';
-    hdr.innerHTML = `
-      <span class="section-icon">&#128250;</span>
-      <h2>YouTube Channels</h2>
-      <span class="section-count">${channels.length} channel${channels.length !== 1 ? 's' : ''}</span>
-    `;
-    sec.appendChild(hdr);
-    const grid = document.createElement('div');
-    grid.className = 'card-grid';
-    channels.forEach(item => grid.appendChild(ytCard(item)));
-    sec.appendChild(grid);
-    root.appendChild(sec);
-  }
+  // Render order: Podcast → Playlists → Highlights → Channels
+  if (podcasts.length)   buildSection('&#127897;', 'Podcast', podcasts, podcastCard);
+  if (playlists.length)  buildSection('&#9654;', 'Playlists', playlists, playlistCard);
+  if (highlights.length) buildSection('&#127909;', 'Highlights', highlights, highlightCard);
+  if (channels.length)   buildSection('&#128250;', 'YouTube Channels', channels, ytCard);
 }
 
 // Boot
