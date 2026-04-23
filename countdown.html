@@ -178,7 +178,7 @@ body {
 /* Content */
 .ac-content {
   flex: 1; padding: 12px 20px;
-  display: flex; flex-direction: column; gap: 7px; overflow: hidden;
+  display: flex; flex-direction: column; gap: 7px; overflow-y: auto;
 }
 
 /* Stat rows (Day 10) */
@@ -447,12 +447,37 @@ window.downloadCard = async () => {
 
   try {
     const card = document.getElementById('card-target');
+
+    // Temporarily expand card and inner scroll container to fit all content
+    const originalHeight = card.style.height;
+    const originalOverflow = card.style.overflow;
+    const contentEl = card.querySelector('.ac-content');
+    const originalContentOverflow = contentEl ? contentEl.style.overflowY : null;
+    const originalContentHeight  = contentEl ? contentEl.style.height    : null;
+
+    if (contentEl) {
+      const scrollHeight = contentEl.scrollHeight;
+      const cardPadding  = card.scrollHeight - contentEl.clientHeight;
+      card.style.height   = (scrollHeight + cardPadding) + 'px';
+      card.style.overflow = 'visible';
+      contentEl.style.overflowY = 'visible';
+      contentEl.style.height    = scrollHeight + 'px';
+    }
+
     const canvas = await html2canvas(card, {
-      scale: 3,           // 3x = ~1170x1800px — crisp on mobile
+      scale: 3,
       useCORS: true,
       backgroundColor: null,
       logging: false,
     });
+
+    // Restore original dimensions
+    card.style.height   = originalHeight;
+    card.style.overflow = originalOverflow;
+    if (contentEl) {
+      contentEl.style.overflowY = originalContentOverflow;
+      contentEl.style.height    = originalContentHeight;
+    }
 
     const link = document.createElement('a');
     const meta = DAY_META[currentDay] || {};
@@ -840,7 +865,7 @@ ${hero(10,'The League by the Numbers',`${totals.seasons} seasons of Mountainside
     const rows = ms.hits.length
       ? ms.hits.map(p => milestoneRow(p, 'H')).join('')
       : '<p style="opacity:0.4;font-size:0.82rem;padding:8px">No players currently within 10% of a hit milestone.</p>';
-    return shell(3, `${hero(3,'Hit Milestones',"Who\u2019s knocking on the door entering 2026",'\u{1F3CF}')}<div class="ac-content" style="gap:5px;overflow:hidden">${rows}</div>`);
+    return shell(3, `${hero(3,'Hit Milestones',"Who\u2019s knocking on the door entering 2026",'\u{1F3CF}')}<div class="ac-content" style="gap:5px;overflow-y:auto">${rows}</div>`);
   }
 
   /* DAY 2 — Run Milestones */
@@ -863,7 +888,7 @@ ${hero(10,'The League by the Numbers',`${totals.seasons} seasons of Mountainside
     const rows = ms.runs.length
       ? ms.runs.map(p => milestoneRow(p, 'R')).join('')
       : '<p style="opacity:0.4;font-size:0.82rem;padding:8px">No players currently within 10% of a run milestone.</p>';
-    return shell(2, `${hero(2,'Run Milestones',"Who\u2019s closing in on the next century entering 2026",'\u{1F3C3}')}<div class="ac-content" style="gap:5px;overflow:hidden">${rows}</div>`);
+    return shell(2, `${hero(2,'Run Milestones',"Who\u2019s closing in on the next century entering 2026",'\u{1F3C3}')}<div class="ac-content" style="gap:5px;overflow-y:auto">${rows}</div>`);
   }
 
   /* DAY 1 — Championship Roll Call */
