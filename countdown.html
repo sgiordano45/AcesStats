@@ -314,9 +314,9 @@ const DAY_META = {
   6:  { title: 'Batting Legends',           sub: 'Best career averages (min 50 AB)' },
   5:  { title: 'Peak Performance',          sub: 'Best single-season batting average' },
   4:  { title: 'Run Scorers',               sub: 'All-time runs scored in Aces history' },
-  3:  { title: 'AcesBPI All-Stars',         sub: "The league's own metric \u2014 best single-season" },
-  2:  { title: 'Championship Roll Call',    sub: 'Every champion, every season' },
-  1:  { title: 'Milestone Watch',           sub: 'Who is knocking on the door entering 2026' },
+  3:  { title: 'Hit Milestones',            sub: 'Players approaching career hit milestones in 2026' },
+  2:  { title: 'Run Milestones',            sub: 'Players approaching career run milestones in 2026' },
+  1:  { title: 'Championship Roll Call',    sub: 'Every champion, every season' },
   0:  { title: 'Opening Day Is Here!',      sub: '2026 Summer Season \u2014 Play Ball!' },
 };
 
@@ -820,27 +820,9 @@ ${hero(10,'The League by the Numbers',`${totals.seasons} seasons of Mountainside
     return shell(4, `${hero(4,'Run Scorers','All-time runs scored in Aces history','\u{1F3C3}')}<div class="ac-content">${rows}</div>`);
   }
 
-  /* DAY 3 — AcesBPI */
+  /* DAY 3 — Hit Milestones */
   if (d === 3) {
-    const rows = leaders.topBPI.length
-      ? leaders.topBPI.map((p,i) => rankRow(i, p.name, (p.value>0?'+':'') + p.value.toFixed(1), p.season)).join('')
-      : '<p style="opacity:0.5;font-size:0.82rem;padding:8px">BPI data coming soon\u2026</p>';
-    const note = `<div style="margin-top:auto;padding:4px 2px 0;font-size:0.6rem;opacity:0.38;text-align:center;font-weight:600">AcesBPI measures offensive production vs. league average</div>`;
-    return shell(3, `${hero(3,'AcesBPI All-Stars',"The Aces\u2019 own composite offensive metric",'\u{1F9E0}')}<div class="ac-content">${rows}${note}</div>`);
-  }
-
-  /* DAY 2 — Champions */
-  if (d === 2) {
-    const rows = champions.length
-      ? champions.map(c => champRow(c.label, c.champion)).join('')
-      : '<p style="opacity:0.5;font-size:0.82rem;padding:8px">Championship data loading\u2026</p>';
-    return shell(2, `${hero(2,'Championship Roll Call','Every champion. Every season.','\u{1F3C6}')}<div class="ac-content">${rows}</div>`);
-  }
-
-  /* DAY 1 — Milestone Watch */
-  if (d === 1) {
     const ms = leagueData.milestones;
-
     const milestoneRow = (p, stat) => {
       const pct = Math.round((p.current / p.milestone) * 100);
       return `<div class="ac-rank" style="flex-direction:column;align-items:stretch;gap:4px;padding:8px 11px">
@@ -855,19 +837,41 @@ ${hero(10,'The League by the Numbers',`${totals.seasons} seasons of Mountainside
   <div style="font-size:0.62rem;opacity:0.45;font-weight:700">${p.gap} away from ${p.milestone}</div>
 </div>`;
     };
+    const rows = ms.hits.length
+      ? ms.hits.map(p => milestoneRow(p, 'H')).join('')
+      : '<p style="opacity:0.4;font-size:0.82rem;padding:8px">No players currently within 10% of a hit milestone.</p>';
+    return shell(3, `${hero(3,'Hit Milestones',"Who\u2019s knocking on the door entering 2026",'\u{1F3CF}')}<div class="ac-content" style="gap:5px;overflow:hidden">${rows}</div>`);
+  }
 
-    const hitRows  = ms.hits.map(p  => milestoneRow(p, 'H')).join('');
-    const runRows  = ms.runs.map(p  => milestoneRow(p, 'R')).join('');
-    const walkRows = ms.walks.map(p => milestoneRow(p, 'BB')).join('');
+  /* DAY 2 — Run Milestones */
+  if (d === 2) {
+    const ms = leagueData.milestones;
+    const milestoneRow = (p, stat) => {
+      const pct = Math.round((p.current / p.milestone) * 100);
+      return `<div class="ac-rank" style="flex-direction:column;align-items:stretch;gap:4px;padding:8px 11px">
+  <div style="display:flex;align-items:center;gap:8px">
+    <span class="ac-rank-name">${p.name}</span>
+    <span style="font-size:0.64rem;opacity:0.5;font-weight:600">${p.team}</span>
+    <span class="ac-rank-val" style="margin-left:auto">${p.current} / ${p.milestone} ${stat}</span>
+  </div>
+  <div style="height:4px;border-radius:2px;background:rgba(255,255,255,0.12);overflow:hidden">
+    <div style="height:100%;width:${pct}%;background:rgba(255,255,255,0.55);border-radius:2px"></div>
+  </div>
+  <div style="font-size:0.62rem;opacity:0.45;font-weight:700">${p.gap} away from ${p.milestone}</div>
+</div>`;
+    };
+    const rows = ms.runs.length
+      ? ms.runs.map(p => milestoneRow(p, 'R')).join('')
+      : '<p style="opacity:0.4;font-size:0.82rem;padding:8px">No players currently within 10% of a run milestone.</p>';
+    return shell(2, `${hero(2,'Run Milestones',"Who\u2019s closing in on the next century entering 2026",'\u{1F3C3}')}<div class="ac-content" style="gap:5px;overflow:hidden">${rows}</div>`);
+  }
 
-    const section = (label, rows) => rows
-      ? `<div style="font-size:0.6rem;font-weight:800;text-transform:uppercase;letter-spacing:0.1em;opacity:0.45;padding:2px 2px 1px">${label}</div>${rows}`
-      : '';
-
-    const allRows = section('Hits', hitRows) + section('Runs', runRows) + section('Walks', walkRows);
-    const empty   = !ms.hits.length && !ms.runs.length && !ms.walks.length;
-
-    return shell(1, `${hero(1,'Milestone Watch',"Who's knocking on the door entering 2026",'\u{1F3AF}')}<div class="ac-content" style="gap:5px;overflow:hidden">${empty ? '<p style="opacity:0.4;font-size:0.82rem">No players currently within 10% of a milestone.</p>' : allRows}</div>`);
+  /* DAY 1 — Championship Roll Call */
+  if (d === 1) {
+    const rows = champions.length
+      ? champions.map(c => champRow(c.label, c.champion)).join('')
+      : '<p style="opacity:0.5;font-size:0.82rem;padding:8px">Championship data loading\u2026</p>';
+    return shell(1, `${hero(1,'Championship Roll Call','Every champion. Every season.','\u{1F3C6}')}<div class="ac-content">${rows}</div>`);
   }
 
   /* DAY 0 — Opening Day */
@@ -958,26 +962,26 @@ function buildCaption(d) {
   }
 
   if (d === 3) {
-    if (!leaders.topBPI.length) {
-      return `${BRN} 3 DAYS TO OPENING DAY ${BRN}\n\nAcesBPI is the Aces\u2019 own composite offensive metric \u2014 tracking who\u2019s been the most impactful relative to league average.\n\nSee the full leaderboard at ${URL}`;
+    const ms = leagueData.milestones;
+    if (!ms.hits.length) {
+      return `\u{1F3CF} 3 DAYS TO OPENING DAY \u{1F3CF}\n\nNo players are currently within 10% of a career hit milestone entering 2026 Summer.\n\n${URL}`;
     }
-    const lines = leaders.topBPI.map((p,i) => `${i+1}. ${p.name} \u2014 ${p.value>0?'+':''}${p.value.toFixed(1)} BPI (${p.season})`).join('\n');
-    return `${BRN} 3 DAYS TO OPENING DAY ${BRN}\n\nAcesBPI \u2014 the Aces\u2019 own composite offensive metric. Best single-season performances ever:\n\n${lines}\n\nWho posts the best BPI in 2026 Summer?\n\n${URL}`;
+    const lines = ms.hits.map(p => `  ${p.name} (${p.team}) \u2014 ${p.current}/${p.milestone} H (${p.gap} away)`).join('\n');
+    return `\u{1F3CF} 3 DAYS TO OPENING DAY \u{1F3CF}\n\nThese players enter 2026 Summer within reach of a career hit milestone:\n\n${lines}\n\nWho gets there first this season?\n\n${URL}`;
   }
 
   if (d === 2) {
-    const lines = champions.map(c => `${TRP} ${c.label}: ${c.champion}`).join('\n');
-    return `${TRP} 2 DAYS TO OPENING DAY ${TRP}\n\nEvery championship in Aces history:\n\n${lines}\n\nWho writes their name on the 2026 Summer trophy?\n\n${URL}`;
+    const ms = leagueData.milestones;
+    if (!ms.runs.length) {
+      return `\u{1F3C3} 2 DAYS TO OPENING DAY \u{1F3C3}\n\nNo players are currently within 10% of a career run milestone entering 2026 Summer.\n\n${URL}`;
+    }
+    const lines = ms.runs.map(p => `  ${p.name} (${p.team}) \u2014 ${p.current}/${p.milestone} R (${p.gap} away)`).join('\n');
+    return `\u{1F3C3} 2 DAYS TO OPENING DAY \u{1F3C3}\n\nThese players enter 2026 Summer within reach of a career run milestone:\n\n${lines}\n\nWho scores the milestone run in 2026?\n\n${URL}`;
   }
 
   if (d === 1) {
-    const ms = leagueData.milestones;
-    const lines = [];
-    if (ms.hits.length)  lines.push('Hits:\n'  + ms.hits.map(p  => `  ${p.name} \u2014 ${p.current}/${p.milestone} (${p.gap} away)`).join('\n'));
-    if (ms.runs.length)  lines.push('Runs:\n'  + ms.runs.map(p  => `  ${p.name} \u2014 ${p.current}/${p.milestone} (${p.gap} away)`).join('\n'));
-    if (ms.walks.length) lines.push('Walks:\n' + ms.walks.map(p => `  ${p.name} \u2014 ${p.current}/${p.milestone} (${p.gap} away)`).join('\n'));
-    const body = lines.length ? lines.join('\n\n') : 'No players currently within 10% of a milestone.';
-    return `\u{1F3AF} 1 DAY TO OPENING DAY \u{1F3AF}\n\nHistory is within reach. These players enter 2026 Summer knocking on the door:\n\n${body}\n\nWho gets there first this season?\n\n${URL}`;
+    const lines = champions.map(c => `${TRP} ${c.label}: ${c.champion}`).join('\n');
+    return `${TRP} 1 DAY TO OPENING DAY ${TRP}\n\nEvery championship in Aces history:\n\n${lines}\n\nWho writes their name on the 2026 Summer trophy?\n\n${URL}`;
   }
 
   if (d === 0) {
