@@ -14,6 +14,53 @@ const messaging = admin.messaging();
 // ============================================================================
 
 /**
+ * Convert UTC timestamp or date to Eastern Time for display
+ * CRITICAL FIX: Prevents 7:45 PM ET from displaying as 11:45 PM
+ * @param {Date|Number|Object} utcDate - UTC date (Date object, timestamp in ms, or Firestore Timestamp)
+ * @returns {Date} Date object representing the same moment in Eastern timezone
+ */
+function convertToEastern(utcDate) {
+  let date;
+  
+  if (!utcDate) return new Date();
+  
+  // Handle Firestore Timestamp
+  if (utcDate.seconds) {
+    date = new Date(utcDate.seconds * 1000);
+  }
+  // Handle milliseconds timestamp
+  else if (typeof utcDate === 'number') {
+    date = new Date(utcDate);
+  }
+  // Handle Date object
+  else if (utcDate instanceof Date) {
+    date = utcDate;
+  }
+  // Fallback
+  else {
+    return new Date();
+  }
+  
+  // Convert UTC to Eastern by using toLocaleString and re-parsing
+  const easternString = date.toLocaleString('en-US', { timeZone: 'America/New_York' });
+  return new Date(easternString);
+}
+
+/**
+ * Format a time string in 12-hour format with AM/PM (Eastern Time)
+ * @param {Date|Number|Object} utcDate - UTC date to format
+ * @returns {string} Time string like "7:45 PM"
+ */
+function formatGameTime(utcDate) {
+  const eastern = convertToEastern(utcDate);
+  return eastern.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true
+  });
+}
+
+/**
  * Check if current time is within user's quiet hours
  * @param {Object} quietHours - User's quiet hours settings {enabled, start, end}
  * @returns {boolean} True if in quiet hours (should NOT send notification)
@@ -864,11 +911,7 @@ exports.sendGameReminders = functions.pubsub
       
         // Format game time
               const gameDate = game.date.toDate();
-              const timeString = gameDate.toLocaleTimeString('en-US', {
-                hour: 'numeric',
-                minute: '2-digit',
-                hour12: true
-              });
+              const timeString = formatGameTime(gameDate);  // NOW USES EASTERN TIME CONVERSION
 
               // Determine if this is a playoff game
               const isPlayoff = isPlayoffGame(gameId);
@@ -2043,12 +2086,7 @@ exports.triggerGameReminders = functions.https.onCall(async (data, context) => {
     }
     
       const gameDate = game.date.toDate();
-          const timeString = gameDate.toLocaleTimeString('en-US', {
-            hour: 'numeric',
-            minute: '2-digit',
-            hour12: true,
-            timeZone: 'America/New_York'
-          });
+    const timeString = formatGameTime(gameDate);  // NOW USES EASTERN TIME CONVERSION
           
           const dateString = gameDate.toLocaleDateString('en-US', {
             weekday: 'short',
