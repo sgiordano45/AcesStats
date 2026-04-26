@@ -234,31 +234,35 @@ export function canUserTrackTeam(userProfile, teamId) {
     
     // Admins and league staff can track any team
     if (userProfile.isAdmin || 
-        userProfile.userType === 'league-staff' ||
         userProfile.userRole === 'admin' ||
-        userProfile.userRole === 'staff' ||
-        userProfile.userRole === 'scorekeeper' ||
-        userProfile.specialRoles?.scorekeeper === true) {
+        userProfile.userRole === 'league-staff') {
         return true;
     }
-    
-    // Captains can track their own team
-    if (userProfile.isCaptain && userProfile.teamId === teamId) {
+
+    // Scorekeepers can track their linked team
+    if (userProfile.specialRoles?.scorekeeper === true &&
+        userProfile.linkedTeam?.toLowerCase() === teamId?.toLowerCase()) {
         return true;
     }
-    
-    // Team staff can track their team
-    if (userProfile.userType === 'team-staff' && userProfile.teamId === teamId) {
-        return true;
-    }
-    
-    // Check teamRoles array
-    if (userProfile.teamRoles && Array.isArray(userProfile.teamRoles)) {
-        const hasRole = userProfile.teamRoles.some(role => 
-            role.teamId === teamId && 
-            (role.role === 'captain' || role.role === 'staff')
+
+    // Check teamRoles map (captain or team-staff, active status)
+    if (userProfile.teamRoles && typeof userProfile.teamRoles === 'object' && !Array.isArray(userProfile.teamRoles)) {
+        const entry = Object.entries(userProfile.teamRoles).find(
+            ([key]) => key.toLowerCase() === teamId?.toLowerCase()
         );
-        if (hasRole) return true;
+        if (entry) {
+            const teamRole = entry[1];
+            if (teamRole.status === 'active' &&
+                (teamRole.role === 'captain' || teamRole.role === 'team-staff')) {
+                return true;
+            }
+        }
+    }
+
+    // Legacy: isCaptain flag with linkedTeam match
+    if (userProfile.isCaptain &&
+        userProfile.linkedTeam?.toLowerCase() === teamId?.toLowerCase()) {
+        return true;
     }
     
     return false;
