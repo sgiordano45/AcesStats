@@ -483,7 +483,23 @@ function RosterManagement({ currentUser }) {
     playerNumber: ''
   });
 
-  const isCaptain = userProfile?.isCaptain || false;
+  const isCaptain = (() => {
+    if (!userProfile) return false;
+    if (userProfile.isAdmin || userProfile.userRole === 'admin' || userProfile.userRole === 'league-staff') return true;
+    if (userProfile.isCaptain) return true;
+    if (selectedTeam && userProfile.teamRoles && typeof userProfile.teamRoles === 'object') {
+      const entry = Object.entries(userProfile.teamRoles).find(
+        ([key]) => key.toLowerCase() === selectedTeam.toLowerCase()
+      );
+      if (entry) {
+        const teamRole = entry[1];
+        if (teamRole.status === 'active' && (teamRole.role === 'captain' || teamRole.role === 'team-staff')) {
+          return true;
+        }
+      }
+    }
+    return false;
+  })();
   const seasonConfig = SEASONS[season];
 
   // Helper function to format relative time
