@@ -598,14 +598,29 @@
       }
 
       try {
+        const teamKey = userProfile.linkedTeam.charAt(0).toUpperCase() + userProfile.linkedTeam.slice(1);
+        const user = allUsers.find(u => u.uid === userId);
+        const existingTeamRoles = user.teamRoles || {};
+
+        const updatedTeamRoles = {
+          ...existingTeamRoles,
+          [teamKey]: {
+            ...(existingTeamRoles[teamKey] || {}),
+            role: 'team-staff',
+            status: 'active',
+            approvedBy: getCurrentUser()?.uid,
+            approvedAt: new Date().toISOString()
+          }
+        };
+
         const result = await updateUserProfile(userId, {
-          userRole: USER_ROLES.TEAM_STAFF,
-          linkedTeam: userProfile.linkedTeam
+          teamRoles: updatedTeamRoles,
+          linkedTeam: teamKey
         });
 
         if (result.success) {
           showSuccess('Team staff role assigned successfully!');
-          await loadData(); // Reload data
+          await loadData();
         } else {
           showError('Failed to assign team staff role');
         }
@@ -621,17 +636,27 @@
       }
 
       try {
-        // Get user to determine what role to revert to
+        const teamKey = userProfile.linkedTeam.charAt(0).toUpperCase() + userProfile.linkedTeam.slice(1);
         const user = allUsers.find(u => u.uid === userId);
-        const newRole = user.linkedPlayer ? USER_ROLES.PLAYER : USER_ROLES.FAN;
+        const existingTeamRoles = user.teamRoles || {};
+
+        const updatedTeamRoles = {
+          ...existingTeamRoles,
+          [teamKey]: {
+            ...(existingTeamRoles[teamKey] || {}),
+            status: 'removed',
+            removedBy: getCurrentUser()?.uid,
+            removedAt: new Date().toISOString()
+          }
+        };
 
         const result = await updateUserProfile(userId, {
-          userRole: newRole
+          teamRoles: updatedTeamRoles
         });
 
         if (result.success) {
           showSuccess('Team staff role removed successfully!');
-          await loadData(); // Reload data
+          await loadData();
         } else {
           showError('Failed to remove team staff role');
         }
