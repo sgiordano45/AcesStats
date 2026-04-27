@@ -1349,53 +1349,22 @@ const saveLineupData = async (type, data, inning = null) => {
       if (!isCaptain || !selectedGame) return;
       
       try {
-        
-        // Get recent games for this team's season
-              const { collection, query, orderBy, limit, getDocs, db } = window.firebaseImports;
-              const gamesRef = collection(db, 'seasons', currentSeason.id, 'games');
-              const pastGamesQuery = query(
-                      gamesRef,
-                      orderBy('date', 'desc'),
-                      limit(30)
-                    );
-              const gamesSnapshot = await getDocs(pastGamesQuery);
-              console.log('🔍 Season ID:', currentSeason.id);
-              console.log('🔍 Selected Team:', selectedTeam);
-              console.log('🔍 Games found in query:', gamesSnapshot.docs.length);
-              
-              // Log first few games to see structure
-              gamesSnapshot.docs.slice(0, 3).forEach(docSnap => {
-                const data = docSnap.data();
-                console.log('🔍 Game:', docSnap.id, {
-                  homeTeam: data.homeTeam || data.home_team,
-                  awayTeam: data.awayTeam || data.away_team,
-                  season: data.season,
-                  date: data.date
-                });
-              });
-              
-        
-        
-        // Filter for this team's games (excluding current game)
-        const teamGames = gamesSnapshot.docs.filter(docSnap => {
-          const data = docSnap.data();
-          const homeTeam = (data.homeTeam || data.home_team || '').toLowerCase();
-          const awayTeam = (data.awayTeam || data.away_team || '').toLowerCase();
-          const team = selectedTeam.toLowerCase();
-          return (homeTeam === team || awayTeam === team) && docSnap.id !== selectedGame;
-        });
-        
-        if (teamGames.length === 0) {
+        // Use already-loaded games array, sorted by date ascending, excluding current game
+        const currentGameData = games.find(g => g.id === selectedGame);
+        const currentGameDate = currentGameData ? new Date(currentGameData.date) : new Date();
+
+        const priorGames = games
+          .filter(g => g.id !== selectedGame)
+          .sort((a, b) => new Date(b.date) - new Date(a.date));
+
+        if (priorGames.length === 0) {
           alert('No previous games found for this team.');
           return;
         }
-        
-        console.log('🔍 Team games found:', teamGames.map(d => d.id));
 
         // Check each game for a batting order (most recent first)
-        for (const gameDoc of teamGames) {
-          const prevBattingOrder = await window.FirebaseRoster.getBattingOrder(gameDoc.id, selectedTeam);
-          console.log('🔍 Batting order for', gameDoc.id, ':', prevBattingOrder);
+        for (const gameData of priorGames) {
+          const prevBattingOrder = await window.FirebaseRoster.getBattingOrder(gameData.id, selectedTeam);
           
           if (prevBattingOrder && prevBattingOrder.length > 0 && prevBattingOrder.some(id => id)) {
             // Found a lineup! Map player IDs to player objects
@@ -1422,10 +1391,7 @@ const saveLineupData = async (type, data, inning = null) => {
             await saveLineupData('batting', copiedOrder);
             
             // Get game info for message
-            const gameData = gameDoc.data();
-            const gameDate = gameData.date?.toDate?.()
-              ? gameData.date.toDate().toLocaleDateString()
-              : gameData.date;
+            const gameDate = gameData.date || gameData.id;
             
             const skippedCount = totalInPrevious - copiedCount;
             let message = `✅ Copied ${copiedCount} players from ${gameDate}`;
