@@ -1037,6 +1037,8 @@ let allTeams = [];
 let gameResults = [];
 let selectedGame = null;
 let rosterPlayers = [];
+let opponentRosterPlayers = [];
+let pendingPlayEdits = null;
 
 // ============================================
 // INITIALIZATION
@@ -1253,8 +1255,16 @@ window.selectGame = async function(gameId) {
   try {
     const seasonId = selectedGame.seasonId;
     rosterPlayers = await getTeamRosterForTracker(selectedGame.teamId, selectedGame.seasonId);
-    
     console.log(`📋 Loaded ${rosterPlayers.length} roster players for ${selectedGame.teamId}`);
+
+    // Load opponent roster for bulk pitcher reassign
+    try {
+      opponentRosterPlayers = await getTeamRosterForTracker(selectedGame.opponentName, selectedGame.seasonId);
+      console.log(`📋 Loaded ${opponentRosterPlayers.length} opponent roster players for ${selectedGame.opponentName}`);
+    } catch(e) {
+      console.warn('Could not load opponent roster:', e);
+      opponentRosterPlayers = [];
+    }
     
     renderReviewPanel();
     
@@ -1296,11 +1306,18 @@ function renderReviewPanel() {
     convertBtn.innerHTML = '✅ Convert to Official Stats';
   }
   
+  // Reset pending edits when switching games
+  pendingPlayEdits = null;
+  opponentRosterPlayers = [];
+
   // Render batting stats with player matching
   renderBattingStats();
   
-  // Render play-by-play
-  renderPlayByPlay();
+  // Render play-by-play (editable)
+  renderPlayByPlayEditable();
+
+  // Render pitching section
+  renderPitchingSection();
   
   // Scroll to review panel
   panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -1636,6 +1653,40 @@ function getWorkingPlays() {
   return pendingPlayEdits || selectedGame.playByPlay || [];
 }
 
+const PLAY_TYPE_OPTIONS = [
+  ['single','Single'], ['double','Double'], ['triple','Triple'], ['homerun','Home Run'],
+  ['walk','Walk'], ['strikeout','Strikeout'], ['flyout','Fly Out'], ['groundout','Ground Out'],
+  ['fielders_choice',"Fielder's Choice"], ['sacfly','Sac Fly'], ['doubleplay','Double Play'],
+  ['out','Out'], ['error','Reached on Error']
+];
+
+const PLAY_TYPE_LABEL_MAP = {
+  single:'1B', double:'2B', triple:'3B', homerun:'HR', walk:'BB',
+  strikeout:'K', flyout:'FO', groundout:'GO', fielders_choice:'FC',
+  sacfly:'SF', doubleplay:'DP', out:'OUT', error:'ROE'
+};
+
+function buildPlayRowHtml(play, idx) {
+  const pitcherName = (play.opposingPitcher && play.opposingPitcher.name) ? play.opposingPitcher.name : '';
+  const runs = play.runsScored || 0;
+  const runText = runs > 0 ? ' <span style="color:#dc2626;">(' + runs + ' run' + (runs > 1 ? 's' : '') + ')</span>' : '';
+  const pitcherText = pitcherName ? '<span style="color:var(--text-light); font-size:0.8rem;"> vs ' + pitcherName + '</span>' : '';
+  const optionsHtml = PLAY_TYPE_OPTIONS.map(function(pair) {
+    return '<option value="' + pair[0] + '"' + (play.playType === pair[0] ? ' selected' : '') + '>' + pair[1] + '</option>';
+  }).join('');
+
+  return '<div class="play-item" id="play-row-' + idx + '" style="display:flex; align-items:center; gap:0.5rem;">' +
+    '<span style="color:var(--text-light); font-size:0.8rem; min-width:22px;">#' + (idx + 1) + '</span>' +
+    '<span class="play-result" style="flex:1;">' +
+      '<strong>' + (play.batter || 'Unknown') + '</strong>: ' +
+      '<span id="play-label-' + idx + '">' + formatPlayResult(play.playType) + '</span>' + runText + pitcherText +
+    '</span>' +
+    '<select id="play-type-select-' + idx + '" style="display:none; padding:0.25rem; border:1px solid var(--border-color); border-radius:4px; font-size:0.85rem;">' + optionsHtml + '</select>' +
+    '<button onclick="togglePlayEdit(' + idx + ')" style="font-size:0.75rem; padding:0.2rem 0.5rem; border:1px solid var(--border-color); border-radius:4px; background:#f1f5f9; cursor:pointer;" id="play-edit-btn-' + idx + '">Edit</button>' +
+    '<button onclick="confirmPlayEdit(' + idx + ')" style="display:none; font-size:0.75rem; padding:0.2rem 0.5rem; border:1px solid var(--success-color); border-radius:4px; background:#dcfce7; cursor:pointer; color:#166534;" id="play-confirm-btn-' + idx + '">Save</button>' +
+  '</div>';
+}
+
 function renderPlayByPlayEditable() {
   const container = document.getElementById('playByPlay');
   const plays = getWorkingPlays();
@@ -1650,42 +1701,23 @@ function renderPlayByPlayEditable() {
   }
 
   const byInning = {};
-  plays.forEach((play, idx) => {
+  plays.forEach(function(play, idx) {
     const inning = play.inning || 1;
     if (!byInning[inning]) byInning[inning] = [];
-    byInning[inning].push({ play, idx });
+    byInning[inning].push({ play: play, idx: idx });
   });
 
-  const playTypeOptions = [
-    ['single','Single'], ['double','Double'], ['triple','Triple'], ['homerun','Home Run'],
-    ['walk','Walk'], ['strikeout','Strikeout'], ['flyout','Fly Out'], ['groundout','Ground Out'],
-    ['fielders_choice',"Fielder's Choice"], ['sacfly','Sac Fly'], ['doubleplay','Double Play'],
-    ['out','Out'], ['error','Reached on Error']
-  ];
+  let html = '';
+  Object.keys(byInning).forEach(function(inning) {
+    html += '<div style="margin-bottom:1rem;">';
+    html += '<div class="play-inning">Inning ' + inning + '</div>';
+    byInning[inning].forEach(function(entry) {
+      html += buildPlayRowHtml(entry.play, entry.idx);
+    });
+    html += '</div>';
+  });
 
-  container.innerHTML = Object.entries(byInning).map(([inning, entries]) => `
-    <div style="margin-bottom:1rem;">
-      <div class="play-inning">Inning ${inning}</div>
-      ${entries.map(({ play, idx }) => {
-        const pitcherName = play.opposingPitcher?.name || '';
-        const runText = play.runsScored > 0 ? ` <span style="color:#dc2626;">(${play.runsScored} run${play.runsScored > 1 ? 's' : ''})</span>` : '';
-        return `
-          <div class="play-item" id="play-row-${idx}" style="display:flex; align-items:center; gap:0.5rem;">
-            <span style="color:var(--text-light); font-size:0.8rem; min-width:22px;">#${idx + 1}</span>
-            <span class="play-result" style="flex:1;">
-              <strong>${play.batter || 'Unknown'}</strong>:
-              <span id="play-label-${idx}">${formatPlayResult(play.playType)}</span>${runText}
-              ${pitcherName ? `<span style="color:var(--text-light); font-size:0.8rem;"> vs ${pitcherName}</span>` : ''}
-            </span>
-            <select id="play-type-select-${idx}" style="display:none; padding:0.25rem; border:1px solid var(--border-color); border-radius:4px; font-size:0.85rem;">
-              ${playTypeOptions.map(([val, label]) => `<option value="${val}" ${play.playType===val?'selected':''}>${label}</option>`).join('')}
-            </select>
-            <button onclick="togglePlayEdit(${idx})" style="font-size:0.75rem; padding:0.2rem 0.5rem; border:1px solid var(--border-color); border-radius:4px; background:#f1f5f9; cursor:pointer;" id="play-edit-btn-${idx}">Edit</button>
-            <button onclick="confirmPlayEdit(${idx})" style="display:none; font-size:0.75rem; padding:0.2rem 0.5rem; border:1px solid var(--success-color); border-radius:4px; background:#dcfce7; cursor:pointer; color:#166534;" id="play-confirm-btn-${idx}">Save</button>
-          </div>`;
-      }).join('')}
-    </div>
-  `).join('');
+  container.innerHTML = html;
 }
 
 window.togglePlayEdit = function(idx) {
@@ -1701,17 +1733,10 @@ window.togglePlayEdit = function(idx) {
 };
 
 window.confirmPlayEdit = function(idx) {
-  const select = document.getElementById(`play-type-select-${idx}`);
+  const select = document.getElementById('play-type-select-' + idx);
   const newType = select.value;
   const plays = pendingPlayEdits ? [...pendingPlayEdits] : [...(selectedGame.playByPlay || [])];
-  
-  const playTypeLabelMap = {
-    single:'1B', double:'2B', triple:'3B', homerun:'HR', walk:'BB',
-    strikeout:'K', flyout:'FO', groundout:'GO', fielders_choice:'FC',
-    sacfly:'SF', doubleplay:'DP', out:'OUT', error:'ROE'
-  };
-
-  plays[idx] = { ...plays[idx], playType: newType, playLabel: playTypeLabelMap[newType] || newType };
+  plays[idx] = Object.assign({}, plays[idx], { playType: newType, playLabel: PLAY_TYPE_LABEL_MAP[newType] || newType });
   pendingPlayEdits = plays;
   renderPlayByPlayEditable();
   renderPitchingSection();
