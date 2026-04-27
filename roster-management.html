@@ -568,7 +568,50 @@ function RosterManagement({ currentUser }) {
       };
     }
   }, [games, selectedTeam, players]);
-  
+
+  useEffect(() => {
+    if (selectedGame && selectedTeam && players.length > 0 && isCaptain) {
+      loadLineupForGame(selectedGame);
+    }
+  }, [selectedGame]);
+
+  async function loadLineupForGame(gameId) {
+    try {
+      const [batting, fielding, bench] = await Promise.all([
+        window.FirebaseRoster.getBattingOrder(gameId, selectedTeam),
+        window.FirebaseRoster.getFieldingPositions(gameId, selectedTeam),
+        window.FirebaseRoster.getBenchPlayers(gameId, selectedTeam)
+      ]);
+
+      const battingWithPlayers = batting.map(playerId =>
+        players.find(p => p.id === playerId) || null
+      );
+
+      const hydratedBench = {};
+      Object.entries(bench).forEach(([inning, playerIds]) => {
+        hydratedBench[inning] = playerIds.map(id =>
+          players.find(p => p.id === id || p.authId === id) || null
+        ).filter(p => p !== null);
+      });
+
+      setBattingOrder(prev => ({ ...prev, [gameId]: battingWithPlayers }));
+      setFieldingPositions(prev => ({ ...prev, [gameId]: fielding }));
+      setBenchPlayers(prev => ({ ...prev, [gameId]: hydratedBench }));
+
+      try {
+        const battingDocRef = window.firebaseImports.doc(window.firebaseImports.db, 'lineups', gameId, 'batting', selectedTeam);
+        const battingDoc = await window.firebaseImports.getDoc(battingDocRef);
+        if (battingDoc.exists() && battingDoc.data().finalized) {
+          setBattingFinalized(prev => ({ ...prev, [gameId]: true }));
+        }
+      } catch (error) {
+        console.log('Error loading batting finalization status:', error);
+      }
+    } catch (error) {
+      console.error('Error loading lineup for game:', gameId, error);
+    }
+  }
+
   async function loadInitialData() {
     try {
       if (!currentUser || !currentUser.uid) {
