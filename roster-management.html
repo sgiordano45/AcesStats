@@ -568,50 +568,7 @@ function RosterManagement({ currentUser }) {
       };
     }
   }, [games, selectedTeam, players]);
-
-  useEffect(() => {
-    if (selectedGame && selectedTeam && players.length > 0 && isCaptain) {
-      loadLineupForGame(selectedGame);
-    }
-  }, [selectedGame]);
-
-  async function loadLineupForGame(gameId) {
-    try {
-      const [batting, fielding, bench] = await Promise.all([
-        window.FirebaseRoster.getBattingOrder(gameId, selectedTeam),
-        window.FirebaseRoster.getFieldingPositions(gameId, selectedTeam),
-        window.FirebaseRoster.getBenchPlayers(gameId, selectedTeam)
-      ]);
-
-      const battingWithPlayers = batting.map(playerId =>
-        players.find(p => p.id === playerId) || null
-      );
-
-      const hydratedBench = {};
-      Object.entries(bench).forEach(([inning, playerIds]) => {
-        hydratedBench[inning] = playerIds.map(id =>
-          players.find(p => p.id === id || p.authId === id) || null
-        ).filter(p => p !== null);
-      });
-
-      setBattingOrder(prev => ({ ...prev, [gameId]: battingWithPlayers }));
-      setFieldingPositions(prev => ({ ...prev, [gameId]: fielding }));
-      setBenchPlayers(prev => ({ ...prev, [gameId]: hydratedBench }));
-
-      try {
-        const battingDocRef = window.firebaseImports.doc(window.firebaseImports.db, 'lineups', gameId, 'batting', selectedTeam);
-        const battingDoc = await window.firebaseImports.getDoc(battingDocRef);
-        if (battingDoc.exists() && battingDoc.data().finalized) {
-          setBattingFinalized(prev => ({ ...prev, [gameId]: true }));
-        }
-      } catch (error) {
-        console.log('Error loading batting finalization status:', error);
-      }
-    } catch (error) {
-      console.error('Error loading lineup for game:', gameId, error);
-    }
-  }
-
+  
   async function loadInitialData() {
     try {
       if (!currentUser || !currentUser.uid) {
@@ -1401,9 +1358,9 @@ const saveLineupData = async (type, data, inning = null) => {
               const player = players.find(p => p.id === playerId);
               if (!player) return null;
               
-              // Check if player RSVP'd yes for current game
+              // Only exclude players who explicitly RSVP'd No
               const key = `${player.id}-${selectedGame}`;
-              return rsvps[key] === 'yes' ? player : null;
+              return rsvps[key] === 'no' ? null : player;
             });
             
             const totalInPrevious = prevBattingOrder.filter(id => id).length;
@@ -1415,8 +1372,7 @@ const saveLineupData = async (type, data, inning = null) => {
             }
             
             // Update state and save
-            const newBattingOrder = { ...battingOrder, [selectedGame]: copiedOrder };
-            setBattingOrder(newBattingOrder);
+            setBattingOrder(prev => ({ ...prev, [selectedGame]: copiedOrder }));
             await saveLineupData('batting', copiedOrder);
             
             // Get game info for message
@@ -1428,7 +1384,7 @@ const saveLineupData = async (type, data, inning = null) => {
             const skippedCount = totalInPrevious - copiedCount;
             let message = `✅ Copied ${copiedCount} players from ${gameDate}`;
             if (skippedCount > 0) {
-              message += `\n⚠️ ${skippedCount} player(s) skipped (not RSVP'd Yes or not on roster)`;
+              message += `\n⚠️ ${skippedCount} player(s) skipped (RSVP'd No or not on roster)`;
             }
             alert(message);
             return;
