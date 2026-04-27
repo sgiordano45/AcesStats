@@ -2013,32 +2013,15 @@ function renderPitchingSection() {
         <input type="hidden" id="oppPitcherCount" value="${opposingPitchers.length}">
       </div>
 
-      <!-- Your Pitcher -->
+      <!-- Your Pitcher(s) -->
       <div>
         <div style="font-weight:700; margin-bottom:0.75rem; color:var(--text-dark);">
-          ${selectedGame.teamId} Pitcher <span style="font-size:0.8rem; font-weight:400; color:var(--text-light);">manual entry</span>
+          ${selectedGame.teamId} Pitcher(s) <span style="font-size:0.8rem; font-weight:400; color:var(--text-light);">manual entry</span>
         </div>
-        <div style="display:flex; gap:1rem; flex-wrap:wrap; align-items:flex-end;">
-          <div>
-            <label style="display:block; font-size:0.85rem; font-weight:600; margin-bottom:0.25rem;">Pitcher</label>
-            <select id="yourPitcherSelect" style="padding:0.5rem; border:2px solid var(--border-color); border-radius:6px; font-size:0.95rem; min-width:200px;">
-              <option value="">Select pitcher...</option>
-              ${rosterPlayers.map(p => `<option value="${JSON.stringify({id: p.id || p.authId || '', name: p.name})}">${p.name}${p.number ? ' #'+p.number : ''}</option>`).join('')}
-            </select>
-          </div>
-          <div>
-            <label style="display:block; font-size:0.85rem; font-weight:600; margin-bottom:0.25rem;">IP</label>
-            <input type="number" id="yourPitcherIP" value="${gameInnings}" min="0" step="0.1" style="width:70px; padding:0.5rem; border:2px solid var(--border-color); border-radius:6px; font-size:0.95rem;">
-          </div>
-          <div>
-            <label style="display:block; font-size:0.85rem; font-weight:600; margin-bottom:0.25rem;">R (Allowed)</label>
-            <input type="number" id="yourPitcherRA" value="${opponentRuns}" min="0" style="width:70px; padding:0.5rem; border:2px solid var(--border-color); border-radius:6px; font-size:0.95rem;">
-          </div>
-          <div>
-            <label style="display:block; font-size:0.85rem; font-weight:600; margin-bottom:0.25rem;">K</label>
-            <input type="number" id="yourPitcherK" value="0" min="0" style="width:70px; padding:0.5rem; border:2px solid var(--border-color); border-radius:6px; font-size:0.95rem;">
-          </div>
+        <div id="yourPitcherRows">
+          ${buildYourPitcherRowHtml(0, gameInnings, opponentRuns)}
         </div>
+        <button class="btn btn-secondary" onclick="addYourPitcher()" style="margin-top:0.75rem; font-size:0.85rem; padding:0.5rem 1rem;">+ Add Another Pitcher</button>
       </div>
 
       <div>
@@ -2105,21 +2088,26 @@ window.savePitchingStats = async function() {
     }
   }
 
-  // Save your pitcher
-  const yourPitcherVal = document.getElementById('yourPitcherSelect').value;
-  const yourIP = parseFloat(document.getElementById('yourPitcherIP').value) || 0;
-  const yourRA = parseInt(document.getElementById('yourPitcherRA').value) || 0;
-  const yourK = parseInt(document.getElementById('yourPitcherK').value) || 0;
-
-  if (yourPitcherVal) {
+  // Save your pitcher(s) — loop through all rows by DOM (handles gaps from removes)
+  const yourPitcherRows = document.querySelectorAll('.your-pitcher-row');
+  for (let pi = 0; pi < yourPitcherRows.length; pi++) {
+    const row = yourPitcherRows[pi];
+    const selectEl = row.querySelector('select');
+    const ipEl = row.querySelectorAll('input[type="number"]')[0];
+    const raEl = row.querySelectorAll('input[type="number"]')[1];
+    const kEl = row.querySelectorAll('input[type="number"]')[2];
+    const yourPitcherVal = selectEl ? selectEl.value : '';
+    const yourIP = parseFloat(ipEl ? ipEl.value : 0) || 0;
+    const yourRA = parseInt(raEl ? raEl.value : 0) || 0;
+    const yourK = parseInt(kEl ? kEl.value : 0) || 0;
+    if (!yourPitcherVal) continue;
     let yourPitcher;
     try { yourPitcher = JSON.parse(yourPitcherVal); } catch(e) { yourPitcher = null; }
-
-    if (yourPitcher && yourPitcher.name) {
-      try {
-        const legacyId = await resolvePitcherLegacyId(yourPitcher.id, yourPitcher.name);
-        const pitchingRef = doc(db, 'pitchingStats', legacyId, 'games', gameDocId);
-        await setDoc(pitchingRef, {
+    if (!yourPitcher || !yourPitcher.name) continue;
+    try {
+      const legacyId = await resolvePitcherLegacyId(yourPitcher.id, yourPitcher.name);
+      const pitchingRef = doc(db, 'pitchingStats', legacyId, 'games', gameDocId);
+      await setDoc(pitchingRef, {
           gameId, gameDocId,
           playerId: legacyId,
           playerName: yourPitcher.name,
@@ -2148,8 +2136,7 @@ window.savePitchingStats = async function() {
         console.error('Error saving your pitcher:', e);
         errors.push(yourPitcher.name);
       }
-    }
-  }
+  } // end for loop
 
   if (errors.length === 0) {
     statusEl.textContent = `Saved ${savedCount} pitcher(s)`;
@@ -2160,6 +2147,56 @@ window.savePitchingStats = async function() {
     statusEl.style.color = 'var(--danger-color)';
     showToast('Some pitching saves failed', 'error');
   }
+};
+
+// ============================================
+// YOUR PITCHER MULTI-ROW HELPERS
+// ============================================
+
+function buildYourPitcherRowHtml(idx, defaultIP, defaultRA) {
+  const optionsHtml = '<option value="">Select pitcher...</option>' +
+    rosterPlayers.map(function(p) {
+      var val = JSON.stringify({ id: p.id || p.authId || '', name: p.name });
+      var label = p.name + (p.number ? ' #' + p.number : '');
+      return '<option value='' + val + ''>' + label + '</option>';
+    }).join('');
+
+  var removeBtn = idx > 0
+    ? '<button onclick="removeYourPitcher(' + idx + ')" style="font-size:0.75rem; padding:0.35rem 0.6rem; border:1px solid var(--danger-color); border-radius:4px; background:#fee2e2; color:#dc2626; cursor:pointer; align-self:flex-end; margin-bottom:2px;">Remove</button>'
+    : '';
+
+  return '<div class="your-pitcher-row" id="your-pitcher-row-' + idx + '" style="display:flex; gap:1rem; flex-wrap:wrap; align-items:flex-end; margin-bottom:0.75rem; padding-bottom:0.75rem; border-bottom:1px solid var(--border-color);">' +
+    '<div>' +
+      '<label style="display:block; font-size:0.85rem; font-weight:600; margin-bottom:0.25rem;">Pitcher</label>' +
+      '<select id="yourPitcherSelect-' + idx + '" style="padding:0.5rem; border:2px solid var(--border-color); border-radius:6px; font-size:0.95rem; min-width:200px;">' + optionsHtml + '</select>' +
+    '</div>' +
+    '<div>' +
+      '<label style="display:block; font-size:0.85rem; font-weight:600; margin-bottom:0.25rem;">IP</label>' +
+      '<input type="number" id="yourPitcherIP-' + idx + '" value="' + (idx === 0 ? defaultIP : 0) + '" min="0" step="0.1" style="width:70px; padding:0.5rem; border:2px solid var(--border-color); border-radius:6px; font-size:0.95rem;">' +
+    '</div>' +
+    '<div>' +
+      '<label style="display:block; font-size:0.85rem; font-weight:600; margin-bottom:0.25rem;">R (Allowed)</label>' +
+      '<input type="number" id="yourPitcherRA-' + idx + '" value="' + (idx === 0 ? defaultRA : 0) + '" min="0" style="width:70px; padding:0.5rem; border:2px solid var(--border-color); border-radius:6px; font-size:0.95rem;">' +
+    '</div>' +
+    '<div>' +
+      '<label style="display:block; font-size:0.85rem; font-weight:600; margin-bottom:0.25rem;">K</label>' +
+      '<input type="number" id="yourPitcherK-' + idx + '" value="0" min="0" style="width:70px; padding:0.5rem; border:2px solid var(--border-color); border-radius:6px; font-size:0.95rem;">' +
+    '</div>' +
+    removeBtn +
+  '</div>';
+}
+
+window.addYourPitcher = function() {
+  const container = document.getElementById('yourPitcherRows');
+  const currentRows = container.querySelectorAll('.your-pitcher-row').length;
+  const div = document.createElement('div');
+  div.innerHTML = buildYourPitcherRowHtml(currentRows, 0, 0);
+  container.appendChild(div.firstChild);
+};
+
+window.removeYourPitcher = function(idx) {
+  const row = document.getElementById('your-pitcher-row-' + idx);
+  if (row) row.remove();
 };
 
 // ============================================
