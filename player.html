@@ -3526,6 +3526,7 @@
     resolvePlayerName,
     getPlayerByIdentifier,
     getAllPlayerStatsOptimized,
+    getCurrentSeason,
     db
   } from './firebase-data.js';
   
@@ -4088,26 +4089,28 @@
   // Fetch player badges from Firestore
   async function fetchPlayerBadges(legacyId) {
     try {
-      // Try current season first (2025-fall)
-      const currentSeasonId = '2025-fall';
+      const activeSeason = await getCurrentSeason();
+      const currentSeasonId = activeSeason?.id || '2026-summer';
+      const [year, season] = currentSeasonId.split('-');
+      const seasonDisplay = `${year} ${season.charAt(0).toUpperCase() + season.slice(1)}`;
       const badgeDocId = `${currentSeasonId}_${legacyId}`;
-      
-      console.log(`🎖️ Fetching badges for: ${badgeDocId}`);
-      
+
+      console.log(`Fetching badges for: ${badgeDocId}`);
+
       const badgeDocRef = doc(db, 'playerBadges', badgeDocId);
       const badgeDocSnap = await getDoc(badgeDocRef);
-      
+
       if (badgeDocSnap.exists()) {
         const data = badgeDocSnap.data();
-        console.log(`✅ Found ${Object.keys(data.earned || {}).length} badges`);
+        console.log(`Found ${Object.keys(data.earned || {}).length} badges`);
         return {
           seasonId: currentSeasonId,
-          seasonDisplay: '2025 Fall',
+          seasonDisplay,
           ...data
         };
       }
-      
-      console.log('ℹ️ No badges found for this player/season');
+
+      console.log('No badges found for this player/season');
       return {};
     } catch (error) {
       console.error('Error fetching badges:', error);
