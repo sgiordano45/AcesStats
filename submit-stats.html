@@ -1159,16 +1159,27 @@ function hasStatsSubmissionAccess(profile) {
     return { hasAccess: true, role: 'captain', teamId: profile.linkedTeam };
   }
 
-  if (profile.role === 'admin') {
+  if (profile.isAdmin || profile.role === 'admin' || profile.userRole === 'admin') {
     return { hasAccess: true, role: 'admin', teamId: null };
   }
 
-  if (profile.role === 'league-staff' || profile.role === 'staff') {
+  if (profile.role === 'league-staff' || profile.role === 'staff' ||
+      profile.userRole === 'league-staff' || profile.userRole === 'staff') {
     return { hasAccess: true, role: 'league-staff', teamId: null };
   }
 
+  // Check top-level role field for team-staff
   if (profile.role === 'team-staff' && profile.linkedTeam) {
     return { hasAccess: true, role: 'team-staff', teamId: profile.linkedTeam };
+  }
+
+  // Check teamRoles map for active team-staff entries (e.g. users designated via admin panel)
+  if (profile.teamRoles) {
+    for (const [teamId, teamRole] of Object.entries(profile.teamRoles)) {
+      if (teamRole.role === 'team-staff' && teamRole.status === 'active') {
+        return { hasAccess: true, role: 'team-staff', teamId: teamId };
+      }
+    }
   }
 
   return { hasAccess: false };

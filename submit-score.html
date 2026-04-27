@@ -920,12 +920,31 @@
         // Use helper functions from firebase-auth.js
         hasFullAccess = hasLeagueRole(userProfile);
         
-        // Check if user is captain or team-staff
+        // Check if user is captain or team-staff (all legacy and new field patterns)
         const isCaptain = userProfile.isCaptain === true || userProfile.userRole === 'captain';
-        const isTeamStaff = userProfile.userType === 'team-staff' || userProfile.userRole === 'team-staff';
+        const isTeamStaff = userProfile.isTeamStaff === true ||
+                            userProfile.userType === 'team-staff' ||
+                            userProfile.userRole === 'team-staff' ||
+                            userProfile.role === 'team-staff' ||
+                            !!(userProfile.teamRoles && Object.values(userProfile.teamRoles).some(
+                              r => r.role === 'team-staff' && r.status === 'active'
+                            ));
         
         // Get user's team IDs using helper function (returns lowercase)
         userTeamIds = getUserTeamIds(userProfile);
+        
+        // Supplement userTeamIds from teamRoles map for users set up via admin panel
+        if (userProfile.teamRoles) {
+          for (const [teamId, teamRole] of Object.entries(userProfile.teamRoles)) {
+            if ((teamRole.role === 'team-staff' || teamRole.role === 'captain') &&
+                teamRole.status === 'active') {
+              const normalizedId = teamId.toLowerCase();
+              if (!userTeamIds.includes(normalizedId)) {
+                userTeamIds.push(normalizedId);
+              }
+            }
+          }
+        }
         
         // Check authorization
         const isAuthorized = hasFullAccess || ((isCaptain || isTeamStaff) && userTeamIds.length > 0);
