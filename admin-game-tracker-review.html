@@ -1671,17 +1671,22 @@ function buildPlayRowHtml(play, idx) {
   const runs = play.runsScored || 0;
   const runText = runs > 0 ? ' <span style="color:#dc2626;">(' + runs + ' run' + (runs > 1 ? 's' : '') + ')</span>' : '';
   const pitcherText = pitcherName ? '<span style="color:var(--text-light); font-size:0.8rem;"> vs ' + pitcherName + '</span>' : '';
-  const optionsHtml = PLAY_TYPE_OPTIONS.map(function(pair) {
+  const typeOptionsHtml = PLAY_TYPE_OPTIONS.map(function(pair) {
     return '<option value="' + pair[0] + '"' + (play.playType === pair[0] ? ' selected' : '') + '>' + pair[1] + '</option>';
   }).join('');
+  const currentBatter = play.batter || '';
+  const batterOptionsHtml = '<option value="">-- batter --</option>' + rosterPlayers.map(function(p) {
+    return '<option value="' + p.name + '"' + (p.name === currentBatter ? ' selected' : '') + '>' + p.name + (p.number ? ' #' + p.number : '') + '</option>';
+  }).join('');
 
-  return '<div class="play-item" id="play-row-' + idx + '" style="display:flex; align-items:center; gap:0.5rem;">' +
+  return '<div class="play-item" id="play-row-' + idx + '" style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">' +
     '<span style="color:var(--text-light); font-size:0.8rem; min-width:22px;">#' + (idx + 1) + '</span>' +
     '<span class="play-result" style="flex:1;">' +
-      '<strong>' + (play.batter || 'Unknown') + '</strong>: ' +
+      '<strong id="play-batter-label-' + idx + '">' + (currentBatter || 'Unknown') + '</strong>: ' +
       '<span id="play-label-' + idx + '">' + formatPlayResult(play.playType) + '</span>' + runText + pitcherText +
     '</span>' +
-    '<select id="play-type-select-' + idx + '" style="display:none; padding:0.25rem; border:1px solid var(--border-color); border-radius:4px; font-size:0.85rem;">' + optionsHtml + '</select>' +
+    '<select id="play-batter-select-' + idx + '" style="display:none; padding:0.25rem; border:1px solid var(--border-color); border-radius:4px; font-size:0.85rem; max-width:160px;">' + batterOptionsHtml + '</select>' +
+    '<select id="play-type-select-' + idx + '" style="display:none; padding:0.25rem; border:1px solid var(--border-color); border-radius:4px; font-size:0.85rem;">' + typeOptionsHtml + '</select>' +
     '<button onclick="togglePlayEdit(' + idx + ')" style="font-size:0.75rem; padding:0.2rem 0.5rem; border:1px solid var(--border-color); border-radius:4px; background:#f1f5f9; cursor:pointer;" id="play-edit-btn-' + idx + '">Edit</button>' +
     '<button onclick="confirmPlayEdit(' + idx + ')" style="display:none; font-size:0.75rem; padding:0.2rem 0.5rem; border:1px solid var(--success-color); border-radius:4px; background:#dcfce7; cursor:pointer; color:#166534;" id="play-confirm-btn-' + idx + '">Save</button>' +
   '</div>';
@@ -1721,22 +1726,30 @@ function renderPlayByPlayEditable() {
 }
 
 window.togglePlayEdit = function(idx) {
+  const batterSelect = document.getElementById(`play-batter-select-${idx}`);
   const select = document.getElementById(`play-type-select-${idx}`);
+  const batterLabel = document.getElementById(`play-batter-label-${idx}`);
   const label = document.getElementById(`play-label-${idx}`);
   const editBtn = document.getElementById(`play-edit-btn-${idx}`);
   const confirmBtn = document.getElementById(`play-confirm-btn-${idx}`);
   const isEditing = select.style.display !== 'none';
+  batterSelect.style.display = isEditing ? 'none' : 'inline-block';
   select.style.display = isEditing ? 'none' : 'inline-block';
+  batterLabel.style.display = isEditing ? 'inline' : 'none';
   label.style.display = isEditing ? 'inline' : 'none';
   editBtn.textContent = isEditing ? 'Edit' : 'Cancel';
   confirmBtn.style.display = isEditing ? 'none' : 'inline-block';
 };
 
 window.confirmPlayEdit = function(idx) {
-  const select = document.getElementById('play-type-select-' + idx);
-  const newType = select.value;
+  const typeSelect = document.getElementById('play-type-select-' + idx);
+  const batterSelect = document.getElementById('play-batter-select-' + idx);
+  const newType = typeSelect.value;
+  const newBatter = batterSelect.value;
   const plays = pendingPlayEdits ? [...pendingPlayEdits] : [...(selectedGame.playByPlay || [])];
-  plays[idx] = Object.assign({}, plays[idx], { playType: newType, playLabel: PLAY_TYPE_LABEL_MAP[newType] || newType });
+  const updates = { playType: newType, playLabel: PLAY_TYPE_LABEL_MAP[newType] || newType };
+  if (newBatter) updates.batter = newBatter;
+  plays[idx] = Object.assign({}, plays[idx], updates);
   pendingPlayEdits = plays;
   renderPlayByPlayEditable();
   renderPitchingSection();
