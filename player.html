@@ -3543,6 +3543,7 @@
   // Splits state
   let currentPlayerData = null;
   let splits2025Data = null;
+  let splitsMainData = null; // aggregatedPlayerStats seasons for 2026+
   let splitsGameStats = [];
   let currentSplitsFilter = 'career';
   
@@ -4074,7 +4075,7 @@
     populateBadgesTab(playerBadges, legacyId);
     
     // Initialize splits tab (load data in background)
-    initializeSplitsTab(playerId, playerName);
+    initializeSplitsTab(playerId, playerName, resolvedPlayer);
     
     // Show tabs by removing hidden class - CSS media queries handle responsive display
     document.getElementById('playerTabs').classList.remove('hidden');
@@ -4999,7 +5000,7 @@
   }
   
   // Initialize splits tab
-  async function initializeSplitsTab(playerId, playerName) {
+  async function initializeSplitsTab(playerId, playerName, resolvedPlayer) {
     console.log('📊 Initializing splits tab...');
     
     try {
@@ -5018,6 +5019,18 @@
       } else {
         console.log('ℹ️ No 2025 splits data found');
       }
+
+      // Load 2026+ splits from aggregatedPlayerStats (already fetched, passed in)
+      if (resolvedPlayer?.seasons) {
+        const mainSeasons = {};
+        Object.entries(resolvedPlayer.seasons).forEach(([seasonId, seasonData]) => {
+          if (!SPLITS_2025_SEASONS.includes(seasonId) && seasonData.splits) {
+            mainSeasons[seasonId] = seasonData;
+          }
+        });
+        splitsMainData = Object.keys(mainSeasons).length > 0 ? { seasons: mainSeasons } : null;
+        if (splitsMainData) console.log('✅ Loaded main splits data for:', Object.keys(mainSeasons).join(', '));
+      }
       
       // Load game log data
       const gamesRef = collection(db, 'playerStats', legacyId, 'games');
@@ -5033,8 +5046,8 @@
       
       // Sort by date descending
       splitsGameStats.sort((a, b) => {
-        const dateA = a.gameDate?.seconds || 0;
-        const dateB = b.gameDate?.seconds || 0;
+        const dateA = a.gameDate?.seconds || (a.gameDateFormatted ? new Date(a.gameDateFormatted).getTime() / 1000 : 0);
+        const dateB = b.gameDate?.seconds || (b.gameDateFormatted ? new Date(b.gameDateFormatted).getTime() / 1000 : 0);
         return dateB - dateA;
       });
       
@@ -5075,6 +5088,15 @@
                              splits2025Data.careerSplits.splits.away?.games > 0;
       if (hasCareerSplits) return true;
     }
+
+    // Check 2026+ splits from main collection
+    if (splitsMainData?.seasons) {
+      const hasMainSplits = Object.keys(splitsMainData.seasons).some(seasonId => {
+        const season = splitsMainData.seasons[seasonId];
+        return season.splits && (season.splits.home?.games > 0 || season.splits.away?.games > 0);
+      });
+      if (hasMainSplits) return true;
+    }
     
     return false;
   }
@@ -5095,6 +5117,13 @@
     if (splits2025Data?.seasons) {
       Object.keys(splits2025Data.seasons)
         .filter(s => splits2025Data.seasons[s].splits)
+        .forEach(s => eligibleSeasons.add(s));
+    }
+
+    // Add 2026+ seasons from main collection
+    if (splitsMainData?.seasons) {
+      Object.keys(splitsMainData.seasons)
+        .filter(s => splitsMainData.seasons[s].splits)
         .forEach(s => eligibleSeasons.add(s));
     }
     
@@ -5131,6 +5160,7 @@
   
   function updateSplitsFilterInfo() {
     const filterInfo = document.getElementById('splitsFilterInfo');
+    const isPartial = is2025Season(currentSplitsFilter);
     
     if (currentSplitsFilter === 'career') {
       filterInfo.textContent = splits2025Data ? 'Career splits (2025 data is partial)' : 'Showing career splits';
@@ -5138,8 +5168,8 @@
     } else {
       const [year, season] = currentSplitsFilter.split('-');
       const seasonName = `${year} ${season.charAt(0).toUpperCase() + season.slice(1)}`;
-      filterInfo.textContent = is2025Season(currentSplitsFilter) ? `${seasonName} splits (partial data)` : `Showing ${seasonName} splits`;
-      filterInfo.classList.toggle('partial-data', is2025Season(currentSplitsFilter));
+      filterInfo.textContent = isPartial ? `${seasonName} splits (partial data)` : `Showing ${seasonName} splits`;
+      filterInfo.classList.toggle('partial-data', isPartial);
     }
   }
   
@@ -5151,16 +5181,120 @@
   
   function getSplitsData() {
     if (currentSplitsFilter === 'career') {
-      return splits2025Data?.careerSplits?.splits || null;
+      return mergeSplits(
+        splits2025Data?.careerSplits?.splits || null,
+        buildCareerSplitsFromMain()
+      );
     }
-    return splits2025Data?.seasons?.[currentSplitsFilter]?.splits || null;
+    // Per-season: 2025 seasons from splits collection, others from main
+    if (SPLITS_2025_SEASONS.includes(currentSplitsFilter)) {
+      return splits2025Data?.seasons?.[currentSplitsFilter]?.splits || null;
+    }
+    return splitsMainData?.seasons?.[currentSplitsFilter]?.splits || null;
   }
-  
+
   function getVsOpponentData() {
     if (currentSplitsFilter === 'career') {
-      return splits2025Data?.careerSplits?.vsOpponent || {};
+      return mergeVsOpponent(
+        splits2025Data?.careerSplits?.vsOpponent || {},
+        buildCareerVsOpponentFromMain()
+      );
     }
-    return splits2025Data?.seasons?.[currentSplitsFilter]?.vsOpponent || {};
+    if (SPLITS_2025_SEASONS.includes(currentSplitsFilter)) {
+      return splits2025Data?.seasons?.[currentSplitsFilter]?.vsOpponent || {};
+    }
+    return splitsMainData?.seasons?.[currentSplitsFilter]?.vsOpponent || {};
+  }
+
+  // Build combined career splits from all main collection seasons
+  function buildCareerSplitsFromMain() {
+    if (!splitsMainData?.seasons) return null;
+    const career = {
+      home: { games: 0, atBats: 0, hits: 0, runs: 0, walks: 0 },
+      away: { games: 0, atBats: 0, hits: 0, runs: 0, walks: 0 },
+      regular: { games: 0, atBats: 0, hits: 0, runs: 0, walks: 0 },
+      playoff: { games: 0, atBats: 0, hits: 0, runs: 0, walks: 0 }
+    };
+    Object.values(splitsMainData.seasons).forEach(season => {
+      if (!season.splits) return;
+      ['home', 'away', 'regular', 'playoff'].forEach(key => {
+        if (!season.splits[key]) return;
+        career[key].games += season.splits[key].games || 0;
+        career[key].atBats += season.splits[key].atBats || 0;
+        career[key].hits += season.splits[key].hits || 0;
+        career[key].runs += season.splits[key].runs || 0;
+        career[key].walks += season.splits[key].walks || 0;
+      });
+    });
+    // Recalculate averages
+    ['home', 'away', 'regular', 'playoff'].forEach(key => {
+      const s = career[key];
+      s.battingAverage = s.atBats > 0 ? s.hits / s.atBats : 0;
+      s.onBasePercentage = (s.atBats + s.walks) > 0 ? (s.hits + s.walks) / (s.atBats + s.walks) : 0;
+    });
+    return career;
+  }
+
+  // Build combined career vsOpponent from all main collection seasons
+  function buildCareerVsOpponentFromMain() {
+    if (!splitsMainData?.seasons) return {};
+    const career = {};
+    Object.values(splitsMainData.seasons).forEach(season => {
+      if (!season.vsOpponent) return;
+      Object.entries(season.vsOpponent).forEach(([opp, stats]) => {
+        if (!career[opp]) career[opp] = { games: 0, atBats: 0, hits: 0, runs: 0, walks: 0 };
+        career[opp].games += stats.games || 0;
+        career[opp].atBats += stats.atBats || 0;
+        career[opp].hits += stats.hits || 0;
+        career[opp].runs += stats.runs || 0;
+        career[opp].walks += stats.walks || 0;
+      });
+    });
+    // Recalculate averages
+    Object.values(career).forEach(opp => {
+      opp.battingAverage = opp.atBats > 0 ? opp.hits / opp.atBats : 0;
+      opp.onBasePercentage = (opp.atBats + opp.walks) > 0 ? (opp.hits + opp.walks) / (opp.atBats + opp.walks) : 0;
+    });
+    return career;
+  }
+
+  // Merge two splits objects (home/away/regular/playoff), recalculating averages
+  function mergeSplits(a, b) {
+    if (!a && !b) return null;
+    if (!a) return b;
+    if (!b) return a;
+    const merged = {};
+    ['home', 'away', 'regular', 'playoff'].forEach(key => {
+      const sa = a[key] || { games: 0, atBats: 0, hits: 0, runs: 0, walks: 0 };
+      const sb = b[key] || { games: 0, atBats: 0, hits: 0, runs: 0, walks: 0 };
+      const g = { games: sa.games + sb.games, atBats: sa.atBats + sb.atBats, hits: sa.hits + sb.hits, runs: sa.runs + sb.runs, walks: sa.walks + sb.walks };
+      g.battingAverage = g.atBats > 0 ? g.hits / g.atBats : 0;
+      g.onBasePercentage = (g.atBats + g.walks) > 0 ? (g.hits + g.walks) / (g.atBats + g.walks) : 0;
+      merged[key] = g;
+    });
+    return merged;
+  }
+
+  // Merge two vsOpponent objects, recalculating averages
+  function mergeVsOpponent(a, b) {
+    const merged = { ...a };
+    Object.entries(b).forEach(([opp, stats]) => {
+      if (!merged[opp]) {
+        merged[opp] = { ...stats };
+      } else {
+        merged[opp] = {
+          games: (merged[opp].games || 0) + (stats.games || 0),
+          atBats: (merged[opp].atBats || 0) + (stats.atBats || 0),
+          hits: (merged[opp].hits || 0) + (stats.hits || 0),
+          runs: (merged[opp].runs || 0) + (stats.runs || 0),
+          walks: (merged[opp].walks || 0) + (stats.walks || 0)
+        };
+        const m = merged[opp];
+        m.battingAverage = m.atBats > 0 ? m.hits / m.atBats : 0;
+        m.onBasePercentage = (m.atBats + m.walks) > 0 ? (m.hits + m.walks) / (m.atBats + m.walks) : 0;
+      }
+    });
+    return merged;
   }
   
   function getFilteredGames() {
