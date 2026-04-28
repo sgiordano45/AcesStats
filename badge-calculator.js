@@ -423,16 +423,21 @@ export class BadgeCalculator {
     console.log(`👥 Processing ${allPlayerIds.size} unique players`);
     
     // Find the actual Opening Day (earliest game date in the season)
-    let openingDay = null;
+    // Use gameDateFormatted (YYYY-MM-DD string) to avoid UTC timestamp issues
+    // with bulk-imported games whose Firestore timestamps may reflect wrong dates
+    let openingDay = null; // stored as 'YYYY-MM-DD' string
     Object.values(battingData).forEach(player => {
       player.games.forEach(game => {
-        const gameDate = game.gameDate instanceof Date ? game.gameDate : new Date(game.gameDate);
-        if (!openingDay || gameDate < openingDay) {
-          openingDay = gameDate;
+        const dateStr = game.gameDateFormatted || (() => {
+          const d = game.gameDate instanceof Date ? game.gameDate : new Date(game.gameDate);
+          return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+        })();
+        if (!openingDay || dateStr < openingDay) {
+          openingDay = dateStr;
         }
       });
     });
-    console.log(`📅 Opening Day detected: ${openingDay ? openingDay.toDateString() : 'N/A'}`);
+    console.log(`Opening Day detected: ${openingDay || 'N/A'}`);
     
     const results = {
       seasonId,
@@ -550,6 +555,7 @@ export class BadgeCalculator {
               games.push({
                 id: gameDoc.id,
                 ...data,
+                gameDateFormatted: data.gameDateFormatted || null,
                 gameDate: data.gameDate?.seconds 
                   ? new Date(data.gameDate.seconds * 1000) 
                   : (data.gameDate?.toDate ? data.gameDate.toDate() : new Date(data.gameDateFormatted || data.gameDate))
@@ -642,6 +648,7 @@ export class BadgeCalculator {
               games.push({
                 id: gameDoc.id,
                 ...data,
+                gameDateFormatted: data.gameDateFormatted || null,
                 gameDate: data.gameDate?.seconds 
                   ? new Date(data.gameDate.seconds * 1000) 
                   : (data.gameDate?.toDate ? data.gameDate.toDate() : new Date(data.gameDateFormatted || data.gameDate))
@@ -755,11 +762,14 @@ export class BadgeCalculator {
       }
       
       // Opening Day Hero - must get a hit in a game on the actual opening day
+      // openingDay is a 'YYYY-MM-DD' string to avoid UTC timestamp issues
       if (openingDay) {
         const openingDayGame = battingData.games.find(g => {
-          const gameDate = g.gameDate instanceof Date ? g.gameDate : new Date(g.gameDate);
-          // Compare dates (ignoring time)
-          return gameDate.toDateString() === openingDay.toDateString();
+          const dateStr = g.gameDateFormatted || (() => {
+            const d = g.gameDate instanceof Date ? g.gameDate : new Date(g.gameDate);
+            return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+          })();
+          return dateStr === openingDay;
         });
         
         if (openingDayGame && (openingDayGame.hits || 0) >= 1) {
