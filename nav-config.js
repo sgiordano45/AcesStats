@@ -69,6 +69,7 @@ export const NAV_STRUCTURE = {
   primary: [
     { id: 'home', href: 'index.html', label: 'Home', icon: '🏠', priority: 1 },
     { id: 'current-season', href: 'current-season.html', label: 'Current Season', icon: '☀️', priority: 1 },
+    { id: 'schedule', href: 'schedule.html', label: 'League Schedule', icon: '📅', priority: 1 },
     { id: 'activity', href: 'activity.html', label: 'Activity Feed', icon: '📣', priority: 1 },
     { id: 'league-rules', href: 'league-rules.html', label: 'League Rules', icon: '⚖️', priority: 1 },
     { id: 'batting', href: 'batting.html', label: 'Batting Stats', icon: '⚾', priority: 1, class: 'batting' },
@@ -156,7 +157,7 @@ export const PAGE_CONFIGS = {
   },
   
   'current-season.html': {
-    desktop: ['home', 'current-season', 'league-rules', 'weekend-preview', 'playoffs','clinching','projections', 'batting', 'pitching']
+    desktop: ['home', 'current-season', 'schedule', 'league-rules', 'weekend-preview', 'playoffs','clinching','projections', 'batting', 'pitching']
   },
   
   'league-rules.html': {
@@ -164,7 +165,7 @@ export const PAGE_CONFIGS = {
   },
   
   'weekend-preview.html': {
-    desktop: ['home', 'current-season', 'league-rules', 'playoffs', 'clinching','projections', 'batting', 'pitching']
+    desktop: ['home', 'current-season', 'schedule', 'league-rules', 'playoffs', 'clinching','projections', 'batting', 'pitching']
   },
   
   'projections.html': {
@@ -270,6 +271,14 @@ export const PAGE_CONFIGS = {
   // Game preview page - no nav needed (accessed via weekend-preview game cards)
   'game-preview.html': {
     desktop: ['home', 'current-season', 'weekend-preview']
+  },
+
+  'schedule.html': {
+    desktop: ['home', 'current-season', 'schedule', 'weekend-preview', 'batting', 'pitching', 'teams']
+  },
+
+  'current-season-team.html': {
+    desktop: ['home', 'current-season', 'schedule', 'batting', 'pitching', 'teams', 'players']
   },
 
   'championship-preview.html': {
