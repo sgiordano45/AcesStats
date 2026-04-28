@@ -1670,17 +1670,23 @@ function buildPlayRowHtml(play, idx) {
   const runs = play.runsScored || 0;
   const runText = runs > 0 ? ' <span style="color:#dc2626;">(' + runs + ' run' + (runs > 1 ? 's' : '') + ')</span>' : '';
   const pitcherText = pitcherName ? '<span style="color:var(--text-light); font-size:0.8rem;"> vs ' + pitcherName + '</span>' : '';
-  const optionsHtml = PLAY_TYPE_OPTIONS.map(function(pair) {
+  const playTypeOptionsHtml = PLAY_TYPE_OPTIONS.map(function(pair) {
     return '<option value="' + pair[0] + '"' + (play.playType === pair[0] ? ' selected' : '') + '>' + pair[1] + '</option>';
   }).join('');
+  const batterOptionsHtml = rosterPlayers.map(function(p) {
+    return '<option value="' + p.name + '"' + (play.batter === p.name ? ' selected' : '') + '>' + p.name + '</option>';
+  }).join('');
 
-  return '<div class="play-item" id="play-row-' + idx + '" style="display:flex; align-items:center; gap:0.5rem;">' +
+  return '<div class="play-item" id="play-row-' + idx + '" style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">' +
     '<span style="color:var(--text-light); font-size:0.8rem; min-width:22px;">#' + (idx + 1) + '</span>' +
-    '<span class="play-result" style="flex:1;">' +
-      '<strong>' + (play.batter || 'Unknown') + '</strong>: ' +
+    '<span class="play-result" id="play-display-' + idx + '" style="flex:1;">' +
+      '<strong id="play-batter-label-' + idx + '">' + (play.batter || 'Unknown') + '</strong>: ' +
       '<span id="play-label-' + idx + '">' + formatPlayResult(play.playType) + '</span>' + runText + pitcherText +
     '</span>' +
-    '<select id="play-type-select-' + idx + '" style="display:none; padding:0.25rem; border:1px solid var(--border-color); border-radius:4px; font-size:0.85rem;">' + optionsHtml + '</select>' +
+    '<span id="play-edit-controls-' + idx + '" style="display:none; flex:1; display:none; gap:0.4rem; align-items:center; flex-wrap:wrap;">' +
+      '<select id="play-batter-select-' + idx + '" style="padding:0.25rem; border:1px solid var(--border-color); border-radius:4px; font-size:0.85rem;"><option value="">-- Batter --</option>' + batterOptionsHtml + '</select>' +
+      '<select id="play-type-select-' + idx + '" style="padding:0.25rem; border:1px solid var(--border-color); border-radius:4px; font-size:0.85rem;">' + playTypeOptionsHtml + '</select>' +
+    '</span>' +
     '<button onclick="togglePlayEdit(' + idx + ')" style="font-size:0.75rem; padding:0.2rem 0.5rem; border:1px solid var(--border-color); border-radius:4px; background:#f1f5f9; cursor:pointer;" id="play-edit-btn-' + idx + '">Edit</button>' +
     '<button onclick="confirmPlayEdit(' + idx + ')" style="display:none; font-size:0.75rem; padding:0.2rem 0.5rem; border:1px solid var(--success-color); border-radius:4px; background:#dcfce7; cursor:pointer; color:#166534;" id="play-confirm-btn-' + idx + '">Save</button>' +
     '<button onclick="deletePlay(' + idx + ')" style="font-size:0.75rem; padding:0.2rem 0.5rem; border:1px solid var(--danger-color); border-radius:4px; background:#fee2e2; cursor:pointer; color:#dc2626;" title="Delete this play">&#x1F5D1;</button>' +
@@ -1721,22 +1727,26 @@ function renderPlayByPlayEditable() {
 }
 
 window.togglePlayEdit = function(idx) {
-  const select = document.getElementById(`play-type-select-${idx}`);
-  const label = document.getElementById(`play-label-${idx}`);
-  const editBtn = document.getElementById(`play-edit-btn-${idx}`);
-  const confirmBtn = document.getElementById(`play-confirm-btn-${idx}`);
-  const isEditing = select.style.display !== 'none';
-  select.style.display = isEditing ? 'none' : 'inline-block';
-  label.style.display = isEditing ? 'inline' : 'none';
+  const displaySpan = document.getElementById('play-display-' + idx);
+  const controlsSpan = document.getElementById('play-edit-controls-' + idx);
+  const editBtn = document.getElementById('play-edit-btn-' + idx);
+  const confirmBtn = document.getElementById('play-confirm-btn-' + idx);
+  const isEditing = controlsSpan.style.display === 'flex';
+  displaySpan.style.display = isEditing ? '' : 'none';
+  controlsSpan.style.display = isEditing ? 'none' : 'flex';
   editBtn.textContent = isEditing ? 'Edit' : 'Cancel';
   confirmBtn.style.display = isEditing ? 'none' : 'inline-block';
 };
 
 window.confirmPlayEdit = function(idx) {
-  const select = document.getElementById('play-type-select-' + idx);
-  const newType = select.value;
+  const typeSelect = document.getElementById('play-type-select-' + idx);
+  const batterSelect = document.getElementById('play-batter-select-' + idx);
+  const newType = typeSelect.value;
+  const newBatter = batterSelect.value;
   const plays = pendingPlayEdits ? [...pendingPlayEdits] : [...(selectedGame.playByPlay || [])];
-  plays[idx] = Object.assign({}, plays[idx], { playType: newType, playLabel: PLAY_TYPE_LABEL_MAP[newType] || newType });
+  const updates = { playType: newType, playLabel: PLAY_TYPE_LABEL_MAP[newType] || newType };
+  if (newBatter) updates.batter = newBatter;
+  plays[idx] = Object.assign({}, plays[idx], updates);
   pendingPlayEdits = plays;
   renderPlayByPlayEditable();
   renderPitchingSection();
