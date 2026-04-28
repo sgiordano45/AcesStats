@@ -2,7 +2,7 @@
 // Handles both offline functionality AND Firebase Cloud Messaging
 // Version 2.1.0 - Force cache refresh to fix PWA stale load
 
-const CACHE_VERSION = 'aces-v2.1.0';
+const CACHE_VERSION = 'aces-v2.1.01';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const DYNAMIC_CACHE = `${CACHE_VERSION}-dynamic`;
 const IMAGE_CACHE = `${CACHE_VERSION}-images`;
