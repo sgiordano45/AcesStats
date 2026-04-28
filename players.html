@@ -569,7 +569,7 @@ body {
 
   <div id="summary" class="summary">
     <p id="totalPlayersText"></p>
-    <p>Players are grouped by their most recent team assignment and split into current active roster (2025 Fall/Summer) and inactive players. Click on any player to view their detailed statistics.</p>
+    <p id="summaryDescText">Players are grouped by their most recent team assignment and split into current active roster and inactive players. Click on any player to view their detailed statistics.</p>
   </div>
 
   <div id="players-container" class="players-container">
@@ -581,10 +581,12 @@ body {
   // UPDATED: Import Firebase data functions with season helper
   import { 
     getAllPlayerStatsOptimized,
-    seasonsObjectToArray
+    seasonsObjectToArray,
+    getCurrentSeason
   } from './firebase-data.js';
 
   let allData = [];
+  let currentSeasonMeta = null; // { year, season } populated from getCurrentSeason()
 
   // Mobile menu toggle
   function toggleMobileMenu() {
@@ -676,6 +678,17 @@ function formatPlayerName(name) {
     console.log('⚡ Loading players data from aggregated collection (OPTIMIZED)...');
 
     try {
+      const seasonData = await getCurrentSeason();
+      if (seasonData) {
+        currentSeasonMeta = {
+          year: seasonData.year.toString(),
+          season: capitalize(seasonData.season)
+        };
+        console.log(`✅ Current season: ${currentSeasonMeta.year} ${currentSeasonMeta.season}`);
+      } else {
+        console.warn('⚠️ No current season found, active player detection may be inaccurate');
+      }
+
       const players = await getAllPlayerStatsOptimized();
       console.log(`✅ Loaded ${players?.length || 0} players from aggregated collection`);
 
@@ -757,8 +770,8 @@ function formatPlayerName(name) {
   }
 
   function isPlayerActive(player) {
-    const year = parseInt(player.year) || 0;
-    return year === 2025 && player.season === 'Fall';
+    if (!currentSeasonMeta) return false;
+    return player.year === currentSeasonMeta.year && player.season === currentSeasonMeta.season;
   }
 
   function sortPlayers(players, isActive) {
@@ -862,8 +875,13 @@ function formatPlayerName(name) {
       }
     });
     
+    const seasonLabel = currentSeasonMeta ? `${currentSeasonMeta.year} ${currentSeasonMeta.season}` : 'Current Season';
+
     document.getElementById("totalPlayersText").textContent =
-      `Total Players: ${totalPlayers} (${activePlayers} active in 2025, ${totalPlayers - activePlayers} inactive) across ${sortedTeams.length} teams`;
+      `Total Players: ${totalPlayers} (${activePlayers} active in ${seasonLabel}, ${totalPlayers - activePlayers} inactive) across ${sortedTeams.length} teams`;
+
+    document.getElementById("summaryDescText").textContent =
+      `Players are grouped by their most recent team assignment and split into current active roster (${seasonLabel}) and inactive players. Click on any player to view their detailed statistics.`;
     
     const container = document.getElementById("players-container");
     container.innerHTML = '';
