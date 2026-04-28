@@ -1323,11 +1323,19 @@
         });
         
         // Filter games based on access level
-        let filteredGames = allGames;
-        
+        // Filter to today and future only, and exclude already-scored games
+        const todayStart = new Date();
+        todayStart.setHours(0, 0, 0, 0);
+
+        let filteredGames = allGames.filter(game => {
+          if (game.hasScore) return false;
+          if (game.gameDate.getTime() === 0) return true; // undated games pass through
+          return game.gameDate >= todayStart;
+        });
+
         if (!hasFullAccess) {
           // Team-restricted: only show games involving user's team(s)
-          filteredGames = allGames.filter(game => {
+          filteredGames = filteredGames.filter(game => {
             return userTeamIds.includes(game.homeTeamId) || 
                    userTeamIds.includes(game.awayTeamId);
           });
@@ -1335,12 +1343,12 @@
           console.log(`Filtered ${allGames.length} games to ${filteredGames.length} for teams: ${userTeamIds.join(', ')}`);
         }
 
-        // Sort by date (most recent first), but undated games go last
+        // Sort by date ascending (soonest first), undated games go last
         filteredGames.sort((a, b) => {
           if (a.gameDate.getTime() === 0 && b.gameDate.getTime() === 0) return 0;
           if (a.gameDate.getTime() === 0) return 1;
           if (b.gameDate.getTime() === 0) return -1;
-          return b.gameDate - a.gameDate;
+          return a.gameDate - b.gameDate;
         });
         
         // Update allGames to filtered list for selection
@@ -1350,9 +1358,9 @@
         
         if (filteredGames.length === 0) {
           if (!hasFullAccess) {
-            gameSelect.innerHTML = '<option value="">No games found for your team this season</option>';
+            gameSelect.innerHTML = '<option value="">No upcoming unscored games for your team</option>';
           } else {
-            gameSelect.innerHTML = '<option value="">No games available for scoring</option>';
+            gameSelect.innerHTML = '<option value="">No upcoming unscored games</option>';
           }
           return;
         }
