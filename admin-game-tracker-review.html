@@ -1683,6 +1683,7 @@ function buildPlayRowHtml(play, idx) {
     '<select id="play-type-select-' + idx + '" style="display:none; padding:0.25rem; border:1px solid var(--border-color); border-radius:4px; font-size:0.85rem;">' + optionsHtml + '</select>' +
     '<button onclick="togglePlayEdit(' + idx + ')" style="font-size:0.75rem; padding:0.2rem 0.5rem; border:1px solid var(--border-color); border-radius:4px; background:#f1f5f9; cursor:pointer;" id="play-edit-btn-' + idx + '">Edit</button>' +
     '<button onclick="confirmPlayEdit(' + idx + ')" style="display:none; font-size:0.75rem; padding:0.2rem 0.5rem; border:1px solid var(--success-color); border-radius:4px; background:#dcfce7; cursor:pointer; color:#166534;" id="play-confirm-btn-' + idx + '">Save</button>' +
+    '<button onclick="deletePlay(' + idx + ')" style="font-size:0.75rem; padding:0.2rem 0.5rem; border:1px solid var(--danger-color); border-radius:4px; background:#fee2e2; cursor:pointer; color:#dc2626;" title="Delete this play">&#x1F5D1;</button>' +
   '</div>';
 }
 
@@ -1736,6 +1737,18 @@ window.confirmPlayEdit = function(idx) {
   const newType = select.value;
   const plays = pendingPlayEdits ? [...pendingPlayEdits] : [...(selectedGame.playByPlay || [])];
   plays[idx] = Object.assign({}, plays[idx], { playType: newType, playLabel: PLAY_TYPE_LABEL_MAP[newType] || newType });
+  pendingPlayEdits = plays;
+  renderPlayByPlayEditable();
+  renderPitchingSection();
+};
+
+window.deletePlay = function(idx) {
+  const plays = pendingPlayEdits ? [...pendingPlayEdits] : [...(selectedGame.playByPlay || [])];
+  const play = plays[idx];
+  const runNote = play.runsScored > 0 ? ` (removes ${play.runsScored} run${play.runsScored > 1 ? 's' : ''})` : '';
+  const label = formatPlayResult(play.playType);
+  if (!confirm(`Delete play #${idx + 1}: ${play.batter || 'Unknown'} – ${label}${runNote}?`)) return;
+  plays.splice(idx, 1);
   pendingPlayEdits = plays;
   renderPlayByPlayEditable();
   renderPitchingSection();
