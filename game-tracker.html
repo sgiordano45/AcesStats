@@ -1702,13 +1702,13 @@ useEffect(() => {
                 }
             };
 
-            // Un-score a runner (put them back on 3rd base)
+            // Un-score a runner (put them back on base — used for non-FC corrections)
             const unscoreRunner = (runnerName) => {
                 // Remove from scored runners
                 setRunnersScored(prev => prev.filter(r => r !== runnerName));
                 // Decrement score
                 setTempScore(prev => Math.max(0, prev - 1));
-                
+
                 // Put runner back on 3rd (if 3rd is empty, otherwise try 2nd, then 1st)
                 setTempBases(prev => {
                     if (prev.third) {
@@ -1725,6 +1725,14 @@ useEffect(() => {
                     }
                     return { ...prev, third: runnerName };
                 });
+            };
+
+            // Mark a scored runner as out at home (FC only)
+            // Unlike unscoreRunner, this adds an out and does NOT put the runner back on base
+            const markScoredRunnerOut = (runnerName) => {
+                setRunnersScored(prev => prev.filter(r => r !== runnerName));
+                setTempScore(prev => Math.max(0, prev - 1));
+                setTempOuts(prev => prev + 1);
             };
 
             const confirmPlay = () => {
@@ -4176,14 +4184,14 @@ const ViewerOnlyMessage = () => {
                                                     return (
                                                         <button
                                                             key={idx}
-                                                            onClick={() => unscoreRunner(runner)}
+                                                            onClick={() => isFC ? markScoredRunnerOut(runner) : unscoreRunner(runner)}
                                                             className={`text-white text-xs px-2 py-1 rounded flex items-center gap-1 transition-colors ${
-                                                                isFC 
-                                                                    ? 'bg-red-600 hover:bg-red-700 border-2 border-red-400' 
+                                                                isFC
+                                                                    ? 'bg-red-600 hover:bg-red-700 border-2 border-red-400'
                                                                     : 'bg-green-700 hover:bg-amber-600'
                                                             }`}
-                                                            title={isFC 
-                                                                ? `${runner.split(' ').pop()} out at home` 
+                                                            title={isFC
+                                                                ? `${runner.split(' ').pop()} out at home — click to mark out`
                                                                 : `Click to put ${runner.split(' ').pop()} back on base`
                                                             }
                                                         >
