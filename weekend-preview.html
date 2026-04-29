@@ -1004,8 +1004,8 @@ function calculateTeamRecord(teamName) {
     }
   });
 
-  const totalDecided = wins + losses;
-  const winPct = totalDecided > 0 ? wins / totalDecided : 0;
+  const totalGames = wins + losses + ties;
+  const winPct = totalGames > 0 ? (wins + ties * 0.5) / totalGames : 0;
 
   return { wins, losses, ties, winPct };
 }
@@ -1073,8 +1073,8 @@ function calculateTeamStanding(teamName) {
   });
 
   const preliminaryStandings = Object.values(teamStats).map(team => {
-    const totalDecided = team.wins + team.losses;
-    team.winPct = totalDecided > 0 ? team.wins / totalDecided : 0;
+    const totalGames = team.wins + team.losses + team.ties;
+    team.winPct = totalGames > 0 ? (team.wins + team.ties * 0.5) / totalGames : 0;
     team.runDifferential = team.runsFor - team.runsAgainst;
     return team;
   });
@@ -1094,22 +1094,28 @@ function calculateTeamStanding(teamName) {
 
   // Sort with proper tiebreakers (matching current-season.html)
   const standings = preliminaryStandings.sort((a, b) => {
-    // First tiebreaker: Win percentage
+    // 1. Win percentage (ties count as half-win)
     if (a.winPct !== b.winPct) return b.winPct - a.winPct;
-    
-    // Check if there are 3+ teams tied at this win percentage
-    const teamsAtSameWinPct = preliminaryStandings.filter(t => t.winPct === a.winPct);
-    
-    // Second tiebreaker: Only use H2H if EXACTLY 2 teams are tied
-    if (teamsAtSameWinPct.length === 2) {
+
+    // 2. Most wins
+    if (a.wins !== b.wins) return b.wins - a.wins;
+
+    // 3. Fewest losses
+    if (a.losses !== b.losses) return a.losses - b.losses;
+
+    // 4. H2H — only if exactly 2 teams tied on win%, wins, and losses
+    const teamsAtSameMark = preliminaryStandings.filter(t =>
+      t.winPct === a.winPct && t.wins === a.wins && t.losses === a.losses
+    );
+    if (teamsAtSameMark.length === 2) {
       const h2hComp = compareHeadToHead(a, b);
       if (h2hComp !== 0) return h2hComp;
     }
-    
-    // Third tiebreaker: Runs Against (for 3+ teams tied, or if H2H didn't resolve)
+
+    // 5. Fewest runs against
     if (a.runsAgainst !== b.runsAgainst) return a.runsAgainst - b.runsAgainst;
-    
-    // Fourth tiebreaker: Run Differential
+
+    // 6. Run differential
     return b.runDifferential - a.runDifferential;
   });
 
