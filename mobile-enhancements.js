@@ -937,8 +937,8 @@
   function setupShareButton() {
     // Skip pages where sharing doesn't make sense
     const path = window.location.pathname;
-    const skipPages = ['signin.html', 'signup.html', 'reset-password.html', 'verify-email.html', 
-                       'admin-', 'submit-score.html', 'submit-stats.html', 'link-player.html',
+    const skipPages = ['signin.html', 'signup.html', 'reset-password.html', 'verify-email.html',
+                       'admin-', 'link-player.html',
                        'roster-management.html', 'photo-upload.html', 'approve-links.html'];
     
     if (skipPages.some(skip => path.includes(skip))) {
