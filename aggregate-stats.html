@@ -697,6 +697,23 @@
             <div class="stat-label">Pitching Updated</div>
           </div>
         </div>
+
+        <!-- Per-team summary table (populated by preview/aggregate) -->
+        <div id="teamSummaryDisplay" style="display: none; margin-top: 1.5rem;">
+          <div style="font-weight: 700; font-size: 0.95rem; margin-bottom: 0.75rem; color: var(--text-dark);">📋 Team Submission Summary</div>
+          <table style="width: 100%; border-collapse: collapse; font-size: 0.875rem;">
+            <thead>
+              <tr style="background: #f1f5f9;">
+                <th style="text-align: left; padding: 8px 12px; border-bottom: 2px solid #e2e8f0;">Team</th>
+                <th style="text-align: center; padding: 8px 12px; border-bottom: 2px solid #e2e8f0;">Players</th>
+                <th style="text-align: center; padding: 8px 12px; border-bottom: 2px solid #e2e8f0;">Game Entries</th>
+                <th style="text-align: center; padding: 8px 12px; border-bottom: 2px solid #e2e8f0;">Games (unique)</th>
+                <th style="text-align: center; padding: 8px 12px; border-bottom: 2px solid #e2e8f0;">Status</th>
+              </tr>
+            </thead>
+            <tbody id="teamSummaryBody"></tbody>
+          </table>
+        </div>
       </div>
     </div>
 
@@ -1382,20 +1399,30 @@
       const playersWithGames = [];
       let totalGamesFound = 0;
       let checkedCount = 0;
-      
+      const teamStats = {}; // teamId -> { players: Set, gameEntries: 0, uniqueGames: Set }
+
       for (const legacyId of playerIds) {
         try {
           const gamesRef = window.collection(window.db, 'playerStats', legacyId, 'games');
           const gamesSnap = await window.getDocs(gamesRef);
-          
+
           let seasonGames = 0;
           gamesSnap.forEach(gameDoc => {
             const data = gameDoc.data();
             if (data.seasonId === seasonId) {
               seasonGames++;
+
+              // Build per-team summary
+              const team = (data.teamId || 'unknown').toLowerCase();
+              if (!teamStats[team]) {
+                teamStats[team] = { players: new Set(), gameEntries: 0, uniqueGames: new Set() };
+              }
+              teamStats[team].players.add(legacyId);
+              teamStats[team].gameEntries++;
+              if (data.gameId) teamStats[team].uniqueGames.add(data.gameId);
             }
           });
-          
+
           if (seasonGames > 0) {
             playersWithGames.push({ legacyId, games: seasonGames });
             totalGamesFound += seasonGames;
@@ -1403,13 +1430,13 @@
         } catch (err) {
           // Player might not have game stats
         }
-        
+
         checkedCount++;
         if (checkedCount % 50 === 0) {
           log(`  Checked ${checkedCount}/${playerIds.length} players...`);
         }
       }
-      
+
       log('');
       log('═══════════════════════════════════════', 'header');
       log('PREVIEW RESULTS', 'header');
@@ -1417,19 +1444,41 @@
       log(`Players with games: ${playersWithGames.length}`, 'success');
       log(`Total games found: ${totalGamesFound}`, 'success');
       log('');
-      
+
       // Show top players
       playersWithGames.sort((a, b) => b.games - a.games);
       log('Top players by games:');
       playersWithGames.slice(0, 10).forEach(p => {
         log(`  ${p.legacyId}: ${p.games} games`);
       });
-      
+
       if (playersWithGames.length > 10) {
         log(`  ... and ${playersWithGames.length - 10} more players`);
       }
-      
+
       updateSeasonStats(playersWithGames.length, totalGamesFound, 0, 0);
+
+      // Render per-team summary table
+      const tbody = document.getElementById('teamSummaryBody');
+      tbody.innerHTML = '';
+      const sortedTeams = Object.entries(teamStats).sort((a, b) => a[0].localeCompare(b[0]));
+      sortedTeams.forEach(([team, data]) => {
+        const uniqueGames = data.uniqueGames.size;
+        const hasGames = uniqueGames > 0;
+        const statusColor = hasGames ? '#16a34a' : '#dc2626';
+        const statusText = hasGames ? `✅ ${uniqueGames} game${uniqueGames !== 1 ? 's' : ''} submitted` : '⚠️ No submissions';
+        const row = document.createElement('tr');
+        row.style.borderBottom = '1px solid #e2e8f0';
+        row.innerHTML = `
+          <td style="padding: 8px 12px; font-weight: 600; text-transform: capitalize;">${team}</td>
+          <td style="padding: 8px 12px; text-align: center;">${data.players.size}</td>
+          <td style="padding: 8px 12px; text-align: center;">${data.gameEntries}</td>
+          <td style="padding: 8px 12px; text-align: center;">${uniqueGames}</td>
+          <td style="padding: 8px 12px; text-align: center; color: ${statusColor}; font-weight: 600;">${statusText}</td>
+        `;
+        tbody.appendChild(row);
+      });
+      document.getElementById('teamSummaryDisplay').style.display = sortedTeams.length > 0 ? 'block' : 'none';
       
       log('');
       log('No changes were made. Click "Aggregate Season" to process and save.', 'game');
