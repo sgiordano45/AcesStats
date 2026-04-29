@@ -12,7 +12,7 @@ cd "$REPO" || exit 1
 if [ -f "$PENDING" ]; then
   MSG=$(cat "$PENDING")
   echo "[$(date '+%Y-%m-%d %H:%M:%S')] Pending commit found: $MSG" >> "$LOG"
-  git add -A >> "$LOG" 2>&1
+  git add -u >> "$LOG" 2>&1
   git commit -m "$MSG" >> "$LOG" 2>&1
   if [ $? -eq 0 ]; then
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] Commit successful." >> "$LOG"
