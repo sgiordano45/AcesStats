@@ -1371,6 +1371,7 @@ body {
 
   <script type="module">
     import { onAuthChange, getCurrentUser, logoutUser, getUserProfile, updateUserProfile as updateUserProfileAuth, addFavoriteTeam, addFavoritePlayer} from './firebase-auth.js';
+    import { isImpersonating, getEffectiveUserProfile, injectImpersonationBanner } from './admin-impersonate.js';
     import { getAllTeams, getAllPlayerStatsOptimized } from './firebase-data.js';
     import { requestNotificationPermission, updateNotificationPreferences, removeFCMToken } from './firebase-messaging.js';
     import { doc, getDoc } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
@@ -1410,8 +1411,10 @@ body {
         currentUser = user;
         try {
           await loadUserProfile(user);
-		    const { ensureCorrectProfilePage } = await import('./firebase-auth.js');
-			ensureCorrectProfilePage(userProfile, 'profile-fan.html');
+		    if (!isImpersonating()) {
+		      const { ensureCorrectProfilePage } = await import('./firebase-auth.js');
+		      ensureCorrectProfilePage(userProfile, 'profile-fan.html');
+		    }
         } catch (error) {
           console.error('❌ Error loading profile data:', error);
           alert('Error loading profile. Check console for details.');
@@ -1449,6 +1452,12 @@ async function loadUserProfile(user) {
         
         if (result.success && result.data) {
           userProfile = result.data;
+          // Check for impersonation mode
+          if (isImpersonating()) {
+            userProfile = getEffectiveUserProfile(userProfile);
+            console.log('🎭 Impersonation active - viewing as:', userProfile?.displayName);
+          }
+          injectImpersonationBanner();
         } else {
           console.log('⚠️ No profile data found');
           userProfile = null;
