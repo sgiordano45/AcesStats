@@ -953,6 +953,7 @@
                   <th title="Hits">H</th>
                   <th title="Runs">R</th>
                   <th title="Walks">BB</th>
+                  <th title="Home Runs">HR</th>
                   <th title="Innings Pitched">IP</th>
                   <th title="Runs Allowed">RA</th>
                 </tr>
@@ -1577,6 +1578,10 @@ function renderStatsTable() {
                data-stat="walks" min="0" value="0">
       </td>
       <td>
+        <input type="number" class="stats-input" id="hr_${index}" data-player-id="${player.id}" 
+               data-stat="homeRuns" min="0" value="0">
+      </td>
+      <td>
         <input type="number" class="stats-input" id="ip_${index}" data-player-id="${player.id}" 
                data-stat="inningsPitched" min="0" step="0.1" value="0">
       </td>
@@ -1627,6 +1632,7 @@ window.submitSingleGameStats = async function() {
         hits: parseInt(document.getElementById(`hits_${i}`)?.value) || 0,
         runs: parseInt(document.getElementById(`runs_${i}`)?.value) || 0,
         walks: parseInt(document.getElementById(`walks_${i}`)?.value) || 0,
+        homeRuns: parseInt(document.getElementById(`hr_${i}`)?.value) || 0,
         inningsPitched: parseFloat(document.getElementById(`ip_${i}`)?.value) || 0,
         runsAllowed: parseInt(document.getElementById(`ra_${i}`)?.value) || 0
       };
@@ -1688,7 +1694,7 @@ window.submitSingleGameStats = async function() {
             walks: stats.walks,
             doubles: 0,
             triples: 0,
-            homeRuns: 0,
+            homeRuns: stats.homeRuns,
             rbi: 0,
             strikeouts: 0,
             stolenBases: 0,
@@ -2026,12 +2032,14 @@ window.submitBulkStats = async function() {
     for (const gameKey of Object.keys(gameGroups)) {
       const game = gameGroups[gameKey];
       
-      // Generate game ID (append _g2 for doubleheader game 2)
+      // Generate game ID — convention: home_vs_away, prefixed with seasonId
       const gameDate = new Date(game.date);
       const dateStr = `${gameDate.getMonth() + 1}-${gameDate.getDate()}-${gameDate.getFullYear()}`;
-      const baseGameId = `${dateStr}_${teamId.toLowerCase()}_vs_${game.opponent.toLowerCase()}`.replace(/\s+/g, '_');
+      const homeTeam = game.isHome ? teamId.toLowerCase() : game.opponent.toLowerCase();
+      const awayTeam = game.isHome ? game.opponent.toLowerCase() : teamId.toLowerCase();
+      const baseGameId = `${seasonId}_${dateStr}_${homeTeam}_vs_${awayTeam}`.replace(/\s+/g, '_');
       const gameId = game.gameNum > 1 ? `${baseGameId}_g${game.gameNum}` : baseGameId;
-      const gameDocId = `${seasonId}_${gameId}`;
+      const gameDocId = gameId;
       
       // Process each player in this game
       for (const row of game.rows) {
@@ -2068,7 +2076,7 @@ window.submitBulkStats = async function() {
               walks: bb,
               doubles: 0,
               triples: 0,
-              homeRuns: 0,
+              homeRuns: parseInt(row.hr) || 0,
               rbi: 0,
               strikeouts: 0,
               stolenBases: 0,
