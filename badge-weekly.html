@@ -140,6 +140,32 @@ body {
   cursor: pointer;
 }
 
+.quick-range-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  flex-wrap: wrap;
+}
+.quick-range-label {
+  font-size: 0.8rem;
+  color: var(--text-light);
+  font-weight: 600;
+}
+.btn-quick {
+  padding: 0.3rem 0.85rem;
+  border: 1px solid var(--border-color);
+  border-radius: 20px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  background: var(--card-bg);
+  color: var(--text-dark);
+  transition: all 0.15s;
+}
+.btn-quick:hover { border-color: var(--admin-color); color: var(--admin-color); }
+.btn-quick.active { background: var(--admin-color); color: #fff; border-color: var(--admin-color); }
+
 .btn-generate {
   margin-top: 1.25rem;
   width: 100%;
@@ -316,9 +342,15 @@ body {
           Include hidden badges
         </label>
         <label class="checkbox-label">
-          <input type="checkbox" id="includeNoDate">
-          Include badges without a game date
+          <input type="checkbox" id="includeNoDate" checked>
+          Include season milestone badges
         </label>
+      </div>
+      <div class="quick-range-row">
+        <span class="quick-range-label">Quick range:</span>
+        <button class="btn-quick" onclick="setRange('week')">This Week</button>
+        <button class="btn-quick" onclick="setRange('month')">This Month</button>
+        <button class="btn-quick active" onclick="setRange('season')" id="rangeSeasonBtn">Full Season</button>
       </div>
       <button class="btn-generate" id="generateBtn" onclick="generate()">
         Generate Report
@@ -428,13 +460,35 @@ body {
     currentSeasonId = select.value || BADGE_SEASONS[0].id;
     select.addEventListener('change', () => { currentSeasonId = select.value; });
 
-    // Default date range: last 7 days
+    // Default date range: full season (Jan 1 of current year → today)
     const today = new Date();
-    const weekAgo = new Date(today);
-    weekAgo.setDate(weekAgo.getDate() - 7);
+    const seasonStart = new Date(today.getFullYear(), 0, 1); // Jan 1
     document.getElementById('dateTo').value = toDateStr(today);
-    document.getElementById('dateFrom').value = toDateStr(weekAgo);
+    document.getElementById('dateFrom').value = toDateStr(seasonStart);
   }
+
+  // ── Quick Range Buttons ────────────────────────────────────
+  window.setRange = function(range) {
+    const today = new Date();
+    let from;
+    if (range === 'week') {
+      from = new Date(today);
+      from.setDate(from.getDate() - 7);
+    } else if (range === 'month') {
+      from = new Date(today);
+      from.setDate(from.getDate() - 30);
+    } else {
+      // season = Jan 1 of current year
+      from = new Date(today.getFullYear(), 0, 1);
+    }
+    document.getElementById('dateFrom').value = toDateStr(from);
+    document.getElementById('dateTo').value = toDateStr(today);
+
+    // Update active button
+    document.querySelectorAll('.btn-quick').forEach(b => b.classList.remove('active'));
+    const map = { week: 0, month: 1, season: 2 };
+    document.querySelectorAll('.btn-quick')[map[range]]?.classList.add('active');
+  };
 
   // ── Load Badge Data ────────────────────────────────────────
   async function loadBadges(seasonId) {
