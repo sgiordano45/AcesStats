@@ -1049,13 +1049,17 @@ body {
         homeLogo.alt = `${targetHomeTeam} logo`;
 
         // Calculate current season records from Firebase games
-        // Get the current season from the game date
+        // Use currentSeasonData to get the correct season name (Summer/Fall/Spring)
         const gameYear = new Date(targetGameDate).getFullYear();
-        const gameMonth = new Date(targetGameDate).getMonth() + 1;
-        const currentSeasonName = gameMonth >= 8 ? 'Fall' : 'Spring';
-        
+        const currentSeasonName = capitalize(currentSeasonData?.season || (() => {
+          const gameMonth = new Date(targetGameDate).getMonth() + 1;
+          if (gameMonth >= 8) return 'fall';
+          if (gameMonth >= 5) return 'summer';
+          return 'spring';
+        })());
+
         const currentSeasonGames = allGames.filter(g =>
-          g.winner && 
+          g.winner &&
           g.winner.trim() !== "" &&
           g.year === gameYear.toString() &&
           g.season === currentSeasonName
@@ -1266,8 +1270,9 @@ body {
         });
 
         // Enrich each rostered player with whatever data we have
+        // Try both legacy id and authId for season lookup since playerData may be keyed by either
         const enriched = roster.map(rp => {
-          const season = seasonLookup[rp.id] || null;
+          const season = seasonLookup[rp.id] || (rp.authId ? seasonLookup[rp.authId] : null) || null;
           const career = careerBPICache[rp.id] || null;
           const splits = splitsCache[rp.id] || null;
           return { id: rp.id, name: rp.name, season, career, splits };
@@ -1317,7 +1322,7 @@ body {
           let seasonHtml = '';
           const s = player.season;
           if (s && (s.atBats || 0) > 0) {
-            const avg    = fmtAvg(s.average ?? s.avg);
+            const avg    = fmtAvg(s.battingAverage ?? s.average ?? s.avg ?? s.ba);
             const hits   = s.hits || 0;
             const runs   = s.runs || 0;
             const bpiVal = typeof s.acesBPI === 'number' ? s.acesBPI.toFixed(2) : 'N/A';
