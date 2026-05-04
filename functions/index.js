@@ -3500,3 +3500,165 @@ exports.cleanupOldActivity = functions.pubsub
     console.log(`🧹 Deleted ${oldQuery.size} old activity items`);
     return null;
   });
+
+// ============================================================================
+// STATS SUBMITTED: Notify admin when anyone submits game stats
+// ============================================================================
+
+exports.onStatsSubmitted = functions
+  .runWith({ secrets: ['RESEND_API_KEY'] })
+  .firestore
+  .document('seasons/{seasonId}/games/{gameId}')
+  .onUpdate(async (change, context) => {
+    const before = change.before.data();
+    const after  = change.after.data();
+
+    // Only fire when statsSubmitted just flipped to true
+    if (before.statsSubmitted === true || after.statsSubmitted !== true) {
+      return null;
+    }
+
+    const { seasonId, gameId } = context.params;
+    const submittedByName = after.statsSubmittedByName || 'Someone';
+    const submittedForTeam = after.statsSubmittedForTeam || 'Unknown Team';
+    const gameDate = after.gameDateFormatted || after.date || 'Unknown Date';
+    const homeTeam = after.homeTeam || after.home || '';
+    const awayTeam = after.awayTeam || after.away || after.opponent || '';
+    const matchup = homeTeam && awayTeam ? `${awayTeam} @ ${homeTeam}` : submittedForTeam;
+
+    const submittedAt = new Date().toLocaleString('en-US', {
+      timeZone: 'America/New_York',
+      month: 'short', day: 'numeric',
+      hour: 'numeric', minute: '2-digit', hour12: true
+    });
+
+    console.log(`📊 Stats submitted by ${submittedByName} for ${matchup} (${gameDate})`);
+
+    // ── Find all admin users ─────────────────────────────────────────────────
+    let adminTokens = [];
+    let adminEmails = [];
+
+    try {
+      // Query by isAdmin flag
+      const adminSnap = await db.collection('users')
+        .where('isAdmin', '==', true)
+        .get();
+
+      // Also catch userRole === 'admin' in case some docs use that
+      const roleAdminSnap = await db.collection('users')
+        .where('userRole', '==', 'admin')
+        .get();
+
+      const seen = new Set();
+      const allAdminDocs = [...adminSnap.docs, ...roleAdminSnap.docs];
+
+      for (const userDoc of allAdminDocs) {
+        if (seen.has(userDoc.id)) continue;
+        seen.add(userDoc.id);
+
+        const data = userDoc.data();
+        const tokens = data.fcmTokens || [];
+        adminTokens.push(...tokens);
+        if (data.email) adminEmails.push(data.email);
+      }
+    } catch (err) {
+      console.error('❌ Error fetching admin users:', err);
+    }
+
+    console.log(`👤 Found ${adminEmails.length} admin email(s), ${adminTokens.length} FCM token(s)`);
+
+    // ── FCM Push Notification ────────────────────────────────────────────────
+    if (adminTokens.length > 0) {
+      try {
+        await sendToTokens(adminTokens, {
+          notification: {
+            title: '📊 Stats Submitted',
+            body: `${submittedByName} submitted stats for ${matchup}`
+          },
+          data: {
+            type: 'stats_submitted',
+            gameId: gameId,
+            seasonId: seasonId,
+            submittedByName: submittedByName,
+            team: submittedForTeam,
+            link: `/submit-stats.html`
+          },
+          webpush: {
+            fcmOptions: { link: '/submit-stats.html' },
+            notification: { icon: '/icons/icon-192x192.png' }
+          }
+        });
+        console.log('✅ FCM push sent to admin(s)');
+      } catch (err) {
+        console.error('❌ FCM push failed:', err);
+      }
+    }
+
+    // ── Resend Email ─────────────────────────────────────────────────────────
+    const apiKey = process.env.RESEND_API_KEY;
+    if (!apiKey) {
+      console.warn('⚠️ RESEND_API_KEY not set — skipping email notification');
+    } else if (adminEmails.length > 0) {
+      const subject = `📊 Stats submitted — ${matchup}`;
+      const htmlBody = `
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;">
+          <div style="background: #2d5016; border-radius: 12px 12px 0 0; padding: 20px 24px;">
+            <h2 style="color: #fff; margin: 0; font-size: 1.1rem;">📊 Stats Submission Alert</h2>
+          </div>
+          <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 12px 12px; padding: 24px;">
+            <p style="margin: 0 0 16px; color: #2d3748; font-size: 0.95rem;">
+              <strong>${submittedByName}</strong> just submitted player stats.
+            </p>
+            <table style="width: 100%; border-collapse: collapse; font-size: 0.875rem; color: #4a5568;">
+              <tr>
+                <td style="padding: 6px 0; color: #718096;">Game</td>
+                <td style="padding: 6px 0; font-weight: 600;">${matchup}</td>
+              </tr>
+              <tr>
+                <td style="padding: 6px 0; color: #718096;">Date</td>
+                <td style="padding: 6px 0;">${gameDate}</td>
+              </tr>
+              <tr>
+                <td style="padding: 6px 0; color: #718096;">Team</td>
+                <td style="padding: 6px 0;">${submittedForTeam}</td>
+              </tr>
+              <tr>
+                <td style="padding: 6px 0; color: #718096;">Submitted at</td>
+                <td style="padding: 6px 0;">${submittedAt} ET</td>
+              </tr>
+            </table>
+            <div style="margin-top: 20px; padding-top: 16px; border-top: 1px solid #e2e8f0; font-size: 0.8rem; color: #a0aec0;">
+              Remember to run the aggregation update for current-season stats.
+            </div>
+          </div>
+        </div>
+      `;
+
+      try {
+        const res = await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            from: 'Mountainside Aces <noreply@acessoftballreference.com>',
+            to: adminEmails,
+            subject: subject,
+            html: htmlBody
+          })
+        });
+
+        if (res.ok) {
+          console.log(`✅ Email sent to ${adminEmails.join(', ')}`);
+        } else {
+          const errText = await res.text();
+          console.error(`❌ Resend email failed (${res.status}):`, errText);
+        }
+      } catch (err) {
+        console.error('❌ Resend fetch threw:', err);
+      }
+    }
+
+    return null;
+  });
