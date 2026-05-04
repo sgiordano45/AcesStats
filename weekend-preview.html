@@ -2155,14 +2155,21 @@ if (!navigator.onLine) updateConnectionStatus();
           .filter(Boolean)
           .join(' & ');
 
-        // Merge key players: union across all games in group, per team
-        // (in practice identical for double-headers, but safe for edge cases)
-        const awayPlayers = [...new Set(games.flatMap(g => g.awayTopPlayers || []))];
-        const homePlayers = [...new Set(games.flatMap(g => g.homeTopPlayers || []))];
+        // Merge key players by TEAM NAME, not by home/away position
+        // (double-headers flip home/away, so flatMapping position gives wrong results)
+        const teamPlayerMap = new Map();
+        games.forEach(g => {
+          if (!teamPlayerMap.has(g.awayTeam)) teamPlayerMap.set(g.awayTeam, new Set());
+          if (!teamPlayerMap.has(g.homeTeam)) teamPlayerMap.set(g.homeTeam, new Set());
+          (g.awayTopPlayers || []).forEach(p => teamPlayerMap.get(g.awayTeam).add(p));
+          (g.homeTopPlayers || []).forEach(p => teamPlayerMap.get(g.homeTeam).add(p));
+        });
 
-        // Determine which team is "home" to label correctly (use first game)
+        // Use first game's away/home for display order
         const awayTeam = d.awayTeam;
         const homeTeam = d.homeTeam;
+        const awayPlayers = [...(teamPlayerMap.get(awayTeam) || [])];
+        const homePlayers = [...(teamPlayerMap.get(homeTeam) || [])];
 
         html += `
           <div style="background:#f8fafc;border-radius:12px;padding:14px 16px;border:1px solid #e2e8f0;">
