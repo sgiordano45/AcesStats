@@ -450,6 +450,26 @@ body {
   box-shadow: var(--shadow-lg);
 }
 
+/* Share Tonight's Games button */
+.share-tonight-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 8px 16px;
+  background: var(--primary, #2d5016);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.1s;
+}
+.share-tonight-btn:hover { background: #1a6b4a; }
+.share-tonight-btn:active { transform: scale(0.97); }
+.share-tonight-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
 /* Share button on each card */
 .card-share-btn {
   position: absolute;
@@ -1624,6 +1644,7 @@ function generateWeekendPreview() {
   weekendInfoElement.innerHTML = `
     <h3>Upcoming Games</h3>
     <p>${weekendGames.length} games scheduled for ${dateRangeText}</p>
+    <button class="share-tonight-btn" onclick="shareTonightGames()">📤 Share Tonight's Games</button>
   `;
 
   const gamesGridElement = document.getElementById('gamesGrid');
@@ -1754,6 +1775,8 @@ function createGameCard(game, cardIdx = 0) {
   window._shareCardData = window._shareCardData || {};
   window._shareCardData[shareKey] = {
     awayTeam, homeTeam, gameDateTime,
+    rawDate: game.date,
+    gameTime: game.time || null,
     awayRecordText, homeRecordText,
     awayStandingText, homeStandingText,
     awayTopPlayers, homeTopPlayers,
@@ -2040,6 +2063,168 @@ if (!navigator.onLine) updateConnectionStatus();
     }).catch(() => {
       alert('Could not copy to clipboard.');
     });
+  }
+
+  // ── Share Tonight's Games ─────────────────────────────────────────────────
+  async function shareTonightGames() {
+    const btn = document.querySelector('.share-tonight-btn');
+    if (!btn) return;
+    const origLabel = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '⏳ Generating…';
+
+    try {
+      // Load html2canvas if needed
+      if (!window.html2canvas) {
+        await new Promise((resolve, reject) => {
+          const s = document.createElement('script');
+          s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+          s.onload = resolve; s.onerror = reject;
+          document.head.appendChild(s);
+        });
+      }
+
+      // Get today's date string (YYYY-MM-DD) for comparison
+      const todayStr = new Date().toISOString().slice(0, 10);
+
+      // Gather tonight's games from _shareCardData
+      const allCards = Object.values(window._shareCardData || {});
+      const tonightCards = allCards.filter(d => {
+        if (!d.rawDate) return false;
+        // rawDate may be "2026-05-04" or "May 4, 2026" — normalize via Date parse
+        const parsed = new Date(d.rawDate);
+        if (isNaN(parsed)) return false;
+        return parsed.toISOString().slice(0, 10) === todayStr;
+      });
+
+      if (!tonightCards.length) {
+        btn.innerHTML = origLabel;
+        btn.disabled = false;
+        alert('No games found for tonight.');
+        return;
+      }
+
+      // Group double-headers: two games with the same pair of teams
+      // Canonical matchup key: sorted team names joined with '_'
+      const matchupMap = new Map();
+      tonightCards.forEach(d => {
+        const key = [d.awayTeam, d.homeTeam].map(t => t.toLowerCase()).sort().join('_');
+        if (!matchupMap.has(key)) {
+          matchupMap.set(key, { games: [], key });
+        }
+        matchupMap.get(key).games.push(d);
+      });
+
+      // Build the date label
+      const tonightLabel = new Date().toLocaleDateString('en-US', {
+        weekday: 'long', month: 'long', day: 'numeric'
+      });
+
+      // Build off-screen wrapper
+      const wrapper = document.createElement('div');
+      wrapper.style.cssText = `
+        position:fixed; top:-9999px; left:-9999px;
+        width:460px; background:#ffffff;
+        border-radius:16px; overflow:hidden;
+        font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+        box-shadow:0 4px 24px rgba(0,0,0,0.12);
+      `;
+
+      // Header
+      let html = `
+        <div style="background:linear-gradient(135deg,#2d5016 0%,#1a6b4a 100%);padding:14px 20px;display:flex;align-items:center;justify-content:space-between;">
+          <div style="color:#fff;font-weight:800;font-size:1rem;">⚾ Tonight's Games</div>
+          <div style="color:rgba(255,255,255,0.8);font-size:0.75rem;font-weight:600;">acessoftballreference.com</div>
+        </div>
+        <div style="padding:6px 20px 4px;background:#f0fdf4;border-bottom:1px solid #d1fae5;">
+          <div style="font-size:0.78rem;font-weight:700;color:#2d5016;text-transform:uppercase;letter-spacing:0.5px;">${tonightLabel}</div>
+        </div>
+        <div style="padding:16px 20px;display:flex;flex-direction:column;gap:14px;">
+      `;
+
+      // One block per matchup group
+      matchupMap.forEach(({ games }) => {
+        // Use first game for team/player/record info (same teams regardless of home/away flip)
+        const d = games[0];
+        const awayColor = getTeamHex(d.awayTeam);
+        const homeColor = getTeamHex(d.homeTeam);
+
+        // Collect game times
+        const times = games
+          .map(g => g.gameTime || (g.gameDateTime || '').split(' ').slice(-2).join(' '))
+          .filter(Boolean)
+          .join(' & ');
+
+        // Merge key players: union across all games in group, per team
+        // (in practice identical for double-headers, but safe for edge cases)
+        const awayPlayers = [...new Set(games.flatMap(g => g.awayTopPlayers || []))];
+        const homePlayers = [...new Set(games.flatMap(g => g.homeTopPlayers || []))];
+
+        // Determine which team is "home" to label correctly (use first game)
+        const awayTeam = d.awayTeam;
+        const homeTeam = d.homeTeam;
+
+        html += `
+          <div style="background:#f8fafc;border-radius:12px;padding:14px 16px;border:1px solid #e2e8f0;">
+            <div style="font-size:0.72rem;color:#718096;font-weight:600;margin-bottom:10px;text-align:center;text-transform:uppercase;letter-spacing:0.4px;">
+              ${times ? times + ' · ' : ''}${d.gameType || 'Regular'} Season${games.length > 1 ? ' · Doubleheader' : ''}
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px;">
+              <div style="text-align:center;flex:1;">
+                <div style="width:44px;height:44px;border-radius:50%;margin:0 auto 6px;background:${awayColor || '#e2e8f0'};display:flex;align-items:center;justify-content:center;overflow:hidden;">
+                  <img src="${d.awayLogoPath || ''}" style="width:38px;height:38px;object-fit:contain;" onerror="this.style.display='none';">
+                </div>
+                <div style="font-weight:800;font-size:0.95rem;color:#2d3748;">${awayTeam}</div>
+                <div style="font-size:0.75rem;color:#718096;">${d.awayRecordText || ''}</div>
+              </div>
+              <div style="font-size:1.2rem;font-weight:900;color:#2d5016;flex-shrink:0;">@</div>
+              <div style="text-align:center;flex:1;">
+                <div style="width:44px;height:44px;border-radius:50%;margin:0 auto 6px;background:${homeColor || '#e2e8f0'};display:flex;align-items:center;justify-content:center;overflow:hidden;">
+                  <img src="${d.homeLogoPath || ''}" style="width:38px;height:38px;object-fit:contain;" onerror="this.style.display='none';">
+                </div>
+                <div style="font-weight:800;font-size:0.95rem;color:#2d3748;">${homeTeam}</div>
+                <div style="font-size:0.75rem;color:#718096;">${d.homeRecordText || ''}</div>
+              </div>
+            </div>
+            ${(awayPlayers.length || homePlayers.length) ? `
+            <div style="display:flex;gap:10px;padding-top:10px;border-top:1px solid #e2e8f0;">
+              <div style="flex:1;text-align:center;">
+                <div style="font-size:0.68rem;font-weight:700;color:#2d5016;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:4px;">${awayTeam}</div>
+                ${awayPlayers.map(p => `<div style="font-size:0.78rem;color:#2d3748;padding:1px 0;">${p}</div>`).join('')}
+              </div>
+              <div style="flex:1;text-align:center;">
+                <div style="font-size:0.68rem;font-weight:700;color:#2d5016;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:4px;">${homeTeam}</div>
+                ${homePlayers.map(p => `<div style="font-size:0.78rem;color:#2d3748;padding:1px 0;">${p}</div>`).join('')}
+              </div>
+            </div>` : ''}
+          </div>
+        `;
+      });
+
+      html += `
+          <div style="font-size:0.68rem;color:#a0aec0;text-align:right;padding-top:2px;">Generated ${new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</div>
+        </div>
+      `;
+
+      wrapper.innerHTML = html;
+      document.body.appendChild(wrapper);
+      const canvas = await html2canvas(wrapper, { scale:2, backgroundColor:'#ffffff', useCORS:true, logging:false });
+      document.body.removeChild(wrapper);
+
+      const link = document.createElement('a');
+      const dateSlug = new Date().toISOString().slice(0,10);
+      link.download = `aces-tonight-${dateSlug}.png`;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+
+      btn.innerHTML = '✅ Saved!';
+      setTimeout(() => { btn.innerHTML = origLabel; btn.disabled = false; }, 2500);
+
+    } catch(err) {
+      console.error('shareTonightGames error:', err);
+      btn.innerHTML = origLabel;
+      btn.disabled = false;
+    }
   }
 </script>
 </body>
