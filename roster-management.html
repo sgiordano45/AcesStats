@@ -705,26 +705,33 @@ function RosterManagement({ currentUser }) {
       formattedPlayers.sort((a, b) => a.name.localeCompare(b.name));
 
       // Fetch current-season batting averages from aggregatedPlayerStats
+      console.log(`🔍 Fetching batting avgs for ${formattedPlayers.length} players, season: ${currentSeason.id}`);
       await Promise.all(formattedPlayers.map(async (p) => {
         try {
-          // Try primary ID first (auth UID), fall back to legacyId
           const lookupIds = [p.id, p.legacyId].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i);
+          console.log(`👤 ${p.name} — lookupIds:`, lookupIds);
           for (const lookupId of lookupIds) {
             const statsSnap = await getDoc(doc(db, 'aggregatedPlayerStats', lookupId));
+            console.log(`  📄 ${lookupId}: exists=${statsSnap.exists()}`);
             if (statsSnap.exists()) {
               const data = statsSnap.data();
-              if (data.migrated) break; // skip migrated legacy shells
-              const seasonKey = Object.keys(data.seasons || {}).find(k => k.startsWith(currentSeason.id));
+              if (data.migrated) { console.log(`  ⚠️ migrated, skipping`); break; }
+              const seasonKeys = Object.keys(data.seasons || {});
+              console.log(`  🗓 season keys:`, seasonKeys);
+              const seasonKey = seasonKeys.find(k => k.startsWith(currentSeason.id));
               if (seasonKey) {
                 const s = data.seasons[seasonKey];
                 const avg = s.battingAverage ?? (s.atBats > 0 ? s.hits / s.atBats : 0);
                 p.battingAvg = typeof avg === 'number' ? avg.toFixed(3) : '.000';
+                console.log(`  ✅ ${p.name} avg: ${p.battingAvg}`);
+              } else {
+                console.log(`  ⚠️ no key starting with "${currentSeason.id}"`);
               }
               break;
             }
           }
         } catch (e) {
-          // leave .000 default
+          console.error(`❌ Stats fetch error for ${p.name}:`, e);
         }
       }));
 
