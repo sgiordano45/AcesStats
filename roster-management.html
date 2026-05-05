@@ -356,7 +356,25 @@ window.FirebaseRoster = {
   finalizeBattingOrder,
   unfinalizeBattingOrder,
   finalizeFieldingPositions,
-  unfinalizeFieldingPositions
+  unfinalizeFieldingPositions,
+  getPlayerSeasonAvg: async function(playerId, legacyId, seasonId) {
+    const lookupIds = [playerId, legacyId].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i);
+    for (const id of lookupIds) {
+      const snap = await getDoc(doc(db, 'aggregatedPlayerStats', id));
+      if (snap.exists()) {
+        const data = snap.data();
+        if (data.migrated) break;
+        const key = Object.keys(data.seasons || {}).find(k => k.startsWith(seasonId));
+        if (key) {
+          const s = data.seasons[key];
+          const avg = s.battingAverage ?? (s.atBats > 0 ? s.hits / s.atBats : 0);
+          return typeof avg === 'number' ? avg.toFixed(3) : '.000';
+        }
+        break;
+      }
+    }
+    return '.000';
+  }
 };
 </script>
 
@@ -705,31 +723,9 @@ function RosterManagement({ currentUser }) {
       formattedPlayers.sort((a, b) => a.name.localeCompare(b.name));
 
       // Fetch current-season batting averages from aggregatedPlayerStats
-      console.log(`🔍 Fetching batting avgs for ${formattedPlayers.length} players, season: ${currentSeason.id}`);
       await Promise.all(formattedPlayers.map(async (p) => {
         try {
-          const lookupIds = [p.id, p.legacyId].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i);
-          console.log(`👤 ${p.name} — lookupIds:`, lookupIds);
-          for (const lookupId of lookupIds) {
-            const statsSnap = await getDoc(doc(db, 'aggregatedPlayerStats', lookupId));
-            console.log(`  📄 ${lookupId}: exists=${statsSnap.exists()}`);
-            if (statsSnap.exists()) {
-              const data = statsSnap.data();
-              if (data.migrated) { console.log(`  ⚠️ migrated, skipping`); break; }
-              const seasonKeys = Object.keys(data.seasons || {});
-              console.log(`  🗓 season keys:`, seasonKeys);
-              const seasonKey = seasonKeys.find(k => k.startsWith(currentSeason.id));
-              if (seasonKey) {
-                const s = data.seasons[seasonKey];
-                const avg = s.battingAverage ?? (s.atBats > 0 ? s.hits / s.atBats : 0);
-                p.battingAvg = typeof avg === 'number' ? avg.toFixed(3) : '.000';
-                console.log(`  ✅ ${p.name} avg: ${p.battingAvg}`);
-              } else {
-                console.log(`  ⚠️ no key starting with "${currentSeason.id}"`);
-              }
-              break;
-            }
-          }
+          p.battingAvg = await window.FirebaseRoster.getPlayerSeasonAvg(p.id, p.legacyId, currentSeason.id);
         } catch (e) {
           console.error(`❌ Stats fetch error for ${p.name}:`, e);
         }
