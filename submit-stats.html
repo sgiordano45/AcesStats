@@ -1745,17 +1745,18 @@ async function submitStats() {
       showMessage('success', `Successfully submitted stats for ${successCount} player(s)!`);
       showToast(`Stats saved for ${successCount} players`, 'success');
       
-      // Mark the game as having stats submitted
+      // Mark the game as having stats submitted (home or away side)
       try {
         const gameRef = doc(db, 'seasons', seasonId, 'games', selectedGameId);
+        const submittedField = gameData.isHome ? 'statsSubmittedHome' : 'statsSubmittedAway';
         await updateDoc(gameRef, {
-          statsSubmitted: true,
+          [submittedField]: true,
           statsSubmittedBy: currentUser.uid,
           statsSubmittedByName: currentUser.displayName || currentUser.email,
           statsSubmittedAt: serverTimestamp(),
           statsSubmittedForTeam: selectedTeam
         });
-        console.log(`✅ Marked game ${selectedGameId} as having stats submitted`);
+        console.log(`✅ Marked game ${selectedGameId} as ${submittedField} for ${selectedTeam}`);
       } catch (gameUpdateError) {
         console.warn('⚠️ Could not update game document with statsSubmitted flag:', gameUpdateError);
         // Don't fail the whole operation if this update fails
@@ -2198,15 +2199,16 @@ window.submitBulkStats = async function() {
         
         try {
           const gameRef = doc(db, 'seasons', seasonId, 'games', gameId);
+          const bulkSubmittedField = game.isHome ? 'statsSubmittedHome' : 'statsSubmittedAway';
           await updateDoc(gameRef, {
-            statsSubmitted: true,
+            [bulkSubmittedField]: true,
             statsSubmittedBy: currentUser.uid,
             statsSubmittedByName: currentUser.displayName || currentUser.email,
             statsSubmittedAt: serverTimestamp(),
             statsSubmittedForTeam: selectedTeam,
             statsSubmittedViaBulkUpload: true
           });
-          console.log(`✅ Marked game ${gameId} as having stats submitted`);
+          console.log(`✅ Marked game ${gameId} as ${bulkSubmittedField} for ${selectedTeam}`);
         } catch (gameUpdateError) {
           console.warn(`⚠️ Could not update game ${gameId} with statsSubmitted flag:`, gameUpdateError);
         }
