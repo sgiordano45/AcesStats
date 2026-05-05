@@ -3513,18 +3513,30 @@ exports.onStatsSubmitted = functions
     const before = change.before.data();
     const after  = change.after.data();
 
-    // Only fire when statsSubmitted just flipped to true
-    if (before.statsSubmitted === true || after.statsSubmitted !== true) {
-      return null;
-    }
+    // Fire when statsSubmittedHome or statsSubmittedAway just flipped to true
+    const homeJustSubmitted = before.statsSubmittedHome !== true && after.statsSubmittedHome === true;
+    const awayJustSubmitted  = before.statsSubmittedAway  !== true && after.statsSubmittedAway  === true;
+
+    if (!homeJustSubmitted && !awayJustSubmitted) return null;
 
     const { seasonId, gameId } = context.params;
-    const submittedByName = after.statsSubmittedByName || 'Someone';
+    const submittedByName  = after.statsSubmittedByName  || 'Someone';
     const submittedForTeam = after.statsSubmittedForTeam || 'Unknown Team';
-    const gameDate = after.gameDateFormatted || after.date || 'Unknown Date';
-    const homeTeam = after.homeTeam || after.home || '';
-    const awayTeam = after.awayTeam || after.away || after.opponent || '';
-    const matchup = homeTeam && awayTeam ? `${awayTeam} @ ${homeTeam}` : submittedForTeam;
+    const _rawDate = after.gameDateFormatted || after.date;
+    const gameDate = _rawDate
+      ? (_rawDate.seconds
+          ? new Date(_rawDate.seconds * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+          : String(_rawDate))
+      : 'Unknown Date';
+    const homeTeam = after['home team'] || after.homeTeam || after.home || '';
+    const awayTeam = after['away team'] || after.awayTeam || after.away || '';
+    const matchup  = homeTeam && awayTeam ? `${awayTeam} @ ${homeTeam}` : submittedForTeam;
+
+    // Which side just submitted, and is the other side still pending?
+    const whichSide   = homeJustSubmitted ? 'Home' : 'Away';
+    const pendingTeam = after.statsSubmittedHome === true && after.statsSubmittedAway === true
+      ? null
+      : homeJustSubmitted ? (awayTeam || 'Away team') : (homeTeam || 'Home team');
 
     const submittedAt = new Date().toLocaleString('en-US', {
       timeZone: 'America/New_York',
@@ -3532,7 +3544,7 @@ exports.onStatsSubmitted = functions
       hour: 'numeric', minute: '2-digit', hour12: true
     });
 
-    console.log(`📊 Stats submitted by ${submittedByName} for ${matchup} (${gameDate})`);
+    console.log(`📊 Stats submitted (${whichSide}) by ${submittedByName} for ${matchup} (${gameDate})${pendingTeam ? ` — ${pendingTeam} still pending` : ' — both sides done'}`);
 
     // ── Find all admin users ─────────────────────────────────────────────────
     let adminTokens = [];
@@ -3570,10 +3582,14 @@ exports.onStatsSubmitted = functions
     // ── FCM Push Notification ────────────────────────────────────────────────
     if (adminTokens.length > 0) {
       try {
+        const pushBody = pendingTeam
+          ? `${submittedByName} submitted ${whichSide} stats for ${matchup} — ${pendingTeam} still pending`
+          : `${submittedByName} submitted ${whichSide} stats for ${matchup} — both sides done ✅`;
+
         await sendToTokens(adminTokens, {
           notification: {
             title: '📊 Stats Submitted',
-            body: `${submittedByName} submitted stats for ${matchup}`
+            body: pushBody
           },
           data: {
             type: 'stats_submitted',
@@ -3581,6 +3597,7 @@ exports.onStatsSubmitted = functions
             seasonId: seasonId,
             submittedByName: submittedByName,
             team: submittedForTeam,
+            side: whichSide,
             link: `/submit-stats.html`
           },
           webpush: {
@@ -3599,7 +3616,10 @@ exports.onStatsSubmitted = functions
     if (!apiKey) {
       console.warn('⚠️ RESEND_API_KEY not set — skipping email notification');
     } else if (adminEmails.length > 0) {
-      const subject = `📊 Stats submitted — ${matchup}`;
+      const subject = `📊 Stats submitted (${whichSide}) — ${matchup}`;
+      const pendingRow = pendingTeam
+        ? `<tr><td style="padding: 6px 0; color: #718096;">Still pending</td><td style="padding: 6px 0; color: #d97706; font-weight: 600;">⏳ ${pendingTeam}</td></tr>`
+        : `<tr><td style="padding: 6px 0; color: #718096;">Status</td><td style="padding: 6px 0; color: #16a34a; font-weight: 600;">✅ Both sides submitted</td></tr>`;
       const htmlBody = `
         <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;">
           <div style="background: #2d5016; border-radius: 12px 12px 0 0; padding: 20px 24px;">
@@ -3607,7 +3627,7 @@ exports.onStatsSubmitted = functions
           </div>
           <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 12px 12px; padding: 24px;">
             <p style="margin: 0 0 16px; color: #2d3748; font-size: 0.95rem;">
-              <strong>${submittedByName}</strong> just submitted player stats.
+              <strong>${submittedByName}</strong> just submitted <strong>${whichSide}</strong> player stats.
             </p>
             <table style="width: 100%; border-collapse: collapse; font-size: 0.875rem; color: #4a5568;">
               <tr>
@@ -3620,8 +3640,9 @@ exports.onStatsSubmitted = functions
               </tr>
               <tr>
                 <td style="padding: 6px 0; color: #718096;">Team</td>
-                <td style="padding: 6px 0;">${submittedForTeam}</td>
+                <td style="padding: 6px 0;">${submittedForTeam} (${whichSide})</td>
               </tr>
+              ${pendingRow}
               <tr>
                 <td style="padding: 6px 0; color: #718096;">Submitted at</td>
                 <td style="padding: 6px 0;">${submittedAt} ET</td>

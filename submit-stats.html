@@ -1198,6 +1198,7 @@ let isAdmin = false;
 let isLeagueStaff = false;
 let csvData = [];
 let csvValidation = [];
+let playersWithExistingPitching = new Set(); // tracks who had pitching data loaded in edit mode
 
 // ============================================
 // TAB SWITCHING
@@ -1521,10 +1522,11 @@ function renderStatsTable(players) {
 }
 
 async function loadExistingStatsForGame(gameId) {
+  playersWithExistingPitching.clear(); // reset for new game selection
   try {
     const seasonId = currentSeason.id;
     const gameDocId = `${seasonId}_${gameId}`;
-    
+
     console.log('🔍 Loading existing stats for game:', gameId);
     showMessage('info', 'Loading existing stats for this game...');
     
@@ -1566,6 +1568,7 @@ async function loadExistingStatsForGame(gameId) {
           }
           existingStats[playerId].inningsPitched = pitchingData.inningsPitched || 0;
           existingStats[playerId].runsAllowed = pitchingData.runsAllowed || 0;
+          playersWithExistingPitching.add(playerId); // remember this player had pitching data
         }
       } catch (error) {}
     }
@@ -1706,7 +1709,8 @@ async function submitStats() {
           }, { merge: true });
         }
 
-        if (playerStats.inningsPitched > 0 || playerStats.runsAllowed > 0) {
+        const hadPitching = playersWithExistingPitching.has(player.id);
+        if (playerStats.inningsPitched > 0 || playerStats.runsAllowed > 0 || hadPitching) {
           const gamePitchingRef = doc(db, 'pitchingStats', legacyId, 'games', gameDocId);
           
           await setDoc(gamePitchingRef, {

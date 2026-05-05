@@ -1114,6 +1114,7 @@ let teamGames = [];
 let selectedGameData = null;
 let csvData = [];
 let csvValidation = [];
+let playersWithExistingPitching = new Set(); // tracks who had pitching data loaded in edit mode
 
 // ============================================
 // INITIALIZATION
@@ -1475,6 +1476,7 @@ window.handleGameChange = async function() {
 };
 
 async function loadExistingStatsForGame(gameId) {
+  playersWithExistingPitching.clear(); // reset for new game selection
   const seasonId = document.getElementById('seasonSelect').value || currentSeason?.id;
   const gameDocId = `${seasonId}_${gameId}`;
   
@@ -1513,12 +1515,13 @@ async function loadExistingStatsForGame(gameId) {
       
       if (pitchingSnap.exists()) {
         const data = pitchingSnap.data();
-        
+
         const ipInput = document.getElementById(`ip_${i}`);
         const raInput = document.getElementById(`ra_${i}`);
-        
+
         if (ipInput) ipInput.value = data.inningsPitched || 0;
         if (raInput) raInput.value = data.runsAllowed || 0;
+        playersWithExistingPitching.add(player.legacyId); // remember this player had pitching data
       }
       
     } catch (error) {
@@ -1709,8 +1712,9 @@ window.submitSingleGameStats = async function() {
           console.log(`✅ Saved batting stats for ${stats.playerName}`);
         }
         
-        // Write pitching stats
-        if (stats.inningsPitched > 0 || stats.runsAllowed > 0) {
+        // Write pitching stats (also fires when zeroing out a previously incorrect entry)
+        const hadPitching = playersWithExistingPitching.has(stats.legacyId);
+        if (stats.inningsPitched > 0 || stats.runsAllowed > 0 || hadPitching) {
           const pitchingRef = doc(db, 'pitchingStats', stats.legacyId, 'games', gameDocId);
           
           await setDoc(pitchingRef, {
