@@ -691,6 +691,7 @@ function RosterManagement({ currentUser }) {
         
         return {
           id: player.playerId || player.id,
+          legacyId: player.legacyId || '',
           name,
           jersey: jerseyNum,
           avatar,
@@ -699,9 +700,34 @@ function RosterManagement({ currentUser }) {
           isMe: isCurrentUser
         };
       });
-      
+
       const formattedPlayers = await Promise.all(formattedPlayersPromises);
       formattedPlayers.sort((a, b) => a.name.localeCompare(b.name));
+
+      // Fetch current-season batting averages from aggregatedPlayerStats
+      await Promise.all(formattedPlayers.map(async (p) => {
+        try {
+          // Try primary ID first (auth UID), fall back to legacyId
+          const lookupIds = [p.id, p.legacyId].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i);
+          for (const lookupId of lookupIds) {
+            const statsSnap = await getDoc(doc(db, 'aggregatedPlayerStats', lookupId));
+            if (statsSnap.exists()) {
+              const data = statsSnap.data();
+              if (data.migrated) break; // skip migrated legacy shells
+              const seasonKey = Object.keys(data.seasons || {}).find(k => k.startsWith(currentSeason.id));
+              if (seasonKey) {
+                const s = data.seasons[seasonKey];
+                const avg = s.battingAverage ?? (s.atBats > 0 ? s.hits / s.atBats : 0);
+                p.battingAvg = typeof avg === 'number' ? avg.toFixed(3) : '.000';
+              }
+              break;
+            }
+          }
+        } catch (e) {
+          // leave .000 default
+        }
+      }));
+
       setPlayers(formattedPlayers);
       
       const upcomingGames = await window.FirebaseRoster.getUpcomingTeamGames(selectedTeam, currentSeason.id);
