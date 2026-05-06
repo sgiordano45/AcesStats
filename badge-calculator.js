@@ -149,9 +149,9 @@ export const BADGE_DEFINITIONS = {
     icon: '💪',
     iconPath: '/assets/badges/pitching/season-innings',
     tiers: {
-      bronze: { name: 'Reliable Arm', threshold: 10, description: '10+ innings pitched in a season' },
-      silver: { name: 'Workhorse', threshold: 20, description: '20+ innings pitched in a season' },
-      gold: { name: 'Ace', threshold: 30, description: '30+ innings pitched in a season' }
+      bronze: { name: 'Reliable Arm', threshold: 25, description: '25+ innings pitched in a season' },
+      silver: { name: 'Workhorse', threshold: 50, description: '50+ innings pitched in a season' },
+      gold: { name: 'Ace', threshold: 75, description: '75+ innings pitched in a season' }
     }
   },
   
