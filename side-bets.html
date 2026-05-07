@@ -623,20 +623,27 @@ async function loadAllPlayers() {
   // but whose user doc doesn't have linkedPlayer set properly
   try {
     const statsSnap = await getDocs(collection(db, 'aggregatedPlayerStats'));
+    // Build a name index from Source 1 for fast duplicate checking
+    const existingNames = new Set(
+      Object.values(byLegacyId).map(p => p.playerName.toLowerCase())
+    );
+
     statsSnap.docs.forEach(d => {
       const data = d.data();
       if (data.migrated) return; // skip legacy stub docs
       const legacyId = d.id;
-      if (byLegacyId[legacyId]) return; // already have a users record, skip
+      if (byLegacyId[legacyId]) return; // same legacyId already in map
       const playerName = data.linkedPlayer || data.name || data.displayName;
       if (!playerName) return;
+      if (existingNames.has(playerName.toLowerCase())) return; // already found via users
       byLegacyId[legacyId] = {
-        userId: data.authId || data.uid || null, // may be null for legacy-only players
+        userId: data.authId || data.uid || null,
         playerName,
         legacyId,
         teamId: data.currentTeam || data.teamId || '',
         source: 'stats'
       };
+      existingNames.add(playerName.toLowerCase());
     });
   } catch (e) {
     console.error('Error loading from aggregatedPlayerStats:', e);
