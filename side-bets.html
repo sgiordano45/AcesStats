@@ -154,6 +154,8 @@ body {
 .badge-settled { background: #e0e7ff; color: #4338ca; }
 .badge-batting { background: #fef3c7; color: #92400e; }
 .badge-pitching { background: #ede9fe; color: #5b21b6; }
+.badge-public { background: #dbeafe; color: #1d4ed8; }
+.badge-private { background: #f1f5f9; color: #64748b; }
 
 .standings-table {
   width: 100%;
@@ -469,6 +471,14 @@ body {
       </div>
 
       <div class="form-group">
+        <label>Visibility</label>
+        <select id="betVisibility">
+          <option value="private">🔒 Private — only participants can see</option>
+          <option value="public">🌐 Public — visible to all league members</option>
+        </select>
+      </div>
+
+      <div class="form-group">
         <label>Participants</label>
         <div class="participant-search-wrap">
           <input type="text" id="participantSearch" placeholder="Search by player name..."
@@ -661,19 +671,25 @@ async function loadBets() {
   container.innerHTML = '<div id="loadingState" class="loading-spinner">⏳ Loading bets...</div>';
 
   try {
-    let q;
+    let allDocs = [];
     if (isAdmin) {
-      q = query(collection(db, 'sideBets'));
+      const snap = await getDocs(collection(db, 'sideBets'));
+      allDocs = snap.docs;
     } else {
-      q = query(
-        collection(db, 'sideBets'),
-        where('participantUserIds', 'array-contains', currentUser.uid)
-      );
+      // Two separate queries — participantUserIds (private) + isPublic (public)
+      const [mySnap, publicSnap] = await Promise.all([
+        getDocs(query(collection(db, 'sideBets'), where('participantUserIds', 'array-contains', currentUser.uid))),
+        getDocs(query(collection(db, 'sideBets'), where('isPublic', '==', true)))
+      ]);
+      const seen = new Set();
+      for (const snap of [mySnap, publicSnap]) {
+        for (const d of snap.docs) {
+          if (!seen.has(d.id)) { seen.add(d.id); allDocs.push(d); }
+        }
+      }
     }
 
-    const snap = await getDocs(q);
-
-    if (snap.empty) {
+    if (allDocs.length === 0) {
       container.innerHTML = `
         <div class="empty-state">
           <div class="icon">🎲</div>
@@ -684,7 +700,7 @@ async function loadBets() {
       return;
     }
 
-    const bets = snap.docs
+    const bets = allDocs
       .map(d => ({ id: d.id, ...d.data() }))
       .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
     container.innerHTML = '';
@@ -728,6 +744,7 @@ async function buildBetCard(bet) {
       <div class="bet-badges">
         <span class="badge ${statusBadge}">${statusLabel}</span>
         <span class="badge ${categoryBadge}">${categoryLabel}</span>
+        <span class="badge ${bet.isPublic ? 'badge-public' : 'badge-private'}">${bet.isPublic ? '🌐 Public' : '🔒 Private'}</span>
       </div>
     </div>
     <div id="standings-${bet.id}">
@@ -872,6 +889,7 @@ window.createBet = async function() {
   const statDef = STAT_OPTIONS[category].find(s => s.value === statValue);
   const seasonLabel = getSeasonLabel(seasonId);
   const title = titleInput || `${statDef.label} — ${seasonLabel}`;
+  const isPublic = document.getElementById('betVisibility').value === 'public';
 
   btn.disabled = true;
   btn.textContent = 'Creating...';
@@ -896,6 +914,7 @@ window.createBet = async function() {
         currentUser.uid,
         ...selectedParticipants.map(p => p.userId).filter(Boolean)
       ])],
+      isPublic,
       createdBy: currentUser.uid,
       createdByName: userProfile?.displayName || userProfile?.linkedPlayer || currentUser.email,
       createdAt: serverTimestamp(),
@@ -954,6 +973,7 @@ window.openCreateModal = function() {
   document.getElementById('betCategory').value = '';
   document.getElementById('betStat').innerHTML = '<option value="">-- Select category first --</option>';
   document.getElementById('statGroup').style.display = 'none';
+  document.getElementById('betVisibility').value = 'private';
   document.getElementById('participantSearch').value = '';
   document.getElementById('participantDropdown').innerHTML = '';
   document.getElementById('participantDropdown').classList.remove('open');
