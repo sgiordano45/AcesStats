@@ -512,7 +512,7 @@ import { getCurrentSeason } from './firebase-data.js';
 import { db } from './firebase-config.js';
 import {
   collection, doc, getDoc, getDocs, addDoc, deleteDoc,
-  query, where, orderBy, serverTimestamp
+  query, where, serverTimestamp
 } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
 
 // ============================================================
@@ -663,12 +663,11 @@ async function loadBets() {
   try {
     let q;
     if (isAdmin) {
-      q = query(collection(db, 'sideBets'), orderBy('createdAt', 'desc'));
+      q = query(collection(db, 'sideBets'));
     } else {
       q = query(
         collection(db, 'sideBets'),
-        where('participantUserIds', 'array-contains', currentUser.uid),
-        orderBy('createdAt', 'desc')
+        where('participantUserIds', 'array-contains', currentUser.uid)
       );
     }
 
@@ -685,7 +684,9 @@ async function loadBets() {
       return;
     }
 
-    const bets = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const bets = snap.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
     container.innerHTML = '';
     for (const bet of bets) {
       const card = await buildBetCard(bet);
@@ -872,7 +873,12 @@ window.createBet = async function() {
         legacyId: p.legacyId,
         teamId: p.teamId
       })),
-      participantUserIds: selectedParticipants.map(p => p.userId).filter(Boolean),
+      // Always include the creator so they can see their own bet,
+      // plus any participants who have a userId
+      participantUserIds: [...new Set([
+        currentUser.uid,
+        ...selectedParticipants.map(p => p.userId).filter(Boolean)
+      ])],
       createdBy: currentUser.uid,
       createdByName: userProfile?.displayName || userProfile?.linkedPlayer || currentUser.email,
       createdAt: serverTimestamp(),
