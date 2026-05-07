@@ -588,30 +588,62 @@ async function loadSeasons() {
 
 // ============================================================
 // LOAD ALL LINKED PLAYERS (for participant search)
+// Sources: (1) users with linkedPlayer, (2) aggregatedPlayerStats
+// Merged and deduplicated by legacyId — users records take priority.
+// This ensures players with accounts but missing/empty linkedPlayer
+// fields are still findable.
 // ============================================================
 async function loadAllPlayers() {
+  const byLegacyId = {};
+
+  // Source 1: users collection
   try {
-    const snap = await getDocs(query(
+    const usersSnap = await getDocs(query(
       collection(db, 'users'),
       where('linkedPlayer', '!=', null)
     ));
-    allPlayers = snap.docs
-      .map(d => {
-        const data = d.data();
-        if (!data.linkedPlayer) return null;
-        return {
-          userId: d.id,
-          playerName: data.linkedPlayer,
-          displayName: data.displayName || data.linkedPlayer,
-          legacyId: data.mergedFromProfile || data.linkedPlayer.toLowerCase().replace(/\./g, '').replace(/\s+/g, '_'),
-          teamId: data.linkedTeam || data.teamId || ''
-        };
-      })
-      .filter(Boolean)
-      .sort((a, b) => a.playerName.localeCompare(b.playerName));
+    usersSnap.docs.forEach(d => {
+      const data = d.data();
+      if (!data.linkedPlayer) return;
+      const legacyId = data.mergedFromProfile ||
+        data.linkedPlayer.toLowerCase().replace(/\./g, '').replace(/\s+/g, '_');
+      byLegacyId[legacyId] = {
+        userId: d.id,
+        playerName: data.linkedPlayer,
+        legacyId,
+        teamId: data.linkedTeam || data.teamId || '',
+        source: 'users'
+      };
+    });
   } catch (e) {
-    console.error('Error loading players:', e);
+    console.error('Error loading from users:', e);
   }
+
+  // Source 2: aggregatedPlayerStats — catches players who have history
+  // but whose user doc doesn't have linkedPlayer set properly
+  try {
+    const statsSnap = await getDocs(collection(db, 'aggregatedPlayerStats'));
+    statsSnap.docs.forEach(d => {
+      const data = d.data();
+      if (data.migrated) return; // skip legacy stub docs
+      const legacyId = d.id;
+      if (byLegacyId[legacyId]) return; // already have a users record, skip
+      const playerName = data.linkedPlayer || data.name || data.displayName;
+      if (!playerName) return;
+      byLegacyId[legacyId] = {
+        userId: data.authId || data.uid || null, // may be null for legacy-only players
+        playerName,
+        legacyId,
+        teamId: data.currentTeam || data.teamId || '',
+        source: 'stats'
+      };
+    });
+  } catch (e) {
+    console.error('Error loading from aggregatedPlayerStats:', e);
+  }
+
+  allPlayers = Object.values(byLegacyId)
+    .sort((a, b) => a.playerName.localeCompare(b.playerName));
 }
 
 // ============================================================
@@ -833,7 +865,7 @@ window.createBet = async function() {
         legacyId: p.legacyId,
         teamId: p.teamId
       })),
-      participantUserIds: selectedParticipants.map(p => p.userId),
+      participantUserIds: selectedParticipants.map(p => p.userId).filter(Boolean),
       createdBy: currentUser.uid,
       createdByName: userProfile?.displayName || userProfile?.linkedPlayer || currentUser.email,
       createdAt: serverTimestamp(),
