@@ -811,24 +811,38 @@ async function loadStandings(bet) {
 // GET PLAYER STAT FROM aggregatedPlayerStats
 // ============================================================
 async function getPlayerStat(legacyId, seasonId, statField) {
-  if (!legacyId) return 0;
+  if (!legacyId) { console.warn('[SideBets] getPlayerStat: no legacyId'); return 0; }
   try {
     const snap = await getDoc(doc(db, 'aggregatedPlayerStats', legacyId));
-    if (!snap.exists()) return 0;
+    if (!snap.exists()) {
+      console.warn(`[SideBets] No aggregatedPlayerStats doc for "${legacyId}"`);
+      return 0;
+    }
     const data = snap.data();
-    if (data.migrated) return 0;
+    if (data.migrated) {
+      console.warn(`[SideBets] Doc "${legacyId}" is migrated — skipping`);
+      return 0;
+    }
 
-    // Find the season key that starts with seasonId
     const seasons = data.seasons || {};
-    const key = Object.keys(seasons).find(k => k.startsWith(seasonId));
-    if (!key) return 0;
+    const availableKeys = Object.keys(seasons);
+    const key = availableKeys.find(k => k.startsWith(seasonId));
+    if (!key) {
+      console.warn(`[SideBets] No season key starting with "${seasonId}" for "${legacyId}". Available:`, availableKeys);
+      return 0;
+    }
 
     const s = seasons[key];
     if (statField === 'battingAverage') {
-      return s.battingAverage ?? (s.atBats > 0 ? s.hits / s.atBats : 0);
+      const avg = s.battingAverage ?? (s.atBats > 0 ? s.hits / s.atBats : 0);
+      console.log(`[SideBets] ${legacyId} | key=${key} | BA=${avg} (hits=${s.hits}, ab=${s.atBats})`);
+      return avg;
     }
-    return s[statField] ?? 0;
+    const val = s[statField] ?? 0;
+    console.log(`[SideBets] ${legacyId} | key=${key} | ${statField}=${val}`);
+    return val;
   } catch (e) {
+    console.error(`[SideBets] Error fetching stat for "${legacyId}":`, e);
     return 0;
   }
 }
