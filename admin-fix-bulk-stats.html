@@ -138,12 +138,21 @@ function isOldFormat(data) {
 
 // ─── Parse date from gameDateFormatted ───────────────────────────────────────
 function parseFormattedDate(str) {
-  // Handles "YYYY-MM-DD"
   if (!str) return null;
-  const parts = str.split('-');
-  if (parts.length === 3) {
-    const [y, m, d] = parts.map(Number);
-    return new Date(y, m - 1, d);
+  if (str.includes('/')) {
+    // M/D/YYYY — raw CSV date format
+    const parts = str.split('/');
+    if (parts.length === 3) {
+      const [m, d, y] = parts.map(Number);
+      return new Date(y, m - 1, d);
+    }
+  } else {
+    // YYYY-MM-DD — ISO format
+    const parts = str.split('-');
+    if (parts.length === 3) {
+      const [y, m, d] = parts.map(Number);
+      return new Date(y, m - 1, d);
+    }
   }
   return null;
 }
@@ -204,9 +213,13 @@ async function getSeasonGames(seasonId) {
   return games;
 }
 
-async function findCorrectGameDocCached(seasonId, gameDateFormatted, opponent, isHome, teamId) {
+async function findCorrectGameDocCached(seasonId, gameDateFormatted, opponent, isHome, teamId, gameTimestamp) {
   const games = await getSeasonGames(seasonId);
-  const csvDate = parseFormattedDate(gameDateFormatted);
+  let csvDate = parseFormattedDate(gameDateFormatted);
+  // Fallback: use the Firestore timestamp stored on the stat doc if date string can't be parsed
+  if (!csvDate && gameTimestamp?.seconds) {
+    csvDate = new Date(gameTimestamp.seconds * 1000);
+  }
   if (!csvDate) return null;
 
   for (const g of games) {
@@ -299,7 +312,7 @@ window.runScan = async function() {
 
           // Find the correct game doc in seasons/{seasonId}/games
           const match = await findCorrectGameDocCached(
-            data.seasonId, data.gameDateFormatted, data.opponent, data.isHome, data.teamId
+            data.seasonId, data.gameDateFormatted, data.opponent, data.isHome, data.teamId, data.gameDate
           );
 
           let newGameId = null, newDocId = null;
