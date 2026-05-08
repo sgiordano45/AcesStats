@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Fix Bulk-Upload Game Stats - Admin</title>
+<style>
+  body { font-family: 'Inter', system-ui, sans-serif; margin: 0; padding: 1.5rem; background: #f7fafc; color: #2d3748; }
+  h1 { color: #2d5016; margin-bottom: 0.25rem; }
+  .subtitle { color: #718096; margin-bottom: 1.5rem; font-size: 0.9rem; }
+  .card { background: white; border-radius: 10px; padding: 1.25rem 1.5rem; margin-bottom: 1rem; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+  .btn { padding: 0.6rem 1.25rem; border: none; border-radius: 6px; cursor: pointer; font-size: 0.9rem; font-weight: 600; }
+  .btn-primary { background: #2d5016; color: white; }
+  .btn-danger  { background: #e53e3e; color: white; }
+  .btn-secondary { background: #e2e8f0; color: #2d3748; }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn + .btn { margin-left: 0.5rem; }
+  #log { background: #1a202c; color: #68d391; font-family: monospace; font-size: 0.8rem; padding: 1rem; border-radius: 8px; height: 200px; overflow-y: auto; white-space: pre-wrap; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+  th { background: #2d5016; color: white; padding: 0.5rem 0.75rem; text-align: left; }
+  td { padding: 0.45rem 0.75rem; border-bottom: 1px solid #e2e8f0; vertical-align: top; }
+  tr:nth-child(even) td { background: #f7fafc; }
+  .tag { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; }
+  .tag-warn  { background: #fef3c7; color: #92400e; }
+  .tag-ok    { background: #d1fae5; color: #065f46; }
+  .tag-err   { background: #fee2e2; color: #991b1b; }
+  .stats-bar { display: flex; gap: 1.5rem; flex-wrap: wrap; margin-bottom: 0.5rem; }
+  .stat-box  { text-align: center; }
+  .stat-num  { font-size: 1.8rem; font-weight: 700; color: #2d5016; }
+  .stat-lbl  { font-size: 0.78rem; color: #718096; }
+  #authBanner { background: #fff3cd; border: 1px solid #ffd600; border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 1rem; display: none; }
+</style>
+</head>
+<body>
+
+<h1>🔧 Fix Bulk-Upload Game Stats</h1>
+<p class="subtitle">
+  Finds <code>playerStats</code> and <code>pitchingStats</code> game docs where the CSV bulk-upload
+  used a self-constructed gameDocId (season prefix baked in, hyphens in date) instead of the real
+  Firestore game document ID. Copies each doc to the correct path and deletes the old one.
+</p>
+
+<div id="authBanner">⚠️ You must be signed in as an admin to run this script.</div>
+
+<div class="card">
+  <div class="stats-bar">
+    <div class="stat-box"><div class="stat-num" id="cntBad">—</div><div class="stat-lbl">Bad docs found</div></div>
+    <div class="stat-box"><div class="stat-num" id="cntMatched">—</div><div class="stat-lbl">Matched to game</div></div>
+    <div class="stat-box"><div class="stat-num" id="cntUnmatched">—</div><div class="stat-lbl">Unmatched (no fix)</div></div>
+    <div class="stat-box"><div class="stat-num" id="cntFixed">—</div><div class="stat-lbl">Fixed</div></div>
+    <div class="stat-box"><div class="stat-num" id="cntErr">—</div><div class="stat-lbl">Errors</div></div>
+  </div>
+  <button class="btn btn-primary" id="scanBtn" onclick="runScan()">🔍 Scan for Bad Docs</button>
+  <button class="btn btn-danger"  id="fixBtn"  onclick="runFix()" disabled>⚡ Fix All Matched</button>
+  <button class="btn btn-secondary" onclick="clearLog()">Clear Log</button>
+</div>
+
+<div class="card" id="previewCard" style="display:none">
+  <h3 style="margin-top:0">Preview — docs to fix</h3>
+  <p style="font-size:0.85rem;color:#718096;">Rows marked <span class="tag tag-warn">no match</span> will be skipped — the correct game doc wasn't found in Firestore.</p>
+  <div style="overflow-x:auto">
+    <table id="previewTable">
+      <thead><tr>
+        <th>Collection</th><th>Player ID</th><th>Old gameDocId</th><th>New gameDocId</th><th>Season</th><th>Date</th><th>Opponent</th><th>Status</th>
+      </tr></thead>
+      <tbody id="previewBody"></tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <h3 style="margin-top:0">Log</h3>
+  <div id="log"></div>
+</div>
+
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
+import {
+  getFirestore,
+  collection,
+  collectionGroup,
+  doc,
+  getDocs,
+  getDoc,
+  setDoc,
+  deleteDoc,
+  query,
+  where
+} from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+
+const firebaseConfig = {
+  apiKey: "AIzaSyCAEWkrTcprzJ2KPPJu-vFJPvYOVU4ky20",
+  authDomain: "acessoftballreference-84791.firebaseapp.com",
+  projectId: "acessoftballreference-84791",
+  storageBucket: "acessoftballreference-84791.firebasestorage.app",
+  messagingSenderId: "777699560175",
+  appId: "1:777699560175:web:4092b422e7d7116352e91a"
+};
+
+const app  = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db   = getFirestore(app);
+
+let currentUser = null;
+let scanResults = [];   // { collName, playerId, oldDocId, newDocId, data, matched, newGameId }
+
+// ─── Auth ────────────────────────────────────────────────────────────────────
+onAuthStateChanged(auth, user => {
+  currentUser = user;
+  const banner = document.getElementById('authBanner');
+  if (!user) {
+    banner.style.display = 'block';
+    document.getElementById('scanBtn').disabled = true;
+  } else {
+    banner.style.display = 'none';
+    document.getElementById('scanBtn').disabled = false;
+  }
+});
+
+// ─── Logging ─────────────────────────────────────────────────────────────────
+function log(msg) {
+  const el = document.getElementById('log');
+  el.textContent += `[${new Date().toLocaleTimeString()}] ${msg}\n`;
+  el.scrollTop = el.scrollHeight;
+}
+window.clearLog = () => { document.getElementById('log').textContent = ''; };
+
+function setStat(id, val) { document.getElementById(id).textContent = val; }
+
+// ─── Detect "old-format" game doc IDs ────────────────────────────────────────
+// Old format: gameId === gameDocId AND gameDocId starts with seasonId + '_'
+// This means the CSV bulk upload baked the season prefix into the gameId.
+function isOldFormat(data) {
+  const { gameId, gameDocId, seasonId } = data;
+  if (!gameId || !gameDocId || !seasonId) return false;
+  return gameId === gameDocId && gameDocId.startsWith(seasonId + '_');
+}
+
+// ─── Parse date from gameDateFormatted ───────────────────────────────────────
+function parseFormattedDate(str) {
+  // Handles "YYYY-MM-DD"
+  if (!str) return null;
+  const parts = str.split('-');
+  if (parts.length === 3) {
+    const [y, m, d] = parts.map(Number);
+    return new Date(y, m - 1, d);
+  }
+  return null;
+}
+
+// ─── Find correct game doc in seasons/{seasonId}/games ───────────────────────
+// Match by date + opponent (case-insensitive). teamId tells us which team's perspective to use.
+async function findCorrectGameDoc(seasonId, gameDateFormatted, opponent, isHome, teamId) {
+  try {
+    const gamesSnap = await getDocs(collection(db, 'seasons', seasonId, 'games'));
+    const csvDate = parseFormattedDate(gameDateFormatted);
+    if (!csvDate) return null;
+
+    for (const gDoc of gamesSnap.docs) {
+      const g = gDoc.data();
+      // Parse game date
+      let gDate = null;
+      if (g.date?.seconds) {
+        gDate = new Date(g.date.seconds * 1000);
+      } else if (g.date && typeof g.date === 'string') {
+        gDate = new Date(g.date);
+      }
+      if (!gDate || isNaN(gDate.getTime())) continue;
+
+      const sameDate =
+        gDate.getFullYear() === csvDate.getFullYear() &&
+        gDate.getMonth()    === csvDate.getMonth()    &&
+        gDate.getDate()     === csvDate.getDate();
+      if (!sameDate) continue;
+
+      const homeTeam = (g.homeTeamName || g['home team'] || g.homeTeam || '').toLowerCase();
+      const awayTeam = (g.awayTeamName || g['away team'] || g.awayTeam || '').toLowerCase();
+      const oppLower = opponent.toLowerCase();
+      const teamLower = (teamId || '').toLowerCase();
+
+      // The opponent field from the stat doc's perspective
+      const statIsHome = isHome === true;
+      const oppMatchesHome = statIsHome
+        ? awayTeam === oppLower || homeTeam === teamLower
+        : homeTeam === oppLower || awayTeam === teamLower;
+
+      if (sameDate && oppMatchesHome) {
+        return { docId: gDoc.id, data: g };
+      }
+    }
+  } catch (e) {
+    log(`  ⚠️ Error searching season ${seasonId}: ${e.message}`);
+  }
+  return null;
+}
+
+// ─── Cache: season games by seasonId ─────────────────────────────────────────
+const seasonGameCache = {};
+async function getSeasonGames(seasonId) {
+  if (seasonGameCache[seasonId]) return seasonGameCache[seasonId];
+  const snap = await getDocs(collection(db, 'seasons', seasonId, 'games'));
+  const games = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  seasonGameCache[seasonId] = games;
+  return games;
+}
+
+async function findCorrectGameDocCached(seasonId, gameDateFormatted, opponent, isHome, teamId) {
+  const games = await getSeasonGames(seasonId);
+  const csvDate = parseFormattedDate(gameDateFormatted);
+  if (!csvDate) return null;
+
+  for (const g of games) {
+    let gDate = null;
+    if (g.date?.seconds) {
+      gDate = new Date(g.date.seconds * 1000);
+    } else if (g.date && typeof g.date === 'string') {
+      gDate = new Date(g.date);
+    }
+    if (!gDate || isNaN(gDate.getTime())) continue;
+
+    const sameDate =
+      gDate.getFullYear() === csvDate.getFullYear() &&
+      gDate.getMonth()    === csvDate.getMonth()    &&
+      gDate.getDate()     === csvDate.getDate();
+    if (!sameDate) continue;
+
+    const homeTeam = (g.homeTeamName || g['home team'] || g.homeTeam || '').toLowerCase();
+    const awayTeam = (g.awayTeamName || g['away team'] || g.awayTeam || '').toLowerCase();
+    const oppLower  = (opponent || '').toLowerCase();
+    const teamLower = (teamId   || '').toLowerCase();
+
+    const statIsHome = isHome === true;
+    // Home stat: team is home, opponent is away
+    // Away stat: team is away, opponent is home
+    const match = statIsHome
+      ? (homeTeam === teamLower && awayTeam === oppLower) ||
+        (homeTeam === teamLower) || (awayTeam === oppLower)
+      : (awayTeam === teamLower && homeTeam === oppLower) ||
+        (homeTeam === oppLower)  || (awayTeam === teamLower);
+
+    if (match) return { docId: g.id, data: g };
+  }
+  return null;
+}
+
+// ─── Scan ─────────────────────────────────────────────────────────────────────
+window.runScan = async function() {
+  document.getElementById('scanBtn').disabled = true;
+  document.getElementById('fixBtn').disabled  = true;
+  scanResults = [];
+  setStat('cntBad', '…'); setStat('cntMatched', '…'); setStat('cntUnmatched', '…');
+  setStat('cntFixed', '—'); setStat('cntErr', '—');
+  document.getElementById('previewCard').style.display = 'none';
+  document.getElementById('previewBody').innerHTML = '';
+
+  log('Starting scan of playerStats and pitchingStats…');
+
+  const colls = ['playerStats', 'pitchingStats'];
+  let badCount = 0, matchedCount = 0, unmatchedCount = 0;
+
+  for (const collName of colls) {
+    log(`Scanning ${collName}…`);
+    try {
+      // collectionGroup lets us reach all /games subcollections at once
+      const gamesSnap = await getDocs(collectionGroup(db, 'games'));
+      // Filter to only those under this top-level collection
+      const relevant = gamesSnap.docs.filter(d => d.ref.path.startsWith(collName + '/'));
+      log(`  ${collName}: ${relevant.length} total game docs`);
+
+      for (const gDoc of relevant) {
+        const data = gDoc.data();
+        if (!isOldFormat(data)) continue;
+
+        badCount++;
+        // Path: playerStats/{playerId}/games/{gameDocId}
+        const pathParts = gDoc.ref.path.split('/');
+        const playerId  = pathParts[1];
+        const oldDocId  = pathParts[3];
+
+        log(`  Found bad doc: ${gDoc.ref.path}`);
+        log(`    gameId=${data.gameId}  date=${data.gameDateFormatted}  opp=${data.opponent}  home=${data.isHome}  team=${data.teamId}`);
+
+        // Find the correct game doc
+        const match = await findCorrectGameDocCached(
+          data.seasonId, data.gameDateFormatted, data.opponent, data.isHome, data.teamId
+        );
+
+        let newGameId = null, newDocId = null;
+        let matched = false;
+
+        if (match) {
+          newGameId = match.docId;
+          newDocId  = `${data.seasonId}_${newGameId}`;
+          matched   = true;
+          matchedCount++;
+          log(`    ✅ Matched → new gameDocId: ${newDocId}`);
+        } else {
+          unmatchedCount++;
+          log(`    ⚠️ No game match found — will skip`);
+        }
+
+        scanResults.push({ collName, playerId, oldDocId, newDocId, newGameId, data, matched });
+      }
+    } catch (e) {
+      log(`  ❌ Error scanning ${collName}: ${e.message}`);
+    }
+  }
+
+  setStat('cntBad',       badCount);
+  setStat('cntMatched',   matchedCount);
+  setStat('cntUnmatched', unmatchedCount);
+
+  // Build preview table
+  const tbody = document.getElementById('previewBody');
+  scanResults.forEach(r => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${r.collName}</td>
+      <td style="font-family:monospace;font-size:0.78rem">${r.playerId}</td>
+      <td style="font-family:monospace;font-size:0.78rem;color:#c53030">${r.oldDocId}</td>
+      <td style="font-family:monospace;font-size:0.78rem;color:#276749">${r.matched ? r.newDocId : '—'}</td>
+      <td>${r.data.seasonId || ''}</td>
+      <td>${r.data.gameDateFormatted || ''}</td>
+      <td>${r.data.opponent || ''} (${r.data.isHome ? 'home' : 'away'})</td>
+      <td><span class="tag ${r.matched ? 'tag-ok' : 'tag-warn'}">${r.matched ? 'ready' : 'no match'}</span></td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  document.getElementById('previewCard').style.display = matchedCount + unmatchedCount > 0 ? 'block' : 'none';
+
+  if (matchedCount > 0) {
+    document.getElementById('fixBtn').disabled = false;
+    log(`\nScan complete. ${matchedCount} doc(s) ready to fix, ${unmatchedCount} skipped.`);
+    log('Review the table above, then click "Fix All Matched" to proceed.');
+  } else {
+    log('\nScan complete. No fixable docs found.');
+  }
+
+  document.getElementById('scanBtn').disabled = false;
+};
+
+// ─── Fix ──────────────────────────────────────────────────────────────────────
+window.runFix = async function() {
+  const toFix = scanResults.filter(r => r.matched);
+  if (toFix.length === 0) { log('Nothing to fix.'); return; }
+
+  if (!confirm(`Fix ${toFix.length} doc(s)? This will copy each to the correct path and delete the old one.`)) return;
+
+  document.getElementById('fixBtn').disabled  = true;
+  document.getElementById('scanBtn').disabled = true;
+
+  let fixed = 0, errors = 0;
+  log(`\nFixing ${toFix.length} doc(s)…`);
+
+  for (const r of toFix) {
+    try {
+      const oldRef = doc(db, r.collName, r.playerId, 'games', r.oldDocId);
+      const newRef = doc(db, r.collName, r.playerId, 'games', r.newDocId);
+
+      // Build corrected data
+      const correctedData = {
+        ...r.data,
+        gameId:      r.newGameId,    // raw doc ID without season prefix
+        gameDocId:   r.newDocId,     // seasonId + "_" + rawDocId
+        fixedFromBulkUpload: true,   // audit trail
+        fixedAt: new Date().toISOString()
+      };
+
+      // Write to new path
+      await setDoc(newRef, correctedData);
+      log(`  ✅ Wrote ${r.collName}/${r.playerId}/games/${r.newDocId}`);
+
+      // Delete old path
+      await deleteDoc(oldRef);
+      log(`  🗑️  Deleted ${r.collName}/${r.playerId}/games/${r.oldDocId}`);
+
+      fixed++;
+    } catch (e) {
+      log(`  ❌ Error fixing ${r.collName}/${r.playerId}/${r.oldDocId}: ${e.message}`);
+      errors++;
+    }
+  }
+
+  setStat('cntFixed', fixed);
+  setStat('cntErr',   errors);
+
+  if (errors === 0) {
+    log(`\n🎉 All done! ${fixed} doc(s) fixed successfully.`);
+    log('You should now re-run your aggregation (badge-weekly or aggregate-stats) to refresh aggregatedPlayerStats.');
+  } else {
+    log(`\nFinished with ${fixed} fixed and ${errors} error(s). Review log above.`);
+  }
+
+  document.getElementById('scanBtn').disabled = false;
+};
+</script>
+</body>
+</html>
