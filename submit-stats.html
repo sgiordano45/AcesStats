@@ -2085,13 +2085,39 @@ window.submitBulkStats = async function() {
       } else {
         [yyyy, mm, dd] = game.date.split('-');
       }
-      const gameDateTimestamp = Timestamp.fromDate(new Date(parseInt(yyyy), parseInt(mm) - 1, parseInt(dd)));
+      const csvDate = new Date(parseInt(yyyy), parseInt(mm) - 1, parseInt(dd));
+      const gameDateTimestamp = Timestamp.fromDate(csvDate);
       const dateStr = `${parseInt(mm)}-${parseInt(dd)}-${yyyy}`;
       // Convention: home_vs_away. If isHome=true, selectedTeam is home so listed first.
       const homeTeam = game.isHome ? selectedTeam.toLowerCase() : game.opponent.toLowerCase();
       const awayTeam = game.isHome ? game.opponent.toLowerCase() : selectedTeam.toLowerCase();
-      const gameId = `${seasonId}_${dateStr}_${homeTeam}_vs_${awayTeam}`.replace(/\s+/g, '_');
-      const gameDocId = gameId;
+
+      // Match against the already-loaded teamGames to get the real Firestore doc ID.
+      // This ensures gameDocId is consistent with manual submit and admin-submit-stats,
+      // which both construct gameDocId = seasonId + "_" + game.id (the raw doc ID).
+      const matchedGame = (teamGames || []).find(g => {
+        if (!g.dateObj || g.dateObj.getTime() === 0) return false;
+        const sameDate =
+          g.dateObj.getFullYear() === csvDate.getFullYear() &&
+          g.dateObj.getMonth()    === csvDate.getMonth()    &&
+          g.dateObj.getDate()     === csvDate.getDate();
+        const sameOpponent = (g.opponent || '').toLowerCase().trim() === game.opponent.toLowerCase().trim();
+        return sameDate && sameOpponent;
+      });
+
+      let gameId, gameDocId;
+      if (matchedGame) {
+        gameId    = matchedGame.id;                 // real Firestore doc ID (e.g. "5_7_2026_teal_vs_black")
+        gameDocId = `${seasonId}_${gameId}`;        // same format as manual submit
+        console.log(`✅ [Bulk] Matched game to Firestore doc: ${gameId}`);
+      } else {
+        // Fallback: construct from CSV data (may not match admin-submit-stats lookup)
+        gameId    = `${seasonId}_${dateStr}_${homeTeam}_vs_${awayTeam}`.replace(/\s+/g, '_');
+        gameDocId = gameId;
+        console.warn(`⚠️ [Bulk] No Firestore game match — using constructed ID: ${gameId}`);
+      }
+      // Store resolved ID so the flag-update loop below can reuse it
+      game.resolvedGameId = matchedGame ? gameId : null;
       
       for (const { row, validation } of game.rows) {
         try {
@@ -2199,8 +2225,10 @@ window.submitBulkStats = async function() {
         // Convention: home_vs_away. If isHome=true, selectedTeam is home so listed first.
         const homeTeam = game.isHome ? selectedTeam.toLowerCase() : game.opponent.toLowerCase();
         const awayTeam = game.isHome ? game.opponent.toLowerCase() : selectedTeam.toLowerCase();
-        const gameId = `${currentSeason.id}_${dateStr}_${homeTeam}_vs_${awayTeam}`.replace(/\s+/g, '_');
-        
+        // Use the Firestore-matched ID stored during the stats-save loop; fall back to constructed if missing
+        const gameId = game.resolvedGameId ||
+          `${currentSeason.id}_${dateStr}_${homeTeam}_vs_${awayTeam}`.replace(/\s+/g, '_');
+
         try {
           const gameRef = doc(db, 'seasons', seasonId, 'games', gameId);
           const bulkSubmittedField = game.isHome ? 'statsSubmittedHome' : 'statsSubmittedAway';
