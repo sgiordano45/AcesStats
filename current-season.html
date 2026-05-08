@@ -1582,6 +1582,7 @@
         getCurrentSeason,
         getAllPlayerStatsOptimized
       } from './firebase-data.js';
+      import { db, collection, getDocs, query, where } from './firebase-config.js';
 
       console.log('Imports successful!');
 
@@ -1633,22 +1634,24 @@
           console.log(`✅ Fetched: ${games?.length || 0} games, ${batting?.length || 0} batting records, ${pitching?.length || 0} pitching records`);
 
           // Fetch active hit streaks (cross-season calculator writes currentStreak field)
+          // Declared outside try so it's in scope for the leaders HTML builder below
           let activeStreaksData = [];
           try {
             const streakQ = query(collection(db, 'hitStreaks'), where('currentStreak', '>=', 1));
             const streakSnap = await getDocs(streakQ);
+            const streakRows = [];
             streakSnap.forEach(d => {
               const s = d.data();
               if ((s.currentStreak || 0) >= 1 && s.playerName) {
-                activeStreaksData.push({
+                streakRows.push({
                   playerId: s.playerId || s.playerLegacyId,
                   name: s.playerName,
                   currentStreak: s.currentStreak
                 });
               }
             });
-            activeStreaksData.sort((a, b) => b.currentStreak - a.currentStreak);
-            activeStreaksData = activeStreaksData.slice(0, 10);
+            streakRows.sort((a, b) => b.currentStreak - a.currentStreak);
+            activeStreaksData = streakRows.slice(0, 10);
           } catch (e) {
             console.warn('Could not fetch active streak leaders:', e);
           }
