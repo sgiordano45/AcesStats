@@ -1100,6 +1100,7 @@ import {
 
 import { onAuthChange, getUserProfile } from './firebase-auth.js';
 import { getSeasonPlayerStatsOptimized, getCurrentSeason } from './firebase-data.js';
+import { getTeamRosterDoc } from './firebase-roster.js';
 
 // ============================================
 // STATE
@@ -1229,37 +1230,21 @@ async function loadTeams() {
 async function loadTeamRoster(teamId) {
   try {
     console.log('🔍 Loading roster for team:', teamId);
-    
-    const seasonId = document.getElementById('seasonSelect').value || currentSeason?.id;
-    const seasonPlayers = await getSeasonPlayerStatsOptimized(seasonId);
-    
-    // Filter for the selected team and exclude migrated players
-    // Use case-insensitive comparison since team IDs may vary in case
-    const teamIdLower = teamId.toLowerCase();
-    const filteredPlayers = seasonPlayers.filter(p => {
-      return (p.team || '').toLowerCase() === teamIdLower && !p.migrated;
-    });
 
-    teamRoster = filteredPlayers.map(player => {
-      const name = player.name || player.playerName;
-      
-      // Derive legacyId for game-level stats lookups
-      let legacyId;
-      if (player.isAuthUser && player.linkedPlayer) {
-        legacyId = player.linkedPlayer.toLowerCase().replace(/\./g, '').replace(/\s+/g, '_');
-      } else {
-        legacyId = player.playerId;
-      }
-      
-      return {
-        id: player.playerId,
-        legacyId: legacyId,
-        name: name,
-        displayName: name,
-        linkedPlayer: player.linkedPlayer || null,
-        isAuthUser: player.isAuthUser || false
-      };
-    });
+    const seasonId = document.getElementById('seasonSelect').value || currentSeason?.id;
+
+    // Use the rosters collection (same source as submit-stats.html) so legacyId
+    // is always the reliable snake_case ID used when storing game-level stats.
+    const rosterPlayers = await getTeamRosterDoc(teamId, seasonId);
+
+    teamRoster = rosterPlayers.map(player => ({
+      id: player.playerId,
+      legacyId: player.legacyId,   // always snake_case from rosters doc
+      name: player.name,
+      displayName: player.name,
+      linkedPlayer: player.isAuthUser ? player.name : null,
+      isAuthUser: player.isAuthUser || false
+    }));
 
     // Sort players by name
     teamRoster.sort((a, b) => a.name.localeCompare(b.name));
