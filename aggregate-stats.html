@@ -717,6 +717,47 @@
       </div>
     </div>
 
+    <!-- Section: Cross-Season Hit Streak Calculator -->
+    <div class="section">
+      <div class="section-header">
+        🔥 Hit Streak Calculator (Cross-Season)
+      </div>
+      <div class="section-content">
+        <p>Calculates hit streaks across <strong>all seasons</strong> for every player. Loads all game docs globally, sorts by date, and detects streaks that may span season boundaries. Notable threshold: 5+ games. Does <em>not</em> touch career totals or aggregatedPlayerStats.</p>
+
+        <div class="flex-row" style="margin-bottom: 1rem;">
+          <button id="streakPreviewBtn" class="btn-secondary" onclick="runStreakCalculator(true)">
+            👁️ Preview Streaks
+          </button>
+          <button id="streakWriteBtn" class="btn-warning" onclick="runStreakCalculator(false)">
+            💾 Write to hitStreaks
+          </button>
+          <button onclick="clearOutput()" class="btn-secondary">
+            Clear Output
+          </button>
+        </div>
+
+        <div class="stats" id="streakStatsDisplay" style="display: none;">
+          <div class="stat-card">
+            <div class="stat-number" id="streakPlayersChecked">0</div>
+            <div class="stat-label">Players Checked</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-number green" id="streakNotable">0</div>
+            <div class="stat-label">Notable (5+)</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-number blue" id="streakWritten">0</div>
+            <div class="stat-label">Written</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-number orange" id="streakSkipped">0</div>
+            <div class="stat-label">Already Existed</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Section 2: Full Career Recalculation -->
     <div class="section">
       <div class="section-header">
@@ -2163,6 +2204,205 @@
     } finally {
       btn.disabled = false;
       btn.textContent = '🎮 Aggregate Season';
+    }
+  };
+
+  // ============================================
+  // CROSS-SEASON HIT STREAK CALCULATOR
+  // ============================================
+
+  window.runStreakCalculator = async function(previewOnly = true) {
+    const previewBtn = document.getElementById('streakPreviewBtn');
+    const writeBtn = document.getElementById('streakWriteBtn');
+    previewBtn.disabled = true;
+    writeBtn.disabled = true;
+
+    if (!previewOnly) {
+      const confirmed = confirm(
+        'This will write cross-season hit streak records to the hitStreaks collection.\n\n' +
+        'Only streaks of 5+ games that don\'t already exist will be written.\n\n' +
+        'This does NOT touch aggregatedPlayerStats or career totals.\n\n' +
+        'Continue?'
+      );
+      if (!confirmed) {
+        previewBtn.disabled = false;
+        writeBtn.disabled = false;
+        return;
+      }
+    }
+
+    log('');
+    log('═══════════════════════════════════════', 'header');
+    log(`Cross-Season Hit Streak Calculator ${previewOnly ? '(PREVIEW — no writes)' : '(WRITE MODE)'}`, 'header');
+    log('═══════════════════════════════════════', 'header');
+
+    try {
+      // Build legacyId → docId mapping from aggregatedPlayerStats
+      log('Loading player roster...', 'game');
+      const aggregatedRef = window.collection(window.db, 'aggregatedPlayerStats');
+      const aggregatedSnap = await window.getDocs(aggregatedRef);
+
+      const legacyToDocId = new Map();
+      const docIdToInfo = new Map();
+
+      aggregatedSnap.forEach(docSnap => {
+        const data = docSnap.data();
+        if (data.migrated) return;
+        const docId = docSnap.id;
+        let legacyId;
+        if (data.isAuthUser && data.linkedPlayer) {
+          legacyId = data.linkedPlayer.toLowerCase().replace(/\./g, '').replace(/\s+/g, '_');
+        } else {
+          legacyId = docId;
+        }
+        legacyToDocId.set(legacyId, docId);
+        docIdToInfo.set(docId, { name: data.name || data.linkedPlayer || legacyId });
+      });
+
+      log(`Found ${legacyToDocId.size} players`, 'success');
+      log('');
+
+      let playersChecked = 0;
+      let notableCount = 0;
+      let writtenCount = 0;
+      let skippedCount = 0;
+      const total = legacyToDocId.size;
+
+      for (const [legacyId, docId] of legacyToDocId) {
+        try {
+          const playerInfo = docIdToInfo.get(docId) || {};
+          const playerName = playerInfo.name || legacyId;
+
+          // Load ALL games across ALL seasons — no seasonId filter
+          const gamesRef = window.collection(window.db, 'playerStats', legacyId, 'games');
+          const gamesSnap = await window.getDocs(gamesRef);
+
+          if (gamesSnap.empty) {
+            playersChecked++;
+            continue;
+          }
+
+          const allGames = [];
+          gamesSnap.forEach(gameDoc => {
+            allGames.push({ gameId: gameDoc.id, ...gameDoc.data() });
+          });
+
+          // Sort globally by date across all seasons
+          allGames.sort((a, b) => {
+            const dateA = a.gameDate?.toDate?.() || new Date(a.gameDate) || new Date(0);
+            const dateB = b.gameDate?.toDate?.() || new Date(b.gameDate) || new Date(0);
+            return dateA - dateB;
+          });
+
+          // Streak detection across the full sorted game list
+          let currentStreak = 0;
+          let maxStreak = 0;
+          let streakStartDate = null;
+          let streakEndDate = null;
+          let maxStreakStart = null;
+          let maxStreakEnd = null;
+          let currentStreakSeasons = new Set();
+          let maxStreakSeasons = new Set();
+
+          allGames.forEach(game => {
+            if ((game.hits || 0) >= 1) {
+              if (currentStreak === 0) streakStartDate = game.gameDate;
+              currentStreak++;
+              streakEndDate = game.gameDate;
+              if (game.seasonId) currentStreakSeasons.add(game.seasonId);
+
+              if (currentStreak > maxStreak) {
+                maxStreak = currentStreak;
+                maxStreakStart = streakStartDate;
+                maxStreakEnd = streakEndDate;
+                maxStreakSeasons = new Set(currentStreakSeasons);
+              }
+            } else {
+              currentStreak = 0;
+              streakStartDate = null;
+              currentStreakSeasons = new Set();
+            }
+          });
+
+          if (maxStreak >= 5) {
+            notableCount++;
+            const isCrossSeason = maxStreakSeasons.size > 1;
+            const seasonsArray = [...maxStreakSeasons].sort();
+            const seasonLabel = isCrossSeason
+              ? `CROSS-SEASON (${seasonsArray.join(' → ')})`
+              : seasonsArray[0] || 'unknown';
+
+            log(`  🔥 ${playerName}: ${maxStreak}-game streak — ${seasonLabel} | ${allGames.length} total games`);
+
+            if (!previewOnly) {
+              // Use "_allSeasons_" prefix to distinguish from per-season docs (${docId}_${seasonId}_${n})
+              const hitStreakDocId = `${docId}_allSeasons_${maxStreak}`;
+              const existingDoc = await window.getDoc(
+                window.doc(window.db, 'hitStreaks', hitStreakDocId)
+              );
+
+              if (existingDoc.exists()) {
+                log(`    ⏭️ Already exists: ${hitStreakDocId}`, 'skip');
+                skippedCount++;
+              } else {
+                await window.setDoc(
+                  window.doc(window.db, 'hitStreaks', hitStreakDocId),
+                  {
+                    playerId: docId,
+                    playerLegacyId: legacyId,
+                    playerName,
+                    seasonId: isCrossSeason ? 'crossSeason' : (seasonsArray[0] || null),
+                    crossSeason: isCrossSeason,
+                    seasonsSpanned: seasonsArray,
+                    streakLength: maxStreak,
+                    startDate: maxStreakStart || null,
+                    endDate: maxStreakEnd || null,
+                    achievedAt: new Date()
+                  }
+                );
+                writtenCount++;
+                log(`    ✓ Written: ${hitStreakDocId}`, 'success');
+              }
+            }
+          }
+
+          playersChecked++;
+          if (playersChecked % 25 === 0) {
+            log(`  Checked ${playersChecked}/${total} players...`);
+          }
+
+        } catch (err) {
+          log(`  ✗ Error for ${legacyId}: ${err.message}`, 'error');
+          playersChecked++;
+        }
+      }
+
+      // Update stat cards
+      document.getElementById('streakStatsDisplay').style.display = 'flex';
+      document.getElementById('streakPlayersChecked').textContent = playersChecked;
+      document.getElementById('streakNotable').textContent = notableCount;
+      document.getElementById('streakWritten').textContent = writtenCount;
+      document.getElementById('streakSkipped').textContent = skippedCount;
+
+      log('');
+      log('═══════════════════════════════════════', 'header');
+      log('STREAK CALCULATION COMPLETE', 'header');
+      log('═══════════════════════════════════════', 'header');
+      log(`Players checked: ${playersChecked}`, 'success');
+      log(`Notable streaks (5+): ${notableCount}`, notableCount > 0 ? 'success' : 'skip');
+      if (!previewOnly) {
+        log(`Written to hitStreaks: ${writtenCount}`, writtenCount > 0 ? 'success' : 'skip');
+        log(`Already existed (skipped): ${skippedCount}`, 'skip');
+      } else {
+        log('Run in Write mode to persist these results.', 'skip');
+      }
+
+    } catch (error) {
+      log(`Fatal error: ${error.message}`, 'error');
+      console.error('Streak calculator error:', error);
+    } finally {
+      previewBtn.disabled = false;
+      writeBtn.disabled = false;
     }
   };
 
