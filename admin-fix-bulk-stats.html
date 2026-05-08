@@ -43,6 +43,11 @@
 <div id="authBanner">⚠️ You must be signed in as an admin to run this script.</div>
 
 <div class="card">
+  <div style="margin-bottom:1rem">
+    <label style="font-size:0.85rem;font-weight:600;color:#4a5568">Season filter (leave blank to scan all)</label><br>
+    <input id="seasonFilter" type="text" value="2026-summer"
+      style="margin-top:0.3rem;padding:0.4rem 0.75rem;border:1px solid #cbd5e0;border-radius:6px;font-size:0.9rem;width:220px">
+  </div>
   <div class="stats-bar">
     <div class="stat-box"><div class="stat-num" id="cntBad">—</div><div class="stat-lbl">Bad docs found</div></div>
     <div class="stat-box"><div class="stat-num" id="cntMatched">—</div><div class="stat-lbl">Matched to game</div></div>
@@ -290,7 +295,13 @@ window.runScan = async function() {
   document.getElementById('previewCard').style.display = 'none';
   document.getElementById('previewBody').innerHTML = '';
 
-  log('Starting scan — collecting player IDs from rosters…');
+  const seasonFilter = document.getElementById('seasonFilter').value.trim();
+  if (seasonFilter) {
+    log(`Starting scan — season filter: "${seasonFilter}"`);
+  } else {
+    log('Starting scan — no season filter (scanning all seasons)');
+  }
+  log('Collecting player IDs from rosters…');
 
   // playerStats/{legacyId}/games/* docs are "phantom" parents — the top-level
   // playerStats docs don't actually exist as Firestore documents, so iterating
@@ -326,6 +337,7 @@ window.runScan = async function() {
 
         for (const gDoc of gamesSnap.docs) {
           const data = gDoc.data();
+          if (seasonFilter && data.seasonId !== seasonFilter) continue;
           if (!isOldFormat(data)) continue;
 
           badCount++;
