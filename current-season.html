@@ -1629,8 +1629,29 @@
             getSeasonPlayerStatsOptimized(seasonId),
             getSeasonPitchingStatsOptimized(seasonId)
           ]);
-          
+
           console.log(`✅ Fetched: ${games?.length || 0} games, ${batting?.length || 0} batting records, ${pitching?.length || 0} pitching records`);
+
+          // Fetch active hit streaks (cross-season calculator writes currentStreak field)
+          let activeStreaksData = [];
+          try {
+            const streakQ = query(collection(db, 'hitStreaks'), where('currentStreak', '>=', 1));
+            const streakSnap = await getDocs(streakQ);
+            streakSnap.forEach(d => {
+              const s = d.data();
+              if ((s.currentStreak || 0) >= 1 && s.playerName) {
+                activeStreaksData.push({
+                  playerId: s.playerId || s.playerLegacyId,
+                  name: s.playerName,
+                  currentStreak: s.currentStreak
+                });
+              }
+            });
+            activeStreaksData.sort((a, b) => b.currentStreak - a.currentStreak);
+            activeStreaksData = activeStreaksData.slice(0, 10);
+          } catch (e) {
+            console.warn('Could not fetch active streak leaders:', e);
+          }
           
           allGames = (games || []).map(g => {
             let dateString = "";
@@ -1906,6 +1927,28 @@
           });
 
           leadersHtml += '</div>';
+
+          // Active Hit Streaks section (data from hitStreaks collection, cross-season calculator)
+          if (activeStreaksData.length > 0) {
+            leadersHtml += '<div class="leaders-section-title">🔥 Active Hit Streaks</div>';
+            leadersHtml += '<div class="leaders-grid">';
+            leadersHtml += '<div class="leader-category"><h4>🔥 Active Streaks</h4><ul class="leader-list">';
+
+            activeStreaksData.forEach((player, i) => {
+              const rank = i + 1;
+              const rankClass = rank === 1 ? 'first' : rank === 2 ? 'second' : rank === 3 ? 'third' : '';
+              leadersHtml += `
+                <li>
+                  <span class="leader-rank ${rankClass}">${rank}</span>
+                  <span class="leader-name"><a href="player.html?id=${encodeURIComponent(player.playerId)}">${player.name}</a></span>
+                  <span class="leader-value">${player.currentStreak} games</span>
+                </li>
+              `;
+            });
+
+            leadersHtml += '</ul></div>';
+            leadersHtml += '</div>';
+          }
         }
 
         if (pitchingData.length > 0) {
@@ -2756,7 +2799,7 @@ if (!navigator.onLine) updateConnectionStatus();
 
   <script type="module">
     import { db } from './firebase-config.js';
-    import { doc, getDoc, collection, getDocs } from './firebase-config.js';
+    import { doc, getDoc, collection, getDocs, query, where } from './firebase-config.js';
     import { BADGE_DEFINITIONS, getBadgesByCategory, getBadgeIconHtml } from './badge-calculator.js';
     import { getCurrentSeason } from './firebase-data.js';
 

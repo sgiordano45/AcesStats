@@ -1135,8 +1135,6 @@
      PITCHING TAB STYLES
      ============================================= */
   .pitching-section {
-    max-width: 900px;
-    margin: 0 auto;
     padding: 1rem 0;
   }
   .section-card {
@@ -3661,6 +3659,7 @@
     getPlayerInfo,
     getPlayerAwards,
     seasonsObjectToArray,
+    pitchingSeasonsObjectToArray,
     resolvePlayerName,
     getPlayerByIdentifier,
     getAllPlayerStatsOptimized,
@@ -4207,6 +4206,7 @@
     await populatePlayerHeader(stats, info, playerName, playerId, careerStats, awards, playerBadges, playerTitles);
     populateStatsTables(stats, playerId, careerStats);
     calculateCareerBests(stats);
+    loadStreakRecord(legacyId); // async, appends streak cards when ready
     handleMasterChefSection(playerName);
     
     // Populate awards in the Awards tab
@@ -5064,6 +5064,75 @@
     empty.style.display = 'none';
   }
 
+  async function loadStreakRecord(legacyId) {
+    try {
+      const streakQ = query(
+        collection(db, 'hitStreaks'),
+        where('playerLegacyId', '==', legacyId)
+      );
+      const streakSnap = await getDocs(streakQ);
+      if (streakSnap.empty) return;
+
+      let maxStreakLength = 0;
+      let maxStreakDoc = null;
+      let activeStreakLength = 0;
+      let activeStreakStart = null;
+
+      streakSnap.forEach(docSnap => {
+        const data = docSnap.data();
+        if ((data.streakLength || 0) > maxStreakLength) {
+          maxStreakLength = data.streakLength;
+          maxStreakDoc = data;
+        }
+        // currentStreak is only on _allSeasons_ docs written by the cross-season calculator
+        if (typeof data.currentStreak === 'number' && data.currentStreak > activeStreakLength) {
+          activeStreakLength = data.currentStreak;
+          activeStreakStart = data.currentStreakStart;
+        }
+      });
+
+      if (!maxStreakDoc || maxStreakLength === 0) return;
+
+      const grid = document.getElementById('careerBestsGrid');
+      const empty = document.getElementById('careerBestsEmpty');
+      if (!grid) return;
+
+      // Ensure the grid is visible even if no other bests were found
+      empty.style.display = 'none';
+      grid.style.display = 'grid';
+
+      const seasons = (maxStreakDoc.seasonsSpanned?.length > 0)
+        ? maxStreakDoc.seasonsSpanned.join(' → ')
+        : (maxStreakDoc.seasonId && maxStreakDoc.seasonId !== 'crossSeason')
+          ? maxStreakDoc.seasonId
+          : 'All Seasons';
+
+      const maxCard = document.createElement('div');
+      maxCard.className = 'career-best-card';
+      maxCard.innerHTML = `
+        <div class="career-best-icon">🔥</div>
+        <div class="career-best-label">Max Hit Streak</div>
+        <div class="career-best-value">${maxStreakLength} games</div>
+        <div class="career-best-context">${seasons}</div>
+      `;
+      grid.appendChild(maxCard);
+
+      if (activeStreakLength >= 2) {
+        const activeCard = document.createElement('div');
+        activeCard.className = 'career-best-card';
+        activeCard.innerHTML = `
+          <div class="career-best-icon">🔴</div>
+          <div class="career-best-label">Active Streak</div>
+          <div class="career-best-value">${activeStreakLength} games</div>
+          <div class="career-best-context">Ongoing</div>
+        `;
+        grid.appendChild(activeCard);
+      }
+    } catch (err) {
+      console.warn('Could not load streak record:', err);
+    }
+  }
+
   function handleMasterChefSection(displayName) {
     const chefSection = document.getElementById('masterChefSection');
     if (displayName === 'Mike Streaman') {
@@ -5626,11 +5695,22 @@
   // =============================================
 
   let pitchingGames = [];
+  // Game-level pitchingStats docs exist from this season forward; earlier seasons use aggregatedPlayerStats
+  const PITCHING_GAME_LEVEL_FROM = '2026-summer';
 
   async function checkPitchingTabVisibility(legacyId) {
     try {
+      // Check game-level docs
       const snap = await getDocs(collection(db, 'pitchingStats', legacyId, 'games'));
-      if (!snap.empty) {
+      const hasGameDocs = !snap.empty;
+
+      // Check historical aggregated seasons
+      const resolvedPlayer = currentPlayerData?.resolvedPlayer;
+      const hasHistorical  = resolvedPlayer
+        ? pitchingSeasonsObjectToArray(resolvedPlayer).some(s => s.seasonId < PITCHING_GAME_LEVEL_FROM)
+        : false;
+
+      if (hasGameDocs || hasHistorical) {
         document.getElementById('pitchingTabBtn').classList.remove('hidden');
         const mobileOpt = document.getElementById('pitchingTabMobileOption');
         if (mobileOpt) mobileOpt.style.display = '';
@@ -5653,25 +5733,26 @@
       const legacyId = currentLegacyId;
       if (!legacyId) throw new Error('No player ID');
 
+      // ── 1. Game-level docs (2026-summer onwards) ──────────────────────────
       const snap = await getDocs(collection(db, 'pitchingStats', legacyId, 'games'));
       pitchingGames = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      pitchingGames.sort((a, b) => (b.gameDate?.seconds ?? 0) - (a.gameDate?.seconds ?? 0));
 
-      // Sort newest first
-      pitchingGames.sort((a, b) => {
-        const ta = a.gameDate?.seconds ?? 0;
-        const tb = b.gameDate?.seconds ?? 0;
-        return tb - ta;
-      });
+      // ── 2. Historical aggregated seasons (pre-2026-summer) ─────────────────
+      const resolvedPlayer = currentPlayerData?.resolvedPlayer;
+      const historicalSeasons = resolvedPlayer
+        ? pitchingSeasonsObjectToArray(resolvedPlayer).filter(s => s.seasonId < PITCHING_GAME_LEVEL_FROM)
+        : [];
 
       loading.classList.add('hidden');
 
-      if (pitchingGames.length === 0) {
+      if (pitchingGames.length === 0 && historicalSeasons.length === 0) {
         noData.classList.remove('hidden');
         return;
       }
 
-      renderPitchingSeasons();
-      renderPitchingCareer();
+      renderPitchingSeasons(historicalSeasons);
+      renderPitchingCareer(historicalSeasons);
       renderPitchingGameLog();
       content.classList.remove('hidden');
 
@@ -5702,63 +5783,109 @@
     return '—';
   }
 
-  function renderPitchingCareer() {
-    const totals = pitchingGames.reduce((acc, g) => {
+  function renderPitchingCareer(historicalSeasons = []) {
+    // Totals from game-level docs
+    const gameTotals = pitchingGames.reduce((acc, g) => {
       acc.games++;
       acc.ip += g.inningsPitched ?? 0;
       acc.ra += g.runsAllowed ?? 0;
       return acc;
     }, { games: 0, ip: 0, ra: 0 });
 
+    // Totals from historical aggregated seasons
+    const histTotals = historicalSeasons.reduce((acc, s) => {
+      acc.games += Number(s.games)         || 0;
+      acc.ip    += Number(s.inningsPitched) || 0;
+      acc.ra    += Number(s.runsAllowed)    || 0;
+      return acc;
+    }, { games: 0, ip: 0, ra: 0 });
+
+    const career = {
+      games: gameTotals.games + histTotals.games,
+      ip:    gameTotals.ip    + histTotals.ip,
+      ra:    gameTotals.ra    + histTotals.ra
+    };
+
     document.getElementById('pitchingCareerBody').innerHTML = `
       <tr>
         <td><strong>Career Total</strong></td>
-        <td>${totals.games}</td>
-        <td>${fmtIP(totals.ip)}</td>
-        <td>${totals.ra}</td>
-        <td>${fmtERA(totals.ra, totals.ip)}</td>
+        <td>${career.games}</td>
+        <td>${fmtIP(career.ip)}</td>
+        <td>${career.ra}</td>
+        <td>${fmtERA(career.ra, career.ip)}</td>
       </tr>
     `;
   }
 
-  function renderPitchingSeasons() {
-    // Group by seasonId, also track team per season (last seen)
-    const seasons = {};
-    pitchingGames.forEach(g => {
-      const s = g.seasonId || 'Unknown';
-      if (!seasons[s]) seasons[s] = { games: 0, ip: 0, ra: 0, team: g.teamId || '' };
-      seasons[s].games++;
-      seasons[s].ip += g.inningsPitched ?? 0;
-      seasons[s].ra += g.runsAllowed ?? 0;
-      if (g.teamId) seasons[s].team = g.teamId;
-    });
-
+  function renderPitchingSeasons(historicalSeasons = []) {
     const seasonOrder = { 'fall': 3, 'summer': 2, 'spring': 1 };
-    const sortedSeasons = Object.entries(seasons).sort((a, b) => {
-      const [yearA, termA = ''] = a[0].split('-');
-      const [yearB, termB = ''] = b[0].split('-');
-      if (yearA !== yearB) return yearB.localeCompare(yearA);
-      return (seasonOrder[termB] || 0) - (seasonOrder[termA] || 0);
+    const allRows = [];
+
+    // ── Historical seasons from aggregatedPlayerStats ──────────────────────
+    historicalSeasons.forEach(s => {
+      const parts = (s.seasonId || '').split('-');
+      const year = parts[0] || s.seasonId;
+      const term = parts[1] ? parts[1].charAt(0).toUpperCase() + parts[1].slice(1) : '';
+      const ip  = Number(s.inningsPitched) || 0;
+      const ra  = Number(s.runsAllowed)    || 0;
+      // Prefer stored earnedRunAverage; fall back to calculation
+      let eraDisplay;
+      if (s.earnedRunAverage !== undefined && s.earnedRunAverage !== null && s.earnedRunAverage !== 'N/A') {
+        eraDisplay = Number(s.earnedRunAverage).toFixed(2);
+      } else {
+        eraDisplay = fmtERA(ra, ip);
+      }
+      allRows.push({
+        sortKey: s.seasonId || '',
+        html: `<tr>
+          <td>${year}</td><td>${term}</td>
+          <td>${capitalize(s.team || '')}</td>
+          <td>${Number(s.games) || 0}</td>
+          <td>${fmtIP(ip)}</td>
+          <td>${ra}</td>
+          <td>${eraDisplay}</td>
+        </tr>`
+      });
     });
 
-    const rows = sortedSeasons.map(([seasonId, s]) => {
+    // ── Game-level seasons (2026-summer+) ──────────────────────────────────
+    const gameSeasonsMap = {};
+    pitchingGames.forEach(g => {
+      const sid = g.seasonId || 'Unknown';
+      if (!gameSeasonsMap[sid]) gameSeasonsMap[sid] = { games: 0, ip: 0, ra: 0, team: g.teamId || '' };
+      gameSeasonsMap[sid].games++;
+      gameSeasonsMap[sid].ip += g.inningsPitched ?? 0;
+      gameSeasonsMap[sid].ra += g.runsAllowed ?? 0;
+      if (g.teamId) gameSeasonsMap[sid].team = g.teamId;
+    });
+
+    Object.entries(gameSeasonsMap).forEach(([seasonId, s]) => {
       const parts = seasonId.split('-');
       const year = parts[0] || seasonId;
       const term = parts[1] ? parts[1].charAt(0).toUpperCase() + parts[1].slice(1) : '';
-      return `
-        <tr>
-          <td>${year}</td>
-          <td>${term}</td>
+      allRows.push({
+        sortKey: seasonId,
+        html: `<tr>
+          <td>${year}</td><td>${term}</td>
           <td>${s.team}</td>
           <td>${s.games}</td>
           <td>${fmtIP(s.ip)}</td>
           <td>${s.ra}</td>
           <td>${fmtERA(s.ra, s.ip)}</td>
-        </tr>
-      `;
-    }).join('');
+        </tr>`
+      });
+    });
 
-    document.getElementById('pitchingSeasonBody').innerHTML = rows;
+    // Sort newest first
+    allRows.sort((a, b) => {
+      const [yearA, termA = ''] = a.sortKey.split('-');
+      const [yearB, termB = ''] = b.sortKey.split('-');
+      if (yearA !== yearB) return yearB.localeCompare(yearA);
+      return (seasonOrder[termB] || 0) - (seasonOrder[termA] || 0);
+    });
+
+    document.getElementById('pitchingSeasonBody').innerHTML =
+      allRows.length ? allRows.map(r => r.html).join('') : '<tr><td colspan="7">No data</td></tr>';
   }
 
   function renderPitchingGameLog() {
