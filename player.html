@@ -1169,37 +1169,8 @@
   }
   .pitching-no-data h3 { color: #2d3748; margin-bottom: 0.5rem; }
   .pitching-no-data p  { color: #718096; }
-  .pitching-summary-bar {
-    display: flex;
-    gap: 2rem;
-    flex-wrap: wrap;
-  }
-  .pitching-stat-box { text-align: center; }
-  .pitching-stat-num { font-size: 2rem; font-weight: 700; color: #2d5016; line-height: 1; }
-  .pitching-stat-lbl { font-size: 0.78rem; color: #718096; margin-top: 0.2rem; }
-  .pitching-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 0.85rem;
-  }
-  .pitching-table th {
-    background: #2d5016;
-    color: white;
-    padding: 0.5rem 0.75rem;
-    text-align: left;
-    font-weight: 600;
-    white-space: nowrap;
-  }
-  .pitching-table td {
-    padding: 0.45rem 0.75rem;
-    border-bottom: 1px solid #e2e8f0;
-  }
-  .pitching-table tr:last-child td { border-bottom: none; }
-  .pitching-table tr:nth-child(even) td { background: #f7fafc; }
-  .pitching-table .total-row td {
-    font-weight: 700;
-    background: #f0f4e8 !important;
-    border-top: 2px solid #2d5016;
+  .pitching-section .stats-section {
+    margin-bottom: 2rem;
   }
   .player-tab.hidden     { display: none; }
   .pitching-loading.hidden,
@@ -2939,51 +2910,59 @@
       <!-- Content -->
       <div id="pitchingContent" class="hidden">
 
-        <!-- Career summary bar -->
-        <div class="section-card" id="pitchingCareerCard">
-          <h2 style="margin:0 0 0.25rem 0;color:#2d3748">⚾ Career Pitching</h2>
-          <p style="color:#718096;margin:0 0 1.25rem 0;font-size:0.85rem">All regular season & playoff appearances</p>
-          <div class="pitching-summary-bar" id="pitchingCareerBar"></div>
+        <!-- Season breakdown -->
+        <div class="stats-section">
+          <h2>⚾ Season Pitching Stats</h2>
+          <table id="pitchingSeasonTable">
+            <thead>
+              <tr>
+                <th>Year</th>
+                <th>Season</th>
+                <th>Team</th>
+                <th>G</th>
+                <th>IP</th>
+                <th>RA</th>
+                <th>ERA</th>
+              </tr>
+            </thead>
+            <tbody id="pitchingSeasonBody"></tbody>
+          </table>
         </div>
 
-        <!-- Season breakdown -->
-        <div class="section-card" id="pitchingSeasonCard">
-          <h2 style="margin:0 0 1rem 0;color:#2d3748">Season Breakdown</h2>
-          <div style="overflow-x:auto">
-            <table class="pitching-table" id="pitchingSeasonTable">
-              <thead>
-                <tr>
-                  <th>Season</th>
-                  <th>G</th>
-                  <th>IP</th>
-                  <th>RA</th>
-                  <th>RA/IP</th>
-                </tr>
-              </thead>
-              <tbody id="pitchingSeasonBody"></tbody>
-            </table>
-          </div>
+        <!-- Career summary -->
+        <div class="stats-section">
+          <h2>🏆 Career Pitching Stats</h2>
+          <table id="pitchingCareerTable">
+            <thead>
+              <tr>
+                <th>Category</th>
+                <th>G</th>
+                <th>IP</th>
+                <th>RA</th>
+                <th>Career ERA</th>
+              </tr>
+            </thead>
+            <tbody id="pitchingCareerBody"></tbody>
+          </table>
         </div>
 
         <!-- Game log -->
-        <div class="section-card" id="pitchingGameLogCard">
-          <h2 style="margin:0 0 1rem 0;color:#2d3748">Game Log</h2>
-          <div style="overflow-x:auto">
-            <table class="pitching-table" id="pitchingGameLogTable">
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Opponent</th>
-                  <th>H/A</th>
-                  <th>Type</th>
-                  <th>IP</th>
-                  <th>RA</th>
-                  <th>RA/IP</th>
-                </tr>
-              </thead>
-              <tbody id="pitchingGameLogBody"></tbody>
-            </table>
-          </div>
+        <div class="stats-section">
+          <h2>📋 Game Log</h2>
+          <table id="pitchingGameLogTable">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Opponent</th>
+                <th>H/A</th>
+                <th>Type</th>
+                <th>IP</th>
+                <th>RA</th>
+                <th>ERA</th>
+              </tr>
+            </thead>
+            <tbody id="pitchingGameLogBody"></tbody>
+          </table>
         </div>
 
       </div><!-- end pitchingContent -->
@@ -5691,8 +5670,8 @@
         return;
       }
 
-      renderPitchingCareer();
       renderPitchingSeasons();
+      renderPitchingCareer();
       renderPitchingGameLog();
       content.classList.remove('hidden');
 
@@ -5708,9 +5687,10 @@
     return (ip ?? 0).toFixed(1);
   }
 
-  function fmtRAperIP(ra, ip) {
-    if (!ip || ip === 0) return '—';
-    return (ra / ip).toFixed(2);
+  // ERA for 7-inning games: (RA / IP) * 7
+  function fmtERA(ra, ip) {
+    if (!ip || ip === 0) return 'N/A';
+    return ((ra / ip) * 7).toFixed(2);
   }
 
   function pitchingDateLabel(game) {
@@ -5730,65 +5710,55 @@
       return acc;
     }, { games: 0, ip: 0, ra: 0 });
 
-    document.getElementById('pitchingCareerBar').innerHTML = `
-      <div class="pitching-stat-box">
-        <div class="pitching-stat-num">${totals.games}</div>
-        <div class="pitching-stat-lbl">G</div>
-      </div>
-      <div class="pitching-stat-box">
-        <div class="pitching-stat-num">${fmtIP(totals.ip)}</div>
-        <div class="pitching-stat-lbl">IP</div>
-      </div>
-      <div class="pitching-stat-box">
-        <div class="pitching-stat-num">${totals.ra}</div>
-        <div class="pitching-stat-lbl">RA</div>
-      </div>
-      <div class="pitching-stat-box">
-        <div class="pitching-stat-num">${fmtRAperIP(totals.ra, totals.ip)}</div>
-        <div class="pitching-stat-lbl">RA/IP</div>
-      </div>
+    document.getElementById('pitchingCareerBody').innerHTML = `
+      <tr>
+        <td><strong>Career Total</strong></td>
+        <td>${totals.games}</td>
+        <td>${fmtIP(totals.ip)}</td>
+        <td>${totals.ra}</td>
+        <td>${fmtERA(totals.ra, totals.ip)}</td>
+      </tr>
     `;
   }
 
   function renderPitchingSeasons() {
-    // Group by seasonId
+    // Group by seasonId, also track team per season (last seen)
     const seasons = {};
     pitchingGames.forEach(g => {
       const s = g.seasonId || 'Unknown';
-      if (!seasons[s]) seasons[s] = { games: 0, ip: 0, ra: 0 };
+      if (!seasons[s]) seasons[s] = { games: 0, ip: 0, ra: 0, team: g.teamId || '' };
       seasons[s].games++;
       seasons[s].ip += g.inningsPitched ?? 0;
       seasons[s].ra += g.runsAllowed ?? 0;
+      if (g.teamId) seasons[s].team = g.teamId;
     });
 
-    const sortedSeasons = Object.entries(seasons).sort((a, b) => b[0].localeCompare(a[0]));
+    const seasonOrder = { 'fall': 3, 'summer': 2, 'spring': 1 };
+    const sortedSeasons = Object.entries(seasons).sort((a, b) => {
+      const [yearA, termA = ''] = a[0].split('-');
+      const [yearB, termB = ''] = b[0].split('-');
+      if (yearA !== yearB) return yearB.localeCompare(yearA);
+      return (seasonOrder[termB] || 0) - (seasonOrder[termA] || 0);
+    });
 
-    // Career total row
-    const careerGames = sortedSeasons.reduce((s, [, v]) => s + v.games, 0);
-    const careerIP    = sortedSeasons.reduce((s, [, v]) => s + v.ip,    0);
-    const careerRA    = sortedSeasons.reduce((s, [, v]) => s + v.ra,    0);
+    const rows = sortedSeasons.map(([seasonId, s]) => {
+      const parts = seasonId.split('-');
+      const year = parts[0] || seasonId;
+      const term = parts[1] ? parts[1].charAt(0).toUpperCase() + parts[1].slice(1) : '';
+      return `
+        <tr>
+          <td>${year}</td>
+          <td>${term}</td>
+          <td>${s.team}</td>
+          <td>${s.games}</td>
+          <td>${fmtIP(s.ip)}</td>
+          <td>${s.ra}</td>
+          <td>${fmtERA(s.ra, s.ip)}</td>
+        </tr>
+      `;
+    }).join('');
 
-    const rows = sortedSeasons.map(([seasonId, s]) => `
-      <tr>
-        <td>${seasonId}</td>
-        <td>${s.games}</td>
-        <td>${fmtIP(s.ip)}</td>
-        <td>${s.ra}</td>
-        <td>${fmtRAperIP(s.ra, s.ip)}</td>
-      </tr>
-    `).join('');
-
-    const totalRow = `
-      <tr class="total-row">
-        <td>Career</td>
-        <td>${careerGames}</td>
-        <td>${fmtIP(careerIP)}</td>
-        <td>${careerRA}</td>
-        <td>${fmtRAperIP(careerRA, careerIP)}</td>
-      </tr>
-    `;
-
-    document.getElementById('pitchingSeasonBody').innerHTML = rows + totalRow;
+    document.getElementById('pitchingSeasonBody').innerHTML = rows;
   }
 
   function renderPitchingGameLog() {
@@ -5804,7 +5774,7 @@
           <td><span class="game-type-badge ${isPlayoff ? 'game-type-playoff' : 'game-type-regular'}">${isPlayoff ? 'Playoff' : 'Regular'}</span></td>
           <td>${fmtIP(ip)}</td>
           <td>${ra}</td>
-          <td>${fmtRAperIP(ra, ip)}</td>
+          <td>${fmtERA(ra, ip)}</td>
         </tr>
       `;
     }).join('');
