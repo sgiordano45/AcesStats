@@ -128,12 +128,22 @@ window.clearLog = () => { document.getElementById('log').textContent = ''; };
 function setStat(id, val) { document.getElementById(id).textContent = val; }
 
 // ─── Detect "old-format" game doc IDs ────────────────────────────────────────
-// Old format: gameId === gameDocId AND gameDocId starts with seasonId + '_'
-// This means the CSV bulk upload baked the season prefix into the gameId.
+// Two known bad patterns from CSV bulk upload:
+//   Case 1: gameId === gameDocId, both have season prefix baked in
+//           e.g. gameId = gameDocId = "2026-summer_4-27-2026_teal_vs_black"
+//   Case 2: gameId has hyphen-formatted date but no season prefix,
+//           gameDocId has season prefix + hyphen date
+//           e.g. gameId = "4-26-2026_black_vs_orange"
+//                gameDocId = "2026-summer_4-26-2026_black_vs_orange"
+//   Correct format uses underscores: gameId = "4_26_2026_black_vs_orange"
 function isOldFormat(data) {
   const { gameId, gameDocId, seasonId } = data;
   if (!gameId || !gameDocId || !seasonId) return false;
-  return gameId === gameDocId && gameDocId.startsWith(seasonId + '_');
+  // Case 1: season prefix baked into both fields
+  if (gameId === gameDocId && gameDocId.startsWith(seasonId + '_')) return true;
+  // Case 2: gameId date uses hyphens instead of underscores (M-D-YYYY or YYYY-MM-DD pattern)
+  if (/^\d+-\d+-\d{4}_/.test(gameId) || /^\d{4}-\d+-\d+_/.test(gameId)) return true;
+  return false;
 }
 
 // ─── Parse date from gameDateFormatted ───────────────────────────────────────
@@ -322,6 +332,9 @@ window.runScan = async function() {
           const oldDocId = gDoc.id;
 
           log(`  Found bad doc: ${collName}/${playerId}/games/${oldDocId}`);
+          if (oldDocId !== data.gameDocId) {
+            log(`    ⚠️  Path key differs from gameDocId field — path: "${oldDocId}" | field: "${data.gameDocId}"`);
+          }
           log(`    gameId=${data.gameId}  date=${data.gameDateFormatted}  opp=${data.opponent}  home=${data.isHome}  team=${data.teamId}`);
 
           // Find the correct game doc in seasons/{seasonId}/games
