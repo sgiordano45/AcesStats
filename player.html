@@ -1132,6 +1132,81 @@
   }
 
   /* =============================================
+     PITCHING TAB STYLES
+     ============================================= */
+  .pitching-section {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 1rem 0;
+  }
+  .section-card {
+    background: white;
+    border-radius: 16px;
+    padding: 1.5rem;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    margin-bottom: 1.5rem;
+  }
+  .pitching-loading {
+    text-align: center;
+    padding: 3rem 1rem;
+    color: #718096;
+  }
+  .pitching-loading-spinner {
+    width: 32px; height: 32px;
+    border: 3px solid #e2e8f0;
+    border-top-color: #2d5016;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin: 0 auto 1rem;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .pitching-no-data {
+    background: white;
+    border-radius: 16px;
+    padding: 3rem 2rem;
+    text-align: center;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  }
+  .pitching-no-data h3 { color: #2d3748; margin-bottom: 0.5rem; }
+  .pitching-no-data p  { color: #718096; }
+  .pitching-summary-bar {
+    display: flex;
+    gap: 2rem;
+    flex-wrap: wrap;
+  }
+  .pitching-stat-box { text-align: center; }
+  .pitching-stat-num { font-size: 2rem; font-weight: 700; color: #2d5016; line-height: 1; }
+  .pitching-stat-lbl { font-size: 0.78rem; color: #718096; margin-top: 0.2rem; }
+  .pitching-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+  }
+  .pitching-table th {
+    background: #2d5016;
+    color: white;
+    padding: 0.5rem 0.75rem;
+    text-align: left;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .pitching-table td {
+    padding: 0.45rem 0.75rem;
+    border-bottom: 1px solid #e2e8f0;
+  }
+  .pitching-table tr:last-child td { border-bottom: none; }
+  .pitching-table tr:nth-child(even) td { background: #f7fafc; }
+  .pitching-table .total-row td {
+    font-weight: 700;
+    background: #f0f4e8 !important;
+    border-top: 2px solid #2d5016;
+  }
+  .player-tab.hidden     { display: none; }
+  .pitching-loading.hidden,
+  .pitching-no-data.hidden,
+  #pitchingContent.hidden { display: none; }
+
+  /* =============================================
      BADGES TAB STYLES
      ============================================= */
   .badges-section {
@@ -2543,8 +2618,12 @@
       <span class="player-tab-icon">🎖️</span>
       <span>Badges</span>
     </button>
+    <button class="player-tab hidden" data-tab="pitching" id="pitchingTabBtn" onclick="switchToTab('pitching')">
+      <span class="player-tab-icon">⚾</span>
+      <span>Pitching</span>
+    </button>
   </div>
-  
+
   <!-- Tab Navigation - Mobile -->
   <select class="player-tabs-mobile hidden" id="playerTabsMobile" onchange="switchToTab(this.value)">
     <option value="stats">📊 Stats</option>
@@ -2552,6 +2631,7 @@
     <option value="records">🏅 Records</option>
     <option value="awards">🏆 Awards</option>
     <option value="badges">🎖️ Badges</option>
+    <option value="pitching" id="pitchingTabMobileOption" style="display:none">⚾ Pitching</option>
   </select>
 
   <!-- ==================== STATS TAB ==================== -->
@@ -2838,7 +2918,78 @@
       </div>
     </div>
   </div><!-- End Records Tab -->
-  
+
+  <!-- ==================== PITCHING TAB ==================== -->
+  <div class="tab-panel" id="tabPitching">
+    <div class="pitching-section">
+
+      <!-- Loading state -->
+      <div id="pitchingLoading" class="pitching-loading">
+        <div class="pitching-loading-spinner"></div>
+        <p>Loading pitching data…</p>
+      </div>
+
+      <!-- No data state -->
+      <div id="pitchingNoData" class="pitching-no-data hidden">
+        <div style="font-size:3rem;margin-bottom:0.75rem;opacity:0.3">⚾</div>
+        <h3>No Pitching Data</h3>
+        <p>No pitching appearances have been recorded yet.</p>
+      </div>
+
+      <!-- Content -->
+      <div id="pitchingContent" class="hidden">
+
+        <!-- Career summary bar -->
+        <div class="section-card" id="pitchingCareerCard">
+          <h2 style="margin:0 0 0.25rem 0;color:#2d3748">⚾ Career Pitching</h2>
+          <p style="color:#718096;margin:0 0 1.25rem 0;font-size:0.85rem">All regular season & playoff appearances</p>
+          <div class="pitching-summary-bar" id="pitchingCareerBar"></div>
+        </div>
+
+        <!-- Season breakdown -->
+        <div class="section-card" id="pitchingSeasonCard">
+          <h2 style="margin:0 0 1rem 0;color:#2d3748">Season Breakdown</h2>
+          <div style="overflow-x:auto">
+            <table class="pitching-table" id="pitchingSeasonTable">
+              <thead>
+                <tr>
+                  <th>Season</th>
+                  <th>G</th>
+                  <th>IP</th>
+                  <th>RA</th>
+                  <th>RA/IP</th>
+                </tr>
+              </thead>
+              <tbody id="pitchingSeasonBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Game log -->
+        <div class="section-card" id="pitchingGameLogCard">
+          <h2 style="margin:0 0 1rem 0;color:#2d3748">Game Log</h2>
+          <div style="overflow-x:auto">
+            <table class="pitching-table" id="pitchingGameLogTable">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Opponent</th>
+                  <th>H/A</th>
+                  <th>Type</th>
+                  <th>IP</th>
+                  <th>RA</th>
+                  <th>RA/IP</th>
+                </tr>
+              </thead>
+              <tbody id="pitchingGameLogBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+      </div><!-- end pitchingContent -->
+    </div>
+  </div><!-- End Pitching Tab -->
+
 </div><!-- End page-container -->
 
 <!-- Badge Modal -->
@@ -3055,13 +3206,19 @@
     });
     const activePanel = document.getElementById('tab' + tabName.charAt(0).toUpperCase() + tabName.slice(1));
     if (activePanel) activePanel.classList.add('active');
+
+    // Lazy-load pitching tab on first open
+    if (tabName === 'pitching' && !pitchingTabLoaded) {
+      pitchingTabLoaded = true;
+      loadPitchingTab();
+    }
   }
-  
+
   // Initialize tab from URL on page load
   function initTabFromURL() {
     const urlParams = new URLSearchParams(window.location.search);
     const tab = urlParams.get('tab');
-    if (tab && ['stats', 'awards', 'badges', 'splits', 'records'].includes(tab)) {
+    if (tab && ['stats', 'awards', 'badges', 'splits', 'records', 'pitching'].includes(tab)) {
       switchToTab(tab);
     }
   }
@@ -3542,6 +3699,7 @@
   
   // Splits state
   let currentPlayerData = null;
+  let currentLegacyId = null;
   let splits2025Data = null;
   let splitsMainData = null; // aggregatedPlayerStats seasons for 2026+
   let splitsGameStats = [];
@@ -3564,6 +3722,7 @@
     'Gold': '#CFB53B',
     'Carolina': '#4b9cd3',
     'Army': '#654321',
+    'Teal': '#008080',
     'Gray': '#757575',
     'Grey': '#757575'
   };
@@ -4055,6 +4214,7 @@
     
     // Generate legacy ID for badge lookup (same format used by badge calculator)
     const legacyId = playerName.toLowerCase().replace(/\./g, '').replace(/\s+/g, '_');
+    currentLegacyId = legacyId;
     
     // Fetch badges and titles in parallel
     const [playerBadges, playerTitles] = await Promise.all([
@@ -4077,7 +4237,10 @@
     
     // Initialize splits tab (load data in background)
     initializeSplitsTab(playerId, playerName, resolvedPlayer);
-    
+
+    // Check for pitching data and reveal tab if found
+    checkPitchingTabVisibility(legacyId);
+
     // Show tabs by removing hidden class - CSS media queries handle responsive display
     document.getElementById('playerTabs').classList.remove('hidden');
     document.getElementById('playerTabsMobile').classList.remove('hidden');
@@ -5475,6 +5638,177 @@
     content.classList.toggle('collapsed');
     toggle.classList.toggle('collapsed');
   };
+
+  // =============================================
+  // PITCHING TAB
+  // =============================================
+
+  let pitchingTabLoaded = false;
+  let pitchingGames = [];
+
+  async function checkPitchingTabVisibility(legacyId) {
+    try {
+      const snap = await getDocs(collection(db, 'pitchingStats', legacyId, 'games'));
+      if (!snap.empty) {
+        document.getElementById('pitchingTabBtn').classList.remove('hidden');
+        const mobileOpt = document.getElementById('pitchingTabMobileOption');
+        if (mobileOpt) mobileOpt.style.display = '';
+      }
+    } catch (e) {
+      // Silently ignore — tab stays hidden
+    }
+  }
+
+  async function loadPitchingTab() {
+    const loading = document.getElementById('pitchingLoading');
+    const noData  = document.getElementById('pitchingNoData');
+    const content = document.getElementById('pitchingContent');
+
+    loading.classList.remove('hidden');
+    noData.classList.add('hidden');
+    content.classList.add('hidden');
+
+    try {
+      const legacyId = currentLegacyId;
+      if (!legacyId) throw new Error('No player ID');
+
+      const snap = await getDocs(collection(db, 'pitchingStats', legacyId, 'games'));
+      pitchingGames = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+      // Sort newest first
+      pitchingGames.sort((a, b) => {
+        const ta = a.gameDate?.seconds ?? 0;
+        const tb = b.gameDate?.seconds ?? 0;
+        return tb - ta;
+      });
+
+      loading.classList.add('hidden');
+
+      if (pitchingGames.length === 0) {
+        noData.classList.remove('hidden');
+        return;
+      }
+
+      renderPitchingCareer();
+      renderPitchingSeasons();
+      renderPitchingGameLog();
+      content.classList.remove('hidden');
+
+    } catch (e) {
+      console.error('Error loading pitching tab:', e);
+      loading.classList.add('hidden');
+      noData.classList.remove('hidden');
+    }
+  }
+
+  function fmtIP(ip) {
+    // Softball IP can be 0.1 increments — display with 1 decimal
+    return (ip ?? 0).toFixed(1);
+  }
+
+  function fmtRAperIP(ra, ip) {
+    if (!ip || ip === 0) return '—';
+    return (ra / ip).toFixed(2);
+  }
+
+  function pitchingDateLabel(game) {
+    if (game.gameDate?.seconds) {
+      const d = new Date(game.gameDate.seconds * 1000);
+      return `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`;
+    }
+    if (game.gameDateFormatted) return game.gameDateFormatted;
+    return '—';
+  }
+
+  function renderPitchingCareer() {
+    const totals = pitchingGames.reduce((acc, g) => {
+      acc.games++;
+      acc.ip += g.inningsPitched ?? 0;
+      acc.ra += g.runsAllowed ?? 0;
+      return acc;
+    }, { games: 0, ip: 0, ra: 0 });
+
+    document.getElementById('pitchingCareerBar').innerHTML = `
+      <div class="pitching-stat-box">
+        <div class="pitching-stat-num">${totals.games}</div>
+        <div class="pitching-stat-lbl">G</div>
+      </div>
+      <div class="pitching-stat-box">
+        <div class="pitching-stat-num">${fmtIP(totals.ip)}</div>
+        <div class="pitching-stat-lbl">IP</div>
+      </div>
+      <div class="pitching-stat-box">
+        <div class="pitching-stat-num">${totals.ra}</div>
+        <div class="pitching-stat-lbl">RA</div>
+      </div>
+      <div class="pitching-stat-box">
+        <div class="pitching-stat-num">${fmtRAperIP(totals.ra, totals.ip)}</div>
+        <div class="pitching-stat-lbl">RA/IP</div>
+      </div>
+    `;
+  }
+
+  function renderPitchingSeasons() {
+    // Group by seasonId
+    const seasons = {};
+    pitchingGames.forEach(g => {
+      const s = g.seasonId || 'Unknown';
+      if (!seasons[s]) seasons[s] = { games: 0, ip: 0, ra: 0 };
+      seasons[s].games++;
+      seasons[s].ip += g.inningsPitched ?? 0;
+      seasons[s].ra += g.runsAllowed ?? 0;
+    });
+
+    const sortedSeasons = Object.entries(seasons).sort((a, b) => b[0].localeCompare(a[0]));
+
+    // Career total row
+    const careerGames = sortedSeasons.reduce((s, [, v]) => s + v.games, 0);
+    const careerIP    = sortedSeasons.reduce((s, [, v]) => s + v.ip,    0);
+    const careerRA    = sortedSeasons.reduce((s, [, v]) => s + v.ra,    0);
+
+    const rows = sortedSeasons.map(([seasonId, s]) => `
+      <tr>
+        <td>${seasonId}</td>
+        <td>${s.games}</td>
+        <td>${fmtIP(s.ip)}</td>
+        <td>${s.ra}</td>
+        <td>${fmtRAperIP(s.ra, s.ip)}</td>
+      </tr>
+    `).join('');
+
+    const totalRow = `
+      <tr class="total-row">
+        <td>Career</td>
+        <td>${careerGames}</td>
+        <td>${fmtIP(careerIP)}</td>
+        <td>${careerRA}</td>
+        <td>${fmtRAperIP(careerRA, careerIP)}</td>
+      </tr>
+    `;
+
+    document.getElementById('pitchingSeasonBody').innerHTML = rows + totalRow;
+  }
+
+  function renderPitchingGameLog() {
+    const rows = pitchingGames.map(g => {
+      const ip   = g.inningsPitched ?? 0;
+      const ra   = g.runsAllowed    ?? 0;
+      const isPlayoff = g.isPlayoff === true || g.gameType === 'playoff' || g.gameType === 'Playoff';
+      return `
+        <tr>
+          <td>${pitchingDateLabel(g)}</td>
+          <td>${getTeamColorDot(g.opponent || 'Unknown')}${g.opponent || 'Unknown'}</td>
+          <td><span class="home-away-badge ${g.isHome ? 'badge-home' : 'badge-away'}">${g.isHome ? 'Home' : 'Away'}</span></td>
+          <td><span class="game-type-badge ${isPlayoff ? 'game-type-playoff' : 'game-type-regular'}">${isPlayoff ? 'Playoff' : 'Regular'}</span></td>
+          <td>${fmtIP(ip)}</td>
+          <td>${ra}</td>
+          <td>${fmtRAperIP(ra, ip)}</td>
+        </tr>
+      `;
+    }).join('');
+
+    document.getElementById('pitchingGameLogBody').innerHTML = rows;
+  }
 
   // ========================================
   // PHOTO EDIT PERMISSION & UPLOAD HANDLING
