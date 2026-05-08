@@ -222,36 +222,50 @@ async function findCorrectGameDocCached(seasonId, gameDateFormatted, opponent, i
   }
   if (!csvDate) return null;
 
-  for (const g of games) {
-    let gDate = null;
-    if (g.date?.seconds) {
-      gDate = new Date(g.date.seconds * 1000);
-    } else if (g.date && typeof g.date === 'string') {
-      gDate = new Date(g.date);
-    }
-    if (!gDate || isNaN(gDate.getTime())) continue;
+  // Build a set of candidate dates to try:
+  // 1. Exact date from the stat doc
+  // 2. +1 day — handles UTC rollback where a late-evening ET game was recorded as the prior day
+  const candidateDates = [
+    csvDate,
+    new Date(csvDate.getFullYear(), csvDate.getMonth(), csvDate.getDate() + 1)
+  ];
 
-    const sameDate =
-      gDate.getFullYear() === csvDate.getFullYear() &&
-      gDate.getMonth()    === csvDate.getMonth()    &&
-      gDate.getDate()     === csvDate.getDate();
-    if (!sameDate) continue;
-
+  function teamsMatch(g) {
     const homeTeam = (g.homeTeamName || g['home team'] || g.homeTeam || '').toLowerCase();
     const awayTeam = (g.awayTeamName || g['away team'] || g.awayTeam || '').toLowerCase();
     const oppLower  = (opponent || '').toLowerCase();
     const teamLower = (teamId   || '').toLowerCase();
-
     const statIsHome = isHome === true;
-    // Home stat: team is home, opponent is away
-    // Away stat: team is away, opponent is home
-    const match = statIsHome
+    return statIsHome
       ? (homeTeam === teamLower && awayTeam === oppLower) ||
         (homeTeam === teamLower) || (awayTeam === oppLower)
       : (awayTeam === teamLower && homeTeam === oppLower) ||
         (homeTeam === oppLower)  || (awayTeam === teamLower);
+  }
 
-    if (match) return { docId: g.id, data: g };
+  for (const candidate of candidateDates) {
+    for (const g of games) {
+      let gDate = null;
+      if (g.date?.seconds) {
+        gDate = new Date(g.date.seconds * 1000);
+      } else if (g.date && typeof g.date === 'string') {
+        gDate = new Date(g.date);
+      }
+      if (!gDate || isNaN(gDate.getTime())) continue;
+
+      const sameDate =
+        gDate.getFullYear() === candidate.getFullYear() &&
+        gDate.getMonth()    === candidate.getMonth()    &&
+        gDate.getDate()     === candidate.getDate();
+      if (!sameDate) continue;
+
+      if (teamsMatch(g)) {
+        if (candidate !== csvDate) {
+          log(`    ℹ️  Matched via +1 day UTC correction (stat: ${gameDateFormatted} → game: ${g.id})`);
+        }
+        return { docId: g.id, data: g };
+      }
+    }
   }
   return null;
 }
