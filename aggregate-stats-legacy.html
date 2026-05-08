@@ -154,6 +154,18 @@
       </div>
     </div>
 
+    <div style="margin-bottom: 1rem; display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
+      <input
+        type="text"
+        id="playerFilter"
+        placeholder="Filter by name or doc ID (leave blank to run all)"
+        style="flex: 1; min-width: 260px; padding: 8px 12px; border: 1px solid #ccc; border-radius: 6px; font-size: 0.9rem;"
+      />
+      <button id="singlePlayerBtn" onclick="runAggregation(true)" style="background: #0369a1; color: white; white-space: nowrap;">
+        👤 Run for Filtered Player
+      </button>
+    </div>
+
     <button id="aggregateBtn" onclick="runAggregation()">🚀 Aggregate All Player Stats</button>
     <button id="verifyBtn" onclick="verifyAggregation()" style="background: #4caf50;">✓ Verify Collection</button>
     <button onclick="clearOutput()" style="background: #757575;">Clear Output</button>
@@ -307,46 +319,76 @@
     };
 
     // FINAL: Main aggregation function - NO DUPLICATES
-    window.runAggregation = async function() {
-      const btn = document.getElementById('aggregateBtn');
+    window.runAggregation = async function(singleMode = false) {
+      const btn = singleMode ? document.getElementById('singlePlayerBtn') : document.getElementById('aggregateBtn');
       btn.disabled = true;
       btn.textContent = '⏳ Processing...';
-      
+
+      const filterRaw = document.getElementById('playerFilter').value.trim().toLowerCase();
+      const hasFilter = filterRaw.length > 0;
+
+      if (singleMode && !hasFilter) {
+        alert('Enter a player name or doc ID in the filter box first.');
+        btn.disabled = false;
+        btn.textContent = '👤 Run for Filtered Player';
+        return;
+      }
+
       log('═══════════════════════════════════════', 'header');
-      log('FINAL Player Stats Aggregation (NO DUPLICATES)', 'header');
+      log(hasFilter
+        ? `Player Stats Aggregation — FILTERED: "${filterRaw}"`
+        : 'FINAL Player Stats Aggregation (NO DUPLICATES)', 'header');
       log('═══════════════════════════════════════', 'header');
-      
+
       try {
         // Get all users
         log('Fetching all users...');
         const usersRef = window.collection(window.db, 'users');
         const allUsersSnapshot = await window.getDocs(usersRef);
-        
+
         log(`Found ${allUsersSnapshot.size} total users`);
-        
+
         // CRITICAL: Filter out migrated legacy profiles to prevent duplicates
-        const playerDocs = allUsersSnapshot.docs.filter(doc => {
+        let playerDocs = allUsersSnapshot.docs.filter(doc => {
           const data = doc.data();
           const role = data.role;
           const linkedPlayer = data.linkedPlayer;
           const migrated = data.migrated;
-          
+
           // Skip migrated legacy profiles (someone already linked this account)
           if (migrated) {
             return false;
           }
-          
+
           // Include unmigrated legacy players (have 'role' field, not migrated)
           if (role) {
             const roleLower = role.toLowerCase();
             if (roleLower === 'player' || roleLower === 'captain') return true;
           }
-          
+
           // Include auth users who linked to a player
           if (linkedPlayer) return true;
-          
+
           return false;
         });
+
+        // Apply name/ID filter if provided
+        if (hasFilter) {
+          const before = playerDocs.length;
+          playerDocs = playerDocs.filter(doc => {
+            const data = doc.data();
+            const name = (data.name || data.displayName || data.linkedPlayer || '').toLowerCase();
+            const id = doc.id.toLowerCase();
+            return name.includes(filterRaw) || id.includes(filterRaw);
+          });
+          log(`Filter "${filterRaw}" matched ${playerDocs.length} of ${before} players`, playerDocs.length > 0 ? 'success' : 'error');
+          if (playerDocs.length === 0) {
+            log('No matching players found — check the name or ID and try again.', 'error');
+            btn.disabled = false;
+            btn.textContent = singleMode ? '👤 Run for Filtered Player' : '🚀 Aggregate All Player Stats';
+            return;
+          }
+        }
         
         // Count how many were skipped
         const migratedCount = allUsersSnapshot.docs.filter(doc => doc.data().migrated).length;
@@ -618,7 +660,7 @@
         console.error('Aggregation error:', error);
       } finally {
         btn.disabled = false;
-        btn.textContent = '🚀 Aggregate All Player Stats';
+        btn.textContent = singleMode ? '👤 Run for Filtered Player' : '🚀 Aggregate All Player Stats';
       }
     };
 
