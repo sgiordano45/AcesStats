@@ -752,7 +752,7 @@
           </div>
           <div class="stat-card">
             <div class="stat-number orange" id="streakSkipped">0</div>
-            <div class="stat-label">Already Existed</div>
+            <div class="stat-label">Updated</div>
           </div>
         </div>
       </div>
@@ -2324,7 +2324,23 @@
             }
           });
 
-          if (maxStreak >= 5) {
+          // Active streak: walk backwards from most recent game
+          let activeStreak = 0;
+          let activeStreakStart = null;
+          let activeStreakSeasons = new Set();
+          for (let i = allGames.length - 1; i >= 0; i--) {
+            if ((allGames[i].hits || 0) >= 1) {
+              activeStreak++;
+              activeStreakStart = allGames[i].gameDate;
+              if (allGames[i].seasonId) activeStreakSeasons.add(allGames[i].seasonId);
+            } else {
+              break;
+            }
+          }
+
+          const isNotable = maxStreak >= 5 || activeStreak >= 3;
+
+          if (isNotable) {
             notableCount++;
             const isCrossSeason = maxStreakSeasons.size > 1;
             const seasonsArray = [...maxStreakSeasons].sort();
@@ -2332,7 +2348,13 @@
               ? `CROSS-SEASON (${seasonsArray.join(' → ')})`
               : seasonsArray[0] || 'unknown';
 
-            log(`  🔥 ${playerName}: ${maxStreak}-game streak — ${seasonLabel} | ${allGames.length} total games`);
+            const activeLabel = activeStreak >= 3
+              ? ` | 🔴 ACTIVE: ${activeStreak}-game streak`
+              : activeStreak > 0
+                ? ` | active: ${activeStreak}`
+                : ' | active: 0';
+
+            log(`  🔥 ${playerName}: max ${maxStreak} games (${seasonLabel})${activeLabel}`);
 
             if (!previewOnly) {
               // Use "_allSeasons_" prefix to distinguish from per-season docs (${docId}_${seasonId}_${n})
@@ -2341,24 +2363,38 @@
                 window.doc(window.db, 'hitStreaks', hitStreakDocId)
               );
 
+              const docData = {
+                playerId: docId,
+                playerLegacyId: legacyId,
+                playerName,
+                seasonId: isCrossSeason ? 'crossSeason' : (seasonsArray[0] || null),
+                crossSeason: isCrossSeason,
+                seasonsSpanned: seasonsArray,
+                streakLength: maxStreak,
+                startDate: maxStreakStart || null,
+                endDate: maxStreakEnd || null,
+                currentStreak: activeStreak,
+                currentStreakStart: activeStreakStart || null,
+                currentStreakSeasons: [...activeStreakSeasons].sort(),
+                achievedAt: new Date()
+              };
+
               if (existingDoc.exists()) {
-                log(`    ⏭️ Already exists: ${hitStreakDocId}`, 'skip');
+                // Always update currentStreak so it stays fresh
+                await window.updateDoc(
+                  window.doc(window.db, 'hitStreaks', hitStreakDocId),
+                  {
+                    currentStreak: activeStreak,
+                    currentStreakStart: activeStreakStart || null,
+                    currentStreakSeasons: [...activeStreakSeasons].sort()
+                  }
+                );
+                log(`    ↻ Updated currentStreak → ${activeStreak}: ${hitStreakDocId}`, 'success');
                 skippedCount++;
               } else {
                 await window.setDoc(
                   window.doc(window.db, 'hitStreaks', hitStreakDocId),
-                  {
-                    playerId: docId,
-                    playerLegacyId: legacyId,
-                    playerName,
-                    seasonId: isCrossSeason ? 'crossSeason' : (seasonsArray[0] || null),
-                    crossSeason: isCrossSeason,
-                    seasonsSpanned: seasonsArray,
-                    streakLength: maxStreak,
-                    startDate: maxStreakStart || null,
-                    endDate: maxStreakEnd || null,
-                    achievedAt: new Date()
-                  }
+                  docData
                 );
                 writtenCount++;
                 log(`    ✓ Written: ${hitStreakDocId}`, 'success');
@@ -2391,8 +2427,8 @@
       log(`Players checked: ${playersChecked}`, 'success');
       log(`Notable streaks (5+): ${notableCount}`, notableCount > 0 ? 'success' : 'skip');
       if (!previewOnly) {
-        log(`Written to hitStreaks: ${writtenCount}`, writtenCount > 0 ? 'success' : 'skip');
-        log(`Already existed (skipped): ${skippedCount}`, 'skip');
+        log(`New docs written: ${writtenCount}`, writtenCount > 0 ? 'success' : 'skip');
+        log(`Existing docs updated (currentStreak refreshed): ${skippedCount}`, skippedCount > 0 ? 'success' : 'skip');
       } else {
         log('Run in Write mode to persist these results.', 'skip');
       }
