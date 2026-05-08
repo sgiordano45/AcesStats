@@ -79,7 +79,6 @@ import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/
 import {
   getFirestore,
   collection,
-  collectionGroup,
   doc,
   getDocs,
   getDoc,
@@ -262,45 +261,46 @@ window.runScan = async function() {
   for (const collName of colls) {
     log(`Scanning ${collName}…`);
     try {
-      // collectionGroup lets us reach all /games subcollections at once
-      const gamesSnap = await getDocs(collectionGroup(db, 'games'));
-      // Filter to only those under this top-level collection
-      const relevant = gamesSnap.docs.filter(d => d.ref.path.startsWith(collName + '/'));
-      log(`  ${collName}: ${relevant.length} total game docs`);
+      // Iterate top-level player docs, then fetch each /games subcollection.
+      // Avoids collectionGroup which requires a special security rule.
+      const topSnap = await getDocs(collection(db, collName));
+      log(`  ${collName}: ${topSnap.size} player docs`);
 
-      for (const gDoc of relevant) {
-        const data = gDoc.data();
-        if (!isOldFormat(data)) continue;
+      for (const playerDoc of topSnap.docs) {
+        const playerId  = playerDoc.id;
+        const gamesSnap = await getDocs(collection(db, collName, playerId, 'games'));
 
-        badCount++;
-        // Path: playerStats/{playerId}/games/{gameDocId}
-        const pathParts = gDoc.ref.path.split('/');
-        const playerId  = pathParts[1];
-        const oldDocId  = pathParts[3];
+        for (const gDoc of gamesSnap.docs) {
+          const data = gDoc.data();
+          if (!isOldFormat(data)) continue;
 
-        log(`  Found bad doc: ${gDoc.ref.path}`);
-        log(`    gameId=${data.gameId}  date=${data.gameDateFormatted}  opp=${data.opponent}  home=${data.isHome}  team=${data.teamId}`);
+          badCount++;
+          const oldDocId = gDoc.id;
 
-        // Find the correct game doc
-        const match = await findCorrectGameDocCached(
-          data.seasonId, data.gameDateFormatted, data.opponent, data.isHome, data.teamId
-        );
+          log(`  Found bad doc: ${collName}/${playerId}/games/${oldDocId}`);
+          log(`    gameId=${data.gameId}  date=${data.gameDateFormatted}  opp=${data.opponent}  home=${data.isHome}  team=${data.teamId}`);
 
-        let newGameId = null, newDocId = null;
-        let matched = false;
+          // Find the correct game doc in seasons/{seasonId}/games
+          const match = await findCorrectGameDocCached(
+            data.seasonId, data.gameDateFormatted, data.opponent, data.isHome, data.teamId
+          );
 
-        if (match) {
-          newGameId = match.docId;
-          newDocId  = `${data.seasonId}_${newGameId}`;
-          matched   = true;
-          matchedCount++;
-          log(`    ✅ Matched → new gameDocId: ${newDocId}`);
-        } else {
-          unmatchedCount++;
-          log(`    ⚠️ No game match found — will skip`);
+          let newGameId = null, newDocId = null;
+          let matched = false;
+
+          if (match) {
+            newGameId = match.docId;
+            newDocId  = `${data.seasonId}_${newGameId}`;
+            matched   = true;
+            matchedCount++;
+            log(`    ✅ Matched → new gameDocId: ${newDocId}`);
+          } else {
+            unmatchedCount++;
+            log(`    ⚠️ No game match found — will skip`);
+          }
+
+          scanResults.push({ collName, playerId, oldDocId, newDocId, newGameId, data, matched });
         }
-
-        scanResults.push({ collName, playerId, oldDocId, newDocId, newGameId, data, matched });
       }
     } catch (e) {
       log(`  ❌ Error scanning ${collName}: ${e.message}`);
