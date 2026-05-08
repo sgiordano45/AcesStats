@@ -253,22 +253,39 @@ window.runScan = async function() {
   document.getElementById('previewCard').style.display = 'none';
   document.getElementById('previewBody').innerHTML = '';
 
-  log('Starting scan of playerStats and pitchingStats…');
+  log('Starting scan — collecting player IDs from rosters…');
+
+  // playerStats/{legacyId}/games/* docs are "phantom" parents — the top-level
+  // playerStats docs don't actually exist as Firestore documents, so iterating
+  // getDocs(collection(db,'playerStats')) returns nothing.
+  // Instead, collect every legacyId from the rosters collection (which has real docs).
+  const playerIds = new Set();
+  try {
+    const rostersSnap = await getDocs(collection(db, 'rosters'));
+    log(`  Loaded ${rostersSnap.size} roster docs`);
+    rostersSnap.forEach(rDoc => {
+      const players = rDoc.data().players || [];
+      players.forEach(p => {
+        if (p.id) playerIds.add(p.id);          // snake_case legacyId
+        if (p.authId) playerIds.add(p.authId);   // auth UID (some stats saved under this)
+      });
+    });
+    log(`  Found ${playerIds.size} unique player IDs across all rosters`);
+  } catch (e) {
+    log(`  ❌ Error loading rosters: ${e.message}`);
+    document.getElementById('scanBtn').disabled = false;
+    return;
+  }
 
   const colls = ['playerStats', 'pitchingStats'];
   let badCount = 0, matchedCount = 0, unmatchedCount = 0;
 
   for (const collName of colls) {
     log(`Scanning ${collName}…`);
-    try {
-      // Iterate top-level player docs, then fetch each /games subcollection.
-      // Avoids collectionGroup which requires a special security rule.
-      const topSnap = await getDocs(collection(db, collName));
-      log(`  ${collName}: ${topSnap.size} player docs`);
-
-      for (const playerDoc of topSnap.docs) {
-        const playerId  = playerDoc.id;
+    for (const playerId of playerIds) {
+      try {
         const gamesSnap = await getDocs(collection(db, collName, playerId, 'games'));
+        if (gamesSnap.empty) continue;
 
         for (const gDoc of gamesSnap.docs) {
           const data = gDoc.data();
@@ -301,9 +318,11 @@ window.runScan = async function() {
 
           scanResults.push({ collName, playerId, oldDocId, newDocId, newGameId, data, matched });
         }
+      } catch (e) {
+        // Subcollection may simply not exist for this player — skip silently
+        if (!e.message?.includes('permission')) continue;
+        log(`  ⚠️ Error reading ${collName}/${playerId}/games: ${e.message}`);
       }
-    } catch (e) {
-      log(`  ❌ Error scanning ${collName}: ${e.message}`);
     }
   }
 
