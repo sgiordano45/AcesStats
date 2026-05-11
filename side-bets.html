@@ -530,17 +530,26 @@ import {
 // ============================================================
 const STAT_OPTIONS = {
   batting: [
-    { value: 'hits',           label: 'Hits',           higherIsBetter: true,  format: 'int' },
-    { value: 'runs',           label: 'Runs',           higherIsBetter: true,  format: 'int' },
-    { value: 'homeRuns',       label: 'Home Runs',      higherIsBetter: true,  format: 'int' },
-    { value: 'walks',          label: 'Walks',          higherIsBetter: true,  format: 'int' },
-    { value: 'rbi',            label: 'RBI',            higherIsBetter: true,  format: 'int' },
-    { value: 'atBats',         label: 'At Bats',        higherIsBetter: true,  format: 'int' },
-    { value: 'battingAverage', label: 'Batting Average',higherIsBetter: true,  format: 'avg' },
+    { value: 'battingAverage',    label: 'Batting Average',     higherIsBetter: true,  format: 'avg' },
+    { value: 'onBasePercentage',  label: 'On-Base Percentage',  higherIsBetter: true,  format: 'avg' },
+    { value: 'hits',              label: 'Hits',                higherIsBetter: true,  format: 'int' },
+    { value: 'runs',              label: 'Runs',                higherIsBetter: true,  format: 'int' },
+    { value: 'homeRuns',          label: 'Home Runs',           higherIsBetter: true,  format: 'int' },
+    { value: 'rbi',               label: 'RBI',                 higherIsBetter: true,  format: 'int' },
+    { value: 'walks',             label: 'Walks',               higherIsBetter: true,  format: 'int' },
+    { value: 'doubles',           label: 'Doubles',             higherIsBetter: true,  format: 'int' },
+    { value: 'triples',           label: 'Triples',             higherIsBetter: true,  format: 'int' },
+    { value: 'stolenBases',       label: 'Stolen Bases',        higherIsBetter: true,  format: 'int' },
+    { value: 'strikeouts',        label: 'Strikeouts (Batting)',higherIsBetter: false, format: 'int' },
+    { value: 'atBats',            label: 'At Bats',             higherIsBetter: true,  format: 'int' },
+    { value: 'games',             label: 'Games Played',        higherIsBetter: true,  format: 'int' },
+    { value: 'acesBPI',           label: 'Aces BPI',            higherIsBetter: true,  format: 'dec' },
   ],
   pitching: [
-    { value: 'inningsPitched', label: 'Innings Pitched',higherIsBetter: true,  format: 'dec' },
-    { value: 'runsAllowed',    label: 'Runs Allowed',   higherIsBetter: false, format: 'int' },
+    { value: 'inningsPitched',    label: 'Innings Pitched',     higherIsBetter: true,  format: 'dec' },
+    { value: 'runsAllowed',       label: 'Runs Allowed',        higherIsBetter: false, format: 'int' },
+    { value: 'runsAllowedPerIP',  label: 'Runs Allowed / IP',   higherIsBetter: false, format: 'era' },
+    { value: 'games',             label: 'Games Pitched',       higherIsBetter: true,  format: 'int' },
   ]
 };
 
@@ -828,11 +837,13 @@ async function loadStandings(bet) {
 // GET PLAYER STAT FROM aggregatedPlayerStats
 // ============================================================
 async function getPlayerStat(legacyId, userId, seasonId, statField) {
-  // Try legacyId first, then userId as fallback (for migrated auth-account players)
+  // Try legacyId first, then userId as fallback (for migrated auth-account players).
+  // Use index-based loop so we can push migration targets (migratedTo) dynamically mid-loop.
   const idsToTry = [legacyId, userId].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i);
   if (idsToTry.length === 0) { console.warn('[SideBets] getPlayerStat: no IDs to try'); return 0; }
 
-  for (const id of idsToTry) {
+  for (let _i = 0; _i < idsToTry.length; _i++) {
+    const id = idsToTry[_i];
     try {
       const snap = await getDoc(doc(db, 'aggregatedPlayerStats', id));
       if (!snap.exists()) {
@@ -841,7 +852,13 @@ async function getPlayerStat(legacyId, userId, seasonId, statField) {
       }
       const data = snap.data();
       if (data.migrated) {
-        console.log(`[SideBets] "${id}" is migrated — trying next ID`);
+        // Follow the migratedTo pointer if present — covers players who joined after the bet was created
+        if (data.migratedTo && !idsToTry.includes(data.migratedTo)) {
+          console.log(`[SideBets] "${id}" is migrated → following pointer to "${data.migratedTo}"`);
+          idsToTry.push(data.migratedTo);
+        } else {
+          console.log(`[SideBets] "${id}" is migrated — no pointer, trying next ID`);
+        }
         continue;
       }
 
@@ -857,6 +874,13 @@ async function getPlayerStat(legacyId, userId, seasonId, statField) {
         const avg = s.battingAverage ?? (s.atBats > 0 ? s.hits / s.atBats : 0);
         console.log(`[SideBets] ${id} | key=${key} | BA=${avg} (hits=${s.hits}, ab=${s.atBats})`);
         return avg;
+      }
+      if (statField === 'runsAllowedPerIP') {
+        const ip = s.inningsPitched ?? 0;
+        const ra = s.runsAllowed ?? 0;
+        const result = ip > 0 ? ra / ip : 0;
+        console.log(`[SideBets] ${id} | key=${key} | runsAllowedPerIP=${result} (ra=${ra}, ip=${ip})`);
+        return result;
       }
       const val = s[statField] ?? 0;
       console.log(`[SideBets] ${id} | key=${key} | ${statField}=${val}`);
@@ -1076,6 +1100,9 @@ function formatStat(value, format) {
   }
   if (format === 'dec') {
     return Number(value).toFixed(1);
+  }
+  if (format === 'era') {
+    return Number(value).toFixed(2);
   }
   return Math.round(value).toString();
 }
