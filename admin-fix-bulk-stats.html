@@ -109,7 +109,20 @@
     <button class="btn btn-primary" onclick="addOotp()">➕ Add</button>
   </div>
 
-  <div id="ootpList" style="font-size:0.87rem;color:#718096;">Loading records…</div>
+  <!-- Scan panel -->
+  <div style="margin-top:1.25rem;padding-top:1rem;border-top:1px solid #e2e8f0;">
+    <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.75rem;">
+      <span style="font-weight:600;font-size:0.9rem;color:#4a5568;">📊 Scan from Stats</span>
+      <button class="btn btn-secondary" style="font-size:0.82rem;padding:0.3rem 0.9rem;" onclick="scanHRStats()">🔍 Scan Season HRs</button>
+      <span style="font-size:0.78rem;color:#a0aec0;">Reads aggregatedPlayerStats for the season above and compares against flagged records</span>
+    </div>
+    <div id="ootpScanResults"></div>
+  </div>
+
+  <div style="margin-top:1.25rem;padding-top:1rem;border-top:1px solid #e2e8f0;">
+    <span style="font-weight:600;font-size:0.9rem;color:#4a5568;display:block;margin-bottom:0.5rem;">💣 Flagged Records</span>
+    <div id="ootpList" style="font-size:0.87rem;color:#718096;">Loading records…</div>
+  </div>
 </div>
 
 <script type="module">
@@ -504,6 +517,103 @@ window.runFix = async function() {
 // =============================================
 // OUT-OF-PARK HR TRACKER
 // =============================================
+
+window.scanHRStats = async function() {
+  const seasonId  = document.getElementById('ootpSeason').value.trim();
+  const scanEl    = document.getElementById('ootpScanResults');
+  if (!seasonId) { alert('Enter a season ID first.'); return; }
+
+  scanEl.innerHTML = '<em style="color:#718096;">Scanning…</em>';
+
+  try {
+    // Load aggregatedPlayerStats — skip migrated redirect docs
+    const statsSnap = await getDocs(collection(db, 'aggregatedPlayerStats'));
+
+    // Load existing outOfParkHRs for this season
+    const ootpSnap = await getDocs(query(collection(db, 'outOfParkHRs'), where('seasonId', '==', seasonId)));
+
+    // Build OOTP totals keyed by normalized player name (lower, trimmed)
+    const ootpByName = {};
+    ootpSnap.forEach(d => {
+      const data = d.data();
+      const key = (data.playerName || '').toLowerCase().trim();
+      if (key) ootpByName[key] = (ootpByName[key] || 0) + (data.count || 1);
+    });
+
+    // Collect players with HRs in this season
+    const hrPlayers = [];
+    statsSnap.forEach(d => {
+      const data = d.data();
+      if (data.migrated === true) return;           // skip pointer-only docs
+      if (!data.name) return;                        // skip docs with no name
+
+      // Season key may be exact match or prefixed with team suffix (legacy)
+      const seasonKeys = Object.keys(data.seasons || {});
+      const matchKey = seasonKeys.find(k => k === seasonId || k.startsWith(seasonId + '-') || k.startsWith(seasonId + '_'));
+      if (!matchKey) return;
+
+      const hrs = (data.seasons[matchKey].homeRuns) || 0;
+      if (hrs <= 0) return;
+
+      const nameKey = data.name.toLowerCase().trim();
+      hrPlayers.push({
+        name: data.name,
+        totalHRs: hrs,
+        flagged: ootpByName[nameKey] || 0,
+      });
+    });
+
+    hrPlayers.sort((a, b) => b.totalHRs - a.totalHRs || a.name.localeCompare(b.name));
+
+    if (hrPlayers.length === 0) {
+      scanEl.innerHTML = `<em style="color:#718096;">No home runs found in <strong>${seasonId}</strong> stats.</em>`;
+      return;
+    }
+
+    const totalHRs    = hrPlayers.reduce((s, p) => s + p.totalHRs, 0);
+    const totalFlagged = hrPlayers.reduce((s, p) => s + p.flagged, 0);
+
+    scanEl.innerHTML = `
+      <p style="font-size:0.8rem;color:#718096;margin:0 0 0.5rem 0">
+        Found <strong>${hrPlayers.length} players</strong> with HRs in <strong>${seasonId}</strong>
+        — ${totalHRs} total HRs, ${totalFlagged} flagged out-of-park.
+      </p>
+      <table style="width:100%;border-collapse:collapse;font-size:0.85rem;">
+        <thead>
+          <tr style="background:#4a5568;color:white;">
+            <th style="padding:6px 10px;text-align:left;">Player</th>
+            <th style="padding:6px 10px;text-align:center;">Total HRs</th>
+            <th style="padding:6px 10px;text-align:center;">💣 OOP Flagged</th>
+            <th style="padding:6px 10px;text-align:left;">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${hrPlayers.map(p => {
+            let statusHtml;
+            if (p.flagged === 0) {
+              statusHtml = '<span style="color:#a0aec0;">None flagged</span>';
+            } else if (p.flagged === p.totalHRs) {
+              statusHtml = `<span style="color:#2d5016;font-weight:600;">✓ All ${p.flagged} flagged</span>`;
+            } else {
+              statusHtml = `<span style="color:#d69e2e;">⚠️ ${p.flagged} of ${p.totalHRs} flagged</span>`;
+            }
+            const rowBg = p.flagged > 0 ? '#f0fff4' : '';
+            return `
+              <tr style="border-bottom:1px solid #e2e8f0;${rowBg ? `background:${rowBg};` : ''}">
+                <td style="padding:6px 10px;">${p.name}</td>
+                <td style="padding:6px 10px;text-align:center;font-weight:600;">${p.totalHRs}</td>
+                <td style="padding:6px 10px;text-align:center;">${p.flagged || '—'}</td>
+                <td style="padding:6px 10px;">${statusHtml}</td>
+              </tr>
+            `;
+          }).join('')}
+        </tbody>
+      </table>
+    `;
+  } catch (err) {
+    scanEl.innerHTML = `<span style="color:#e53e3e;">Scan error: ${err.message}</span>`;
+  }
+};
 
 async function loadOotp() {
   const listEl = document.getElementById('ootpList');
