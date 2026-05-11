@@ -518,59 +518,50 @@ window.runFix = async function() {
 // OUT-OF-PARK HR TRACKER
 // =============================================
 
+// Player name registry so onclick handlers can look up names safely (avoids quoting issues)
+let _scanPlayers = [];
+
 window.scanHRStats = async function() {
-  const seasonId  = document.getElementById('ootpSeason').value.trim();
-  const scanEl    = document.getElementById('ootpScanResults');
+  const seasonId = document.getElementById('ootpSeason').value.trim();
+  const scanEl   = document.getElementById('ootpScanResults');
   if (!seasonId) { alert('Enter a season ID first.'); return; }
 
   scanEl.innerHTML = '<em style="color:#718096;">Scanning…</em>';
+  _scanPlayers = [];
 
   try {
-    // Load aggregatedPlayerStats — skip migrated redirect docs
     const statsSnap = await getDocs(collection(db, 'aggregatedPlayerStats'));
+    const ootpSnap  = await getDocs(query(collection(db, 'outOfParkHRs'), where('seasonId', '==', seasonId)));
 
-    // Load existing outOfParkHRs for this season
-    const ootpSnap = await getDocs(query(collection(db, 'outOfParkHRs'), where('seasonId', '==', seasonId)));
-
-    // Build OOTP totals keyed by normalized player name (lower, trimmed)
     const ootpByName = {};
     ootpSnap.forEach(d => {
-      const data = d.data();
-      const key = (data.playerName || '').toLowerCase().trim();
-      if (key) ootpByName[key] = (ootpByName[key] || 0) + (data.count || 1);
+      const s = d.data();
+      const key = (s.playerName || '').toLowerCase().trim();
+      if (key) ootpByName[key] = (ootpByName[key] || 0) + (s.count || 1);
     });
 
-    // Collect players with HRs in this season
     const hrPlayers = [];
     statsSnap.forEach(d => {
       const data = d.data();
-      if (data.migrated === true) return;           // skip pointer-only docs
-      if (!data.name) return;                        // skip docs with no name
-
-      // Season key may be exact match or prefixed with team suffix (legacy)
-      const seasonKeys = Object.keys(data.seasons || {});
-      const matchKey = seasonKeys.find(k => k === seasonId || k.startsWith(seasonId + '-') || k.startsWith(seasonId + '_'));
+      if (data.migrated === true || !data.name) return;
+      const matchKey = Object.keys(data.seasons || {}).find(
+        k => k === seasonId || k.startsWith(seasonId + '-') || k.startsWith(seasonId + '_')
+      );
       if (!matchKey) return;
-
-      const hrs = (data.seasons[matchKey].homeRuns) || 0;
+      const hrs = data.seasons[matchKey].homeRuns || 0;
       if (hrs <= 0) return;
-
-      const nameKey = data.name.toLowerCase().trim();
-      hrPlayers.push({
-        name: data.name,
-        totalHRs: hrs,
-        flagged: ootpByName[nameKey] || 0,
-      });
+      hrPlayers.push({ name: data.name, totalHRs: hrs, flagged: ootpByName[data.name.toLowerCase().trim()] || 0 });
     });
 
     hrPlayers.sort((a, b) => b.totalHRs - a.totalHRs || a.name.localeCompare(b.name));
+    _scanPlayers = hrPlayers; // store for onclick access by index
 
     if (hrPlayers.length === 0) {
       scanEl.innerHTML = `<em style="color:#718096;">No home runs found in <strong>${seasonId}</strong> stats.</em>`;
       return;
     }
 
-    const totalHRs    = hrPlayers.reduce((s, p) => s + p.totalHRs, 0);
+    const totalHRs     = hrPlayers.reduce((s, p) => s + p.totalHRs, 0);
     const totalFlagged = hrPlayers.reduce((s, p) => s + p.flagged, 0);
 
     scanEl.innerHTML = `
@@ -583,27 +574,47 @@ window.scanHRStats = async function() {
           <tr style="background:#4a5568;color:white;">
             <th style="padding:6px 10px;text-align:left;">Player</th>
             <th style="padding:6px 10px;text-align:center;">Total HRs</th>
-            <th style="padding:6px 10px;text-align:center;">💣 OOP Flagged</th>
+            <th style="padding:6px 10px;text-align:center;">💣 OOP</th>
             <th style="padding:6px 10px;text-align:left;">Status</th>
+            <th style="padding:6px 10px;text-align:center;">Flag</th>
           </tr>
         </thead>
         <tbody>
-          ${hrPlayers.map(p => {
+          ${hrPlayers.map((p, idx) => {
             let statusHtml;
             if (p.flagged === 0) {
               statusHtml = '<span style="color:#a0aec0;">None flagged</span>';
             } else if (p.flagged === p.totalHRs) {
-              statusHtml = `<span style="color:#2d5016;font-weight:600;">✓ All ${p.flagged} flagged</span>`;
+              statusHtml = `<span style="color:#2d5016;font-weight:600;">✓ All ${p.flagged}</span>`;
             } else {
-              statusHtml = `<span style="color:#d69e2e;">⚠️ ${p.flagged} of ${p.totalHRs} flagged</span>`;
+              statusHtml = `<span style="color:#d69e2e;">⚠️ ${p.flagged} of ${p.totalHRs}</span>`;
             }
-            const rowBg = p.flagged > 0 ? '#f0fff4' : '';
+            const rowBg = p.flagged > 0 ? 'background:#f0fff4;' : '';
             return `
-              <tr style="border-bottom:1px solid #e2e8f0;${rowBg ? `background:${rowBg};` : ''}">
+              <tr id="scan-row-${idx}" style="border-bottom:1px solid #e2e8f0;${rowBg}">
                 <td style="padding:6px 10px;">${p.name}</td>
                 <td style="padding:6px 10px;text-align:center;font-weight:600;">${p.totalHRs}</td>
                 <td style="padding:6px 10px;text-align:center;">${p.flagged || '—'}</td>
                 <td style="padding:6px 10px;">${statusHtml}</td>
+                <td style="padding:6px 10px;text-align:center;">
+                  <button class="btn btn-primary" style="padding:2px 10px;font-size:0.78rem;"
+                    onclick="toggleScanForm(${idx})">➕ Flag</button>
+                </td>
+              </tr>
+              <tr id="scan-form-${idx}" style="display:none;background:#fffbeb;">
+                <td colspan="5" style="padding:8px 12px;">
+                  <div style="display:flex;gap:0.6rem;align-items:center;flex-wrap:wrap;">
+                    <span style="font-weight:600;font-size:0.85rem;">${p.name}</span>
+                    <input id="scan-date-${idx}" type="text" placeholder="Game date (2026-04-26)"
+                      style="padding:0.3rem 0.6rem;border:1px solid #cbd5e0;border-radius:5px;font-size:0.83rem;width:160px">
+                    <input id="scan-count-${idx}" type="number" value="1" min="1" max="4"
+                      style="padding:0.3rem 0.5rem;border:1px solid #cbd5e0;border-radius:5px;font-size:0.83rem;width:56px">
+                    <button class="btn btn-primary" style="padding:3px 12px;font-size:0.82rem;"
+                      onclick="submitScanFlag(${idx})">✓ Add</button>
+                    <button class="btn btn-secondary" style="padding:3px 10px;font-size:0.82rem;"
+                      onclick="toggleScanForm(${idx})">Cancel</button>
+                  </div>
+                </td>
               </tr>
             `;
           }).join('')}
@@ -612,6 +623,46 @@ window.scanHRStats = async function() {
     `;
   } catch (err) {
     scanEl.innerHTML = `<span style="color:#e53e3e;">Scan error: ${err.message}</span>`;
+  }
+};
+
+window.toggleScanForm = function(idx) {
+  const formRow = document.getElementById(`scan-form-${idx}`);
+  if (!formRow) return;
+  const opening = formRow.style.display === 'none';
+  formRow.style.display = opening ? 'table-row' : 'none';
+  if (opening) {
+    const dateInput = document.getElementById(`scan-date-${idx}`);
+    if (dateInput) setTimeout(() => dateInput.focus(), 50);
+  }
+};
+
+window.submitScanFlag = async function(idx) {
+  const player    = _scanPlayers[idx];
+  if (!player) return;
+  const seasonId  = document.getElementById('ootpSeason').value.trim();
+  const gameDate  = (document.getElementById(`scan-date-${idx}`)?.value || '').trim();
+  const count     = parseInt(document.getElementById(`scan-count-${idx}`)?.value) || 1;
+
+  const legacyId  = player.name.toLowerCase().replace(/\./g, '').replace(/\s+/g, '_');
+  const datePart  = gameDate || 'unspecified';
+  const docId     = `${legacyId}_${seasonId}_${datePart}`;
+
+  try {
+    await setDoc(doc(db, 'outOfParkHRs', docId), {
+      playerName: player.name,
+      playerLegacyId: legacyId,
+      seasonId,
+      gameDate: gameDate || null,
+      count,
+      addedAt: new Date()
+    });
+    log(`✓ Flagged OOP HR: ${player.name} (${seasonId} — ${datePart}, count: ${count})`);
+    // Refresh both scan and flagged list
+    await window.scanHRStats();
+    await loadOotp();
+  } catch (err) {
+    alert(`Error adding record: ${err.message}`);
   }
 };
 
