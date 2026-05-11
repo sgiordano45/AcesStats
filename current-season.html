@@ -1673,6 +1673,20 @@
 
           console.log(`✅ Fetched: ${games?.length || 0} games, ${batting?.length || 0} batting records, ${pitching?.length || 0} pitching records`);
 
+          // Fetch out-of-park HR flags for this season
+          let ootpByName = {}; // playerName.toLowerCase() → total count
+          try {
+            const ootpQ = query(collection(db, 'outOfParkHRs'), where('seasonId', '==', seasonId));
+            const ootpSnap = await getDocs(ootpQ);
+            ootpSnap.forEach(d => {
+              const s = d.data();
+              const key = (s.playerName || '').trim().toLowerCase();
+              if (key) ootpByName[key] = (ootpByName[key] || 0) + (s.count || 1);
+            });
+          } catch (e) {
+            console.warn('Could not fetch out-of-park HR data:', e);
+          }
+
           // Fetch active hit streaks (cross-season calculator writes currentStreak field)
           // Declared outside try so it's in scope for the leaders HTML builder below
           let activeStreaksData = [];
@@ -1955,12 +1969,18 @@
               leaders.forEach((player) => {
                 const rank = player.rank;
                 const rankClass = rank === 1 ? 'first' : rank === 2 ? 'second' : rank === 3 ? 'third' : '';
+                const ootpCount = category.field === 'homeRuns'
+                  ? (ootpByName[(player.name || '').trim().toLowerCase()] || 0)
+                  : 0;
+                const ootpBadge = ootpCount > 0
+                  ? `<span title="${ootpCount} out-of-park" style="margin-left:4px;font-size:1rem;cursor:default;" aria-label="${ootpCount} out-of-park home run${ootpCount > 1 ? 's' : ''}">💣${ootpCount > 1 ? `<sup style="font-size:0.65rem;">${ootpCount}</sup>` : ''}</span>`
+                  : '';
                 leadersHtml += `
                   <li>
                     <span class="leader-rank ${rankClass}">${rank}</span>
                     <span class="leader-name"><a href="player.html?id=${encodeURIComponent(player.id || player.playerId)}">${player.name}</a></span>
                     <span class="leader-team" data-team="${player.team}">(${player.team})</span>
-                    <span class="leader-value">${category.formatter(player[category.field])}</span>
+                    <span class="leader-value">${category.formatter(player[category.field])}${ootpBadge}</span>
                   </li>
                 `;
               });

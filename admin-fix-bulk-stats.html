@@ -78,6 +78,40 @@
   <div id="log"></div>
 </div>
 
+<!-- ===================== OUT-OF-PARK HR MANAGER ===================== -->
+<div class="card" id="ootpCard">
+  <h3 style="margin-top:0">💣 Out-of-Park Home Run Tracker</h3>
+  <p style="font-size:0.85rem;color:#718096;margin-top:0">
+    Manually flag true out-of-park HRs. These display as a 💣 badge on the current-season HR leaderboard.
+  </p>
+
+  <div style="display:flex;gap:0.75rem;flex-wrap:wrap;align-items:flex-end;margin-bottom:1rem;">
+    <div>
+      <label style="font-size:0.82rem;font-weight:600;color:#4a5568;display:block;margin-bottom:0.25rem">Player Name</label>
+      <input id="ootpPlayer" type="text" placeholder="e.g. Will Klippel"
+        style="padding:0.4rem 0.75rem;border:1px solid #cbd5e0;border-radius:6px;font-size:0.9rem;width:200px">
+    </div>
+    <div>
+      <label style="font-size:0.82rem;font-weight:600;color:#4a5568;display:block;margin-bottom:0.25rem">Season</label>
+      <input id="ootpSeason" type="text" value="2026-summer"
+        style="padding:0.4rem 0.75rem;border:1px solid #cbd5e0;border-radius:6px;font-size:0.9rem;width:130px">
+    </div>
+    <div>
+      <label style="font-size:0.82rem;font-weight:600;color:#4a5568;display:block;margin-bottom:0.25rem">Game Date</label>
+      <input id="ootpDate" type="text" placeholder="e.g. 2026-04-26"
+        style="padding:0.4rem 0.75rem;border:1px solid #cbd5e0;border-radius:6px;font-size:0.9rem;width:130px">
+    </div>
+    <div>
+      <label style="font-size:0.82rem;font-weight:600;color:#4a5568;display:block;margin-bottom:0.25rem">Count</label>
+      <input id="ootpCount" type="number" value="1" min="1" max="4"
+        style="padding:0.4rem 0.75rem;border:1px solid #cbd5e0;border-radius:6px;font-size:0.9rem;width:70px">
+    </div>
+    <button class="btn btn-primary" onclick="addOotp()">➕ Add</button>
+  </div>
+
+  <div id="ootpList" style="font-size:0.87rem;color:#718096;">Loading records…</div>
+</div>
+
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
 import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
@@ -466,6 +500,106 @@ window.runFix = async function() {
 
   document.getElementById('scanBtn').disabled = false;
 };
+
+// =============================================
+// OUT-OF-PARK HR TRACKER
+// =============================================
+
+async function loadOotp() {
+  const listEl = document.getElementById('ootpList');
+  try {
+    const snap = await getDocs(collection(db, 'outOfParkHRs'));
+    if (snap.empty) {
+      listEl.innerHTML = '<em>No out-of-park HRs recorded yet.</em>';
+      return;
+    }
+
+    const rows = [];
+    snap.forEach(d => rows.push({ id: d.id, ...d.data() }));
+    rows.sort((a, b) => (b.seasonId || '').localeCompare(a.seasonId || '') || (a.playerName || '').localeCompare(b.playerName || ''));
+
+    listEl.innerHTML = `
+      <table style="width:100%;border-collapse:collapse;font-size:0.85rem;">
+        <thead>
+          <tr style="background:#2d5016;color:white;">
+            <th style="padding:6px 10px;text-align:left;">Player</th>
+            <th style="padding:6px 10px;text-align:left;">Season</th>
+            <th style="padding:6px 10px;text-align:left;">Game Date</th>
+            <th style="padding:6px 10px;text-align:center;">Count</th>
+            <th style="padding:6px 10px;text-align:center;">Delete</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map(r => `
+            <tr style="border-bottom:1px solid #e2e8f0;">
+              <td style="padding:6px 10px;">💣 ${r.playerName || '—'}</td>
+              <td style="padding:6px 10px;">${r.seasonId || '—'}</td>
+              <td style="padding:6px 10px;">${r.gameDate || '—'}</td>
+              <td style="padding:6px 10px;text-align:center;">${r.count || 1}</td>
+              <td style="padding:6px 10px;text-align:center;">
+                <button class="btn btn-danger" style="padding:2px 10px;font-size:0.8rem;" onclick="deleteOotp('${r.id}')">✕</button>
+              </td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    `;
+  } catch (err) {
+    listEl.innerHTML = `<span style="color:#e53e3e;">Error loading records: ${err.message}</span>`;
+  }
+}
+
+window.addOotp = async function() {
+  const playerName = document.getElementById('ootpPlayer').value.trim();
+  const seasonId   = document.getElementById('ootpSeason').value.trim();
+  const gameDate   = document.getElementById('ootpDate').value.trim();
+  const count      = parseInt(document.getElementById('ootpCount').value) || 1;
+
+  if (!playerName || !seasonId) {
+    alert('Player name and season are required.');
+    return;
+  }
+
+  const legacyId = playerName.toLowerCase().replace(/\./g, '').replace(/\s+/g, '_');
+  const datePart = gameDate || 'unspecified';
+  const docId = `${legacyId}_${seasonId}_${datePart}`;
+
+  try {
+    await setDoc(doc(db, 'outOfParkHRs', docId), {
+      playerName,
+      playerLegacyId: legacyId,
+      seasonId,
+      gameDate: gameDate || null,
+      count,
+      addedAt: new Date()
+    });
+    document.getElementById('ootpPlayer').value = '';
+    document.getElementById('ootpDate').value = '';
+    document.getElementById('ootpCount').value = '1';
+    await loadOotp();
+    log(`✓ Added out-of-park HR: ${playerName} (${seasonId} — ${datePart}, count: ${count})`);
+  } catch (err) {
+    alert(`Error adding record: ${err.message}`);
+  }
+};
+
+window.deleteOotp = async function(docId) {
+  if (!confirm('Delete this out-of-park HR record?')) return;
+  try {
+    await deleteDoc(doc(db, 'outOfParkHRs', docId));
+    await loadOotp();
+    log(`✓ Deleted out-of-park HR record: ${docId}`);
+  } catch (err) {
+    alert(`Error deleting: ${err.message}`);
+  }
+};
+
+// Load OOTP records when auth confirms admin
+const _origEnableButtons = window._origEnableButtons || null;
+// Hook into auth: load after page is confirmed admin
+setTimeout(() => {
+  if (document.getElementById('ootpCard')) loadOotp();
+}, 2000);
 </script>
 </body>
 </html>
