@@ -2942,22 +2942,26 @@ body {
         
         for (const game of completedTeamGames) {
           try {
-            // Build the expected game doc ID pattern
-            // Games use format like "10_12_2025_white_vs_blue"
-            const gameId = game.id;
-            const seasonGameId = `${currentSeason.id}_${gameId}`;
-            
-            // Check if the game has statsSubmitted flag (if we add this later)
-            // For now, we'll check if there's at least one playerStats entry for this game
-            // This is expensive, so we use a simple heuristic: check the game's statsSubmitted field
+            // Legacy flag set by admin-mark-stats-submitted tool
             if (game.statsSubmitted === true) {
-              continue; // Stats already submitted
+              continue;
             }
-            
-            // If no explicit flag, we assume stats are needed for recent games
-            // In production, you'd query playerStats collection
+
+            // Per-side flags set by submit-stats.html (added after dashboard was built)
+            // Only require THIS team's side to be submitted — captains can't control the other team
+            const homeTeam = (game.homeTeamName || game['home team'] || game.homeTeam || game.homeTeamId || '').toLowerCase();
+            const teamLower = linkedTeam.toLowerCase();
+            const captainIsHome = homeTeam === teamLower;
+
+            if (captainIsHome && game.statsSubmittedHome === true) {
+              continue; // Captain's home-side stats are in
+            }
+            if (!captainIsHome && game.statsSubmittedAway === true) {
+              continue; // Captain's away-side stats are in
+            }
+
             gamesWithoutStats.push(game);
-            
+
           } catch (e) {
             // If we can't determine, assume needs stats
             gamesWithoutStats.push(game);
