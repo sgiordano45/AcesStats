@@ -259,7 +259,8 @@
 <script type="module">
 import { db, collection, getDocs, doc, getDoc, query, where, orderBy } from './firebase-config.js';
 import { deleteDoc, setDoc, updateDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
-import { onAuthChange, getUserProfile } from './firebase-auth.js';
+import { auth } from './firebase-auth.js';
+import { onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
 import { getAllTeams, getCurrentSeason } from './firebase-data.js';
 import { getTeamRosterDoc } from './firebase-roster.js';
 
@@ -272,11 +273,25 @@ let currentTab = 'batting';
 let loadedType = 'batting';
 
 // ── Init ──────────────────────────────────────────────────────────────
-onAuthChange(async (user) => {
+onAuthStateChanged(auth, async (user) => {
   try {
     if (!user) { window.location.href = 'index.html'; return; }
-    const profile = await getUserProfile(user.uid);
-    if (!profile || (profile.role !== 'admin' && profile.role !== 'league-staff')) {
+    // Read user doc directly — matches pattern used by other admin pages
+    const userSnap = await getDoc(doc(db, 'users', user.uid));
+    if (!userSnap.exists()) {
+      document.getElementById('loadingOverlay').innerHTML =
+        '<p style="color:#dc2626;font-weight:600">User not found.</p>';
+      return;
+    }
+    const p = userSnap.data();
+    const role  = (p.role  || '').toLowerCase();
+    const uRole = (p.userRole || '').toLowerCase();
+    const uType = (p.userType || '').toLowerCase();
+    const ok = p.isAdmin === true ||
+      ['admin','staff','league-staff'].includes(role) ||
+      ['admin','staff','league-staff'].includes(uRole) ||
+      ['admin','league-staff'].includes(uType);
+    if (!ok) {
       document.getElementById('loadingOverlay').innerHTML =
         '<p style="color:#dc2626;font-weight:600">Admin access required.</p>';
       return;
