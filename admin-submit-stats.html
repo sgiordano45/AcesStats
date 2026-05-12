@@ -2022,14 +2022,19 @@ window.submitBulkStats = async function() {
     for (const gameKey of Object.keys(gameGroups)) {
       const game = gameGroups[gameKey];
       
-      // Generate game ID — convention: home_vs_away, prefixed with seasonId
-      const gameDate = new Date(game.date);
-      const dateStr = `${gameDate.getMonth() + 1}-${gameDate.getDate()}-${gameDate.getFullYear()}`;
+      // Generate game ID — convention: M_D_YYYY_home_vs_away (underscores, no season prefix, no zero-padding)
+      // Parse date parts directly to avoid UTC rollover on evening games
+      let _yyyy, _mm, _dd;
+      if (game.date.includes('/')) {
+        [_mm, _dd, _yyyy] = game.date.split('/');
+      } else {
+        [_yyyy, _mm, _dd] = game.date.split('-');
+      }
+      const dateStr = `${parseInt(_mm)}_${parseInt(_dd)}_${_yyyy}`;
       const homeTeam = game.isHome ? teamId.toLowerCase() : game.opponent.toLowerCase();
       const awayTeam = game.isHome ? game.opponent.toLowerCase() : teamId.toLowerCase();
-      const baseGameId = `${seasonId}_${dateStr}_${homeTeam}_vs_${awayTeam}`.replace(/\s+/g, '_');
-      const gameId = game.gameNum > 1 ? `${baseGameId}_g${game.gameNum}` : baseGameId;
-      const gameDocId = gameId;
+      const gameId = `${dateStr}_${homeTeam}_vs_${awayTeam}`.replace(/\s+/g, '_');
+      const gameDocId = `${seasonId}_${gameId}`;
       
       // Process each player in this game
       for (const row of game.rows) {
