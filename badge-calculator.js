@@ -705,42 +705,48 @@ export class BadgeCalculator {
       const hitStreak = this.calculateHitStreak(battingData.games);
       const hitStreakBadge = this.evaluateTieredBadge('hitStreak', hitStreak.maxStreak);
       if (hitStreakBadge) {
-        earned.hitStreak = { ...hitStreakBadge, value: hitStreak.maxStreak };
+        // Use most recent game as proxy for when the streak badge was earned
+        earned.hitStreak = { ...hitStreakBadge, value: hitStreak.maxStreak, gameDate: battingData.games[battingData.games.length - 1]?.gameDate || null };
       }
       progress.hitStreak = { current: hitStreak.currentStreak, max: hitStreak.maxStreak };
       
+      // Most recent game (games sorted ascending) — used as "earned on" date for cumulative badges
+      const lastGame = battingData.games[battingData.games.length - 1];
+
       // Multi-Hit Games
       const maxHitsInGame = Math.max(...battingData.games.map(g => g.hits || 0));
       const multiHitBadge = this.evaluateTieredBadge('multiHitGames', maxHitsInGame);
       if (multiHitBadge) {
-        earned.multiHitGames = { ...multiHitBadge, value: maxHitsInGame };
+        const multiHitGame = battingData.games.find(g => (g.hits || 0) === maxHitsInGame);
+        earned.multiHitGames = { ...multiHitBadge, value: maxHitsInGame, gameDate: multiHitGame?.gameDate || null };
       }
-      
+
       // Season Hits
       const seasonHitsBadge = this.evaluateTieredBadge('seasonHits', battingData.totals.hits);
       if (seasonHitsBadge) {
-        earned.seasonHits = { ...seasonHitsBadge, value: battingData.totals.hits };
+        earned.seasonHits = { ...seasonHitsBadge, value: battingData.totals.hits, gameDate: lastGame?.gameDate || null };
       }
-      
+
       // Season Runs
       const seasonRunsBadge = this.evaluateTieredBadge('seasonRuns', battingData.totals.runs);
       if (seasonRunsBadge) {
-        earned.seasonRuns = { ...seasonRunsBadge, value: battingData.totals.runs };
+        earned.seasonRuns = { ...seasonRunsBadge, value: battingData.totals.runs, gameDate: lastGame?.gameDate || null };
       }
-      
+
       // Season Walks
       const seasonWalksBadge = this.evaluateTieredBadge('seasonWalks', battingData.totals.walks);
       if (seasonWalksBadge) {
-        earned.seasonWalks = { ...seasonWalksBadge, value: battingData.totals.walks };
+        earned.seasonWalks = { ...seasonWalksBadge, value: battingData.totals.walks, gameDate: lastGame?.gameDate || null };
       }
-      
+
       // Big Games (max runs in a game)
       const maxRunsInGame = Math.max(...battingData.games.map(g => g.runs || 0));
       const bigGameBadge = this.evaluateTieredBadge('bigGames', maxRunsInGame);
       if (bigGameBadge) {
-        earned.bigGames = { ...bigGameBadge, value: maxRunsInGame };
+        const bigGameEntry = battingData.games.find(g => (g.runs || 0) === maxRunsInGame);
+        earned.bigGames = { ...bigGameBadge, value: maxRunsInGame, gameDate: bigGameEntry?.gameDate || null };
       }
-      
+
       // Iron Man - hit in every game (regular season only)
       const regularGames = battingData.games.filter(g => !g.isPlayoff);
       const gamesWithHits = regularGames.filter(g => (g.hits || 0) >= 1).length;
@@ -748,16 +754,18 @@ export class BadgeCalculator {
         earned.ironMan = {
           badgeId: 'ironMan',
           ...BADGE_DEFINITIONS.ironMan,
-          value: regularGames.length
+          value: regularGames.length,
+          gameDate: regularGames[regularGames.length - 1]?.gameDate || null
         };
       }
-      
+
       // Table Setter - more walks than games
       if (battingData.totals.walks > battingData.totals.games) {
         earned.tableSetter = {
           badgeId: 'tableSetter',
           ...BADGE_DEFINITIONS.tableSetter,
-          value: battingData.totals.walks
+          value: battingData.totals.walks,
+          gameDate: lastGame?.gameDate || null
         };
       }
       
@@ -790,18 +798,20 @@ export class BadgeCalculator {
           badgeId: 'theArchitect',
           ...BADGE_DEFINITIONS.theArchitect,
           value: gamesWithRuns,
-          hidden: true
+          hidden: true,
+          gameDate: lastGame?.gameDate || null
         };
       }
-      
+
       // Perfect 10 - exactly 10/10/10
-      if (battingData.totals.hits === 10 && 
-          battingData.totals.runs === 10 && 
+      if (battingData.totals.hits === 10 &&
+          battingData.totals.runs === 10 &&
           battingData.totals.walks === 10) {
         earned.perfectTen = {
           badgeId: 'perfectTen',
           ...BADGE_DEFINITIONS.perfectTen,
-          hidden: true
+          hidden: true,
+          gameDate: lastGame?.gameDate || null
         };
       }
       
@@ -828,7 +838,8 @@ export class BadgeCalculator {
           ...BADGE_DEFINITIONS.dejaVu,
           value: maxSameStatLine,
           statLine: winningStatLine,
-          hidden: true
+          hidden: true,
+          gameDate: lastGame?.gameDate || null
         };
       }
       
@@ -839,7 +850,8 @@ export class BadgeCalculator {
           badgeId: 'invisibleMan',
           ...BADGE_DEFINITIONS.invisibleMan,
           value: invisibleGame.walks,
-          hidden: true
+          hidden: true,
+          gameDate: invisibleGame.gameDate || null
         };
       }
       
@@ -853,12 +865,16 @@ export class BadgeCalculator {
       });
       const luckySevenOpponent = Object.entries(hitsVsOpponent).find(([opp, hits]) => hits === 7);
       if (luckySevenOpponent) {
+        // Use the most recent game vs that opponent as the earned date
+        const luckySevenGames = battingData.games.filter(g => (g.opponent || '').toLowerCase() === luckySevenOpponent[0]);
+        const luckySevenLastGame = luckySevenGames[luckySevenGames.length - 1];
         earned.luckySeven = {
           badgeId: 'luckySeven',
           ...BADGE_DEFINITIONS.luckySeven,
           opponent: luckySevenOpponent[0],
           value: 7,
-          hidden: true
+          hidden: true,
+          gameDate: luckySevenLastGame?.gameDate || null
         };
       }
       
@@ -891,7 +907,8 @@ export class BadgeCalculator {
               badgeId: 'theStreakLives',
               ...BADGE_DEFINITIONS.theStreakLives,
               value: streakAtEnd,
-              hidden: true
+              hidden: true,
+              gameDate: finalGame.gameDate || null
             };
           }
         }
@@ -913,7 +930,8 @@ export class BadgeCalculator {
             ...BADGE_DEFINITIONS.zeroToHero,
             value: secondHalfRuns,
             firstHalfGames: halfPoint,
-            hidden: true
+            hidden: true,
+            gameDate: secondHalfGames[secondHalfGames.length - 1]?.gameDate || null
           };
         }
       }
@@ -927,7 +945,8 @@ export class BadgeCalculator {
           earned.playoffPerformer = {
             badgeId: 'playoffPerformer',
             ...BADGE_DEFINITIONS.playoffPerformer,
-            value: playoffBattingGames.length
+            value: playoffBattingGames.length,
+            gameDate: playoffBattingGames[playoffBattingGames.length - 1]?.gameDate || null
           };
         }
       }
@@ -935,31 +954,34 @@ export class BadgeCalculator {
     
     // ===== PITCHING BADGES =====
     if (pitchingData.games && pitchingData.games.length > 0) {
-      
+
+      // Most recent pitching game — used as "earned on" date for cumulative pitching badges
+      const lastPitchingGame = pitchingData.games[pitchingData.games.length - 1];
+
       // Scoreless Outings (0 RA with 1+ IP)
       const scorelessOutings = pitchingData.games.filter(
         g => (g.runsAllowed || 0) === 0 && (g.inningsPitched || 0) >= 1
       ).length;
       const scorelessBadge = this.evaluateTieredBadge('scorelessOutings', scorelessOutings);
       if (scorelessBadge) {
-        earned.scorelessOutings = { ...scorelessBadge, value: scorelessOutings };
+        earned.scorelessOutings = { ...scorelessBadge, value: scorelessOutings, gameDate: lastPitchingGame?.gameDate || null };
       }
-      
+
       // Season Innings
       const seasonInningsBadge = this.evaluateTieredBadge('seasonInnings', pitchingData.totals.inningsPitched);
       if (seasonInningsBadge) {
-        earned.seasonInnings = { ...seasonInningsBadge, value: pitchingData.totals.inningsPitched };
+        earned.seasonInnings = { ...seasonInningsBadge, value: pitchingData.totals.inningsPitched, gameDate: lastPitchingGame?.gameDate || null };
       }
-      
+
       // Low-Run Games (≤2 RA with 2+ IP)
       const lowRunGames = pitchingData.games.filter(
         g => (g.runsAllowed || 0) <= 2 && (g.inningsPitched || 0) >= 2
       ).length;
       const lowRunBadge = this.evaluateTieredBadge('lowRunGames', lowRunGames);
       if (lowRunBadge) {
-        earned.lowRunGames = { ...lowRunBadge, value: lowRunGames };
+        earned.lowRunGames = { ...lowRunBadge, value: lowRunGames, gameDate: lastPitchingGame?.gameDate || null };
       }
-      
+
       // Ironclad - 0 RA with 3+ IP in one game
       const ironcladGame = pitchingData.games.find(
         g => (g.runsAllowed || 0) === 0 && (g.inningsPitched || 0) >= 3
@@ -968,10 +990,11 @@ export class BadgeCalculator {
         earned.ironclad = {
           badgeId: 'ironclad',
           ...BADGE_DEFINITIONS.ironclad,
-          value: ironcladGame.inningsPitched
+          value: ironcladGame.inningsPitched,
+          gameDate: ironcladGame.gameDate || null
         };
       }
-      
+
       // Kryptonite - ≤2 RA vs same opponent 2+ times
       const opponentRA = {};
       pitchingData.games.forEach(g => {
@@ -982,14 +1005,16 @@ export class BadgeCalculator {
       });
       const kryptoniteOpponent = Object.entries(opponentRA).find(([opp, count]) => count >= 2);
       if (kryptoniteOpponent) {
+        const kryptoniteGames = pitchingData.games.filter(g => (g.opponent || '').toLowerCase() === kryptoniteOpponent[0]);
         earned.kryptonite = {
           badgeId: 'kryptonite',
           ...BADGE_DEFINITIONS.kryptonite,
           opponent: kryptoniteOpponent[0],
-          value: kryptoniteOpponent[1]
+          value: kryptoniteOpponent[1],
+          gameDate: kryptoniteGames[kryptoniteGames.length - 1]?.gameDate || null
         };
       }
-      
+
       // Nemesis - pitch 3+ games vs same opponent
       const opponentGames = {};
       pitchingData.games.forEach(g => {
@@ -998,17 +1023,19 @@ export class BadgeCalculator {
       });
       const nemesisOpponent = Object.entries(opponentGames).find(([opp, count]) => count >= 3);
       if (nemesisOpponent) {
+        const nemesisGames = pitchingData.games.filter(g => (g.opponent || '').toLowerCase() === nemesisOpponent[0]);
         earned.nemesis = {
           badgeId: 'nemesis',
           ...BADGE_DEFINITIONS.nemesis,
           opponent: nemesisOpponent[0],
-          value: nemesisOpponent[1]
+          value: nemesisOpponent[1],
+          gameDate: nemesisGames[nemesisGames.length - 1]?.gameDate || null
         };
       }
-      
+
       // ===== PLAYOFF PITCHING BADGES =====
       const playoffPitchingGames = pitchingData.games.filter(g => g.isPlayoff === true);
-      
+
       // Postseason Ace - scoreless outing in playoffs (min 1 IP)
       const scorelessPlayoffGame = playoffPitchingGames.find(
         g => (g.runsAllowed || 0) === 0 && (g.inningsPitched || 0) >= 1
@@ -1018,7 +1045,8 @@ export class BadgeCalculator {
           badgeId: 'postseasonAce',
           ...BADGE_DEFINITIONS.postseasonAce,
           value: scorelessPlayoffGame.inningsPitched,
-          opponent: scorelessPlayoffGame.opponent
+          opponent: scorelessPlayoffGame.opponent,
+          gameDate: scorelessPlayoffGame.gameDate || null
         };
       }
       
@@ -1063,7 +1091,8 @@ export class BadgeCalculator {
               badgeId: 'giantSlayer',
               ...BADGE_DEFINITIONS.giantSlayer,
               opponent: opp,
-              value: gameRuns
+              value: gameRuns,
+              gameDate: game.gameDate || null
             };
             break; // Only need one
           }
@@ -1096,10 +1125,11 @@ export class BadgeCalculator {
           name: twoWayDef.tiers[twoWayTier].name,
           icon: twoWayDef.icon,
           category: twoWayDef.category,
-          value: { hits, ip, scorelessCount }
+          value: { hits, ip, scorelessCount },
+          gameDate: lastGame?.gameDate || null
         };
       }
-      
+
       // Quiet Storm (hidden) - lead team in runs but not hits
       // This requires team context - we'll check it if we have team data
       if (teamId && allBattingData) {
@@ -1107,13 +1137,14 @@ export class BadgeCalculator {
         if (teamPlayers.length > 1) {
           const sortedByRuns = [...teamPlayers].sort((a, b) => (b.totals?.runs || 0) - (a.totals?.runs || 0));
           const sortedByHits = [...teamPlayers].sort((a, b) => (b.totals?.hits || 0) - (a.totals?.hits || 0));
-          
+
           if (sortedByRuns[0]?.playerId === playerId && sortedByHits[0]?.playerId !== playerId) {
             earned.quietStorm = {
               badgeId: 'quietStorm',
               ...BADGE_DEFINITIONS.quietStorm,
               value: battingData.totals.runs,
-              hidden: true
+              hidden: true,
+              gameDate: lastGame?.gameDate || null
             };
           }
         }
