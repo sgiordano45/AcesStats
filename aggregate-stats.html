@@ -2363,11 +2363,10 @@
             log(`  🔥 ${playerName}: max ${maxStreak} games (${seasonLabel})${activeLabel}`);
 
             if (!previewOnly) {
-              // Use "_allSeasons_" prefix to distinguish from per-season docs (${docId}_${seasonId}_${n})
-              const hitStreakDocId = `${docId}_allSeasons_${maxStreak}`;
-              const existingDoc = await window.getDoc(
-                window.doc(window.db, 'hitStreaks', hitStreakDocId)
-              );
+              // Stable doc ID — one doc per player for cross-season streaks.
+              // Previously used "${docId}_allSeasons_${maxStreak}" which created a new doc
+              // every time the max streak grew, leaving stale docs with active currentStreak values.
+              const hitStreakDocId = `${docId}_allSeasons`;
 
               const docData = {
                 playerId: docId,
@@ -2385,25 +2384,31 @@
                 achievedAt: new Date()
               };
 
-              if (existingDoc.exists()) {
-                // Always update currentStreak so it stays fresh
-                await window.updateDoc(
-                  window.doc(window.db, 'hitStreaks', hitStreakDocId),
-                  {
-                    currentStreak: activeStreak,
-                    currentStreakStart: activeStreakStart || null,
-                    currentStreakSeasons: [...activeStreakSeasons].sort()
+              // Always full-overwrite so every aggregation run stays fresh
+              await window.setDoc(
+                window.doc(window.db, 'hitStreaks', hitStreakDocId),
+                docData
+              );
+              writtenCount++;
+              log(`    ✓ Written/updated: ${hitStreakDocId}`, 'success');
+
+              // Zero out any old versioned docs (e.g. ${docId}_allSeasons_8) so they no
+              // longer appear as active streaks on the leaderboard.
+              try {
+                const oldVersionedQuery = window.query(
+                  window.collection(window.db, 'hitStreaks'),
+                  window.where('playerId', '==', docId),
+                  window.where('crossSeason', '==', true)
+                );
+                const oldVersionedSnap = await window.getDocs(oldVersionedQuery);
+                for (const oldDoc of oldVersionedSnap.docs) {
+                  if (oldDoc.id !== hitStreakDocId && (oldDoc.data().currentStreak || 0) > 0) {
+                    await window.updateDoc(oldDoc.ref, { currentStreak: 0 });
+                    log(`    🧹 Zeroed stale doc: ${oldDoc.id}`, 'skip');
                   }
-                );
-                log(`    ↻ Updated currentStreak → ${activeStreak}: ${hitStreakDocId}`, 'success');
-                skippedCount++;
-              } else {
-                await window.setDoc(
-                  window.doc(window.db, 'hitStreaks', hitStreakDocId),
-                  docData
-                );
-                writtenCount++;
-                log(`    ✓ Written: ${hitStreakDocId}`, 'success');
+                }
+              } catch (cleanupErr) {
+                log(`    ⚠ Cleanup error for ${docId}: ${cleanupErr.message}`, 'error');
               }
             }
           }
