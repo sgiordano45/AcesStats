@@ -1693,17 +1693,23 @@
           try {
             const streakQ = query(collection(db, 'hitStreaks'), where('currentStreak', '>=', 1));
             const streakSnap = await getDocs(streakQ);
-            const streakRows = [];
+            // Deduplicate by playerId — keep highest currentStreak per player
+            // (calculator may leave stale docs when streak grows and a new doc is created)
+            const streakByPlayer = {};
             streakSnap.forEach(d => {
               const s = d.data();
               if ((s.currentStreak || 0) >= 1 && s.playerName) {
-                streakRows.push({
-                  playerId: s.playerId || s.playerLegacyId,
-                  name: s.playerName,
-                  currentStreak: s.currentStreak
-                });
+                const pid = s.playerId || s.playerLegacyId;
+                if (!streakByPlayer[pid] || s.currentStreak > streakByPlayer[pid].currentStreak) {
+                  streakByPlayer[pid] = {
+                    playerId: pid,
+                    name: s.playerName,
+                    currentStreak: s.currentStreak
+                  };
+                }
               }
             });
+            const streakRows = Object.values(streakByPlayer);
             streakRows.sort((a, b) => b.currentStreak - a.currentStreak);
             activeStreaksData = streakRows.slice(0, 10);
           } catch (e) {
