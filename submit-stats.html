@@ -1814,7 +1814,8 @@ window.downloadRosterTemplate = function() {
   let csv = 'Player,GameDate,Opponent,IsHome,AB,H,R,BB,HR,IP,RA\n';
 
   // Add a row for each player with sample data
-  const sampleDate = new Date().toISOString().split('T')[0]; // Today's date
+  const _td = new Date();
+  const sampleDate = `${_td.getFullYear()}-${String(_td.getMonth()+1).padStart(2,'0')}-${String(_td.getDate()).padStart(2,'0')}`;
 
   rosterPlayers.forEach(player => {
     // Pre-fill player name, leave other fields as placeholders
@@ -2063,7 +2064,7 @@ window.submitBulkStats = async function() {
     let successCount = 0;
     let errorCount = 0;
     
-    // Group by game
+    // Group by game — date + opponent + isHome is unique (double-headers flip home/away)
     const gameGroups = {};
     csvData.forEach((row, idx) => {
       const gameKey = `${row.gamedate}_${row.opponent}_${row.ishome?.toLowerCase()}`;
@@ -2096,8 +2097,7 @@ window.submitBulkStats = async function() {
       const awayTeam = game.isHome ? game.opponent.toLowerCase() : selectedTeam.toLowerCase();
 
       // Match against the already-loaded teamGames to get the real Firestore doc ID.
-      // This ensures gameDocId is consistent with manual submit and admin-submit-stats,
-      // which both construct gameDocId = seasonId + "_" + game.id (the raw doc ID).
+      // isHome distinguishes double-headers (same date, same opponent, flipped home/away).
       const matchedGame = (teamGames || []).find(g => {
         if (!g.dateObj || g.dateObj.getTime() === 0) return false;
         const sameDate =
@@ -2105,18 +2105,19 @@ window.submitBulkStats = async function() {
           g.dateObj.getMonth()    === csvDate.getMonth()    &&
           g.dateObj.getDate()     === csvDate.getDate();
         const sameOpponent = (g.opponent || '').toLowerCase().trim() === game.opponent.toLowerCase().trim();
-        return sameDate && sameOpponent;
-      });
+        const sameHomeAway = g.isHome === game.isHome;
+        return sameDate && sameOpponent && sameHomeAway;
+      }) || null;
 
       let gameId, gameDocId;
       if (matchedGame) {
-        gameId    = matchedGame.id;                 // real Firestore doc ID (e.g. "5_7_2026_teal_vs_black")
-        gameDocId = `${seasonId}_${gameId}`;        // same format as manual submit
+        gameId    = matchedGame.id;                       // real Firestore doc ID (e.g. "5_11_2026_silver_vs_black")
+        gameDocId = `${seasonId}_${gameId}`;              // e.g. "2026-summer_5_11_2026_silver_vs_black"
         console.log(`✅ [Bulk] Matched game to Firestore doc: ${gameId}`);
       } else {
-        // Fallback: construct from CSV data (may not match admin-submit-stats lookup)
-        gameId    = `${seasonId}_${dateStr}_${homeTeam}_vs_${awayTeam}`.replace(/\s+/g, '_');
-        gameDocId = gameId;
+        // Fallback: construct using underscore date format to match season-setup-wizard convention
+        gameId    = `${parseInt(mm)}_${parseInt(dd)}_${yyyy}_${homeTeam}_vs_${awayTeam}`.replace(/\s+/g, '_');
+        gameDocId = `${seasonId}_${gameId}`;
         console.warn(`⚠️ [Bulk] No Firestore game match — using constructed ID: ${gameId}`);
       }
       // Store resolved ID so the flag-update loop below can reuse it
@@ -2224,13 +2225,12 @@ window.submitBulkStats = async function() {
         } else {
           [yyyy, mm, dd] = game.date.split('-');
         }
-        const dateStr = `${parseInt(mm)}-${parseInt(dd)}-${yyyy}`;
         // Convention: home_vs_away. If isHome=true, selectedTeam is home so listed first.
         const homeTeam = game.isHome ? selectedTeam.toLowerCase() : game.opponent.toLowerCase();
         const awayTeam = game.isHome ? game.opponent.toLowerCase() : selectedTeam.toLowerCase();
-        // Use the Firestore-matched ID stored during the stats-save loop; fall back to constructed if missing
-        const gameId = game.resolvedGameId ||
-          `${currentSeason.id}_${dateStr}_${homeTeam}_vs_${awayTeam}`.replace(/\s+/g, '_');
+        // Use the Firestore-matched ID stored during the stats-save loop; fall back to wizard underscore format
+        const _fallbackFlag = `${parseInt(mm)}_${parseInt(dd)}_${yyyy}_${homeTeam}_vs_${awayTeam}`.replace(/\s+/g, '_');
+        const gameId = game.resolvedGameId || _fallbackFlag;
 
         try {
           const gameRef = doc(db, 'seasons', seasonId, 'games', gameId);
