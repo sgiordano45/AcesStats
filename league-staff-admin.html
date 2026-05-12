@@ -3430,8 +3430,12 @@
     let timeValue = '';
     if (selectedGame.date?.seconds) {
       const d = new Date(selectedGame.date.seconds * 1000);
-      dateValue = d.toISOString().split('T')[0];
-      timeValue = d.toTimeString().slice(0, 5);
+      // Use local date parts to avoid UTC offset shifting the date
+      const yy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      dateValue = `${yy}-${mm}-${dd}`;
+      timeValue = d.toTimeString().slice(0, 5); // toTimeString is already local
     }
 
     const TEAMS = ['Black', 'Green', 'Red', 'Blue', 'White', 'Orange', 'Silver', 'Purple', 'Gold', 'Carolina', 'Army', 'Teal'];
@@ -3565,7 +3569,20 @@
     try {
       const dateTime = new Date(`${dateInput}T${timeInput || '00:00'}`);
       const gameRef = doc(db, 'seasons', selectedGame.seasonId, 'games', selectedGame.id);
-      
+
+      // Compute winner when marking completed; clear scores/winner for scheduled games
+      let scoreFields = {};
+      if (status === 'completed') {
+        let winner = null;
+        if (homeScore > awayScore)       winner = homeTeamId;
+        else if (awayScore > homeScore)  winner = awayTeamId;
+        else                             winner = 'tie';
+        scoreFields = { homeScore, awayScore, winner };
+      } else {
+        // Don't write zero scores for non-completed games — keep null so hasScore stays false
+        scoreFields = { homeScore: null, awayScore: null, winner: null };
+      }
+
       await updateDoc(gameRef, {
         date: Timestamp.fromDate(dateTime),
         time: to12Hour(timeInput),
@@ -3573,8 +3590,7 @@
         homeTeamId,
         awayTeamName: capitalize(awayTeamId),
         homeTeamName: capitalize(homeTeamId),
-        awayScore,
-        homeScore,
+        ...scoreFields,
         gameType,
         game_type: gameType,
         status,
