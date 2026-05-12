@@ -864,14 +864,24 @@ exports.sendGameReminders = functions.pubsub
       return null;
     }
     
-    // Get games for tomorrow
+    // Get games for tomorrow using ET midnight boundaries to avoid UTC day-shift
+    // (e.g. an 8:45 PM ET game is 00:45 UTC next day — UTC-midnight queries would miss it)
     const now = new Date();
-    const tomorrow = new Date(now);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    tomorrow.setHours(0, 0, 0, 0);
-    
-    const dayAfter = new Date(tomorrow);
-    dayAfter.setDate(dayAfter.getDate() + 1);
+    const etDateStr = now.toLocaleDateString('en-US', {
+      timeZone: 'America/New_York',
+      year: 'numeric', month: '2-digit', day: '2-digit'
+    }); // "MM/DD/YYYY"
+    const [etM, etD, etY] = etDateStr.split('/').map(Number);
+
+    function etMidnightUTC(y, m, d) {
+      const date = new Date(y, m - 1, d); // JS handles month/day overflow automatically
+      const month = date.getMonth() + 1;
+      const isDST = month >= 3 && month <= 11; // EDT March–November, EST otherwise
+      return new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate(), isDST ? 4 : 5));
+    }
+
+    const tomorrow = etMidnightUTC(etY, etM, etD + 1);
+    const dayAfter  = etMidnightUTC(etY, etM, etD + 2);
     
     console.log(`Looking for games between ${tomorrow.toISOString()} and ${dayAfter.toISOString()}`);
     
