@@ -1192,6 +1192,7 @@ let currentUser = null;
 let userProfile = null;
 let currentSeason = null;
 let selectedTeam = null;
+let selectedTeamName = null;  // Properly capitalized display name (e.g. "Silver", not "silver")
 let rosterPlayers = [];
 let teamGames = [];
 let isAdmin = false;
@@ -1691,7 +1692,7 @@ async function submitStats() {
             playerId: legacyId,
             playerName: playerStats.playerName,
             seasonId: seasonId,
-            teamId: selectedTeam,
+            teamId: selectedTeamName || selectedTeam,
             gameDate: gameData.date || null,
             gameDateFormatted: gameDateFormatted,
             opponent: gameData.opponent || 'Unknown',
@@ -1722,7 +1723,7 @@ async function submitStats() {
             playerId: legacyId,
             playerName: playerStats.playerName,
             seasonId: seasonId,
-            teamId: selectedTeam,
+            teamId: selectedTeamName || selectedTeam,
             gameDate: gameData.date || null,
             gameDateFormatted: gameDateFormatted,
             opponent: gameData.opponent || 'Unknown',
@@ -1761,7 +1762,7 @@ async function submitStats() {
           statsSubmittedBy: currentUser.uid,
           statsSubmittedByName: currentUser.displayName || currentUser.email,
           statsSubmittedAt: serverTimestamp(),
-          statsSubmittedForTeam: selectedTeam
+          statsSubmittedForTeam: selectedTeamName || selectedTeam
         });
         console.log(`✅ Marked game ${selectedGameId} as ${submittedField} for ${selectedTeam}`);
       } catch (gameUpdateError) {
@@ -2148,7 +2149,7 @@ window.submitBulkStats = async function() {
               playerId: playerLegacyId,
               playerName: validation.matchedPlayer?.name || row.player,
               seasonId: seasonId,
-              teamId: selectedTeam,
+              teamId: selectedTeamName || selectedTeam,
               gameDateFormatted: game.date,
               gameDate: gameDateTimestamp,
               opponent: game.opponent,
@@ -2182,7 +2183,7 @@ window.submitBulkStats = async function() {
               playerId: playerLegacyId,
               playerName: validation.matchedPlayer?.name || row.player,
               seasonId: seasonId,
-              teamId: selectedTeam,
+              teamId: selectedTeamName || selectedTeam,
               gameDateFormatted: game.date,
               gameDate: gameDateTimestamp,
               opponent: game.opponent,
@@ -2240,7 +2241,7 @@ window.submitBulkStats = async function() {
             statsSubmittedBy: currentUser.uid,
             statsSubmittedByName: currentUser.displayName || currentUser.email,
             statsSubmittedAt: serverTimestamp(),
-            statsSubmittedForTeam: selectedTeam,
+            statsSubmittedForTeam: selectedTeamName || selectedTeam,
             statsSubmittedViaBulkUpload: true
           });
           console.log(`✅ Marked game ${gameId} as ${bulkSubmittedField} for ${selectedTeam}`);
@@ -2356,6 +2357,7 @@ async function initializePage(user) {
         const teamId = e.target.value;
         if (teamId) {
           selectedTeam = teamId;
+          selectedTeamName = e.target.options[e.target.selectedIndex].text;
           showMessage('info', 'Loading team roster...');
           try {
             rosterPlayers = await loadTeamRoster(teamId);
@@ -2372,8 +2374,16 @@ async function initializePage(user) {
 
     } else {
       selectedTeam = access.teamId;
+      // Look up the properly capitalized team name
+      try {
+        const allTeams = await getAllTeams();
+        const myTeam = allTeams.find(t => t.id === selectedTeam);
+        selectedTeamName = myTeam?.name || selectedTeam;
+      } catch {
+        selectedTeamName = selectedTeam;
+      }
       showMessage('info', 'Loading your team roster...');
-      
+
       try {
         rosterPlayers = await loadTeamRoster(selectedTeam);
         renderStatsTable(rosterPlayers);
