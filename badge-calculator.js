@@ -698,20 +698,22 @@ export class BadgeCalculator {
     const playerName = battingData.playerName || pitchingData.playerName || playerId;
     const teamId = battingData.teamId || pitchingData.teamId || '';
     
+    // Most recent batting game — hoisted so two-way badges outside the batting block can use it
+    const lastGame = (battingData.games && battingData.games.length > 0)
+      ? battingData.games[battingData.games.length - 1]
+      : null;
+
     // ===== HITTING BADGES =====
     if (battingData.games && battingData.games.length > 0) {
-      
+
       // Hit Streak
       const hitStreak = this.calculateHitStreak(battingData.games);
       const hitStreakBadge = this.evaluateTieredBadge('hitStreak', hitStreak.maxStreak);
       if (hitStreakBadge) {
         // Use most recent game as proxy for when the streak badge was earned
-        earned.hitStreak = { ...hitStreakBadge, value: hitStreak.maxStreak, gameDate: battingData.games[battingData.games.length - 1]?.gameDate || null };
+        earned.hitStreak = { ...hitStreakBadge, value: hitStreak.maxStreak, gameDate: lastGame?.gameDate || null };
       }
       progress.hitStreak = { current: hitStreak.currentStreak, max: hitStreak.maxStreak };
-      
-      // Most recent game (games sorted ascending) — used as "earned on" date for cumulative badges
-      const lastGame = battingData.games[battingData.games.length - 1];
 
       // Multi-Hit Games
       const maxHitsInGame = Math.max(...battingData.games.map(g => g.hits || 0));
