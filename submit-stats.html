@@ -2094,18 +2094,31 @@ window.submitBulkStats = async function() {
       const gameDateTimestamp = Timestamp.fromDate(csvDate);
       const dateStr = `${parseInt(mm)}-${parseInt(dd)}-${yyyy}`;
       // Convention: home_vs_away. If isHome=true, selectedTeam is home so listed first.
-      const homeTeam = game.isHome ? selectedTeam.toLowerCase() : game.opponent.toLowerCase();
-      const awayTeam = game.isHome ? game.opponent.toLowerCase() : selectedTeam.toLowerCase();
+      // Normalize opponent using known game data to handle "Aces Silver"→"silver", "TEAL"→"teal" etc.
+      const normOpp = (() => {
+        const lower = game.opponent.toLowerCase().trim();
+        const known = (teamGames || []).find(g => {
+          const gOpp = (g.opponent || '').toLowerCase().trim();
+          return gOpp === lower || gOpp.includes(lower) || lower.includes(gOpp);
+        });
+        return known ? known.opponent.toLowerCase().replace(/\s+/g, '_') : lower.replace(/\s+/g, '_');
+      })();
+      const homeTeam = game.isHome ? selectedTeam.toLowerCase() : normOpp;
+      const awayTeam = game.isHome ? normOpp : selectedTeam.toLowerCase();
 
       // Match against the already-loaded teamGames to get the real Firestore doc ID.
       // isHome distinguishes double-headers (same date, same opponent, flipped home/away).
+      // Opponent matching is fuzzy: exact first, then substring (handles "Aces Silver" vs "Silver").
+      const opponentCsv = game.opponent.toLowerCase().trim();
       const matchedGame = (teamGames || []).find(g => {
         if (!g.dateObj || g.dateObj.getTime() === 0) return false;
         const sameDate =
           g.dateObj.getFullYear() === csvDate.getFullYear() &&
           g.dateObj.getMonth()    === csvDate.getMonth()    &&
           g.dateObj.getDate()     === csvDate.getDate();
-        const sameOpponent = (g.opponent || '').toLowerCase().trim() === game.opponent.toLowerCase().trim();
+        const gOpp = (g.opponent || '').toLowerCase().trim();
+        const sameOpponent = gOpp === opponentCsv ||
+          gOpp.includes(opponentCsv) || opponentCsv.includes(gOpp);
         const sameHomeAway = g.isHome === game.isHome;
         return sameDate && sameOpponent && sameHomeAway;
       }) || null;

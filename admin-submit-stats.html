@@ -1227,6 +1227,28 @@ async function loadTeams() {
   }
 }
 
+// Normalize an opponent string from a CSV to the canonical team ID used in game doc IDs.
+// Handles case mismatches ("TEAL" → "teal") and prefix mismatches ("Aces Silver" → "silver").
+function normalizeOpponent(raw) {
+  if (!raw) return raw;
+  const lower = raw.toLowerCase().trim();
+  // 1. Exact match on team id
+  const exactId = allTeams.find(t => t.id.toLowerCase() === lower);
+  if (exactId) return exactId.id.toLowerCase();
+  // 2. Exact match on team name
+  const exactName = allTeams.find(t => (t.name || '').toLowerCase() === lower);
+  if (exactName) return exactName.id.toLowerCase();
+  // 3. Fuzzy: CSV contains the team id/name, or team id/name contains the CSV value
+  const fuzzy = allTeams.find(t => {
+    const tid = t.id.toLowerCase();
+    const tname = (t.name || '').toLowerCase();
+    return lower.includes(tid) || tid.includes(lower) || lower.includes(tname) || tname.includes(lower);
+  });
+  if (fuzzy) return fuzzy.id.toLowerCase();
+  // 4. Fallback: just lowercase + underscore the raw value
+  return lower.replace(/\s+/g, '_');
+}
+
 async function loadTeamRoster(teamId) {
   try {
     console.log('🔍 Loading roster for team:', teamId);
@@ -2035,8 +2057,9 @@ window.submitBulkStats = async function() {
         [_yyyy, _mm, _dd] = game.date.split('-');
       }
       const dateStr = `${parseInt(_mm)}_${parseInt(_dd)}_${_yyyy}`;
-      const homeTeam = game.isHome ? teamId.toLowerCase() : game.opponent.toLowerCase();
-      const awayTeam = game.isHome ? game.opponent.toLowerCase() : teamId.toLowerCase();
+      const normOpponent = normalizeOpponent(game.opponent);
+      const homeTeam = game.isHome ? teamId.toLowerCase() : normOpponent;
+      const awayTeam = game.isHome ? normOpponent : teamId.toLowerCase();
       const gameId = `${dateStr}_${homeTeam}_vs_${awayTeam}`.replace(/\s+/g, '_');
       const gameDocId = `${seasonId}_${gameId}`;
       
