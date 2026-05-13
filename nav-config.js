@@ -81,6 +81,7 @@ export const NAV_STRUCTURE = {
   // Tier 2: SECONDARY - Important pages (shown contextually on desktop)
   secondary: [
     { id: 'weekend-preview', href: 'weekend-preview.html', label: 'Weekend Preview', icon: '🔮', priority: 2 },
+    { id: 'stream', href: 'stream.html', label: 'Live Stream', icon: '📹', priority: 2 },
     { id: 'playoffs', href: 'playoffs.html', label: 'Playoff Bracket', icon: '🥇', priority: 2 },
     { id: 'projections', href: 'projections.html', label: 'Playoff Projections', icon: '🎱', priority: 2 },
     { id: 'clinching', href: 'playoff-clinching.html', label: 'Playoff Clinching', icon: '🔒', priority: 2 },
@@ -155,6 +156,10 @@ export const ALL_PAGES = {};
 export const PAGE_CONFIGS = {
   'index.html': {
     desktop: [] // No desktop nav on home page
+  },
+
+  'stream.html': {
+    desktop: ['home', 'current-season', 'weekend-preview', 'stream']
   },
   
   'current-season.html': {
