@@ -777,77 +777,60 @@ window.addEventListener('load', function() {
 
 <script>
 // ============================================================
-// AUTO LIVE DETECTION via YouTube IFrame Player API
-// The page mirrors whatever state the YouTube channel is in.
-// No manual trigger needed — go live on YouTube, this page
-// automatically flips to LIVE. End the stream, it flips back.
+// AUTO LIVE DETECTION via YouTube oEmbed polling
+// oEmbed returns HTTP 200 + stream title when the channel is
+// live, and HTTP 404 when it is not. No API key needed.
+// Polls every 30s. Immediate check on page load.
 // ============================================================
 
-const YOUTUBE_CHANNEL_ID  = 'UCFaQJcIQUrjYOZzthFM8TqA';
-const POLL_INTERVAL_MS    = 30000; // re-check player state every 30s
+const CHANNEL_ID   = 'UCFaQJcIQUrjYOZzthFM8TqA';
+const OEMBED_URL   = `https://www.youtube.com/oembed?url=https://www.youtube.com/channel/${CHANNEL_ID}/live&format=json`;
+const POLL_MS      = 30000;
 
-let ytPlayer   = null;
-let pollTimer  = null;
 let liveState  = false;
+let pollTimer  = null;
 
-// Inject the YouTube IFrame API script
-(function() {
-  const tag = document.createElement('script');
-  tag.src = 'https://www.youtube.com/iframe_api';
-  document.head.appendChild(tag);
-})();
-
-// Called automatically by the YouTube IFrame API once loaded
-window.onYouTubeIframeAPIReady = function() {
-  // Wrap the existing iframe — it already has the channel live_stream URL
-  ytPlayer = new YT.Player('ytIframe', {
-    events: {
-      onStateChange: function(e) {
-        // PLAYING(1) or BUFFERING(3) = channel is live
-        if (e.data === YT.PlayerState.PLAYING || e.data === YT.PlayerState.BUFFERING) {
-          setLive(true);
-        } else if (e.data === YT.PlayerState.ENDED || e.data === YT.PlayerState.PAUSED) {
-          setLive(false);
-        }
-        // -1 (unstarted) = still loading, don't flip state yet
-      },
-      onError: function() {
-        // Error loading the live_stream URL = channel is not currently live
-        setLive(false);
-      }
+async function checkLiveStatus() {
+  try {
+    const res = await fetch(OEMBED_URL);
+    if (res.ok) {
+      const data = await res.json();
+      setLive(true, data.title || '');
+    } else {
+      setLive(false);
     }
-  });
-
-  // Give the player a moment to settle, then do an initial state check
-  setTimeout(checkPlayerState, 4000);
-
-  // Poll every 30s so the page self-corrects if events are missed
-  clearInterval(pollTimer);
-  pollTimer = setInterval(checkPlayerState, POLL_INTERVAL_MS);
-};
-
-function checkPlayerState() {
-  if (!ytPlayer || typeof ytPlayer.getPlayerState !== 'function') return;
-  const state = ytPlayer.getPlayerState();
-  if (state === YT.PlayerState.PLAYING || state === YT.PlayerState.BUFFERING) {
-    setLive(true);
-  } else if (state !== -1) {
-    // -1 = unstarted (still loading) — leave state as-is
-    setLive(false);
+  } catch(e) {
+    // Network error — don't flip state, try again next poll
+    console.warn('Live check failed:', e.message);
   }
 }
 
-function setLive(live) {
-  if (live === liveState) return; // no change
+function setLive(live, title) {
+  if (live === liveState) return;
   liveState = live;
 
-  document.getElementById('liveBadge').style.display    = live ? 'inline-flex' : 'none';
-  document.getElementById('offlineBadge').style.display = live ? 'none'        : 'inline-flex';
-  document.getElementById('offlinePlaceholder').style.display = live ? 'none'  : 'flex';
-  document.getElementById('streamInfoBar').style.display      = live ? 'flex'  : 'none';
+  const iframe = document.getElementById('ytIframe');
 
-  console.log(live ? '📺 Stream detected LIVE' : '📴 Stream offline');
+  if (live) {
+    // Switch iframe to autoplay now that we know the stream is up
+    iframe.src = `https://www.youtube.com/embed/live_stream?channel=${CHANNEL_ID}&autoplay=1&modestbranding=1&rel=0&playsinline=1`;
+    if (title) document.getElementById('streamGameLabel').textContent = title;
+  } else {
+    // Reset to non-autoplay so it doesn't blast audio on next check
+    iframe.src = `https://www.youtube.com/embed/live_stream?channel=${CHANNEL_ID}&autoplay=0&modestbranding=1&rel=0&playsinline=1`;
+  }
+
+  document.getElementById('liveBadge').style.display          = live ? 'inline-flex' : 'none';
+  document.getElementById('offlineBadge').style.display       = live ? 'none'        : 'inline-flex';
+  document.getElementById('offlinePlaceholder').style.display = live ? 'none'        : 'flex';
+  document.getElementById('streamInfoBar').style.display      = live ? 'flex'        : 'none';
+
+  console.log(live ? `📺 Stream LIVE: ${title}` : '📴 Stream offline');
 }
+
+// Check immediately on load, then every 30s
+checkLiveStatus();
+pollTimer = setInterval(checkLiveStatus, POLL_MS);
 </script>
 
 <script src="mobile-enhancements.js"></script>
