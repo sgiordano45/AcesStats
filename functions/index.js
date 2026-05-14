@@ -3693,3 +3693,99 @@ exports.onStatsSubmitted = functions
 
     return null;
   });
+
+// ============================================================================
+// YOUTUBE LIVE STREAM AUTO-DETECTION
+// Polls the YouTube Data API every 3 minutes.
+// If the Aces channel is live, writes videoId + title to siteConfig/streamConfig.
+// If the channel goes offline, clears the live state (only if auto-detected).
+//
+// SETUP (one-time, run in terminal):
+//   firebase functions:config:set youtube.api_key="YOUR_YOUTUBE_DATA_API_v3_KEY"
+//   firebase deploy --only functions
+//
+// Get a key at: https://console.cloud.google.com/apis/library/youtube.googleapis.com
+// Enable "YouTube Data API v3" then create an API key restricted to that API.
+// ============================================================================
+
+const ACES_CHANNEL_ID = 'UCFaQJcIQUrjYOZzthFM8TqA';
+
+exports.checkYouTubeLiveStatus = functions.pubsub
+  .schedule('every 3 minutes')
+  .timeZone('America/New_York')
+  .onRun(async () => {
+    const apiKey = functions.config().youtube && functions.config().youtube.api_key;
+
+    if (!apiKey) {
+      console.error('⚠️  YouTube API key not set. Run: firebase functions:config:set youtube.api_key="YOUR_KEY"');
+      return null;
+    }
+
+    const streamRef = db.collection('siteConfig').doc('streamConfig');
+
+    try {
+      const url =
+        `https://www.googleapis.com/youtube/v3/search` +
+        `?part=id,snippet` +
+        `&channelId=${ACES_CHANNEL_ID}` +
+        `&eventType=live` +
+        `&type=video` +
+        `&maxResults=1` +
+        `&key=${apiKey}`;
+
+      const response = await fetch(url);
+      const data = await response.json();
+
+      if (data.error) {
+        console.error('YouTube API error:', JSON.stringify(data.error));
+        return null;
+      }
+
+      if (data.items && data.items.length > 0) {
+        // Channel is live — write video info to Firestore
+        const video = data.items[0];
+        const videoId = video.id.videoId;
+        const title = video.snippet.title || '';
+
+        const snap = await streamRef.get();
+        const current = snap.exists ? snap.data() : {};
+
+        // Only write if something changed (avoid unnecessary writes)
+        if (!current.isLive || current.videoId !== videoId) {
+          await streamRef.set({
+            isLive: true,
+            videoId,
+            title,
+            detectedAt: admin.firestore.FieldValue.serverTimestamp(),
+            source: 'auto'
+          });
+          console.log(`✅ Live stream detected and published: ${videoId} — "${title}"`);
+        } else {
+          console.log(`ℹ️  Already showing live stream ${videoId}, no update needed.`);
+        }
+
+      } else {
+        // Channel is not live — clear only if it was auto-detected (don't clobber manual overrides)
+        const snap = await streamRef.get();
+        const current = snap.exists ? snap.data() : null;
+
+        if (current && current.isLive && current.source === 'auto') {
+          await streamRef.set({
+            isLive: false,
+            videoId: null,
+            title: '',
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            source: 'auto'
+          });
+          console.log('📴 Stream ended — Firestore updated to offline.');
+        } else {
+          console.log('ℹ️  Channel offline, no active auto-stream to clear.');
+        }
+      }
+
+    } catch (err) {
+      console.error('❌ YouTube live check failed:', err);
+    }
+
+    return null;
+  });
