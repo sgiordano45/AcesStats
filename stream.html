@@ -672,33 +672,7 @@ input:checked + .toggle-slider:before { transform: translateX(20px); }
     <p class="page-subtitle">Watch Mountainside Aces games live</p>
   </div>
 
-  <!-- Admin panel — only visible to admin/league-staff -->
-  <div class="admin-panel" id="adminPanel" style="display:none;">
-    <div class="admin-panel-title">&#9881; Stream Control (Admin Only)</div>
-    <div class="admin-controls">
-      <div class="admin-row">
-        <label>Channel ID</label>
-        <!-- PLACEHOLDER: Replace with actual YouTube Channel ID once channel is created -->
-        <input type="text" id="channelIdInput" placeholder="UCxxxxxxxxxxxxxxxxxxxxxxxx" />
-      </div>
-      <div class="admin-row">
-        <label>Game Label</label>
-        <input type="text" id="gameLabelInput" placeholder="e.g. Green vs Gold — July 14" />
-      </div>
-      <div class="toggle-row" style="margin-top:4px;">
-        <span class="toggle-label">Stream Active</span>
-        <label class="toggle">
-          <input type="checkbox" id="streamActiveToggle" onchange="toggleStreamActive()" />
-          <span class="toggle-slider"></span>
-        </label>
-      </div>
-      <div class="admin-row" style="margin-top:4px;">
-        <button class="btn-admin btn-go-live" onclick="saveStreamConfig()">Save &amp; Go Live</button>
-        <button class="btn-admin btn-end-stream" onclick="endStream()">End Stream</button>
-      </div>
-      <div class="admin-status-msg" id="adminStatusMsg"></div>
-    </div>
-  </div>
+  <!-- No manual admin panel needed — stream auto-detects from YouTube -->
 
   <!-- Retro TV Stream -->
   <div class="tv-wrap" id="streamCard">
@@ -712,23 +686,21 @@ input:checked + .toggle-slider:before { transform: translateX(20px); }
       <div class="tv-screen-bezel">
         <div class="tv-screen">
           <div class="video-wrapper">
-            <!-- YouTube embed injected here when live; offline placeholder shown otherwise -->
-            <div class="stream-offline" id="offlinePlaceholder">
+            <!-- Always-on iframe — YT IFrame API detects live state automatically -->
+            <iframe id="ytIframe"
+              src="https://www.youtube.com/embed/live_stream?channel=UCFaQJcIQUrjYOZzthFM8TqA&enablejsapi=1&autoplay=0&modestbranding=1&rel=0&playsinline=1"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+              allowfullscreen
+              style="position:absolute;top:0;left:0;width:100%;height:100%;border:none;">
+            </iframe>
+            <!-- Offline overlay — shown until player confirms PLAYING -->
+            <div class="stream-offline" id="offlinePlaceholder" style="position:absolute;top:0;left:0;width:100%;height:100%;z-index:5;">
               <div class="offline-icon">&#128249;</div>
               <div class="offline-title">No Stream Active</div>
               <div class="offline-subtitle">
-                Live streams will appear here during game nights. Check back when games are scheduled.
-              </div>
-              <div class="offline-next-game" id="nextGameInfo" style="display:none;">
-                <strong>Next Scheduled Game</strong>
-                <span id="nextGameText">Loading...</span>
+                Live streams appear here automatically when a game is being broadcast. No refresh needed.
               </div>
             </div>
-            <!-- iframe inserted dynamically when live -->
-            <iframe id="youtubeEmbed" style="display:none;"
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-              allowfullscreen>
-            </iframe>
           </div>
         </div>
       </div>
@@ -761,7 +733,7 @@ input:checked + .toggle-slider:before { transform: translateX(20px); }
       Live Game <span id="streamGameDetails"></span>
     </div>
     <div class="stream-actions">
-      <a id="watchOnYT" href="#" target="_blank" rel="noopener" class="btn-watch-yt">
+      <a id="watchOnYT" href="https://www.youtube.com/@MountainsideAcesStreams/live" target="_blank" rel="noopener" class="btn-watch-yt">
         &#9654; Watch on YouTube
       </a>
     </div>
@@ -803,139 +775,79 @@ window.addEventListener('load', function() {
   // Navigation auto-initializes on load
 </script>
 
-<script type="module">
-import { db } from './firebase-data.js';
-import { doc, getDoc, setDoc, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
-import { getCurrentUser, getUserRole } from './firebase-auth.js';
-
+<script>
 // ============================================================
-// PLACEHOLDER — replace YOUTUBE_CHANNEL_ID once channel exists
+// AUTO LIVE DETECTION via YouTube IFrame Player API
+// The page mirrors whatever state the YouTube channel is in.
+// No manual trigger needed — go live on YouTube, this page
+// automatically flips to LIVE. End the stream, it flips back.
 // ============================================================
-const YOUTUBE_CHANNEL_ID = 'UCFaQJcIQUrjYOZzthFM8TqA';
-const YOUTUBE_CHANNEL_URL = 'https://www.youtube.com/@MountainsideAcesStreams';
 
-const streamConfigRef = doc(db, 'siteConfig', 'streamConfig');
+const YOUTUBE_CHANNEL_ID  = 'UCFaQJcIQUrjYOZzthFM8TqA';
+const POLL_INTERVAL_MS    = 30000; // re-check player state every 30s
 
-// --- Auth & Role Check ---
-async function init() {
-  const user = await getCurrentUser();
-  const role = user ? await getUserRole(user.uid) : null;
-  const isAdmin = role === 'admin' || role === 'league-staff';
+let ytPlayer   = null;
+let pollTimer  = null;
+let liveState  = false;
 
-  if (isAdmin) {
-    document.getElementById('adminPanel').style.display = 'block';
-    await loadAdminFields();
-  }
+// Inject the YouTube IFrame API script
+(function() {
+  const tag = document.createElement('script');
+  tag.src = 'https://www.youtube.com/iframe_api';
+  document.head.appendChild(tag);
+})();
 
-  // Listen for real-time stream config changes
-  onSnapshot(streamConfigRef, (snap) => {
-    const data = snap.exists() ? snap.data() : null;
-    renderStreamState(data, isAdmin);
+// Called automatically by the YouTube IFrame API once loaded
+window.onYouTubeIframeAPIReady = function() {
+  // Wrap the existing iframe — it already has the channel live_stream URL
+  ytPlayer = new YT.Player('ytIframe', {
+    events: {
+      onStateChange: function(e) {
+        // PLAYING(1) or BUFFERING(3) = channel is live
+        if (e.data === YT.PlayerState.PLAYING || e.data === YT.PlayerState.BUFFERING) {
+          setLive(true);
+        } else if (e.data === YT.PlayerState.ENDED || e.data === YT.PlayerState.PAUSED) {
+          setLive(false);
+        }
+        // -1 (unstarted) = still loading, don't flip state yet
+      },
+      onError: function() {
+        // Error loading the live_stream URL = channel is not currently live
+        setLive(false);
+      }
+    }
   });
-}
 
-// --- Render stream on/off state ---
-function renderStreamState(config, isAdmin) {
-  const isLive = config && config.isLive === true;
-  const channelId = (config && config.channelId) ? config.channelId : YOUTUBE_CHANNEL_ID;
-  const gameLabel = (config && config.gameLabel) ? config.gameLabel : '';
+  // Give the player a moment to settle, then do an initial state check
+  setTimeout(checkPlayerState, 4000);
 
-  document.getElementById('liveBadge').style.display    = isLive ? 'inline-flex' : 'none';
-  document.getElementById('offlineBadge').style.display = isLive ? 'none' : 'inline-flex';
+  // Poll every 30s so the page self-corrects if events are missed
+  clearInterval(pollTimer);
+  pollTimer = setInterval(checkPlayerState, POLL_INTERVAL_MS);
+};
 
-  const embed = document.getElementById('youtubeEmbed');
-  const placeholder = document.getElementById('offlinePlaceholder');
-  const infoBar = document.getElementById('streamInfoBar');
-
-  if (isLive && channelId !== 'PLACEHOLDER_CHANNEL_ID') {
-    // Build YouTube live embed URL for the channel
-    embed.src = `https://www.youtube.com/embed/live_stream?channel=${channelId}&autoplay=1&modestbranding=1&rel=0`;
-    embed.style.display = 'block';
-    placeholder.style.display = 'none';
-    infoBar.style.display = 'flex';
-
-    if (gameLabel) {
-      document.getElementById('streamGameLabel').textContent = gameLabel;
-    }
-    document.getElementById('watchOnYT').href = `https://www.youtube.com/channel/${channelId}/live`;
-  } else {
-    embed.style.display = 'none';
-    embed.src = '';
-    placeholder.style.display = 'flex';
-    infoBar.style.display = 'none';
-  }
-
-  // Keep toggle in sync if admin
-  if (isAdmin) {
-    document.getElementById('streamActiveToggle').checked = isLive;
+function checkPlayerState() {
+  if (!ytPlayer || typeof ytPlayer.getPlayerState !== 'function') return;
+  const state = ytPlayer.getPlayerState();
+  if (state === YT.PlayerState.PLAYING || state === YT.PlayerState.BUFFERING) {
+    setLive(true);
+  } else if (state !== -1) {
+    // -1 = unstarted (still loading) — leave state as-is
+    setLive(false);
   }
 }
 
-// --- Load current config into admin fields ---
-async function loadAdminFields() {
-  try {
-    const snap = await getDoc(streamConfigRef);
-    if (snap.exists()) {
-      const d = snap.data();
-      if (d.channelId) document.getElementById('channelIdInput').value = d.channelId;
-      if (d.gameLabel) document.getElementById('gameLabelInput').value = d.gameLabel;
-      document.getElementById('streamActiveToggle').checked = !!d.isLive;
-    }
-  } catch(e) {
-    console.warn('Could not load stream config:', e);
-  }
+function setLive(live) {
+  if (live === liveState) return; // no change
+  liveState = live;
+
+  document.getElementById('liveBadge').style.display    = live ? 'inline-flex' : 'none';
+  document.getElementById('offlineBadge').style.display = live ? 'none'        : 'inline-flex';
+  document.getElementById('offlinePlaceholder').style.display = live ? 'none'  : 'flex';
+  document.getElementById('streamInfoBar').style.display      = live ? 'flex'  : 'none';
+
+  console.log(live ? '📺 Stream detected LIVE' : '📴 Stream offline');
 }
-
-// --- Admin: Save config and go live ---
-window.saveStreamConfig = async function() {
-  const channelId = document.getElementById('channelIdInput').value.trim();
-  const gameLabel = document.getElementById('gameLabelInput').value.trim();
-  const isLive    = document.getElementById('streamActiveToggle').checked;
-  const msg       = document.getElementById('adminStatusMsg');
-
-  if (!channelId) {
-    msg.textContent = 'Channel ID is required.';
-    return;
-  }
-
-  try {
-    await setDoc(streamConfigRef, {
-      channelId,
-      gameLabel,
-      isLive,
-      updatedAt: new Date().toISOString()
-    });
-    msg.textContent = isLive ? 'Stream is now LIVE.' : 'Config saved (stream inactive).';
-    setTimeout(() => { msg.textContent = ''; }, 4000);
-  } catch(e) {
-    msg.textContent = 'Error saving: ' + e.message;
-  }
-};
-
-// --- Admin: End stream ---
-window.endStream = async function() {
-  const msg = document.getElementById('adminStatusMsg');
-  try {
-    await setDoc(streamConfigRef, {
-      channelId: document.getElementById('channelIdInput').value.trim(),
-      gameLabel: document.getElementById('gameLabelInput').value.trim(),
-      isLive: false,
-      updatedAt: new Date().toISOString()
-    });
-    document.getElementById('streamActiveToggle').checked = false;
-    msg.textContent = 'Stream ended.';
-    setTimeout(() => { msg.textContent = ''; }, 4000);
-  } catch(e) {
-    msg.textContent = 'Error: ' + e.message;
-  }
-};
-
-// Toggle just flips the checkbox — Save button commits to Firestore
-window.toggleStreamActive = function() {
-  // no-op; handled on save
-};
-
-init();
 </script>
 
 <script src="mobile-enhancements.js"></script>
