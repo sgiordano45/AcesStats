@@ -820,18 +820,26 @@ function setLive(live, videoId, title) {
   document.getElementById('streamInfoBar').style.display      = live ? 'flex'        : 'none';
 }
 
-// Listen for live state changes in real-time — fires for all viewers instantly
-onSnapshot(streamRef, snap => {
-  const d = snap.exists() ? snap.data() : null;
-  if (d && d.isLive && d.videoId) {
-    setLive(true, d.videoId, d.title || '');
-  } else {
-    setLive(false);
-  }
-});
+// Listen for live state changes — starts after auth resolves
+let snapshotUnsubscribe = null;
 
-// Show admin panel if logged-in admin
 onAuthStateChanged(auth, async user => {
+  // Start stream listener once we have auth (even if user is null, auth is resolved)
+  if (!snapshotUnsubscribe) {
+    snapshotUnsubscribe = onSnapshot(streamRef, snap => {
+      const d = snap.exists() ? snap.data() : null;
+      if (d && d.isLive && d.videoId) {
+        setLive(true, d.videoId, d.title || '');
+      } else {
+        setLive(false);
+      }
+    }, err => {
+      console.warn('Stream config read failed:', err.message);
+      setLive(false);
+    });
+  }
+
+  // Show admin panel if user is an admin
   if (!user) return;
   try {
     const userSnap = await getDoc(doc(db, 'users', user.uid));
