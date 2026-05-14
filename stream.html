@@ -795,7 +795,11 @@ async function checkLiveStatus() {
     const res = await fetch(OEMBED_URL);
     if (res.ok) {
       const data = await res.json();
-      setLive(true, data.title || '');
+      // Extract the specific video ID from the oEmbed html field
+      // e.g. <iframe src="https://www.youtube.com/embed/VIDEO_ID?..."
+      const match = data.html && data.html.match(/youtube\.com\/embed\/([a-zA-Z0-9_-]+)/);
+      const videoId = match ? match[1] : null;
+      setLive(true, data.title || '', videoId);
     } else {
       setLive(false);
     }
@@ -805,18 +809,21 @@ async function checkLiveStatus() {
   }
 }
 
-function setLive(live, title) {
+function setLive(live, title, videoId) {
   if (live === liveState) return;
   liveState = live;
 
   const iframe = document.getElementById('ytIframe');
 
   if (live) {
-    // Switch iframe to autoplay now that we know the stream is up
-    iframe.src = `https://www.youtube.com/embed/live_stream?channel=${CHANNEL_ID}&autoplay=1&modestbranding=1&rel=0&playsinline=1`;
+    // Use the specific video ID when available — more reliable than live_stream?channel=
+    const embedId = videoId || `live_stream?channel=${CHANNEL_ID}`;
+    const base = videoId
+      ? `https://www.youtube.com/embed/${embedId}`
+      : `https://www.youtube.com/embed/live_stream?channel=${CHANNEL_ID}`;
+    iframe.src = `${base}?autoplay=1&modestbranding=1&rel=0&playsinline=1`;
     if (title) document.getElementById('streamGameLabel').textContent = title;
   } else {
-    // Reset to non-autoplay so it doesn't blast audio on next check
     iframe.src = `https://www.youtube.com/embed/live_stream?channel=${CHANNEL_ID}&autoplay=0&modestbranding=1&rel=0&playsinline=1`;
   }
 
