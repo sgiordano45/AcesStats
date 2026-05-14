@@ -672,7 +672,21 @@ input:checked + .toggle-slider:before { transform: translateX(20px); }
     <p class="page-subtitle">Watch Mountainside Aces games live</p>
   </div>
 
-  <!-- No manual admin panel needed — stream auto-detects from YouTube -->
+  <!-- Admin panel — paste YouTube URL to go live -->
+  <div class="admin-panel" id="adminPanel" style="display:none;">
+    <div class="admin-panel-title">&#9881; Stream Control (Admin Only)</div>
+    <div class="admin-controls">
+      <div class="admin-row">
+        <label>YouTube URL</label>
+        <input type="text" id="ytUrlInput" placeholder="https://www.youtube.com/watch?v=..." />
+      </div>
+      <div class="admin-row" style="margin-top:4px;">
+        <button class="btn-admin btn-go-live" onclick="adminGoLive()">&#9899; Go Live</button>
+        <button class="btn-admin btn-end-stream" onclick="adminEndStream()">End Stream</button>
+      </div>
+      <div class="admin-status-msg" id="adminStatusMsg"></div>
+    </div>
+  </div>
 
   <!-- Retro TV Stream -->
   <div class="tv-wrap" id="streamCard">
@@ -775,69 +789,83 @@ window.addEventListener('load', function() {
   // Navigation auto-initializes on load
 </script>
 
-<script>
+<script type="module">
 // ============================================================
-// AUTO LIVE DETECTION via YouTube oEmbed polling
-// oEmbed returns HTTP 200 + stream title when the channel is
-// live, and HTTP 404 when it is not. No API key needed.
-// Polls every 30s. Immediate check on page load.
+// STREAM CONTROL — Firestore-backed
+// Admin pastes YouTube URL and clicks Go Live.
+// All viewers get the stream within seconds via onSnapshot.
 // ============================================================
+import { db } from './firebase-config.js';
+import { doc, setDoc, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
+import { getDoc } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
 
-const CHANNEL_ID   = 'UCFaQJcIQUrjYOZzthFM8TqA';
-const OEMBED_URL   = `https://www.youtube.com/oembed?url=https://www.youtube.com/channel/${CHANNEL_ID}/live&format=json`;
-const POLL_MS      = 30000;
+const streamRef = doc(db, 'siteConfig', 'streamConfig');
 
-let liveState  = false;
-let pollTimer  = null;
-
-async function checkLiveStatus() {
-  try {
-    const res = await fetch(OEMBED_URL);
-    if (res.ok) {
-      const data = await res.json();
-      // Extract the specific video ID from the oEmbed html field
-      // e.g. <iframe src="https://www.youtube.com/embed/VIDEO_ID?..."
-      const match = data.html && data.html.match(/youtube\.com\/embed\/([a-zA-Z0-9_-]+)/);
-      const videoId = match ? match[1] : null;
-      setLive(true, data.title || '', videoId);
-    } else {
-      setLive(false);
-    }
-  } catch(e) {
-    // Network error — don't flip state, try again next poll
-    console.warn('Live check failed:', e.message);
-  }
+function extractVideoId(url) {
+  const m = url.match(/(?:v=|youtu\.be\/|embed\/)([a-zA-Z0-9_-]{11})/);
+  return m ? m[1] : null;
 }
 
-function setLive(live, title, videoId) {
-  if (live === liveState) return;
-  liveState = live;
-
+function setLive(live, videoId, title) {
   const iframe = document.getElementById('ytIframe');
-
-  if (live) {
-    // Use the specific video ID when available — more reliable than live_stream?channel=
-    const embedId = videoId || `live_stream?channel=${CHANNEL_ID}`;
-    const base = videoId
-      ? `https://www.youtube.com/embed/${embedId}`
-      : `https://www.youtube.com/embed/live_stream?channel=${CHANNEL_ID}`;
-    iframe.src = `${base}?autoplay=1&modestbranding=1&rel=0&playsinline=1`;
+  if (live && videoId) {
+    iframe.src = `https://www.youtube.com/embed/${videoId}?autoplay=1&modestbranding=1&rel=0&playsinline=1`;
     if (title) document.getElementById('streamGameLabel').textContent = title;
   } else {
-    iframe.src = `https://www.youtube.com/embed/live_stream?channel=${CHANNEL_ID}&autoplay=0&modestbranding=1&rel=0&playsinline=1`;
+    iframe.src = '';
   }
-
   document.getElementById('liveBadge').style.display          = live ? 'inline-flex' : 'none';
   document.getElementById('offlineBadge').style.display       = live ? 'none'        : 'inline-flex';
   document.getElementById('offlinePlaceholder').style.display = live ? 'none'        : 'flex';
   document.getElementById('streamInfoBar').style.display      = live ? 'flex'        : 'none';
-
-  console.log(live ? `📺 Stream LIVE: ${title}` : '📴 Stream offline');
 }
 
-// Check immediately on load, then every 30s
-checkLiveStatus();
-pollTimer = setInterval(checkLiveStatus, POLL_MS);
+// Listen for live state changes in real-time — fires for all viewers instantly
+onSnapshot(streamRef, snap => {
+  const d = snap.exists() ? snap.data() : null;
+  if (d && d.isLive && d.videoId) {
+    setLive(true, d.videoId, d.title || '');
+  } else {
+    setLive(false);
+  }
+});
+
+// Show admin panel if logged-in admin
+const auth = getAuth();
+onAuthStateChanged(auth, async user => {
+  if (!user) return;
+  try {
+    const userSnap = await getDoc(doc(db, 'users', user.uid));
+    const u = userSnap.data() || {};
+    const isAdmin = u.isAdmin || u.role === 'admin' || u.userRole === 'admin' || u.userType === 'admin';
+    if (isAdmin) document.getElementById('adminPanel').style.display = 'block';
+  } catch(e) { /* not admin */ }
+});
+
+// Admin: Go Live
+window.adminGoLive = async function() {
+  const url = document.getElementById('ytUrlInput').value.trim();
+  const msg = document.getElementById('adminStatusMsg');
+  const videoId = extractVideoId(url);
+  if (!videoId) { msg.textContent = 'Paste a valid YouTube URL first.'; return; }
+  try {
+    await setDoc(streamRef, { isLive: true, videoId, title: '', updatedAt: new Date().toISOString() });
+    msg.textContent = '✅ Stream is live!';
+    setTimeout(() => { msg.textContent = ''; }, 4000);
+  } catch(e) { msg.textContent = 'Error: ' + e.message; }
+};
+
+// Admin: End stream
+window.adminEndStream = async function() {
+  const msg = document.getElementById('adminStatusMsg');
+  try {
+    await setDoc(streamRef, { isLive: false, videoId: null, title: '', updatedAt: new Date().toISOString() });
+    document.getElementById('ytUrlInput').value = '';
+    msg.textContent = 'Stream ended.';
+    setTimeout(() => { msg.textContent = ''; }, 4000);
+  } catch(e) { msg.textContent = 'Error: ' + e.message; }
+};
 </script>
 
 <script src="mobile-enhancements.js"></script>
