@@ -667,7 +667,7 @@ let allActivities = [];
 let currentActivity = null;
 let lastDoc = null;
 let isLoading = false;
-const PAGE_SIZE = 20;
+const PAGE_SIZE = 40;
 
 // DOM Elements
 const activityContainer = document.getElementById('activityContainer');
@@ -709,38 +709,44 @@ async function loadActivities(loadMore = false) {
     const activitiesRef = collection(db, 'activity');
     const typeValue = typeFilter.value;
     const timeRange = getTimeRange(timeFilter.value);
-    
-    // Build query
-    let constraints = [
-      orderBy('timestamp', 'desc'),
-      limit(PAGE_SIZE)
-    ];
-    
-    // Add time filter if not "all"
-    if (timeFilter.value !== 'all') {
-      constraints.unshift(where('timestamp', '>=', timeRange.start));
+
+    // Build constraints in the correct Firestore order:
+    // equality wheres → range where → orderBy (same field as range) → cursor → limit
+    const constraints = [];
+
+    // 1. Type filter — server-side so limit(PAGE_SIZE) isn't wasted on the wrong types.
+    //    Requires a composite index: type ASC + timestamp DESC.
+    //    Firestore will surface a link to create it on the first run if it doesn't exist yet.
+    if (typeValue !== 'all') {
+      constraints.push(where('type', '==', typeValue));
     }
-    
-    // Add pagination cursor
+
+    // 2. Time range — must use same field as the orderBy below
+    if (timeFilter.value !== 'all') {
+      constraints.push(where('timestamp', '>=', timeRange.start));
+    }
+
+    // 3. orderBy
+    constraints.push(orderBy('timestamp', 'desc'));
+
+    // 4. Pagination cursor — must come before limit
     if (loadMore && lastDoc) {
       constraints.push(startAfter(lastDoc));
     }
-    
+
+    // 5. limit last
+    constraints.push(limit(PAGE_SIZE));
+
     const q = query(activitiesRef, ...constraints);
     const snapshot = await getDocs(q);
-    
+
     // Process results
     let newActivities = snapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data(),
       timestamp: doc.data().timestamp?.toDate() || new Date()
     }));
-    
-    // Client-side type filtering
-    if (typeValue !== 'all') {
-      newActivities = newActivities.filter(a => a.type === typeValue);
-    }
-    
+
     // Update pagination state
     if (snapshot.docs.length > 0) {
       lastDoc = snapshot.docs[snapshot.docs.length - 1];
@@ -762,11 +768,13 @@ async function loadActivities(loadMore = false) {
     console.error('Error loading activities:', error);
     
     if (error.code === 'failed-precondition' || error.message?.includes('index')) {
+      // Log the full error so the Firebase Console link to create the index is visible in DevTools
+      console.error('Firestore index required:', error);
       activityContainer.innerHTML = `
         <div class="empty-state">
           <div class="empty-state-icon">🔧</div>
-          <h3>Setting up...</h3>
-          <p>Activity feed indexes are being created. Please try again in a few minutes.</p>
+          <h3>Index needed</h3>
+          <p>Open the browser console — Firebase will show a direct link to create the required index. It takes about a minute to build.</p>
         </div>
       `;
     } else {
