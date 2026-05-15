@@ -374,6 +374,84 @@ body {
 #authLoading { display: flex; align-items: center; justify-content: center; min-height: 60vh; }
 #mainContent { display: none; }
 
+/* ── O/U Card ── */
+.ou-scoreboard {
+  padding: 1rem 1.25rem;
+}
+.ou-line-display {
+  text-align: center;
+  padding: 0.75rem;
+  background: #f8fafc;
+  border-radius: 10px;
+  margin-bottom: 1rem;
+}
+.ou-line-label { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-light); }
+.ou-line-number { font-size: 1.8rem; font-weight: 800; color: var(--text-dark); line-height: 1.1; }
+.ou-line-stat { font-size: 0.85rem; color: var(--text-light); }
+.ou-current-val {
+  font-size: 0.9rem; text-align: center; margin-bottom: 1rem; font-weight: 600;
+}
+.ou-current-over { color: #15803d; }
+.ou-current-under { color: #b91c1c; }
+.ou-current-push { color: var(--text-light); }
+
+.ou-sides {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;
+}
+.ou-side-card {
+  border-radius: 10px; padding: 0.75rem; border: 2px solid var(--border-color);
+}
+.ou-side-card.over-side { border-color: #bbf7d0; background: #f0fdf4; }
+.ou-side-card.under-side { border-color: #fecaca; background: #fef2f2; }
+.ou-side-card.over-side.winning { border-color: #15803d; background: #dcfce7; }
+.ou-side-card.under-side.winning { border-color: #b91c1c; background: #fee2e2; }
+.ou-side-label {
+  font-size: 0.72rem; font-weight: 800; text-transform: uppercase;
+  letter-spacing: 0.05em; margin-bottom: 0.4rem;
+}
+.over-side .ou-side-label { color: #15803d; }
+.under-side .ou-side-label { color: #b91c1c; }
+.ou-side-player { font-size: 0.88rem; font-weight: 600; color: var(--text-dark); }
+.ou-side-team { font-size: 0.75rem; color: var(--text-light); }
+.ou-status-chip {
+  display: inline-block; font-size: 0.7rem; font-weight: 700;
+  padding: 0.15rem 0.45rem; border-radius: 10px; margin-top: 0.4rem;
+}
+.chip-leading { background: #dcfce7; color: #15803d; }
+.chip-trailing { background: #fef2f2; color: #b91c1c; }
+.chip-push { background: #f1f5f9; color: #64748b; }
+.chip-winner { background: #fef9c3; color: #854d0e; }
+
+/* Side mini-select inside participant tag */
+.side-mini-select {
+  background: white; border: 1px solid var(--primary-color);
+  border-radius: 10px; padding: 0.1rem 0.3rem;
+  font-size: 0.75rem; font-weight: 600; color: var(--primary-color);
+  cursor: pointer; margin: 0 0.2rem;
+}
+
+/* O/U form fields */
+.ou-fields { display: none; }
+.ou-fields.visible { display: block; }
+.bet-type-tabs {
+  display: flex; gap: 0.5rem; margin-bottom: 1rem;
+}
+.bet-type-tab {
+  flex: 1; padding: 0.55rem; border: 1.5px solid var(--border-color);
+  border-radius: 8px; background: white; font-size: 0.85rem; font-weight: 600;
+  cursor: pointer; text-align: center; color: var(--text-light); transition: all 0.15s;
+}
+.bet-type-tab.active { border-color: var(--primary-color); color: var(--primary-color); background: #f0fdf4; }
+
+/* Dark mode additions */
+[data-theme="dark"] .ou-line-display { background: #374151; }
+[data-theme="dark"] .ou-side-card { border-color: #4a5568; }
+[data-theme="dark"] .ou-side-card.over-side { background: rgba(21,128,61,0.1); border-color: rgba(187,247,208,0.3); }
+[data-theme="dark"] .ou-side-card.under-side { background: rgba(185,28,28,0.1); border-color: rgba(254,202,202,0.3); }
+[data-theme="dark"] .ou-side-card.over-side.winning { background: rgba(21,128,61,0.2); }
+[data-theme="dark"] .ou-side-card.under-side.winning { background: rgba(185,28,28,0.2); }
+[data-theme="dark"] .side-mini-select { background: #374151; border-color: #4a5568; color: #e2e8f0; }
+
 /* Winner highlight */
 .winner-badge {
   display: inline-flex; align-items: center; gap: 0.3rem;
@@ -508,10 +586,19 @@ body {
     <div class="modal-body">
       <div id="modalAlert" class="alert alert-error"></div>
 
+      <!-- Bet Type Tabs -->
+      <div class="form-group">
+        <label>Bet Type</label>
+        <div class="bet-type-tabs">
+          <button class="bet-type-tab active" id="tabH2H" onclick="switchBetType('h2h')">⚔️ Head to Head</button>
+          <button class="bet-type-tab" id="tabOU" onclick="switchBetType('ou')">📊 Over / Under</button>
+        </div>
+      </div>
+
       <div class="form-group">
         <label>Bet Title <span style="color:var(--text-light); font-weight:400">(optional)</span></label>
         <input type="text" id="betTitle" placeholder="e.g. Who hits more dingers?" maxlength="80">
-        <div class="form-hint">Leave blank to auto-generate from stat name.</div>
+        <div class="form-hint">Leave blank to auto-generate.</div>
       </div>
 
       <div class="form-group">
@@ -521,20 +608,42 @@ body {
         </select>
       </div>
 
-      <div class="form-group">
-        <label>Stat Category</label>
-        <select id="betCategory" onchange="updateStatOptions()">
-          <option value="">-- Select --</option>
-          <option value="batting">⚾ Batting</option>
-          <option value="pitching">💪 Pitching</option>
-        </select>
+      <!-- H2H fields -->
+      <div id="h2hFields">
+        <div class="form-group">
+          <label>Stat Category</label>
+          <select id="betCategory" onchange="updateStatOptions()">
+            <option value="">-- Select --</option>
+            <option value="batting">⚾ Batting</option>
+            <option value="pitching">💪 Pitching</option>
+          </select>
+        </div>
+        <div class="form-group" id="statGroup" style="display:none">
+          <label>Stat</label>
+          <select id="betStat">
+            <option value="">-- Select category first --</option>
+          </select>
+        </div>
       </div>
 
-      <div class="form-group" id="statGroup" style="display:none">
-        <label>Stat</label>
-        <select id="betStat">
-          <option value="">-- Select category first --</option>
-        </select>
+      <!-- O/U fields -->
+      <div id="ouFields" class="ou-fields">
+        <div class="form-group">
+          <label>Team</label>
+          <input type="text" id="ouTeam" placeholder="e.g. Carolina" maxlength="40">
+          <div class="form-hint">Enter the team name exactly as it appears in the standings.</div>
+        </div>
+        <div class="form-group">
+          <label>Stat</label>
+          <select id="ouStat">
+            <option value="wins">Wins</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Line</label>
+          <input type="number" id="ouLine" placeholder="e.g. 10.5" min="0" max="99" step="0.5">
+          <div class="form-hint">The number participants are betting over or under.</div>
+        </div>
       </div>
 
       <div class="form-group">
@@ -555,7 +664,7 @@ body {
             onblur="hideDropdownDelayed()">
           <div class="participant-dropdown" id="participantDropdown"></div>
         </div>
-        <div class="form-hint">Add 2 or more players.</div>
+        <div class="form-hint" id="participantHint">Add 2 or more players.</div>
         <div class="participant-tags" id="participantTags"></div>
       </div>
     </div>
@@ -630,6 +739,7 @@ let allPlayers = [];       // { userId, playerName, legacyId, teamId }
 let selectedParticipants = [];
 let betToDelete = null;
 let seasons = [];
+let currentBetType = 'h2h'; // 'h2h' | 'ou'
 
 // ============================================================
 // AUTH
@@ -799,32 +909,42 @@ async function buildBetCard(bet) {
   card.className = 'bet-card';
   card.id = `bet-${bet.id}`;
 
-  const categoryLabel = bet.statCategory === 'pitching' ? 'Pitching' : 'Batting';
-  const categoryBadge = bet.statCategory === 'pitching' ? 'badge-pitching' : 'badge-batting';
+  const isOU = bet.type === 'over_under';
   const statusBadge = bet.status === 'settled' ? 'badge-settled' : 'badge-active';
   const statusLabel = bet.status === 'settled' ? 'Settled' : 'Active';
   const seasonLabel = getSeasonLabel(bet.seasonId);
   const createdDate = bet.createdAt?.toDate ? bet.createdAt.toDate().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
   const canDelete = isAdmin || bet.createdBy === currentUser.uid;
 
+  // Category badge
+  let categoryBadgeHtml = '';
+  if (isOU) {
+    categoryBadgeHtml = `<span class="badge badge-public">📊 O/U</span>`;
+  } else {
+    const categoryLabel = bet.statCategory === 'pitching' ? 'Pitching' : 'Batting';
+    const categoryBadge = bet.statCategory === 'pitching' ? 'badge-pitching' : 'badge-batting';
+    categoryBadgeHtml = `<span class="badge ${categoryBadge}">${categoryLabel}</span>`;
+  }
+
+  // Subtitle line
+  const subtitleLine = isOU
+    ? `<span>🏟 ${escHtml(bet.ouTeam)}</span> <span>📊 ${escHtml(bet.statLabel)} O/U ${bet.ouLine}</span>${createdDate ? ` <span>Created ${createdDate}</span>` : ''}`
+    : `<span>📅 ${seasonLabel}</span><span>📊 ${escHtml(bet.statLabel)}</span>${createdDate ? ` <span>Created ${createdDate}</span>` : ''}`;
+
   card.innerHTML = `
     <div class="bet-card-header">
       <div>
         <div class="bet-title">${escHtml(bet.title)}</div>
-        <div class="bet-meta">
-          <span>📅 ${seasonLabel}</span>
-          <span>📊 ${escHtml(bet.statLabel)}</span>
-          ${createdDate ? `<span>Created ${createdDate}</span>` : ''}
-        </div>
+        <div class="bet-meta">${subtitleLine}</div>
       </div>
       <div class="bet-badges">
         <span class="badge ${statusBadge}">${statusLabel}</span>
-        <span class="badge ${categoryBadge}">${categoryLabel}</span>
+        ${categoryBadgeHtml}
         <span class="badge ${bet.isPublic ? 'badge-public' : 'badge-private'}">${bet.isPublic ? '🌐 Public' : '🔒 Private'}</span>
       </div>
     </div>
     <div id="standings-${bet.id}">
-      <div class="loading-spinner">Loading standings...</div>
+      <div class="loading-spinner">Loading...</div>
     </div>
     <div class="bet-card-footer">
       <span>Created by ${escHtml(bet.createdByName || 'Unknown')}</span>
@@ -844,59 +964,152 @@ async function loadStandings(bet) {
   if (!container) return;
 
   try {
-    const statDef = STAT_OPTIONS[bet.statCategory]?.find(s => s.value === bet.stat);
-    const higherIsBetter = statDef ? statDef.higherIsBetter : true;
-    const format = statDef?.format || 'int';
-
-    // Fetch stat value for each participant
-    const results = await Promise.all(bet.participants.map(async (p) => {
-      const val = await getPlayerStat(p.legacyId, p.userId, bet.seasonId, bet.stat);
-      return { ...p, value: val };
-    }));
-
-    // Sort by value
-    results.sort((a, b) => higherIsBetter ? (b.value - a.value) : (a.value - b.value));
-
-    // Build table
-    let rows = '';
-    results.forEach((p, idx) => {
-      const rank = idx + 1;
-      const rankClass = rank <= 3 ? `rank-${rank}` : '';
-      const isWinner = bet.status === 'settled' && idx === 0;
-      const formattedVal = formatStat(p.value, format);
-
-      rows += `
-        <tr class="${rankClass}">
-          <td>
-            <div class="player-rank">
-              <span class="rank-num">${rank}</span>
-              <div>
-                <div class="player-name-cell">
-                  ${escHtml(p.playerName)}
-                  ${isWinner ? '<span class="winner-badge">🏆 Winner</span>' : ''}
-                </div>
-                <div class="player-team-cell">${escHtml(p.teamId || '')}</div>
-              </div>
-            </div>
-          </td>
-          <td>${formattedVal}</td>
-        </tr>`;
-    });
-
-    container.innerHTML = `
-      <table class="standings-table">
-        <thead>
-          <tr>
-            <th>Player</th>
-            <th style="text-align:right">${escHtml(bet.statLabel)}</th>
-          </tr>
-        </thead>
-        <tbody>${rows}</tbody>
-      </table>`;
-
+    if (bet.type === 'over_under') {
+      await loadOUStandings(bet, container);
+    } else {
+      await loadH2HStandings(bet, container);
+    }
   } catch (e) {
     console.error('Standings error:', e);
     container.innerHTML = `<div class="loading-spinner" style="color:var(--danger-color)">Could not load standings</div>`;
+  }
+}
+
+async function loadH2HStandings(bet, container) {
+  const statDef = STAT_OPTIONS[bet.statCategory]?.find(s => s.value === bet.stat);
+  const higherIsBetter = statDef ? statDef.higherIsBetter : true;
+  const format = statDef?.format || 'int';
+
+  const results = await Promise.all(bet.participants.map(async (p) => {
+    const val = await getPlayerStat(p.legacyId, p.userId, bet.seasonId, bet.stat);
+    return { ...p, value: val };
+  }));
+
+  results.sort((a, b) => higherIsBetter ? (b.value - a.value) : (a.value - b.value));
+
+  let rows = '';
+  results.forEach((p, idx) => {
+    const rank = idx + 1;
+    const rankClass = rank <= 3 ? `rank-${rank}` : '';
+    const isWinner = bet.status === 'settled' && idx === 0;
+    const formattedVal = formatStat(p.value, format);
+
+    rows += `
+      <tr class="${rankClass}">
+        <td>
+          <div class="player-rank">
+            <span class="rank-num">${rank}</span>
+            <div>
+              <div class="player-name-cell">
+                ${escHtml(p.playerName)}
+                ${isWinner ? '<span class="winner-badge">🏆 Winner</span>' : ''}
+              </div>
+              <div class="player-team-cell">${escHtml(p.teamId || '')}</div>
+            </div>
+          </div>
+        </td>
+        <td>${formattedVal}</td>
+      </tr>`;
+  });
+
+  container.innerHTML = `
+    <table class="standings-table">
+      <thead>
+        <tr>
+          <th>Player</th>
+          <th style="text-align:right">${escHtml(bet.statLabel)}</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
+async function loadOUStandings(bet, container) {
+  const line = bet.ouLine ?? 0;
+  const currentVal = await getTeamWins(bet.seasonId, bet.ouTeam);
+
+  // Determine who's currently winning
+  const overIsWinning = currentVal > line;
+  const underIsWinning = currentVal < line;
+  const isPush = currentVal === line;
+
+  // Current status text
+  let currentText = '';
+  let currentClass = 'ou-current-push';
+  if (currentVal !== null) {
+    if (overIsWinning) { currentText = `${currentVal} wins — OVER ${line} 📈`; currentClass = 'ou-current-over'; }
+    else if (underIsWinning) { currentText = `${currentVal} wins — UNDER ${line} 📉`; currentClass = 'ou-current-under'; }
+    else { currentText = `${currentVal} wins — RIGHT ON THE LINE`; currentClass = 'ou-current-push'; }
+  }
+
+  // Group participants by side
+  const overPlayers  = (bet.participants || []).filter(p => p.side === 'over');
+  const underPlayers = (bet.participants || []).filter(p => p.side === 'under');
+
+  const isSettled = bet.status === 'settled';
+
+  function renderSideCard(players, side) {
+    const isWinningSide = side === 'over' ? overIsWinning : underIsWinning;
+    const winnerClass = isSettled && isWinningSide ? 'winning' : '';
+    const sideLabel = side === 'over' ? '📈 Over' : '📉 Under';
+
+    const playerLines = players.map(p => {
+      let chipHtml = '';
+      if (isSettled) {
+        chipHtml = isWinningSide
+          ? `<div><span class="ou-status-chip chip-winner">🏆 Winner</span></div>`
+          : `<div><span class="ou-status-chip chip-trailing">Lost</span></div>`;
+      } else if (currentVal !== null && !isPush) {
+        chipHtml = isWinningSide
+          ? `<div><span class="ou-status-chip chip-leading">Leading</span></div>`
+          : `<div><span class="ou-status-chip chip-trailing">Trailing</span></div>`;
+      } else if (isPush) {
+        chipHtml = `<div><span class="ou-status-chip chip-push">Push</span></div>`;
+      }
+      return `<div style="margin-bottom:0.35rem;">
+        <div class="ou-side-player">${escHtml(p.playerName)}</div>
+        <div class="ou-side-team">${escHtml(p.teamId || '')}</div>
+        ${chipHtml}
+      </div>`;
+    }).join('');
+
+    return `<div class="ou-side-card ${side}-side ${winnerClass}">
+      <div class="ou-side-label">${sideLabel}</div>
+      ${playerLines || '<div style="color:var(--text-light);font-size:0.82rem;">—</div>'}
+    </div>`;
+  }
+
+  container.innerHTML = `
+    <div class="ou-scoreboard">
+      <div class="ou-line-display">
+        <div class="ou-line-label">Line</div>
+        <div class="ou-line-number">${line}</div>
+        <div class="ou-line-stat">${escHtml(bet.statLabel || 'Wins')} — ${getSeasonLabel(bet.seasonId)}</div>
+      </div>
+      ${currentVal !== null ? `<div class="ou-current-val ${currentClass}">${currentText}</div>` : ''}
+      <div class="ou-sides">
+        ${renderSideCard(overPlayers, 'over')}
+        ${renderSideCard(underPlayers, 'under')}
+      </div>
+    </div>`;
+}
+
+// ============================================================
+// GET TEAM WIN COUNT FROM SEASON GAMES
+// ============================================================
+async function getTeamWins(seasonId, teamName) {
+  try {
+    const snap = await getDocs(collection(db, 'seasons', seasonId, 'games'));
+    let wins = 0;
+    snap.docs.forEach(d => {
+      const data = d.data();
+      const winner = data.winner || data.Winner || '';
+      if (winner.toLowerCase() === (teamName || '').toLowerCase()) wins++;
+    });
+    return wins;
+  } catch (e) {
+    console.warn('[SideBets] Could not fetch team wins:', e.message);
+    return null;
   }
 }
 
@@ -964,53 +1177,95 @@ async function getPlayerStat(legacyId, userId, seasonId, statField) {
 // ============================================================
 window.createBet = async function() {
   const btn = document.getElementById('createBetBtn');
-  const alert = document.getElementById('modalAlert');
-  hideAlert(alert);
+  hideAlert(document.getElementById('modalAlert'));
 
   const seasonId = document.getElementById('betSeason').value;
-  const category = document.getElementById('betCategory').value;
-  const statValue = document.getElementById('betStat').value;
   const titleInput = document.getElementById('betTitle').value.trim();
-
-  if (!seasonId) return showModalAlert('Please select a season.');
-  if (!category) return showModalAlert('Please select a stat category.');
-  if (!statValue) return showModalAlert('Please select a stat.');
-  if (selectedParticipants.length < 2) return showModalAlert('Please add at least 2 participants.');
-
-  const statDef = STAT_OPTIONS[category].find(s => s.value === statValue);
-  const seasonLabel = getSeasonLabel(seasonId);
-  const title = titleInput || `${statDef.label} — ${seasonLabel}`;
   const isPublic = document.getElementById('betVisibility').value === 'public';
 
+  if (!seasonId) return showModalAlert('Please select a season.');
+  if (selectedParticipants.length < 2) return showModalAlert('Please add at least 2 participants.');
+
+  const seasonLabel = getSeasonLabel(seasonId);
   btn.disabled = true;
   btn.textContent = 'Creating...';
 
   try {
-    await addDoc(collection(db, 'sideBets'), {
-      title,
-      seasonId,
-      statCategory: category,
-      stat: statValue,
-      statLabel: statDef.label,
-      higherIsBetter: statDef.higherIsBetter,
-      participants: selectedParticipants.map(p => ({
-        userId: p.userId,
-        playerName: p.playerName,
-        legacyId: p.legacyId,
-        teamId: p.teamId
-      })),
-      // Always include the creator so they can see their own bet,
-      // plus any participants who have a userId
-      participantUserIds: [...new Set([
-        currentUser.uid,
-        ...selectedParticipants.map(p => p.userId).filter(Boolean)
-      ])],
-      isPublic,
-      createdBy: currentUser.uid,
-      createdByName: userProfile?.displayName || userProfile?.linkedPlayer || currentUser.email,
-      createdAt: serverTimestamp(),
-      status: 'active'
-    });
+    if (currentBetType === 'ou') {
+      // ── Over/Under bet ──────────────────────────────────────
+      const team = document.getElementById('ouTeam').value.trim();
+      const line = parseFloat(document.getElementById('ouLine').value);
+      const ouStatVal = document.getElementById('ouStat').value;
+      if (!team) { showModalAlert('Please enter a team name.'); return; }
+      if (isNaN(line) || line < 0) { showModalAlert('Please enter a valid line number.'); return; }
+      const hasBothSides = selectedParticipants.some(p => p.side === 'over') &&
+                           selectedParticipants.some(p => p.side === 'under');
+      if (!hasBothSides) return showModalAlert('At least one player must be on Over and one on Under.');
+
+      const statLabel = ouStatVal === 'wins' ? 'Wins' : capitalize(ouStatVal);
+      const title = titleInput || `${team} ${statLabel} O/U ${line} — ${seasonLabel}`;
+
+      await addDoc(collection(db, 'sideBets'), {
+        type: 'over_under',
+        title,
+        seasonId,
+        ouTeam: team,
+        ouStat: ouStatVal,
+        ouLine: line,
+        statLabel,
+        participants: selectedParticipants.map(p => ({
+          userId: p.userId,
+          playerName: p.playerName,
+          legacyId: p.legacyId,
+          teamId: p.teamId,
+          side: p.side || 'over'
+        })),
+        participantUserIds: [...new Set([
+          currentUser.uid,
+          ...selectedParticipants.map(p => p.userId).filter(Boolean)
+        ])],
+        isPublic,
+        createdBy: currentUser.uid,
+        createdByName: userProfile?.displayName || userProfile?.linkedPlayer || currentUser.email,
+        createdAt: serverTimestamp(),
+        status: 'active'
+      });
+
+    } else {
+      // ── Head-to-Head bet ────────────────────────────────────
+      const category = document.getElementById('betCategory').value;
+      const statValue = document.getElementById('betStat').value;
+      if (!category) return showModalAlert('Please select a stat category.');
+      if (!statValue) return showModalAlert('Please select a stat.');
+
+      const statDef = STAT_OPTIONS[category].find(s => s.value === statValue);
+      const title = titleInput || `${statDef.label} — ${seasonLabel}`;
+
+      await addDoc(collection(db, 'sideBets'), {
+        type: 'h2h',
+        title,
+        seasonId,
+        statCategory: category,
+        stat: statValue,
+        statLabel: statDef.label,
+        higherIsBetter: statDef.higherIsBetter,
+        participants: selectedParticipants.map(p => ({
+          userId: p.userId,
+          playerName: p.playerName,
+          legacyId: p.legacyId,
+          teamId: p.teamId
+        })),
+        participantUserIds: [...new Set([
+          currentUser.uid,
+          ...selectedParticipants.map(p => p.userId).filter(Boolean)
+        ])],
+        isPublic,
+        createdBy: currentUser.uid,
+        createdByName: userProfile?.displayName || userProfile?.linkedPlayer || currentUser.email,
+        createdAt: serverTimestamp(),
+        status: 'active'
+      });
+    }
 
     closeCreateModal();
     showAlert('Bet created!', 'success');
@@ -1060,10 +1315,14 @@ window.confirmDelete = async function() {
 // ============================================================
 window.openCreateModal = function() {
   // Reset form
+  currentBetType = 'h2h';
   document.getElementById('betTitle').value = '';
   document.getElementById('betCategory').value = '';
   document.getElementById('betStat').innerHTML = '<option value="">-- Select category first --</option>';
   document.getElementById('statGroup').style.display = 'none';
+  document.getElementById('ouTeam').value = '';
+  document.getElementById('ouLine').value = '';
+  document.getElementById('ouStat').value = 'wins';
   document.getElementById('betVisibility').value = 'private';
   document.getElementById('participantSearch').value = '';
   document.getElementById('participantDropdown').innerHTML = '';
@@ -1071,7 +1330,32 @@ window.openCreateModal = function() {
   selectedParticipants = [];
   renderParticipantTags();
   hideAlert(document.getElementById('modalAlert'));
+  // Reset tabs
+  document.getElementById('tabH2H').classList.add('active');
+  document.getElementById('tabOU').classList.remove('active');
+  document.getElementById('h2hFields').style.display = '';
+  document.getElementById('ouFields').classList.remove('visible');
+  document.getElementById('betTitle').placeholder = 'e.g. Who hits more dingers?';
+  document.getElementById('participantHint').textContent = 'Add 2 or more players.';
   document.getElementById('createModal').classList.add('open');
+};
+
+window.switchBetType = function(type) {
+  currentBetType = type;
+  document.getElementById('tabH2H').classList.toggle('active', type === 'h2h');
+  document.getElementById('tabOU').classList.toggle('active', type === 'ou');
+  document.getElementById('h2hFields').style.display = type === 'h2h' ? '' : 'none';
+  if (type === 'ou') {
+    document.getElementById('ouFields').classList.add('visible');
+    document.getElementById('betTitle').placeholder = 'e.g. Carolina win total O/U 10.5';
+    document.getElementById('participantHint').textContent = 'Add bettors and assign each side — first added defaults to Over.';
+  } else {
+    document.getElementById('ouFields').classList.remove('visible');
+    document.getElementById('betTitle').placeholder = 'e.g. Who hits more dingers?';
+    document.getElementById('participantHint').textContent = 'Add 2 or more players.';
+  }
+  selectedParticipants = [];
+  renderParticipantTags();
 };
 window.closeCreateModal = function() {
   document.getElementById('createModal').classList.remove('open');
@@ -1126,10 +1410,19 @@ window.hideDropdownDelayed = function() {
 window.addParticipant = function(legacyId) {
   const player = allPlayers.find(p => p.legacyId === legacyId);
   if (!player || selectedParticipants.some(p => p.legacyId === legacyId)) return;
-  selectedParticipants.push(player);
+  // For O/U: auto-assign sides — first person = over, rest = under
+  const side = currentBetType === 'ou'
+    ? (selectedParticipants.length === 0 ? 'over' : 'under')
+    : undefined;
+  selectedParticipants.push({ ...player, side });
   renderParticipantTags();
   document.getElementById('participantSearch').value = '';
   document.getElementById('participantDropdown').classList.remove('open');
+};
+
+window.setParticipantSide = function(legacyId, side) {
+  const p = selectedParticipants.find(p => p.legacyId === legacyId);
+  if (p) p.side = side;
 };
 
 window.removeParticipant = function(legacyId) {
@@ -1139,11 +1432,19 @@ window.removeParticipant = function(legacyId) {
 
 function renderParticipantTags() {
   const container = document.getElementById('participantTags');
-  container.innerHTML = selectedParticipants.map(p => `
-    <span class="participant-tag">
+  container.innerHTML = selectedParticipants.map(p => {
+    const sideSelect = currentBetType === 'ou'
+      ? `<select class="side-mini-select" onchange="setParticipantSide('${p.legacyId}', this.value)">
+           <option value="over"  ${p.side === 'over'  ? 'selected' : ''}>📈 Over</option>
+           <option value="under" ${p.side === 'under' ? 'selected' : ''}>📉 Under</option>
+         </select>`
+      : '';
+    return `<span class="participant-tag">
       ${escHtml(p.playerName)} <span style="opacity:0.6; font-weight:400; font-size:0.72rem">${escHtml(p.teamId)}</span>
+      ${sideSelect}
       <button onclick="removeParticipant('${p.legacyId}')" title="Remove">✕</button>
-    </span>`).join('');
+    </span>`;
+  }).join('');
 }
 
 // ============================================================
