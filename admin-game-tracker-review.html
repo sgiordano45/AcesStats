@@ -514,6 +514,16 @@
     background: #cbd5e1;
   }
 
+  .btn-warning {
+    background: #f59e0b;
+    color: white;
+  }
+
+  .btn-warning:hover {
+    background: #d97706;
+    transform: translateY(-2px);
+  }
+
   .btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
@@ -911,6 +921,9 @@
             </div>
             <div class="review-actions">
               <button class="btn btn-secondary" onclick="closeReview()">✕ Close</button>
+              <button class="btn btn-warning" id="forceReConvertBtn" onclick="forceReConvert()" style="display:none;">
+                ⚠️ Force Re-Convert
+              </button>
               <button class="btn btn-success" id="convertBtn" onclick="convertToOfficial()">
                 ✅ Convert to Official Stats
               </button>
@@ -1298,12 +1311,15 @@ function renderReviewPanel() {
   
   // Update convert button state
   const convertBtn = document.getElementById('convertBtn');
+  const forceReConvertBtn = document.getElementById('forceReConvertBtn');
   if (selectedGame.convertedToOfficial) {
     convertBtn.disabled = true;
     convertBtn.innerHTML = '✓ Already Converted';
+    forceReConvertBtn.style.display = '';
   } else {
     convertBtn.disabled = false;
     convertBtn.innerHTML = '✅ Convert to Official Stats';
+    forceReConvertBtn.style.display = 'none';
   }
   
   // Reset pending edits when switching games
@@ -1604,6 +1620,102 @@ window.convertToOfficial = async function() {
   } finally {
     convertBtn.disabled = false;
     convertBtn.innerHTML = '✅ Convert to Official Stats';
+  }
+};
+
+window.forceReConvert = async function() {
+  if (!selectedGame) return;
+
+  const confirmed = window.confirm(
+    'This will overwrite existing playerStats docs for this game with the current gameResults values. ' +
+    'Stats written by submit-stats will be replaced. Continue?'
+  );
+  if (!confirmed) return;
+
+  const stats = selectedGame.battingStats || [];
+  if (stats.length === 0) {
+    showMessage('error', 'No batting stats to convert.');
+    return;
+  }
+
+  const forceBtn = document.getElementById('forceReConvertBtn');
+  forceBtn.disabled = true;
+  forceBtn.innerHTML = '⏳ Re-Converting...';
+
+  try {
+    const seasonId = selectedGame.seasonId;
+    const gameId = selectedGame.gameId;
+    const gameDocId = `${seasonId}_${gameId}`;
+
+    let successCount = 0;
+    let errorCount = 0;
+
+    for (const player of stats) {
+      const match = findPlayerMatch(player.name || player.playerName);
+      if (!match) {
+        console.warn(`⚠️ Skipping unmatched player: ${player.name || player.playerName}`);
+        continue;
+      }
+
+      try {
+        const legacyId = match.legacyId;
+        const battingRef = doc(db, 'playerStats', legacyId, 'games', gameDocId);
+
+        await setDoc(battingRef, {
+          gameId: gameId,
+          gameDocId: gameDocId,
+          playerId: legacyId,
+          playerName: match.name || match.playerName,
+          seasonId: seasonId,
+          teamId: selectedGame.teamId,
+          gameDate: selectedGame.completedAt || null,
+          gameDateFormatted: selectedGame.completedAt?.toDate?.()?.toLocaleDateString() || '',
+          opponent: selectedGame.opponentName || 'Unknown',
+          isHome: selectedGame.isHome || false,
+          gameType: 'Regular',
+          isPlayoff: false,
+          atBats: player.atBats || 0,
+          hits: player.hits || 0,
+          runs: player.runs || 0,
+          walks: player.walks || 0,
+          doubles: player.doubles || 0,
+          triples: player.triples || 0,
+          homeRuns: player.homeRuns || 0,
+          rbi: player.rbi || 0,
+          strikeouts: player.strikeouts || 0,
+          stolenBases: 0,
+          caughtStealing: 0,
+          submittedBy: currentUser.uid,
+          submittedByName: currentUser.displayName || currentUser.email,
+          submittedAt: serverTimestamp(),
+          lastModified: serverTimestamp(),
+          dataVersion: 1,
+          sourceType: 'gameTracker',
+          sourceDocId: selectedGame.id
+        }, { merge: true });
+
+        successCount++;
+        console.log(`✅ Force re-converted stats for ${match.name || match.playerName}`);
+
+      } catch (error) {
+        console.error(`❌ Error re-converting stats for ${player.name}:`, error);
+        errorCount++;
+      }
+    }
+
+    showMessage('success', `Force re-convert complete: ${successCount} player(s) updated${errorCount > 0 ? `, ${errorCount} failed` : ''}.`);
+    showToast(`Re-converted ${successCount} player stats`, 'success');
+
+    renderReviewPanel();
+    filterGames();
+
+  } catch (error) {
+    console.error('❌ Error during force re-convert:', error);
+    showMessage('error', `Error during force re-convert: ${error.message}`);
+    showToast('Force re-convert failed', 'error');
+  } finally {
+    forceBtn.disabled = false;
+    forceBtn.innerHTML = '⚠️ Force Re-Convert';
   }
 };
 

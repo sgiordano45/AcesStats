@@ -1683,63 +1683,79 @@ async function submitStats() {
       try {
         const gameDocId = `${seasonId}_${selectedGameId}`;
 
-        if (playerStats.atBats > 0 || playerStats.hits > 0 || playerStats.runs > 0 || playerStats.walks > 0) {
-          const gameBattingRef = doc(db, 'playerStats', legacyId, 'games', gameDocId);
-          
-          await setDoc(gameBattingRef, {
-            gameId: selectedGameId,
-            gameDocId: gameDocId,
-            playerId: legacyId,
-            playerName: playerStats.playerName,
-            seasonId: seasonId,
-            teamId: selectedTeamName || selectedTeam,
-            gameDate: gameData.date || null,
-            gameDateFormatted: gameDateFormatted,
-            opponent: gameData.opponent || 'Unknown',
-            isHome: gameData.isHome || false,
-            gameType: gameData.gameType || 'Regular',
-            isPlayoff: gameData.isPlayoff || false,
-            atBats: playerStats.atBats,
-            hits: playerStats.hits,
-            runs: playerStats.runs,
-            walks: playerStats.walks,
-            doubles: 0, triples: 0, homeRuns: playerStats.homeRuns, rbi: 0,
-            strikeouts: 0, stolenBases: 0, caughtStealing: 0,
-            submittedBy: currentUser.uid,
-            submittedByName: currentUser.displayName || currentUser.email,
-            submittedAt: serverTimestamp(),
-            lastModified: serverTimestamp(),
-            dataVersion: 1
-          }, { merge: true });
+        const hasBatting = playerStats.atBats > 0 || playerStats.hits > 0 || playerStats.runs > 0 || playerStats.walks > 0;
+        const hadPitching = playersWithExistingPitching.has(player.id);
+        const hasPitching = playerStats.inningsPitched > 0 || playerStats.runsAllowed > 0 || hadPitching;
+
+        const gameBattingRef = doc(db, 'playerStats', legacyId, 'games', gameDocId);
+        const gamePitchingRef = doc(db, 'pitchingStats', legacyId, 'games', gameDocId);
+
+        // Check existing docs in parallel to avoid overwriting gameTracker data
+        const [existingBatting, existingPitching] = await Promise.all([
+          hasBatting ? getDoc(gameBattingRef) : Promise.resolve(null),
+          hasPitching ? getDoc(gamePitchingRef) : Promise.resolve(null)
+        ]);
+
+        if (hasBatting) {
+          if (existingBatting?.exists() && existingBatting.data()?.sourceType === 'gameTracker') {
+            console.log('⚡ Skipping playerStats write for', playerStats.playerName, '— already set by gameTracker');
+          } else {
+            await setDoc(gameBattingRef, {
+              gameId: selectedGameId,
+              gameDocId: gameDocId,
+              playerId: legacyId,
+              playerName: playerStats.playerName,
+              seasonId: seasonId,
+              teamId: selectedTeamName || selectedTeam,
+              gameDate: gameData.date || null,
+              gameDateFormatted: gameDateFormatted,
+              opponent: gameData.opponent || 'Unknown',
+              isHome: gameData.isHome || false,
+              gameType: gameData.gameType || 'Regular',
+              isPlayoff: gameData.isPlayoff || false,
+              atBats: playerStats.atBats,
+              hits: playerStats.hits,
+              runs: playerStats.runs,
+              walks: playerStats.walks,
+              doubles: 0, triples: 0, homeRuns: playerStats.homeRuns, rbi: 0,
+              strikeouts: 0, stolenBases: 0, caughtStealing: 0,
+              submittedBy: currentUser.uid,
+              submittedByName: currentUser.displayName || currentUser.email,
+              submittedAt: serverTimestamp(),
+              lastModified: serverTimestamp(),
+              dataVersion: 1
+            }, { merge: true });
+          }
         }
 
-        const hadPitching = playersWithExistingPitching.has(player.id);
-        if (playerStats.inningsPitched > 0 || playerStats.runsAllowed > 0 || hadPitching) {
-          const gamePitchingRef = doc(db, 'pitchingStats', legacyId, 'games', gameDocId);
-          
-          await setDoc(gamePitchingRef, {
-            gameId: selectedGameId,
-            gameDocId: gameDocId,
-            playerId: legacyId,
-            playerName: playerStats.playerName,
-            seasonId: seasonId,
-            teamId: selectedTeamName || selectedTeam,
-            gameDate: gameData.date || null,
-            gameDateFormatted: gameDateFormatted,
-            opponent: gameData.opponent || 'Unknown',
-            isHome: gameData.isHome || false,
-            gameType: gameData.gameType || 'Regular',
-            isPlayoff: gameData.isPlayoff || false,
-            inningsPitched: playerStats.inningsPitched,
-            runsAllowed: playerStats.runsAllowed,
-            // strikeouts/walks/hits omitted — preserve richer data from game tracker if present
-            wins: 0, losses: 0, saves: 0,
-            submittedBy: currentUser.uid,
-            submittedByName: currentUser.displayName || currentUser.email,
-            submittedAt: serverTimestamp(),
-            lastModified: serverTimestamp(),
-            dataVersion: 1
-          }, { merge: true });
+        if (hasPitching) {
+          if (existingPitching?.exists() && existingPitching.data()?.sourceType === 'gameTracker') {
+            console.log('⚡ Skipping playerStats write for', playerStats.playerName, '— already set by gameTracker');
+          } else {
+            await setDoc(gamePitchingRef, {
+              gameId: selectedGameId,
+              gameDocId: gameDocId,
+              playerId: legacyId,
+              playerName: playerStats.playerName,
+              seasonId: seasonId,
+              teamId: selectedTeamName || selectedTeam,
+              gameDate: gameData.date || null,
+              gameDateFormatted: gameDateFormatted,
+              opponent: gameData.opponent || 'Unknown',
+              isHome: gameData.isHome || false,
+              gameType: gameData.gameType || 'Regular',
+              isPlayoff: gameData.isPlayoff || false,
+              inningsPitched: playerStats.inningsPitched,
+              runsAllowed: playerStats.runsAllowed,
+              // strikeouts/walks/hits omitted — preserve richer data from game tracker if present
+              wins: 0, losses: 0, saves: 0,
+              submittedBy: currentUser.uid,
+              submittedByName: currentUser.displayName || currentUser.email,
+              submittedAt: serverTimestamp(),
+              lastModified: serverTimestamp(),
+              dataVersion: 1
+            }, { merge: true });
+          }
         }
 
         successCount++;
@@ -2156,69 +2172,85 @@ window.submitBulkStats = async function() {
           const bb = parseInt(row.bb) || 0;
           const hr = parseInt(row.hr) || 0;
 
-          if (ab > 0 || h > 0 || r > 0 || bb > 0) {
-            const battingRef = doc(db, 'playerStats', playerLegacyId, 'games', gameDocId);
-
-            await setDoc(battingRef, {
-              gameId: gameId,
-              gameDocId: gameDocId,
-              playerId: playerLegacyId,
-              playerName: validation.matchedPlayer?.name || row.player,
-              seasonId: seasonId,
-              teamId: selectedTeamName || selectedTeam,
-              gameDateFormatted: game.date,
-              gameDate: gameDateTimestamp,
-              opponent: opponentDisplay,
-              isHome: game.isHome,
-              gameType: 'Regular',
-              isPlayoff: false,
-              atBats: ab,
-              hits: h,
-              runs: r,
-              walks: bb,
-              doubles: 0, triples: 0, homeRuns: hr, rbi: 0,
-              strikeouts: 0, stolenBases: 0, caughtStealing: 0,
-              submittedBy: currentUser.uid,
-              submittedByName: currentUser.displayName || currentUser.email,
-              submittedAt: serverTimestamp(),
-              lastModified: serverTimestamp(),
-              dataVersion: 1,
-              bulkImport: true
-            }, { merge: true });
-          }
-          
           const ip = parseFloat(row.ip) || 0;
           const ra = parseInt(row.ra) || 0;
-          
-          if (ip > 0 || ra > 0) {
-            const pitchingRef = doc(db, 'pitchingStats', playerLegacyId, 'games', gameDocId);
-            
-            await setDoc(pitchingRef, {
-              gameId: gameId,
-              gameDocId: gameDocId,
-              playerId: playerLegacyId,
-              playerName: validation.matchedPlayer?.name || row.player,
-              seasonId: seasonId,
-              teamId: selectedTeamName || selectedTeam,
-              gameDateFormatted: game.date,
-              gameDate: gameDateTimestamp,
-              opponent: opponentDisplay,
-              isHome: game.isHome,
-              gameType: 'Regular',
-              isPlayoff: false,
-              inningsPitched: ip,
-              runsAllowed: ra,
-              // strikeouts/walks/hits omitted — preserve richer data from game tracker if present
-              wins: 0, losses: 0, saves: 0,
-              submittedBy: currentUser.uid,
-              submittedByName: currentUser.displayName || currentUser.email,
-              submittedAt: serverTimestamp(),
-              lastModified: serverTimestamp(),
-              dataVersion: 1,
-              bulkImport: true
-            }, { merge: true });
+
+          const hasBatting = ab > 0 || h > 0 || r > 0 || bb > 0;
+          const hasPitching = ip > 0 || ra > 0;
+
+          const battingRef = doc(db, 'playerStats', playerLegacyId, 'games', gameDocId);
+          const pitchingRef = doc(db, 'pitchingStats', playerLegacyId, 'games', gameDocId);
+
+          // Check existing docs in parallel to avoid overwriting gameTracker data
+          const [existingBatting, existingPitching] = await Promise.all([
+            hasBatting ? getDoc(battingRef) : Promise.resolve(null),
+            hasPitching ? getDoc(pitchingRef) : Promise.resolve(null)
+          ]);
+
+          if (hasBatting) {
+            if (existingBatting?.exists() && existingBatting.data()?.sourceType === 'gameTracker') {
+              console.log('⚡ Skipping playerStats write for', validation.matchedPlayer?.name || row.player, '— already set by gameTracker');
+            } else {
+              await setDoc(battingRef, {
+                gameId: gameId,
+                gameDocId: gameDocId,
+                playerId: playerLegacyId,
+                playerName: validation.matchedPlayer?.name || row.player,
+                seasonId: seasonId,
+                teamId: selectedTeamName || selectedTeam,
+                gameDateFormatted: game.date,
+                gameDate: gameDateTimestamp,
+                opponent: opponentDisplay,
+                isHome: game.isHome,
+                gameType: 'Regular',
+                isPlayoff: false,
+                atBats: ab,
+                hits: h,
+                runs: r,
+                walks: bb,
+                doubles: 0, triples: 0, homeRuns: hr, rbi: 0,
+                strikeouts: 0, stolenBases: 0, caughtStealing: 0,
+                submittedBy: currentUser.uid,
+                submittedByName: currentUser.displayName || currentUser.email,
+                submittedAt: serverTimestamp(),
+                lastModified: serverTimestamp(),
+                dataVersion: 1,
+                bulkImport: true
+              }, { merge: true });
+            }
           }
-          
+
+          if (hasPitching) {
+            if (existingPitching?.exists() && existingPitching.data()?.sourceType === 'gameTracker') {
+              console.log('⚡ Skipping playerStats write for', validation.matchedPlayer?.name || row.player, '— already set by gameTracker');
+            } else {
+              await setDoc(pitchingRef, {
+                gameId: gameId,
+                gameDocId: gameDocId,
+                playerId: playerLegacyId,
+                playerName: validation.matchedPlayer?.name || row.player,
+                seasonId: seasonId,
+                teamId: selectedTeamName || selectedTeam,
+                gameDateFormatted: game.date,
+                gameDate: gameDateTimestamp,
+                opponent: opponentDisplay,
+                isHome: game.isHome,
+                gameType: 'Regular',
+                isPlayoff: false,
+                inningsPitched: ip,
+                runsAllowed: ra,
+                // strikeouts/walks/hits omitted — preserve richer data from game tracker if present
+                wins: 0, losses: 0, saves: 0,
+                submittedBy: currentUser.uid,
+                submittedByName: currentUser.displayName || currentUser.email,
+                submittedAt: serverTimestamp(),
+                lastModified: serverTimestamp(),
+                dataVersion: 1,
+                bulkImport: true
+              }, { merge: true });
+            }
+          }
+
           successCount++;
         } catch (error) {
           console.error(`❌ Error saving stats for ${row.player}:`, error);
