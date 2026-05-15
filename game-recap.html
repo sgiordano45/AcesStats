@@ -505,17 +505,33 @@ body {
   // player's batting and pitching doc for this game. Missing docs are ignored.
   async function fetchGameStats(gameDocId) {
     try {
-      // Get all player stat-path IDs.
-      // - Legacy players: aggregatedPlayerStats doc ID === legacyId (used in playerStats path)
-      // - Auth users linked to legacy profile: use data.linkedPlayer (the legacyId) instead of auth UID
-      // - Pure auth users: fall back to doc ID
-      // Deduplicate in case both a migrated legacy doc and an auth doc point to the same legacyId.
-      const allPlayersSnap = await getDocs(collection(db, 'aggregatedPlayerStats'));
-      const playerIds = [...new Set(
-        allPlayersSnap.docs
-          .filter(d => !d.data().migrated)
-          .map(d => d.data().mergedFromProfile || d.id)
-      )];
+      // Build the complete set of legacyIds to query.
+      //
+      // Two sources:
+      //  1. aggregatedPlayerStats — non-migrated docs whose ID IS the legacyId (legacy-only players)
+      //  2. users — auth-linked players store their legacyId in `mergedFromProfile` here;
+      //             aggregatedPlayerStats may not reliably carry that field.
+      //
+      // Both are small collections (< 200 docs) so parallel fetching is fine.
+      const [aggregatedSnap, usersSnap] = await Promise.all([
+        getDocs(collection(db, 'aggregatedPlayerStats')),
+        getDocs(collection(db, 'users'))
+      ]);
+
+      const legacyIdSet = new Set();
+
+      // Legacy players: doc ID is the legacyId
+      aggregatedSnap.docs
+        .filter(d => !d.data().migrated)
+        .forEach(d => legacyIdSet.add(d.id));
+
+      // Auth-linked players: mergedFromProfile on users doc is the legacyId
+      usersSnap.docs.forEach(d => {
+        const mp = d.data().mergedFromProfile;
+        if (mp) legacyIdSet.add(mp);
+      });
+
+      const playerIds = [...legacyIdSet];
 
       // Parallel-fetch batting + pitching docs for every player
       const [battingSnaps, pitchingSnaps] = await Promise.all([
