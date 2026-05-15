@@ -370,7 +370,36 @@ export function getCurrentUser() {
 }
 
 export function onAuthChange(callback) {
+  let settled = false;
+
+  // Safety net: if Firebase auth hasn't responded in 10 seconds (hanging SDK,
+  // bad PWA cache, network stall), treat as signed-out so the page can redirect
+  // to signin instead of showing a spinner forever.
+  const authTimeoutId = setTimeout(() => {
+    if (!settled) {
+      settled = true;
+      console.warn('⚠️ Auth timeout after 10s — treating as signed out');
+      callback(null);
+    }
+  }, 10000);
+
   return onAuthStateChanged(auth, async (user) => {
+    // Clear the safety timeout — auth resolved normally
+    if (!settled) {
+      settled = true;
+      clearTimeout(authTimeoutId);
+    }
+
+    // Force-refresh the ID token on every page load so stale tokens don't
+    // cause silent Firestore write failures (the RSVP flicker problem).
+    if (user) {
+      try {
+        await user.getIdToken(true);
+      } catch (err) {
+        console.warn('⚠️ Token refresh failed:', err.message || err);
+      }
+    }
+
     // Call the original callback first (don't block on FCM refresh)
     callback(user);
     
