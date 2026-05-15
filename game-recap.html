@@ -543,13 +543,16 @@ body {
       document.getElementById('gameSubtitle').textContent = scoreText + (dateStr ? ` · ${dateStr}` : '');
       document.title = `${scoreText} - Game Recap`;
 
+      // ── Line score (inning-by-inning) if submitted ───────────────────────
+      const lineScore = game.lineScore || null; // { home: [], away: [], innings: N }
+
       // 2. Fetch all batting + pitching stats for this game
       const { battingDocs, pitchingDocs, legacyToAuth } = await fetchGameStats(gameDocId);
 
       // ── Render ────────────────────────────────────────────────────────────
       renderPage({
         homeTeam, awayTeam, homeScore, awayScore, winner,
-        gameType, dateStr, gameDocId,
+        gameType, dateStr, gameDocId, lineScore,
         battingDocs, pitchingDocs, legacyToAuth
       });
 
@@ -623,7 +626,7 @@ body {
   }
 
   // ── Render page ─────────────────────────────────────────────────────────────
-  function renderPage({ homeTeam, awayTeam, homeScore, awayScore, winner, gameType, dateStr, battingDocs, pitchingDocs, legacyToAuth = {} }) {
+  function renderPage({ homeTeam, awayTeam, homeScore, awayScore, winner, gameType, dateStr, lineScore, battingDocs, pitchingDocs, legacyToAuth = {} }) {
     const container = document.getElementById('mainContent');
     container.className = '';
     container.innerHTML = '';
@@ -660,6 +663,36 @@ body {
           </div>
         </div>
         <div class="game-meta">${dateStr || ''}${gameTypeBadge}</div>
+        ${lineScore && lineScore.home && lineScore.home.length > 0 ? (() => {
+          const innings = Math.max(lineScore.home.length, lineScore.away.length);
+          const cols = Array.from({ length: innings }, (_, i) => i);
+          const homeTotal = lineScore.home.reduce((s, v) => s + (v || 0), 0);
+          const awayTotal = lineScore.away.reduce((s, v) => s + (v || 0), 0);
+          return `
+            <div style="overflow-x:auto;margin-top:1.25rem;">
+              <table style="width:100%;border-collapse:collapse;font-size:0.9rem;text-align:center;">
+                <thead>
+                  <tr>
+                    <th style="text-align:left;padding:0.35rem 0.6rem;color:var(--text-light);font-weight:600;white-space:nowrap;">Team</th>
+                    ${cols.map(i => `<th style="padding:0.35rem 0.5rem;color:var(--text-light);font-weight:600;min-width:2rem;">${i + 1}</th>`).join('')}
+                    <th style="padding:0.35rem 0.6rem;color:var(--text-light);font-weight:700;border-left:2px solid var(--border-color);">R</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr style="background:${awayWon ? 'rgba(45,80,22,0.06)' : 'transparent'}">
+                    <td style="text-align:left;padding:0.4rem 0.6rem;font-weight:700;white-space:nowrap;">${awayTeam}</td>
+                    ${cols.map(i => `<td style="padding:0.4rem 0.5rem;">${lineScore.away[i] ?? 0}</td>`).join('')}
+                    <td style="padding:0.4rem 0.6rem;font-weight:800;border-left:2px solid var(--border-color);${awayWon ? 'color:var(--primary-color);' : ''}">${awayTotal}</td>
+                  </tr>
+                  <tr style="background:${homeWon ? 'rgba(45,80,22,0.06)' : 'transparent'}">
+                    <td style="text-align:left;padding:0.4rem 0.6rem;font-weight:700;white-space:nowrap;">${homeTeam}</td>
+                    ${cols.map(i => `<td style="padding:0.4rem 0.5rem;">${lineScore.home[i] ?? 0}</td>`).join('')}
+                    <td style="padding:0.4rem 0.6rem;font-weight:800;border-left:2px solid var(--border-color);${homeWon ? 'color:var(--primary-color);' : ''}">${homeTotal}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>`;
+        })() : ''}
       </div>
     `;
 
