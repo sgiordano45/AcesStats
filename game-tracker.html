@@ -118,7 +118,7 @@
         import { getCurrentSeason, getAllTeams, getSeasonPlayerStatsOptimized } from './firebase-data.js';
         import { getUpcomingTeamGames, getBattingOrder } from './firebase-roster.js';
         import { getTeamRosterForTracker } from './firebase_game_tracker.js';
-        import { doc, setDoc, getDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+        import { doc, setDoc, getDoc, updateDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
         import { db } from './firebase-data.js';
 		
 		import { 
@@ -2338,7 +2338,58 @@ useEffect(() => {
                     if (!proceedAnyway) return;
                 }
                 
-                // Step 2: Mark YOUR team's game state as completed (preserve data)
+                // Step 1.5: Derive inning-by-inning linescore from play history and save to game doc.
+    // Handles both regular plays (runsScored) and manual run adjustments (adjustment).
+    // Undo-safe: undo removes plays from the array, so the derived totals are always current.
+    if (saveSuccess && selectedGame?.seasonId && selectedGame?.id) {
+      try {
+        const yourRuns = {}; // inning (1-based) → net runs for your team
+        const oppRuns  = {}; // inning (1-based) → net runs for opponent
+
+        for (const play of gameState.playHistory) {
+          const inning = play.inning;
+          if (!inning) continue;
+
+          let runs = 0;
+          if (play.type === 'manual-run-adjustment') {
+            runs = typeof play.adjustment === 'number' ? play.adjustment : 0;
+          } else {
+            runs = play.runsScored || 0;
+          }
+          if (runs === 0) continue;
+
+          if (play.isYourTeam !== false) {
+            yourRuns[inning] = (yourRuns[inning] || 0) + runs;
+          } else {
+            oppRuns[inning] = (oppRuns[inning] || 0) + runs;
+          }
+        }
+
+        const maxInning = Math.max(
+          gameState.inning,
+          ...Object.keys(yourRuns).map(Number),
+          ...Object.keys(oppRuns).map(Number),
+          1
+        );
+
+        const yourArr = Array.from({ length: maxInning }, (_, i) => yourRuns[i + 1] || 0);
+        const oppArr  = Array.from({ length: maxInning }, (_, i) => oppRuns[i + 1]  || 0);
+
+        const lineScore = {
+          home:    isHome ? yourArr : oppArr,
+          away:    isHome ? oppArr  : yourArr,
+          innings: maxInning
+        };
+
+        const gameRef = doc(db, 'seasons', selectedGame.seasonId, 'games', selectedGame.id);
+        await updateDoc(gameRef, { lineScore });
+        console.log('✅ Linescore saved:', lineScore);
+      } catch (err) {
+        console.warn('⚠️ Linescore save failed (non-critical):', err);
+      }
+    }
+
+    // Step 2: Mark YOUR team's game state as completed (preserve data)
                 try {
                     if (selectedGame && selectedTeam && selectedGame.seasonId) {
                         await window.FirebaseGameTracker.clearGameState(
