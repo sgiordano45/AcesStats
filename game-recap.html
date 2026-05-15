@@ -36,12 +36,62 @@ body {
   color: var(--text-dark);
 }
 
+/* ── Nav bar ── */
+.filters-nav {
+  background: var(--card-bg);
+  padding: 1.5rem;
+  border-radius: 16px;
+  margin-bottom: 2rem;
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--border-color);
+}
+
+.nav-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: center;
+  justify-content: center;
+}
+
+.nav-link {
+  padding: 1rem 1.75rem;
+  border: 2px solid var(--primary-color);
+  background: white;
+  color: var(--primary-color);
+  text-decoration: none;
+  border-radius: 12px;
+  font-weight: 600;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  white-space: nowrap;
+  position: relative;
+  overflow: hidden;
+  z-index: 1;
+}
+
+.nav-link::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  background: var(--primary-color);
+  transform: translateX(-100%);
+  transition: transform 0.3s ease;
+  z-index: -1;
+}
+
+.nav-link:hover::before { transform: translateX(0); }
+.nav-link:hover { color: white; transform: translateY(-2px); box-shadow: var(--shadow-md); }
+
 /* ── Header ── */
 .header {
   background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
   color: white;
   text-align: center;
-  padding: 2.5rem 2rem;
+  padding: 3rem 2rem;
   box-shadow: var(--shadow-lg);
   position: relative;
   overflow: hidden;
@@ -56,9 +106,17 @@ body {
   border-radius: 50%;
 }
 
+.header::after {
+  content: '⚾';
+  position: absolute;
+  bottom: -40px; left: -40px;
+  font-size: 200px;
+  opacity: 0.05;
+}
+
 .header h1 {
   margin: 0;
-  font-size: 2.4rem;
+  font-size: 3rem;
   font-weight: 800;
   text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
   position: relative;
@@ -66,8 +124,8 @@ body {
 }
 
 .header p {
-  margin: 0.5rem 0 0 0;
-  font-size: 1.1rem;
+  margin: 0.75rem 0 0 0;
+  font-size: 1.2rem;
   opacity: 0.95;
   position: relative;
   z-index: 1;
@@ -406,9 +464,11 @@ body {
 </head>
 <body>
 
+<div class="filters-nav"></div>
+
 <header class="header">
-  <a class="back-btn" href="current-season.html">&#8592; Back</a>
-  <h1>⚾ Game Recap</h1>
+  <button class="back-btn" onclick="history.length > 1 ? history.back() : window.location.href='current-season.html'">&#8592; Back</button>
+  <h1>Game Recap</h1>
   <p id="gameSubtitle">Loading...</p>
 </header>
 
@@ -484,13 +544,13 @@ body {
       document.title = `${scoreText} - Game Recap`;
 
       // 2. Fetch all batting + pitching stats for this game
-      const { battingDocs, pitchingDocs } = await fetchGameStats(gameDocId);
+      const { battingDocs, pitchingDocs, legacyToAuth } = await fetchGameStats(gameDocId);
 
       // ── Render ────────────────────────────────────────────────────────────
       renderPage({
         homeTeam, awayTeam, homeScore, awayScore, winner,
         gameType, dateStr, gameDocId,
-        battingDocs, pitchingDocs
+        battingDocs, pitchingDocs, legacyToAuth
       });
 
     } catch (err) {
@@ -539,6 +599,14 @@ body {
         Promise.all(playerIds.map(id => getDoc(firestoreDoc(db, 'pitchingStats', id, 'games', gameDocId))))
       ]);
 
+      // Build legacyId → authUID reverse map so player links use authId when available
+      // (same pattern as current-season-team.html: authId || legacyId)
+      const legacyToAuth = {};
+      usersSnap.docs.forEach(d => {
+        const mp = d.data().mergedFromProfile;
+        if (mp) legacyToAuth[mp] = d.id;
+      });
+
       const battingDocs = battingSnaps
         .filter(s => s.exists())
         .map(s => ({ id: s.id, _legacyId: s.ref.parent.parent.id, ...s.data() }));
@@ -547,7 +615,7 @@ body {
         .filter(s => s.exists())
         .map(s => ({ id: s.id, _legacyId: s.ref.parent.parent.id, ...s.data() }));
 
-      return { battingDocs, pitchingDocs };
+      return { battingDocs, pitchingDocs, legacyToAuth };
     } catch (err) {
       console.warn('fetchGameStats failed:', err);
       return { battingDocs: [], pitchingDocs: [] };
@@ -555,7 +623,7 @@ body {
   }
 
   // ── Render page ─────────────────────────────────────────────────────────────
-  function renderPage({ homeTeam, awayTeam, homeScore, awayScore, winner, gameType, dateStr, battingDocs, pitchingDocs }) {
+  function renderPage({ homeTeam, awayTeam, homeScore, awayScore, winner, gameType, dateStr, battingDocs, pitchingDocs, legacyToAuth = {} }) {
     const container = document.getElementById('mainContent');
     container.className = '';
     container.innerHTML = '';
@@ -672,8 +740,9 @@ body {
                   ? (p.hits / p.atBats).toFixed(3).replace(/^0/, '')
                   : '---';
                 const playerLegacyId = p._legacyId || null;
-                const nameLink = playerLegacyId
-                  ? `<a class="player-link" href="player.html?id=${encodeURIComponent(playerLegacyId)}">${esc(p.playerName || p.playerId || '?')}</a>`
+                const playerPageId = (playerLegacyId && legacyToAuth[playerLegacyId]) || playerLegacyId;
+                const nameLink = playerPageId
+                  ? `<a class="player-link" href="player.html?id=${encodeURIComponent(playerPageId)}">${esc(p.playerName || p.playerId || '?')}</a>`
                   : esc(p.playerName || p.playerId || '?');
                 return `<tr>
                   <td>${nameLink}</td>
@@ -730,8 +799,9 @@ body {
             <tbody>
               ${teamPitching.map(p => {
                 const playerLegacyId = p._legacyId || null;
-                const nameLink = playerLegacyId
-                  ? `<a class="player-link" href="player.html?id=${encodeURIComponent(playerLegacyId)}">${esc(p.playerName || p.playerId || '?')}</a>`
+                const playerPageId = (playerLegacyId && legacyToAuth[playerLegacyId]) || playerLegacyId;
+                const nameLink = playerPageId
+                  ? `<a class="player-link" href="player.html?id=${encodeURIComponent(playerPageId)}">${esc(p.playerName || p.playerId || '?')}</a>`
                   : esc(p.playerName || p.playerId || '?');
                 return `<tr>
                   <td>${nameLink}</td>
