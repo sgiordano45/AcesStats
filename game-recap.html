@@ -505,11 +505,17 @@ body {
   // player's batting and pitching doc for this game. Missing docs are ignored.
   async function fetchGameStats(gameDocId) {
     try {
-      // Get all player legacyIds (aggregatedPlayerStats doc ID === legacyId)
+      // Get all player stat-path IDs.
+      // - Legacy players: aggregatedPlayerStats doc ID === legacyId (used in playerStats path)
+      // - Auth users linked to legacy profile: use data.linkedPlayer (the legacyId) instead of auth UID
+      // - Pure auth users: fall back to doc ID
+      // Deduplicate in case both a migrated legacy doc and an auth doc point to the same legacyId.
       const allPlayersSnap = await getDocs(collection(db, 'aggregatedPlayerStats'));
-      const playerIds = allPlayersSnap.docs
-        .filter(d => !d.data().migrated)
-        .map(d => d.id);
+      const playerIds = [...new Set(
+        allPlayersSnap.docs
+          .filter(d => !d.data().migrated)
+          .map(d => d.data().linkedPlayer || d.id)
+      )];
 
       // Parallel-fetch batting + pitching docs for every player
       const [battingSnaps, pitchingSnaps] = await Promise.all([
