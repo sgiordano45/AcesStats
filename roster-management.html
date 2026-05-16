@@ -1376,15 +1376,32 @@ const saveLineupData = async (type, data, inning = null) => {
   // Copy batting order from most recent previous game
     const copyFromPreviousGame = async () => {
       if (!isCaptain || !selectedGame) return;
-      
-      try {
-        // Use already-loaded games array, sorted by date ascending, excluding current game
-        const currentGameData = games.find(g => g.id === selectedGame);
-        const currentGameDate = currentGameData ? new Date(currentGameData.date) : new Date();
 
-        const priorGames = games
-          .filter(g => g.id !== selectedGame)
-          .sort((a, b) => new Date(b.date) - new Date(a.date));
+      try {
+        // games state only contains future games, so query Firestore directly for past games
+        const teamIdLower = selectedTeam.toLowerCase();
+        const allGamesSnap = await getDocs(collection(db, 'seasons', currentSeason.id, 'games'));
+        const now = new Date();
+        now.setHours(0, 0, 0, 0);
+
+        const priorGames = [];
+        allGamesSnap.forEach(docSnap => {
+          const data = docSnap.data();
+          if (docSnap.id === selectedGame) return;
+          const homeTeam = (data.homeTeamId || data.homeTeamName || data.homeTeam || data['home team'] || '').toLowerCase();
+          const awayTeam = (data.awayTeamId || data.awayTeamName || data.awayTeam || data['away team'] || '').toLowerCase();
+          if (homeTeam !== teamIdLower && awayTeam !== teamIdLower) return;
+          let gameDate;
+          if (data.date?.seconds) gameDate = new Date(data.date.seconds * 1000);
+          else if (data.date) gameDate = new Date(data.date);
+          else return;
+          gameDate.setHours(0, 0, 0, 0);
+          if (gameDate < now) {
+            priorGames.push({ id: docSnap.id, ...data, _parsedDate: gameDate });
+          }
+        });
+
+        priorGames.sort((a, b) => b._parsedDate - a._parsedDate);
 
         if (priorGames.length === 0) {
           alert('No previous games found for this team.');
@@ -1420,7 +1437,7 @@ const saveLineupData = async (type, data, inning = null) => {
             await saveLineupData('batting', copiedOrder);
             
             // Get game info for message
-            const gameDate = gameData.date || gameData.id;
+            const gameDate = gameData._parsedDate ? gameData._parsedDate.toLocaleDateString() : gameData.id;
             
             const skippedCount = totalInPrevious - copiedCount;
             let message = `✅ Copied ${copiedCount} players from ${gameDate}`;
