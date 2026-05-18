@@ -1199,6 +1199,7 @@
               <ul style="margin: 0.5rem 0 0 1.25rem; padding: 0; color: var(--text-light);">
                 <li><code>users/{player_id}</code> - User profile for authentication</li>
                 <li><code>aggregatedPlayerStats/{player_id}</code> - Stats record (required for roster visibility)</li>
+                <li><code>rosters/{season}-{team}</code> - Player entry added to the roster doc</li>
               </ul>
               <p style="margin: 0.75rem 0 0 0; font-size: 0.9rem; color: var(--text-light);">
                 Players will be added to the <strong id="activeSeasonDisplay">active season</strong> roster and appear in stats submission.
@@ -1465,14 +1466,15 @@
   import { db, functions } from './firebase-config.js';
   import { onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
   import { 
-    collection, 
-    getDocs, 
-    doc, 
+    collection,
+    getDocs,
+    doc,
     getDoc,
     setDoc,
     updateDoc,
     deleteDoc,
     addDoc,
+    arrayUnion,
     query,
     where,
     orderBy,
@@ -2314,7 +2316,27 @@
 
       await setDoc(doc(db, 'aggregatedPlayerStats', legacyId), statsDoc);
 
-      showToast(`Created user: ${name}`, 'success');
+      // Add to rosters collection for current season
+      const rosterDocId = `${activeSeason.id}-${team.toLowerCase()}`;
+      const rosterRef = doc(db, 'rosters', rosterDocId);
+      const rosterEntry = {
+        authId: '',
+        bats: '-',
+        captain: false,
+        id: legacyId,
+        name: name,
+        number: null,
+        position: '-',
+        throws: '-'
+      };
+      const rosterSnap = await getDoc(rosterRef);
+      if (rosterSnap.exists()) {
+        await updateDoc(rosterRef, { players: arrayUnion(rosterEntry) });
+      } else {
+        await setDoc(rosterRef, { players: [rosterEntry], seasonId: activeSeason.id, teamId: team.toLowerCase() });
+      }
+
+      showToast(`Created user: ${name} (added to ${rosterDocId})`, 'success');
       document.getElementById('newUserName').value = '';
       document.getElementById('newUserTeam').value = '';
       document.getElementById('newUserLegacyId').value = '';
@@ -2397,6 +2419,26 @@
           career: { games: 0 },
           createdAt: serverTimestamp()
         });
+
+        // Add to rosters collection
+        const rosterDocId = `${activeSeason.id}-${user.team.toLowerCase()}`;
+        const rosterRef = doc(db, 'rosters', rosterDocId);
+        const rosterEntry = {
+          authId: '',
+          bats: '-',
+          captain: false,
+          id: user.legacyId,
+          name: user.name,
+          number: null,
+          position: '-',
+          throws: '-'
+        };
+        const rosterSnap = await getDoc(rosterRef);
+        if (rosterSnap.exists()) {
+          await updateDoc(rosterRef, { players: arrayUnion(rosterEntry) });
+        } else {
+          await setDoc(rosterRef, { players: [rosterEntry], seasonId: activeSeason.id, teamId: user.team.toLowerCase() });
+        }
 
         created++;
       } catch (error) {
