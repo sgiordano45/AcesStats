@@ -1902,14 +1902,30 @@ useEffect(() => {
             // Update opponent score manually (for when opponent team isn't tracking)
             const updateOpponentScore = async (delta) => {
                 const newOpponentScore = Math.max(0, gameState.score.opponent + delta);
-                
+                const currentInning = gameMetadata?.inning || gameState.inning;
+
+                // Build an audit record so the linescore derivation can track opponent runs by inning
+                const adjustmentRecord = delta !== 0 ? {
+                    type: 'manual-run-adjustment',
+                    inning: currentInning,
+                    isYourTeam: false,
+                    adjustment: delta,
+                    previousScore: gameState.score.opponent,
+                    newScore: newOpponentScore,
+                    reason: delta > 0 ? 'Opponent run added' : 'Opponent run removed',
+                    timestamp: Date.now()
+                } : null;
+
                 // Update local state
                 setGameState(prev => ({
                     ...prev,
                     score: {
                         ...prev.score,
                         opponent: newOpponentScore
-                    }
+                    },
+                    playHistory: adjustmentRecord
+                        ? [...prev.playHistory, adjustmentRecord]
+                        : prev.playHistory
                 }));
                 
                 // Update Firebase metadata
