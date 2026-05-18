@@ -338,10 +338,10 @@ export const BADGE_DEFINITIONS = {
     id: 'zeroToHero',
     name: 'Zero to Hero',
     category: 'hidden',
-    type: 'single',
+    type: 'multi',
     icon: '🦸',
     iconPath: '/assets/badges/hidden/zero-to-hero',
-    description: 'Score 3+ runs after being hitless through half the season',
+    description: 'Score 3+ runs in a game after being hitless in the previous 3 games',
     revealText: '"A tale of redemption"',
     hidden: true
   },
@@ -396,6 +396,7 @@ export class BadgeCalculator {
     this.setDoc = options.setDoc || null;
     this.serverTimestamp = options.serverTimestamp || null;
     this.testMode = options.testMode || false;
+    this.seasonComplete = options.seasonComplete || false;
     this.seasonId = null;
     this.isPartialData = false;
   }
@@ -459,7 +460,7 @@ export class BadgeCalculator {
       const playerBatting = battingData[playerId] || { games: [], totals: {} };
       const playerPitching = pitchingData[playerId] || { games: [], totals: {} };
       
-      const badges = this.calculatePlayerBadges(playerId, playerBatting, playerPitching, battingData, pitchingData, openingDay);
+      const badges = this.calculatePlayerBadges(playerId, playerBatting, playerPitching, battingData, pitchingData, openingDay, this.seasonComplete);
       
       if (Object.keys(badges.earned).length > 0) {
         results.playerBadges[playerId] = badges;
@@ -691,7 +692,7 @@ export class BadgeCalculator {
   /**
    * Calculate all badges for a single player
    */
-  calculatePlayerBadges(playerId, battingData, pitchingData, allBattingData, allPitchingData, openingDay) {
+  calculatePlayerBadges(playerId, battingData, pitchingData, allBattingData, allPitchingData, openingDay, seasonComplete = false) {
     const earned = {};
     const progress = {};
     
@@ -880,18 +881,19 @@ export class BadgeCalculator {
         };
       }
       
-      // The Streak Lives - hit in final game to extend streak to 6+
-      // Sort games by date to find the final game
+      // The Streak Lives - hit in the final game of the season to end with a 6+ game hit streak
+      // Only evaluated when the season is marked complete, so it doesn't fire prematurely mid-season
+      if (seasonComplete) {
       const sortedGames = [...battingData.games].sort((a, b) => {
         const dateA = a.gameDate instanceof Date ? a.gameDate : new Date(a.gameDate);
         const dateB = b.gameDate instanceof Date ? b.gameDate : new Date(b.gameDate);
         return dateB - dateA; // Most recent first
       });
-      
+
       if (sortedGames.length > 0) {
         const finalGame = sortedGames[0];
         const finalGameHadHit = (finalGame.hits || 0) >= 1;
-        
+
         if (finalGameHadHit) {
           // Check if this extended a streak to 6+
           // Count consecutive games with hits ending at the final game
@@ -915,25 +917,39 @@ export class BadgeCalculator {
           }
         }
       }
-      
-      // Zero to Hero - 3+ runs after being hitless through half the season
+      } // end seasonComplete gate for theStreakLives
+
+      // Zero to Hero - score 3+ runs in a game after being hitless in the previous 3 games
+      // Can be earned multiple times; stored as an array of occurrences
       const regularSeasonGames = battingData.games.filter(g => !g.isPlayoff);
-      if (regularSeasonGames.length >= 4) { // Need at least 4 games for "half season" to make sense
-        const halfPoint = Math.floor(regularSeasonGames.length / 2);
-        const firstHalfGames = regularSeasonGames.slice(0, halfPoint);
-        const secondHalfGames = regularSeasonGames.slice(halfPoint);
-        
-        const firstHalfHits = firstHalfGames.reduce((sum, g) => sum + (g.hits || 0), 0);
-        const secondHalfRuns = secondHalfGames.reduce((sum, g) => sum + (g.runs || 0), 0);
-        
-        if (firstHalfHits === 0 && secondHalfRuns >= 3) {
+      if (regularSeasonGames.length >= 4) { // Need at least 4 games for the 3-game lookback to be meaningful
+        const zeroToHeroOccurrences = [];
+        for (let i = 3; i < regularSeasonGames.length; i++) {
+          const currentGame = regularSeasonGames[i];
+          if ((currentGame.runs || 0) < 3) continue;
+
+          const prev3 = regularSeasonGames.slice(i - 3, i);
+          const hitlessInPrev3 = prev3.every(g => (g.hits || 0) === 0);
+
+          if (hitlessInPrev3) {
+            zeroToHeroOccurrences.push({
+              gameIndex: i,
+              gameDate: currentGame.gameDate || null,
+              runsScored: currentGame.runs,
+              hitlessPriorGames: 3
+            });
+          }
+        }
+
+        if (zeroToHeroOccurrences.length > 0) {
           earned.zeroToHero = {
             badgeId: 'zeroToHero',
             ...BADGE_DEFINITIONS.zeroToHero,
-            value: secondHalfRuns,
-            firstHalfGames: halfPoint,
-            hidden: true,
-            gameDate: secondHalfGames[secondHalfGames.length - 1]?.gameDate || null
+            occurrences: zeroToHeroOccurrences,
+            count: zeroToHeroOccurrences.length,
+            // Use the most recent occurrence date for display
+            gameDate: zeroToHeroOccurrences[zeroToHeroOccurrences.length - 1].gameDate,
+            hidden: true
           };
         }
       }
