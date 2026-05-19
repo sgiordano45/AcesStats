@@ -712,9 +712,9 @@
               <tr style="background: #f1f5f9;">
                 <th style="text-align: left; padding: 8px 12px; border-bottom: 2px solid #e2e8f0;">Team</th>
                 <th style="text-align: center; padding: 8px 12px; border-bottom: 2px solid #e2e8f0;">Players</th>
-                <th style="text-align: center; padding: 8px 12px; border-bottom: 2px solid #e2e8f0;">Game Entries</th>
-                <th style="text-align: center; padding: 8px 12px; border-bottom: 2px solid #e2e8f0;">Games (unique)</th>
-                <th style="text-align: center; padding: 8px 12px; border-bottom: 2px solid #e2e8f0;">Status</th>
+                <th style="text-align: center; padding: 8px 12px; border-bottom: 2px solid #e2e8f0;">Games Played</th>
+                <th style="text-align: center; padding: 8px 12px; border-bottom: 2px solid #e2e8f0;">Stats Submitted</th>
+                <th style="text-align: center; padding: 8px 12px; border-bottom: 2px solid #e2e8f0;">Missing</th>
               </tr>
             </thead>
             <tbody id="teamSummaryBody"></tbody>
@@ -1505,23 +1505,73 @@
 
       updateSeasonStats(playersWithGames.length, totalGamesFound, 0, 0);
 
+      // Fetch season games to compute games played and submission status per team
+      const teamGamesPlayed = {}; // team (lowercase) -> { played: 0, submitted: 0 }
+      try {
+        const seasonGamesRef = window.collection(window.db, 'seasons', seasonId, 'games');
+        const seasonGamesSnap = await window.getDocs(seasonGamesRef);
+        const now = Date.now();
+
+        seasonGamesSnap.forEach(gameDoc => {
+          const g = gameDoc.data();
+
+          // Parse game date
+          let gameMs = null;
+          if (g.date?.seconds) {
+            gameMs = g.date.seconds * 1000;
+          } else if (g.date && typeof g.date === 'string') {
+            const d = new Date(g.date);
+            if (!isNaN(d.getTime())) gameMs = d.getTime();
+          }
+          if (!gameMs || gameMs > now) return; // skip future/undated games
+
+          const homeTeam = (g.homeTeamName || g['home team'] || g.homeTeam || '').toLowerCase();
+          const awayTeam = (g.awayTeamName || g['away team'] || g.awayTeam || '').toLowerCase();
+
+          if (homeTeam) {
+            if (!teamGamesPlayed[homeTeam]) teamGamesPlayed[homeTeam] = { played: 0, submitted: 0 };
+            teamGamesPlayed[homeTeam].played++;
+            if (g.statsSubmittedHome) teamGamesPlayed[homeTeam].submitted++;
+          }
+          if (awayTeam) {
+            if (!teamGamesPlayed[awayTeam]) teamGamesPlayed[awayTeam] = { played: 0, submitted: 0 };
+            teamGamesPlayed[awayTeam].played++;
+            if (g.statsSubmittedAway) teamGamesPlayed[awayTeam].submitted++;
+          }
+        });
+      } catch (err) {
+        log(`⚠️ Could not load season games for completion check: ${err.message}`, 'warning');
+      }
+
       // Render per-team summary table
       const tbody = document.getElementById('teamSummaryBody');
       tbody.innerHTML = '';
-      const sortedTeams = Object.entries(teamStats).sort((a, b) => a[0].localeCompare(b[0]));
-      sortedTeams.forEach(([team, data]) => {
-        const uniqueGames = data.uniqueGames.size;
-        const hasGames = uniqueGames > 0;
-        const statusColor = hasGames ? '#16a34a' : '#dc2626';
-        const statusText = hasGames ? `✅ ${uniqueGames} game${uniqueGames !== 1 ? 's' : ''} submitted` : '⚠️ No submissions';
+
+      // Merge teamStats and teamGamesPlayed — include teams from either source
+      const allTeams = new Set([
+        ...Object.keys(teamStats),
+        ...Object.keys(teamGamesPlayed)
+      ]);
+      const sortedTeams = Array.from(allTeams).sort();
+
+      sortedTeams.forEach(team => {
+        const data = teamStats[team] || { players: new Set(), gameEntries: 0, uniqueGames: new Set() };
+        const played = teamGamesPlayed[team]?.played ?? '—';
+        const submitted = teamGamesPlayed[team]?.submitted ?? data.uniqueGames.size;
+        const missing = (typeof played === 'number' && typeof submitted === 'number')
+          ? played - submitted
+          : '—';
+        const missingColor = missing > 0 ? '#dc2626' : missing === 0 ? '#16a34a' : '#64748b';
+        const missingText = missing > 0 ? `⚠️ ${missing}` : missing === 0 ? '✅ 0' : '—';
+
         const row = document.createElement('tr');
         row.style.borderBottom = '1px solid #e2e8f0';
         row.innerHTML = `
           <td style="padding: 8px 12px; font-weight: 600; text-transform: capitalize;">${team}</td>
-          <td style="padding: 8px 12px; text-align: center;">${data.players.size}</td>
-          <td style="padding: 8px 12px; text-align: center;">${data.gameEntries}</td>
-          <td style="padding: 8px 12px; text-align: center;">${uniqueGames}</td>
-          <td style="padding: 8px 12px; text-align: center; color: ${statusColor}; font-weight: 600;">${statusText}</td>
+          <td style="padding: 8px 12px; text-align: center;">${data.players.size || '—'}</td>
+          <td style="padding: 8px 12px; text-align: center;">${played}</td>
+          <td style="padding: 8px 12px; text-align: center;">${submitted}</td>
+          <td style="padding: 8px 12px; text-align: center; color: ${missingColor}; font-weight: 600;">${missingText}</td>
         `;
         tbody.appendChild(row);
       });
