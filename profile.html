@@ -2905,21 +2905,45 @@ async function loadNotificationPreferences() {
 
 
     // Tab switching functionality
+    function switchToTab(tabName) {
+      const matchingTab = document.querySelector(`.nav-tab[data-tab="${tabName}"]`);
+      if (!matchingTab) return;
+      document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+      matchingTab.classList.add('active');
+      document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+      const tabContent = document.getElementById(`tab-${tabName}`);
+      if (tabContent) tabContent.classList.add('active');
+      // Scroll the active tab button into view on mobile
+      matchingTab.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
+    }
+
     document.querySelectorAll('.nav-tab').forEach(tab => {
       tab.addEventListener('click', () => {
-        const targetTab = tab.dataset.tab;
-        
-        // Update active tab
-        document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
-        tab.classList.add('active');
-        
-        // Update active content
-        document.querySelectorAll('.tab-content').forEach(content => {
-          content.classList.remove('active');
-        });
-        document.getElementById(`tab-${targetTab}`).classList.add('active');
+        switchToTab(tab.dataset.tab);
+        // Update URL hash without triggering a scroll jump
+        history.replaceState(null, '', `#tab-${tab.dataset.tab}`);
       });
     });
+
+    // On load: honour #tab-<name> hash or ?tab=<name> query param (e.g. from profile-setup-guide)
+    (function activateTabFromUrl() {
+      const hash = window.location.hash; // e.g. "#tab-directory"
+      const params = new URLSearchParams(window.location.search);
+      let tabName = null;
+      if (hash && hash.startsWith('#tab-')) {
+        tabName = hash.slice(5); // strip "#tab-"
+      } else if (params.get('tab')) {
+        tabName = params.get('tab');
+      }
+      if (tabName) {
+        switchToTab(tabName);
+        // Scroll the nav bar into view so the user immediately sees the active tab
+        const navTabs = document.querySelector('.nav-tabs');
+        if (navTabs) {
+          setTimeout(() => navTabs.scrollIntoView({ behavior: 'smooth', block: 'start' }), 300);
+        }
+      }
+    })();
 
     // Mobile tab scroll indicators
     const navTabs = document.querySelector('.nav-tabs');
