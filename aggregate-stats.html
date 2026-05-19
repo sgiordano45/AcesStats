@@ -1505,8 +1505,11 @@
 
       updateSeasonStats(playersWithGames.length, totalGamesFound, 0, 0);
 
-      // Fetch season games to compute games played and submission status per team
-      const teamGamesPlayed = {}; // team (lowercase) -> { played: 0, submitted: 0 }
+      // Fetch season games to compute games played and submission status per team.
+      // A game counts as submitted if EITHER the statsSubmittedHome/Away flag is set
+      // OR the gameId appears in playerStats (covers early games before the flag existed
+      // and acts as a fallback for any failed flag writes).
+      const teamGamesPlayed = {}; // team (lowercase) -> { played: 0, submittedIds: Set }
       try {
         const seasonGamesRef = window.collection(window.db, 'seasons', seasonId, 'games');
         const seasonGamesSnap = await window.getDocs(seasonGamesRef);
@@ -1514,6 +1517,7 @@
 
         seasonGamesSnap.forEach(gameDoc => {
           const g = gameDoc.data();
+          const gameId = gameDoc.id;
 
           // Parse game date
           let gameMs = null;
@@ -1529,14 +1533,19 @@
           const awayTeam = (g.awayTeamName || g['away team'] || g.awayTeam || '').toLowerCase();
 
           if (homeTeam) {
-            if (!teamGamesPlayed[homeTeam]) teamGamesPlayed[homeTeam] = { played: 0, submitted: 0 };
+            if (!teamGamesPlayed[homeTeam]) teamGamesPlayed[homeTeam] = { played: 0, submittedIds: new Set() };
             teamGamesPlayed[homeTeam].played++;
-            if (g.statsSubmittedHome) teamGamesPlayed[homeTeam].submitted++;
+            // Flag-based OR playerStats-based (uniqueGames)
+            const flagSet = !!g.statsSubmittedHome;
+            const inPlayerStats = teamStats[homeTeam]?.uniqueGames?.has(gameId) || false;
+            if (flagSet || inPlayerStats) teamGamesPlayed[homeTeam].submittedIds.add(gameId);
           }
           if (awayTeam) {
-            if (!teamGamesPlayed[awayTeam]) teamGamesPlayed[awayTeam] = { played: 0, submitted: 0 };
+            if (!teamGamesPlayed[awayTeam]) teamGamesPlayed[awayTeam] = { played: 0, submittedIds: new Set() };
             teamGamesPlayed[awayTeam].played++;
-            if (g.statsSubmittedAway) teamGamesPlayed[awayTeam].submitted++;
+            const flagSet = !!g.statsSubmittedAway;
+            const inPlayerStats = teamStats[awayTeam]?.uniqueGames?.has(gameId) || false;
+            if (flagSet || inPlayerStats) teamGamesPlayed[awayTeam].submittedIds.add(gameId);
           }
         });
       } catch (err) {
@@ -1557,7 +1566,9 @@
       sortedTeams.forEach(team => {
         const data = teamStats[team] || { players: new Set(), gameEntries: 0, uniqueGames: new Set() };
         const played = teamGamesPlayed[team]?.played ?? '—';
-        const submitted = teamGamesPlayed[team]?.submitted ?? data.uniqueGames.size;
+        const submitted = teamGamesPlayed[team]
+          ? teamGamesPlayed[team].submittedIds.size
+          : data.uniqueGames.size;
         const missing = (typeof played === 'number' && typeof submitted === 'number')
           ? played - submitted
           : '—';
