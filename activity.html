@@ -300,6 +300,143 @@ body {
   background: #f7fafc;
 }
 
+/* Digest Button */
+.digest-btn {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.5rem 1rem;
+  background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.2s ease, transform 0.1s ease;
+  white-space: nowrap;
+}
+.digest-btn:hover { opacity: 0.9; transform: translateY(-1px); }
+.digest-btn:active { transform: translateY(0); }
+
+/* Digest Modal */
+.digest-modal-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  opacity: 0;
+  visibility: hidden;
+  transition: all 0.3s ease;
+}
+.digest-modal-overlay.active {
+  opacity: 1;
+  visibility: visible;
+}
+.digest-modal {
+  background: white;
+  border-radius: 16px;
+  width: 92%;
+  max-width: 520px;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+}
+.digest-modal-header {
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+.digest-modal-header h3 {
+  margin: 0;
+  font-size: 1.1rem;
+  color: var(--text-dark);
+}
+.digest-modal-close {
+  background: none;
+  border: none;
+  font-size: 1.2rem;
+  cursor: pointer;
+  color: var(--text-light);
+  padding: 0.25rem;
+  line-height: 1;
+}
+.digest-range-bar {
+  padding: 0.75rem 1.5rem;
+  background: #f7fafc;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-shrink: 0;
+  font-size: 0.85rem;
+  color: var(--text-light);
+}
+.digest-range-bar select {
+  padding: 0.3rem 0.6rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font-size: 0.85rem;
+  color: var(--text-dark);
+  background: white;
+  cursor: pointer;
+}
+.digest-text-area {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1.25rem 1.5rem;
+  font-family: 'Inter', -apple-system, sans-serif;
+  font-size: 0.9rem;
+  line-height: 1.7;
+  color: var(--text-dark);
+  white-space: pre-wrap;
+  min-height: 120px;
+}
+.digest-text-area .digest-category-heading {
+  font-weight: 700;
+  margin-top: 1rem;
+  margin-bottom: 0.25rem;
+  font-size: 0.95rem;
+  color: var(--primary-color);
+}
+.digest-text-area .digest-category-heading:first-child { margin-top: 0; }
+.digest-text-area .digest-entry { padding-left: 0.25rem; }
+.digest-empty {
+  color: var(--text-light);
+  font-style: italic;
+  text-align: center;
+  padding: 2rem 0;
+}
+.digest-modal-footer {
+  padding: 1rem 1.5rem;
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  gap: 0.75rem;
+  flex-shrink: 0;
+}
+.digest-copy-btn {
+  flex: 1;
+  padding: 0.7rem;
+  background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.2s ease;
+}
+.digest-copy-btn:hover { opacity: 0.9; }
+.digest-copy-btn.copied { background: #10b981; }
+
 /* Share Modal */
 .share-modal-overlay {
   position: fixed;
@@ -595,6 +732,7 @@ body {
         <option value="all">All Time</option>
       </select>
     </div>
+    <button class="digest-btn" id="digestBtn">📋 Weekly Digest</button>
   </div>
 
   <div class="activity-wrapper">
@@ -640,6 +778,29 @@ body {
       </button>
     </div>
     <button class="share-close" id="shareClose">Close</button>
+  </div>
+</div>
+
+<!-- Milestone Digest Modal -->
+<div class="digest-modal-overlay" id="digestModal">
+  <div class="digest-modal">
+    <div class="digest-modal-header">
+      <h3>📋 Weekly Milestone Digest</h3>
+      <button class="digest-modal-close" id="digestModalClose">✕</button>
+    </div>
+    <div class="digest-range-bar">
+      <span>Range:</span>
+      <select id="digestRangeSelect">
+        <option value="7">Past 7 days</option>
+        <option value="14">Past 14 days</option>
+        <option value="30">Past 30 days</option>
+      </select>
+      <span id="digestDateRange" style="color: var(--text-light); margin-left: auto;"></span>
+    </div>
+    <div class="digest-text-area" id="digestTextArea"></div>
+    <div class="digest-modal-footer">
+      <button class="digest-copy-btn" id="digestCopyBtn">📋 Copy to Clipboard</button>
+    </div>
   </div>
 </div>
 
@@ -1102,8 +1263,148 @@ function setupEventListeners() {
   
   // Escape key closes modal
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') closeShareModal();
+    if (e.key === 'Escape') { closeShareModal(); closeDigestModal(); }
   });
+
+  // Digest button
+  document.getElementById('digestBtn').addEventListener('click', openDigestModal);
+  document.getElementById('digestModalClose').addEventListener('click', closeDigestModal);
+  document.getElementById('digestModal').addEventListener('click', (e) => {
+    if (e.target === document.getElementById('digestModal')) closeDigestModal();
+  });
+  document.getElementById('digestRangeSelect').addEventListener('change', renderDigest);
+  document.getElementById('digestCopyBtn').addEventListener('click', copyDigestText);
+}
+
+// ── Weekly Milestone Digest ──────────────────────────────────────────────────
+
+const DIGEST_CATEGORY_META = {
+  hits:        { label: 'Hits',         icon: '🎯' },
+  runs:        { label: 'Runs',         icon: '🏃' },
+  games:       { label: 'Games Played', icon: '📅' },
+  walks:       { label: 'Walks',        icon: '🚶' },
+  rbis:        { label: 'RBIs',         icon: '💥' },
+  career_high: { label: 'Career Highs', icon: '🔥' },
+  badge:       { label: 'Badges',       icon: '🏅' },
+};
+
+let digestActivities = [];
+
+async function openDigestModal() {
+  document.getElementById('digestModal').classList.add('active');
+  await renderDigest();
+}
+
+function closeDigestModal() {
+  document.getElementById('digestModal').classList.remove('active');
+}
+
+async function renderDigest() {
+  const days = parseInt(document.getElementById('digestRangeSelect').value, 10);
+  const textArea = document.getElementById('digestTextArea');
+  const dateRangeEl = document.getElementById('digestDateRange');
+  textArea.innerHTML = '<div class="digest-empty">Loading…</div>';
+
+  const fromDate = new Date();
+  fromDate.setDate(fromDate.getDate() - days);
+  const fromTimestamp = Timestamp.fromDate(fromDate);
+
+  // Date range label
+  const fmt = (d) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  dateRangeEl.textContent = `${fmt(fromDate)} – ${fmt(new Date())}`;
+
+  try {
+    // Query without type filter to avoid composite index requirement; filter client-side
+    const q = query(
+      collection(db, 'activity'),
+      where('timestamp', '>=', fromTimestamp),
+      orderBy('timestamp', 'desc'),
+      limit(200)
+    );
+    const snap = await getDocs(q);
+    digestActivities = snap.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .filter(a => a.type === 'milestone' || a.type === 'career_high' || a.type === 'badge');
+  } catch (err) {
+    console.error('Digest fetch error:', err);
+    textArea.innerHTML = '<div class="digest-empty">Could not load activities.</div>';
+    return;
+  }
+
+  if (digestActivities.length === 0) {
+    textArea.innerHTML = '<div class="digest-empty">No milestones in this period.</div>';
+    return;
+  }
+
+  // Group by category
+  const groups = {};
+  digestActivities.forEach(a => {
+    let key;
+    if (a.type === 'milestone') {
+      key = (a.data && a.data.milestoneType) ? a.data.milestoneType : 'milestone';
+    } else {
+      key = a.type; // 'career_high' or 'badge'
+    }
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(a);
+  });
+
+  // Render as styled HTML (also build plain text for copy)
+  let html = '';
+  for (const [key, items] of Object.entries(groups)) {
+    const meta = DIGEST_CATEGORY_META[key] || { label: key.replace(/_/g, ' '), icon: '⭐' };
+    html += `<div class="digest-category-heading">${meta.icon} ${meta.label}</div>`;
+    items.forEach(a => {
+      const name = a.playerName || a.teamName || '';
+      const title = a.title || '';
+      html += `<div class="digest-entry">• ${name}${name && title ? ' — ' : ''}${title}</div>`;
+    });
+  }
+  textArea.innerHTML = html;
+}
+
+function buildPlainText() {
+  const days = parseInt(document.getElementById('digestRangeSelect').value, 10);
+  const fromDate = new Date();
+  fromDate.setDate(fromDate.getDate() - days);
+  const fmt = (d) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const dateRange = `${fmt(fromDate)} – ${fmt(new Date())}`;
+
+  const groups = {};
+  digestActivities.forEach(a => {
+    let key = (a.type === 'milestone' && a.data && a.data.milestoneType) ? a.data.milestoneType : a.type;
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(a);
+  });
+
+  let text = `⚾ Mountainside Aces — Milestone Recap\n${dateRange}\n`;
+  for (const [key, items] of Object.entries(groups)) {
+    const meta = DIGEST_CATEGORY_META[key] || { label: key.replace(/_/g, ' '), icon: '⭐' };
+    text += `\n${meta.icon} ${meta.label}\n`;
+    items.forEach(a => {
+      const name = a.playerName || a.teamName || '';
+      const title = a.title || '';
+      text += `• ${name}${name && title ? ' — ' : ''}${title}\n`;
+    });
+  }
+  text += '\nCongrats to all our Aces! 🏆';
+  return text;
+}
+
+async function copyDigestText() {
+  const btn = document.getElementById('digestCopyBtn');
+  const text = buildPlainText();
+  try {
+    await navigator.clipboard.writeText(text);
+    btn.textContent = '✅ Copied!';
+    btn.classList.add('copied');
+    setTimeout(() => {
+      btn.textContent = '📋 Copy to Clipboard';
+      btn.classList.remove('copied');
+    }, 2500);
+  } catch {
+    showToast('Could not copy — try selecting the text manually.');
+  }
 }
 
 // Initialize
