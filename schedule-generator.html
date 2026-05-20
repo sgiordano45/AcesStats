@@ -836,10 +836,10 @@
             <div class="info-card">
               <strong>🍂 Fall League Schedule:</strong>
               <ul style="margin-left: 1.5rem; margin-top: 0.5rem;">
-                <li>12 games per team</li>
-                <li><strong>Primary Day:</strong> Sundays</li>
-                <li><strong>Time Slots:</strong> 8:00 AM, 9:00 AM, 10:00 AM, 11:00 AM, 12:00 PM (5 games per Sunday)</li>
-                <li><strong>Frequency:</strong> Each team plays once per Sunday</li>
+                <li><strong>10 teams:</strong> 12 games per team, all teams play each Sunday</li>
+                <li><strong>11 teams:</strong> 10 games per team (full round-robin), 5 games per Sunday, 1 team on bye — rotates each week over 11 Sundays</li>
+                <li><strong>Primary Day:</strong> Sundays, 8:00 AM – 1:00 PM</li>
+                <li><strong>Time Slots:</strong> 8:00 AM, 9:00 AM, 10:00 AM, 11:00 AM, 12:00 PM</li>
                 <li>Optional weeknight games for late season/makeup games</li>
                 <li>Minimum 7 players to start</li>
               </ul>
@@ -1676,9 +1676,10 @@
     }
 
     function updateConfigSummary() {
-      const gamesPerTeam = scheduleConfig.seasonType === 'summer' 
-        ? scheduleConfig.summerGamesPerTeam 
-        : 12;
+      const numTeamsForSummary = scheduleConfig.selectedTeams.length;
+      const gamesPerTeam = scheduleConfig.seasonType === 'summer'
+        ? scheduleConfig.summerGamesPerTeam
+        : (numTeamsForSummary % 2 !== 0 ? numTeamsForSummary - 1 : 12);
       const gameDays = scheduleConfig.seasonType === 'fall' ? 'Sundays' : 'Sun–Thu';
       
       let restrictionsText = '';
@@ -1709,11 +1710,11 @@
     }
 
     window.generateSchedule = function() {
-      const gamesPerTeam = scheduleConfig.seasonType === 'summer'
-        ? scheduleConfig.summerGamesPerTeam
-        : 12;
       const teams = scheduleConfig.selectedTeams;
       const numTeams = teams.length;
+      const gamesPerTeam = scheduleConfig.seasonType === 'summer'
+        ? scheduleConfig.summerGamesPerTeam
+        : (numTeams % 2 !== 0 ? numTeams - 1 : 12);
 
       console.log(`🎯 Generating: ${numTeams} teams × ${gamesPerTeam} games`);
 
@@ -1750,8 +1751,19 @@
         }
         finalSchedule = finalSchedule.slice(0, totalGames);
 
+      } else if (scheduleConfig.seasonType === 'fall') {
+        // ODD teams FALL (11 teams): 1 clean round-robin pass = 55 games, 10 per team.
+        // Each Sunday has 5 games; the team matched against BYE sits out (bye week).
+        // 11 Sundays total, every team plays every other team exactly once.
+        finalSchedule.push(...rrPass(teams, false));  // 55 games, each team plays 10
+
+        const counts = Object.fromEntries(
+          teams.map(t => [t.name, finalSchedule.filter(g => g.home.id === t.id || g.away.id === t.id).length])
+        );
+        console.log(`📋 Fall 11-team pool: ${finalSchedule.length} games. Per-team:`, counts);
+
       } else {
-        // ODD teams (11): 121 total games (excluding OD which is layered on top)
+        // ODD teams SUMMER (11): 121 total games (excluding OD which is layered on top)
         // Structure: 55 DH pairs (110 games) + 11 singles (22 games, 2 per team)
         // = 121 games. Each team plays 22 games total.
         //
@@ -1774,11 +1786,13 @@
         const counts = Object.fromEntries(
           teams.map(t => [t.name, finalSchedule.filter(g => g.home.id === t.id || g.away.id === t.id).length])
         );
-        console.log(`📋 Pool: ${finalSchedule.length} games. Per-team:`, counts);
+        console.log(`📋 Summer odd-team pool: ${finalSchedule.length} games. Per-team:`, counts);
       }
 
       // OD adds 6 more games on top (handled in assignSummerSchedule)
-      const totalExpected = numTeams % 2 !== 0 ? 127 : (numTeams * gamesPerTeam) / 2;
+      const totalExpected = numTeams % 2 !== 0 && scheduleConfig.seasonType === 'summer'
+        ? 127
+        : (numTeams % 2 !== 0 ? numTeams * (numTeams - 1) / 2 : (numTeams * gamesPerTeam) / 2);
 
       console.log(`📋 Final pool: ${finalSchedule.length} games`);
 
