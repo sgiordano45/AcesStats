@@ -1313,17 +1313,24 @@ async function renderDigest() {
   dateRangeEl.textContent = `${fmt(fromDate)} – ${fmt(new Date())}`;
 
   try {
-    // Query without type filter to avoid composite index requirement; filter client-side
-    const q = query(
+    // Two targeted queries — avoids client-side limit problem where game/standings
+    // activity fills the 200-doc budget before milestones appear
+    const makeQ = (type) => query(
       collection(db, 'activity'),
+      where('type', '==', type),
       where('timestamp', '>=', fromTimestamp),
-      orderBy('timestamp', 'desc'),
-      limit(200)
+      orderBy('timestamp', 'desc')
     );
-    const snap = await getDocs(q);
-    digestActivities = snap.docs
-      .map(d => ({ id: d.id, ...d.data() }))
-      .filter(a => a.type === 'milestone' || a.type === 'career_high');
+    const [milestoneSnap, careerHighSnap] = await Promise.all([
+      getDocs(makeQ('milestone')),
+      getDocs(makeQ('career_high'))
+    ]);
+    digestActivities = [
+      ...milestoneSnap.docs.map(d => ({ id: d.id, ...d.data() })),
+      ...careerHighSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+    ];
+    // Sort combined results by timestamp desc
+    digestActivities.sort((a, b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0));
   } catch (err) {
     console.error('Digest fetch error:', err);
     textArea.innerHTML = '<div class="digest-empty">Could not load activities.</div>';
@@ -1371,7 +1378,7 @@ function buildPlainText() {
 
   const groups = {};
   digestActivities.forEach(a => {
-    let key = (a.type === 'milestone' && a.data && a.data.milestoneType) ? a.data.milestoneType : a.type;
+    const key = (a.type === 'milestone' && a.data && a.data.milestoneType) ? a.data.milestoneType : a.type;
     if (!groups[key]) groups[key] = [];
     groups[key].push(a);
   });
