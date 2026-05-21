@@ -193,6 +193,82 @@
     }
     @keyframes spin { to { transform: rotate(360deg); } }
 
+    /* ── Share button ────────────────────────────── */
+    .share-standings-btn {
+      background: rgba(255,255,255,0.18);
+      border: 1.5px solid rgba(255,255,255,0.45);
+      color: white;
+      padding: 5px 12px;
+      border-radius: 20px;
+      font-size: 0.78rem;
+      font-weight: 700;
+      cursor: pointer;
+      letter-spacing: 0.03em;
+      transition: background 0.15s;
+      white-space: nowrap;
+    }
+    .share-standings-btn:hover { background: rgba(255,255,255,0.30); }
+
+    /* ── Share modal ─────────────────────────────── */
+    .share-modal-overlay {
+      display: none;
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.45);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+    }
+    .share-modal-overlay.active { display: flex; }
+    .share-modal {
+      background: white;
+      border-radius: 16px;
+      padding: 24px;
+      max-width: 340px;
+      width: 90%;
+      box-shadow: 0 8px 40px rgba(0,0,0,0.18);
+    }
+    .share-modal h3 {
+      margin: 0 0 6px;
+      font-size: 1.05rem;
+      color: var(--primary);
+    }
+    .share-modal p {
+      margin: 0 0 18px;
+      font-size: 0.85rem;
+      color: var(--text-light);
+    }
+    .share-modal-options { display: flex; flex-direction: column; gap: 10px; }
+    .share-option-btn {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      background: #f7faf3;
+      border: 1.5px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 16px;
+      cursor: pointer;
+      text-align: left;
+      transition: border-color 0.15s, background 0.15s;
+      font-family: inherit;
+      width: 100%;
+    }
+    .share-option-btn:hover { border-color: var(--primary); background: #edf7e3; }
+    .share-option-icon { font-size: 1.6rem; flex-shrink: 0; }
+    .share-option-title { font-size: 0.9rem; font-weight: 700; color: var(--text); }
+    .share-option-desc  { font-size: 0.78rem; color: var(--text-light); margin-top: 2px; }
+    .share-modal-cancel {
+      margin-top: 14px;
+      width: 100%;
+      background: none;
+      border: none;
+      color: var(--text-light);
+      font-size: 0.85rem;
+      cursor: pointer;
+      padding: 6px;
+      font-family: inherit;
+    }
+    .share-modal-cancel:hover { color: var(--text); }
+
     /* ── Mobile ──────────────────────────────────── */
     @media (max-width: 600px) {
       body { padding: 12px; }
@@ -321,9 +397,6 @@
     Object.values(teams).forEach(t => {
       t.avg = t.atBats > 0 ? t.hits / t.atBats : 0;
       t.obp = (t.atBats + t.walks) > 0 ? (t.hits + t.walks) / (t.atBats + t.walks) : 0;
-      const tb = t.singles + 2*t.doubles + 3*t.triples + 4*t.homeRuns;
-      t.slg  = t.atBats > 0 ? tb / t.atBats : 0;
-      t.ops  = t.obp + t.slg;
     });
 
     return Object.values(teams);
@@ -402,8 +475,6 @@
       { key: 'rbis',           label: 'RBI',     align: 'right' },
       { key: 'avg',            label: 'AVG',     align: 'right', rate: true },
       { key: 'obp',            label: 'OBP',     align: 'right', rate: true },
-      { key: 'slg',            label: 'SLG',     align: 'right', rate: true },
-      { key: 'ops',            label: 'OPS',     align: 'right', rate: true },
     ];
 
     const headers = cols.map(c => {
@@ -435,7 +506,7 @@
       <div class="table-card">
         <div class="table-card-header">
           <span>📊 Team Batting — ${rows[0]?.year || ''} ${rows[0]?.season || 'All'}</span>
-          <span style="opacity:0.75;font-weight:400;font-size:0.78rem;">Click column headers to sort</span>
+          <button class="share-standings-btn" id="shareBtn">📤 Share</button>
         </div>
         <div class="table-scroll">
           <table class="stats-table">
@@ -454,7 +525,73 @@
         renderTable();
       });
     });
+
+    // Share button
+    const shareBtn = document.getElementById('shareBtn');
+    if (shareBtn) shareBtn.addEventListener('click', openShareModal);
   }
+
+  // ── Share helpers ─────────────────────────────────────
+  function openShareModal()  { document.getElementById('shareModalOverlay').classList.add('active'); }
+  function closeShareModal() { document.getElementById('shareModalOverlay').classList.remove('active'); }
+
+  async function shareTeamStatsImage() {
+    closeShareModal();
+    const card = document.querySelector('.table-card');
+    if (!card) return;
+    try {
+      const canvas = await html2canvas(card, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
+      const link = document.createElement('a');
+      const yearEl  = document.querySelector('#yearSelect').value   || 'all';
+      const sznEl   = document.querySelector('#seasonSelect').value || 'seasons';
+      link.download = `aces-team-stats-${yearEl}-${sznEl}.png`;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+    } catch(e) {
+      console.error('Image share failed:', e);
+      alert('Could not capture image. Try the text option instead.');
+    }
+  }
+
+  function shareTeamStatsText() {
+    closeShareModal();
+    const table = document.querySelector('.stats-table');
+    if (!table) return;
+
+    const pad = (s, n, right = false) => {
+      const str = String(s ?? '');
+      return right ? str.padStart(n) : str.padEnd(n);
+    };
+
+    // Collect headers
+    const headers = [...table.querySelectorAll('thead th')].map(th => th.textContent.trim().replace(/[▲▼]/g, '').trim());
+    // Collect rows
+    const dataRows = [...table.querySelectorAll('tbody tr')].map(tr =>
+      [...tr.querySelectorAll('td')].map(td => td.textContent.trim())
+    );
+
+    // Column widths
+    const widths = headers.map((h, i) => Math.max(h.length, ...dataRows.map(r => (r[i] || '').length)));
+
+    const sep  = widths.map(w => '-'.repeat(w)).join('  ');
+    const head = headers.map((h, i) => pad(h, widths[i])).join('  ');
+    const body = dataRows.map(r => r.map((c, i) => pad(c, widths[i])).join('  ')).join('\n');
+
+    const yearVal = document.querySelector('#yearSelect').value;
+    const sznVal  = document.querySelector('#seasonSelect').value;
+    const label   = [yearVal, sznVal].filter(Boolean).join(' ') || 'All Seasons';
+    const text    = `📊 Aces Team Batting Stats — ${label}\n${sep}\n${head}\n${sep}\n${body}\n${sep}`;
+
+    navigator.clipboard.writeText(text).then(() => {
+      const btn = document.getElementById('shareBtn');
+      if (btn) { btn.textContent = '✅ Copied!'; setTimeout(() => { btn.textContent = '📤 Share'; }, 2000); }
+    }).catch(() => alert('Clipboard not available. Please copy manually.'));
+  }
+
+  // Expose to global scope for modal button onclick attributes
+  window.closeShareModal   = closeShareModal;
+  window.shareTeamStatsImage = shareTeamStatsImage;
+  window.shareTeamStatsText  = shareTeamStatsText;
 
   // ── Init ─────────────────────────────────────────────
   onAuthStateChanged(auth, async (user) => {
@@ -485,6 +622,32 @@
 <script type="module">
   import { NavigationComponent } from './nav-component.js';
 </script>
+<!-- Share modal -->
+<div class="share-modal-overlay" id="shareModalOverlay" onclick="if(event.target===this)closeShareModal()">
+  <div class="share-modal">
+    <h3>📤 Share Team Stats</h3>
+    <p>Choose how you'd like to share this table.</p>
+    <div class="share-modal-options">
+      <button class="share-option-btn" onclick="shareTeamStatsImage()">
+        <span class="share-option-icon">🖼️</span>
+        <div>
+          <div class="share-option-title">Save as Image</div>
+          <div class="share-option-desc">Download a PNG of the table</div>
+        </div>
+      </button>
+      <button class="share-option-btn" onclick="shareTeamStatsText()">
+        <span class="share-option-icon">📋</span>
+        <div>
+          <div class="share-option-title">Copy as Text</div>
+          <div class="share-option-desc">Copy a plain-text table to clipboard</div>
+        </div>
+      </button>
+    </div>
+    <button class="share-modal-cancel" onclick="closeShareModal()">Cancel</button>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="mobile-enhancements.js"></script>
 <script src="theme-toggle.js"></script>
 </body>
