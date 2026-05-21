@@ -156,6 +156,49 @@
     }
     .filter-select:focus { outline: none; border-color: var(--primary); }
 
+    /* ── Per-game toggle ─────────────────────────── */
+    .toggle-wrap {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-left: auto;
+    }
+    .toggle-label {
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: var(--text-light);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      white-space: nowrap;
+    }
+    .toggle-switch {
+      position: relative;
+      width: 40px;
+      height: 22px;
+      flex-shrink: 0;
+    }
+    .toggle-switch input { opacity: 0; width: 0; height: 0; }
+    .toggle-track {
+      position: absolute;
+      inset: 0;
+      background: #cbd5e0;
+      border-radius: 22px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .toggle-track::before {
+      content: '';
+      position: absolute;
+      width: 16px; height: 16px;
+      left: 3px; top: 3px;
+      background: white;
+      border-radius: 50%;
+      transition: transform 0.2s;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    }
+    .toggle-switch input:checked + .toggle-track { background: var(--primary); }
+    .toggle-switch input:checked + .toggle-track::before { transform: translateX(18px); }
+
     /* ── Summary bar ─────────────────────────────── */
     .summary-bar {
       display: flex;
@@ -374,6 +417,13 @@
       <option value="summer">Summer</option>
       <option value="fall">Fall</option>
     </select>
+    <div class="toggle-wrap">
+      <span class="toggle-label">Per Game</span>
+      <label class="toggle-switch">
+        <input type="checkbox" id="perGameToggle">
+        <span class="toggle-track"></span>
+      </label>
+    </div>
   </div>
 
   <!-- Summary chips -->
@@ -412,6 +462,7 @@
   let currentSeason = null;
   let sortCol = 'avg';
   let sortDir = -1; // -1 = desc
+  let perGame  = false;
 
   // ── Build team rows from player data ──────────────────
   function buildTeamRows(yearFilter, seasonFilter) {
@@ -536,20 +587,22 @@
     `;
     summaryBar.style.display = 'flex';
 
+    const pg = perGame; // snapshot for this render
+    const sfx = pg ? '/G' : '';
     const cols = [
-      { key: 'team',        label: 'Team',    align: 'left'  },
-      { key: 'playerCount', label: 'Players', align: 'right' },
-      { key: 'games',       label: 'G',       align: 'right' },
-      { key: 'atBats',      label: 'AB',      align: 'right' },
-      { key: 'hits',        label: 'H',       align: 'right' },
-      { key: 'runs',        label: 'R',       align: 'right' },
-      { key: 'walks',       label: 'BB',      align: 'right' },
-      { key: 'doubles',     label: '2B',      align: 'right' },
-      { key: 'triples',     label: '3B',      align: 'right' },
-      { key: 'homeRuns',    label: 'HR',      align: 'right' },
-      { key: 'rbis',        label: 'RBI',     align: 'right' },
-      { key: 'avg',         label: 'AVG',     align: 'right', rate: true },
-      { key: 'obp',         label: 'OBP',     align: 'right', rate: true },
+      { key: 'team',        label: 'Team',         align: 'left'  },
+      { key: 'playerCount', label: 'Players',       align: 'right' },
+      { key: 'games',       label: 'G',             align: 'right' },
+      { key: 'atBats',      label: `AB${sfx}`,      align: 'right', perGame: pg },
+      { key: 'hits',        label: `H${sfx}`,       align: 'right', perGame: pg },
+      { key: 'runs',        label: `R${sfx}`,       align: 'right', perGame: pg },
+      { key: 'walks',       label: `BB${sfx}`,      align: 'right', perGame: pg },
+      { key: 'doubles',     label: `2B${sfx}`,      align: 'right', perGame: pg },
+      { key: 'triples',     label: `3B${sfx}`,      align: 'right', perGame: pg },
+      { key: 'homeRuns',    label: `HR${sfx}`,      align: 'right', perGame: pg },
+      { key: 'rbis',        label: `RBI${sfx}`,     align: 'right', perGame: pg },
+      { key: 'avg',         label: 'AVG',           align: 'right', rate: true },
+      { key: 'obp',         label: 'OBP',           align: 'right', rate: true },
     ];
 
     const headers = cols.map(c => {
@@ -570,8 +623,16 @@
             </div>
           </td>`;
         }
-        const val = r[c.key] ?? 0;
-        const display = c.rate ? `<span class="stat-rate">${fmtAvg(val)}</span>` : val;
+        const rawVal = r[c.key] ?? 0;
+        let display;
+        if (c.rate) {
+          display = `<span class="stat-rate">${fmtAvg(rawVal)}</span>`;
+        } else if (c.perGame && r.games > 0) {
+          const pgVal = rawVal / r.games;
+          display = `<span class="stat-rate">${pgVal.toFixed(1)}</span>`;
+        } else {
+          display = rawVal;
+        }
         return `<td style="text-align:right">${display}</td>`;
       }).join('');
       return `<tr>${cells}</tr>`;
@@ -580,7 +641,7 @@
     wrap.innerHTML = `
       <div class="table-card">
         <div class="table-card-header">
-          <span>📊 Team Batting — ${rows[0]?.year || ''} ${rows[0]?.season || 'All'}</span>
+          <span>📊 Team Batting — ${rows[0]?.year || ''} ${rows[0]?.season || 'All'}${pg ? ' · Per Game' : ''}</span>
           <button class="share-standings-btn" id="shareBtn">📤 Share</button>
         </div>
         <div class="table-scroll">
@@ -685,6 +746,10 @@
 
   document.getElementById('yearSelect').addEventListener('change', renderTable);
   document.getElementById('seasonSelect').addEventListener('change', renderTable);
+  document.getElementById('perGameToggle').addEventListener('change', e => {
+    perGame = e.target.checked;
+    renderTable();
+  });
 
   // Pre-select from URL params (?year=2025&season=fall)
   const params = new URLSearchParams(window.location.search);
