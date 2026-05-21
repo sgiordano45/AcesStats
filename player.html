@@ -3689,6 +3689,8 @@
   // Splits constants
   const SPLITS_2025_COLLECTION = 'aggregatedPlayerStats2025Splits';
   const SPLITS_2025_SEASONS = ['2025-summer', '2025-fall'];
+  // Teams whose 2025-fall data is fully reconciled — no partial-data banner shown
+  const COMPLETE_2025_FALL_TEAMS = ['silver', 'white'];
   
   // Team colors for opponent breakdown
   const teamColors = {
@@ -5207,6 +5209,26 @@
   function is2025Season(seasonId) {
     return SPLITS_2025_SEASONS.includes(seasonId);
   }
+
+  // Returns true if this 2025 season's data is still partial for the current player
+  function is2025SeasonPartial(seasonFilter) {
+    if (!is2025Season(seasonFilter)) return false;
+    const seasons = currentPlayerData?.resolvedPlayer?.seasons || {};
+    const key = Object.keys(seasons).find(k => k.startsWith(seasonFilter + '-'));
+    if (key) {
+      const team = key.slice(seasonFilter.length + 1).toLowerCase();
+      if (seasonFilter === '2025-fall' && COMPLETE_2025_FALL_TEAMS.includes(team)) return false;
+    }
+    return true;
+  }
+
+  // For career view: partial only if the player has at least one partial 2025 season
+  function hasAnyPartial2025Season() {
+    return SPLITS_2025_SEASONS.some(s => is2025SeasonPartial(s) &&
+      currentPlayerData?.resolvedPlayer?.seasons &&
+      Object.keys(currentPlayerData.resolvedPlayer.seasons).some(k => k.startsWith(s + '-'))
+    );
+  }
   
   function hasGameLevelData(seasonId) {
     if (!seasonId) return false;
@@ -5356,7 +5378,7 @@
       const displayName = `${year} ${season.charAt(0).toUpperCase() + season.slice(1)}`;
       const option = document.createElement('option');
       option.value = seasonId;
-      option.textContent = is2025Season(seasonId) ? `${displayName} ⚠️` : displayName;
+      option.textContent = is2025SeasonPartial(seasonId) ? `${displayName} ⚠️` : displayName;
       filterSelect.appendChild(option);
     });
     
@@ -5375,11 +5397,13 @@
   
   function updateSplitsFilterInfo() {
     const filterInfo = document.getElementById('splitsFilterInfo');
-    const isPartial = is2025Season(currentSplitsFilter);
-    
+    const isPartial = currentSplitsFilter === 'career'
+      ? (!!splits2025Data && hasAnyPartial2025Season())
+      : is2025SeasonPartial(currentSplitsFilter);
+
     if (currentSplitsFilter === 'career') {
-      filterInfo.textContent = splits2025Data ? 'Career splits (2025 data is partial)' : 'Showing career splits';
-      filterInfo.classList.toggle('partial-data', !!splits2025Data);
+      filterInfo.textContent = isPartial ? 'Career splits (2025 data is partial)' : 'Showing career splits';
+      filterInfo.classList.toggle('partial-data', isPartial);
     } else {
       const [year, season] = currentSplitsFilter.split('-');
       const seasonName = `${year} ${season.charAt(0).toUpperCase() + season.slice(1)}`;
@@ -5387,10 +5411,12 @@
       filterInfo.classList.toggle('partial-data', isPartial);
     }
   }
-  
+
   function updateSplitsIncompleteDataBanner() {
     const banner = document.getElementById('splitsIncompleteDataBanner');
-    const isPartial = currentSplitsFilter === 'career' ? !!splits2025Data : is2025Season(currentSplitsFilter);
+    const isPartial = currentSplitsFilter === 'career'
+      ? (!!splits2025Data && hasAnyPartial2025Season())
+      : is2025SeasonPartial(currentSplitsFilter);
     banner.classList.toggle('hidden', !isPartial);
   }
   
@@ -5779,7 +5805,16 @@
       const d = new Date(game.gameDate.seconds * 1000);
       return `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`;
     }
-    if (game.gameDateFormatted) return game.gameDateFormatted;
+    if (game.gameDateFormatted) {
+      // gameDateFormatted may be an ISO string like "2025-10-05" — parse and reformat
+      // Append T12:00 to avoid UTC midnight timezone shift (new Date("2025-10-05") = Oct 4 in US timezones)
+      const raw = game.gameDateFormatted;
+      const d = new Date(raw.includes('T') ? raw : `${raw}T12:00:00`);
+      if (!isNaN(d.getTime())) {
+        return `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`;
+      }
+      return raw; // unparseable — show as-is
+    }
     return '—';
   }
 
