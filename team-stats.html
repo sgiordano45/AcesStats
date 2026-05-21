@@ -21,30 +21,107 @@
       --card: #ffffff;
       --radius: 12px;
       --shadow: 0 2px 12px rgba(0,0,0,0.08);
+      --shadow-lg: 0 12px 32px rgba(0,0,0,0.16);
     }
     * { box-sizing: border-box; }
     body {
       font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      margin: 0; padding: 20px;
+      margin: 0; padding: 0;
       background: linear-gradient(135deg, #f7fafc 0%, #edf2f7 100%);
       min-height: 100vh;
       color: var(--text);
     }
 
-    /* ── Page header ─────────────────────────────── */
-    .page-header {
-      margin-bottom: 24px;
+    /* ── Loading overlay ─────────────────────────── */
+    .loading-overlay {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(255,255,255,0.95);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+      opacity: 1;
+      transition: opacity 0.4s ease, visibility 0.4s ease;
+      visibility: visible;
     }
-    .page-header h1 {
-      font-size: 1.6rem;
-      font-weight: 800;
-      color: var(--primary);
-      margin: 0 0 4px;
+    .loading-overlay.hidden {
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
     }
-    .page-header p {
-      color: var(--text-light);
+    .softball-spinner {
+      text-align: center;
+    }
+    .softball-spinner::before {
+      content: '⚾';
+      font-size: 80px;
+      display: block;
+      animation: spin 1.5s ease-in-out infinite;
+      margin-bottom: 20px;
+    }
+    .softball-spinner::after {
+      content: 'Loading team stats...';
+      display: block;
+      font-size: 1.1rem;
+      color: #4a5568;
+      font-weight: 600;
+    }
+    @keyframes spin {
+      0%, 100% { transform: rotate(0deg) scale(1); }
+      50%       { transform: rotate(180deg) scale(1.1); }
+    }
+
+    /* ── Hero banner ─────────────────────────────── */
+    .header {
+      background: linear-gradient(135deg, #2d5016 0%, #1a6b4a 100%);
+      color: white;
+      text-align: center;
+      padding: 4rem 2rem;
+      box-shadow: var(--shadow-lg);
+      position: relative;
+      overflow: hidden;
+    }
+    .header::before {
+      content: '';
+      position: absolute;
+      top: -50%; right: -10%;
+      width: 400px; height: 400px;
+      background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+      border-radius: 50%;
+    }
+    .header::after {
+      content: '🏟️';
+      position: absolute;
+      bottom: -30px; left: 5%;
+      font-size: 140px;
+      opacity: 0.12;
+      transform: rotate(-10deg);
+      pointer-events: none;
+    }
+    .header h1 {
       margin: 0;
-      font-size: 0.9rem;
+      font-size: 3rem;
+      font-weight: 800;
+      text-shadow: 2px 4px 8px rgba(0,0,0,0.2);
+      letter-spacing: -0.5px;
+      position: relative;
+      z-index: 1;
+    }
+    .header p {
+      margin: 0.75rem 0 0;
+      font-size: 1.15rem;
+      opacity: 0.9;
+      font-weight: 300;
+      position: relative;
+      z-index: 1;
+    }
+
+    /* ── Page container ──────────────────────────── */
+    .page-container {
+      max-width: 1400px;
+      margin: 2.5rem auto;
+      padding: 0 2rem;
     }
 
     /* ── Filter bar ──────────────────────────────── */
@@ -181,17 +258,6 @@
       color: var(--text-light);
     }
     .state-box .icon { font-size: 2.5rem; margin-bottom: 10px; }
-    .spinner {
-      width: 22px; height: 22px;
-      border: 3px solid #e2e8f0;
-      border-top-color: var(--primary);
-      border-radius: 50%;
-      animation: spin 0.8s linear infinite;
-      display: inline-block;
-      margin-right: 8px;
-      vertical-align: middle;
-    }
-    @keyframes spin { to { transform: rotate(360deg); } }
 
     /* ── Share button ────────────────────────────── */
     .share-standings-btn {
@@ -271,43 +337,52 @@
 
     /* ── Mobile ──────────────────────────────────── */
     @media (max-width: 600px) {
-      body { padding: 12px; }
+      .header { padding: 2.5rem 1.2rem; }
+      .header h1 { font-size: 2rem; }
+      .header p { font-size: 1rem; }
+      .page-container { padding: 0 1rem; margin-top: 1.5rem; }
       .filter-bar { padding: 12px; gap: 8px; }
       .filter-select { min-width: 110px; font-size: 0.85rem; }
-      .page-header h1 { font-size: 1.3rem; }
     }
   </style>
 </head>
 <body>
 <nav-component></nav-component>
 
-<div class="page-header">
+<!-- Loading overlay -->
+<div class="loading-overlay" id="loadingOverlay">
+  <div class="softball-spinner"></div>
+</div>
+
+<!-- Hero banner -->
+<header class="header">
   <h1>🏟️ Team Batting Stats</h1>
-  <p>Season totals aggregated from all players on each team. Select a year and season to filter.</p>
-</div>
+  <p>Season totals aggregated from all players on each team</p>
+</header>
 
-<!-- Filters -->
-<div class="filter-bar">
-  <span class="filter-label">Year</span>
-  <select id="yearSelect" class="filter-select">
-    <option value="">All Years</option>
-  </select>
-  <span class="filter-label" style="margin-left:8px;">Season</span>
-  <select id="seasonSelect" class="filter-select">
-    <option value="">All Seasons</option>
-    <option value="summer">Summer</option>
-    <option value="fall">Fall</option>
-    <option value="spring">Spring</option>
-  </select>
-</div>
+<div class="page-container">
 
-<!-- Summary chips -->
-<div class="summary-bar" id="summaryBar" style="display:none;"></div>
+  <!-- Filters -->
+  <div class="filter-bar">
+    <span class="filter-label">Year</span>
+    <select id="yearSelect" class="filter-select">
+      <option value="">All Years</option>
+    </select>
+    <span class="filter-label" style="margin-left:8px;">Season</span>
+    <select id="seasonSelect" class="filter-select">
+      <option value="">All Seasons</option>
+      <option value="summer">Summer</option>
+      <option value="fall">Fall</option>
+    </select>
+  </div>
 
-<!-- Table -->
-<div id="tableWrap">
-  <div class="state-box"><div class="spinner"></div> Loading stats…</div>
-</div>
+  <!-- Summary chips -->
+  <div class="summary-bar" id="summaryBar" style="display:none;"></div>
+
+  <!-- Table -->
+  <div id="tableWrap"></div>
+
+</div><!-- end .page-container -->
 
 <script type="module">
   import { getAllPlayerStatsOptimized, getCurrentSeason, db } from './firebase-data.js';
@@ -320,7 +395,8 @@
     black:  '#1a1a1a', white: '#9e9e9e',  silver: '#708090',
     red:    '#c0392b', blue:  '#2980b9',  green:  '#27ae60',
     orange: '#e67e22', gold:  '#f1c40f',  purple: '#8e44ad',
-    yellow: '#f9ca24', gray:  '#95a5a6',  navy:   '#1b2a4a'
+    yellow: '#f9ca24', gray:  '#95a5a6',  navy:   '#1b2a4a',
+    teal:   '#008080'
   };
   function teamColor(name) {
     return TEAM_COLORS[(name || '').toLowerCase()] || '#2d5016';
@@ -450,10 +526,9 @@
     });
 
     // Summary chips
-    const totalGames   = Math.max(...rows.map(r => r.games));
-    const leagueAVG    = rows.reduce((s,r) => s + r.atBats, 0) > 0
+    const leagueAVG = rows.reduce((s,r) => s + r.atBats, 0) > 0
       ? rows.reduce((s,r) => s + r.hits,0) / rows.reduce((s,r) => s + r.atBats,0) : 0;
-    const seasonLabel  = rows[0] ? `${rows[0].year} ${rows[0].season}` : '';
+    const seasonLabel = rows[0] ? `${rows[0].year} ${rows[0].season}` : '';
     summaryBar.innerHTML = `
       <div class="summary-chip">Teams: <strong>${rows.length}</strong></div>
       <div class="summary-chip">Season: <strong>${seasonLabel || 'All'}</strong></div>
@@ -462,19 +537,19 @@
     summaryBar.style.display = 'flex';
 
     const cols = [
-      { key: 'team',           label: 'Team',   align: 'left'  },
-      { key: 'playerCount',    label: 'Players', align: 'right' },
-      { key: 'games',          label: 'G',       align: 'right' },
-      { key: 'atBats',         label: 'AB',      align: 'right' },
-      { key: 'hits',           label: 'H',       align: 'right' },
-      { key: 'runs',           label: 'R',       align: 'right' },
-      { key: 'walks',          label: 'BB',      align: 'right' },
-      { key: 'doubles',        label: '2B',      align: 'right' },
-      { key: 'triples',        label: '3B',      align: 'right' },
-      { key: 'homeRuns',       label: 'HR',      align: 'right' },
-      { key: 'rbis',           label: 'RBI',     align: 'right' },
-      { key: 'avg',            label: 'AVG',     align: 'right', rate: true },
-      { key: 'obp',            label: 'OBP',     align: 'right', rate: true },
+      { key: 'team',        label: 'Team',    align: 'left'  },
+      { key: 'playerCount', label: 'Players', align: 'right' },
+      { key: 'games',       label: 'G',       align: 'right' },
+      { key: 'atBats',      label: 'AB',      align: 'right' },
+      { key: 'hits',        label: 'H',       align: 'right' },
+      { key: 'runs',        label: 'R',       align: 'right' },
+      { key: 'walks',       label: 'BB',      align: 'right' },
+      { key: 'doubles',     label: '2B',      align: 'right' },
+      { key: 'triples',     label: '3B',      align: 'right' },
+      { key: 'homeRuns',    label: 'HR',      align: 'right' },
+      { key: 'rbis',        label: 'RBI',     align: 'right' },
+      { key: 'avg',         label: 'AVG',     align: 'right', rate: true },
+      { key: 'obp',         label: 'OBP',     align: 'right', rate: true },
     ];
 
     const headers = cols.map(c => {
@@ -542,8 +617,8 @@
     try {
       const canvas = await html2canvas(card, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
       const link = document.createElement('a');
-      const yearEl  = document.querySelector('#yearSelect').value   || 'all';
-      const sznEl   = document.querySelector('#seasonSelect').value || 'seasons';
+      const yearEl = document.querySelector('#yearSelect').value   || 'all';
+      const sznEl  = document.querySelector('#seasonSelect').value || 'seasons';
       link.download = `aces-team-stats-${yearEl}-${sznEl}.png`;
       link.href = canvas.toDataURL('image/png');
       link.click();
@@ -563,16 +638,12 @@
       return right ? str.padStart(n) : str.padEnd(n);
     };
 
-    // Collect headers
     const headers = [...table.querySelectorAll('thead th')].map(th => th.textContent.trim().replace(/[▲▼]/g, '').trim());
-    // Collect rows
     const dataRows = [...table.querySelectorAll('tbody tr')].map(tr =>
       [...tr.querySelectorAll('td')].map(td => td.textContent.trim())
     );
 
-    // Column widths
     const widths = headers.map((h, i) => Math.max(h.length, ...dataRows.map(r => (r[i] || '').length)));
-
     const sep  = widths.map(w => '-'.repeat(w)).join('  ');
     const head = headers.map((h, i) => pad(h, widths[i])).join('  ');
     const body = dataRows.map(r => r.map((c, i) => pad(c, widths[i])).join('  ')).join('\n');
@@ -589,7 +660,7 @@
   }
 
   // Expose to global scope for modal button onclick attributes
-  window.closeShareModal   = closeShareModal;
+  window.closeShareModal     = closeShareModal;
   window.shareTeamStatsImage = shareTeamStatsImage;
   window.shareTeamStatsText  = shareTeamStatsText;
 
@@ -607,6 +678,8 @@
       console.error(e);
       document.getElementById('tableWrap').innerHTML =
         `<div class="state-box"><div class="icon">⚠️</div><p>Failed to load stats.</p></div>`;
+    } finally {
+      document.getElementById('loadingOverlay').classList.add('hidden');
     }
   });
 
@@ -619,9 +692,6 @@
   if (params.get('season')) document.getElementById('seasonSelect').value = params.get('season');
 </script>
 
-<script type="module">
-  import { NavigationComponent } from './nav-component.js';
-</script>
 <!-- Share modal -->
 <div class="share-modal-overlay" id="shareModalOverlay" onclick="if(event.target===this)closeShareModal()">
   <div class="share-modal">
