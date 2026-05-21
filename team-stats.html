@@ -263,42 +263,57 @@
 
   // ── Build team rows from player data ──────────────────
   function buildTeamRows(yearFilter, seasonFilter) {
-    // seasonId examples: "2025-fall-silver", "2026-summer-black"
-    const teams = {}; // key = "2025-fall-silver" → { year, season, team, totals }
+    // 2025 and earlier: seasonId = "2025-fall-silver" (team in key)
+    // 2026+:            seasonId = "2026-summer"      (team in sData.team)
+    const teams = {}; // grouped by "year-season-team"
 
     allPlayers.forEach(player => {
       if (!player.seasons) return;
       Object.entries(player.seasons).forEach(([seasonId, sData]) => {
-        const parts = seasonId.split('-');
-        if (parts.length < 3) return; // skip bare "2025-fall" keys
+        // Skip sub seasons
+        const sub = sData.sub || sData.Sub || '';
+        if (sub === 'Yes' || sub === 'yes' || sub === true) return;
+
+        const parts  = seasonId.split('-');
         const year   = parts[0];
         const season = parts[1];
-        const team   = parts.slice(2).map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(' ');
+        if (!year || !season) return;
+
+        // Team: prefer field on the data; fall back to key suffix (2025 style)
+        const teamRaw = sData.team
+          ? sData.team
+          : parts.slice(2).join('-');  // e.g. "silver" from "2025-fall-silver"
+        if (!teamRaw) return; // no team info at all — skip
+
+        const team = teamRaw.charAt(0).toUpperCase() + teamRaw.slice(1);
 
         if (yearFilter   && year   !== yearFilter)   return;
         if (seasonFilter && season !== seasonFilter)  return;
 
-        if (!teams[seasonId]) {
-          teams[seasonId] = {
-            seasonId, year, season: season.charAt(0).toUpperCase() + season.slice(1),
+        const groupKey = `${year}-${season}-${team.toLowerCase()}`;
+
+        if (!teams[groupKey]) {
+          teams[groupKey] = {
+            groupKey, year,
+            season: season.charAt(0).toUpperCase() + season.slice(1),
             team, games:0, atBats:0, hits:0, runs:0, walks:0,
             singles:0, doubles:0, triples:0, homeRuns:0, rbis:0, plateAppearances:0,
             playerCount: 0
           };
         }
-        const t = teams[seasonId];
+        const t = teams[groupKey];
         t.playerCount++;
-        t.games           += Number(sData.games)            || 0;
-        t.atBats          += Number(sData.atBats)           || 0;
-        t.hits            += Number(sData.hits)             || 0;
-        t.runs            += Number(sData.runs)             || 0;
-        t.walks           += Number(sData.walks)            || 0;
-        t.singles         += Number(sData.singles)          || 0;
-        t.doubles         += Number(sData.doubles)          || 0;
-        t.triples         += Number(sData.triples)          || 0;
-        t.homeRuns        += Number(sData.homeRuns)         || 0;
-        t.rbis            += Number(sData.rbis || sData.rbi)|| 0;
-        t.plateAppearances+= Number(sData.plateAppearances) || (Number(sData.atBats||0) + Number(sData.walks||0));
+        t.games           += Number(sData.games)             || 0;
+        t.atBats          += Number(sData.atBats)            || 0;
+        t.hits            += Number(sData.hits)              || 0;
+        t.runs            += Number(sData.runs)              || 0;
+        t.walks           += Number(sData.walks)             || 0;
+        t.singles         += Number(sData.singles)           || 0;
+        t.doubles         += Number(sData.doubles)           || 0;
+        t.triples         += Number(sData.triples)           || 0;
+        t.homeRuns        += Number(sData.homeRuns)          || 0;
+        t.rbis            += Number(sData.rbis || sData.rbi) || 0;
+        t.plateAppearances+= Number(sData.plateAppearances)  || (Number(sData.atBats||0) + Number(sData.walks||0));
       });
     });
 
