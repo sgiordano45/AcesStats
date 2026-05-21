@@ -478,19 +478,19 @@
 
   import { auth } from './firebase-auth.js';
   import { onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
-  import { NavigationComponent } from './nav-component.js';
 
   // ── State ────────────────────────────────────────────
   const SPLITS_2025_COLLECTION = 'aggregatedPlayerStats2025Splits';
   const SPLITS_2025_SEASONS    = ['2025-summer', '2025-fall'];
 
   let allPlayers      = [];
-  let currentPlayer   = null;  // resolvedPlayer doc
-  let currentStats    = null;  // allStats array (seasons)
+  let currentPlayer   = null;
+  let currentStats    = [];   // processed season rows (no subs), sorted newest first
   let splits2025Data  = null;
   let splitsMainData  = null;
+  let gameDocs        = [];   // raw game-level docs for home/away vs opponent
   let currentSeason   = null;
-  let currentOpponent = '';    // '' = all
+  let currentOpponent = '';
 
   // ── DOM refs ─────────────────────────────────────────
   const playerSelect   = document.getElementById('playerSelect');
@@ -504,66 +504,60 @@
     ? (v >= 1 ? v.toFixed(3) : '.' + Math.round(v * 1000).toString().padStart(3,'0'))
     : '---';
 
+  function cap(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : ''; }
+
   function toLegacyId(name) {
     return (name || '').toLowerCase().replace(/\./g, '').replace(/\s+/g, '_');
   }
 
+  // Parse a seasonId like "2025-fall-silver" into { year, season, team }
+  function parseSeasonId(seasonId) {
+    const parts = (seasonId || '').split('-');
+    return {
+      year:   parts[0] || '',
+      season: cap(parts[1] || ''),
+      team:   parts.slice(2).map(cap).join(' ')
+    };
+  }
+
+  // ── vsOpponent career totals ──────────────────────────
   function buildVsOpponentCareer() {
     const career = {};
-    // Merge 2025 splits vsOpponent
-    if (splits2025Data?.careerSplits?.vsOpponent) {
-      Object.entries(splits2025Data.careerSplits.vsOpponent).forEach(([opp, s]) => {
-        if (!career[opp]) career[opp] = { games:0, atBats:0, hits:0, runs:0, walks:0 };
-        career[opp].games   += s.games   || 0;
-        career[opp].atBats  += s.atBats  || 0;
-        career[opp].hits    += s.hits    || 0;
-        career[opp].runs    += s.runs    || 0;
-        career[opp].walks   += s.walks   || 0;
-      });
-    }
-    // Merge 2026+ season vsOpponent
-    if (splitsMainData?.seasons) {
-      Object.values(splitsMainData.seasons).forEach(season => {
-        if (!season.vsOpponent) return;
-        Object.entries(season.vsOpponent).forEach(([opp, s]) => {
-          if (!career[opp]) career[opp] = { games:0, atBats:0, hits:0, runs:0, walks:0 };
-          career[opp].games   += s.games   || 0;
-          career[opp].atBats  += s.atBats  || 0;
-          career[opp].hits    += s.hits    || 0;
-          career[opp].runs    += s.runs    || 0;
-          career[opp].walks   += s.walks   || 0;
-        });
-      });
-    }
-    // Recalculate rate stats
+    const addOpp = (opp, s) => {
+      if (!career[opp]) career[opp] = { games:0, atBats:0, hits:0, runs:0, walks:0 };
+      career[opp].games  += s.games  || 0;
+      career[opp].atBats += s.atBats || 0;
+      career[opp].hits   += s.hits   || 0;
+      career[opp].runs   += s.runs   || 0;
+      career[opp].walks  += s.walks  || 0;
+    };
+    if (splits2025Data?.careerSplits?.vsOpponent)
+      Object.entries(splits2025Data.careerSplits.vsOpponent).forEach(([o, s]) => addOpp(o, s));
+    if (splitsMainData?.seasons)
+      Object.values(splitsMainData.seasons).forEach(season =>
+        season.vsOpponent && Object.entries(season.vsOpponent).forEach(([o, s]) => addOpp(o, s)));
     Object.values(career).forEach(o => {
-      o.battingAverage    = o.atBats > 0 ? o.hits / o.atBats : 0;
-      o.onBasePercentage  = (o.atBats + o.walks) > 0 ? (o.hits + o.walks) / (o.atBats + o.walks) : 0;
+      o.battingAverage   = o.atBats > 0 ? o.hits / o.atBats : 0;
+      o.onBasePercentage = (o.atBats + o.walks) > 0 ? (o.hits + o.walks) / (o.atBats + o.walks) : 0;
     });
     return career;
   }
 
+  // ── Career splits (home/away/regular/playoff) ─────────
   function getMergedCareerSplits() {
-    const blank = { games:0, atBats:0, hits:0, runs:0, walks:0 };
-    const merged = {
-      home:    { ...blank }, away:    { ...blank },
-      regular: { ...blank }, playoff: { ...blank }
-    };
-    const add = (target, src) => {
-      if (!src) return;
+    const blank = () => ({ games:0, atBats:0, hits:0, runs:0, walks:0 });
+    const merged = { home: blank(), away: blank(), regular: blank(), playoff: blank() };
+    const add = (src) => {
       ['home','away','regular','playoff'].forEach(k => {
-        if (!src[k]) return;
-        target[k].games   += src[k].games   || 0;
-        target[k].atBats  += src[k].atBats  || 0;
-        target[k].hits    += src[k].hits    || 0;
-        target[k].runs    += src[k].runs    || 0;
-        target[k].walks   += src[k].walks   || 0;
+        if (!src?.[k]) return;
+        const t = merged[k], s = src[k];
+        t.games  += s.games  || 0; t.atBats += s.atBats || 0;
+        t.hits   += s.hits   || 0; t.runs   += s.runs   || 0;
+        t.walks  += s.walks  || 0;
       });
     };
-    if (splits2025Data?.careerSplits?.splits) add(merged, splits2025Data.careerSplits.splits);
-    if (splitsMainData?.seasons) {
-      Object.values(splitsMainData.seasons).forEach(s => s.splits && add(merged, s.splits));
-    }
+    if (splits2025Data?.careerSplits?.splits) add(splits2025Data.careerSplits.splits);
+    if (splitsMainData?.seasons) Object.values(splitsMainData.seasons).forEach(s => add(s.splits));
     ['home','away','regular','playoff'].forEach(k => {
       const s = merged[k];
       s.battingAverage   = s.atBats > 0 ? s.hits / s.atBats : 0;
@@ -572,36 +566,57 @@
     return merged;
   }
 
-  // ── Quick-stat row HTML ───────────────────────────────
+  // ── Build home/away + regular/playoff splits vs one opponent from game docs ──
+  function buildSplitsVsOpponent(opp) {
+    const blank = () => ({ games:0, atBats:0, hits:0, runs:0, walks:0 });
+    const result = { home: blank(), away: blank(), regular: blank(), playoff: blank() };
+    const add = (bucket, g) => {
+      bucket.games++;
+      bucket.atBats += g.atBats || 0;
+      bucket.hits   += g.hits   || 0;
+      bucket.runs   += g.runs   || 0;
+      bucket.walks  += g.walks  || 0;
+    };
+    gameDocs
+      .filter(g => (g.opponent || '').toLowerCase() === opp.toLowerCase())
+      .forEach(g => {
+        add(g.isHome === true ? result.home : result.away, g);
+        add(g.isPlayoff === true || g.gameType === 'playoff' ? result.playoff : result.regular, g);
+      });
+    ['home','away','regular','playoff'].forEach(k => {
+      const s = result[k];
+      s.battingAverage   = s.atBats > 0 ? s.hits / s.atBats : 0;
+      s.onBasePercentage = (s.atBats + s.walks) > 0 ? (s.hits + s.walks) / (s.atBats + s.walks) : 0;
+    });
+    return result;
+  }
+
+  // ── Quick-stat row ────────────────────────────────────
   function renderQuickStats(g, ab, h, r, bb, avg, obp, bpi) {
-    const stats = [
-      { label:'G',   value: g ?? '—' },
-      { label:'AB',  value: ab ?? '—' },
-      { label:'H',   value: h ?? '—' },
-      { label:'R',   value: r ?? '—' },
-      { label:'BB',  value: bb ?? '—' },
+    const items = [
+      { label:'G',   value: g   ?? '—' },
+      { label:'AB',  value: ab  ?? '—' },
+      { label:'H',   value: h   ?? '—' },
+      { label:'R',   value: r   ?? '—' },
+      { label:'BB',  value: bb  ?? '—' },
       { label:'AVG', value: typeof avg === 'number' ? fmtAvg(avg) : (avg ?? '—') },
       { label:'OBP', value: typeof obp === 'number' ? fmtAvg(obp) : (obp ?? '—') },
       { label:'BPI', value: typeof bpi === 'number' ? bpi.toFixed(1) : (bpi ?? '—') }
     ];
-    document.getElementById('quickStatsRow').innerHTML = stats.map(s =>
+    document.getElementById('quickStatsRow').innerHTML = items.map(i =>
       `<div class="quick-stat">
-        <div class="quick-stat-value">${s.value}</div>
-        <div class="quick-stat-label">${s.label}</div>
+        <div class="quick-stat-value">${i.value}</div>
+        <div class="quick-stat-label">${i.label}</div>
       </div>`
     ).join('');
   }
 
-  // ── Populate splits tables ────────────────────────────
+  // ── Splits table rendering ────────────────────────────
   function splitRow(label, s) {
     if (!s || !s.games) return `<tr><td>${label}</td><td colspan="7" style="color:#999;font-style:italic;font-size:0.82rem;">No data</td></tr>`;
     return `<tr>
-      <td>${label}</td>
-      <td>${s.games}</td>
-      <td>${s.atBats ?? '—'}</td>
-      <td>${s.hits ?? '—'}</td>
-      <td>${s.runs ?? '—'}</td>
-      <td>${s.walks ?? '—'}</td>
+      <td>${label}</td><td>${s.games}</td><td>${s.atBats ?? '—'}</td>
+      <td>${s.hits ?? '—'}</td><td>${s.runs ?? '—'}</td><td>${s.walks ?? '—'}</td>
       <td class="stat-avg">${fmtAvg(s.battingAverage)}</td>
       <td class="stat-avg">${fmtAvg(s.onBasePercentage)}</td>
     </tr>`;
@@ -614,73 +629,39 @@
       splitRow('⚾ Regular', splits?.regular) + splitRow('🏆 Playoffs', splits?.playoff);
   }
 
-  function renderSplitsVsOpponent(opp) {
-    const noData = `<tr><td colspan="8" class="no-data-note">Not available when filtering by opponent</td></tr>`;
-    document.getElementById('homeAwaySplitBody').innerHTML = noData;
-    document.getElementById('regularPlayoffSplitBody').innerHTML = noData;
-  }
-
-  // ── Season history table ──────────────────────────────
-  function renderSeasonHistory(stats, vsNote) {
+  // ── Season history ────────────────────────────────────
+  function renderSeasonHistory() {
     const body = document.getElementById('historyTableBody');
-    if (vsNote) {
-      body.innerHTML = `<tr><td colspan="11" class="no-data-note">${vsNote}</td></tr>`;
+    if (!currentStats.length) {
+      body.innerHTML = `<tr><td colspan="11" class="no-data-note">No season data available</td></tr>`;
       return;
     }
 
-    const regular = stats.filter(s => s.sub === 'No');
-    const subs    = stats.filter(s => s.sub === 'Yes');
-
-    let html = regular.map(s => `
+    let html = currentStats.map(s => `
       <tr>
         <td>${s.year}</td>
         <td>${s.season}</td>
         <td><a href="team.html?team=${encodeURIComponent(s.team)}" class="team-link">${s.team}</a></td>
-        <td>${s.games}</td>
-        <td>${s.atBats}</td>
-        <td>${s.hits}</td>
-        <td>${s.runs}</td>
-        <td>${s.walks}</td>
-        <td class="stat-avg">${typeof s.BA === 'number' ? fmtAvg(s.BA) : '—'}</td>
-        <td class="stat-avg">${typeof s.OBP === 'number' ? fmtAvg(s.OBP) : '—'}</td>
-        <td>${typeof s.AcesWar === 'number' ? s.AcesWar.toFixed(2) : '—'}</td>
+        <td>${s.games}</td><td>${s.atBats}</td><td>${s.hits}</td>
+        <td>${s.runs}</td><td>${s.walks}</td>
+        <td class="stat-avg">${fmtAvg(s.BA)}</td>
+        <td class="stat-avg">${fmtAvg(s.OBP)}</td>
+        <td>${typeof s.BPI === 'number' ? s.BPI.toFixed(2) : '—'}</td>
       </tr>`).join('');
 
-    if (subs.length > 0) {
-      html += subs.map(s => `
-        <tr style="opacity:0.7;">
-          <td>${s.year}</td>
-          <td>${s.season}</td>
-          <td><a href="team.html?team=${encodeURIComponent(s.team)}" class="team-link">${s.team}</a> <span class="sub-tag">Sub</span></td>
-          <td>${s.games}</td>
-          <td>${s.atBats}</td>
-          <td>${s.hits}</td>
-          <td>${s.runs}</td>
-          <td>${s.walks}</td>
-          <td class="stat-avg">${typeof s.BA === 'number' ? fmtAvg(s.BA) : '—'}</td>
-          <td class="stat-avg">${typeof s.OBP === 'number' ? fmtAvg(s.OBP) : '—'}</td>
-          <td>${typeof s.AcesWar === 'number' ? s.AcesWar.toFixed(2) : '—'}</td>
-        </tr>`).join('');
-    }
-
     // Career totals row
-    const tot = regular.reduce((acc, s) => ({
-      games:  acc.games  + (s.games  || 0),
-      atBats: acc.atBats + (s.atBats || 0),
-      hits:   acc.hits   + (s.hits   || 0),
-      runs:   acc.runs   + (s.runs   || 0),
-      walks:  acc.walks  + (s.walks  || 0)
-    }), { games:0, atBats:0, hits:0, runs:0, walks:0 });
+    const tot = currentStats.reduce((acc, s) => {
+      acc.games  += s.games  || 0; acc.atBats += s.atBats || 0;
+      acc.hits   += s.hits   || 0; acc.runs   += s.runs   || 0;
+      acc.walks  += s.walks  || 0; return acc;
+    }, { games:0, atBats:0, hits:0, runs:0, walks:0 });
     tot.BA  = tot.atBats > 0 ? tot.hits / tot.atBats : 0;
     tot.OBP = (tot.atBats + tot.walks) > 0 ? (tot.hits + tot.walks) / (tot.atBats + tot.walks) : 0;
 
     html += `<tr class="career-row">
-      <td colspan="3">Career (Reg. Season)</td>
-      <td>${tot.games}</td>
-      <td>${tot.atBats}</td>
-      <td>${tot.hits}</td>
-      <td>${tot.runs}</td>
-      <td>${tot.walks}</td>
+      <td colspan="3">Career</td>
+      <td>${tot.games}</td><td>${tot.atBats}</td><td>${tot.hits}</td>
+      <td>${tot.runs}</td><td>${tot.walks}</td>
       <td class="stat-avg">${fmtAvg(tot.BA)}</td>
       <td class="stat-avg">${fmtAvg(tot.OBP)}</td>
       <td>—</td>
@@ -690,37 +671,27 @@
   }
 
   // ── Radial chart ──────────────────────────────────────
-  function renderRadial(containerId, statsObj, title, subtitle) {
+  function renderRadial(containerId, statsObj, playerName, subtitle) {
     const container = document.getElementById(containerId);
-    if (!statsObj) {
+    if (!statsObj || !statsObj.games) {
       container.innerHTML = '<div class="no-data-note">No data available</div>';
       return;
     }
-
-    // TeamCharts expects a string element ID — give inner div a unique id
     const innerId = containerId + '_inner';
     container.innerHTML = `<div id="${innerId}"></div>`;
     const charts = new TeamCharts(innerId, { width: 420, height: 360 });
-
     const player = {
       battingAvg: statsObj.battingAverage ?? 0,
       obp:        statsObj.onBasePercentage ?? 0,
       runs:       statsObj.runs ?? 0,
-      acesBPI:    statsObj.acesBPI ?? statsObj.acesBpi ?? 0,
+      acesBPI:    statsObj.acesBPI ?? statsObj.BPI ?? 0,
       games:      statsObj.games ?? 0
     };
-
-    charts.createPlayerRadialChart(player, title, 'career', {
-      width: 420,
-      height: 360
-    });
-
-    // Replace the auto-generated title with our own
+    charts.createPlayerRadialChart(player, playerName, 'career', { width: 420, height: 360 });
     const svg = container.querySelector('svg');
     if (svg) {
-      const titles = svg.querySelectorAll('text');
-      titles.forEach(t => {
-        if (t.getAttribute('y') === '30') t.textContent = title;
+      svg.querySelectorAll('text').forEach(t => {
+        if (t.getAttribute('y') === '30') t.textContent = playerName;
         if (t.getAttribute('y') === '50') t.textContent = subtitle || '';
       });
     }
@@ -730,238 +701,205 @@
   function renderBadges(badges) {
     const grid  = document.getElementById('badgesGrid');
     const title = document.getElementById('badgesCardTitle');
-
-    if (!badges?.earned || Object.keys(badges.earned).length === 0) {
+    if (!badges?.earned || !Object.keys(badges.earned).length) {
       grid.innerHTML = '<div class="no-data-note">No badges earned yet this season.</div>';
       title.textContent = 'Badges';
       return;
     }
-
-    const season = badges.seasonDisplay || '';
-    title.textContent = `Badges — ${season}`;
-
+    title.textContent = `Badges — ${badges.seasonDisplay || ''}`;
     const categories = {
       hitting:   { name: '⚾ Hitting',    badges: [] },
       milestone: { name: '🏆 Milestones', badges: [] },
       hidden:    { name: '🔮 Hidden',     badges: [] }
     };
-
     Object.entries(badges.earned).forEach(([id, b]) => {
       const cat = b.category || 'hitting';
       (categories[cat] || categories.hitting).badges.push({ id, ...b });
     });
-
-    const tierOrder = { gold: 0, silver: 1, bronze: 2 };
-    const tierColor = { gold: '#b8860b', silver: '#666', bronze: '#8b4513' };
-
+    const tierOrder = { gold:0, silver:1, bronze:2 };
+    const tierColor = { gold:'#b8860b', silver:'#666', bronze:'#8b4513' };
     let html = '';
     Object.values(categories).forEach(cat => {
       if (!cat.badges.length) return;
-      cat.badges.sort((a, b) =>
-        (tierOrder[a.tier] ?? 3) - (tierOrder[b.tier] ?? 3) || (a.name||'').localeCompare(b.name||'')
-      );
+      cat.badges.sort((a, b) => (tierOrder[a.tier]??3)-(tierOrder[b.tier]??3)||(a.name||'').localeCompare(b.name||''));
       html += `<div class="badge-category-label">${cat.name}</div>`;
       cat.badges.forEach(b => {
-        const icon = b.icon || '🎖️';
-        const tc   = tierColor[b.tier] || '#2d5016';
-        html += `
-          <div class="badge-item ${b.tier || ''}">
-            <div class="badge-icon">${icon}</div>
-            <div class="badge-name">${b.name || b.id}</div>
-            ${b.tier ? `<div class="badge-tier-label" style="color:${tc}">${b.tier}</div>` : ''}
-          </div>`;
+        const tc = tierColor[b.tier] || '#2d5016';
+        html += `<div class="badge-item ${b.tier||''}">
+          <div class="badge-icon">${b.icon||'🎖️'}</div>
+          <div class="badge-name">${b.name||b.id}</div>
+          ${b.tier ? `<div class="badge-tier-label" style="color:${tc}">${b.tier}</div>` : ''}
+        </div>`;
       });
     });
-
     grid.innerHTML = html;
   }
 
-  // ── Full render ───────────────────────────────────────
+  // ── Main render ───────────────────────────────────────
   function renderReport() {
     const p = currentPlayer;
     if (!p) return;
 
-    const name    = p.name || p.displayName || p.id;
-    const legacyId = toLegacyId(name);
+    const name = p.name || p.displayName || p.id;
 
-    // Player header
+    // Header
     document.getElementById('playerNameDisplay').textContent = name;
-
-    // Meta (team, seasons)
-    const regularSeasons = (currentStats || []).filter(s => s.sub === 'No');
-    const teams = [...new Set(regularSeasons.map(s => s.team))].filter(Boolean);
-    const latestTeam = regularSeasons[0]?.team || '';
+    const latestTeam = currentStats[0]?.team || '';
     document.getElementById('playerMeta').innerHTML = [
       latestTeam ? `<span>🏟️ ${latestTeam}</span>` : '',
-      regularSeasons.length ? `<span>📅 ${regularSeasons.length} season${regularSeasons.length !== 1 ? 's' : ''}</span>` : ''
+      currentStats.length ? `<span>📅 ${currentStats.length} season${currentStats.length !== 1 ? 's' : ''}</span>` : ''
     ].filter(Boolean).join('');
 
     // Avatar
     const avatarEl = document.getElementById('playerAvatar');
     const photoUrl  = p.photoURL || p.profilePhoto;
-    if (photoUrl) {
-      avatarEl.innerHTML = `<img src="${photoUrl}" alt="${name}" onerror="this.parentElement.innerHTML='🧢'">`;
-    } else {
-      avatarEl.textContent = '🧢';
-    }
+    avatarEl.innerHTML = photoUrl
+      ? `<img src="${photoUrl}" alt="${name}" onerror="this.parentElement.innerHTML='🧢'">`
+      : '🧢';
 
-    // ── Opponent filter? ──
+    // Populate opponent dropdown
     const vsOpponentMap = buildVsOpponentCareer();
     const oppNames = Object.keys(vsOpponentMap).sort();
-
-    // Repopulate opponent dropdown
     opponentSelect.innerHTML = '<option value="">All Opponents</option>';
     oppNames.forEach(opp => {
       const opt = document.createElement('option');
-      opt.value = opp;
-      opt.textContent = opp;
+      opt.value = opp; opt.textContent = opp;
       if (opp === currentOpponent) opt.selected = true;
       opponentSelect.appendChild(opt);
     });
-    opponentSelect.disabled = oppNames.length === 0;
+    opponentSelect.disabled = !oppNames.length;
 
     if (currentOpponent && vsOpponentMap[currentOpponent]) {
-      renderVsOpponent(currentOpponent, vsOpponentMap[currentOpponent], name, p.career);
+      renderVsOpponentView(currentOpponent, vsOpponentMap[currentOpponent], name);
     } else {
-      renderFull(p, name);
+      renderFullView(p, name);
     }
   }
 
-  function renderFull(p, name) {
+  function renderFullView(p, name) {
     const career = p.career || {};
-    const banner = document.getElementById('vsBanner');
-    banner.classList.remove('active');
-    banner.textContent = '';
+    document.getElementById('vsBanner').classList.remove('active');
+    document.getElementById('vsBanner').textContent = '';
 
-    // Quick stats
-    renderQuickStats(
-      career.games, career.atBats, career.hits, career.runs, career.walks,
-      career.battingAverage, career.onBasePercentage, career.acesBPI
-    );
+    renderQuickStats(career.games, career.atBats, career.hits, career.runs, career.walks,
+      career.battingAverage, career.onBasePercentage, career.acesBPI);
 
     // Career radial
     renderRadial('careerRadialContainer', {
-      battingAverage: career.battingAverage,
-      onBasePercentage: career.onBasePercentage,
-      runs: career.runs,
-      acesBPI: career.acesBPI,
-      games: career.games
+      battingAverage: career.battingAverage, onBasePercentage: career.onBasePercentage,
+      runs: career.runs, acesBPI: career.acesBPI, games: career.games
     }, name, 'Career');
 
-    // Season radial — use most recent regular season
-    const regular = (currentStats || []).filter(s => s.sub === 'No');
-    const latest  = regular[0];
-    if (latest) {
+    // Season radial — prefer current season, fall back to most recent
+    const csId = currentSeason?.id;
+    const seasonForRadial = csId
+      ? currentStats.find(s => s.seasonId?.startsWith(csId)) ?? currentStats[0]
+      : currentStats[0];
+
+    if (seasonForRadial) {
       document.getElementById('seasonRadialTitle').textContent =
-        `${latest.year} ${latest.season} — ${latest.team}`;
+        `${seasonForRadial.year} ${seasonForRadial.season} — ${seasonForRadial.team}`;
       renderRadial('seasonRadialContainer', {
-        battingAverage: latest.BA,
-        onBasePercentage: latest.OBP,
-        runs: latest.runs,
-        acesBPI: latest.AcesWar,
-        games: latest.games
-      }, name, `${latest.year} ${latest.season}`);
+        battingAverage: seasonForRadial.BA, onBasePercentage: seasonForRadial.OBP,
+        runs: seasonForRadial.runs, acesBPI: seasonForRadial.BPI, games: seasonForRadial.games
+      }, name, `${seasonForRadial.year} ${seasonForRadial.season}`);
     } else {
       document.getElementById('seasonRadialTitle').textContent = 'Season Radial';
       document.getElementById('seasonRadialContainer').innerHTML =
         '<div class="no-data-note">No season data available</div>';
     }
 
-    // Splits
-    const splits = getMergedCareerSplits();
-    renderSplits(splits);
-
-    // Season history
-    renderSeasonHistory(currentStats || []);
+    renderSplits(getMergedCareerSplits());
+    renderSeasonHistory();
   }
 
-  function renderVsOpponent(opp, oppData, name, career) {
-    // Banner
+  function renderVsOpponentView(opp, oppData, name) {
     const banner = document.getElementById('vsBanner');
-    banner.textContent = `📊 Viewing stats vs ${opp}  ·  ${oppData.games} G, ${oppData.hits}-for-${oppData.atBats} (${fmtAvg(oppData.battingAverage)})`;
+    banner.textContent = `📊 vs ${opp}  ·  ${oppData.games} G, ${oppData.hits}-for-${oppData.atBats} (${fmtAvg(oppData.battingAverage)})`;
     banner.classList.add('active');
 
-    // Quick stats
-    renderQuickStats(
-      oppData.games, oppData.atBats, oppData.hits, oppData.runs, oppData.walks,
-      oppData.battingAverage, oppData.onBasePercentage, null
-    );
+    renderQuickStats(oppData.games, oppData.atBats, oppData.hits, oppData.runs, oppData.walks,
+      oppData.battingAverage, oppData.onBasePercentage, null);
 
-    // Radials — vs opponent (no BPI)
     const vsStats = {
-      battingAverage: oppData.battingAverage,
-      onBasePercentage: oppData.onBasePercentage,
-      runs: oppData.runs,
-      acesBPI: 0,
-      games: oppData.games
+      battingAverage: oppData.battingAverage, onBasePercentage: oppData.onBasePercentage,
+      runs: oppData.runs, acesBPI: 0, games: oppData.games
     };
     renderRadial('careerRadialContainer', vsStats, name, `Career vs ${opp}`);
 
-    // Season radial: compare their overall season vs this opponent if possible (just show career vs opp)
     document.getElementById('seasonRadialTitle').textContent = `vs ${opp} — All Games`;
     renderRadial('seasonRadialContainer', vsStats, name, `All seasons vs ${opp}`);
 
-    // Splits — not available by opponent
-    renderSplitsVsOpponent(opp);
+    // Home/Away + Regular/Playoff from game-level docs
+    renderSplits(buildSplitsVsOpponent(opp));
 
-    // Season history — show note
-    renderSeasonHistory(null, `Per-season breakdown vs ${opp} is not available. Showing career totals above.`);
+    renderSeasonHistory();
   }
 
-  // ── Load player data ──────────────────────────────────
+  // ── Load player ───────────────────────────────────────
   async function loadPlayer(playerId) {
-    splits2025Data = null;
-    splitsMainData = null;
-    currentPlayer  = null;
-    currentStats   = [];
+    splits2025Data = null; splitsMainData = null;
+    currentPlayer = null; currentStats = []; gameDocs = [];
 
     emptyState.classList.add('hidden');
     scoutingReport.classList.add('hidden');
     loadingState.classList.remove('hidden');
 
     try {
-      // Fetch player doc
       const player = await getPlayerStatsOptimized(playerId);
       if (!player) throw new Error('Player not found');
       currentPlayer = player;
 
-      // Build seasons array
-      currentStats = seasonsObjectToArray(player)
-        .sort((a, b) => {
-          if (a.year !== b.year) return b.year.localeCompare(a.year);
-          const ord = { Fall: 3, Summer: 2, Spring: 1 };
-          return (ord[b.season] || 0) - (ord[a.season] || 0);
-        });
-
       const name     = player.name || player.displayName || playerId;
       const legacyId = toLegacyId(name);
 
-      // Fetch 2025 splits
+      // Process seasons — no subs, parse year/season/team from seasonId
+      currentStats = seasonsObjectToArray(player)
+        .filter(s => !(s.sub === 'Yes' || s.sub === 'yes' || s.sub === true))
+        .map(s => {
+          const { year, season, team } = parseSeasonId(s.seasonId);
+          return {
+            ...s,
+            year,
+            season,
+            team:   s.team ? cap(s.team) : team,
+            BA:     typeof s.battingAverage  === 'number' ? s.battingAverage  : 0,
+            OBP:    typeof s.onBasePercentage=== 'number' ? s.onBasePercentage: 0,
+            BPI:    typeof s.acesBPI         === 'number' ? s.acesBPI         : null
+          };
+        })
+        .sort((a, b) => b.seasonId.localeCompare(a.seasonId));
+
+      // 2025 splits
       const splitsSnap = await getDoc(doc(db, SPLITS_2025_COLLECTION, legacyId));
       if (splitsSnap.exists()) splits2025Data = splitsSnap.data();
 
-      // Build 2026+ splits from seasons
+      // 2026+ splits embedded in seasons
       if (player.seasons) {
         const mainSeasons = {};
         Object.entries(player.seasons).forEach(([sid, data]) => {
-          if (!SPLITS_2025_SEASONS.includes(sid) && data.splits) mainSeasons[sid] = data;
+          if (!SPLITS_2025_SEASONS.some(s => sid.startsWith(s)) && data.splits) mainSeasons[sid] = data;
         });
-        if (Object.keys(mainSeasons).length > 0) splitsMainData = { seasons: mainSeasons };
+        if (Object.keys(mainSeasons).length) splitsMainData = { seasons: mainSeasons };
       }
 
-      // Fetch badges
+      // Fetch game-level docs for vsOpponent home/away splits
+      try {
+        const gSnap = await getDocs(collection(db, 'playerStats', legacyId, 'games'));
+        gameDocs = gSnap.docs.map(d => d.data());
+      } catch(e) { console.warn('Game docs unavailable:', e); }
+
+      // Badges
       let badges = {};
       try {
-        const season = currentSeason || await getCurrentSeason();
-        if (!currentSeason) currentSeason = season;
-        const badgeId  = `${season?.id || '2026-summer'}_${legacyId}`;
+        if (!currentSeason) currentSeason = await getCurrentSeason();
+        const badgeId   = `${currentSeason?.id || '2026-summer'}_${legacyId}`;
         const badgeSnap = await getDoc(doc(db, 'playerBadges', badgeId));
-        if (badgeSnap.exists()) badges = { ...badgeSnap.data(), seasonDisplay: season?.displayName };
+        if (badgeSnap.exists()) badges = { ...badgeSnap.data(), seasonDisplay: currentSeason?.displayName };
       } catch(e) { console.warn('Badge fetch failed:', e); }
 
       loadingState.classList.add('hidden');
       scoutingReport.classList.remove('hidden');
-
       renderReport();
       renderBadges(badges);
 
@@ -976,26 +914,19 @@
 
   // ── Init ─────────────────────────────────────────────
   onAuthStateChanged(auth, async (user) => {
-    if (!user) {
-      window.location.href = 'index.html';
-      return;
-    }
-
+    if (!user) { window.location.href = 'index.html'; return; }
     try {
       const players = await getAllPlayerStatsOptimized();
       allPlayers = players
         .filter(p => p.name || p.displayName)
-        .sort((a, b) => ((a.name || a.displayName) || '').localeCompare((b.name || b.displayName) || ''));
-
+        .sort((a, b) => (a.name||a.displayName||'').localeCompare(b.name||b.displayName||''));
       allPlayers.forEach(p => {
         const opt = document.createElement('option');
         opt.value = p.id;
         opt.textContent = p.name || p.displayName;
         playerSelect.appendChild(opt);
       });
-    } catch(e) {
-      console.error('Failed to load player list:', e);
-    }
+    } catch(e) { console.error('Failed to load player list:', e); }
   });
 
   playerSelect.addEventListener('change', () => {
