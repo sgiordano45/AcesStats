@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <link rel="manifest" href="/manifest.json">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Team Stats - Mountainside Aces</title>
+  <meta name="theme-color" content="#2d5016">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="stylesheet" href="mobile-enhancements.css">
+  <link rel="stylesheet" href="nav-styles.css">
+  <style>
+    :root {
+      --primary: #2d5016;
+      --primary-light: #4a7c2e;
+      --accent: #e8f5e0;
+      --text: #1a202c;
+      --text-light: #718096;
+      --border: #e2e8f0;
+      --card: #ffffff;
+      --radius: 12px;
+      --shadow: 0 2px 12px rgba(0,0,0,0.08);
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      margin: 0; padding: 20px;
+      background: linear-gradient(135deg, #f7fafc 0%, #edf2f7 100%);
+      min-height: 100vh;
+      color: var(--text);
+    }
+
+    /* ── Page header ─────────────────────────────── */
+    .page-header {
+      margin-bottom: 24px;
+    }
+    .page-header h1 {
+      font-size: 1.6rem;
+      font-weight: 800;
+      color: var(--primary);
+      margin: 0 0 4px;
+    }
+    .page-header p {
+      color: var(--text-light);
+      margin: 0;
+      font-size: 0.9rem;
+    }
+
+    /* ── Filter bar ──────────────────────────────── */
+    .filter-bar {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+      background: var(--card);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 14px 18px;
+      margin-bottom: 20px;
+    }
+    .filter-label {
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: var(--text-light);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .filter-select {
+      padding: 8px 12px;
+      border: 1.5px solid var(--border);
+      border-radius: 8px;
+      font-size: 0.9rem;
+      font-family: inherit;
+      background: white;
+      color: var(--text);
+      cursor: pointer;
+      min-width: 130px;
+    }
+    .filter-select:focus { outline: none; border-color: var(--primary); }
+
+    /* ── Summary bar ─────────────────────────────── */
+    .summary-bar {
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+      margin-bottom: 20px;
+    }
+    .summary-chip {
+      background: var(--card);
+      border-radius: 8px;
+      padding: 10px 16px;
+      box-shadow: var(--shadow);
+      font-size: 0.85rem;
+      color: var(--text-light);
+    }
+    .summary-chip strong { color: var(--primary); font-size: 1rem; }
+
+    /* ── Table card ──────────────────────────────── */
+    .table-card {
+      background: var(--card);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      margin-bottom: 24px;
+    }
+    .table-card-header {
+      background: var(--primary);
+      color: white;
+      padding: 14px 20px;
+      font-size: 0.85rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .table-scroll { overflow-x: auto; }
+    table.stats-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.88rem;
+    }
+    table.stats-table th {
+      padding: 9px 12px;
+      text-align: left;
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-light);
+      border-bottom: 2px solid var(--border);
+      white-space: nowrap;
+      cursor: pointer;
+      user-select: none;
+      background: #fafbfc;
+    }
+    table.stats-table th:hover { background: #f0f4f8; color: var(--primary); }
+    table.stats-table th.sorted-asc::after  { content: ' ▲'; font-size: 0.65rem; }
+    table.stats-table th.sorted-desc::after { content: ' ▼'; font-size: 0.65rem; }
+    table.stats-table td {
+      padding: 10px 12px;
+      border-bottom: 1px solid #f0f4f8;
+      white-space: nowrap;
+    }
+    table.stats-table tr:last-child td { border-bottom: none; }
+    table.stats-table tbody tr:hover { background: #f7faf3; }
+    .team-cell {
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .team-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .stat-rate { color: var(--primary); font-weight: 700; }
+    .rank-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 20px; height: 20px;
+      border-radius: 50%;
+      font-size: 0.7rem;
+      font-weight: 800;
+      background: #e8f5e0;
+      color: var(--primary);
+      flex-shrink: 0;
+    }
+    .rank-badge.r1 { background: #ffd700; color: #7a5800; }
+    .rank-badge.r2 { background: #c0c0c0; color: #444; }
+    .rank-badge.r3 { background: #cd7f32; color: white; }
+
+    /* ── Empty / Loading ─────────────────────────── */
+    .state-box {
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--text-light);
+    }
+    .state-box .icon { font-size: 2.5rem; margin-bottom: 10px; }
+    .spinner {
+      width: 22px; height: 22px;
+      border: 3px solid #e2e8f0;
+      border-top-color: var(--primary);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      display: inline-block;
+      margin-right: 8px;
+      vertical-align: middle;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Mobile ──────────────────────────────────── */
+    @media (max-width: 600px) {
+      body { padding: 12px; }
+      .filter-bar { padding: 12px; gap: 8px; }
+      .filter-select { min-width: 110px; font-size: 0.85rem; }
+      .page-header h1 { font-size: 1.3rem; }
+    }
+  </style>
+</head>
+<body>
+<nav-component></nav-component>
+
+<div class="page-header">
+  <h1>🏟️ Team Batting Stats</h1>
+  <p>Season totals aggregated from all players on each team. Select a year and season to filter.</p>
+</div>
+
+<!-- Filters -->
+<div class="filter-bar">
+  <span class="filter-label">Year</span>
+  <select id="yearSelect" class="filter-select">
+    <option value="">All Years</option>
+  </select>
+  <span class="filter-label" style="margin-left:8px;">Season</span>
+  <select id="seasonSelect" class="filter-select">
+    <option value="">All Seasons</option>
+    <option value="summer">Summer</option>
+    <option value="fall">Fall</option>
+    <option value="spring">Spring</option>
+  </select>
+</div>
+
+<!-- Summary chips -->
+<div class="summary-bar" id="summaryBar" style="display:none;"></div>
+
+<!-- Table -->
+<div id="tableWrap">
+  <div class="state-box"><div class="spinner"></div> Loading stats…</div>
+</div>
+
+<script type="module">
+  import { getAllPlayerStatsOptimized, getCurrentSeason, db } from './firebase-data.js';
+  import { auth } from './firebase-auth.js';
+  import { onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
+  import { NavigationComponent } from './nav-component.js';
+
+  // ── Team colors (used for dots) ───────────────────────
+  const TEAM_COLORS = {
+    black:  '#1a1a1a', white: '#9e9e9e',  silver: '#708090',
+    red:    '#c0392b', blue:  '#2980b9',  green:  '#27ae60',
+    orange: '#e67e22', gold:  '#f1c40f',  purple: '#8e44ad',
+    yellow: '#f9ca24', gray:  '#95a5a6',  navy:   '#1b2a4a'
+  };
+  function teamColor(name) {
+    return TEAM_COLORS[(name || '').toLowerCase()] || '#2d5016';
+  }
+
+  const fmtAvg = (v) => {
+    if (typeof v !== 'number' || isNaN(v)) return '---';
+    return v >= 1 ? v.toFixed(3) : '.' + Math.round(v * 1000).toString().padStart(3,'0');
+  };
+
+  // ── State ─────────────────────────────────────────────
+  let allPlayers = [];
+  let currentSeason = null;
+  let sortCol = 'avg';
+  let sortDir = -1; // -1 = desc
+
+  // ── Build team rows from player data ──────────────────
+  function buildTeamRows(yearFilter, seasonFilter) {
+    // seasonId examples: "2025-fall-silver", "2026-summer-black"
+    const teams = {}; // key = "2025-fall-silver" → { year, season, team, totals }
+
+    allPlayers.forEach(player => {
+      if (!player.seasons) return;
+      Object.entries(player.seasons).forEach(([seasonId, sData]) => {
+        const parts = seasonId.split('-');
+        if (parts.length < 3) return; // skip bare "2025-fall" keys
+        const year   = parts[0];
+        const season = parts[1];
+        const team   = parts.slice(2).map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(' ');
+
+        if (yearFilter   && year   !== yearFilter)   return;
+        if (seasonFilter && season !== seasonFilter)  return;
+
+        if (!teams[seasonId]) {
+          teams[seasonId] = {
+            seasonId, year, season: season.charAt(0).toUpperCase() + season.slice(1),
+            team, games:0, atBats:0, hits:0, runs:0, walks:0,
+            singles:0, doubles:0, triples:0, homeRuns:0, rbis:0, plateAppearances:0,
+            playerCount: 0
+          };
+        }
+        const t = teams[seasonId];
+        t.playerCount++;
+        t.games           += Number(sData.games)            || 0;
+        t.atBats          += Number(sData.atBats)           || 0;
+        t.hits            += Number(sData.hits)             || 0;
+        t.runs            += Number(sData.runs)             || 0;
+        t.walks           += Number(sData.walks)            || 0;
+        t.singles         += Number(sData.singles)          || 0;
+        t.doubles         += Number(sData.doubles)          || 0;
+        t.triples         += Number(sData.triples)          || 0;
+        t.homeRuns        += Number(sData.homeRuns)         || 0;
+        t.rbis            += Number(sData.rbis || sData.rbi)|| 0;
+        t.plateAppearances+= Number(sData.plateAppearances) || (Number(sData.atBats||0) + Number(sData.walks||0));
+      });
+    });
+
+    // Compute rate stats
+    Object.values(teams).forEach(t => {
+      t.avg = t.atBats > 0 ? t.hits / t.atBats : 0;
+      t.obp = (t.atBats + t.walks) > 0 ? (t.hits + t.walks) / (t.atBats + t.walks) : 0;
+      const tb = t.singles + 2*t.doubles + 3*t.triples + 4*t.homeRuns;
+      t.slg  = t.atBats > 0 ? tb / t.atBats : 0;
+      t.ops  = t.obp + t.slg;
+    });
+
+    return Object.values(teams);
+  }
+
+  // ── Populate year dropdown from actual data ───────────
+  function populateYears() {
+    const years = new Set();
+    allPlayers.forEach(p => {
+      if (!p.seasons) return;
+      Object.keys(p.seasons).forEach(sid => {
+        const y = sid.split('-')[0];
+        if (y && /^\d{4}$/.test(y)) years.add(y);
+      });
+    });
+    const yearSelect = document.getElementById('yearSelect');
+    [...years].sort((a,b) => b.localeCompare(a)).forEach(y => {
+      const opt = document.createElement('option');
+      opt.value = y; opt.textContent = y;
+      yearSelect.appendChild(opt);
+    });
+
+    // Pre-select current season year
+    if (currentSeason?.id) {
+      const csYear = currentSeason.id.split('-')[0];
+      if (years.has(csYear)) yearSelect.value = csYear;
+      const csSeason = currentSeason.id.split('-')[1];
+      if (csSeason) document.getElementById('seasonSelect').value = csSeason;
+    }
+  }
+
+  // ── Render table ──────────────────────────────────────
+  function renderTable() {
+    const yearFilter   = document.getElementById('yearSelect').value;
+    const seasonFilter = document.getElementById('seasonSelect').value;
+    const rows = buildTeamRows(yearFilter, seasonFilter);
+
+    const wrap = document.getElementById('tableWrap');
+    const summaryBar = document.getElementById('summaryBar');
+
+    if (!rows.length) {
+      wrap.innerHTML = `<div class="state-box"><div class="icon">📊</div><p>No data for this season.</p></div>`;
+      summaryBar.style.display = 'none';
+      return;
+    }
+
+    // Sort
+    rows.sort((a, b) => {
+      const av = a[sortCol] ?? 0, bv = b[sortCol] ?? 0;
+      return typeof av === 'string' ? av.localeCompare(bv) * sortDir : (bv - av) * -sortDir;
+    });
+
+    // Summary chips
+    const totalGames   = Math.max(...rows.map(r => r.games));
+    const leagueAVG    = rows.reduce((s,r) => s + r.atBats, 0) > 0
+      ? rows.reduce((s,r) => s + r.hits,0) / rows.reduce((s,r) => s + r.atBats,0) : 0;
+    const seasonLabel  = rows[0] ? `${rows[0].year} ${rows[0].season}` : '';
+    summaryBar.innerHTML = `
+      <div class="summary-chip">Teams: <strong>${rows.length}</strong></div>
+      <div class="summary-chip">Season: <strong>${seasonLabel || 'All'}</strong></div>
+      <div class="summary-chip">League AVG: <strong>${fmtAvg(leagueAVG)}</strong></div>
+    `;
+    summaryBar.style.display = 'flex';
+
+    const cols = [
+      { key: 'team',           label: 'Team',   align: 'left'  },
+      { key: 'playerCount',    label: 'Players', align: 'right' },
+      { key: 'games',          label: 'G',       align: 'right' },
+      { key: 'atBats',         label: 'AB',      align: 'right' },
+      { key: 'hits',           label: 'H',       align: 'right' },
+      { key: 'runs',           label: 'R',       align: 'right' },
+      { key: 'walks',          label: 'BB',      align: 'right' },
+      { key: 'doubles',        label: '2B',      align: 'right' },
+      { key: 'triples',        label: '3B',      align: 'right' },
+      { key: 'homeRuns',       label: 'HR',      align: 'right' },
+      { key: 'rbis',           label: 'RBI',     align: 'right' },
+      { key: 'avg',            label: 'AVG',     align: 'right', rate: true },
+      { key: 'obp',            label: 'OBP',     align: 'right', rate: true },
+      { key: 'slg',            label: 'SLG',     align: 'right', rate: true },
+      { key: 'ops',            label: 'OPS',     align: 'right', rate: true },
+    ];
+
+    const headers = cols.map(c => {
+      const cls = c.key === sortCol ? (sortDir === -1 ? 'sorted-desc' : 'sorted-asc') : '';
+      return `<th class="${cls}" data-key="${c.key}" style="text-align:${c.align}">${c.label}</th>`;
+    }).join('');
+
+    const tbody = rows.map((r, i) => {
+      const rank = i + 1;
+      const rankCls = rank === 1 ? 'r1' : rank === 2 ? 'r2' : rank === 3 ? 'r3' : '';
+      const cells = cols.map(c => {
+        if (c.key === 'team') {
+          return `<td>
+            <div class="team-cell">
+              <span class="rank-badge ${rankCls}">${rank}</span>
+              <span class="team-dot" style="background:${teamColor(r.team)}"></span>
+              <a href="team.html?team=${encodeURIComponent(r.team)}" style="color:var(--primary);font-weight:700;text-decoration:none;">${r.team}</a>
+            </div>
+          </td>`;
+        }
+        const val = r[c.key] ?? 0;
+        const display = c.rate ? `<span class="stat-rate">${fmtAvg(val)}</span>` : val;
+        return `<td style="text-align:right">${display}</td>`;
+      }).join('');
+      return `<tr>${cells}</tr>`;
+    }).join('');
+
+    wrap.innerHTML = `
+      <div class="table-card">
+        <div class="table-card-header">
+          <span>📊 Team Batting — ${rows[0]?.year || ''} ${rows[0]?.season || 'All'}</span>
+          <span style="opacity:0.75;font-weight:400;font-size:0.78rem;">Click column headers to sort</span>
+        </div>
+        <div class="table-scroll">
+          <table class="stats-table">
+            <thead><tr>${headers}</tr></thead>
+            <tbody>${tbody}</tbody>
+          </table>
+        </div>
+      </div>`;
+
+    // Sort click handlers
+    wrap.querySelectorAll('th[data-key]').forEach(th => {
+      th.addEventListener('click', () => {
+        const key = th.dataset.key;
+        if (sortCol === key) sortDir *= -1;
+        else { sortCol = key; sortDir = -1; }
+        renderTable();
+      });
+    });
+  }
+
+  // ── Init ─────────────────────────────────────────────
+  onAuthStateChanged(auth, async (user) => {
+    if (!user) { window.location.href = 'index.html'; return; }
+    try {
+      [allPlayers, currentSeason] = await Promise.all([
+        getAllPlayerStatsOptimized(),
+        getCurrentSeason()
+      ]);
+      populateYears();
+      renderTable();
+    } catch(e) {
+      console.error(e);
+      document.getElementById('tableWrap').innerHTML =
+        `<div class="state-box"><div class="icon">⚠️</div><p>Failed to load stats.</p></div>`;
+    }
+  });
+
+  document.getElementById('yearSelect').addEventListener('change', renderTable);
+  document.getElementById('seasonSelect').addEventListener('change', renderTable);
+
+  // Pre-select from URL params (?year=2025&season=fall)
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('year'))   document.getElementById('yearSelect').value   = params.get('year');
+  if (params.get('season')) document.getElementById('seasonSelect').value = params.get('season');
+</script>
+
+<script type="module">
+  import { NavigationComponent } from './nav-component.js';
+</script>
+<script src="mobile-enhancements.js"></script>
+<script src="theme-toggle.js"></script>
+</body>
+</html>
