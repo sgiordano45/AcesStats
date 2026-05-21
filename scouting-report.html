@@ -370,6 +370,10 @@
   <select id="opponentSelect" class="filter-select" disabled>
     <option value="">All Opponents</option>
   </select>
+  <span class="filter-label" style="margin-left:8px;">vs Pitcher</span>
+  <select id="pitcherSelect" class="filter-select" disabled>
+    <option value="">All Pitchers</option>
+  </select>
 </div>
 
 <!-- Empty / Loading state -->
@@ -483,18 +487,23 @@
   const SPLITS_2025_COLLECTION = 'aggregatedPlayerStats2025Splits';
   const SPLITS_2025_SEASONS    = ['2025-summer', '2025-fall'];
 
-  let allPlayers      = [];
-  let currentPlayer   = null;
-  let currentStats    = [];   // processed season rows (no subs), sorted newest first
-  let splits2025Data  = null;
-  let splitsMainData  = null;
-  let gameDocs        = [];   // raw game-level docs for home/away vs opponent
-  let currentSeason   = null;
-  let currentOpponent = '';
+  let allPlayers         = [];
+  let currentPlayer      = null;
+  let currentStats       = [];   // processed season rows (no subs), sorted newest first
+  let splits2025Data     = null;
+  let splitsMainData     = null;
+  let gameDocs           = [];   // raw game-level docs for home/away vs opponent
+  let gameDocIdMap       = {};   // gameDocId → batter game doc (for fast pitcher lookup)
+  let currentSeason      = null;
+  let currentOpponent    = '';
+  let currentPitcher     = '';   // pitcher player ID
+  let currentPitcherName = '';
+  let pitcherGameDocIds  = new Set(); // gameDocIds where this pitcher appeared
 
   // ── DOM refs ─────────────────────────────────────────
   const playerSelect   = document.getElementById('playerSelect');
   const opponentSelect = document.getElementById('opponentSelect');
+  const pitcherSelect  = document.getElementById('pitcherSelect');
   const emptyState     = document.getElementById('emptyState');
   const loadingState   = document.getElementById('loadingState');
   const scoutingReport = document.getElementById('scoutingReport');
@@ -769,7 +778,9 @@
     });
     opponentSelect.disabled = !oppNames.length;
 
-    if (currentOpponent && vsOpponentMap[currentOpponent]) {
+    if (currentPitcher && pitcherGameDocIds.size > 0) {
+      renderVsPitcherView(currentPitcherName);
+    } else if (currentOpponent && vsOpponentMap[currentOpponent]) {
       renderVsOpponentView(currentOpponent, vsOpponentMap[currentOpponent], name);
     } else {
       renderFullView(p, name);
@@ -836,10 +847,87 @@
     renderSeasonHistory();
   }
 
+  // ── Render: vs Pitcher ───────────────────────────────
+  function renderVsPitcherView(pitcherName) {
+    const name = currentPlayer.name || currentPlayer.displayName;
+    const banner = document.getElementById('vsBanner');
+
+    const matchingGames = gameDocs.filter(g => pitcherGameDocIds.has(g.gameDocId));
+
+    if (!matchingGames.length) {
+      banner.textContent = `⚾ vs ${pitcherName} — No matchup data found`;
+      banner.classList.add('active');
+      renderQuickStats('—','—','—','—','—','---','---', null);
+      document.getElementById('homeAwaySplitBody').innerHTML =
+        `<tr><td colspan="8" class="no-data-note">No games on record vs ${pitcherName}</td></tr>`;
+      document.getElementById('regularPlayoffSplitBody').innerHTML = '';
+      renderSeasonHistory();
+      return;
+    }
+
+    // Aggregate totals
+    const tot = { games: matchingGames.length, atBats:0, hits:0, runs:0, walks:0 };
+    matchingGames.forEach(g => {
+      tot.atBats += g.atBats || 0;
+      tot.hits   += g.hits   || 0;
+      tot.runs   += g.runs   || 0;
+      tot.walks  += g.walks  || 0;
+    });
+    tot.battingAverage   = tot.atBats > 0 ? tot.hits / tot.atBats : 0;
+    tot.onBasePercentage = (tot.atBats + tot.walks) > 0
+      ? (tot.hits + tot.walks) / (tot.atBats + tot.walks) : 0;
+
+    banner.textContent = `⚾ vs ${pitcherName}  ·  ${tot.games} G, ${tot.hits}-for-${tot.atBats} (${fmtAvg(tot.battingAverage)})`;
+    banner.classList.add('active');
+
+    renderQuickStats(tot.games, tot.atBats, tot.hits, tot.runs, tot.walks,
+      tot.battingAverage, tot.onBasePercentage, null);
+
+    const vsStats = {
+      battingAverage: tot.battingAverage, onBasePercentage: tot.onBasePercentage,
+      runs: tot.runs, acesBPI: 0, games: tot.games
+    };
+    renderRadial('careerRadialContainer', vsStats, name, `vs ${pitcherName}`);
+    document.getElementById('seasonRadialTitle').textContent = `vs ${pitcherName}`;
+    renderRadial('seasonRadialContainer', vsStats, name, `vs ${pitcherName}`);
+
+    // Home/Away + Regular/Playoff splits from matching game docs
+    const blank = () => ({ games:0, atBats:0, hits:0, runs:0, walks:0 });
+    const splits = { home: blank(), away: blank(), regular: blank(), playoff: blank() };
+    matchingGames.forEach(g => {
+      const ha = g.isHome === true ? splits.home : splits.away;
+      const rp = (g.isPlayoff === true || g.gameType === 'playoff') ? splits.playoff : splits.regular;
+      [ha, rp].forEach(b => {
+        b.games++; b.atBats += g.atBats||0; b.hits += g.hits||0;
+        b.runs += g.runs||0; b.walks += g.walks||0;
+      });
+    });
+    ['home','away','regular','playoff'].forEach(k => {
+      const s = splits[k];
+      s.battingAverage   = s.atBats > 0 ? s.hits / s.atBats : 0;
+      s.onBasePercentage = (s.atBats + s.walks) > 0 ? (s.hits + s.walks) / (s.atBats + s.walks) : 0;
+    });
+    renderSplits(splits);
+    renderSeasonHistory();
+  }
+
+  // ── Load pitcher matchup data ─────────────────────────
+  async function loadPitcherMatchup(pitcherLegacyId) {
+    pitcherGameDocIds = new Set();
+    try {
+      const snap = await getDocs(collection(db, 'pitchingStats', pitcherLegacyId, 'games'));
+      snap.docs.forEach(d => {
+        const id = d.data().gameDocId || d.id;
+        if (id) pitcherGameDocIds.add(id);
+      });
+    } catch(e) { console.warn('Pitcher game docs unavailable:', e); }
+  }
+
   // ── Load player ───────────────────────────────────────
   async function loadPlayer(playerId) {
     splits2025Data = null; splitsMainData = null;
-    currentPlayer = null; currentStats = []; gameDocs = [];
+    currentPlayer = null; currentStats = []; gameDocs = []; gameDocIdMap = {};
+    currentPitcher = ''; currentPitcherName = ''; pitcherGameDocIds = new Set();
 
     emptyState.classList.add('hidden');
     scoutingReport.classList.add('hidden');
@@ -883,11 +971,14 @@
         if (Object.keys(mainSeasons).length) splitsMainData = { seasons: mainSeasons };
       }
 
-      // Fetch game-level docs for vsOpponent home/away splits
+      // Fetch game-level docs for vsOpponent home/away splits + vs-pitcher matching
       try {
         const gSnap = await getDocs(collection(db, 'playerStats', legacyId, 'games'));
         gameDocs = gSnap.docs.map(d => d.data());
+        gameDocs.forEach(g => { if (g.gameDocId) gameDocIdMap[g.gameDocId] = g; });
       } catch(e) { console.warn('Game docs unavailable:', e); }
+      pitcherSelect.disabled = false;
+      pitcherSelect.value = '';
 
       // Badges
       let badges = {};
@@ -919,18 +1010,42 @@
       allPlayers = players
         .filter(p => p.name || p.displayName)
         .sort((a, b) => (a.name||a.displayName||'').localeCompare(b.name||b.displayName||''));
+
       allPlayers.forEach(p => {
         const opt = document.createElement('option');
         opt.value = p.id;
         opt.textContent = p.name || p.displayName;
         playerSelect.appendChild(opt);
       });
+
+      // Populate pitcher dropdown — only players with pitching seasons
+      const pitchers = allPlayers.filter(p =>
+        p.pitchingSeasons && Object.keys(p.pitchingSeasons).length > 0
+      );
+      pitchers.forEach(p => {
+        const pName = p.name || p.displayName;
+        const legId  = toLegacyId(pName);
+        // Show their most recent team for context
+        const seasonVals = Object.entries(p.pitchingSeasons || {})
+          .sort((a, b) => b[0].localeCompare(a[0]));
+        const latestTeam = seasonVals[0]?.[1]?.team ? ` (${cap(seasonVals[0][1].team)})` : '';
+        const opt = document.createElement('option');
+        opt.value = p.id;
+        opt.textContent = `${pName}${latestTeam}`;
+        opt.dataset.legacyId = legId;
+        opt.dataset.name     = pName;
+        pitcherSelect.appendChild(opt);
+      });
+
     } catch(e) { console.error('Failed to load player list:', e); }
   });
 
   playerSelect.addEventListener('change', () => {
     currentOpponent = '';
+    currentPitcher = ''; currentPitcherName = ''; pitcherGameDocIds = new Set();
     opponentSelect.value = '';
+    pitcherSelect.value  = '';
+    pitcherSelect.disabled = true;
     if (playerSelect.value) loadPlayer(playerSelect.value);
     else {
       scoutingReport.classList.add('hidden');
@@ -941,6 +1056,28 @@
 
   opponentSelect.addEventListener('change', () => {
     currentOpponent = opponentSelect.value;
+    if (currentOpponent) {
+      // Clear pitcher when opponent is selected
+      currentPitcher = ''; currentPitcherName = ''; pitcherGameDocIds = new Set();
+      pitcherSelect.value = '';
+    }
+    if (currentPlayer) renderReport();
+  });
+
+  pitcherSelect.addEventListener('change', async () => {
+    const sel = pitcherSelect.options[pitcherSelect.selectedIndex];
+    currentPitcher     = pitcherSelect.value;
+    currentPitcherName = sel?.dataset?.name || '';
+    const legacyId     = sel?.dataset?.legacyId || '';
+
+    if (currentPitcher) {
+      // Clear opponent when pitcher is selected
+      currentOpponent = '';
+      opponentSelect.value = '';
+      await loadPitcherMatchup(legacyId);
+    } else {
+      pitcherGameDocIds = new Set();
+    }
     if (currentPlayer) renderReport();
   });
 
