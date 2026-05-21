@@ -1055,10 +1055,16 @@ window.runReconciliation = async function() {
           if (data.seasonId === seasonId) gameDocs.push(data);
         });
 
-        // Load season doc
-        const seasonDocRef = doc(db, 'playerStats', player.legacyId, 'seasons', seasonId);
-        const seasonDocSnap = await getDoc(seasonDocRef);
-        const seasonDocData = seasonDocSnap.exists() ? seasonDocSnap.data() : null;
+        // Load season doc — keyed as {seasonId} or {seasonId}-{teamId} (e.g. "2025-fall-silver")
+        const seasonsSnap = await getDocs(collection(db, 'playerStats', player.legacyId, 'seasons'));
+        let seasonDocData = null;
+        let seasonDocId = seasonId; // fallback for new doc creation
+        seasonsSnap.forEach(sd => {
+          if (sd.id === seasonId || sd.id.startsWith(seasonId + '-') || sd.data().seasonId === seasonId) {
+            seasonDocData = sd.data();
+            seasonDocId = sd.id;
+          }
+        });
 
         if (gameDocs.length === 0) {
           result = {
@@ -1068,7 +1074,8 @@ window.runReconciliation = async function() {
             status: 'nodata',
             diffs: [],
             gameSums: null,
-            seasonDocData
+            seasonDocData,
+            seasonDocId
           };
         } else {
           // Sum game docs
@@ -1103,7 +1110,8 @@ window.runReconciliation = async function() {
               status: 'nodoc',
               diffs: [],
               gameSums: sums,
-              seasonDocData: null
+              seasonDocData: null,
+              seasonDocId
             };
           } else {
             // Compare
@@ -1129,7 +1137,8 @@ window.runReconciliation = async function() {
               status: diffs.length === 0 ? 'match' : 'mismatch',
               diffs,
               gameSums: sums,
-              seasonDocData
+              seasonDocData,
+              seasonDocId
             };
           }
         }
@@ -1216,7 +1225,7 @@ function renderReconcileTable(seasonId) {
 
     const showFix = r.status === 'mismatch' || r.status === 'nodoc';
     const fixBtn = showFix
-      ? `<button class="btn btn-danger btn-sm" onclick="fixSeasonDoc('${r.legacyId}', '${seasonId}')">🔧 Fix Season Doc</button>`
+      ? `<button class="btn btn-danger btn-sm" onclick="fixSeasonDoc('${r.legacyId}', '${seasonId}', '${r.seasonDocId}')">🔧 Fix Season Doc</button>`
       : '';
 
     row.innerHTML = `
@@ -1230,7 +1239,7 @@ function renderReconcileTable(seasonId) {
   });
 }
 
-window.fixSeasonDoc = async function(legacyId, seasonId) {
+window.fixSeasonDoc = async function(legacyId, seasonId, seasonDocId) {
   const fixCell = document.getElementById(`fix-cell-${legacyId}`);
   if (!fixCell) return;
 
@@ -1278,7 +1287,7 @@ window.fixSeasonDoc = async function(legacyId, seasonId) {
       : 0;
 
     // Write to season doc (merge: true preserves non-stat fields like team, teamId, etc.)
-    const seasonDocRef = doc(db, 'playerStats', legacyId, 'seasons', seasonId);
+    const seasonDocRef = doc(db, 'playerStats', legacyId, 'seasons', seasonDocId || seasonId);
     await setDoc(seasonDocRef, {
       ...sums,
       battingAverage: parseFloat(ba.toFixed(3)),
