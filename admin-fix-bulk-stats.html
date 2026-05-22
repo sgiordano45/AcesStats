@@ -78,6 +78,49 @@
   <div id="log"></div>
 </div>
 
+<!-- ===================== DATE MISMATCH SCANNER ===================== -->
+<div class="card" id="dateMismatchCard">
+  <h3 style="margin-top:0">📅 Date Mismatch Scanner</h3>
+  <p style="font-size:0.85rem;color:#718096;margin-top:0">
+    Finds game docs where the date baked into <code>gameDocId</code> doesn't match <code>gameDateFormatted</code>.
+    This catches docs uploaded with the wrong CSV date (e.g. 5/22 instead of 5/21) that passed the normal
+    format check. The doc's <code>gameDateFormatted</code> must already be corrected via the editor before running this.
+  </p>
+
+  <div style="margin-bottom:1rem">
+    <label style="font-size:0.85rem;font-weight:600;color:#4a5568">Season filter (leave blank to scan all)</label><br>
+    <input id="dmSeasonFilter" type="text" value="2026-summer"
+      style="margin-top:0.3rem;padding:0.4rem 0.75rem;border:1px solid #cbd5e0;border-radius:6px;font-size:0.9rem;width:220px">
+  </div>
+
+  <div class="stats-bar">
+    <div class="stat-box"><div class="stat-num" id="dmCntBad">—</div><div class="stat-lbl">Mismatches found</div></div>
+    <div class="stat-box"><div class="stat-num" id="dmCntMatched">—</div><div class="stat-lbl">Matched to game</div></div>
+    <div class="stat-box"><div class="stat-num" id="dmCntUnmatched">—</div><div class="stat-lbl">Unmatched (no fix)</div></div>
+    <div class="stat-box"><div class="stat-num" id="dmCntFixed">—</div><div class="stat-lbl">Fixed</div></div>
+    <div class="stat-box"><div class="stat-num" id="dmCntErr">—</div><div class="stat-lbl">Errors</div></div>
+  </div>
+  <button class="btn btn-primary" id="dmScanBtn" onclick="runDateMismatchScan()">🔍 Scan for Date Mismatches</button>
+  <button class="btn btn-danger"  id="dmFixBtn"  onclick="runDateMismatchFix()" disabled>⚡ Fix All Matched</button>
+  <button class="btn btn-secondary" onclick="clearLog()">Clear Log</button>
+</div>
+
+<div class="card" id="dmPreviewCard" style="display:none">
+  <h3 style="margin-top:0">Preview — date mismatch docs to fix</h3>
+  <p style="font-size:0.85rem;color:#718096;">
+    <span class="tag tag-warn">no match</span> rows will be skipped — the correct game doc wasn't found in Firestore.
+    Make sure <code>gameDateFormatted</code> is already corrected in the editor for these docs.
+  </p>
+  <div style="overflow-x:auto">
+    <table id="dmPreviewTable">
+      <thead><tr>
+        <th>Collection</th><th>Player ID</th><th>Current gameDocId</th><th>Date in ID</th><th>gameDateFormatted</th><th>New gameDocId</th><th>Status</th>
+      </tr></thead>
+      <tbody id="dmPreviewBody"></tbody>
+    </table>
+  </div>
+</div>
+
 <!-- ===================== OUT-OF-PARK HR MANAGER ===================== -->
 <div class="card" id="ootpCard">
   <h3 style="margin-top:0">💣 Out-of-Park Home Run Tracker</h3>
@@ -512,6 +555,224 @@ window.runFix = async function() {
   }
 
   document.getElementById('scanBtn').disabled = false;
+};
+
+// =============================================
+// DATE MISMATCH SCANNER
+// =============================================
+
+let dateMismatchResults = [];  // { collName, playerId, oldDocId, newDocId, newGameId, dateInId, data, matched }
+
+// Parse M_D_YYYY out of a gameDocId that starts with seasonId_
+function parseDateFromGameDocId(gameDocId, seasonId) {
+  if (!gameDocId || !seasonId) return null;
+  const prefix = seasonId + '_';
+  if (!gameDocId.startsWith(prefix)) return null;
+  const rest = gameDocId.slice(prefix.length);  // e.g. "5_22_2026_silver_vs_army"
+  const parts = rest.split('_');
+  if (parts.length < 3) return null;
+  const m = parseInt(parts[0], 10);
+  const d = parseInt(parts[1], 10);
+  const y = parseInt(parts[2], 10);
+  if (isNaN(m) || isNaN(d) || isNaN(y) || y < 2020 || y > 2040) return null;
+  return new Date(y, m - 1, d);
+}
+
+// Returns true when the date baked into gameDocId differs from gameDateFormatted
+// Skips docs already caught by isOldFormat (they'll be handled by the main scanner)
+function isDateMismatch(data) {
+  const { gameDocId, seasonId, gameDateFormatted } = data;
+  if (!gameDocId || !seasonId || !gameDateFormatted) return false;
+  if (isOldFormat(data)) return false;  // let the main scanner handle these
+
+  const docDate = parseDateFromGameDocId(gameDocId, seasonId);
+  if (!docDate) return false;
+
+  const formattedDate = parseFormattedDate(gameDateFormatted);
+  if (!formattedDate) return false;
+
+  return (
+    docDate.getFullYear() !== formattedDate.getFullYear() ||
+    docDate.getMonth()    !== formattedDate.getMonth()    ||
+    docDate.getDate()     !== formattedDate.getDate()
+  );
+}
+
+function setDmStat(id, val) { document.getElementById(id).textContent = val; }
+
+window.runDateMismatchScan = async function() {
+  document.getElementById('dmScanBtn').disabled = true;
+  document.getElementById('dmFixBtn').disabled  = true;
+  dateMismatchResults = [];
+  setDmStat('dmCntBad', '…'); setDmStat('dmCntMatched', '…'); setDmStat('dmCntUnmatched', '…');
+  setDmStat('dmCntFixed', '—'); setDmStat('dmCntErr', '—');
+  document.getElementById('dmPreviewCard').style.display = 'none';
+  document.getElementById('dmPreviewBody').innerHTML = '';
+
+  const seasonFilter = document.getElementById('dmSeasonFilter').value.trim();
+  log(seasonFilter
+    ? `[Date Mismatch] Starting scan — season filter: "${seasonFilter}"`
+    : '[Date Mismatch] Starting scan — no season filter');
+
+  // Collect player IDs from rosters (same approach as main scanner)
+  const playerIds = new Set();
+  try {
+    const rostersSnap = await getDocs(collection(db, 'rosters'));
+    rostersSnap.forEach(rDoc => {
+      const players = rDoc.data().players || [];
+      players.forEach(p => {
+        if (p.id) playerIds.add(p.id);
+        if (p.authId) playerIds.add(p.authId);
+      });
+    });
+    log(`  Found ${playerIds.size} unique player IDs`);
+  } catch (e) {
+    log(`  ❌ Error loading rosters: ${e.message}`);
+    document.getElementById('dmScanBtn').disabled = false;
+    return;
+  }
+
+  const colls = ['playerStats', 'pitchingStats'];
+  let badCount = 0, matchedCount = 0, unmatchedCount = 0;
+
+  for (const collName of colls) {
+    log(`Scanning ${collName} for date mismatches…`);
+    for (const playerId of playerIds) {
+      try {
+        const gamesSnap = await getDocs(collection(db, collName, playerId, 'games'));
+        if (gamesSnap.empty) continue;
+
+        for (const gDoc of gamesSnap.docs) {
+          const data = gDoc.data();
+          if (seasonFilter && data.seasonId !== seasonFilter) continue;
+          if (!isDateMismatch(data)) continue;
+
+          badCount++;
+          const oldDocId = gDoc.id;
+
+          // Derive what date is embedded in gameDocId for display
+          const docDate = parseDateFromGameDocId(data.gameDocId || oldDocId, data.seasonId);
+          const dateInId = docDate
+            ? `${docDate.getMonth()+1}/${docDate.getDate()}/${docDate.getFullYear()}`
+            : '?';
+
+          log(`  Found mismatch: ${collName}/${playerId}/games/${oldDocId}`);
+          log(`    Date in gameDocId: ${dateInId} | gameDateFormatted: ${data.gameDateFormatted}`);
+          log(`    opp=${data.opponent}  home=${data.isHome}  team=${data.teamId}`);
+
+          // Use corrected gameDateFormatted to find the right game
+          const match = await findCorrectGameDocCached(
+            data.seasonId, data.gameDateFormatted, data.opponent, data.isHome, data.teamId, data.gameDate
+          );
+
+          let newGameId = null, newDocId = null;
+          let matched = false;
+
+          if (match) {
+            newGameId = match.docId;
+            newDocId  = `${data.seasonId}_${newGameId}`;
+            matched   = true;
+            matchedCount++;
+            log(`    ✅ Matched → new gameDocId: ${newDocId}`);
+          } else {
+            unmatchedCount++;
+            log(`    ⚠️ No game match found — check that gameDateFormatted has been corrected in the editor`);
+          }
+
+          dateMismatchResults.push({ collName, playerId, oldDocId, newDocId, newGameId, dateInId, data, matched });
+        }
+      } catch (e) {
+        if (!e.message?.includes('permission')) continue;
+        log(`  ⚠️ Error reading ${collName}/${playerId}/games: ${e.message}`);
+      }
+    }
+  }
+
+  setDmStat('dmCntBad',       badCount);
+  setDmStat('dmCntMatched',   matchedCount);
+  setDmStat('dmCntUnmatched', unmatchedCount);
+
+  // Build preview table
+  const tbody = document.getElementById('dmPreviewBody');
+  dateMismatchResults.forEach(r => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${r.collName}</td>
+      <td style="font-family:monospace;font-size:0.78rem">${r.playerId}</td>
+      <td style="font-family:monospace;font-size:0.78rem;color:#c53030">${r.oldDocId}</td>
+      <td style="color:#c53030;font-weight:600">${r.dateInId}</td>
+      <td style="color:#276749;font-weight:600">${r.data.gameDateFormatted || ''}</td>
+      <td style="font-family:monospace;font-size:0.78rem;color:#276749">${r.matched ? r.newDocId : '—'}</td>
+      <td><span class="tag ${r.matched ? 'tag-ok' : 'tag-warn'}">${r.matched ? 'ready' : 'no match'}</span></td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  document.getElementById('dmPreviewCard').style.display = (badCount > 0) ? 'block' : 'none';
+
+  if (matchedCount > 0) {
+    document.getElementById('dmFixBtn').disabled = false;
+    log(`\n[Date Mismatch] Scan complete. ${matchedCount} doc(s) ready to fix, ${unmatchedCount} skipped.`);
+    log('Review the table above, then click "Fix All Matched" to proceed.');
+  } else if (badCount === 0) {
+    log('\n[Date Mismatch] Scan complete. No date-mismatch docs found.');
+  } else {
+    log(`\n[Date Mismatch] Scan complete. ${badCount} mismatch(es) found but none could be matched — verify gameDateFormatted is corrected.`);
+  }
+
+  document.getElementById('dmScanBtn').disabled = false;
+};
+
+window.runDateMismatchFix = async function() {
+  const toFix = dateMismatchResults.filter(r => r.matched);
+  if (toFix.length === 0) { log('Nothing to fix.'); return; }
+
+  if (!confirm(`Fix ${toFix.length} date-mismatch doc(s)? This copies each to the correct path and deletes the old one.`)) return;
+
+  document.getElementById('dmFixBtn').disabled  = true;
+  document.getElementById('dmScanBtn').disabled = true;
+
+  let fixed = 0, errors = 0;
+  log(`\n[Date Mismatch] Fixing ${toFix.length} doc(s)…`);
+
+  for (const r of toFix) {
+    try {
+      const oldRef = doc(db, r.collName, r.playerId, 'games', r.oldDocId);
+      const newRef = doc(db, r.collName, r.playerId, 'games', r.newDocId);
+
+      // Build corrected data — update gameId, gameDocId; preserve everything else
+      const correctedData = {
+        ...r.data,
+        gameId:    r.newGameId,
+        gameDocId: r.newDocId,
+        fixedFromDateMismatch: true,
+        fixedAt: new Date().toISOString()
+      };
+
+      await setDoc(newRef, correctedData);
+      log(`  ✅ Wrote ${r.collName}/${r.playerId}/games/${r.newDocId}`);
+
+      await deleteDoc(oldRef);
+      log(`  🗑️  Deleted ${r.collName}/${r.playerId}/games/${r.oldDocId}`);
+
+      fixed++;
+    } catch (e) {
+      log(`  ❌ Error fixing ${r.collName}/${r.playerId}/${r.oldDocId}: ${e.message}`);
+      errors++;
+    }
+  }
+
+  setDmStat('dmCntFixed', fixed);
+  setDmStat('dmCntErr',   errors);
+
+  if (errors === 0) {
+    log(`\n🎉 Done! ${fixed} date-mismatch doc(s) fixed.`);
+    log('Re-run aggregation (badge-weekly or aggregate-stats) to refresh aggregatedPlayerStats.');
+  } else {
+    log(`\nFinished with ${fixed} fixed and ${errors} error(s).`);
+  }
+
+  document.getElementById('dmScanBtn').disabled = false;
 };
 
 // =============================================
