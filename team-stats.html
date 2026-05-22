@@ -529,6 +529,56 @@
     return Object.values(teams);
   }
 
+  // ── IP helpers (baseball thirds format: 7.1 = 7⅓ innings) ──
+  function ipToDecimal(ip) {
+    const n = Number(ip) || 0;
+    const full   = Math.floor(n);
+    const thirds = Math.round((n - full) * 10); // .1 → 1, .2 → 2
+    return full + thirds / 3;
+  }
+  function decimalToIP(dec) {
+    if (!dec || dec <= 0) return '0.0';
+    const full   = Math.floor(dec);
+    const thirds = Math.round((dec - full) * 3);
+    return `${full}.${thirds}`;
+  }
+  function fmtERA(era) {
+    if (era === null || era === undefined || isNaN(era)) return '—';
+    return era.toFixed(2);
+  }
+
+  // ── Build pitching totals by team ─────────────────────
+  function buildPitchingByTeam(yearFilter, seasonFilter) {
+    const pitching = {}; // groupKey → { ipDec, ra }
+
+    allPlayers.forEach(player => {
+      if (!player.pitchingSeasons) return;
+      Object.entries(player.pitchingSeasons).forEach(([seasonId, pData]) => {
+        const sub = pData.sub || pData.Sub || '';
+        if (sub === 'Yes' || sub === 'yes' || sub === true) return;
+
+        const parts  = seasonId.split('-');
+        const year   = parts[0];
+        const season = parts[1];
+        if (!year || !season) return;
+
+        const teamRaw = pData.team ? pData.team : parts.slice(2).join('-');
+        if (!teamRaw) return;
+
+        const team = teamRaw.charAt(0).toUpperCase() + teamRaw.slice(1);
+        if (yearFilter   && year   !== yearFilter)   return;
+        if (seasonFilter && season !== seasonFilter)  return;
+
+        const groupKey = `${year}-${season}-${team.toLowerCase()}`;
+        if (!pitching[groupKey]) pitching[groupKey] = { ipDec: 0, ra: 0 };
+        pitching[groupKey].ipDec += ipToDecimal(pData.inningsPitched);
+        pitching[groupKey].ra    += Number(pData.runsAllowed) || 0;
+      });
+    });
+
+    return pitching;
+  }
+
   // ── Populate year dropdown from actual data ───────────
   function populateYears() {
     const years = new Set();
@@ -560,7 +610,16 @@
     const pg           = perGame; // snapshot for this render — must be first (TDZ guard)
     const yearFilter   = document.getElementById('yearSelect').value;
     const seasonFilter = document.getElementById('seasonSelect').value;
-    const rows = buildTeamRows(yearFilter, seasonFilter);
+    const rows        = buildTeamRows(yearFilter, seasonFilter);
+    const pitchingMap = buildPitchingByTeam(yearFilter, seasonFilter);
+
+    // Merge pitching into batting rows
+    rows.forEach(r => {
+      const p  = pitchingMap[r.groupKey] || { ipDec: 0, ra: 0 };
+      r.ip     = p.ipDec;   // stored as true decimal for math/sorting
+      r.ra     = p.ra;
+      r.era    = p.ipDec > 0 ? (p.ra / p.ipDec) * 7 : null; // 7-inning games
+    });
 
     const wrap = document.getElementById('tableWrap');
     const summaryBar = document.getElementById('summaryBar');
@@ -572,7 +631,7 @@
     }
 
     // Sort — respect per-game mode for counting stat columns
-    const perGameCols = new Set(['atBats','hits','runs','walks','doubles','triples','homeRuns','rbis']);
+    const perGameCols = new Set(['atBats','hits','runs','walks','doubles','triples','homeRuns','rbis','ra','ip']);
     rows.sort((a, b) => {
       const dA = (pg && perGameCols.has(sortCol) && a.games > 0) ? a.games : 1;
       const dB = (pg && perGameCols.has(sortCol) && b.games > 0) ? b.games : 1;
@@ -584,11 +643,15 @@
     // Summary chips
     const leagueAVG = rows.reduce((s,r) => s + r.atBats, 0) > 0
       ? rows.reduce((s,r) => s + r.hits,0) / rows.reduce((s,r) => s + r.atBats,0) : 0;
+    const totalIPDec = rows.reduce((s,r) => s + (r.ip || 0), 0);
+    const totalRA    = rows.reduce((s,r) => s + (r.ra || 0), 0);
+    const leagueERA  = totalIPDec > 0 ? (totalRA / totalIPDec) * 7 : null;
     const seasonLabel = rows[0] ? `${rows[0].year} ${rows[0].season}` : '';
     summaryBar.innerHTML = `
       <div class="summary-chip">Teams: <strong>${rows.length}</strong></div>
       <div class="summary-chip">Season: <strong>${seasonLabel || 'All'}</strong></div>
       <div class="summary-chip">League AVG: <strong>${fmtAvg(leagueAVG)}</strong></div>
+      ${leagueERA !== null ? `<div class="summary-chip">League ERA: <strong>${fmtERA(leagueERA)}</strong></div>` : ''}
     `;
     summaryBar.style.display = 'flex';
 
@@ -607,6 +670,9 @@
       { key: 'rbis',        label: `RBI${sfx}`,     align: 'right', perGame: pg },
       { key: 'avg',         label: 'AVG',           align: 'right', rate: true },
       { key: 'obp',         label: 'OBP',           align: 'right', rate: true },
+      { key: 'ip',          label: `IP${sfx}`,      align: 'right', pitching: true, perGame: pg },
+      { key: 'ra',          label: `RA${sfx}`,      align: 'right', pitching: true, perGame: pg },
+      { key: 'era',         label: 'ERA',           align: 'right', pitching: true, era: true },
     ];
 
     const headers = cols.map(c => {
@@ -629,8 +695,20 @@
         }
         const rawVal = r[c.key] ?? 0;
         let display;
-        if (c.rate) {
+        if (c.era) {
+          // ERA: rate stat, lower is better, already calculated
+          display = r.ip > 0
+            ? `<span class="stat-rate">${fmtERA(rawVal)}</span>`
+            : '<span style="color:#aaa">—</span>';
+        } else if (c.rate) {
           display = `<span class="stat-rate">${fmtAvg(rawVal)}</span>`;
+        } else if (c.key === 'ip') {
+          // IP: display in baseball thirds format
+          if (c.perGame && r.games > 0) {
+            display = `<span class="stat-rate">${(rawVal / r.games).toFixed(2)}</span>`;
+          } else {
+            display = r.ip > 0 ? decimalToIP(rawVal) : '—';
+          }
         } else if (c.perGame && r.games > 0) {
           const pgVal = rawVal / r.games;
           display = `<span class="stat-rate">${pgVal.toFixed(1)}</span>`;
