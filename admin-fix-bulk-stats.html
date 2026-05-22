@@ -101,7 +101,7 @@
     <div class="stat-box"><div class="stat-num" id="dmCntErr">—</div><div class="stat-lbl">Errors</div></div>
   </div>
   <button class="btn btn-primary" id="dmScanBtn" onclick="runDateMismatchScan()">🔍 Scan for Date Mismatches</button>
-  <button class="btn btn-danger"  id="dmFixBtn"  onclick="runDateMismatchFix()" disabled>⚡ Fix All Matched</button>
+  <button class="btn btn-danger"  id="dmFixBtn"  onclick="runDateMismatchFix()" disabled>⚡ Fix Selected</button>
   <button class="btn btn-secondary" onclick="clearLog()">Clear Log</button>
 </div>
 
@@ -112,9 +112,16 @@
     Make sure <code>gameDateFormatted</code> is already corrected in the editor for these docs.
   </p>
   <div style="overflow-x:auto">
+    <div style="margin-bottom:0.6rem;display:flex;gap:0.75rem;align-items:center;">
+      <label style="font-size:0.85rem;font-weight:600;cursor:pointer;">
+        <input type="checkbox" id="dmSelectAll" onchange="toggleDmSelectAll(this.checked)" style="margin-right:0.3rem">
+        Select all ready
+      </label>
+      <span id="dmSelectedCount" style="font-size:0.82rem;color:#718096;">0 selected</span>
+    </div>
     <table id="dmPreviewTable">
       <thead><tr>
-        <th>Collection</th><th>Player ID</th><th>Current gameDocId</th><th>Date in ID</th><th>gameDateFormatted</th><th>New gameDocId</th><th>Status</th>
+        <th style="width:2rem"></th><th>Collection</th><th>Player ID</th><th>Current gameDocId</th><th>Date in ID</th><th>gameDateFormatted</th><th>New gameDocId</th><th>Status</th>
       </tr></thead>
       <tbody id="dmPreviewBody"></tbody>
     </table>
@@ -694,9 +701,15 @@ window.runDateMismatchScan = async function() {
 
   // Build preview table
   const tbody = document.getElementById('dmPreviewBody');
-  dateMismatchResults.forEach(r => {
+  dateMismatchResults.forEach((r, idx) => {
     const tr = document.createElement('tr');
+    const cbId = `dm-cb-${idx}`;
     tr.innerHTML = `
+      <td style="text-align:center">
+        ${r.matched
+          ? `<input type="checkbox" id="${cbId}" data-idx="${idx}" onchange="updateDmSelectedCount()" checked>`
+          : ''}
+      </td>
       <td>${r.collName}</td>
       <td style="font-family:monospace;font-size:0.78rem">${r.playerId}</td>
       <td style="font-family:monospace;font-size:0.78rem;color:#c53030">${r.oldDocId}</td>
@@ -709,11 +722,12 @@ window.runDateMismatchScan = async function() {
   });
 
   document.getElementById('dmPreviewCard').style.display = (badCount > 0) ? 'block' : 'none';
+  updateDmSelectedCount();
 
   if (matchedCount > 0) {
     document.getElementById('dmFixBtn').disabled = false;
     log(`\n[Date Mismatch] Scan complete. ${matchedCount} doc(s) ready to fix, ${unmatchedCount} skipped.`);
-    log('Review the table above, then click "Fix All Matched" to proceed.');
+    log('Check/uncheck rows above, then click "Fix Selected" to proceed.');
   } else if (badCount === 0) {
     log('\n[Date Mismatch] Scan complete. No date-mismatch docs found.');
   } else {
@@ -723,11 +737,35 @@ window.runDateMismatchScan = async function() {
   document.getElementById('dmScanBtn').disabled = false;
 };
 
-window.runDateMismatchFix = async function() {
-  const toFix = dateMismatchResults.filter(r => r.matched);
-  if (toFix.length === 0) { log('Nothing to fix.'); return; }
+window.toggleDmSelectAll = function(checked) {
+  document.querySelectorAll('#dmPreviewBody input[type=checkbox]').forEach(cb => cb.checked = checked);
+  updateDmSelectedCount();
+};
 
-  if (!confirm(`Fix ${toFix.length} date-mismatch doc(s)? This copies each to the correct path and deletes the old one.`)) return;
+window.updateDmSelectedCount = function() {
+  const cbs = document.querySelectorAll('#dmPreviewBody input[type=checkbox]');
+  const checkedCount = Array.from(cbs).filter(cb => cb.checked).length;
+  document.getElementById('dmSelectedCount').textContent = `${checkedCount} selected`;
+  // Keep "select all" checkbox in sync
+  const allChecked = cbs.length > 0 && checkedCount === cbs.length;
+  const selectAll = document.getElementById('dmSelectAll');
+  if (selectAll) {
+    selectAll.indeterminate = checkedCount > 0 && !allChecked;
+    selectAll.checked = allChecked;
+  }
+  document.getElementById('dmFixBtn').disabled = checkedCount === 0;
+};
+
+window.runDateMismatchFix = async function() {
+  // Collect checked indices
+  const checkedIdxs = new Set(
+    Array.from(document.querySelectorAll('#dmPreviewBody input[type=checkbox]:checked'))
+      .map(cb => parseInt(cb.dataset.idx, 10))
+  );
+  const toFix = dateMismatchResults.filter((r, idx) => r.matched && checkedIdxs.has(idx));
+  if (toFix.length === 0) { log('Nothing selected to fix.'); return; }
+
+  if (!confirm(`Fix ${toFix.length} selected doc(s)? This copies each to the correct path and deletes the old one.`)) return;
 
   document.getElementById('dmFixBtn').disabled  = true;
   document.getElementById('dmScanBtn').disabled = true;
@@ -772,7 +810,13 @@ window.runDateMismatchFix = async function() {
     log(`\nFinished with ${fixed} fixed and ${errors} error(s).`);
   }
 
+  // Uncheck fixed rows and update button state
+  Array.from(document.querySelectorAll('#dmPreviewBody input[type=checkbox]:checked')).forEach(cb => {
+    const idx = parseInt(cb.dataset.idx, 10);
+    if (checkedIdxs.has(idx)) cb.checked = false;
+  });
   document.getElementById('dmScanBtn').disabled = false;
+  updateDmSelectedCount();
 };
 
 // =============================================
