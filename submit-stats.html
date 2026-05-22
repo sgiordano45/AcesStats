@@ -1236,7 +1236,10 @@ Jane Doe,2025-09-15,Blue,true,3,1,0,1,0,2,1</code>
                   <th style="padding:0.5rem; text-align:center;">H</th>
                   <th style="padding:0.5rem; text-align:center;">R</th>
                   <th style="padding:0.5rem; text-align:center;">BB</th>
+                  <th style="padding:0.5rem; text-align:center;">2B</th>
+                  <th style="padding:0.5rem; text-align:center;">3B</th>
                   <th style="padding:0.5rem; text-align:center;">HR</th>
+                  <th style="padding:0.5rem; text-align:center;">RBI</th>
                   <th style="padding:0.5rem; text-align:center;">IP</th>
                   <th style="padding:0.5rem; text-align:center;">RA</th>
                 </tr>
@@ -2865,8 +2868,24 @@ function parseStatLines(lines, roster) {
     // H can't exceed AB
     if (ab > 0 && h > ab) h = ab;
 
+    // Parse extra fields if column map has them; otherwise default to 0
+    let doubles = 0, triples = 0, rbi = 0;
+    if (colMap) {
+      const tokens = trimmed.split(/\s+/);
+      let firstNumIdx = tokens.findIndex(t => /^\d+\.?\d*$/.test(t));
+      if (firstNumIdx < 0) firstNumIdx = 1;
+      const offset = (colMap.ab !== undefined ? colMap.ab : firstNumIdx) - firstNumIdx;
+      const getCol = (col) => col !== undefined ? (parseFloat(tokens[col - offset]) || 0) : 0;
+      doubles = getCol(colMap['2b']);
+      triples = getCol(colMap['3b']);
+      rbi     = getCol(colMap.rbi);
+    } else {
+      // No header — rawNums order is AB H R BB HR; 2B/3B/RBI not reliably parseable
+      // Leave at 0 for manual fill
+    }
+
     const { player, score } = bestRosterMatch(namePart, roster);
-    rawResults.push({ pdfName: namePart, matchedPlayer: player, matchScore: score, ab, h, r, bb, hr, ip, ra });
+    rawResults.push({ pdfName: namePart, matchedPlayer: player, matchScore: score, ab, h, r, bb, '2b': doubles, '3b': triples, hr, rbi, ip, ra });
   }
 
   // Deduplicate: if the same roster player was matched from multiple lines, keep the best
@@ -2941,7 +2960,7 @@ window.handlePdfUpload = async function(event) {
 function renderPdfReviewTable() {
   const tbody = document.getElementById('pdfReviewBody');
   tbody.innerHTML = '';
-  const statFields = ['ab','h','r','bb','hr','ip','ra'];
+  const statFields = ['ab','h','r','bb','2b','3b','hr','rbi','ip','ra'];
 
   pdfParsedRows.forEach((row, idx) => {
     const score = row.matchScore;
@@ -3030,15 +3049,18 @@ window.submitPdfStats = async function() {
     const player     = rosterPlayers.find(p => p.legacyId === legacyId);
     const playerName = player?.name || pdfParsedRows[idx].pdfName;
 
-    const ab = parseInt(document.getElementById(`pdfStat_${idx}_ab`)?.value) || 0;
-    const h  = parseInt(document.getElementById(`pdfStat_${idx}_h`)?.value)  || 0;
-    const r  = parseInt(document.getElementById(`pdfStat_${idx}_r`)?.value)  || 0;
-    const bb = parseInt(document.getElementById(`pdfStat_${idx}_bb`)?.value) || 0;
-    const hr = parseInt(document.getElementById(`pdfStat_${idx}_hr`)?.value) || 0;
-    const ip = parseFloat(document.getElementById(`pdfStat_${idx}_ip`)?.value) || 0;
-    const ra = parseInt(document.getElementById(`pdfStat_${idx}_ra`)?.value) || 0;
+    const ab  = parseInt(document.getElementById(`pdfStat_${idx}_ab`)?.value)  || 0;
+    const h   = parseInt(document.getElementById(`pdfStat_${idx}_h`)?.value)   || 0;
+    const r   = parseInt(document.getElementById(`pdfStat_${idx}_r`)?.value)   || 0;
+    const bb  = parseInt(document.getElementById(`pdfStat_${idx}_bb`)?.value)  || 0;
+    const d2b = parseInt(document.getElementById(`pdfStat_${idx}_2b`)?.value)  || 0;
+    const d3b = parseInt(document.getElementById(`pdfStat_${idx}_3b`)?.value)  || 0;
+    const hr  = parseInt(document.getElementById(`pdfStat_${idx}_hr`)?.value)  || 0;
+    const rbi = parseInt(document.getElementById(`pdfStat_${idx}_rbi`)?.value) || 0;
+    const ip  = parseFloat(document.getElementById(`pdfStat_${idx}_ip`)?.value) || 0;
+    const ra  = parseInt(document.getElementById(`pdfStat_${idx}_ra`)?.value)  || 0;
 
-    const hasBatting  = ab > 0 || h > 0 || r > 0 || bb > 0 || hr > 0;
+    const hasBatting  = ab > 0 || h > 0 || r > 0 || bb > 0 || hr > 0 || d2b > 0 || d3b > 0 || rbi > 0;
     const hasPitching = ip > 0 || ra > 0;
     if (!hasBatting && !hasPitching) { skippedCount++; continue; }
 
@@ -3060,7 +3082,7 @@ window.submitPdfStats = async function() {
         await setDoc(doc(db, 'playerStats', legacyId, 'games', gameDocId), {
           ...commonFields,
           atBats: ab, hits: h, runs: r, walks: bb,
-          doubles: 0, triples: 0, homeRuns: hr, rbi: 0,
+          doubles: d2b, triples: d3b, homeRuns: hr, rbi,
           strikeouts: 0, stolenBases: 0, caughtStealing: 0
         }, { merge: true });
       }
