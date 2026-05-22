@@ -988,6 +988,9 @@ body {
       <button class="tab-btn" onclick="switchTab('bulk')">
         <span class="icon">📤</span> CSV Bulk Upload
       </button>
+      <button class="tab-btn" onclick="switchTab('pdf')">
+        <span class="icon">📄</span> PDF Import
+      </button>
     </div>
 
     <!-- Messages (shared) -->
@@ -1169,10 +1172,103 @@ Jane Doe,2025-09-15,Blue,true,3,1,0,1,0,2,1</code>
       </div>
     </div>
   </div>
+
+    <!-- PDF IMPORT TAB -->
+    <div id="pdfTab" class="tab-content">
+
+      <!-- Game Selection -->
+      <div class="controls-section">
+        <div class="control-group">
+          <label for="pdfGameSelect">Select Game:</label>
+          <select id="pdfGameSelect">
+            <option value="">-- Select a game --</option>
+          </select>
+        </div>
+        <div id="pdfGameDetails" style="display:none; padding:1rem; background:#f8fafc; border-radius:8px; margin-top:1rem;">
+          <div style="display:grid; grid-template-columns:auto 1fr; gap:0.5rem 1rem; font-size:14px;">
+            <strong>Date:</strong><span id="pdfSelectedDate"></span>
+            <strong>Opponent:</strong><span id="pdfSelectedOpp"></span>
+            <strong>Location:</strong><span id="pdfSelectedLoc"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- PDF Upload -->
+      <div class="controls-section">
+        <h3 style="margin-top:0;">📄 Upload Scoresheet PDF</h3>
+        <p style="color:var(--text-light); margin-bottom:1rem;">
+          Upload a PDF scoresheet. Player names will be fuzzy-matched to your roster automatically.
+          Review every row and correct any mistakes before submitting — you can reassign names and edit any stat.
+        </p>
+        <div class="upload-area" id="pdfUploadArea" onclick="document.getElementById('pdfFileInput').click()">
+          <input type="file" id="pdfFileInput" accept=".pdf" onchange="handlePdfUpload(event)" style="display:none">
+          <div class="icon">📄</div>
+          <div><strong>Click to upload</strong> or drag and drop</div>
+          <div style="color:var(--text-light); margin-top:0.5rem;">PDF scoresheet file</div>
+        </div>
+        <div id="pdfParseStatus" style="display:none; margin-top:1rem;"></div>
+      </div>
+
+      <!-- Review Table -->
+      <div id="pdfReviewSection" style="display:none;">
+        <div class="controls-section">
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem; margin-bottom:0.75rem;">
+            <h3 style="margin:0;">Review Parsed Stats</h3>
+            <div style="font-size:0.82rem; color:var(--text-light);">
+              <span style="color:#276749; font-weight:700;">✓ Good</span> = high confidence &nbsp;
+              <span style="color:#d97706; font-weight:700;">⚠ Review</span> = check match &nbsp;
+              <span style="color:#c53030; font-weight:700;">✗ No match</span> = assign manually
+            </div>
+          </div>
+          <p style="font-size:0.85rem; color:var(--text-light); margin-top:0;">
+            Use the <strong>Roster Name</strong> dropdown to reassign any wrong match. Uncheck rows to exclude players.
+            All stat values are editable.
+          </p>
+          <div style="overflow-x:auto;">
+            <table style="width:100%; border-collapse:collapse; font-size:0.85rem;">
+              <thead>
+                <tr style="background:var(--primary-color); color:white;">
+                  <th style="padding:0.5rem; width:2rem;"></th>
+                  <th style="padding:0.5rem; text-align:left;">Roster Name</th>
+                  <th style="padding:0.5rem; text-align:left;">PDF Name</th>
+                  <th style="padding:0.5rem; text-align:center;">Match</th>
+                  <th style="padding:0.5rem; text-align:center;">AB</th>
+                  <th style="padding:0.5rem; text-align:center;">H</th>
+                  <th style="padding:0.5rem; text-align:center;">R</th>
+                  <th style="padding:0.5rem; text-align:center;">BB</th>
+                  <th style="padding:0.5rem; text-align:center;">HR</th>
+                  <th style="padding:0.5rem; text-align:center;">IP</th>
+                  <th style="padding:0.5rem; text-align:center;">RA</th>
+                </tr>
+              </thead>
+              <tbody id="pdfReviewBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="action-buttons">
+          <button class="btn btn-secondary" onclick="clearPdfUpload()">
+            <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+            </svg>
+            Clear
+          </button>
+          <button class="btn btn-primary" id="pdfSubmitBtn" onclick="submitPdfStats()">
+            <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+            Submit Stats
+          </button>
+        </div>
+      </div>
+    </div>
+
+  </div>
 </div>
 
 <div id="toastContainer" class="toast-container"></div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script type="module">
 import { onAuthChange, getCurrentUser, getUserProfile } from './firebase-auth.js';
 import { getCurrentSeason, getAllTeams } from './firebase-data.js';
@@ -1207,13 +1303,17 @@ let playersWithExistingPitching = new Set(); // tracks who had pitching data loa
 window.switchTab = function(tab) {
   document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
   document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
-  
+
   if (tab === 'single') {
     document.querySelector('.tab-btn:nth-child(1)').classList.add('active');
     document.getElementById('singleTab').classList.add('active');
-  } else {
+  } else if (tab === 'bulk') {
     document.querySelector('.tab-btn:nth-child(2)').classList.add('active');
     document.getElementById('bulkTab').classList.add('active');
+  } else if (tab === 'pdf') {
+    document.querySelector('.tab-btn:nth-child(3)').classList.add('active');
+    document.getElementById('pdfTab').classList.add('active');
+    populatePdfGameSelect();
   }
 };
 
@@ -2507,6 +2607,501 @@ onAuthChange((user) => {
     window.location.href = 'signin.html';
   }
 });
+
+// ============================================
+// PDF IMPORT
+// ============================================
+
+// Configure PDF.js worker (loaded via <script> tag above the module)
+if (window.pdfjsLib) {
+  pdfjsLib.GlobalWorkerOptions.workerSrc =
+    'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+}
+
+let pdfParsedRows = [];  // { pdfName, matchedPlayer, matchScore, ab, h, r, bb, hr, ip, ra }
+
+// Populate pdfGameSelect from the already-loaded teamGames array
+function populatePdfGameSelect() {
+  const sel = document.getElementById('pdfGameSelect');
+  if (!sel) return;
+  // Rebuild only if game list changed or empty
+  if (sel.options.length > 1 && sel.options.length - 1 === teamGames.length) return;
+  sel.innerHTML = '<option value="">-- Select a game --</option>';
+  if (!teamGames || teamGames.length === 0) {
+    const opt = document.createElement('option');
+    opt.disabled = true;
+    opt.textContent = 'No games loaded — select your team first';
+    sel.appendChild(opt);
+    return;
+  }
+  teamGames.forEach(game => {
+    const opt = document.createElement('option');
+    opt.value = game.id;
+    let dateStr = 'Unknown Date';
+    if (game.dateObj && game.dateObj.getTime() !== 0) {
+      dateStr = game.dateObj.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    }
+    const loc     = game.isHome ? 'vs' : '@';
+    const playoff = game.isPlayoff ? '🏆 ' : '';
+    const round   = game.round ? ` (${game.round})` : '';
+    opt.textContent = `${playoff}${dateStr} ${loc} ${game.opponent}${round}`;
+    opt.dataset.gameData = JSON.stringify(game);
+    sel.appendChild(opt);
+  });
+}
+
+// Wire up pdfGameSelect change handler after DOM is ready
+document.getElementById('pdfGameSelect').addEventListener('change', (e) => {
+  const opt = e.target.options[e.target.selectedIndex];
+  const details = document.getElementById('pdfGameDetails');
+  if (opt.value && opt.dataset.gameData) {
+    const gd = JSON.parse(opt.dataset.gameData);
+    if (gd.dateObj) gd.dateObj = new Date(gd.dateObj);
+    const hasDate = gd.dateObj && !isNaN(gd.dateObj.getTime()) && gd.dateObj.getTime() !== 0;
+    document.getElementById('pdfSelectedDate').textContent = hasDate
+      ? gd.dateObj.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+      : 'TBD';
+    document.getElementById('pdfSelectedOpp').textContent = gd.opponent || 'Unknown';
+    document.getElementById('pdfSelectedLoc').textContent = gd.isHome ? 'Home' : 'Away';
+    details.style.display = 'block';
+  } else {
+    details.style.display = 'none';
+  }
+});
+
+// Drag-and-drop for PDF upload area
+const pdfUploadArea = document.getElementById('pdfUploadArea');
+if (pdfUploadArea) {
+  pdfUploadArea.addEventListener('dragover', (e) => { e.preventDefault(); pdfUploadArea.classList.add('dragover'); });
+  pdfUploadArea.addEventListener('dragleave', () => pdfUploadArea.classList.remove('dragover'));
+  pdfUploadArea.addEventListener('drop', (e) => {
+    e.preventDefault();
+    pdfUploadArea.classList.remove('dragover');
+    const file = e.dataTransfer.files[0];
+    if (file && file.name.toLowerCase().endsWith('.pdf')) {
+      document.getElementById('pdfFileInput').files = e.dataTransfer.files;
+      handlePdfUpload({ target: { files: [file] } });
+    } else {
+      showMessage('error', 'Please drop a PDF file.');
+    }
+  });
+}
+
+// ── Fuzzy Matching ───────────────────────────────────────────────────────────
+
+function levenshtein(a, b) {
+  const m = a.length, n = b.length;
+  const dp = [];
+  for (let i = 0; i <= m; i++) { dp[i] = [i]; }
+  for (let j = 0; j <= n; j++) { dp[0][j] = j; }
+  for (let i = 1; i <= m; i++)
+    for (let j = 1; j <= n; j++)
+      dp[i][j] = a[i-1] === b[j-1]
+        ? dp[i-1][j-1]
+        : 1 + Math.min(dp[i-1][j], dp[i][j-1], dp[i-1][j-1]);
+  return dp[m][n];
+}
+
+function fuzzyScore(a, b) {
+  a = a.toLowerCase().trim();
+  b = b.toLowerCase().trim();
+  if (!a || !b) return 0;
+  if (a === b) return 1;
+  return 1 - levenshtein(a, b) / Math.max(a.length, b.length, 1);
+}
+
+function bestRosterMatch(pdfName, roster) {
+  if (!roster || roster.length === 0) return { player: null, score: 0 };
+  let best = null, bestScore = 0;
+  const pdfLower = pdfName.toLowerCase().trim();
+  for (const player of roster) {
+    const full = (player.name || '').toLowerCase();
+    const parts = full.split(' ');
+    const last  = parts[parts.length - 1] || '';
+    const first = parts[0] || '';
+    const lastFirst = `${last} ${first}`.trim();
+    const score = Math.max(
+      fuzzyScore(pdfLower, full),
+      fuzzyScore(pdfLower, last)      * 0.85,
+      fuzzyScore(pdfLower, first)     * 0.80,
+      fuzzyScore(pdfLower, lastFirst) * 0.95
+    );
+    if (score > bestScore) { bestScore = score; best = player; }
+  }
+  return { player: best, score: bestScore };
+}
+
+// ── PDF Text Extraction ──────────────────────────────────────────────────────
+
+// Extract text lines from all pages, grouping items by Y coordinate
+async function extractPdfLines(file) {
+  if (!window.pdfjsLib) throw new Error('PDF.js library not loaded. Please refresh the page.');
+  const arrayBuffer = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  const allLines = [];
+
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const page = await pdf.getPage(p);
+    const content = await page.getTextContent();
+
+    // Group text items by rounded Y (2px tolerance buckets)
+    const yGroups = new Map();
+    for (const item of content.items) {
+      if (!item.str?.trim()) continue;
+      const y = Math.round(item.transform[5] / 2) * 2;
+      if (!yGroups.has(y)) yGroups.set(y, []);
+      yGroups.get(y).push({ x: item.transform[4], str: item.str });
+    }
+
+    // Sort by Y descending (top of page = highest Y in PDF coordinates)
+    const sortedYs = [...yGroups.keys()].sort((a, b) => b - a);
+    for (const y of sortedYs) {
+      const items = yGroups.get(y).sort((a, b) => a.x - b.x);
+      const line = items.map(i => i.str).join(' ').replace(/\s+/g, ' ').trim();
+      if (line) allLines.push(line);
+    }
+  }
+  return allLines;
+}
+
+// ── Column Header Detection ──────────────────────────────────────────────────
+
+// Try to find a header row and return an index map for each stat column
+function detectColumnMap(lines) {
+  for (const line of lines) {
+    const lower = line.toLowerCase();
+    // Need at least "AB" or "at bat" to treat as a header
+    if (!lower.includes('ab') && !lower.includes('at bat') && !lower.includes('atbats')) continue;
+
+    const tokens = line.split(/\s+/);
+    const map = { _tokens: tokens };
+    tokens.forEach((t, i) => {
+      const tl = t.toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (['ab','atbat','atbats'].includes(tl))                  map.ab  = i;
+      else if (['h','hits'].includes(tl) && map.h  === undefined) map.h   = i;
+      else if (['r','runs','rs'].includes(tl) && map.r === undefined) map.r = i;
+      else if (['bb','walks','walk'].includes(tl))                map.bb  = i;
+      else if (['hr','homerun','homeruns'].includes(tl))          map.hr  = i;
+      else if (['rbi','rbis'].includes(tl))                       map.rbi = i;
+      else if (['2b','doubles'].includes(tl))                     map['2b'] = i;
+      else if (['3b','triples'].includes(tl))                     map['3b'] = i;
+      else if (['ip','innings'].includes(tl))                     map.ip  = i;
+      else if (['ra','runsallowed'].includes(tl))                 map.ra  = i;
+      else if (['er','earnedruns'].includes(tl))                  map.er  = i;
+    });
+
+    if (map.ab !== undefined || (map.h !== undefined && map.r !== undefined)) {
+      return map;
+    }
+  }
+  return null;
+}
+
+// ── Stat Line Parsing ────────────────────────────────────────────────────────
+
+const SKIP_WORDS = new Set([
+  'totals','total','team','opponent','game','date','season','player','name',
+  'innings','stats','batting','pitching','lineup','ab','h','r','bb','hr','ip','ra',
+  'rbi','so','sb','avg','obp','slg','era','g','gs'
+]);
+
+function parseStatLines(lines, roster) {
+  const colMap = detectColumnMap(lines);
+
+  // Pattern: name (1-3 words, letters/dots/apostrophes/hyphens), then 2+ numbers
+  const statRx = /^([A-Za-z][A-Za-z'.'\-\s]{1,30}?)\s{2,}(\d[\d\s.]*\d|\d+)$/;
+  const simpleRx = /^([A-Za-z][A-Za-z'.\-\s]{1,28}?)\s+(\d+(?:\.\d)?)\s+(\d+)\s+(\d+)(?:\s+(\d+))?(?:\s+(\d+))?(?:\s+(\d+))?/;
+
+  const rawResults = [];
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.length < 4) continue;
+    if (/^\d/.test(trimmed)) continue;
+
+    const firstWordLower = trimmed.split(/\s+/)[0].toLowerCase().replace(/[^a-z]/g, '');
+    if (SKIP_WORDS.has(firstWordLower)) continue;
+
+    // Try matching name + space-separated numbers
+    const m = simpleRx.exec(trimmed);
+    if (!m) continue;
+
+    const namePart = m[1].trim();
+    if (namePart.length < 2) continue;
+    if (SKIP_WORDS.has(namePart.toLowerCase().replace(/[^a-z]/g, ''))) continue;
+
+    // Pull all numeric tokens from the part of the line after the name
+    const afterName = trimmed.slice(namePart.length).trim();
+    const rawNums = afterName.split(/\s+/).map(n => parseFloat(n)).filter(n => !isNaN(n));
+    if (rawNums.length < 2) continue;
+
+    // Sanity check: AB (likely first number) shouldn't be unreasonably large
+    if (rawNums[0] > 20) continue;
+
+    // Map numbers to stats
+    let ab = 0, h = 0, r = 0, bb = 0, hr = 0, ip = 0, ra = 0;
+
+    if (colMap && colMap.ab !== undefined) {
+      // Use header-detected positions — find first number token index in this line
+      const tokens = trimmed.split(/\s+/);
+      let firstNumIdx = tokens.findIndex(t => /^\d+\.?\d*$/.test(t));
+      if (firstNumIdx < 0) firstNumIdx = 1;
+      const offset = colMap.ab - firstNumIdx;
+      const getCol = (col) => col !== undefined ? (parseFloat(tokens[col - offset]) || 0) : 0;
+
+      ab = getCol(colMap.ab);
+      h  = getCol(colMap.h);
+      r  = getCol(colMap.r);
+      bb = getCol(colMap.bb);
+      hr = getCol(colMap.hr);
+      ip = colMap.ip !== undefined ? getCol(colMap.ip) : 0;
+      ra = (colMap.ra !== undefined ? getCol(colMap.ra) : 0) ||
+           (colMap.er  !== undefined ? getCol(colMap.er)  : 0);
+    } else {
+      // No header — assume standard order: AB H R BB HR
+      [ab = 0, h = 0, r = 0, bb = 0, hr = 0] = rawNums;
+    }
+
+    // H can't exceed AB
+    if (ab > 0 && h > ab) h = ab;
+
+    const { player, score } = bestRosterMatch(namePart, roster);
+    rawResults.push({ pdfName: namePart, matchedPlayer: player, matchScore: score, ab, h, r, bb, hr, ip, ra });
+  }
+
+  // Deduplicate: if the same roster player was matched from multiple lines, keep the best
+  const byLegacyId = new Map();
+  for (const row of rawResults) {
+    const key = row.matchedPlayer?.legacyId || `__pdf__${row.pdfName}`;
+    const prev = byLegacyId.get(key);
+    if (!prev || prev.matchScore < row.matchScore) byLegacyId.set(key, row);
+  }
+  return [...byLegacyId.values()];
+}
+
+// ── Upload Handler ───────────────────────────────────────────────────────────
+
+window.handlePdfUpload = async function(event) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+
+  if (!document.getElementById('pdfGameSelect').value) {
+    showMessage('warning', 'Please select a game before uploading the PDF.');
+    event.target.value = '';
+    return;
+  }
+  if (rosterPlayers.length === 0) {
+    showMessage('warning', 'No roster loaded. Please ensure your team is selected and try again.');
+    return;
+  }
+
+  const statusEl = document.getElementById('pdfParseStatus');
+  statusEl.style.display = 'block';
+  statusEl.innerHTML = '<em style="color:#718096;">⏳ Reading PDF…</em>';
+  document.getElementById('pdfReviewSection').style.display = 'none';
+
+  try {
+    const lines = await extractPdfLines(file);
+    const parsed = parseStatLines(lines, rosterPlayers);
+
+    if (parsed.length === 0) {
+      statusEl.innerHTML = `
+        <div class="warning-box">
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="24" height="24" flex-shrink="0">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+          </svg>
+          <div>No player stats could be parsed from this PDF. The layout may not be recognized —
+          try the CSV upload or manual entry instead.</div>
+        </div>`;
+      return;
+    }
+
+    pdfParsedRows = parsed;
+    const highConf = parsed.filter(r => r.matchScore >= 0.75).length;
+    const lowConf  = parsed.filter(r => r.matchScore < 0.45).length;
+    statusEl.innerHTML = `
+      <div style="color:#276749; font-weight:600;">
+        ✅ Parsed <strong>${parsed.length}</strong> player row(s) —
+        ${highConf} high-confidence · ${parsed.length - highConf - lowConf} review · ${lowConf} unmatched.
+        Review and correct below.
+      </div>`;
+    renderPdfReviewTable();
+    document.getElementById('pdfReviewSection').style.display = 'block';
+  } catch (err) {
+    statusEl.innerHTML = `
+      <div class="error-box">
+        <div>Error reading PDF: ${err.message}</div>
+      </div>`;
+    console.error('PDF parse error:', err);
+  }
+};
+
+// ── Review Table ─────────────────────────────────────────────────────────────
+
+function renderPdfReviewTable() {
+  const tbody = document.getElementById('pdfReviewBody');
+  tbody.innerHTML = '';
+  const statFields = ['ab','h','r','bb','hr','ip','ra'];
+
+  pdfParsedRows.forEach((row, idx) => {
+    const score = row.matchScore;
+    const confColor = score >= 0.75 ? '#276749' : score >= 0.45 ? '#d97706' : '#c53030';
+    const confLabel = score >= 0.75 ? '✓ Good' : score >= 0.45 ? '⚠ Review' : '✗ No match';
+
+    const rosterOptions = rosterPlayers.map(p => {
+      const sel = row.matchedPlayer?.legacyId === p.legacyId ? ' selected' : '';
+      return `<option value="${p.legacyId}"${sel}>${p.name}</option>`;
+    }).join('');
+
+    const tr = document.createElement('tr');
+    tr.style.borderBottom = '1px solid #e2e8f0';
+    if (idx % 2 === 0) tr.style.background = '#f8fafc';
+    tr.innerHTML = `
+      <td style="text-align:center; padding:0.4rem 0.5rem;">
+        <input type="checkbox" id="pdfCb_${idx}" checked>
+      </td>
+      <td style="padding:0.4rem 0.5rem; min-width:160px;">
+        <select id="pdfPlayer_${idx}"
+          style="width:100%; padding:0.3rem 0.5rem; border:1px solid #cbd5e0; border-radius:4px; font-size:0.82rem;">
+          <option value="">-- Unmatched --</option>
+          ${rosterOptions}
+        </select>
+      </td>
+      <td style="padding:0.4rem 0.5rem; font-size:0.8rem; color:#718096; white-space:nowrap;">${row.pdfName}</td>
+      <td style="padding:0.4rem 0.5rem; text-align:center; white-space:nowrap;">
+        <span style="font-size:0.75rem; font-weight:700; color:${confColor};">${confLabel}</span>
+      </td>
+      ${statFields.map(f => `
+        <td style="padding:0.25rem 0.3rem;">
+          <input type="number" id="pdfStat_${idx}_${f}"
+            value="${row[f] || 0}" min="0" step="${f === 'ip' ? '0.1' : '1'}"
+            style="width:50px; padding:0.25rem; border:1px solid #cbd5e0; border-radius:4px;
+                   font-size:0.83rem; text-align:center;">
+        </td>`).join('')}
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+// ── Clear ────────────────────────────────────────────────────────────────────
+
+window.clearPdfUpload = function() {
+  pdfParsedRows = [];
+  document.getElementById('pdfFileInput').value = '';
+  document.getElementById('pdfParseStatus').style.display = 'none';
+  document.getElementById('pdfReviewSection').style.display = 'none';
+  document.getElementById('pdfGameSelect').value = '';
+  document.getElementById('pdfGameDetails').style.display = 'none';
+};
+
+// ── Submit ───────────────────────────────────────────────────────────────────
+
+window.submitPdfStats = async function() {
+  const selectedGameId = document.getElementById('pdfGameSelect').value;
+  if (!selectedGameId) { showMessage('error', 'Please select a game before submitting.'); return; }
+  if (pdfParsedRows.length === 0) { showMessage('error', 'No parsed data to submit.'); return; }
+
+  const gameOption = document.querySelector(`#pdfGameSelect option[value="${selectedGameId}"]`);
+  const gameData   = JSON.parse(gameOption.dataset.gameData);
+  if (gameData.dateObj) gameData.dateObj = new Date(gameData.dateObj);
+
+  const seasonId = currentSeason.id;
+  let gameDateFormatted = 'Unknown';
+  if (gameData?.dateObj && !isNaN(gameData.dateObj.getTime()) && gameData.dateObj.getTime() !== 0) {
+    const d = gameData.dateObj;
+    gameDateFormatted = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  }
+
+  const btn = document.getElementById('pdfSubmitBtn');
+  const origHtml = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '⏳ Submitting…';
+
+  let successCount = 0, errorCount = 0, skippedCount = 0;
+  const gameDocId = `${seasonId}_${selectedGameId}`;
+
+  for (let idx = 0; idx < pdfParsedRows.length; idx++) {
+    const included  = document.getElementById(`pdfCb_${idx}`)?.checked;
+    if (!included) { skippedCount++; continue; }
+
+    const legacyId = document.getElementById(`pdfPlayer_${idx}`)?.value;
+    if (!legacyId)  { skippedCount++; continue; }
+
+    const player     = rosterPlayers.find(p => p.legacyId === legacyId);
+    const playerName = player?.name || pdfParsedRows[idx].pdfName;
+
+    const ab = parseInt(document.getElementById(`pdfStat_${idx}_ab`)?.value) || 0;
+    const h  = parseInt(document.getElementById(`pdfStat_${idx}_h`)?.value)  || 0;
+    const r  = parseInt(document.getElementById(`pdfStat_${idx}_r`)?.value)  || 0;
+    const bb = parseInt(document.getElementById(`pdfStat_${idx}_bb`)?.value) || 0;
+    const hr = parseInt(document.getElementById(`pdfStat_${idx}_hr`)?.value) || 0;
+    const ip = parseFloat(document.getElementById(`pdfStat_${idx}_ip`)?.value) || 0;
+    const ra = parseInt(document.getElementById(`pdfStat_${idx}_ra`)?.value) || 0;
+
+    const hasBatting  = ab > 0 || h > 0 || r > 0 || bb > 0 || hr > 0;
+    const hasPitching = ip > 0 || ra > 0;
+    if (!hasBatting && !hasPitching) { skippedCount++; continue; }
+
+    const commonFields = {
+      gameId: selectedGameId, gameDocId,
+      playerId: legacyId, playerName,
+      seasonId, teamId: selectedTeamName || selectedTeam,
+      gameDate: gameData.date || null, gameDateFormatted,
+      opponent: gameData.opponent || 'Unknown', isHome: gameData.isHome || false,
+      gameType: gameData.gameType || 'Regular', isPlayoff: gameData.isPlayoff || false,
+      submittedBy: currentUser.uid,
+      submittedByName: currentUser.displayName || currentUser.email,
+      submittedAt: serverTimestamp(), lastModified: serverTimestamp(),
+      dataVersion: 1, sourceType: 'pdf-import'
+    };
+
+    try {
+      if (hasBatting) {
+        await setDoc(doc(db, 'playerStats', legacyId, 'games', gameDocId), {
+          ...commonFields,
+          atBats: ab, hits: h, runs: r, walks: bb,
+          doubles: 0, triples: 0, homeRuns: hr, rbi: 0,
+          strikeouts: 0, stolenBases: 0, caughtStealing: 0
+        }, { merge: true });
+      }
+      if (hasPitching) {
+        await setDoc(doc(db, 'pitchingStats', legacyId, 'games', gameDocId), {
+          ...commonFields,
+          inningsPitched: ip, runsAllowed: ra,
+          wins: 0, losses: 0, saves: 0
+        }, { merge: true });
+      }
+      successCount++;
+    } catch (err) {
+      console.error(`Error saving ${playerName}:`, err);
+      errorCount++;
+    }
+  }
+
+  // Mark game as stats-submitted
+  try {
+    const submittedField = gameData.isHome ? 'statsSubmittedHome' : 'statsSubmittedAway';
+    await updateDoc(doc(db, 'seasons', seasonId, 'games', selectedGameId), {
+      [submittedField]: true,
+      statsSubmittedBy: currentUser.uid,
+      statsSubmittedByName: currentUser.displayName || currentUser.email,
+      statsSubmittedAt: serverTimestamp(),
+      statsSubmittedForTeam: selectedTeamName || selectedTeam
+    });
+  } catch { /* non-fatal */ }
+
+  btn.disabled = false;
+  btn.innerHTML = origHtml;
+
+  if (errorCount === 0) {
+    showMessage('success', `✅ Submitted PDF stats for ${successCount} player(s)! ${skippedCount > 0 ? `(${skippedCount} skipped)` : ''}`);
+    showToast(`PDF stats saved for ${successCount} players`, 'success');
+    setTimeout(() => clearPdfUpload(), 3000);
+  } else {
+    showMessage('warning', `Saved ${successCount}, failed ${errorCount}, skipped ${skippedCount}.`);
+  }
+};
+
 </script>
 
 </div><!-- Close page-container -->
