@@ -1200,12 +1200,13 @@ Jane Doe,2025-09-15,Blue,true,3,1,0,1,0,2,1</code>
           Upload a PDF scoresheet. Player names will be fuzzy-matched to your roster automatically.
           Review every row and correct any mistakes before submitting — you can reassign names and edit any stat.
         </p>
-        <div class="upload-area" id="pdfUploadArea" onclick="document.getElementById('pdfFileInput').click()">
-          <input type="file" id="pdfFileInput" accept=".pdf" onchange="handlePdfUpload(event)" style="display:none">
+        <label class="upload-area" id="pdfUploadArea" for="pdfFileInput" style="cursor:pointer; display:flex; flex-direction:column; align-items:center;">
+          <input type="file" id="pdfFileInput" accept=".pdf,application/pdf" onchange="handlePdfUpload(event)"
+            style="position:absolute; opacity:0; pointer-events:none; width:0; height:0;">
           <div class="icon">📄</div>
-          <div><strong>Click to upload</strong> or drag and drop</div>
+          <div><strong>Tap to upload</strong> or drag and drop</div>
           <div style="color:var(--text-light); margin-top:0.5rem;">PDF scoresheet file</div>
-        </div>
+        </label>
         <div id="pdfParseStatus" style="display:none; margin-top:1rem;"></div>
       </div>
 
@@ -2767,40 +2768,109 @@ async function extractPdfLines(file) {
   return allLines;
 }
 
-// ── Column Header Detection ──────────────────────────────────────────────────
+// ── GameChanger Format Detection & Parsing ───────────────────────────────────
+// GameChanger box score PDFs have:
+//   - "BATTING" as a standalone line
+//   - Column header: [Team Name] AB R H RBI BB SO  (note: R before H, no HR column)
+//   - Player rows:   FirstInitial LastName #Jersey  AB R H RBI BB SO
+//   - 2B/3B/HR in a footer notes line: "2B: E Lund, E Cantagallo, 3B: B Sforza, ..."
+//   - Two teams side-by-side, so Y-grouped lines may contain both teams' rows merged
 
-// Try to find a header row and return an index map for each stat column
-function detectColumnMap(lines) {
-  for (const line of lines) {
-    const lower = line.toLowerCase();
-    // Need at least "AB" or "at bat" to treat as a header
-    if (!lower.includes('ab') && !lower.includes('at bat') && !lower.includes('atbats')) continue;
-
-    const tokens = line.split(/\s+/);
-    const map = { _tokens: tokens };
-    tokens.forEach((t, i) => {
-      const tl = t.toLowerCase().replace(/[^a-z0-9]/g, '');
-      if (['ab','atbat','atbats'].includes(tl))                  map.ab  = i;
-      else if (['h','hits'].includes(tl) && map.h  === undefined) map.h   = i;
-      else if (['r','runs','rs'].includes(tl) && map.r === undefined) map.r = i;
-      else if (['bb','walks','walk'].includes(tl))                map.bb  = i;
-      else if (['hr','homerun','homeruns'].includes(tl))          map.hr  = i;
-      else if (['rbi','rbis'].includes(tl))                       map.rbi = i;
-      else if (['2b','doubles'].includes(tl))                     map['2b'] = i;
-      else if (['3b','triples'].includes(tl))                     map['3b'] = i;
-      else if (['ip','innings'].includes(tl))                     map.ip  = i;
-      else if (['ra','runsallowed'].includes(tl))                 map.ra  = i;
-      else if (['er','earnedruns'].includes(tl))                  map.er  = i;
-    });
-
-    if (map.ab !== undefined || (map.h !== undefined && map.r !== undefined)) {
-      return map;
-    }
-  }
-  return null;
+function isGameChangerFormat(lines) {
+  const hasBatting   = lines.some(l => /^BATTING$/i.test(l.trim()));
+  const hasColHeader = lines.some(l => /\bAB\s+R\s+H\s+RBI\s+BB\s+SO\b/.test(l));
+  return hasBatting && hasColHeader;
 }
 
-// ── Stat Line Parsing ────────────────────────────────────────────────────────
+// Parse a "2B: Name, Name, 3B: Name, HR: Name" notes section
+// Returns { 'player name lowercase': count }
+function parseHitTypeFromNotes(notesText, hitType) {
+  const map = {};
+  // Grab the section between this hit-type marker and the next known marker (or end)
+  const stopMarkers = '2B|3B|HR|TB|SF|LOB|HBP|GDP|SB|CS|PITCHING';
+  const rx = new RegExp(`\\b${hitType}\\s*:\\s*([\\s\\S]+?)(?=\\s*\\b(?:${stopMarkers})\\s*:|$)`, 'i');
+  const m  = rx.exec(notesText);
+  if (!m) return map;
+
+  const section = m[1];
+  // Each entry is a name optionally followed by a count: "E Lund 2" or just "E Lund"
+  const parts = section.split(',').map(s => s.trim()).filter(Boolean);
+  for (const part of parts) {
+    // Grab name (letters, spaces, dots) + optional trailing number
+    const nm = part.match(/^([A-Za-z][A-Za-z\s.']+?)(?:\s+(\d+))?\s*$/);
+    if (!nm) continue;
+    const name  = nm[1].trim().toLowerCase();
+    const count = parseInt(nm[2]) || 1;
+    // Skip if it accidentally captured a marker keyword
+    if (/^(tb|sf|lob|hbp|gdp|totals|pitching)$/.test(name)) continue;
+    if (name.length < 2) continue;
+    map[name] = (map[name] || 0) + count;
+  }
+  return map;
+}
+
+function parseGameChangerFormat(lines, roster) {
+  const results = [];
+  const seenNames = new Set();
+
+  // ── Step 1: extract player stat rows ────────────────────────────────────────
+  // Anchor on the jersey number "#N" — robust even when two columns are merged
+  // on the same text line. Columns: AB R H RBI BB SO
+  const fullText = lines.join(' ');
+  const playerRx = /([A-Za-z][A-Za-z\s.']{1,30}?)\s+#\d+\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)/g;
+
+  let m;
+  while ((m = playerRx.exec(fullText)) !== null) {
+    const name = m[1].trim();
+    if (/^totals$/i.test(name)) continue;
+    const nameLower = name.toLowerCase();
+    if (seenNames.has(nameLower)) continue;
+    seenNames.add(nameLower);
+
+    // GameChanger batting columns: AB R H RBI BB SO
+    const ab  = parseInt(m[2]) || 0;
+    const r   = parseInt(m[3]) || 0;
+    const h   = parseInt(m[4]) || 0;
+    const rbi = parseInt(m[5]) || 0;
+    const bb  = parseInt(m[6]) || 0;
+    // m[7] = SO — not tracked
+
+    const { player, score } = bestRosterMatch(name, roster);
+    results.push({
+      pdfName: name, matchedPlayer: player, matchScore: score,
+      ab, h, r, bb, '2b': 0, '3b': 0, hr: 0, rbi, ip: 0, ra: 0
+    });
+  }
+
+  // ── Step 2: extract 2B / 3B / HR from footer notes ──────────────────────────
+  // Notes line looks like: "2B: E Lund, E Cantagallo, C Lacasse, 3B: B Sforza, TB: ..."
+  const notesLines = lines.filter(l => /\b(2B|3B|HR)\s*:/i.test(l));
+  if (notesLines.length > 0) {
+    const notesText = notesLines.join(' ');
+    const doublesMap  = parseHitTypeFromNotes(notesText, '2B');
+    const triplesMap  = parseHitTypeFromNotes(notesText, '3B');
+    const homeRunsMap = parseHitTypeFromNotes(notesText, 'HR');
+
+    for (const row of results) {
+      const rowName = row.pdfName.toLowerCase();
+      for (const [noteName, count] of Object.entries(doublesMap)) {
+        if (fuzzyScore(rowName, noteName) >= 0.72) row['2b'] += count;
+      }
+      for (const [noteName, count] of Object.entries(triplesMap)) {
+        if (fuzzyScore(rowName, noteName) >= 0.72) row['3b'] += count;
+      }
+      for (const [noteName, count] of Object.entries(homeRunsMap)) {
+        if (fuzzyScore(rowName, noteName) >= 0.72) row.hr += count;
+      }
+    }
+  }
+
+  return results;
+}
+
+// ── Generic Fallback Parser ───────────────────────────────────────────────────
+// Used when the format is not recognized as GameChanger.
+// Assumes column order: AB H R BB HR (most common generic scoresheet layout).
 
 const SKIP_WORDS = new Set([
   'totals','total','team','opponent','game','date','season','player','name',
@@ -2808,94 +2878,91 @@ const SKIP_WORDS = new Set([
   'rbi','so','sb','avg','obp','slg','era','g','gs'
 ]);
 
-function parseStatLines(lines, roster) {
-  const colMap = detectColumnMap(lines);
+function parseGenericFormat(lines, roster) {
+  // Try to detect column header for smarter mapping
+  function detectColumnMap() {
+    for (const line of lines) {
+      if (!/\bab\b/i.test(line)) continue;
+      const tokens = line.split(/\s+/);
+      const map = {};
+      tokens.forEach((t, i) => {
+        const tl = t.toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (['ab','atbat','atbats'].includes(tl))                      map.ab    = i;
+        else if (['h','hits'].includes(tl) && map.h  === undefined)    map.h     = i;
+        else if (['r','runs','rs'].includes(tl) && map.r === undefined) map.r    = i;
+        else if (['bb','walks','walk'].includes(tl))                    map.bb    = i;
+        else if (['hr','homerun','homeruns'].includes(tl))              map.hr    = i;
+        else if (['rbi','rbis'].includes(tl))                          map.rbi   = i;
+        else if (['2b','doubles'].includes(tl))                        map['2b'] = i;
+        else if (['3b','triples'].includes(tl))                        map['3b'] = i;
+        else if (['ip','innings'].includes(tl))                        map.ip    = i;
+        else if (['ra','runsallowed'].includes(tl))                    map.ra    = i;
+        else if (['er','earnedruns'].includes(tl))                     map.er    = i;
+      });
+      if (map.ab !== undefined || (map.h !== undefined && map.r !== undefined)) return map;
+    }
+    return null;
+  }
 
-  // Pattern: name (1-3 words, letters/dots/apostrophes/hyphens), then 2+ numbers
-  const statRx = /^([A-Za-z][A-Za-z'.'\-\s]{1,30}?)\s{2,}(\d[\d\s.]*\d|\d+)$/;
+  const colMap = detectColumnMap();
   const simpleRx = /^([A-Za-z][A-Za-z'.\-\s]{1,28}?)\s+(\d+(?:\.\d)?)\s+(\d+)\s+(\d+)(?:\s+(\d+))?(?:\s+(\d+))?(?:\s+(\d+))?/;
-
   const rawResults = [];
 
   for (const line of lines) {
     const trimmed = line.trim();
-    if (!trimmed || trimmed.length < 4) continue;
-    if (/^\d/.test(trimmed)) continue;
+    if (!trimmed || trimmed.length < 4 || /^\d/.test(trimmed)) continue;
+    const firstWord = trimmed.split(/\s+/)[0].toLowerCase().replace(/[^a-z]/g, '');
+    if (SKIP_WORDS.has(firstWord)) continue;
 
-    const firstWordLower = trimmed.split(/\s+/)[0].toLowerCase().replace(/[^a-z]/g, '');
-    if (SKIP_WORDS.has(firstWordLower)) continue;
-
-    // Try matching name + space-separated numbers
     const m = simpleRx.exec(trimmed);
     if (!m) continue;
-
     const namePart = m[1].trim();
-    if (namePart.length < 2) continue;
-    if (SKIP_WORDS.has(namePart.toLowerCase().replace(/[^a-z]/g, ''))) continue;
+    if (namePart.length < 2 || SKIP_WORDS.has(namePart.toLowerCase().replace(/[^a-z]/g, ''))) continue;
 
-    // Pull all numeric tokens from the part of the line after the name
     const afterName = trimmed.slice(namePart.length).trim();
-    const rawNums = afterName.split(/\s+/).map(n => parseFloat(n)).filter(n => !isNaN(n));
-    if (rawNums.length < 2) continue;
+    const rawNums   = afterName.split(/\s+/).map(n => parseFloat(n)).filter(n => !isNaN(n));
+    if (rawNums.length < 2 || rawNums[0] > 20) continue;
 
-    // Sanity check: AB (likely first number) shouldn't be unreasonably large
-    if (rawNums[0] > 20) continue;
-
-    // Map numbers to stats
-    let ab = 0, h = 0, r = 0, bb = 0, hr = 0, ip = 0, ra = 0;
+    let ab = 0, h = 0, r = 0, bb = 0, hr = 0, ip = 0, ra = 0, doubles = 0, triples = 0, rbi = 0;
 
     if (colMap && colMap.ab !== undefined) {
-      // Use header-detected positions — find first number token index in this line
       const tokens = trimmed.split(/\s+/);
-      let firstNumIdx = tokens.findIndex(t => /^\d+\.?\d*$/.test(t));
-      if (firstNumIdx < 0) firstNumIdx = 1;
-      const offset = colMap.ab - firstNumIdx;
-      const getCol = (col) => col !== undefined ? (parseFloat(tokens[col - offset]) || 0) : 0;
-
-      ab = getCol(colMap.ab);
-      h  = getCol(colMap.h);
-      r  = getCol(colMap.r);
-      bb = getCol(colMap.bb);
-      hr = getCol(colMap.hr);
-      ip = colMap.ip !== undefined ? getCol(colMap.ip) : 0;
-      ra = (colMap.ra !== undefined ? getCol(colMap.ra) : 0) ||
-           (colMap.er  !== undefined ? getCol(colMap.er)  : 0);
+      let fni = tokens.findIndex(t => /^\d+\.?\d*$/.test(t));
+      if (fni < 0) fni = 1;
+      const off = (colMap.ab ?? fni) - fni;
+      const gc  = (col) => col !== undefined ? (parseFloat(tokens[col - off]) || 0) : 0;
+      ab = gc(colMap.ab); h = gc(colMap.h); r = gc(colMap.r); bb = gc(colMap.bb);
+      hr = gc(colMap.hr); ip = gc(colMap.ip);
+      ra = gc(colMap.ra) || gc(colMap.er);
+      doubles = gc(colMap['2b']); triples = gc(colMap['3b']); rbi = gc(colMap.rbi);
     } else {
-      // No header — assume standard order: AB H R BB HR
       [ab = 0, h = 0, r = 0, bb = 0, hr = 0] = rawNums;
     }
 
-    // H can't exceed AB
     if (ab > 0 && h > ab) h = ab;
 
-    // Parse extra fields if column map has them; otherwise default to 0
-    let doubles = 0, triples = 0, rbi = 0;
-    if (colMap) {
-      const tokens = trimmed.split(/\s+/);
-      let firstNumIdx = tokens.findIndex(t => /^\d+\.?\d*$/.test(t));
-      if (firstNumIdx < 0) firstNumIdx = 1;
-      const offset = (colMap.ab !== undefined ? colMap.ab : firstNumIdx) - firstNumIdx;
-      const getCol = (col) => col !== undefined ? (parseFloat(tokens[col - offset]) || 0) : 0;
-      doubles = getCol(colMap['2b']);
-      triples = getCol(colMap['3b']);
-      rbi     = getCol(colMap.rbi);
-    } else {
-      // No header — rawNums order is AB H R BB HR; 2B/3B/RBI not reliably parseable
-      // Leave at 0 for manual fill
-    }
-
     const { player, score } = bestRosterMatch(namePart, roster);
-    rawResults.push({ pdfName: namePart, matchedPlayer: player, matchScore: score, ab, h, r, bb, '2b': doubles, '3b': triples, hr, rbi, ip, ra });
+    rawResults.push({ pdfName: namePart, matchedPlayer: player, matchScore: score,
+      ab, h, r, bb, '2b': doubles, '3b': triples, hr, rbi, ip, ra });
   }
 
-  // Deduplicate: if the same roster player was matched from multiple lines, keep the best
-  const byLegacyId = new Map();
+  // Deduplicate — keep highest-confidence match per roster player
+  const byKey = new Map();
   for (const row of rawResults) {
-    const key = row.matchedPlayer?.legacyId || `__pdf__${row.pdfName}`;
-    const prev = byLegacyId.get(key);
-    if (!prev || prev.matchScore < row.matchScore) byLegacyId.set(key, row);
+    const key  = row.matchedPlayer?.legacyId || `__pdf__${row.pdfName}`;
+    const prev = byKey.get(key);
+    if (!prev || prev.matchScore < row.matchScore) byKey.set(key, row);
   }
-  return [...byLegacyId.values()];
+  return [...byKey.values()];
+}
+
+// ── Main dispatcher ───────────────────────────────────────────────────────────
+
+function parseStatLines(lines, roster) {
+  if (isGameChangerFormat(lines)) {
+    return parseGameChangerFormat(lines, roster);
+  }
+  return parseGenericFormat(lines, roster);
 }
 
 // ── Upload Handler ───────────────────────────────────────────────────────────
@@ -2936,13 +3003,17 @@ window.handlePdfUpload = async function(event) {
     }
 
     pdfParsedRows = parsed;
-    const highConf = parsed.filter(r => r.matchScore >= 0.75).length;
-    const lowConf  = parsed.filter(r => r.matchScore < 0.45).length;
+    const highConf  = parsed.filter(r => r.matchScore >= 0.75).length;
+    const lowConf   = parsed.filter(r => r.matchScore < 0.45).length;
+    const formatTag = isGameChangerFormat(lines)
+      ? '<span style="font-size:0.78rem;background:#d1fae5;color:#065f46;padding:2px 7px;border-radius:9999px;margin-left:6px;">GameChanger format</span>'
+      : '';
     statusEl.innerHTML = `
       <div style="color:#276749; font-weight:600;">
         ✅ Parsed <strong>${parsed.length}</strong> player row(s) —
         ${highConf} high-confidence · ${parsed.length - highConf - lowConf} review · ${lowConf} unmatched.
-        Review and correct below.
+        ${formatTag}
+        <br><span style="font-weight:400;font-size:0.85rem;color:#4a7c59;">Review and correct below before submitting.</span>
       </div>`;
     renderPdfReviewTable();
     document.getElementById('pdfReviewSection').style.display = 'block';
