@@ -2595,9 +2595,13 @@ async function extractPdfLines(file) {
 // ── GameChanger Format ────────────────────────────────────────────────────────
 
 function isGameChangerFormat(lines) {
-  const hasBatting   = lines.some(l => /^BATTING$/i.test(l.trim()));
+  // "AB R H RBI BB SO" (R before H, no HR column) is specific to GameChanger box scores
   const hasColHeader = lines.some(l => /\bAB\s+R\s+H\s+RBI\s+BB\s+SO\b/.test(l));
-  return hasBatting && hasColHeader;
+  // Jersey numbers (#N) appear on every player row in GameChanger format
+  const hasJersey    = lines.some(l => /#\d+/.test(l));
+  // "BATTING" as a word anywhere (not necessarily a standalone line)
+  const hasBatting   = lines.some(l => /\bBATTING\b/i.test(l));
+  return hasColHeader && (hasJersey || hasBatting);
 }
 
 function parseHitTypeFromNotes(notesText, hitType) {
@@ -2706,6 +2710,8 @@ function parseGenericFormat(lines, roster) {
     if (!m) continue;
     const namePart = m[1].trim();
     if (namePart.length < 2 || PDF_SKIP_WORDS.has(namePart.toLowerCase().replace(/[^a-z]/g, ''))) continue;
+    // Skip all-uppercase short strings — these are team abbreviations (e.g. "ACSR", "NYY"), not player names
+    if (namePart.length <= 6 && namePart === namePart.toUpperCase() && /^[A-Z]+$/.test(namePart)) continue;
 
     const rawNums = trimmed.slice(namePart.length).trim().split(/\s+/).map(n => parseFloat(n)).filter(n => !isNaN(n));
     if (rawNums.length < 2 || rawNums[0] > 20) continue;
