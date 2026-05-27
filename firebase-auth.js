@@ -3106,4 +3106,6 @@ export { auth };
 // Make auth available globally for navigation component
 if (typeof window !== 'undefined') {
   window.auth = auth;
+  // Signal nav-component (and any other listeners) that auth is ready
+  window.dispatchEvent(new CustomEvent('firebase-auth-ready'));
 }

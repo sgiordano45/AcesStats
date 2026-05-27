@@ -10,9 +10,20 @@ let configLoaded = false;
 // Function to fetch page visibility from Firebase
 export async function loadPageVisibility() {
   if (configLoaded) {
-    console.log('✅ Page visibility already loaded');
     return visibilityConfig;
   }
+
+  // Check sessionStorage cache first (5-minute TTL) — avoids Firestore hit on every page navigation
+  try {
+    const cached = sessionStorage.getItem('_navVisConfig');
+    const cachedTs = parseInt(sessionStorage.getItem('_navVisConfigTs') || '0', 10);
+    if (cached && (Date.now() - cachedTs) < 5 * 60 * 1000) {
+      visibilityConfig = JSON.parse(cached);
+      configLoaded = true;
+      console.log('✅ Page visibility loaded from cache');
+      return visibilityConfig;
+    }
+  } catch (e) { /* sessionStorage unavailable — fall through to Firestore */ }
 
   try {
     if (typeof db === 'undefined') {
@@ -23,13 +34,20 @@ export async function loadPageVisibility() {
 
     const pagesRef = collection(db, 'siteConfig', 'navigation', 'pages');
     const pagesSnapshot = await getDocs(pagesRef);
-    
+
     pagesSnapshot.forEach(doc => {
       visibilityConfig[doc.id] = doc.data();
     });
-    
+
     configLoaded = true;
-    console.log('✅ Loaded page visibility config:', visibilityConfig);
+    console.log('✅ Loaded page visibility config from Firestore');
+
+    // Cache for 5 minutes so subsequent page navigations skip this Firestore call
+    try {
+      sessionStorage.setItem('_navVisConfig', JSON.stringify(visibilityConfig));
+      sessionStorage.setItem('_navVisConfigTs', Date.now().toString());
+    } catch (e) { /* silent fail */ }
+
     return visibilityConfig;
   } catch (error) {
     console.error('❌ Error loading page visibility:', error);

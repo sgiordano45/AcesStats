@@ -321,16 +321,25 @@ export class NavigationComponent {
     await loadPageVisibility();
     const filteredNav = getFilteredNavStructure();
     
-    // Try to load user profile for role-based filtering
+    // Try to load user profile for role-based nav filtering
+    // Cached in sessionStorage (keyed by uid) so we only hit Firestore once per session
     let userProfile = null;
     try {
       if (typeof window.auth !== 'undefined' && window.auth.currentUser) {
-        const { getUserProfile } = await import('./firebase-auth.js');
         const userId = window.auth.currentUser.uid;
-        const result = await getUserProfile(userId);
-        if (result.success && result.data) {
-          userProfile = result.data;
-          console.log('👤 Loaded user profile for nav filtering:', userProfile.userRole || 'no role');
+        const cacheKey = `_navProfile_${userId}`;
+        const cached = sessionStorage.getItem(cacheKey);
+        if (cached) {
+          userProfile = JSON.parse(cached);
+          console.log('👤 User profile loaded from cache for nav filtering');
+        } else {
+          const { getUserProfile } = await import('./firebase-auth.js');
+          const result = await getUserProfile(userId);
+          if (result.success && result.data) {
+            userProfile = result.data;
+            console.log('👤 Loaded user profile for nav filtering:', userProfile.userRole || 'no role');
+            try { sessionStorage.setItem(cacheKey, JSON.stringify(userProfile)); } catch (e) { /* silent */ }
+          }
         }
       }
     } catch (error) {
@@ -601,15 +610,33 @@ if (typeof window !== 'undefined') {
   
   // Try immediately
   if (!setupAuthListener()) {
-    console.log('⏳ Firebase auth not loaded, will check again...');
+    // Auth not ready yet — listen for the event fired by firebase-auth.js
+    // This is nearly instantaneous when firebase-auth.js loads after us.
+    let authSetupDone = false;
+
+    const onAuthReady = () => {
+      if (authSetupDone) return;
+      authSetupDone = true;
+      window.removeEventListener('firebase-auth-ready', onAuthReady);
+      clearInterval(authCheckInterval);
+      if (setupAuthListener()) {
+        console.log('✅ Firebase auth ready (event), listener attached');
+      }
+    };
+    window.addEventListener('firebase-auth-ready', onAuthReady);
+
+    // Short fallback polling (2s max) in case the event fired before we listened
     let authCheckAttempts = 0;
     const authCheckInterval = setInterval(() => {
       if (setupAuthListener()) {
-        console.log('✅ Firebase auth now available, listener attached');
+        authSetupDone = true;
+        window.removeEventListener('firebase-auth-ready', onAuthReady);
         clearInterval(authCheckInterval);
-      } else if (++authCheckAttempts > 40) {
-        console.warn('⚠️ Firebase auth not found after 40 attempts (10 seconds)');
+        console.log('✅ Firebase auth now available (poll), listener attached');
+      } else if (++authCheckAttempts >= 8) {
+        window.removeEventListener('firebase-auth-ready', onAuthReady);
         clearInterval(authCheckInterval);
+        console.warn('⚠️ Firebase auth not found after 2 seconds');
       }
     }, 250);
   }
