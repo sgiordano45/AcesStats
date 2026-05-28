@@ -2627,12 +2627,18 @@ function parseGameChangerFormat(lines, roster) {
   const results   = [];
   const seenNames = new Set();
   const fullText  = lines.join(' ');
-  const playerRx  = /([A-Za-z][A-Za-z\s.']{1,30}?)\s+(?:#\d+\s+)?(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)/g;
+  const playerRx  = /([A-Za-z][A-Za-z\s.']{1,30}?)\s+#\d+\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)/g;
 
   let m;
   while ((m = playerRx.exec(fullText)) !== null) {
     const name = m[1].trim();
     if (/^totals$/i.test(name)) continue;
+    // Skip team abbreviations: all-caps, 2-6 chars (e.g. ACSC, ACSB, NYY)
+    if (/^[A-Z]{2,6}$/.test(name)) continue;
+    // Skip stat column header noise (e.g. "R H E ACSC", "AB R H RBI BB SO")
+    if (/\b(AB|RBI|BB|SO|ERA|OBP|SLG)\b/.test(name)) continue;
+    // Skip names that are just single initials or contain only stat abbreviations
+    if (name.split(/\s+/).every(w => /^[A-Z]{1,3}$/.test(w))) continue;
     const nameLower = name.toLowerCase();
     if (seenNames.has(nameLower)) continue;
     seenNames.add(nameLower);
