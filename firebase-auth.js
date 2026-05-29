@@ -28,7 +28,16 @@ import { doc, setDoc, getDoc, updateDoc, serverTimestamp, collection, getDocs, q
 
 import { app, db } from './firebase-data.js';
 
-import { requestNotificationPermission } from './firebase-messaging.js';
+// firebase-messaging is imported lazily (dynamic import) so it doesn't block auth init
+// It's only loaded when requestNotificationPermission is actually called
+let _requestNotificationPermission = null;
+async function requestNotificationPermission(...args) {
+  if (!_requestNotificationPermission) {
+    const mod = await import('./firebase-messaging.js');
+    _requestNotificationPermission = mod.requestNotificationPermission;
+  }
+  return _requestNotificationPermission(...args);
+}
 
 // Re-export Firebase auth functions for other modules
 export { onAuthStateChanged, signOut, signInWithPopup, GoogleAuthProvider, updateProfile };

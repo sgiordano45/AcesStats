@@ -13,17 +13,17 @@ export async function loadPageVisibility() {
     return visibilityConfig;
   }
 
-  // Check sessionStorage cache first (5-minute TTL) — avoids Firestore hit on every page navigation
+  // Check localStorage cache first (15-min TTL) — survives iOS PWA restarts unlike sessionStorage
   try {
-    const cached = sessionStorage.getItem('_navVisConfig');
-    const cachedTs = parseInt(sessionStorage.getItem('_navVisConfigTs') || '0', 10);
-    if (cached && (Date.now() - cachedTs) < 5 * 60 * 1000) {
+    const cached   = localStorage.getItem('_navVisConfig');
+    const cachedTs = parseInt(localStorage.getItem('_navVisConfigTs') || '0', 10);
+    if (cached && (Date.now() - cachedTs) < 15 * 60 * 1000) {
       visibilityConfig = JSON.parse(cached);
       configLoaded = true;
-      console.log('✅ Page visibility loaded from cache');
+      console.log('✅ Page visibility loaded from localStorage cache');
       return visibilityConfig;
     }
-  } catch (e) { /* sessionStorage unavailable — fall through to Firestore */ }
+  } catch (e) { /* localStorage unavailable — fall through to Firestore */ }
 
   try {
     if (typeof db === 'undefined') {
@@ -42,10 +42,10 @@ export async function loadPageVisibility() {
     configLoaded = true;
     console.log('✅ Loaded page visibility config from Firestore');
 
-    // Cache for 5 minutes so subsequent page navigations skip this Firestore call
+    // Cache in localStorage (15-min TTL) — persists across iOS PWA restarts
     try {
-      sessionStorage.setItem('_navVisConfig', JSON.stringify(visibilityConfig));
-      sessionStorage.setItem('_navVisConfigTs', Date.now().toString());
+      localStorage.setItem('_navVisConfig', JSON.stringify(visibilityConfig));
+      localStorage.setItem('_navVisConfigTs', Date.now().toString());
     } catch (e) { /* silent fail */ }
 
     return visibilityConfig;
@@ -147,6 +147,7 @@ export const NAV_STRUCTURE = {
     { id: 'roster-management', href: 'roster-management.html', label: 'Roster Management', icon: '✉️', priority: 4, requiresAuth: true },
     { id: 'game-tracker', href: 'game-tracker.html', label: 'Game Tracker', icon: '📊', priority: 4, requiresAuth: true },
     { id: 'captain-guide', href: 'captain-guide.html', label: "Captain's Guide", icon: '👨‍✈️', priority: 4, requiresAuth: true, requiresRole: 'captain' },
+    { id: 'captain-roster-edit', href: 'captain-roster-edit.html', label: 'Edit Roster', icon: '✏️', priority: 4, requiresAuth: true, requiresRole: 'captain' },
     { id: 'league-staff-admin', href: 'league-staff-admin.html', label: 'League Staff Admin', icon: '⚙️', priority: 4, requiresAuth: true, requiresRole: 'league_staff' },
     { id: 'directory', href: 'aces-directory.html', label: 'Aces Directory', icon: '📇', priority: 4, requiresAuth: true },
     { id: 'submit-score', href: 'submit-score.html', label: 'Submit Scores', icon: '🔢️', priority: 4, requiresAuth: true },
@@ -362,6 +363,10 @@ export const PAGE_CONFIGS = {
   
   'captain-guide.html': {
     desktop: ['home', 'roster-management']
+  },
+
+  'captain-roster-edit.html': {
+    desktop: ['home', 'roster-management', 'submit-stats', 'game-tracker']
   },
   
   'league-staff-admin.html': {

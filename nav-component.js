@@ -322,23 +322,33 @@ export class NavigationComponent {
     const filteredNav = getFilteredNavStructure();
     
     // Try to load user profile for role-based nav filtering
-    // Cached in sessionStorage (keyed by uid) so we only hit Firestore once per session
+    // Cached in localStorage (keyed by uid + 10-min TTL) — survives iOS PWA restarts
+    // unlike sessionStorage which is wiped every time iOS kills the app
     let userProfile = null;
     try {
       if (typeof window.auth !== 'undefined' && window.auth.currentUser) {
         const userId = window.auth.currentUser.uid;
         const cacheKey = `_navProfile_${userId}`;
-        const cached = sessionStorage.getItem(cacheKey);
+        const cacheTs  = `_navProfileTs_${userId}`;
+        let cached = null;
+        try {
+          const raw = localStorage.getItem(cacheKey);
+          const ts  = parseInt(localStorage.getItem(cacheTs) || '0', 10);
+          if (raw && (Date.now() - ts) < 10 * 60 * 1000) cached = raw; // 10-min TTL
+        } catch (e) { /* localStorage unavailable */ }
         if (cached) {
           userProfile = JSON.parse(cached);
-          console.log('👤 User profile loaded from cache for nav filtering');
+          console.log('👤 User profile loaded from localStorage cache for nav filtering');
         } else {
           const { getUserProfile } = await import('./firebase-auth.js');
           const result = await getUserProfile(userId);
           if (result.success && result.data) {
             userProfile = result.data;
             console.log('👤 Loaded user profile for nav filtering:', userProfile.userRole || 'no role');
-            try { sessionStorage.setItem(cacheKey, JSON.stringify(userProfile)); } catch (e) { /* silent */ }
+            try {
+              localStorage.setItem(cacheKey, JSON.stringify(userProfile));
+              localStorage.setItem(cacheTs,  Date.now().toString());
+            } catch (e) { /* silent */ }
           }
         }
       }
@@ -544,7 +554,8 @@ if (typeof window !== 'undefined') {
   let isInitializing = false;
   let hasInitialized = false;
   let lastReinitTime = 0;
-  
+  let lastRenderedUid  = null; // track which user we last rendered nav for
+
   // Store a reference to reinitialize nav when auth is ready
   window.reinitializeNav = async function() {
     // Prevent reinit if we're currently initializing
@@ -552,13 +563,20 @@ if (typeof window !== 'undefined') {
       console.log('⏳ Already initializing, skipping reinit...');
       return;
     }
-    
+
     // Don't reinit during the first 2 seconds after page load (initial auth check)
     if (!hasInitialized && performance.now() < 2000) {
       console.log('⏳ Initial page load, skipping early reinit...');
       return;
     }
-    
+
+    // Skip reinit if the same user is already rendered — prevents double-render on every page load
+    const currentUid = window.auth?.currentUser?.uid || null;
+    if (currentUid && currentUid === lastRenderedUid) {
+      console.log('⏭ Same user already rendered in nav, skipping reinit');
+      return;
+    }
+
     // Debounce: don't reinit more than once per second
     const now = Date.now();
     if (now - lastReinitTime < 1000) {
@@ -572,14 +590,21 @@ if (typeof window !== 'undefined') {
     document.querySelector('.nav-container')?.remove();
     isInitializing = true;
     await NavigationComponent.init();
+    markNavRendered();
     isInitializing = false;
   };
   
+  // Helper: record which user the nav was last rendered for
+  const markNavRendered = () => {
+    lastRenderedUid = window.auth?.currentUser?.uid || null;
+  };
+
   // Wait for DOM to be ready
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', async () => {
       isInitializing = true;
       await NavigationComponent.init();
+      markNavRendered();
       isInitializing = false;
       hasInitialized = true;
     });
@@ -587,6 +612,7 @@ if (typeof window !== 'undefined') {
     (async () => {
       isInitializing = true;
       await NavigationComponent.init();
+      markNavRendered();
       isInitializing = false;
       hasInitialized = true;
     })();
