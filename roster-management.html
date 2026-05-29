@@ -194,10 +194,10 @@ import {
 import { onForegroundMessage } from './firebase-messaging.js';
 
 // Expose Firebase functions for finalization status checks
-import { doc, getDoc, collection, query, where, orderBy, limit, getDocs } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+import { doc, getDoc, setDoc, deleteDoc, collection, query, where, orderBy, limit, getDocs, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
 import { db } from './firebase-data.js';
 
-window.firebaseImports = { doc, getDoc, db, collection, query, where, orderBy, limit, getDocs };
+window.firebaseImports = { doc, getDoc, setDoc, deleteDoc, db, collection, query, where, orderBy, limit, getDocs, serverTimestamp };
 
 
 let rsvpListeners = [];
@@ -500,6 +500,24 @@ function RosterManagement({ currentUser }) {
     onSelect: null,
     playerNumber: ''
   });
+
+  // Past game picker (Option 1)
+  const [pastGames, setPastGames] = useState([]);
+  const [pastGamesLoaded, setPastGamesLoaded] = useState(false);
+  const [pastGameSelectBatting, setPastGameSelectBatting] = useState('');
+  const [pastGameSelectFielding, setPastGameSelectFielding] = useState('');
+  const [loadingFromPast, setLoadingFromPast] = useState(false);
+
+  // Template save/load (Option 3)
+  const [battingTemplates, setBattingTemplates] = useState([]);
+  const [fieldingTemplates, setFieldingTemplates] = useState([]);
+  const [templatesLoaded, setTemplatesLoaded] = useState(false);
+  const [showTemplateModal, setShowTemplateModal] = useState(false);
+  const [templateModalType, setTemplateModalType] = useState(''); // 'batting' | 'fielding'
+  const [templateNameInput, setTemplateNameInput] = useState('');
+  const [savingTemplate, setSavingTemplate] = useState(false);
+  const [templateSelectBatting, setTemplateSelectBatting] = useState('');
+  const [templateSelectFielding, setTemplateSelectFielding] = useState('');
 
   const isCaptain = (() => {
     if (!userProfile) return false;
@@ -1457,7 +1475,261 @@ const saveLineupData = async (type, data, inning = null) => {
         alert('Error copying previous lineup. Please try again.');
       }
     };
-  
+
+    // ── Load past games list (shared by batting + fielding pickers) ──────────
+    const loadPastGames = async () => {
+      if (pastGamesLoaded || !currentSeason || !selectedTeam) return;
+      try {
+        const { getDocs: _getDocs, collection: _collection, db: _db } = window.firebaseImports;
+        const teamIdLower = selectedTeam.toLowerCase();
+        const allGamesSnap = await _getDocs(_collection(_db, 'seasons', currentSeason.id, 'games'));
+        const now = new Date();
+        now.setHours(0, 0, 0, 0);
+        const prior = [];
+        allGamesSnap.forEach(docSnap => {
+          const data = docSnap.data();
+          if (docSnap.id === selectedGame) return;
+          const home = (data.homeTeamId || data.homeTeamName || data.homeTeam || data['home team'] || '').toLowerCase();
+          const away = (data.awayTeamId || data.awayTeamName || data.awayTeam || data['away team'] || '').toLowerCase();
+          if (home !== teamIdLower && away !== teamIdLower) return;
+          let gameDate;
+          if (data.date?.seconds) gameDate = new Date(data.date.seconds * 1000);
+          else if (data.date) gameDate = new Date(data.date);
+          else return;
+          gameDate.setHours(0, 0, 0, 0);
+          if (gameDate < now) {
+            const opponent = home === teamIdLower
+              ? (data.awayTeamId || data.awayTeamName || data.awayTeam || data['away team'] || 'Opponent')
+              : (data.homeTeamId || data.homeTeamName || data.homeTeam || data['home team'] || 'Opponent');
+            const cap = s => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+            prior.push({
+              id: docSnap.id,
+              _parsedDate: gameDate,
+              label: `${gameDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} vs ${cap(opponent)}`
+            });
+          }
+        });
+        prior.sort((a, b) => b._parsedDate - a._parsedDate);
+        setPastGames(prior);
+        setPastGamesLoaded(true);
+      } catch (err) {
+        console.error('Error loading past games:', err);
+      }
+    };
+
+    // ── Load batting order from a specific past game ──────────────────────────
+    const loadBattingFromGame = async (gameId) => {
+      if (!gameId || !isCaptain) return;
+      setLoadingFromPast(true);
+      try {
+        const prevOrder = await window.FirebaseRoster.getBattingOrder(gameId, selectedTeam);
+        if (!prevOrder || !prevOrder.some(id => id)) {
+          alert('No batting order found for that game.');
+          setLoadingFromPast(false);
+          return;
+        }
+        const copiedOrder = prevOrder.map(playerId => {
+          if (!playerId) return null;
+          return players.find(p => p.id === playerId) || null;
+        });
+        const copiedCount = copiedOrder.filter(p => p).length;
+        if (copiedCount === 0) {
+          alert('None of those players are on the current roster.');
+          setLoadingFromPast(false);
+          return;
+        }
+        setBattingOrder(prev => ({ ...prev, [selectedGame]: copiedOrder }));
+        await saveLineupData('batting', copiedOrder);
+        const gameLabel = pastGames.find(g => g.id === gameId)?.label || gameId;
+        const skipped = prevOrder.filter(id => id).length - copiedCount;
+        let msg = `✅ Batting order loaded from ${gameLabel} (${copiedCount} players)`;
+        if (skipped > 0) msg += `\n⚠️ ${skipped} player(s) not on current roster — slots left empty`;
+        alert(msg);
+        setPastGameSelectBatting('');
+      } catch (err) {
+        console.error('Error loading batting from past game:', err);
+        alert('Error loading batting order. Please try again.');
+      }
+      setLoadingFromPast(false);
+    };
+
+    // ── Load fielding from a specific past game ───────────────────────────────
+    const loadFieldingFromGame = async (gameId) => {
+      if (!gameId || !isCaptain) return;
+      setLoadingFromPast(true);
+      try {
+        const prevFielding = await window.FirebaseRoster.getFieldingPositions(gameId, selectedTeam);
+        if (!prevFielding || Object.keys(prevFielding).length === 0) {
+          alert('No fielding positions found for that game.');
+          setLoadingFromPast(false);
+          return;
+        }
+        // Hydrate: stored values may be player IDs (strings) or player objects
+        const hydrateInning = (inningData) => {
+          const result = {};
+          Object.entries(inningData).forEach(([pos, val]) => {
+            if (val && typeof val === 'object' && val.id) {
+              // Already a player object — find from current roster
+              const p = players.find(pl => pl.id === val.id);
+              if (p) result[pos] = p;
+            } else if (typeof val === 'string') {
+              const p = players.find(pl => pl.id === val);
+              if (p) result[pos] = p;
+            }
+          });
+          return result;
+        };
+        const hydratedFielding = {};
+        Object.entries(prevFielding).forEach(([inning, data]) => {
+          hydratedFielding[inning] = hydrateInning(data);
+        });
+        setFieldingPositions(prev => ({ ...prev, [selectedGame]: hydratedFielding }));
+        // Save all innings
+        const savePromises = Object.entries(hydratedFielding).map(([inning]) =>
+          saveLineupData('fielding', hydratedFielding, parseInt(inning))
+        );
+        await Promise.all(savePromises);
+        const gameLabel = pastGames.find(g => g.id === gameId)?.label || gameId;
+        alert(`✅ Defense loaded from ${gameLabel}`);
+        setPastGameSelectFielding('');
+      } catch (err) {
+        console.error('Error loading fielding from past game:', err);
+        alert('Error loading defense. Please try again.');
+      }
+      setLoadingFromPast(false);
+    };
+
+    // ── Load templates from Firestore ─────────────────────────────────────────
+    const loadTemplates = async () => {
+      if (templatesLoaded || !selectedTeam) return;
+      try {
+        const { getDocs: _getDocs, collection: _collection, db: _db, orderBy: _orderBy, query: _query } = window.firebaseImports;
+        const [batSnap, fieldSnap] = await Promise.all([
+          _getDocs(_query(_collection(_db, 'lineupTemplates', selectedTeam, 'batting'), _orderBy('createdAt', 'desc'))),
+          _getDocs(_query(_collection(_db, 'lineupTemplates', selectedTeam, 'fielding'), _orderBy('createdAt', 'desc')))
+        ]);
+        setBattingTemplates(batSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+        setFieldingTemplates(fieldSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+        setTemplatesLoaded(true);
+      } catch (err) {
+        console.error('Error loading templates:', err);
+      }
+    };
+
+    // ── Save current lineup as a named template ───────────────────────────────
+    const saveTemplate = async () => {
+      if (!templateNameInput.trim() || !isCaptain) return;
+      setSavingTemplate(true);
+      try {
+        const { setDoc: _setDoc, doc: _doc, db: _db, serverTimestamp: _ts } = window.firebaseImports;
+        const templateId = templateNameInput.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+        const safeName = templateNameInput.trim();
+
+        if (templateModalType === 'batting') {
+          const order = (battingOrder[selectedGame] || []).map(p => p?.id || null);
+          await _setDoc(_doc(_db, 'lineupTemplates', selectedTeam, 'batting', templateId), {
+            name: safeName,
+            order,
+            createdAt: _ts(),
+            createdBy: currentUser?.uid || ''
+          });
+          setBattingTemplates(prev => {
+            const filtered = prev.filter(t => t.id !== templateId);
+            return [{ id: templateId, name: safeName, order }, ...filtered];
+          });
+          alert(`✅ Batting template "${safeName}" saved.`);
+        } else if (templateModalType === 'fielding') {
+          // Serialize: store player IDs instead of full objects
+          const serialized = {};
+          const currentFielding = fieldingPositions[selectedGame] || {};
+          Object.entries(currentFielding).forEach(([inning, positions]) => {
+            serialized[inning] = {};
+            Object.entries(positions).forEach(([pos, player]) => {
+              if (player && player.id) serialized[inning][pos] = player.id;
+            });
+          });
+          await _setDoc(_doc(_db, 'lineupTemplates', selectedTeam, 'fielding', templateId), {
+            name: safeName,
+            positions: serialized,
+            createdAt: _ts(),
+            createdBy: currentUser?.uid || ''
+          });
+          setFieldingTemplates(prev => {
+            const filtered = prev.filter(t => t.id !== templateId);
+            return [{ id: templateId, name: safeName, positions: serialized }, ...filtered];
+          });
+          alert(`✅ Defense template "${safeName}" saved.`);
+        }
+
+        setShowTemplateModal(false);
+        setTemplateNameInput('');
+      } catch (err) {
+        console.error('Error saving template:', err);
+        alert('Error saving template. Please try again.');
+      }
+      setSavingTemplate(false);
+    };
+
+    // ── Load a batting template into the current game ─────────────────────────
+    const loadBattingTemplate = async (templateId) => {
+      if (!templateId || !isCaptain) return;
+      const template = battingTemplates.find(t => t.id === templateId);
+      if (!template) return;
+      setLoadingFromPast(true);
+      try {
+        const copiedOrder = (template.order || []).map(playerId => {
+          if (!playerId) return null;
+          return players.find(p => p.id === playerId) || null;
+        });
+        const copiedCount = copiedOrder.filter(p => p).length;
+        if (copiedCount === 0) {
+          alert('None of the template players are on the current roster.');
+          setLoadingFromPast(false);
+          return;
+        }
+        setBattingOrder(prev => ({ ...prev, [selectedGame]: copiedOrder }));
+        await saveLineupData('batting', copiedOrder);
+        const skipped = (template.order || []).filter(id => id).length - copiedCount;
+        let msg = `✅ Template "${template.name}" loaded (${copiedCount} players)`;
+        if (skipped > 0) msg += `\n⚠️ ${skipped} player(s) not on roster — slots left empty`;
+        alert(msg);
+        setTemplateSelectBatting('');
+      } catch (err) {
+        console.error('Error loading batting template:', err);
+        alert('Error loading template. Please try again.');
+      }
+      setLoadingFromPast(false);
+    };
+
+    // ── Load a fielding template into the current game ────────────────────────
+    const loadFieldingTemplate = async (templateId) => {
+      if (!templateId || !isCaptain) return;
+      const template = fieldingTemplates.find(t => t.id === templateId);
+      if (!template || !template.positions) return;
+      setLoadingFromPast(true);
+      try {
+        const hydratedFielding = {};
+        Object.entries(template.positions).forEach(([inning, positions]) => {
+          hydratedFielding[inning] = {};
+          Object.entries(positions).forEach(([pos, playerId]) => {
+            const p = players.find(pl => pl.id === playerId);
+            if (p) hydratedFielding[inning][pos] = p;
+          });
+        });
+        setFieldingPositions(prev => ({ ...prev, [selectedGame]: hydratedFielding }));
+        const savePromises = Object.entries(hydratedFielding).map(([inning]) =>
+          saveLineupData('fielding', hydratedFielding, parseInt(inning))
+        );
+        await Promise.all(savePromises);
+        alert(`✅ Defense template "${template.name}" loaded`);
+        setTemplateSelectFielding('');
+      } catch (err) {
+        console.error('Error loading fielding template:', err);
+        alert('Error loading defense template. Please try again.');
+      }
+      setLoadingFromPast(false);
+    };
+
 const printBattingOrder = () => {
   const selectedGameData = games.find(g => g.id === selectedGame);
   if (!selectedGameData) return;
@@ -1626,6 +1898,49 @@ const printDefensiveRotation = () => {
   `);
   printWindow.document.close();
 };
+
+  // Save Template Modal Component
+  const SaveTemplateModal = () => {
+    if (!showTemplateModal) return null;
+    const typeLabel = templateModalType === 'batting' ? 'Batting Order' : 'Defense';
+    return (
+      <div
+        style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000, padding: '20px', backdropFilter: 'blur(4px)' }}
+        onClick={() => setShowTemplateModal(false)}
+      >
+        <div
+          style={{ background: 'white', borderRadius: '16px', padding: '2rem', width: '100%', maxWidth: '400px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}
+          onClick={e => e.stopPropagation()}
+        >
+          <h3 style={{ margin: '0 0 0.5rem', fontSize: '1.2rem', color: 'var(--text-dark)' }}>💾 Save {typeLabel} Template</h3>
+          <p style={{ margin: '0 0 1.25rem', fontSize: '14px', color: 'var(--text-light)' }}>
+            Give this template a name so you can load it for future games.
+          </p>
+          <input
+            type="text"
+            value={templateNameInput}
+            onChange={e => setTemplateNameInput(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter' && templateNameInput.trim()) saveTemplate(); if (e.key === 'Escape') setShowTemplateModal(false); }}
+            placeholder={`e.g. "Standard ${typeLabel}" or "Playoff D"`}
+            autoFocus
+            style={{ width: '100%', padding: '0.6rem 0.85rem', border: '1px solid #d1d5db', borderRadius: '8px', fontSize: '15px', marginBottom: '1.25rem', outline: 'none', boxSizing: 'border-box' }}
+          />
+          <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+            <button onClick={() => setShowTemplateModal(false)} style={{ padding: '0.6rem 1.25rem', border: '1px solid #d1d5db', borderRadius: '8px', background: 'white', color: '#374151', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}>
+              Cancel
+            </button>
+            <button
+              onClick={saveTemplate}
+              disabled={!templateNameInput.trim() || savingTemplate}
+              style={{ padding: '0.6rem 1.5rem', border: 'none', borderRadius: '8px', background: !templateNameInput.trim() || savingTemplate ? '#9ca3af' : '#059669', color: 'white', fontSize: '14px', fontWeight: '700', cursor: !templateNameInput.trim() || savingTemplate ? 'not-allowed' : 'pointer' }}
+            >
+              {savingTemplate ? 'Saving…' : 'Save Template'}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   // Player Selection Modal Component
   const PlayerSelectionModal = () => {
@@ -1992,6 +2307,7 @@ const printDefensiveRotation = () => {
   return (
     <>
       <PlayerSelectionModal />
+      <SaveTemplateModal />
       <div style={{ fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", background: 'linear-gradient(135deg, #f7fafc 0%, #edf2f7 100%)', minHeight: '100vh', padding: '2rem' }}>	
       <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
         
@@ -2297,38 +2613,54 @@ const printDefensiveRotation = () => {
   </div>
 </div>
                                                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center', marginBottom: '1rem' }}>
-                                                                                     <p style={{ fontSize: '14px', color: 'var(--text-light)', margin: 0, flex: 1 }}>
-                                                                                       {seasonConfig.name} allows up to {seasonConfig.battingOrderSize} batters. {isMobile ? 'Tap + to add players, use arrows to reorder.' : 'Drag players from the available list.'}
-                                                                                     </p>
-                                                                                     <button
-                                                                                       onClick={copyFromPreviousGame}
-                                                                                       style={{
-                                                                                         padding: '8px 16px',
-                                                                                         background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
-                                                                                         color: 'white',
-                                                                                         border: 'none',
-                                                                                         borderRadius: '8px',
-                                                                                         fontSize: '13px',
-                                                                                         fontWeight: '600',
-                                                                                         cursor: 'pointer',
-                                                                                         display: 'flex',
-                                                                                         alignItems: 'center',
-                                                                                         gap: '6px',
-                                                                                         transition: 'all 0.2s ease',
-                                                                                         boxShadow: '0 2px 8px rgba(99, 102, 241, 0.3)'
-                                                                                       }}
-                                                                                       onMouseEnter={(e) => {
-                                                                                         e.target.style.transform = 'translateY(-1px)';
-                                                                                         e.target.style.boxShadow = '0 4px 12px rgba(99, 102, 241, 0.4)';
-                                                                                       }}
-                                                                                       onMouseLeave={(e) => {
-                                                                                         e.target.style.transform = 'translateY(0)';
-                                                                                         e.target.style.boxShadow = '0 2px 8px rgba(99, 102, 241, 0.3)';
-                                                                                       }}
-                                                                                     >
-                                                                                       📋 Copy Previous Lineup
-                                                                                     </button>
-                                                                                   </div>
+                                                               <p style={{ fontSize: '14px', color: 'var(--text-light)', margin: 0, flex: 1 }}>
+                                                                 {seasonConfig.name} allows up to {seasonConfig.battingOrderSize} batters. {isMobile ? 'Tap + to add players, use arrows to reorder.' : 'Drag players from the available list.'}
+                                                               </p>
+                                                             </div>
+                                                             {isCaptain && (
+                                                               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center', marginBottom: '1.25rem', padding: '10px 14px', background: '#f8f7ff', borderRadius: '10px', border: '1px solid #e0deff' }}>
+                                                                 <span style={{ fontSize: '13px', fontWeight: '600', color: '#4c4b7a', whiteSpace: 'nowrap' }}>📋 Load batting:</span>
+                                                                 <select
+                                                                   value={pastGameSelectBatting}
+                                                                   onChange={e => setPastGameSelectBatting(e.target.value)}
+                                                                   onFocus={loadPastGames}
+                                                                   style={{ padding: '6px 10px', borderRadius: '8px', border: '1px solid #c7c3f5', fontSize: '13px', background: 'white', cursor: 'pointer', flex: 1, minWidth: '160px' }}
+                                                                 >
+                                                                   <option value="">From past game…</option>
+                                                                   {pastGames.map(g => <option key={g.id} value={g.id}>{g.label}</option>)}
+                                                                 </select>
+                                                                 <button
+                                                                   onClick={() => loadBattingFromGame(pastGameSelectBatting)}
+                                                                   disabled={!pastGameSelectBatting || loadingFromPast}
+                                                                   style={{ padding: '6px 14px', background: !pastGameSelectBatting || loadingFromPast ? '#d1d5db' : '#6366f1', color: 'white', border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: '600', cursor: !pastGameSelectBatting || loadingFromPast ? 'not-allowed' : 'pointer' }}
+                                                                 >
+                                                                   Load
+                                                                 </button>
+                                                                 <span style={{ color: '#c4c4d4', margin: '0 2px' }}>|</span>
+                                                                 <select
+                                                                   value={templateSelectBatting}
+                                                                   onChange={e => setTemplateSelectBatting(e.target.value)}
+                                                                   onFocus={() => { loadPastGames(); loadTemplates(); }}
+                                                                   style={{ padding: '6px 10px', borderRadius: '8px', border: '1px solid #c7c3f5', fontSize: '13px', background: 'white', cursor: 'pointer', flex: 1, minWidth: '160px' }}
+                                                                 >
+                                                                   <option value="">From template…</option>
+                                                                   {battingTemplates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                                                                 </select>
+                                                                 <button
+                                                                   onClick={() => loadBattingTemplate(templateSelectBatting)}
+                                                                   disabled={!templateSelectBatting || loadingFromPast}
+                                                                   style={{ padding: '6px 14px', background: !templateSelectBatting || loadingFromPast ? '#d1d5db' : '#6366f1', color: 'white', border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: '600', cursor: !templateSelectBatting || loadingFromPast ? 'not-allowed' : 'pointer' }}
+                                                                 >
+                                                                   Load
+                                                                 </button>
+                                                                 <button
+                                                                   onClick={() => { loadTemplates(); setTemplateModalType('batting'); setTemplateNameInput(''); setShowTemplateModal(true); }}
+                                                                   style={{ padding: '6px 12px', background: '#059669', color: 'white', border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: '600', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                                                                 >
+                                                                   💾 Save template
+                                                                 </button>
+                                                               </div>
+                                                             )}
                       
                       {isMobile ? (
                         // MOBILE VIEW: Vertical list with arrow buttons
@@ -2591,11 +2923,11 @@ const printDefensiveRotation = () => {
   <h2 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 'bold', color: 'var(--text-dark)' }}>Defensive Positions by Inning</h2>
   <div style={{ display: 'flex', gap: '0.5rem' }}>
     {isCaptain && (
-      <button 
-        onClick={() => applyFieldingToAllInnings(1)} 
+      <button
+        onClick={() => applyFieldingToAllInnings(1)}
         disabled={savingLineup}
-        style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 1rem', background: '#6366f1', color: 'white', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: savingLineup ? 'not-allowed' : 'pointer', transition: 'all 0.2s ease', opacity: savingLineup ? 0.7 : 1 }} 
-        onMouseEnter={(e) => !savingLineup && (e.target.style.background = '#4f46e5')} 
+        style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 1rem', background: '#6366f1', color: 'white', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: savingLineup ? 'not-allowed' : 'pointer', transition: 'all 0.2s ease', opacity: savingLineup ? 0.7 : 1 }}
+        onMouseEnter={(e) => !savingLineup && (e.target.style.background = '#4f46e5')}
         onMouseLeave={(e) => e.target.style.background = '#6366f1'}
       >
         {savingLineup ? '⏳' : '📋'} Apply Inning 1 to All
@@ -2607,7 +2939,51 @@ const printDefensiveRotation = () => {
     </button>
   </div>
 </div>
-                      
+                      {isCaptain && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center', marginBottom: '1.25rem', padding: '10px 14px', background: '#f0fdf4', borderRadius: '10px', border: '1px solid #bbf7d0' }}>
+                          <span style={{ fontSize: '13px', fontWeight: '600', color: '#166534', whiteSpace: 'nowrap' }}>🛡 Load defense:</span>
+                          <select
+                            value={pastGameSelectFielding}
+                            onChange={e => setPastGameSelectFielding(e.target.value)}
+                            onFocus={loadPastGames}
+                            style={{ padding: '6px 10px', borderRadius: '8px', border: '1px solid #86efac', fontSize: '13px', background: 'white', cursor: 'pointer', flex: 1, minWidth: '160px' }}
+                          >
+                            <option value="">From past game…</option>
+                            {pastGames.map(g => <option key={g.id} value={g.id}>{g.label}</option>)}
+                          </select>
+                          <button
+                            onClick={() => loadFieldingFromGame(pastGameSelectFielding)}
+                            disabled={!pastGameSelectFielding || loadingFromPast}
+                            style={{ padding: '6px 14px', background: !pastGameSelectFielding || loadingFromPast ? '#d1d5db' : '#16a34a', color: 'white', border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: '600', cursor: !pastGameSelectFielding || loadingFromPast ? 'not-allowed' : 'pointer' }}
+                          >
+                            Load
+                          </button>
+                          <span style={{ color: '#86efac', margin: '0 2px' }}>|</span>
+                          <select
+                            value={templateSelectFielding}
+                            onChange={e => setTemplateSelectFielding(e.target.value)}
+                            onFocus={() => { loadPastGames(); loadTemplates(); }}
+                            style={{ padding: '6px 10px', borderRadius: '8px', border: '1px solid #86efac', fontSize: '13px', background: 'white', cursor: 'pointer', flex: 1, minWidth: '160px' }}
+                          >
+                            <option value="">From template…</option>
+                            {fieldingTemplates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                          </select>
+                          <button
+                            onClick={() => loadFieldingTemplate(templateSelectFielding)}
+                            disabled={!templateSelectFielding || loadingFromPast}
+                            style={{ padding: '6px 14px', background: !templateSelectFielding || loadingFromPast ? '#d1d5db' : '#16a34a', color: 'white', border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: '600', cursor: !templateSelectFielding || loadingFromPast ? 'not-allowed' : 'pointer' }}
+                          >
+                            Load
+                          </button>
+                          <button
+                            onClick={() => { loadTemplates(); setTemplateModalType('fielding'); setTemplateNameInput(''); setShowTemplateModal(true); }}
+                            style={{ padding: '6px 12px', background: '#059669', color: 'white', border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: '600', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                          >
+                            💾 Save template
+                          </button>
+                        </div>
+                      )}
+
                       {isMobile ? (
                         // MOBILE VIEW: One inning at a time with navigation
                         <>
