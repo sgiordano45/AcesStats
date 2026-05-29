@@ -1510,6 +1510,8 @@ useEffect(() => {
                         basesBefore: { ...gameState.bases },
                         basesAfter: { ...gameState.bases },
                         runsScored: 0,
+                        inningBefore: gameState.inning,
+                        isYourTeamBattingBefore: gameState.isYourTeamBatting,
                         opposingPitcher: opponentPitcher ? { id: opponentPitcher.id, name: opponentPitcher.name } : null,
                         timestamp: Date.now()
                     };
@@ -1758,6 +1760,8 @@ useEffect(() => {
                     basesAfter: { ...tempBases },
                     runsScored: tempScore,
                     runnersScored: [...runnersScored],  // Track WHO scored
+                    inningBefore: gameState.inning,
+                    isYourTeamBattingBefore: gameState.isYourTeamBatting,
                     opposingPitcher: opponentPitcher ? { id: opponentPitcher.id, name: opponentPitcher.name } : null,
                     timestamp: Date.now()
                 };
@@ -2224,14 +2228,22 @@ useEffect(() => {
 
                 newState.currentBatter = (newState.currentBatter - 1 + battingOrder.length) % battingOrder.length;
 
-                if (lastPlay.outsBefore >= 3 && gameState.outs === 0) {
-                    if (gameState.isYourTeamBatting && gameState.inning > 1) {
-                        newState.inning -= 1;
-                        newState.isYourTeamBatting = false;
-                    } else if (!gameState.isYourTeamBatting) {
-                        newState.isYourTeamBatting = true;
+                // Restore inning / half-inning state from stored values (reliable even if
+                // multiple plays were made after an inning change before undo was pressed).
+                if (lastPlay.inningBefore !== undefined) {
+                    newState.inning = lastPlay.inningBefore;
+                    newState.isYourTeamBatting = lastPlay.isYourTeamBattingBefore;
+                } else {
+                    // Fallback for old play records that don't have these fields
+                    if (lastPlay.outsBefore >= 3 && gameState.outs === 0) {
+                        if (gameState.isYourTeamBatting && gameState.inning > 1) {
+                            newState.inning -= 1;
+                            newState.isYourTeamBatting = false;
+                        } else if (!gameState.isYourTeamBatting) {
+                            newState.isYourTeamBatting = true;
+                        }
+                        newState.outs = lastPlay.outsBefore;
                     }
-                    newState.outs = lastPlay.outsBefore;
                 }
 
                 setGameState(newState);
