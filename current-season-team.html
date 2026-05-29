@@ -1830,6 +1830,12 @@
             authId: rosterPlayer.authId, // Add authId for profile linking
             name: rosterPlayer.name,
             team: teamName,
+            // Carry roster fields so cards don't need a separate name-match lookup
+            rosterNumber: rosterPlayer.number || null,
+            rosterPosition: rosterPlayer.position || null,
+            rosterBats: rosterPlayer.bats || null,
+            rosterThrows: rosterPlayer.throws || null,
+            rosterCaptain: rosterPlayer.captain || false,
             games: (statsRecord && Number(statsRecord.games)) || 0,
             atBats: (statsRecord && Number(statsRecord.atBats)) || 0,
             hits: (statsRecord && Number(statsRecord.hits)) || 0,
@@ -1892,56 +1898,65 @@
   // Load extra player info (photos, position, number, captain status)
   async function loadPlayerExtraInfo() {
     console.log('🎴 Loading extra player info for baseball cards...');
-    
+
     const infoPromises = playerData.map(async (player) => {
       try {
-        // Get player profile info
-        const info = await getPlayerInfo(player.name);
-        
-        // Try to get photo from linked user account
+        // If roster already supplied number/position, use it directly — no name-match needed.
+        // Only fall back to getPlayerInfo for nickname and photo (not stored on roster).
+        const hasRosterData = player.rosterNumber || player.rosterPosition;
+        const info = hasRosterData ? null : await getPlayerInfo(player.name);
+
+        // Resolve photo: prefer linked user account, then playerInfo photo
         let photoURL = null;
         try {
-          const usersRef = collection(db, 'users');
-          const q = query(usersRef, where('linkedPlayer', '==', player.name));
-          const querySnapshot = await getDocs(q);
-          
-          if (!querySnapshot.empty) {
-            const userData = querySnapshot.docs[0].data();
-            photoURL = userData.playerPhotoURL || userData.profilePhotoURL || null;
+          // If we have an authId, look up user directly (avoids name-mismatch issues)
+          if (player.authId) {
+            const userDoc = await getDoc(doc(db, 'users', player.authId));
+            if (userDoc.exists()) {
+              const userData = userDoc.data();
+              photoURL = userData.playerPhotoURL || userData.profilePhotoURL || null;
+            }
+          }
+          // Fallback: query by linkedPlayer name
+          if (!photoURL) {
+            const usersRef = collection(db, 'users');
+            const q = query(usersRef, where('linkedPlayer', '==', player.name));
+            const querySnapshot = await getDocs(q);
+            if (!querySnapshot.empty) {
+              const userData = querySnapshot.docs[0].data();
+              photoURL = userData.playerPhotoURL || userData.profilePhotoURL || null;
+            }
           }
         } catch (e) {
           console.warn('Could not fetch user photo for', player.name);
         }
-        
-        // Fall back to info.photo if no user photo
-        if (!photoURL && info?.photo) {
-          photoURL = info.photo;
-        }
-        
+        if (!photoURL && info?.photo) photoURL = info.photo;
+
         playerExtraInfo[player.id] = {
-          position: info?.position || '-',
-          bats: info?.bats || '-',
-          throws: info?.throws || '-',
-          number: info?.number || null,
+          // Roster fields take priority over the users-collection lookup
+          position: player.rosterPosition || info?.position || '-',
+          bats:     player.rosterBats     || info?.bats     || '-',
+          throws:   player.rosterThrows   || info?.throws   || '-',
+          number:   player.rosterNumber   || info?.number   || null,
           nickname: info?.nickname || null,
-          captain: info?.captain === 'Yes' || info?.captain === 'yes',
+          captain:  player.rosterCaptain  || info?.captain === 'Yes' || info?.captain === 'yes',
           photoURL: photoURL
         };
-        
+
       } catch (error) {
         console.warn('Could not load extra info for', player.name);
         playerExtraInfo[player.id] = {
-          position: '-',
-          bats: '-',
-          throws: '-',
-          number: null,
+          position: player.rosterPosition || '-',
+          bats:     player.rosterBats     || '-',
+          throws:   player.rosterThrows   || '-',
+          number:   player.rosterNumber   || null,
           nickname: null,
-          captain: false,
+          captain:  player.rosterCaptain  || false,
           photoURL: null
         };
       }
     });
-    
+
     await Promise.all(infoPromises);
     console.log('✅ Loaded extra info for', Object.keys(playerExtraInfo).length, 'players');
   }
