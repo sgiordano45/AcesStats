@@ -322,6 +322,47 @@
     color: var(--tracker-color);
   }
 
+  /* Linescore / scorecard */
+  .linescore-table {
+    border-collapse: collapse;
+    font-size: 0.875rem;
+    margin-top: 0.25rem;
+    overflow-x: auto;
+    display: block;
+    white-space: nowrap;
+  }
+  .linescore-table th,
+  .linescore-table td {
+    border: 1px solid var(--border-color);
+    padding: 0.3rem 0.6rem;
+    text-align: center;
+    min-width: 2rem;
+  }
+  .linescore-table th {
+    background: #f1f5f9;
+    font-weight: 600;
+    color: var(--text-light);
+  }
+  .linescore-table td.team-name {
+    text-align: left;
+    font-weight: 600;
+    color: var(--text-dark);
+    padding-right: 1rem;
+    min-width: 7rem;
+  }
+  .linescore-table td.totals {
+    font-weight: 700;
+    background: #f8fafc;
+    border-left: 2px solid var(--border-color);
+  }
+  .linescore-table tr.your-team td {
+    background: #f0fdf4;
+  }
+  .linescore-table tr.your-team td.totals {
+    background: #dcfce7;
+    color: var(--primary-color);
+  }
+
   .game-card-meta {
     display: flex;
     gap: 1rem;
@@ -918,6 +959,7 @@
             <div>
               <div class="review-title" id="reviewTitle">Game Details</div>
               <div style="color: var(--text-light); margin-top: 0.25rem;" id="reviewMeta"></div>
+              <div id="linescoreContainer" style="margin-top: 1rem;"></div>
             </div>
             <div class="review-actions">
               <button class="btn btn-secondary" onclick="closeReview()">✕ Close</button>
@@ -1288,6 +1330,86 @@ window.selectGame = async function(gameId) {
   }
 };
 
+function renderLinescore() {
+  const container = document.getElementById('linescoreContainer');
+  if (!container) return;
+
+  const plays = selectedGame.playByPlay || [];
+  const isHome = selectedGame.isHome || false;
+  const yourTeamName = selectedGame.teamId || 'Your Team';
+  const oppTeamName = selectedGame.opponentName || 'Opponent';
+
+  if (plays.length === 0) {
+    container.innerHTML = '<div style="color:var(--text-light);font-size:0.85rem;">No play data — linescore unavailable</div>';
+    return;
+  }
+
+  // Tally runs per inning for each team
+  const yourRuns = {};
+  const oppRuns = {};
+  plays.forEach(play => {
+    const inning = play.inning;
+    if (!inning) return;
+    let runs = 0;
+    if (play.type === 'manual-run-adjustment') {
+      runs = typeof play.adjustment === 'number' ? play.adjustment : 0;
+    } else {
+      runs = play.runsScored || 0;
+    }
+    if (runs === 0) return;
+    if (play.isYourTeam !== false) {
+      yourRuns[inning] = (yourRuns[inning] || 0) + runs;
+    } else {
+      oppRuns[inning] = (oppRuns[inning] || 0) + runs;
+    }
+  });
+
+  const maxInning = Math.max(
+    ...[...Object.keys(yourRuns), ...Object.keys(oppRuns)].map(Number),
+    selectedGame.innings || 1
+  );
+
+  // Build header row
+  let headerCells = '<th>Team</th>';
+  for (let i = 1; i <= maxInning; i++) headerCells += `<th>${i}</th>`;
+  headerCells += '<th class="totals">R</th>';
+
+  const yourTotal = selectedGame.finalScore?.yourTeam ?? Object.values(yourRuns).reduce((a, b) => a + b, 0);
+  const oppTotal = selectedGame.finalScore?.opponent ?? Object.values(oppRuns).reduce((a, b) => a + b, 0);
+
+  const yourCells = Array.from({ length: maxInning }, (_, i) => `<td>${yourRuns[i + 1] ?? '-'}</td>`).join('');
+  const oppCells  = Array.from({ length: maxInning }, (_, i) => `<td>${oppRuns[i + 1]  ?? '-'}</td>`).join('');
+
+  // Arrange home/away rows: away on top, home on bottom (standard scorecard)
+  const awayName = isHome ? oppTeamName : yourTeamName;
+  const homeName = isHome ? yourTeamName : oppTeamName;
+  const awayCells = isHome ? oppCells : yourCells;
+  const homeCells = isHome ? yourCells : oppCells;
+  const awayTotal = isHome ? oppTotal : yourTotal;
+  const homeTotal = isHome ? yourTotal : oppTotal;
+  const awayRowClass = isHome ? '' : 'your-team';
+  const homeRowClass = isHome ? 'your-team' : '';
+
+  container.innerHTML = `
+    <div style="overflow-x:auto;">
+      <table class="linescore-table">
+        <thead><tr>${headerCells}</tr></thead>
+        <tbody>
+          <tr class="${awayRowClass}">
+            <td class="team-name">⬆ ${awayName}</td>
+            ${awayCells}
+            <td class="totals">${awayTotal}</td>
+          </tr>
+          <tr class="${homeRowClass}">
+            <td class="team-name">⬇ ${homeName}</td>
+            ${homeCells}
+            <td class="totals">${homeTotal}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>`;
+}
+
 function renderReviewPanel() {
   const panel = document.getElementById('reviewPanel');
   panel.classList.add('visible');
@@ -1322,6 +1444,9 @@ function renderReviewPanel() {
     forceReConvertBtn.style.display = 'none';
   }
   
+  // Render linescore
+  renderLinescore();
+
   // Reset pending edits when switching games
   pendingPlayEdits = null;
 
