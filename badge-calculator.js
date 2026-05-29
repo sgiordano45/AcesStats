@@ -393,6 +393,7 @@ export class BadgeCalculator {
     this.collection = options.collection || null; // Firestore collection function
     this.getDocs = options.getDocs || null;
     this.doc = options.doc || null;
+    this.getDoc = options.getDoc || null;
     this.setDoc = options.setDoc || null;
     this.serverTimestamp = options.serverTimestamp || null;
     this.testMode = options.testMode || false;
@@ -1262,11 +1263,34 @@ export class BadgeCalculator {
         leaderboard: results.leaderboard.slice(0, 20) // Top 20
       });
       
-      // Save individual player badges
+      // Save individual player badges — preserve earnedAt timestamps for existing badges
       for (const [playerId, badges] of Object.entries(results.playerBadges)) {
         const playerRef = this.doc(this.db, collectionName, `${results.seasonId}_${playerId}`);
+
+        // Read existing doc to preserve earnedAt for badges that were already awarded
+        let existingEarned = {};
+        try {
+          const existing = await this.getDoc ? this.getDoc(playerRef) : null;
+          if (existing && existing.exists && existing.exists()) {
+            existingEarned = existing.data()?.earned || {};
+          }
+        } catch (e) {
+          // If read fails, proceed without preservation
+        }
+
+        // Stamp earnedAt on each badge: preserve existing, set now for new ones
+        const now = new Date().toISOString();
+        const earnedWithTimestamps = {};
+        for (const [badgeId, badge] of Object.entries(badges.earned || {})) {
+          earnedWithTimestamps[badgeId] = {
+            ...badge,
+            earnedAt: existingEarned[badgeId]?.earnedAt || (badge.gameDate ? (badge.gameDate instanceof Date ? badge.gameDate.toISOString() : badge.gameDate) : now)
+          };
+        }
+
         await this.setDoc(playerRef, {
           ...badges,
+          earned: earnedWithTimestamps,
           updatedAt: this.serverTimestamp ? this.serverTimestamp() : new Date()
         });
       }
