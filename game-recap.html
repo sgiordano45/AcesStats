@@ -820,6 +820,45 @@ body {
         const totRA = sum(teamPitching, 'runsAllowed');
         const calcERA = (ra, ip) => ip > 0 ? ((ra / ip) * 7).toFixed(2) : '—';
 
+        // ── WHIP calculation ─────────────────────────────────────────────────
+        // Opposing batters = this team's pitchers' opponents (source of H and BB allowed)
+        const opposingTeamName = (team === homeTeam) ? awayTeam : homeTeam;
+        const opposingBatting  = battingDocs.filter(d => matchesTeam(d, opposingTeamName));
+        const oppTotH  = sum(opposingBatting, 'hits');
+        const oppTotBB = sum(opposingBatting, 'walks');
+        const isSinglePitcher = teamPitching.length === 1;
+
+        // Returns { display: string, estimated: boolean }
+        const calcWHIP = (p) => {
+          const ip = p.inningsPitched || 0;
+          if (ip === 0) return { display: '—', estimated: false };
+          // Exact: game-tracker games write hitsAllowed + walksAllowed explicitly
+          if (p.hitsAllowed != null && p.walksAllowed != null) {
+            return { display: ((p.hitsAllowed + p.walksAllowed) / ip).toFixed(2), estimated: false };
+          }
+          // Estimated: single-pitcher manual game — opposing batting totals = pitcher's H+BB allowed
+          if (isSinglePitcher && opposingBatting.length > 0) {
+            return { display: ((oppTotH + oppTotBB) / ip).toFixed(2), estimated: true };
+          }
+          return { display: '—', estimated: false };
+        };
+
+        const totWHIP = (() => {
+          if (totIP === 0) return { display: '—', estimated: false };
+          const allExact = teamPitching.every(p => p.hitsAllowed != null && p.walksAllowed != null);
+          if (allExact) {
+            const totHA  = sum(teamPitching, 'hitsAllowed');
+            const totBBA = sum(teamPitching, 'walksAllowed');
+            return { display: ((totHA + totBBA) / totIP).toFixed(2), estimated: false };
+          }
+          if (isSinglePitcher && opposingBatting.length > 0) {
+            return { display: ((oppTotH + oppTotBB) / totIP).toFixed(2), estimated: true };
+          }
+          return { display: '—', estimated: false };
+        })();
+
+        const anyEstimated = teamPitching.some(p => calcWHIP(p).estimated) || totWHIP.estimated;
+
         const wrapEl = document.createElement('div');
         wrapEl.className = 'stat-table-wrap';
         wrapEl.innerHTML = `
@@ -831,6 +870,7 @@ body {
                 <th>IP</th>
                 <th>R</th>
                 <th>ERA</th>
+                <th>WHIP</th>
               </tr>
             </thead>
             <tbody>
@@ -840,11 +880,14 @@ body {
                 const nameLink = playerPageId
                   ? `<a class="player-link" href="player.html?id=${encodeURIComponent(playerPageId)}">${esc(p.playerName || p.playerId || '?')}</a>`
                   : esc(p.playerName || p.playerId || '?');
+                const whip = calcWHIP(p);
+                const whipDisplay = (whip.display !== '—' && whip.estimated) ? whip.display + '*' : whip.display;
                 return `<tr>
                   <td>${nameLink}</td>
                   <td>${formatIP(p.inningsPitched)}</td>
                   <td>${p.runsAllowed ?? 0}</td>
                   <td>${calcERA(p.runsAllowed ?? 0, p.inningsPitched || 0)}</td>
+                  <td>${whipDisplay}</td>
                 </tr>`;
               }).join('')}
             </tbody>
@@ -854,9 +897,11 @@ body {
                 <td>${formatIP(totIP)}</td>
                 <td>${totRA}</td>
                 <td>${calcERA(totRA, totIP)}</td>
+                <td>${(totWHIP.display !== '—' && totWHIP.estimated) ? totWHIP.display + '*' : totWHIP.display}</td>
               </tr>
             </tfoot>
           </table>
+          ${anyEstimated ? '<div style="font-size:0.75rem;color:var(--text-light);margin-top:0.4rem;">* Estimated from opposing batting totals (unofficial)</div>' : ''}
         `;
         sectionEl.appendChild(wrapEl);
       }
