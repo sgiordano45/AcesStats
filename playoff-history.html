@@ -468,7 +468,7 @@
 
   <!-- Firebase and Data -->
   <script type="module">
-    import { getAllSeasons, getSeasonGames } from './firebase-data.js';
+    import { getAllSeasons, getSeasonGames, db, doc, getDoc } from './firebase-data.js';
 
     // Global state
     let allSeasons = [];
@@ -624,8 +624,18 @@
           return;
         }
 
+        // Load bracket doc for resolving TBD team names
+        const bracketRef = doc(db, 'seasons', seasonId, 'playoffs', 'bracket');
+        const bracketSnap = await getDoc(bracketRef);
+        let bracketData = bracketSnap.exists() ? bracketSnap.data() : null;
+        let resolvedNames = {};
+        if (bracketData) {
+          resolvedNames = buildResolvedNames(bracketData);
+          console.log(`🗺️ Built resolvedNames for ${Object.keys(resolvedNames).length} matchups`);
+        }
+
         // Render the bracket
-        renderBracket(seasonId);
+        renderBracket(seasonId, resolvedNames);
 
       } catch (error) {
         console.error('❌ Error loading playoff bracket:', error);
@@ -638,7 +648,7 @@
       }
     }
 
-    function renderBracket(seasonId) {
+    function renderBracket(seasonId, resolvedNames = {}) {
       const container = document.getElementById('bracketContainer');
       
       // Group games by round
@@ -666,9 +676,18 @@
           return dateB - dateA;
         });
         
-        championshipGame = championshipGames.find(g => g.winner);
+        championshipGame = championshipGames.find(g => g.winner) || championshipGames[0];
         if (championshipGame) {
-          champion = championshipGame.winner;
+          const hs = parseInt(championshipGame['home score'] ?? championshipGame.homeScore ?? NaN);
+          const as = parseInt(championshipGame['away score'] ?? championshipGame.awayScore ?? NaN);
+          const homeTeamRaw = championshipGame['home team'] || championshipGame.homeTeamName || '';
+          const awayTeamRaw = championshipGame['away team'] || championshipGame.awayTeamName || '';
+          const { homeTeam: chHome, awayTeam: chAway } = substituteTeamNames(homeTeamRaw, awayTeamRaw, resolvedNames);
+          if (!isNaN(hs) && !isNaN(as)) {
+            champion = hs > as ? chHome : chAway;
+          } else {
+            champion = championshipGame.winner || chHome || chAway;
+          }
         }
       }
 
@@ -709,7 +728,7 @@
       roundOrder.forEach(roundConfig => {
         if (gamesByRound[roundConfig.key] && !renderedRounds.has(roundConfig.display)) {
           const games = gamesByRound[roundConfig.key];
-          html += renderRoundSection(roundConfig.display, games, roundConfig.type);
+          html += renderRoundSection(roundConfig.display, games, roundConfig.type, resolvedNames);
           renderedRounds.add(roundConfig.display);
         }
       });
@@ -720,18 +739,19 @@
         if (!alreadyRendered && !renderedRounds.has(roundName)) {
           const games = gamesByRound[roundName];
           const type = roundName.toLowerCase().includes('loser') ? 'losers' : 'winners';
-          html += renderRoundSection(roundName, games, type);
+          html += renderRoundSection(roundName, games, type, resolvedNames);
           renderedRounds.add(roundName);
         }
       });
 
       // Championship summary if we have a champion
       if (champion && championshipGame) {
-        const homeTeam = championshipGame['home team'] || championshipGame.homeTeamName || '';
-        const awayTeam = championshipGame['away team'] || championshipGame.awayTeamName || '';
+        const homeTeamRaw = championshipGame['home team'] || championshipGame.homeTeamName || '';
+        const awayTeamRaw = championshipGame['away team'] || championshipGame.awayTeamName || '';
+        const { homeTeam, awayTeam } = substituteTeamNames(homeTeamRaw, awayTeamRaw, resolvedNames);
         const homeScore = championshipGame['home score'] ?? championshipGame.homeScore ?? '';
         const awayScore = championshipGame['away score'] ?? championshipGame.awayScore ?? '';
-        
+
         let runnerUp = '';
         if (champion.toLowerCase() === homeTeam.toLowerCase()) {
           runnerUp = awayTeam;
@@ -772,7 +792,7 @@
       container.innerHTML = html;
     }
 
-    function renderRoundSection(roundName, games, type) {
+    function renderRoundSection(roundName, games, type, resolvedNames = {}) {
       // Sort games by date or game number
       games.sort((a, b) => {
         const dateA = parseGameDate(a);
@@ -794,23 +814,26 @@
       `;
 
       games.forEach((game, index) => {
-        html += renderGameCard(game, index + 1, type === 'championship');
+        html += renderGameCard(game, index + 1, type === 'championship', resolvedNames);
       });
 
       html += '</div></div>';
       return html;
     }
 
-    function renderGameCard(game, gameNum, isChampionship) {
-      const homeTeam = game['home team'] || game.homeTeamName || 'TBD';
-      const awayTeam = game['away team'] || game.awayTeamName || 'TBD';
+    function renderGameCard(game, gameNum, isChampionship, resolvedNames = {}) {
+      const homeTeamRaw = game['home team'] || game.homeTeamName || 'TBD';
+      const awayTeamRaw = game['away team'] || game.awayTeamName || 'TBD';
+      const { homeTeam, awayTeam } = substituteTeamNames(homeTeamRaw, awayTeamRaw, resolvedNames);
       const homeScore = game['home score'] ?? game.homeScore ?? '';
       const awayScore = game['away score'] ?? game.awayScore ?? '';
       const winner = game.winner || '';
       const gameDate = formatGameDate(game);
 
-      const homeIsWinner = winner && winner.toLowerCase() === homeTeam.toLowerCase();
-      const awayIsWinner = winner && winner.toLowerCase() === awayTeam.toLowerCase();
+      const hs = homeScore !== '' ? parseInt(homeScore) : null;
+      const as = awayScore !== '' ? parseInt(awayScore) : null;
+      const homeIsWinner = hs !== null && as !== null ? hs > as : (winner && winner.toLowerCase() === homeTeam.toLowerCase());
+      const awayIsWinner = hs !== null && as !== null ? as > hs : (winner && winner.toLowerCase() === awayTeam.toLowerCase());
 
       return `
         <div class="game-card ${isChampionship ? 'championship' : ''}">
@@ -855,6 +878,147 @@
     function capitalize(str) {
       if (!str) return '';
       return str.charAt(0).toUpperCase() + str.slice(1);
+    }
+
+    // ── Bracket name-resolution helpers (Bug 1) ──────────────────────────────
+
+    function findMatchupInBracket(matchupId, bracketData) {
+      if (!bracketData || !matchupId) return null;
+      const wb = bracketData.winnersBracket || {};
+      const lb = bracketData.losersBracket || {};
+      const sections = [
+        ...(wb.round1 || []),
+        ...(wb.round2 || []),
+        ...(wb.semifinals || []),
+        ...(lb.round1 || []),
+        ...(lb.round2 || []),
+        ...(lb.round3 || []),
+        ...(lb.semifinals || []),
+      ];
+      if (wb.finals) sections.push(wb.finals);
+      if (lb.finals) sections.push(lb.finals);
+      if (bracketData.championship) sections.push(bracketData.championship);
+      const idNorm = matchupId.toLowerCase().replace(/[\s\-_()\[\]]/g, '');
+      return sections.find(m => m && m.id && m.id.toLowerCase().replace(/[\s\-_()\[\]]/g, '') === idNorm) || null;
+    }
+
+    function resolveTeamName(teamData, bracketData, seedToName) {
+      if (!teamData) return null;
+      if (teamData.seed != null) return seedToName[teamData.seed] || `Seed ${teamData.seed}`;
+      if (teamData.from) {
+        const srcMatchup = findMatchupInBracket(teamData.from, bracketData);
+        if (srcMatchup && srcMatchup.winner) {
+          const winnerData = srcMatchup.winner === 1 ? srcMatchup.team1 : srcMatchup.team2;
+          return resolveTeamName(winnerData, bracketData, seedToName);
+        }
+      }
+      if (teamData.loserFrom) {
+        const srcMatchup = findMatchupInBracket(teamData.loserFrom, bracketData);
+        if (srcMatchup && srcMatchup.winner) {
+          const loserData = srcMatchup.winner === 1 ? srcMatchup.team2 : srcMatchup.team1;
+          return resolveTeamName(loserData, bracketData, seedToName);
+        }
+      }
+      return null;
+    }
+
+    function buildResolvedNames(bracketData) {
+      const seedToName = {};
+      (bracketData.lockedSeeds || []).forEach(s => {
+        if (s.seed != null && s.teamName) seedToName[s.seed] = s.teamName;
+      });
+
+      const wb = bracketData.winnersBracket || {};
+      const lb = bracketData.losersBracket || {};
+      const allMatchups = [
+        ...(wb.round1 || []),
+        ...(wb.round2 || []),
+        ...(wb.semifinals || []),
+        ...(lb.round1 || []),
+        ...(lb.round2 || []),
+        ...(lb.round3 || []),
+        ...(lb.semifinals || []),
+      ];
+      if (wb.finals) allMatchups.push(wb.finals);
+      if (lb.finals) allMatchups.push(lb.finals);
+      if (bracketData.championship) allMatchups.push(bracketData.championship);
+
+      const resolvedNames = {};
+      allMatchups.forEach(matchup => {
+        if (!matchup || !matchup.id) return;
+        const t1 = resolveTeamName(matchup.team1, bracketData, seedToName);
+        const t2 = resolveTeamName(matchup.team2, bracketData, seedToName);
+        resolvedNames[matchup.id] = {
+          team1: t1,
+          team2: t2,
+          winnerName: matchup.winner === 1 ? t1 : (matchup.winner === 2 ? t2 : null)
+        };
+      });
+      return resolvedNames;
+    }
+
+    function isPlaceholder(name) {
+      if (!name || name.trim() === '' || name === 'TBD') return true;
+      const n = name.toLowerCase();
+      return n.includes('winner') || n.includes('loser') || /^seed \d+$/i.test(n);
+    }
+
+    function substituteTeamNames(homeTeam, awayTeam, resolvedNames) {
+      if (!resolvedNames || (!isPlaceholder(homeTeam) && !isPlaceholder(awayTeam))) {
+        return { homeTeam, awayTeam };
+      }
+
+      // Try to resolve a placeholder by parsing its embedded matchup ID
+      // e.g. "Winner W1G1" → look up matchup "W1G1" in resolvedNames
+      function lookupByMatchupId(placeholder) {
+        const winnerMatch = placeholder.match(/^winner\s+(.+)$/i);
+        const loserMatch  = placeholder.match(/^loser\s+(.+)$/i);
+        if (winnerMatch) {
+          const hint = winnerMatch[1].trim().toLowerCase().replace(/[\s\-_()\[\]]/g, '');
+          for (const [id, names] of Object.entries(resolvedNames)) {
+            if (id.toLowerCase().replace(/[\s\-_()\[\]]/g, '') === hint && names.winnerName) {
+              return names.winnerName;
+            }
+          }
+        }
+        if (loserMatch) {
+          const hint = loserMatch[1].trim().toLowerCase().replace(/[\s\-_()\[\]]/g, '');
+          for (const [id, names] of Object.entries(resolvedNames)) {
+            if (id.toLowerCase().replace(/[\s\-_()\[\]]/g, '') === hint) {
+              if (names.winnerName && names.team1 && names.team2) {
+                return names.winnerName === names.team1 ? names.team2 : names.team1;
+              }
+            }
+          }
+        }
+        return null;
+      }
+
+      // Fallback: given a known real team name, find the matchup it belongs to
+      // and return the other team's name
+      function lookupByOpponent(placeholder, knownTeam) {
+        if (!knownTeam || isPlaceholder(knownTeam)) return null;
+        const knownLower = knownTeam.toLowerCase();
+        for (const [, names] of Object.entries(resolvedNames)) {
+          const t1 = (names.team1 || '').toLowerCase();
+          const t2 = (names.team2 || '').toLowerCase();
+          if (t1 === knownLower && names.team2) return names.team2;
+          if (t2 === knownLower && names.team1) return names.team1;
+        }
+        return null;
+      }
+
+      let resolvedHome = homeTeam;
+      let resolvedAway = awayTeam;
+
+      if (isPlaceholder(homeTeam)) {
+        resolvedHome = lookupByMatchupId(homeTeam) || lookupByOpponent(homeTeam, awayTeam) || homeTeam;
+      }
+      if (isPlaceholder(awayTeam)) {
+        resolvedAway = lookupByMatchupId(awayTeam) || lookupByOpponent(awayTeam, resolvedHome) || awayTeam;
+      }
+
+      return { homeTeam: resolvedHome, awayTeam: resolvedAway };
     }
   </script>
   <script type="module">
