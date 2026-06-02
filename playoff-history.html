@@ -680,13 +680,17 @@
         if (championshipGame) {
           const hs = parseInt(championshipGame['home score'] ?? championshipGame.homeScore ?? NaN);
           const as = parseInt(championshipGame['away score'] ?? championshipGame.awayScore ?? NaN);
-          const homeTeamRaw = championshipGame['home team'] || championshipGame.homeTeamName || '';
-          const awayTeamRaw = championshipGame['away team'] || championshipGame.awayTeamName || '';
+          const homeTeamRaw = championshipGame['home team'] || championshipGame.homeTeamName || championshipGame.homeTeam || championshipGame.homeTeamId || '';
+          const awayTeamRaw = championshipGame['away team'] || championshipGame.awayTeamName || championshipGame.awayTeam || championshipGame.awayTeamId || '';
           const { homeTeam: chHome, awayTeam: chAway } = substituteTeamNames(homeTeamRaw, awayTeamRaw, resolvedNames);
           if (!isNaN(hs) && !isNaN(as)) {
             champion = hs > as ? chHome : chAway;
           } else {
-            champion = championshipGame.winner || chHome || chAway;
+            // winner field may be 'home'/'away' (new format) or a team name (old format)
+            const winnerRaw = championshipGame.winner || '';
+            if (winnerRaw === 'home') champion = chHome;
+            else if (winnerRaw === 'away') champion = chAway;
+            else champion = winnerRaw || chHome || chAway;
           }
         }
       }
@@ -746,8 +750,8 @@
 
       // Championship summary if we have a champion
       if (champion && championshipGame) {
-        const homeTeamRaw = championshipGame['home team'] || championshipGame.homeTeamName || '';
-        const awayTeamRaw = championshipGame['away team'] || championshipGame.awayTeamName || '';
+        const homeTeamRaw = championshipGame['home team'] || championshipGame.homeTeamName || championshipGame.homeTeam || championshipGame.homeTeamId || '';
+        const awayTeamRaw = championshipGame['away team'] || championshipGame.awayTeamName || championshipGame.awayTeam || championshipGame.awayTeamId || '';
         const { homeTeam, awayTeam } = substituteTeamNames(homeTeamRaw, awayTeamRaw, resolvedNames);
         const homeScore = championshipGame['home score'] ?? championshipGame.homeScore ?? '';
         const awayScore = championshipGame['away score'] ?? championshipGame.awayScore ?? '';
@@ -822,8 +826,8 @@
     }
 
     function renderGameCard(game, gameNum, isChampionship, resolvedNames = {}) {
-      const homeTeamRaw = game['home team'] || game.homeTeamName || 'TBD';
-      const awayTeamRaw = game['away team'] || game.awayTeamName || 'TBD';
+      const homeTeamRaw = game['home team'] || game.homeTeamName || game.homeTeam || game.homeTeamId || 'TBD';
+      const awayTeamRaw = game['away team'] || game.awayTeamName || game.awayTeam || game.awayTeamId || 'TBD';
       const { homeTeam, awayTeam } = substituteTeamNames(homeTeamRaw, awayTeamRaw, resolvedNames);
       const homeScore = game['home score'] ?? game.homeScore ?? '';
       const awayScore = game['away score'] ?? game.awayScore ?? '';
@@ -832,8 +836,20 @@
 
       const hs = homeScore !== '' ? parseInt(homeScore) : null;
       const as = awayScore !== '' ? parseInt(awayScore) : null;
-      const homeIsWinner = hs !== null && as !== null ? hs > as : (winner && winner.toLowerCase() === homeTeam.toLowerCase());
-      const awayIsWinner = hs !== null && as !== null ? as > hs : (winner && winner.toLowerCase() === awayTeam.toLowerCase());
+      // winner field may be 'home'/'away' (new format) or a team name string (old format)
+      const winnerNorm = (winner || '').toLowerCase();
+      let homeIsWinner, awayIsWinner;
+      if (hs !== null && as !== null) {
+        homeIsWinner = hs > as;
+        awayIsWinner = as > hs;
+      } else if (winnerNorm === 'home') {
+        homeIsWinner = true; awayIsWinner = false;
+      } else if (winnerNorm === 'away') {
+        homeIsWinner = false; awayIsWinner = true;
+      } else {
+        homeIsWinner = winnerNorm !== '' && winnerNorm === homeTeam.toLowerCase();
+        awayIsWinner = winnerNorm !== '' && winnerNorm === awayTeam.toLowerCase();
+      }
 
       return `
         <div class="game-card ${isChampionship ? 'championship' : ''}">
