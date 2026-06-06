@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Team Scouting Report - Mountainside Aces</title>
+  <link rel="icon" type="image/png" href="aces-favicon.png">
+  <link rel="stylesheet" href="nav-styles.css">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+
+    body {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      background: #f0f4f0;
+      color: #111;
+      margin: 0;
+    }
+
+    /* ── Screen controls bar ───────────────────────────── */
+    .controls {
+      background: linear-gradient(135deg, #1a6b4a 0%, #2d5016 100%);
+      color: white;
+      padding: 0.9rem 1.5rem;
+      display: flex;
+      align-items: center;
+      gap: 1.2rem;
+      flex-wrap: wrap;
+    }
+
+    .controls h1 {
+      font-size: 1.15rem;
+      font-weight: 700;
+      margin: 0;
+      white-space: nowrap;
+    }
+
+    .ctrl-group { display: flex; flex-direction: column; gap: 2px; }
+
+    .ctrl-group label {
+      font-size: 0.7rem;
+      opacity: 0.75;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .ctrl-group select {
+      padding: 0.38rem 0.7rem;
+      border-radius: 5px;
+      border: none;
+      font-size: 0.88rem;
+      background: white;
+      color: #1a6b4a;
+      font-weight: 600;
+      cursor: pointer;
+      min-width: 150px;
+    }
+    .ctrl-group select:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    .btn-print {
+      margin-left: auto;
+      background: white;
+      color: #1a6b4a;
+      border: none;
+      border-radius: 6px;
+      padding: 0.45rem 1rem;
+      font-weight: 700;
+      font-size: 0.88rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+      white-space: nowrap;
+    }
+    .btn-print:hover:not(:disabled) { background: #e0f2ea; }
+    .btn-print:disabled { opacity: 0.35; cursor: default; }
+
+    /* ── Report wrapper ────────────────────────────────── */
+    .report-wrap {
+      max-width: 960px;
+      margin: 1.2rem auto;
+      padding: 0 1rem;
+    }
+
+    /* State cards */
+    .state-card {
+      text-align: center;
+      padding: 3.5rem 1rem;
+      background: white;
+      border-radius: 10px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.07);
+      color: #666;
+    }
+    .state-card h3 { margin: 0 0 0.4rem; color: #1a6b4a; }
+    .state-card p  { margin: 0; font-size: 0.9rem; }
+
+    .spinner {
+      width: 34px; height: 34px;
+      border: 4px solid #ddd;
+      border-top-color: #1a6b4a;
+      border-radius: 50%;
+      animation: spin 0.75s linear infinite;
+      margin: 0 auto 0.8rem;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Report: header ─────────────────────────────────── */
+    .rpt-header {
+      background: white;
+      border-radius: 8px 8px 0 0;
+      border-bottom: 3px solid #1a6b4a;
+      padding: 0.8rem 1.2rem 0.65rem;
+      display: flex;
+      align-items: center;
+      gap: 0.9rem;
+    }
+
+    .rpt-logo {
+      width: 46px;
+      height: 46px;
+      object-fit: contain;
+      flex-shrink: 0;
+    }
+
+    .rpt-title { flex: 1; }
+    .rpt-title h2 {
+      margin: 0 0 0.1rem;
+      font-size: 1.3rem;
+      color: #1a6b4a;
+      text-transform: capitalize;
+    }
+    .rpt-title p {
+      margin: 0;
+      font-size: 0.75rem;
+      color: #777;
+    }
+
+    .rpt-meta {
+      text-align: right;
+      font-size: 0.72rem;
+      color: #999;
+      line-height: 1.5;
+    }
+    .rpt-meta strong { display: block; font-size: 0.82rem; color: #444; }
+
+    /* ── Report: body ───────────────────────────────────── */
+    .rpt-body {
+      background: white;
+      border-radius: 0 0 8px 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.07);
+      padding: 0.8rem 1.2rem 1.2rem;
+    }
+
+    /* ── Player grid ────────────────────────────────────── */
+    .player-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+      gap: 0.55rem;
+      margin-top: 0.65rem;
+    }
+
+    .p-card {
+      border: 1.5px solid #c8e6d5;
+      border-radius: 7px;
+      padding: 0.55rem 0.7rem 0.55rem;
+      background: #f8fef9;
+      position: relative;
+      break-inside: avoid;
+    }
+
+    .p-card.captain {
+      border-color: #c8a000;
+      background: #fffef0;
+    }
+
+    .p-num {
+      position: absolute;
+      top: 0.38rem;
+      right: 0.55rem;
+      font-size: 0.67rem;
+      color: #999;
+      font-weight: 600;
+      line-height: 1;
+    }
+
+    .p-name {
+      font-weight: 700;
+      font-size: 0.82rem;
+      color: #152e1e;
+      padding-right: 2rem;
+      margin-bottom: 0.4rem;
+      line-height: 1.2;
+    }
+    .p-name.cap-mark::after {
+      content: ' ©';
+      font-weight: 400;
+      color: #b8860b;
+      font-size: 0.7rem;
+    }
+
+    .p-stats {
+      display: flex;
+      gap: 0.5rem;
+    }
+
+    .p-stat {
+      flex: 1;
+      text-align: center;
+    }
+
+    .p-stat-lbl {
+      font-size: 0.58rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #999;
+      line-height: 1;
+      margin-bottom: 1px;
+    }
+
+    .p-stat-val {
+      font-size: 0.92rem;
+      font-weight: 800;
+      color: #1a6b4a;
+      line-height: 1.1;
+    }
+    .p-stat-val.na {
+      color: #ccc;
+      font-size: 0.78rem;
+      font-weight: 400;
+    }
+
+    /* ── Team totals footer ─────────────────────────────── */
+    .rpt-footer {
+      margin-top: 0.7rem;
+      padding-top: 0.55rem;
+      border-top: 1px solid #e5e7eb;
+      font-size: 0.76rem;
+      color: #666;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.3rem 1.5rem;
+    }
+    .rpt-footer strong { color: #1a6b4a; }
+
+    /* ── PRINT ──────────────────────────────────────────── */
+    @media print {
+      @page {
+        size: letter portrait;
+        margin: 0.5in 0.5in 0.5in 0.5in;
+      }
+
+      body { background: white; }
+
+      nav#main-nav,
+      .controls { display: none !important; }
+
+      .report-wrap {
+        max-width: none;
+        margin: 0;
+        padding: 0;
+      }
+
+      .rpt-header {
+        border-radius: 0;
+        padding: 0.35rem 0.5rem 0.3rem;
+        border-bottom-width: 2pt;
+      }
+      .rpt-logo { width: 38px; height: 38px; }
+      .rpt-title h2 { font-size: 1.05rem; }
+      .rpt-title p  { font-size: 0.68rem; }
+      .rpt-meta { font-size: 0.65rem; }
+
+      .rpt-body {
+        border-radius: 0;
+        box-shadow: none;
+        padding: 0.4rem 0.5rem 0.5rem;
+      }
+
+      /* 5 columns on letter paper */
+      .player-grid {
+        grid-template-columns: repeat(5, 1fr);
+        gap: 0.35rem;
+        margin-top: 0.35rem;
+      }
+
+      .p-card {
+        padding: 0.3rem 0.45rem 0.35rem;
+        border-radius: 4px;
+        border-width: 1pt;
+      }
+
+      .p-name     { font-size: 0.68rem; margin-bottom: 0.28rem; }
+      .p-num      { font-size: 0.58rem; top: 0.28rem; right: 0.38rem; }
+      .p-stat-lbl { font-size: 0.52rem; }
+      .p-stat-val { font-size: 0.8rem; }
+      .p-stat-val.na { font-size: 0.68rem; }
+
+      .rpt-footer { font-size: 0.65rem; margin-top: 0.4rem; padding-top: 0.35rem; }
+
+      .state-card { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <nav id="main-nav"></nav>
+
+  <!-- Screen controls -->
+  <div class="controls">
+    <h1>📋 Team Scouting Report</h1>
+
+    <div class="ctrl-group">
+      <label for="seasonSel">Season</label>
+      <select id="seasonSel"><option value="">Loading…</option></select>
+    </div>
+
+    <div class="ctrl-group">
+      <label for="teamSel">Team</label>
+      <select id="teamSel" disabled><option value="">Select season first</option></select>
+    </div>
+
+    <button class="btn-print" id="btnPrint" disabled onclick="window.print()">🖨 Print</button>
+  </div>
+
+  <!-- Report area -->
+  <div class="report-wrap">
+    <div id="rptContainer">
+      <div class="state-card">
+        <h3>📋 Select a Season &amp; Team</h3>
+        <p>Choose a season and team above to generate the printable scouting report.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Nav init -->
+  <script src="nav-component.js"></script>
+  <script type="module">
+    import { onAuthChange } from './firebase-auth.js';
+    import { loadPageVisibility, getFilteredNavStructure } from './nav-config.js';
+    async function initNav() {
+      await loadPageVisibility();
+      onAuthChange(async (user, userProfile) => {
+        const nav = new NavigationComponent({
+          isAuthenticated: !!user,
+          userDisplayName: user?.displayName || user?.email?.split('@')[0],
+          userProfile,
+          navStructure: getFilteredNavStructure()
+        });
+        nav.render();
+      });
+    }
+    initNav();
+  </script>
+
+  <!-- Main data logic -->
+  <script type="module">
+    import { getAllSeasons, getAllTeams, getSeasonPlayerStatsOptimized } from './firebase-data.js';
+    import { getTeamRosterDoc } from './firebase-roster.js';
+
+    const seasonSel  = document.getElementById('seasonSel');
+    const teamSel    = document.getElementById('teamSel');
+    const btnPrint   = document.getElementById('btnPrint');
+    const rptCont    = document.getElementById('rptContainer');
+
+    let allTeams = [];
+
+    // ── Boot ────────────────────────────────────────────────────────────────
+    async function boot() {
+      try {
+        const [seasons, teams] = await Promise.all([getAllSeasons(), getAllTeams()]);
+        allTeams = teams;
+
+        seasons.sort((a, b) => {
+          if (b.year !== a.year) return b.year - a.year;
+          return a.season === 'spring' ? 1 : -1;
+        });
+
+        seasonSel.innerHTML = '<option value="">— Season —</option>';
+        seasons.forEach(s => {
+          const opt = document.createElement('option');
+          opt.value = s.id;
+          const label = `${s.year} ${cap(s.season)}`;
+          opt.textContent = s.isActive ? `${label} (Current)` : label;
+          seasonSel.appendChild(opt);
+        });
+
+        seasonSel.addEventListener('change', onSeasonChange);
+        teamSel.addEventListener('change', onTeamChange);
+
+        // Auto-load current/most-recent season
+        if (seasons.length) {
+          seasonSel.value = seasons[0].id;
+          await onSeasonChange();
+        }
+      } catch (e) {
+        rptCont.innerHTML = err(e);
+      }
+    }
+
+    // ── Season selected ─────────────────────────────────────────────────────
+    async function onSeasonChange() {
+      const sid = seasonSel.value;
+      if (!sid) {
+        teamSel.disabled = true;
+        teamSel.innerHTML = '<option value="">Select season first</option>';
+        btnPrint.disabled = true;
+        showEmpty();
+        return;
+      }
+
+      teamSel.innerHTML = '<option value="">Loading…</option>';
+      teamSel.disabled  = true;
+      btnPrint.disabled = true;
+
+      try {
+        // Discover teams that have batting stats in this season
+        const stats = await getSeasonPlayerStatsOptimized(sid);
+        const teamIds = [...new Set(
+          stats.map(p => (p.team || p.currentTeam || '').toLowerCase()).filter(Boolean)
+        )].sort();
+
+        teamSel.innerHTML = '<option value="">— Team —</option>';
+        const pool = teamIds.length ? teamIds : allTeams.map(t => t.id.toLowerCase());
+        pool.forEach(tid => {
+          const known = allTeams.find(t => t.id.toLowerCase() === tid);
+          const label = known?.name ? cap(known.name) : cap(tid);
+          const opt   = document.createElement('option');
+          opt.value   = tid;
+          opt.textContent = label;
+          teamSel.appendChild(opt);
+        });
+
+        teamSel.disabled = false;
+        showEmpty();
+      } catch (e) {
+        teamSel.innerHTML = '<option value="">Error loading</option>';
+        console.error(e);
+      }
+    }
+
+    // ── Team selected ───────────────────────────────────────────────────────
+    async function onTeamChange() {
+      const sid = seasonSel.value;
+      const tid = teamSel.value;
+      if (!sid || !tid) { btnPrint.disabled = true; showEmpty(); return; }
+
+      showLoading();
+      btnPrint.disabled = true;
+
+      try {
+        const [roster, allStats] = await Promise.all([
+          getTeamRosterDoc(tid, sid),
+          getSeasonPlayerStatsOptimized(sid)
+        ]);
+
+        // Stats filtered to this team
+        const tStats = allStats.filter(p =>
+          (p.team || p.currentTeam || '').toLowerCase() === tid.toLowerCase()
+        );
+
+        let players;
+        if (roster && roster.length > 0) {
+          // Roster doc is source of truth for team composition + jersey numbers
+          players = roster.map(rp => {
+            const st = tStats.find(s =>
+              s.id === rp.id ||
+              s.id === rp.legacyId ||
+              norm(s.name) === norm(rp.name)
+            );
+            return blend(rp, st);
+          });
+        } else {
+          // No roster doc — fall back to stats collection
+          players = tStats.map(s => blend(null, s));
+        }
+
+        // Sort: by jersey number if present, then alphabetically
+        players.sort((a, b) => {
+          if (a.num != null && b.num != null) return a.num - b.num;
+          if (a.num != null) return -1;
+          if (b.num != null) return 1;
+          return a.name.localeCompare(b.name);
+        });
+
+        render(sid, tid, players);
+        btnPrint.disabled = false;
+      } catch (e) {
+        rptCont.innerHTML = err(e);
+        console.error(e);
+      }
+    }
+
+    // ── Merge roster player + stats record ──────────────────────────────────
+    function blend(rp, st) {
+      const name    = rp?.name || st?.name || st?.playerName || '?';
+      const num     = rp?.number ?? null;
+      const captain = rp?.isCaptain || false;
+
+      const ab = +(st?.atBats ?? 0);
+      const h  = +(st?.hits   ?? 0);
+      const bb = +(st?.walks  ?? 0);
+      const g  = +(st?.games  ?? 0);
+
+      // AVG — prefer stored; recalculate if needed
+      let avg = (st?.battingAverage != null) ? st.battingAverage : (ab > 0 ? h / ab : null);
+      // OBP — prefer stored; recalculate if needed
+      let obp = (st?.onBasePercentage != null) ? st.onBasePercentage : ((ab + bb) > 0 ? (h + bb) / (ab + bb) : null);
+
+      return { name, num, captain, ab, h, bb, g, avg, obp };
+    }
+
+    // ── Render the report ────────────────────────────────────────────────────
+    function render(sid, tid, players) {
+      const seasonLabel = seasonSel.options[seasonSel.selectedIndex]?.text || sid;
+      const teamLabel   = (() => {
+        const known = allTeams.find(t => t.id.toLowerCase() === tid);
+        return known?.name ? cap(known.name) : cap(tid);
+      })();
+      const now = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+
+      // Team aggregate (only players with at-bats)
+      const batters  = players.filter(p => p.ab > 0);
+      const totAB    = batters.reduce((s, p) => s + p.ab, 0);
+      const totH     = batters.reduce((s, p) => s + p.h,  0);
+      const totBB    = batters.reduce((s, p) => s + p.bb, 0);
+      const tmAVG    = totAB > 0 ? fmt(totH / totAB) : '—';
+      const tmOBP    = (totAB + totBB) > 0 ? fmt((totH + totBB) / (totAB + totBB)) : '—';
+
+      const cards = players.map(p => {
+        const avgStr = p.avg != null && p.ab > 0 ? fmt(p.avg) : null;
+        const obpStr = p.obp != null && p.ab > 0 ? fmt(p.obp) : null;
+
+        return `
+          <div class="p-card${p.captain ? ' captain' : ''}">
+            ${p.num != null ? `<div class="p-num">#${p.num}</div>` : ''}
+            <div class="p-name${p.captain ? ' cap-mark' : ''}">${esc(p.name)}</div>
+            <div class="p-stats">
+              <div class="p-stat">
+                <div class="p-stat-lbl">AVG</div>
+                <div class="p-stat-val${avgStr ? '' : ' na'}">${avgStr ?? '—'}</div>
+              </div>
+              <div class="p-stat">
+                <div class="p-stat-lbl">OBP</div>
+                <div class="p-stat-val${obpStr ? '' : ' na'}">${obpStr ?? '—'}</div>
+              </div>
+            </div>
+          </div>`;
+      }).join('');
+
+      rptCont.innerHTML = `
+        <div class="rpt-header">
+          <img class="rpt-logo" src="photos/Aces-Logo.png" onerror="this.style.display='none'" alt="Aces">
+          <div class="rpt-title">
+            <h2>${teamLabel} Team</h2>
+            <p>${seasonLabel} &mdash; Scouting Report</p>
+          </div>
+          <div class="rpt-meta">
+            <strong>${players.length} players</strong>
+            ${now}
+          </div>
+        </div>
+        <div class="rpt-body">
+          <div class="player-grid">${cards}</div>
+          <div class="rpt-footer">
+            Team totals (${batters.length} with ABs) &mdash;
+            AVG: <strong>${tmAVG}</strong> &nbsp;&bull;&nbsp;
+            OBP: <strong>${tmOBP}</strong> &nbsp;&bull;&nbsp;
+            AB: <strong>${totAB}</strong>
+          </div>
+        </div>`;
+    }
+
+    // ── Utilities ───────────────────────────────────────────────────────────
+    function showEmpty() {
+      rptCont.innerHTML = `
+        <div class="state-card">
+          <h3>📋 Select a Season &amp; Team</h3>
+          <p>Choose a season and team above to generate the scouting report.</p>
+        </div>`;
+    }
+
+    function showLoading() {
+      rptCont.innerHTML = `
+        <div class="state-card">
+          <div class="spinner"></div>
+          <p>Loading roster and stats…</p>
+        </div>`;
+    }
+
+    function fmt(v) {
+      if (v == null || isNaN(v)) return null;
+      const n = +v;
+      // Drop leading zero for rates < 1 (e.g. 0.333 → .333)
+      return n < 1 ? n.toFixed(3).slice(1) : n.toFixed(3);
+    }
+
+    function cap(s) {
+      if (!s) return '';
+      return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
+    }
+
+    function norm(s) { return (s || '').toLowerCase().trim(); }
+
+    function esc(s) {
+      return String(s)
+        .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+        .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    function err(e) {
+      return `<div class="state-card"><h3>Error</h3><p>${esc(e.message)}</p></div>`;
+    }
+
+    boot();
+  </script>
+  <script src="mobile-enhancements.js"></script>
+  <script src="theme-toggle.js"></script>
+</body>
+</html>

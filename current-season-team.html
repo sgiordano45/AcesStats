@@ -856,6 +856,23 @@
     z-index: 10;
   }
 
+  /* ── Sortable batting table headers ── */
+  #player-stats-table th[data-col] {
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+  }
+  #player-stats-table th[data-col]:hover {
+    background: linear-gradient(135deg, var(--secondary-color) 0%, #1a3a6a 100%);
+  }
+  #player-stats-table th[data-col]::after {
+    content: ' ⇅';
+    opacity: 0.4;
+    font-size: 0.75rem;
+  }
+  #player-stats-table th[data-col].sort-asc::after  { content: ' ▲'; opacity: 1; }
+  #player-stats-table th[data-col].sort-desc::after { content: ' ▼'; opacity: 1; }
+
   .stats-table td, .schedule-table td {
     padding: 14px 12px;
     border-bottom: 1px solid var(--border-color);
@@ -1618,15 +1635,15 @@
         <table class="stats-table" id="player-stats-table">
           <thead>
             <tr>
-              <th>Player</th>
-              <th>G</th>
-              <th>AB</th>
-              <th>H</th>
-              <th>R</th>
-              <th>BB</th>
-              <th>BA</th>
-              <th>OBP</th>
-              <th>AcesBPI</th>
+              <th data-col="name" data-type="alpha">Player</th>
+              <th data-col="games" data-type="num">G</th>
+              <th data-col="atBats" data-type="num">AB</th>
+              <th data-col="hits" data-type="num">H</th>
+              <th data-col="runs" data-type="num">R</th>
+              <th data-col="walks" data-type="num">BB</th>
+              <th data-col="ba" data-type="num">BA</th>
+              <th data-col="obp" data-type="num">OBP</th>
+              <th data-col="acesBPI" data-type="num">AcesBPI</th>
             </tr>
           </thead>
           <tbody>
@@ -2478,53 +2495,93 @@
   function updatePlayerStats() {
     const tbody = document.querySelector("#player-stats-table tbody");
     tbody.classList.remove('loading');
-    
+
     if (playerData.length === 0) {
       tbody.innerHTML = '<tr><td colspan="9" class="no-data">No player statistics available</td></tr>';
       return;
     }
 
-    const sortedPlayers = [...playerData].sort((a, b) => {
-      const gamesA = Number(a.games) || 0;
-      const gamesB = Number(b.games) || 0;
-      if (gamesB !== gamesA) return gamesB - gamesA;
-      
-      const baA = (Number(a.atBats) || 0) > 0 ? (Number(a.hits) || 0) / (Number(a.atBats) || 0) : 0;
-      const baB = (Number(b.atBats) || 0) > 0 ? (Number(b.hits) || 0) / (Number(b.atBats) || 0) : 0;
-      return baB - baA;
+    // Sort state — default: games desc, then BA desc
+    let battingSortCol = 'games';
+    let battingSortDir = 'desc';
+
+    // Enrich each player with derived numeric fields once
+    const enriched = playerData.map(p => {
+      const games  = Number(p.games)  || 0;
+      const atBats = Number(p.atBats) || 0;
+      const hits   = Number(p.hits)   || 0;
+      const runs   = Number(p.runs)   || 0;
+      const walks  = Number(p.walks)  || 0;
+      const ba     = atBats > 0 ? hits / atBats : 0;
+      const obp    = (atBats + walks) > 0 ? (hits + walks) / (atBats + walks) : 0;
+      const bpiRaw = p.acesBPI;
+      const acesBPI = (bpiRaw !== "N/A" && bpiRaw != null && !isNaN(bpiRaw))
+        ? Number(bpiRaw) : null;
+      return { ...p, games, atBats, hits, runs, walks, ba, obp, acesBPI };
     });
 
-    const statsHTML = sortedPlayers.map(player => {
-      const games = Number(player.games) || 0;
-      const atBats = Number(player.atBats) || 0;
-      const hits = Number(player.hits) || 0;
-      const runs = Number(player.runs) || 0;
-      const walks = Number(player.walks) || 0;
-      
-      const ba = atBats > 0 ? (hits / atBats).toFixed(3) : '.000';
-      const obp = (atBats + walks) > 0 ? ((hits + walks) / (atBats + walks)).toFixed(3) : '.000';
-      
-      const acesBPIValue = player.acesBPI;
-      const acesBPI = (acesBPIValue !== "N/A" && acesBPIValue !== null && acesBPIValue !== undefined && !isNaN(acesBPIValue)) 
-        ? Number(acesBPIValue).toFixed(2) 
-        : "N/A";
+    function renderBattingRows() {
+      const sorted = [...enriched].sort((a, b) => {
+        let valA, valB;
+        if (battingSortCol === 'name') {
+          valA = (a.name || '').toLowerCase();
+          valB = (b.name || '').toLowerCase();
+          const cmp = valA.localeCompare(valB);
+          return battingSortDir === 'asc' ? cmp : -cmp;
+        }
+        // Numeric columns — null / N/A sorts to the bottom regardless of direction
+        valA = (battingSortCol === 'acesBPI') ? (a.acesBPI ?? -Infinity) : (a[battingSortCol] ?? 0);
+        valB = (battingSortCol === 'acesBPI') ? (b.acesBPI ?? -Infinity) : (b[battingSortCol] ?? 0);
+        return battingSortDir === 'asc' ? valA - valB : valB - valA;
+      });
 
-      return `
-        <tr>
-          <td><a href="player.html?id=${encodeURIComponent(player.authId || player.id)}" class="player-link">${player.name}</a></td>
-          <td style="text-align: center;">${games}</td>
-          <td style="text-align: center;">${atBats}</td>
-          <td style="text-align: center;">${hits}</td>
-          <td style="text-align: center;">${runs}</td>
-          <td style="text-align: center;">${walks}</td>
-          <td style="text-align: center; font-weight: bold;">${ba}</td>
-          <td style="text-align: center; font-weight: bold;">${obp}</td>
-          <td style="text-align: center;">${acesBPI}</td>
-        </tr>
-      `;
-    }).join('');
+      tbody.innerHTML = sorted.map(player => {
+        const baStr  = player.atBats > 0 ? player.ba.toFixed(3)  : '.000';
+        const obpStr = (player.atBats + player.walks) > 0 ? player.obp.toFixed(3) : '.000';
+        const bpiStr = player.acesBPI !== null ? player.acesBPI.toFixed(2) : 'N/A';
+        return `
+          <tr>
+            <td><a href="player.html?id=${encodeURIComponent(player.authId || player.id)}" class="player-link">${player.name}</a></td>
+            <td style="text-align:center;">${player.games}</td>
+            <td style="text-align:center;">${player.atBats}</td>
+            <td style="text-align:center;">${player.hits}</td>
+            <td style="text-align:center;">${player.runs}</td>
+            <td style="text-align:center;">${player.walks}</td>
+            <td style="text-align:center;font-weight:bold;">${baStr}</td>
+            <td style="text-align:center;font-weight:bold;">${obpStr}</td>
+            <td style="text-align:center;">${bpiStr}</td>
+          </tr>`;
+      }).join('');
+    }
 
-    tbody.innerHTML = statsHTML;
+    // Initial render (default sort: games desc)
+    renderBattingRows();
+
+    // Wire up header click handlers
+    document.querySelectorAll('#player-stats-table th[data-col]').forEach(th => {
+      th.addEventListener('click', () => {
+        const col = th.dataset.col;
+        if (battingSortCol === col) {
+          battingSortDir = battingSortDir === 'desc' ? 'asc' : 'desc';
+        } else {
+          battingSortCol = col;
+          // Alpha cols default to asc; numeric cols default to desc
+          battingSortDir = th.dataset.type === 'alpha' ? 'asc' : 'desc';
+        }
+
+        // Update header indicators
+        document.querySelectorAll('#player-stats-table th[data-col]').forEach(h => {
+          h.classList.remove('sort-asc', 'sort-desc');
+        });
+        th.classList.add(battingSortDir === 'asc' ? 'sort-asc' : 'sort-desc');
+
+        renderBattingRows();
+      });
+    });
+
+    // Mark the default sort column
+    const defaultTh = document.querySelector('#player-stats-table th[data-col="games"]');
+    if (defaultTh) defaultTh.classList.add('sort-desc');
   }
 
   function updateSchedule() {
