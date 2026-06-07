@@ -222,11 +222,27 @@
       color: #1a6b4a;
       line-height: 1.1;
     }
+    .p-stat-val.career {
+      font-size: 0.92rem;
+      font-weight: 700;
+      color: #3a6a8a;
+    }
     .p-stat-val.na {
       color: #ccc;
       font-size: 0.9rem;
       font-weight: 400;
     }
+
+    .p-row-lbl {
+      font-size: 0.55rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #999;
+      margin-bottom: 2px;
+      margin-top: 5px;
+    }
+    .p-row-lbl:first-of-type { margin-top: 0; }
+    .p-row-lbl.career-lbl { color: #5a7a9a; }
 
     /* ── Team totals footer ─────────────────────────────── */
     .rpt-footer {
@@ -288,11 +304,13 @@
         border-width: 1pt;
       }
 
-      .p-name     { font-size: 0.68rem; margin-bottom: 0.28rem; }
+      .p-name     { font-size: 0.68rem; margin-bottom: 0.2rem; }
       .p-num      { font-size: 0.58rem; top: 0.28rem; right: 0.38rem; }
       .p-stat-lbl { font-size: 0.52rem; }
       .p-stat-val { font-size: 0.8rem; }
+      .p-stat-val.career { font-size: 0.68rem; }
       .p-stat-val.na { font-size: 0.68rem; }
+      .p-row-lbl  { font-size: 0.48rem; margin-top: 3px; }
 
       .rpt-footer { font-size: 0.65rem; margin-top: 0.4rem; padding-top: 0.35rem; }
 
@@ -317,7 +335,7 @@
       <select id="teamSel" disabled><option value="">Select season first</option></select>
     </div>
 
-    <button class="btn-print" id="btnPrint" disabled onclick="window.print()">🖨 Print</button>
+    <button class="btn-print" id="btnPrint" disabled>🖨 Print</button>
   </div>
 
   <!-- Report area -->
@@ -337,7 +355,7 @@
 
   <!-- Main data logic -->
   <script type="module">
-    import { getAllSeasons, getAllTeams, getSeasonPlayerStatsOptimized } from './firebase-data.js';
+    import { getAllSeasons, getAllTeams, getSeasonPlayerStatsOptimized, getAllPlayerStatsOptimized } from './firebase-data.js';
     import { getTeamRosterDoc } from './firebase-roster.js';
 
     const seasonSel  = document.getElementById('seasonSel');
@@ -346,6 +364,7 @@
     const rptCont    = document.getElementById('rptContainer');
 
     let allTeams = [];
+    let currentReportData = null; // { sid, tid, players } — kept for print window
 
     // ── Boot ────────────────────────────────────────────────────────────────
     async function boot() {
@@ -369,6 +388,7 @@
 
         seasonSel.addEventListener('change', onSeasonChange);
         teamSel.addEventListener('change', onTeamChange);
+        btnPrint.addEventListener('click', printReport);
 
         // Auto-load current/most-recent season
         if (seasons.length) {
@@ -431,10 +451,15 @@
       btnPrint.disabled = true;
 
       try {
-        const [roster, allStats] = await Promise.all([
+        const [roster, allStats, allPlayers] = await Promise.all([
           getTeamRosterDoc(tid, sid),
-          getSeasonPlayerStatsOptimized(sid)
+          getSeasonPlayerStatsOptimized(sid),
+          getAllPlayerStatsOptimized()
         ]);
+
+        // Build career lookup: playerId → career object
+        const careerMap = {};
+        allPlayers.forEach(p => { if (p.id) careerMap[p.id] = p.career || null; });
 
         // Stats filtered to this team
         const tStats = allStats.filter(p =>
@@ -450,11 +475,12 @@
               s.id === rp.legacyId ||
               norm(s.name) === norm(rp.name)
             );
-            return blend(rp, st);
+            const careerRec = careerMap[rp.id] || careerMap[rp.legacyId] || (st ? careerMap[st.id] : null);
+            return blend(rp, st, careerRec);
           });
         } else {
           // No roster doc — fall back to stats collection
-          players = tStats.map(s => blend(null, s));
+          players = tStats.map(s => blend(null, s, careerMap[s.id] || null));
         }
 
         // Sort: by jersey number if present, then alphabetically
@@ -465,6 +491,7 @@
           return a.name.localeCompare(b.name);
         });
 
+        currentReportData = { sid, tid, players };
         render(sid, tid, players);
         btnPrint.disabled = false;
       } catch (e) {
@@ -473,8 +500,8 @@
       }
     }
 
-    // ── Merge roster player + stats record ──────────────────────────────────
-    function blend(rp, st) {
+    // ── Merge roster player + stats record + career record ──────────────────
+    function blend(rp, st, career) {
       const name    = rp?.name || st?.name || st?.playerName || '?';
       const num     = rp?.number ?? null;
       const captain = rp?.isCaptain || false;
@@ -484,12 +511,18 @@
       const bb = +(st?.walks  ?? 0);
       const g  = +(st?.games  ?? 0);
 
-      // AVG — prefer stored; recalculate if needed
+      // Season AVG/OBP — prefer stored; recalculate if needed
       let avg = (st?.battingAverage != null) ? st.battingAverage : (ab > 0 ? h / ab : null);
-      // OBP — prefer stored; recalculate if needed
       let obp = (st?.onBasePercentage != null) ? st.onBasePercentage : ((ab + bb) > 0 ? (h + bb) / (ab + bb) : null);
 
-      return { name, num, captain, ab, h, bb, g, avg, obp };
+      // Career AVG/OBP
+      const cab = +(career?.atBats ?? 0);
+      const ch  = +(career?.hits   ?? 0);
+      const cbb = +(career?.walks  ?? 0);
+      let careerAvg = (career?.battingAverage != null) ? career.battingAverage : (cab > 0 ? ch / cab : null);
+      let careerObp = (career?.onBasePercentage != null) ? career.onBasePercentage : ((cab + cbb) > 0 ? (ch + cbb) / (cab + cbb) : null);
+
+      return { name, num, captain, ab, h, bb, g, avg, obp, careerAvg, careerObp, cab };
     }
 
     // ── Render the report ────────────────────────────────────────────────────
@@ -509,26 +542,7 @@
       const tmAVG    = totAB > 0 ? fmt(totH / totAB) : '—';
       const tmOBP    = (totAB + totBB) > 0 ? fmt((totH + totBB) / (totAB + totBB)) : '—';
 
-      const cards = players.map(p => {
-        const avgStr = p.avg != null && p.ab > 0 ? fmt(p.avg) : null;
-        const obpStr = p.obp != null && p.ab > 0 ? fmt(p.obp) : null;
-
-        return `
-          <div class="p-card${p.captain ? ' captain' : ''}">
-            ${p.num != null ? `<div class="p-num">#${p.num}</div>` : ''}
-            <div class="p-name${p.captain ? ' cap-mark' : ''}">${esc(p.name)}</div>
-            <div class="p-stats">
-              <div class="p-stat">
-                <div class="p-stat-lbl">AVG</div>
-                <div class="p-stat-val${avgStr ? '' : ' na'}">${avgStr ?? '—'}</div>
-              </div>
-              <div class="p-stat">
-                <div class="p-stat-lbl">OBP</div>
-                <div class="p-stat-val${obpStr ? '' : ' na'}">${obpStr ?? '—'}</div>
-              </div>
-            </div>
-          </div>`;
-      }).join('');
+      const cards = players.map(p => cardHtml(p)).join('');
 
       rptCont.innerHTML = `
         <div class="rpt-header">
@@ -551,6 +565,195 @@
             AB: <strong>${totAB}</strong>
           </div>
         </div>`;
+    }
+
+    // ── Build a single player card (reused by screen + print) ───────────────
+    function cardHtml(p, large = false) {
+      const avgStr     = p.avg     != null && p.ab  > 0 ? fmt(p.avg)     : null;
+      const obpStr     = p.obp     != null && p.ab  > 0 ? fmt(p.obp)     : null;
+      const cAvgStr    = p.careerAvg != null && p.cab > 0 ? fmt(p.careerAvg) : null;
+      const cObpStr    = p.careerObp != null && p.cab > 0 ? fmt(p.careerObp) : null;
+      const hasCareer  = cAvgStr || cObpStr;
+
+      return `
+        <div class="p-card${p.captain ? ' captain' : ''}${large ? ' large' : ''}">
+          ${p.num != null ? `<div class="p-num">#${p.num}</div>` : ''}
+          <div class="p-name${p.captain ? ' cap-mark' : ''}">${esc(p.name)}</div>
+          <div class="p-row-lbl">Season</div>
+          <div class="p-stats">
+            <div class="p-stat">
+              <div class="p-stat-lbl">AVG</div>
+              <div class="p-stat-val${avgStr ? '' : ' na'}">${avgStr ?? '—'}</div>
+            </div>
+            <div class="p-stat">
+              <div class="p-stat-lbl">OBP</div>
+              <div class="p-stat-val${obpStr ? '' : ' na'}">${obpStr ?? '—'}</div>
+            </div>
+          </div>
+          ${hasCareer ? `
+          <div class="p-row-lbl career-lbl">Career</div>
+          <div class="p-stats">
+            <div class="p-stat">
+              <div class="p-stat-lbl">AVG</div>
+              <div class="p-stat-val career${cAvgStr ? '' : ' na'}">${cAvgStr ?? '—'}</div>
+            </div>
+            <div class="p-stat">
+              <div class="p-stat-lbl">OBP</div>
+              <div class="p-stat-val career${cObpStr ? '' : ' na'}">${cObpStr ?? '—'}</div>
+            </div>
+          </div>` : ''}
+        </div>`;
+    }
+
+    // ── Print: open nicely-formatted standalone window ───────────────────────
+    function printReport() {
+      if (!currentReportData) return;
+      const { sid, tid, players } = currentReportData;
+
+      const seasonLabel = seasonSel.options[seasonSel.selectedIndex]?.text || sid;
+      const teamLabel   = (() => {
+        const known = allTeams.find(t => t.id.toLowerCase() === tid);
+        return known?.name ? cap(known.name) : cap(tid);
+      })();
+
+      const batters = players.filter(p => p.ab > 0);
+      const totAB   = batters.reduce((s, p) => s + p.ab, 0);
+      const totH    = batters.reduce((s, p) => s + p.h,  0);
+      const totBB   = batters.reduce((s, p) => s + p.bb, 0);
+      const tmAVG   = totAB > 0 ? fmt(totH / totAB) : '—';
+      const tmOBP   = (totAB + totBB) > 0 ? fmt((totH + totBB) / (totAB + totBB)) : '—';
+
+      const now = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+
+      const cards = players.map(p => {
+        const avgStr  = p.avg     != null && p.ab  > 0 ? fmt(p.avg)     : null;
+        const obpStr  = p.obp     != null && p.ab  > 0 ? fmt(p.obp)     : null;
+        const cAvgStr = p.careerAvg != null && p.cab > 0 ? fmt(p.careerAvg) : null;
+        const cObpStr = p.careerObp != null && p.cab > 0 ? fmt(p.careerObp) : null;
+        const hasCareer = cAvgStr || cObpStr;
+
+        return `
+          <div class="pc${p.captain ? ' cap' : ''}">
+            ${p.num != null ? `<div class="pnum">#${p.num}</div>` : ''}
+            <div class="pname${p.captain ? ' capmark' : ''}">${esc(p.name)}</div>
+            <div class="row-lbl">Season</div>
+            <div class="pstats">
+              <div class="ps"><div class="psl">AVG</div><div class="psv${avgStr ? '' : ' na'}">${avgStr ?? '—'}</div></div>
+              <div class="ps"><div class="psl">OBP</div><div class="psv${obpStr ? '' : ' na'}">${obpStr ?? '—'}</div></div>
+            </div>
+            ${hasCareer ? `
+            <div class="row-lbl clbl">Career</div>
+            <div class="pstats">
+              <div class="ps"><div class="psl">AVG</div><div class="psv career${cAvgStr ? '' : ' na'}">${cAvgStr ?? '—'}</div></div>
+              <div class="ps"><div class="psl">OBP</div><div class="psv career${cObpStr ? '' : ' na'}">${cObpStr ?? '—'}</div></div>
+            </div>` : ''}
+          </div>`;
+      }).join('');
+
+      const pw = window.open('', '_blank');
+      pw.document.write(`<!DOCTYPE html>
+<html>
+<head>
+  <title>Scouting Report — ${teamLabel} ${seasonLabel}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      padding: 0.5in;
+      background: white;
+      color: #111;
+    }
+    /* Header */
+    .hdr {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      border-bottom: 3pt solid #1a6b4a;
+      padding-bottom: 0.45rem;
+      margin-bottom: 0.5rem;
+    }
+    .hdr-logo { width: 52px; height: 52px; object-fit: contain; }
+    .hdr-main { flex: 1; }
+    .hdr-main h1 { font-size: 1.4rem; color: #1a6b4a; font-weight: 800; line-height: 1.1; }
+    .hdr-main p  { font-size: 0.8rem; color: #555; margin-top: 2px; }
+    .hdr-right { text-align: right; font-size: 0.72rem; color: #777; line-height: 1.5; }
+    .hdr-right strong { display: block; font-size: 0.82rem; color: #333; }
+    /* Grid */
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 0.4rem;
+    }
+    /* Player card */
+    .pc {
+      border: 1.5pt solid #c8e6d5;
+      border-radius: 6pt;
+      padding: 0.5rem 0.6rem 0.45rem;
+      background: #f8fef9;
+      position: relative;
+      break-inside: avoid;
+    }
+    .pc.cap { border-color: #c8a000; background: #fffef0; }
+    .pnum {
+      position: absolute;
+      top: 0.3rem; right: 0.45rem;
+      font-size: 0.65rem; color: #aaa; font-weight: 600; line-height: 1;
+    }
+    .pname {
+      font-weight: 700; font-size: 0.82rem; color: #152e1e;
+      padding-right: 1.8rem; line-height: 1.2; margin-bottom: 0.25rem;
+    }
+    .pname.capmark::after { content: ' ©'; font-weight: 400; color: #b8860b; font-size: 0.68rem; }
+    .row-lbl {
+      font-size: 0.52rem; text-transform: uppercase; letter-spacing: 0.06em;
+      color: #888; margin-bottom: 2px; margin-top: 4px;
+    }
+    .row-lbl:first-of-type { margin-top: 0; }
+    .clbl { color: #5a7a9a; }
+    .pstats { display: flex; gap: 0.4rem; }
+    .ps { flex: 1; text-align: center; }
+    .psl { font-size: 0.52rem; text-transform: uppercase; letter-spacing: 0.05em; color: #999; line-height: 1; margin-bottom: 1px; }
+    .psv { font-size: 1.05rem; font-weight: 800; color: #1a6b4a; line-height: 1.1; }
+    .psv.career { font-size: 0.88rem; color: #3a6a8a; font-weight: 700; }
+    .psv.na { color: #ccc; font-size: 0.78rem; font-weight: 400; }
+    /* Footer */
+    .ftr {
+      margin-top: 0.5rem;
+      padding-top: 0.35rem;
+      border-top: 1pt solid #ddd;
+      font-size: 0.72rem;
+      color: #555;
+    }
+    .ftr strong { color: #1a6b4a; }
+    @media print {
+      body { padding: 0; }
+      @page { size: letter portrait; margin: 0.5in; }
+    }
+  </style>
+</head>
+<body>
+  <div class="hdr">
+    <img class="hdr-logo" src="photos/Aces-Logo.png" onerror="this.style.display='none'" alt="Aces">
+    <div class="hdr-main">
+      <h1>${teamLabel} — Scouting Report</h1>
+      <p>${seasonLabel}</p>
+    </div>
+    <div class="hdr-right">
+      <strong>${players.length} players</strong>
+      ${now}
+    </div>
+  </div>
+  <div class="grid">${cards}</div>
+  <div class="ftr">
+    Team totals (${batters.length} with ABs) &mdash;
+    AVG: <strong>${tmAVG}</strong> &nbsp;&bull;&nbsp;
+    OBP: <strong>${tmOBP}</strong> &nbsp;&bull;&nbsp;
+    AB: <strong>${totAB}</strong>
+  </div>
+  <script>window.print();<\/script>
+</body>
+</html>`);
+      pw.document.close();
     }
 
     // ── Utilities ───────────────────────────────────────────────────────────
