@@ -148,6 +148,7 @@ export const NAV_STRUCTURE = {
     { id: 'game-tracker', href: 'game-tracker.html', label: 'Game Tracker', icon: '📊', priority: 4, requiresAuth: true },
     { id: 'captain-guide', href: 'captain-guide.html', label: "Captain's Guide", icon: '👨‍✈️', priority: 4, requiresAuth: true, requiresRole: 'captain' },
     { id: 'captain-roster-edit', href: 'captain-roster-edit.html', label: 'Edit Roster', icon: '✏️', priority: 4, requiresAuth: true, requiresRole: 'captain' },
+    { id: 'team-scouting-report', href: 'team-scouting-report.html', label: 'Team Scouting Report', icon: '📋', priority: 4, requiresAuth: true, requiresRole: 'captain' },
     { id: 'league-staff-admin', href: 'league-staff-admin.html', label: 'League Staff Admin', icon: '⚙️', priority: 4, requiresAuth: true, requiresRole: 'league_staff' },
     { id: 'directory', href: 'aces-directory.html', label: 'Aces Directory', icon: '📇', priority: 4, requiresAuth: true },
     { id: 'submit-score', href: 'submit-score.html', label: 'Submit Scores', icon: '🔢️', priority: 4, requiresAuth: true },
