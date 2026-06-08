@@ -488,6 +488,7 @@
   <div class="tab-bar">
     <button class="tab-btn active" data-tab="table">📊 Stats Table</button>
     <button class="tab-btn" data-tab="trends">📈 Trends</button>
+    <button class="tab-btn" data-tab="running">🎯 Running Avg</button>
   </div>
 
   <!-- Stats Table tab -->
@@ -532,12 +533,43 @@
     </div>
   </div>
 
+  <!-- Running Avg tab -->
+  <div class="tab-panel" id="tab-running">
+    <div class="trends-card">
+      <div class="trends-controls">
+        <h3>🎯 Running Season Averages</h3>
+        <span class="filter-label">Season</span>
+        <select id="runningSeasonSel" class="filter-select"></select>
+        <span class="filter-label">Stat</span>
+        <select id="runningStatSel" class="filter-select" style="min-width:220px;">
+          <option value="hits_pg">H/G — Hits per Game</option>
+          <option value="runs_pg">R/G — Runs per Game</option>
+          <option value="walks_pg">BB/G — Walks per Game</option>
+          <option value="hr_pg">HR/G — Home Runs per Game</option>
+          <option value="ab_pg">AB/G — At Bats per Game</option>
+          <option value="avg">AVG — Batting Average</option>
+          <option value="obp">OBP — On-Base Percentage</option>
+          <option value="doubles_pg">2B/G — Doubles per Game</option>
+          <option value="triples_pg">3B/G — Triples per Game</option>
+          <option value="rbis_pg">RBI/G — RBIs per Game</option>
+          <option value="ra_pg">RA/G — Runs Allowed per Game</option>
+        </select>
+      </div>
+      <p style="font-size:0.8rem;color:var(--text-light);margin:0 0 12px 0;">Cumulative per-game average through each game played — e.g., after Game 4 the value reflects the season average across all 4 games.</p>
+      <div id="runningLoading" style="display:none;text-align:center;padding:20px;color:var(--text-light);">⏳ Loading game data…</div>
+      <div class="chart-wrap">
+        <canvas id="runningChart"></canvas>
+      </div>
+    </div>
+  </div>
+
 </div><!-- end .page-container -->
 
 <script type="module">
-  import { getAllPlayerStatsOptimized, getCurrentSeason, db } from './firebase-data.js';
+  import { getAllPlayerStatsOptimized, getCurrentSeason, getAllSeasons, db } from './firebase-data.js';
   import { auth } from './firebase-auth.js';
   import { onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
+  import { collection, getDocs, query, where } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
   import { NavigationComponent } from './nav-component.js';
 
   // ── Team colors (used for dots) ───────────────────────
@@ -941,6 +973,158 @@
   // ── TRENDS ───────────────────────────────────────────
   let trendChart = null;
 
+  // ── RUNNING AVERAGES ─────────────────────────────────
+  let runningChart = null;
+  const runningDataCache = {}; // seasonId → { teamId → games[] }
+
+  async function loadRunningAvgData(seasonId) {
+    if (runningDataCache[seasonId]) return runningDataCache[seasonId];
+
+    const q = query(collection(db, 'gameResults'), where('seasonId', '==', seasonId));
+    const snap = await getDocs(q);
+
+    const byTeam = {};
+    snap.forEach(docSnap => {
+      const d = docSnap.data();
+      const stats = d.battingStats || [];
+      let hits = 0, runs = 0, walks = 0, ab = 0, doubles = 0, triples = 0, hr = 0, rbi = 0;
+      stats.forEach(p => {
+        hits    += Number(p.hits)     || 0;
+        runs    += Number(p.runs)     || 0;
+        walks   += Number(p.walks)    || 0;
+        ab      += Number(p.atBats)   || 0;
+        doubles += Number(p.doubles)  || 0;
+        triples += Number(p.triples)  || 0;
+        hr      += Number(p.homeRuns) || 0;
+        rbi     += Number(p.rbi)      || 0;
+      });
+      const ra = Number(d.finalScore?.opponent) || 0;
+      const teamId = (d.teamId || 'unknown').toLowerCase();
+      if (!byTeam[teamId]) byTeam[teamId] = [];
+      byTeam[teamId].push({
+        date: d.completedAt?.toMillis?.() || 0,
+        hits, runs, walks, ab, doubles, triples, hr, rbi, ra
+      });
+    });
+
+    // Sort each team's games chronologically
+    Object.values(byTeam).forEach(games => games.sort((a, b) => a.date - b.date));
+
+    runningDataCache[seasonId] = byTeam;
+    return byTeam;
+  }
+
+  function buildRunningDataset(byTeam, statKey) {
+    const EXCLUDED_TEAMS = ['kings'];
+    const maxGames = Math.max(...Object.values(byTeam).map(g => g.length), 0);
+    if (maxGames === 0) return { labels: [], datasets: [] };
+
+    const labels = Array.from({ length: maxGames }, (_, i) => `Game ${i + 1}`);
+
+    const datasets = Object.entries(byTeam)
+      .filter(([team]) => !EXCLUDED_TEAMS.includes(team))
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([teamId, games]) => {
+        const data = [];
+        let cH=0,cR=0,cBB=0,cAB=0,c2B=0,c3B=0,cHR=0,cRBI=0,cRA=0;
+        for (let i = 0; i < maxGames; i++) {
+          if (i >= games.length) { data.push(null); continue; }
+          const g = games[i];
+          cH+=g.hits; cR+=g.runs; cBB+=g.walks; cAB+=g.ab;
+          c2B+=g.doubles; c3B+=g.triples; cHR+=g.hr; cRBI+=g.rbi; cRA+=g.ra;
+          const n = i + 1;
+          let val;
+          switch (statKey) {
+            case 'hits_pg':    val = cH / n; break;
+            case 'runs_pg':    val = cR / n; break;
+            case 'walks_pg':   val = cBB / n; break;
+            case 'hr_pg':      val = cHR / n; break;
+            case 'ab_pg':      val = cAB / n; break;
+            case 'avg':        val = cAB > 0 ? cH / cAB : null; break;
+            case 'obp':        val = (cAB + cBB) > 0 ? (cH + cBB) / (cAB + cBB) : null; break;
+            case 'doubles_pg': val = c2B / n; break;
+            case 'triples_pg': val = c3B / n; break;
+            case 'rbis_pg':    val = cRBI / n; break;
+            case 'ra_pg':      val = cRA / n; break;
+            default:           val = null;
+          }
+          data.push(val !== null ? Math.round(val * 10000) / 10000 : null);
+        }
+        if (data.every(v => v === null)) return null;
+        const color = teamColor(teamId);
+        return {
+          label: teamId.charAt(0).toUpperCase() + teamId.slice(1),
+          data, spanGaps: false,
+          borderColor: color, backgroundColor: color + '20',
+          borderWidth: 2.5, tension: 0.3,
+          pointRadius: 4, pointHoverRadius: 6
+        };
+      })
+      .filter(Boolean);
+
+    return { labels, datasets };
+  }
+
+  async function renderRunningAvg() {
+    const seasonId = document.getElementById('runningSeasonSel').value;
+    const statKey  = document.getElementById('runningStatSel').value;
+    if (!seasonId) return;
+
+    const loadingEl = document.getElementById('runningLoading');
+    loadingEl.style.display = 'block';
+    try {
+      const byTeam = await loadRunningAvgData(seasonId);
+      const { labels, datasets } = buildRunningDataset(byTeam, statKey);
+
+      if (runningChart) { runningChart.destroy(); runningChart = null; }
+
+      const isRate = statKey === 'avg' || statKey === 'obp';
+      const fmt = v => isRate
+        ? (v < 1 ? '.' + Math.round(v * 1000).toString().padStart(3, '0') : v.toFixed(3))
+        : v.toFixed(2);
+
+      const ctx = document.getElementById('runningChart').getContext('2d');
+      runningChart = new Chart(ctx, {
+        type: 'line',
+        data: { labels, datasets },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          plugins: {
+            legend: { position: 'bottom', labels: { boxWidth: 12, padding: 14, font: { size: 11 } } },
+            tooltip: { callbacks: { label: c => c.parsed.y === null ? null : ` ${c.dataset.label}: ${fmt(c.parsed.y)}` } }
+          },
+          scales: {
+            x: { grid: { color: '#f0f4f8' }, ticks: { font: { size: 11 } } },
+            y: { beginAtZero: false, grid: { color: '#f0f4f8' },
+                 ticks: { font: { size: 11 }, callback: v => isRate
+                   ? '.' + Math.round(v * 1000).toString().padStart(3, '0')
+                   : v.toFixed(1) } }
+          }
+        }
+      });
+    } finally {
+      loadingEl.style.display = 'none';
+    }
+  }
+
+  async function populateRunningSeasons() {
+    const seasons = await getAllSeasons();
+    const sel = document.getElementById('runningSeasonSel');
+    seasons.sort((a, b) => b.id.localeCompare(a.id)); // newest first
+    seasons.forEach(s => {
+      const year = s.year || s.id.split('-')[0];
+      const seas = s.season
+        ? (s.season.charAt(0).toUpperCase() + s.season.slice(1))
+        : (s.id.split('-')[1] || '').replace(/^\w/, c => c.toUpperCase());
+      const opt = document.createElement('option');
+      opt.value = s.id;
+      opt.textContent = `${year} ${seas}`;
+      if (s.id === '2026-summer') opt.selected = true;
+      sel.appendChild(opt);
+    });
+  }
+
   function getAllSeasonKeys() {
     const seen = new Set();
     allPlayers.forEach(p => {
@@ -999,9 +1183,13 @@
       r.ra  = p.ra;
     });
 
+    // Teams to exclude from trend charts
+    const EXCLUDED_TEAMS = ['Kings'];
+
     // Group by team name → season key → row
     const byTeam = {}; // teamName → { 'year-season': row }
     rows.forEach(r => {
+      if (EXCLUDED_TEAMS.includes(r.team)) return;
       const sk = `${r.year}-${r.season.toLowerCase()}`;
       if (!byTeam[r.team]) byTeam[r.team] = {};
       byTeam[r.team][sk] = r;
@@ -1094,6 +1282,7 @@
   }
 
   // Tab switching
+  let runningTabInitialized = false;
   document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
@@ -1102,10 +1291,20 @@
       const panel = document.getElementById(`tab-${btn.dataset.tab}`);
       if (panel) panel.classList.add('active');
       if (btn.dataset.tab === 'trends') renderTrends();
+      if (btn.dataset.tab === 'running') {
+        if (!runningTabInitialized) {
+          runningTabInitialized = true;
+          populateRunningSeasons().then(() => renderRunningAvg());
+        } else {
+          renderRunningAvg();
+        }
+      }
     });
   });
 
   document.getElementById('trendStatSel').addEventListener('change', renderTrends);
+  document.getElementById('runningSeasonSel').addEventListener('change', renderRunningAvg);
+  document.getElementById('runningStatSel').addEventListener('change', renderRunningAvg);
 </script>
 
 <!-- Share modal -->
