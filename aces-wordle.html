@@ -1130,6 +1130,22 @@ function shuffleWithSeed(array, seed) {
 // ============================================
 // PUZZLE GENERATION
 // ============================================
+
+async function getUsedAnswers() {
+  try {
+    const snapshot = await getDocs(collection(db, 'wordleDailyPuzzles'));
+    const used = new Set();
+    snapshot.forEach(d => {
+      const answer = d.data().answer;
+      if (answer) used.add(answer.toUpperCase());
+    });
+    console.log(`📚 ${used.size} previously used answers loaded`);
+    return used;
+  } catch (error) {
+    console.error('Error loading used answers:', error);
+    return new Set();
+  }
+}
 function buildLastNameData() {
   const lastNamePlayers = {};
   
@@ -1195,24 +1211,39 @@ function buildPuzzlePool() {
   console.log(`Total puzzle pool: ${allPuzzleWords.length} words (${validLastNames.length} names, ${softballWords.length} softball)`);
 }
 
-function generateDailyPuzzle() {
+function generateDailyPuzzle(usedAnswers = new Set()) {
   const dayNum = getDayNumber();
-  
-  // Use a FIXED seed so the pool order is always the same
-  // Then index by day number to cycle through without repeats
+
+  // Use a FIXED seed so the pool order is always deterministic
   const FIXED_SEED = 54321;
   const shuffled = shuffleWithSeed(allPuzzleWords, FIXED_SEED);
-  
-  // Day 1 = index 0, Day 2 = index 1, etc.
-  // Only cycles back after going through entire pool
-  const index = (dayNum - 1) % shuffled.length;
-  const selected = shuffled[index];
-  
+
+  // Starting from the day's natural index, walk forward until we find
+  // a word that hasn't been used in a previous puzzle.
+  const startIndex = (dayNum - 1) % shuffled.length;
+  let selected = null;
+  let skipped = 0;
+
+  for (let offset = 0; offset < shuffled.length; offset++) {
+    const candidate = shuffled[(startIndex + offset) % shuffled.length];
+    if (!usedAnswers.has(candidate.word.toUpperCase())) {
+      selected = candidate;
+      break;
+    }
+    skipped++;
+  }
+
+  if (!selected) {
+    // Every word has been used — just wrap to natural index (pool exhausted)
+    console.warn('⚠️ All words used — cycling from natural index');
+    selected = shuffled[startIndex];
+  } else if (skipped > 0) {
+    console.log(`⏭ Skipped ${skipped} already-used word(s); selected index ${(startIndex + skipped) % shuffled.length}`);
+  }
+
   if (selected.type === 'player') {
-    // Player name puzzle
     const players = selected.players;
     const playerNames = players.map(p => p.fullName);
-    
     return {
       dayNum,
       answer: selected.word,
@@ -1223,7 +1254,6 @@ function generateDailyPuzzle() {
       hint: null
     };
   } else {
-    // Softball word puzzle
     return {
       dayNum,
       answer: selected.word,
@@ -1293,17 +1323,19 @@ async function savePuzzleToFirebase(puzzle) {
 
 async function getOrCreateDailyPuzzle() {
   const dayNum = getDayNumber();
-  
-  // First, check if puzzle already exists in Firebase
+
+  // If today's puzzle is already locked in Firebase, use it
   const existingPuzzle = await loadPuzzleFromFirebase(dayNum);
   if (existingPuzzle) {
     return existingPuzzle;
   }
-  
-  // Generate new puzzle and save to Firebase
-  const newPuzzle = generateDailyPuzzle();
+
+  // New day — fetch all previously used answers so we don't repeat
+  const usedAnswers = await getUsedAnswers();
+
+  const newPuzzle = generateDailyPuzzle(usedAnswers);
   await savePuzzleToFirebase(newPuzzle);
-  
+
   return newPuzzle;
 }
 
