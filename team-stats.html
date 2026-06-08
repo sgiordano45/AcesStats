@@ -980,35 +980,68 @@
   async function loadRunningAvgData(seasonId) {
     if (runningDataCache[seasonId]) return runningDataCache[seasonId];
 
-    const q = query(collection(db, 'gameResults'), where('seasonId', '==', seasonId));
-    const snap = await getDocs(q);
+    // Find players who have stats in this season (avoids unnecessary reads)
+    const seasonPlayers = allPlayers.filter(p => p.id && p.seasons && p.seasons[seasonId]);
+    console.log(`🎯 Running avg: querying game docs for ${seasonPlayers.length} players in ${seasonId}`);
 
-    const byTeam = {};
-    snap.forEach(docSnap => {
-      const d = docSnap.data();
-      const stats = d.battingStats || [];
-      let hits = 0, runs = 0, walks = 0, ab = 0, doubles = 0, triples = 0, hr = 0, rbi = 0;
-      stats.forEach(p => {
-        hits    += Number(p.hits)     || 0;
-        runs    += Number(p.runs)     || 0;
-        walks   += Number(p.walks)    || 0;
-        ab      += Number(p.atBats)   || 0;
-        doubles += Number(p.doubles)  || 0;
-        triples += Number(p.triples)  || 0;
-        hr      += Number(p.homeRuns) || 0;
-        rbi     += Number(p.rbi)      || 0;
-      });
-      const ra = Number(d.finalScore?.opponent) || 0;
-      const teamId = (d.teamId || 'unknown').toLowerCase();
-      if (!byTeam[teamId]) byTeam[teamId] = [];
-      byTeam[teamId].push({
-        date: d.completedAt?.toMillis?.() || 0,
-        hits, runs, walks, ab, doubles, triples, hr, rbi, ra
+    // Batch Firestore reads — one per player for batting, one for pitching
+    const [battingSnaps, pitchingSnaps] = await Promise.all([
+      Promise.all(seasonPlayers.map(p =>
+        getDocs(query(collection(db, 'playerStats', p.id, 'games'), where('seasonId', '==', seasonId)))
+      )),
+      Promise.all(seasonPlayers.map(p =>
+        getDocs(query(collection(db, 'pitchingStats', p.id, 'games'), where('seasonId', '==', seasonId)))
+          .catch(() => ({ forEach: () => {} })) // pitching is optional — ignore missing docs
+      ))
+    ]);
+
+    // Accumulate by teamId → gameDocId
+    const byTeamGame = {};
+
+    battingSnaps.forEach(snap => {
+      snap.forEach(docSnap => {
+        const d = docSnap.data();
+        const teamId = (d.teamId || 'unknown').toLowerCase();
+        const gid = d.gameDocId || docSnap.id;
+        if (!byTeamGame[teamId]) byTeamGame[teamId] = {};
+        if (!byTeamGame[teamId][gid]) byTeamGame[teamId][gid] = {
+          date: d.gameDate?.toMillis?.() || 0,
+          hits:0, runs:0, walks:0, ab:0, doubles:0, triples:0, hr:0, rbi:0, ra:0
+        };
+        const g = byTeamGame[teamId][gid];
+        g.hits    += Number(d.hits)     || 0;
+        g.runs    += Number(d.runs)     || 0;
+        g.walks   += Number(d.walks)    || 0;
+        g.ab      += Number(d.atBats)   || 0;
+        g.doubles += Number(d.doubles)  || 0;
+        g.triples += Number(d.triples)  || 0;
+        g.hr      += Number(d.homeRuns) || 0;
+        g.rbi     += Number(d.rbi)      || 0;
       });
     });
 
-    // Sort each team's games chronologically
-    Object.values(byTeam).forEach(games => games.sort((a, b) => a.date - b.date));
+    pitchingSnaps.forEach(snap => {
+      snap.forEach(docSnap => {
+        const d = docSnap.data();
+        const teamId = (d.teamId || 'unknown').toLowerCase();
+        const gid = d.gameDocId || docSnap.id;
+        if (!byTeamGame[teamId]) byTeamGame[teamId] = {};
+        if (!byTeamGame[teamId][gid]) byTeamGame[teamId][gid] = {
+          date: d.gameDate?.toMillis?.() || 0,
+          hits:0, runs:0, walks:0, ab:0, doubles:0, triples:0, hr:0, rbi:0, ra:0
+        };
+        byTeamGame[teamId][gid].ra += Number(d.runsAllowed) || 0;
+      });
+    });
+
+    // Convert to sorted arrays; skip games with no at-bats recorded
+    const byTeam = {};
+    for (const [teamId, gameMap] of Object.entries(byTeamGame)) {
+      const games = Object.values(gameMap)
+        .filter(g => g.ab > 0)
+        .sort((a, b) => a.date - b.date);
+      if (games.length > 0) byTeam[teamId] = games;
+    }
 
     runningDataCache[seasonId] = byTeam;
     return byTeam;
