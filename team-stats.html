@@ -977,38 +977,52 @@
   let runningChart = null;
   const runningDataCache = {}; // seasonId → { teamId → games[] }
 
+  // Derive the playerStats doc ID for a player.
+  // aggregatedPlayerStats uses Firebase UID for auth users, but playerStats uses the
+  // name-derived legacyId (e.g. "stephen_giordano"). Must match to find game docs.
+  function playerStatsId(p) {
+    if (p.isAuthUser) {
+      return (p.name || '').toLowerCase().replace(/\./g, '').replace(/\s+/g, '_');
+    }
+    return p.id;
+  }
+
   async function loadRunningAvgData(seasonId) {
     if (runningDataCache[seasonId]) return runningDataCache[seasonId];
 
-    // Find players who have stats in this season (avoids unnecessary reads)
+    // ── Phase 1: playerStats sub-collections (PDF import + converted game tracker) ──
     const seasonPlayers = allPlayers.filter(p => p.id && p.seasons && p.seasons[seasonId]);
     console.log(`🎯 Running avg: querying game docs for ${seasonPlayers.length} players in ${seasonId}`);
 
-    // Batch Firestore reads — one per player for batting, one for pitching
     const [battingSnaps, pitchingSnaps] = await Promise.all([
       Promise.all(seasonPlayers.map(p =>
-        getDocs(query(collection(db, 'playerStats', p.id, 'games'), where('seasonId', '==', seasonId)))
+        getDocs(query(collection(db, 'playerStats', playerStatsId(p), 'games'), where('seasonId', '==', seasonId)))
+          .catch(() => ({ forEach: () => {} }))
       )),
       Promise.all(seasonPlayers.map(p =>
-        getDocs(query(collection(db, 'pitchingStats', p.id, 'games'), where('seasonId', '==', seasonId)))
-          .catch(() => ({ forEach: () => {} })) // pitching is optional — ignore missing docs
+        getDocs(query(collection(db, 'pitchingStats', playerStatsId(p), 'games'), where('seasonId', '==', seasonId)))
+          .catch(() => ({ forEach: () => {} }))
       ))
     ]);
 
-    // Accumulate by teamId → gameDocId
     const byTeamGame = {};
+
+    function ensureGame(teamId, gid, date) {
+      if (!byTeamGame[teamId]) byTeamGame[teamId] = {};
+      if (!byTeamGame[teamId][gid]) byTeamGame[teamId][gid] = {
+        date: date || 0, hits:0, runs:0, walks:0, ab:0, doubles:0, triples:0, hr:0, rbi:0, ra:0,
+        fromPlayerStats: false
+      };
+      return byTeamGame[teamId][gid];
+    }
 
     battingSnaps.forEach(snap => {
       snap.forEach(docSnap => {
         const d = docSnap.data();
         const teamId = (d.teamId || 'unknown').toLowerCase();
         const gid = d.gameDocId || docSnap.id;
-        if (!byTeamGame[teamId]) byTeamGame[teamId] = {};
-        if (!byTeamGame[teamId][gid]) byTeamGame[teamId][gid] = {
-          date: d.gameDate?.toMillis?.() || 0,
-          hits:0, runs:0, walks:0, ab:0, doubles:0, triples:0, hr:0, rbi:0, ra:0
-        };
-        const g = byTeamGame[teamId][gid];
+        const g = ensureGame(teamId, gid, d.gameDate?.toMillis?.() || 0);
+        g.fromPlayerStats = true;
         g.hits    += Number(d.hits)     || 0;
         g.runs    += Number(d.runs)     || 0;
         g.walks   += Number(d.walks)    || 0;
@@ -1025,16 +1039,46 @@
         const d = docSnap.data();
         const teamId = (d.teamId || 'unknown').toLowerCase();
         const gid = d.gameDocId || docSnap.id;
-        if (!byTeamGame[teamId]) byTeamGame[teamId] = {};
-        if (!byTeamGame[teamId][gid]) byTeamGame[teamId][gid] = {
-          date: d.gameDate?.toMillis?.() || 0,
-          hits:0, runs:0, walks:0, ab:0, doubles:0, triples:0, hr:0, rbi:0, ra:0
-        };
-        byTeamGame[teamId][gid].ra += Number(d.runsAllowed) || 0;
+        ensureGame(teamId, gid, d.gameDate?.toMillis?.() || 0).ra += Number(d.runsAllowed) || 0;
       });
     });
 
-    // Convert to sorted arrays; skip games with no at-bats recorded
+    // ── Phase 2: gameResults (unconverted game-tracker games not yet in playerStats) ──
+    const grSnap = await getDocs(
+      query(collection(db, 'gameResults'), where('seasonId', '==', seasonId))
+    ).catch(() => null);
+
+    if (grSnap) {
+      grSnap.forEach(docSnap => {
+        const d = docSnap.data();
+        const teamId = (d.teamId || 'unknown').toLowerCase();
+        // gameResults doc IDs are "{gameId}_{teamId}"; playerStats gameDocId is "{seasonId}_{gameId}"
+        const gid = d.gameId ? `${seasonId}_${d.gameId}` : docSnap.id;
+
+        // Only fill in if playerStats had nothing for this game (avoid double-counting)
+        if (byTeamGame[teamId]?.[gid]?.fromPlayerStats) return;
+
+        const stats = d.battingStats || [];
+        let hits=0, runs=0, walks=0, ab=0, doubles=0, triples=0, hr=0, rbi=0;
+        stats.forEach(p => {
+          hits    += Number(p.hits)     || 0;
+          runs    += Number(p.runs)     || 0;
+          walks   += Number(p.walks)    || 0;
+          ab      += Number(p.atBats)   || 0;
+          doubles += Number(p.doubles)  || 0;
+          triples += Number(p.triples)  || 0;
+          hr      += Number(p.homeRuns) || 0;
+          rbi     += Number(p.rbi)      || 0;
+        });
+        if (ab === 0) return; // skip games with no at-bats
+        const g = ensureGame(teamId, gid, d.completedAt?.toMillis?.() || 0);
+        g.hits = hits; g.runs = runs; g.walks = walks; g.ab = ab;
+        g.doubles = doubles; g.triples = triples; g.hr = hr; g.rbi = rbi;
+        g.ra = Number(d.finalScore?.opponent) || 0;
+      });
+    }
+
+    // ── Build sorted arrays per team ──
     const byTeam = {};
     for (const [teamId, gameMap] of Object.entries(byTeamGame)) {
       const games = Object.values(gameMap)
@@ -1043,6 +1087,7 @@
       if (games.length > 0) byTeam[teamId] = games;
     }
 
+    console.log(`🎯 Running avg loaded: ${Object.entries(byTeam).map(([t,g]) => `${t}:${g.length}`).join(', ')}`);
     runningDataCache[seasonId] = byTeam;
     return byTeam;
   }
