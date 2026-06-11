@@ -510,6 +510,9 @@
       <button class="tab-btn" onclick="switchTab('reconcile')">
         <span>⚖️</span> Season Stats Reconciliation
       </button>
+      <button class="tab-btn" onclick="switchTab('pitching')">
+        <span>⚾</span> Pitching Audit
+      </button>
     </div>
 
     <!-- ============================================
@@ -674,6 +677,79 @@
       </div>
     </div>
 
+    <!-- ============================================
+         TOOL 3 — MISSING PITCHING AUDIT
+         ============================================ -->
+    <div id="pitchingTab" class="tab-content">
+
+      <div id="pitchingMessage" class="message-box info-box">
+        Select a season and click "Scan for Missing Pitching" to find games where batting stats exist but no pitching stats were submitted.
+      </div>
+
+      <div class="section">
+        <div class="section-header green">
+          <span>⚾</span> Missing Pitching Stats Audit
+        </div>
+        <div class="section-content">
+          <div class="form-row">
+            <div class="form-group">
+              <label for="pitchingSeasonSelect">Season</label>
+              <select id="pitchingSeasonSelect">
+                <option value="">Loading seasons...</option>
+              </select>
+            </div>
+            <div class="form-group" style="display:flex;align-items:flex-end;">
+              <button class="btn btn-primary" onclick="runPitchingAudit()" id="runPitchingBtn">
+                🔍 Scan for Missing Pitching
+              </button>
+            </div>
+          </div>
+          <div id="pitchingProgress" class="progress-container">
+            <div class="progress-label" id="pitchingProgressLabel">Scanning...</div>
+            <div class="progress-bar"><div class="progress-fill" id="pitchingProgressFill"></div></div>
+          </div>
+        </div>
+      </div>
+
+      <div id="pitchingResultsSection" class="section" style="display:none;">
+        <div class="section-header">
+          <span>📋</span> Results — <span id="pitchingMissingCount">0</span> game(s) missing pitching stats
+        </div>
+        <div class="section-content">
+          <div class="summary-bar">
+            <div class="summary-item">
+              <div class="summary-dot dot-green"></div>
+              <span><span id="pitchingOkCount">0</span> games with pitching ✅</span>
+            </div>
+            <div class="summary-item">
+              <div class="summary-dot dot-red"></div>
+              <span><span id="pitchingBadCount">0</span> missing pitching ❌</span>
+            </div>
+          </div>
+          <label style="display:flex;align-items:center;gap:0.5rem;font-size:0.9rem;cursor:pointer;margin-bottom:1rem;margin-top:0.75rem;">
+            <input type="checkbox" id="pitchingShowMissingOnly" checked onchange="renderPitchingTable()" style="width:18px;height:18px;accent-color:var(--admin-color);">
+            Show missing pitching only
+          </label>
+          <div class="table-scroll-container">
+            <table class="data-table" id="pitchingTable">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Opponent</th>
+                  <th>Team</th>
+                  <th class="center">H/A</th>
+                  <th class="center">Batting</th>
+                  <th class="center">Pitching</th>
+                </tr>
+              </thead>
+              <tbody id="pitchingTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /pitchingTab -->
+
   </div><!-- /container -->
 </div><!-- /mainApp -->
 
@@ -748,6 +824,7 @@ async function loadSeasons() {
 
     document.getElementById('switcherSeasonSelect').innerHTML = options;
     document.getElementById('reconcileSeasonSelect').innerHTML = options;
+    document.getElementById('pitchingSeasonSelect').innerHTML = options;
   } catch (err) {
     console.error('Error loading seasons:', err);
   }
@@ -805,6 +882,9 @@ window.switchTab = function(tab) {
   if (tab === 'switcher') {
     document.querySelector('.tab-btn:nth-child(1)').classList.add('active');
     document.getElementById('switcherTab').classList.add('active');
+  } else if (tab === 'pitching') {
+    document.querySelector('.tab-btn:nth-child(3)').classList.add('active');
+    document.getElementById('pitchingTab').classList.add('active');
   } else {
     document.querySelector('.tab-btn:nth-child(2)').classList.add('active');
     document.getElementById('reconcileTab').classList.add('active');
@@ -1335,6 +1415,156 @@ window.fixSeasonDoc = async function(legacyId, seasonId, seasonDocId) {
 
 function showReconcileMessage(type, text) {
   const el = document.getElementById('reconcileMessage');
+  el.className = `message-box ${type === 'error' ? 'error-box' : type === 'warning' ? 'warning-box' : type === 'success' ? 'success-box' : 'info-box'}`;
+  el.textContent = text;
+}
+
+// ============================================
+// TOOL 3 — MISSING PITCHING AUDIT
+// ============================================
+let pitchingAuditResults = [];
+
+window.runPitchingAudit = async function() {
+  const seasonId = document.getElementById('pitchingSeasonSelect').value;
+  if (!seasonId) { showPitchingMessage('error', 'Please select a season.'); return; }
+
+  const btn = document.getElementById('runPitchingBtn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Scanning...';
+  pitchingAuditResults = [];
+  document.getElementById('pitchingResultsSection').style.display = 'none';
+
+  const progressContainer = document.getElementById('pitchingProgress');
+  const progressLabel = document.getElementById('pitchingProgressLabel');
+  const progressFill = document.getElementById('pitchingProgressFill');
+  progressContainer.classList.add('visible');
+
+  try {
+    showPitchingMessage('info', 'Discovering players...');
+    const players = await discoverPlayerIds();
+    const total = players.length;
+    let processed = 0;
+
+    // key = `${teamId}||${gameDocId}`
+    const battingGames = new Map();  // key → game metadata
+    const pitchingGames = new Set(); // keys that have at least one pitching doc
+
+    await processInBatches(players, 10, async (player) => {
+      try {
+        const [battingSnap, pitchingSnap] = await Promise.all([
+          getDocs(query(collection(db, 'playerStats',  player.legacyId, 'games'), where('seasonId', '==', seasonId))),
+          getDocs(query(collection(db, 'pitchingStats', player.legacyId, 'games'), where('seasonId', '==', seasonId)))
+            .catch(() => ({ forEach: () => {} }))
+        ]);
+
+        battingSnap.forEach(gd => {
+          const d = gd.data();
+          const teamId    = (d.teamId || 'unknown').toLowerCase();
+          const gameDocId = d.gameDocId || gd.id;
+          const key       = `${teamId}||${gameDocId}`;
+          if (!battingGames.has(key)) {
+            battingGames.set(key, {
+              teamId, gameDocId,
+              gameDateFormatted: d.gameDateFormatted || '',
+              opponent: d.opponent || '—',
+              isHome:   d.isHome || false,
+              dateMs:   d.gameDate?.toMillis?.() || 0
+            });
+          }
+        });
+
+        pitchingSnap.forEach(gd => {
+          const d = gd.data();
+          const teamId    = (d.teamId || 'unknown').toLowerCase();
+          const gameDocId = d.gameDocId || gd.id;
+          pitchingGames.add(`${teamId}||${gameDocId}`);
+        });
+
+      } catch (err) {
+        console.warn(`Error scanning ${player.legacyId}:`, err);
+      }
+
+      processed++;
+      progressFill.style.width = Math.round((processed / total) * 100) + '%';
+      progressLabel.textContent = `Scanning players… ${processed}/${total}`;
+    });
+
+    progressContainer.classList.remove('visible');
+
+    pitchingAuditResults = Array.from(battingGames.entries()).map(([key, info]) => ({
+      key, ...info,
+      hasBatting:  true,
+      hasPitching: pitchingGames.has(key)
+    }));
+
+    // Sort chronologically, then by team
+    pitchingAuditResults.sort((a, b) =>
+      a.dateMs !== b.dateMs ? a.dateMs - b.dateMs : a.teamId.localeCompare(b.teamId)
+    );
+
+    const missing = pitchingAuditResults.filter(r => !r.hasPitching).length;
+    const ok      = pitchingAuditResults.filter(r =>  r.hasPitching).length;
+
+    document.getElementById('pitchingMissingCount').textContent = missing;
+    document.getElementById('pitchingOkCount').textContent      = ok;
+    document.getElementById('pitchingBadCount').textContent     = missing;
+    document.getElementById('pitchingResultsSection').style.display = 'block';
+    renderPitchingTable();
+
+    showPitchingMessage(
+      missing === 0 ? 'success' : 'warning',
+      missing === 0
+        ? `✅ All ${ok} game(s) have pitching stats.`
+        : `Found ${missing} game(s) missing pitching stats out of ${pitchingAuditResults.length} total.`
+    );
+
+  } catch (err) {
+    console.error('Pitching audit error:', err);
+    progressContainer.classList.remove('visible');
+    showPitchingMessage('error', `Error: ${err.message}`);
+  }
+
+  btn.disabled = false;
+  btn.textContent = '🔍 Scan for Missing Pitching';
+};
+
+window.renderPitchingTable = function() {
+  const missingOnly = document.getElementById('pitchingShowMissingOnly').checked;
+  const tbody = document.getElementById('pitchingTableBody');
+  tbody.innerHTML = '';
+
+  const rows = missingOnly ? pitchingAuditResults.filter(r => !r.hasPitching) : pitchingAuditResults;
+
+  if (rows.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="6" class="center" style="color:var(--text-light);padding:2rem;">No games to show</td></tr>`;
+    return;
+  }
+
+  rows.forEach(r => {
+    const tr = document.createElement('tr');
+    if (!r.hasPitching) tr.style.background = 'rgba(239,68,68,0.06)';
+
+    const pitchBadge = r.hasPitching
+      ? `<span class="badge badge-match">✅ Yes</span>`
+      : `<span class="badge badge-mismatch">❌ Missing</span>`;
+    const homeAway = r.isHome
+      ? `<span style="color:var(--success-color);font-weight:600;">Home</span>`
+      : `<span style="color:var(--text-light);">Away</span>`;
+
+    tr.innerHTML = `
+      <td>${r.gameDateFormatted || '<em style="color:var(--text-light)">Unknown</em>'}</td>
+      <td><strong>${r.opponent}</strong></td>
+      <td>${r.teamId.charAt(0).toUpperCase() + r.teamId.slice(1)}</td>
+      <td class="center">${homeAway}</td>
+      <td class="center"><span class="badge badge-match">✅ Yes</span></td>
+      <td class="center">${pitchBadge}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+};
+
+function showPitchingMessage(type, text) {
+  const el = document.getElementById('pitchingMessage');
   el.className = `message-box ${type === 'error' ? 'error-box' : type === 'warning' ? 'warning-box' : type === 'success' ? 'success-box' : 'info-box'}`;
   el.textContent = text;
 }
