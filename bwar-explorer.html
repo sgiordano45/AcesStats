@@ -331,9 +331,10 @@
     (weighted on-base average, using configurable run values), compared to a replacement-level
     baseline (% of league average), scaled to runs and then converted to wins using the league's
     actual run environment.<br><br>
-    <strong>Full data</strong> — player has 2B/3B/HR tracked (game tracker or PDF import).<br>
-    <strong>Imputed</strong> — only H/AB/BB known; 2B/3B/HR estimated from league-average XBH rates.<br>
-    <strong>Simplified</strong> — all hits treated equally (flat weight); shown alongside for comparison.<br><br>
+    <strong>All players</strong> have AB, H, R, BB, and HR — HR always uses its real weight (wHR).<br>
+    <strong>Full data teams</strong> also have 2B and 3B tracked; those use exact weights.<br>
+    <strong>Imputed</strong> — 2B and 3B estimated from full-data teams' rates among non-HR hits.<br>
+    <strong>Simplified</strong> — non-HR hits (1B/2B/3B combined) use a flat weight; HR still real.<br><br>
     Adjust the sliders and click <strong>Recalculate</strong> (or it updates live). Save your preferred
     weights at end of season once you're happy with how the rankings look.
   </div>
@@ -446,10 +447,10 @@ const DEFAULTS = {
   w2B:    { val: 0.75, min: 0,   max: 2.0, step: 0.01, label: 'w2B  (double)',  fmt: v => v.toFixed(2) },
   w3B:    { val: 1.02, min: 0,   max: 2.5, step: 0.01, label: 'w3B  (triple)',  fmt: v => v.toFixed(2) },
   wHR:    { val: 1.40, min: 0,   max: 3.0, step: 0.01, label: 'wHR  (home run)',fmt: v => v.toFixed(2) },
-  wFlat:  { val: 0.55, min: 0,   max: 1.5, step: 0.01, label: 'Flat hit weight (simplified)', fmt: v => v.toFixed(2) },
+  wFlat:  { val: 0.70, min: 0,   max: 1.5, step: 0.01, label: 'Flat 1B/2B/3B weight (simplified)', fmt: v => v.toFixed(2) },
   replPct:{ val: 70,   min: 50,  max: 90,  step: 1,    label: 'Replacement level %',          fmt: v => v + '%' },
   minPA:  { val: 20,   min: 0,   max: 100, step: 5,    label: 'Min PA to qualify',             fmt: v => v + ' PA' },
-  rpwMul: { val: 1.0,  min: 0.3, max: 3.0, step: 0.1,  label: 'RPW multiplier  (× R/G)',      fmt: v => v.toFixed(1) + '×' },
+  rpwMul: { val: 0.5,  min: 0.3, max: 3.0, step: 0.1,  label: 'RPW multiplier  (× R/G)',      fmt: v => v.toFixed(1) + '×' },
 };
 
 // ─── Bootstrap ────────────────────────────────────────────────────────────────
@@ -593,62 +594,67 @@ window.recalc = function() {
   const leagueRPG = numGames > 0 ? totalRuns / numGames : 10;
   const RPW       = leagueRPG * w.rpwMul;
 
-  // ── Identify full-data vs imputed players ───────────────────────────────────
-  // Full hit type data is determined by which teams you've checked in the team selector
+  // ── Identify full-data (2B+3B known) vs partial-data players ──────────────────
+  // HR is real for ALL players. Full-data teams also have 2B and 3B.
+  // Non-full-data teams: HR is real, 2B and 3B are imputed from league rates.
   const fullDataTeams = getFullDataTeams();
   const enriched = rawPlayers.map(p => {
-    const hasHitType = fullDataTeams.has(p.team);
-    const ab  = Number(p.atBats)  || 0;
-    const h   = Number(p.hits)    || 0;
-    const bb  = Number(p.walks)   || 0;
-    const dbl = hasHitType ? (Number(p.doubles)  || 0) : null;
-    const tri = hasHitType ? (Number(p.triples)  || 0) : null;
-    const hr  = hasHitType ? (Number(p.homeRuns) || 0) : null;
+    const has2B3B = fullDataTeams.has(p.team);  // only these teams have 2B/3B
+    const ab  = Number(p.atBats)   || 0;
+    const h   = Number(p.hits)     || 0;
+    const bb  = Number(p.walks)    || 0;
+    const hr  = Number(p.homeRuns) || 0;  // REAL for all players
+    const dbl = has2B3B ? (Number(p.doubles) || 0) : null;
+    const tri = has2B3B ? (Number(p.triples) || 0) : null;
     const pa  = ab + bb;
-    return { ...p, ab, h, bb, dbl, tri, hr, pa, hasHitType };
+    return { ...p, ab, h, bb, hr, dbl, tri, pa, has2B3B };
   });
 
-  // ── Compute league XBH rates from full-data players ──────────────────────────
-  let fullH = 0, full2B = 0, full3B = 0, fullHR = 0;
+  // ── Compute 2B/3B rates from full-data players (as % of non-HR hits) ──────────
+  let fullNonHR = 0, full2B = 0, full3B = 0;
   enriched.forEach(p => {
-    if (p.hasHitType && p.h > 0) {
-      fullH  += p.h;
-      full2B += p.dbl;
-      full3B += p.tri;
-      fullHR += p.hr;
+    if (p.has2B3B && p.h > 0) {
+      const nonHR = Math.max(0, p.h - p.hr);
+      fullNonHR += nonHR;
+      full2B    += p.dbl;
+      full3B    += p.tri;
     }
   });
-  const rate2B = fullH > 0 ? full2B / fullH : 0.18;
-  const rate3B = fullH > 0 ? full3B / fullH : 0.04;
-  const rateHR = fullH > 0 ? fullHR / fullH : 0.06;
+  // Default rates if no full-data teams are checked
+  const rate2B = fullNonHR > 0 ? full2B / fullNonHR : 0.22;
+  const rate3B = fullNonHR > 0 ? full3B / fullNonHR : 0.05;
 
   // ── Per-player wOBA variants ──────────────────────────────────────────────────
   const withWOBA = enriched.map(p => {
-    if (p.pa === 0) return { ...p, woba: 0, wobaSimp: 0, dataType: 'full' };
+    if (p.pa === 0) return { ...p, woba: 0, wobaSimp: 0, dataType: 'full', d1b: 0, d2b: 0, d3b: 0, dhr: p.hr || 0 };
 
-    // Full (or imputed) wOBA
-    let d2b, d3b, dhr;
-    let dataType;
-    if (p.hasHitType) {
-      d2b = p.dbl; d3b = p.tri; dhr = p.hr;
+    const dhr = p.hr;  // Always real
+    const nonHR = Math.max(0, p.h - dhr);
+
+    let d2b, d3b, dataType;
+    if (p.has2B3B) {
+      d2b = p.dbl;
+      d3b = p.tri;
       dataType = 'full';
     } else {
-      d2b = Math.round(p.h * rate2B);
-      d3b = Math.round(p.h * rate3B);
-      dhr = Math.round(p.h * rateHR);
-      // Clamp so total XBH ≤ total H
-      const totalXBH = d2b + d3b + dhr;
-      if (totalXBH > p.h) {
-        const scale = p.h / totalXBH;
+      // Impute 2B and 3B from league rates of non-HR hits; HR stays real
+      d2b = Math.round(nonHR * rate2B);
+      d3b = Math.round(nonHR * rate3B);
+      // Clamp so 2B + 3B ≤ non-HR hits
+      if (d2b + d3b > nonHR) {
+        const scale = nonHR / (d2b + d3b);
         d2b = Math.round(d2b * scale);
         d3b = Math.round(d3b * scale);
-        dhr = Math.round(dhr * scale);
       }
       dataType = 'imputed';
     }
     const d1b = Math.max(0, p.h - d2b - d3b - dhr);
+
+    // Full/imputed wOBA: uses real HR + real or imputed 2B/3B
     const woba = (w.wBB * p.bb + w.w1B * d1b + w.w2B * d2b + w.w3B * d3b + w.wHR * dhr) / p.pa;
-    const wobaSimp = (w.wBB * p.bb + w.wFlat * p.h) / p.pa;
+
+    // Simplified wOBA: real HR gets wHR, all other hits get flat weight
+    const wobaSimp = (w.wBB * p.bb + w.wFlat * nonHR + w.wHR * dhr) / p.pa;
 
     return { ...p, d1b, d2b, d3b, dhr, woba, wobaSimp, dataType };
   });
@@ -690,9 +696,10 @@ window.recalc = function() {
   setText('ctxQual',  `${qualCount} / ${calcResults.length}`);
   const fullTeamNames = [...getFullDataTeams()].join(', ') || 'none selected';
   setText('dataNoteEl',
-    `${fullCount} players on full-data teams (${fullTeamNames}) · ` +
-    `${imputedCount} players imputed (league XBH rates: ` +
-    `${Math.round(rate2B*100)}% 2B / ${Math.round(rate3B*100)}% 3B / ${Math.round(rateHR*100)}% HR of hits)`
+    `HR is real for all players · ` +
+    `${fullCount} players on full-data teams (${fullTeamNames || 'none'}) have real 2B/3B · ` +
+    `${imputedCount} players have imputed 2B/3B ` +
+    `(${Math.round(rate2B*100)}% 2B / ${Math.round(rate3B*100)}% 3B of non-HR hits)`
   );
 
   setText('rpwInfo',
