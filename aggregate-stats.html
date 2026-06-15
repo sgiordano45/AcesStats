@@ -723,6 +723,50 @@
       </div>
     </div>
 
+    <!-- Section: bWAR Calculator -->
+    <div class="section">
+      <div class="section-header">
+        ⚾ bWAR Calculator (Simplified)
+      </div>
+      <div class="section-content">
+        <p>Computes simplified bWAR for each player in the selected season using calibrated run weights. Writes <code>bwarSimp</code> to each player's season record in <code>aggregatedPlayerStats</code>. Players below the minimum PA threshold are written as <code>0</code>. Run this after each aggregation pass.</p>
+        <p style="font-size: 0.82rem; color: #718096; margin-top: -0.5rem;">
+          <strong>Weights:</strong> wBB=0.30 · wFlat(1B/2B/3B)=0.70 · wHR=1.40 · Replacement=50% league avg · Min PA=20 · RPW=0.5×R/G
+        </p>
+
+        <div class="flex-row" style="margin-bottom: 1rem;">
+          <button id="bwarPreviewBtn" class="btn-secondary" onclick="runBWARCalculator(true)">
+            👁️ Preview bWAR
+          </button>
+          <button id="bwarWriteBtn" class="btn-warning" onclick="runBWARCalculator(false)">
+            💾 Write bWAR to Firestore
+          </button>
+          <button onclick="clearOutput()" class="btn-secondary">
+            Clear Output
+          </button>
+        </div>
+
+        <div class="stats" id="bwarStatsDisplay" style="display: none;">
+          <div class="stat-card">
+            <div class="stat-number" id="bwarPlayersCalc">0</div>
+            <div class="stat-label">Players Calculated</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-number green" id="bwarQualified">0</div>
+            <div class="stat-label">Qualified (≥20 PA)</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-number blue" id="bwarWritten">0</div>
+            <div class="stat-label">Written</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-number orange" id="bwarLeagueAvgDisplay">—</div>
+            <div class="stat-label">League avg wOBA</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Section: Cross-Season Hit Streak Calculator -->
     <div class="section">
       <div class="section-header">
@@ -2271,6 +2315,187 @@
     } finally {
       btn.disabled = false;
       btn.textContent = '🎮 Aggregate Season';
+    }
+  };
+
+  // ============================================
+  // bWAR CALCULATOR
+  // ============================================
+
+  window.runBWARCalculator = async function(previewOnly = true) {
+    const seasonId = document.getElementById('seasonSelect').value;
+    if (!seasonId) { alert('Please select a season first'); return; }
+
+    const previewBtn = document.getElementById('bwarPreviewBtn');
+    const writeBtn   = document.getElementById('bwarWriteBtn');
+    previewBtn.disabled = true;
+    writeBtn.disabled   = true;
+
+    const statsDiv = document.getElementById('bwarStatsDisplay');
+    statsDiv.style.display = 'grid';
+
+    log('═══════════════════════════════════════', 'header');
+    log(`bWAR Calculator — ${seasonId} ${previewOnly ? '(PREVIEW)' : '(WRITE)'}`, 'header');
+    log('═══════════════════════════════════════', 'header');
+
+    // ── Calibrated weights ────────────────────────────────────────────────────
+    const W = {
+      wBB:     0.30,
+      wFlat:   0.70,   // flat weight for 1B/2B/3B (non-HR hits)
+      wHR:     1.40,
+      replPct: 50,     // replacement level as % of league avg wOBA
+      minPA:   20,
+      rpwMul:  0.5,    // RPW = R/G × rpwMul
+    };
+
+    log(`Weights: wBB=${W.wBB} wFlat=${W.wFlat} wHR=${W.wHR} | Replacement=${W.replPct}% | Min PA=${W.minPA} | RPW=${W.rpwMul}×R/G`);
+
+    try {
+      // ── Step 1: Load all season player stats ────────────────────────────────
+      log('');
+      log('Step 1: Loading player stats...', 'game');
+      const statsSnap = await window.getDocs(window.collection(window.db, 'aggregatedPlayerStats'));
+      const players = [];
+      statsSnap.forEach(docSnap => {
+        const data = docSnap.data();
+        if (data.migrated) return;
+        const matchingKeys = Object.keys(data.seasons || {}).filter(k => k.startsWith(seasonId));
+        if (!matchingKeys.length) return;
+        const seasonKey = matchingKeys[0];
+        const s = data.seasons[seasonKey];
+        const ab = Number(s.atBats) || 0;
+        const bb = Number(s.walks)  || 0;
+        const pa = ab + bb;
+        if (pa === 0) return;
+        players.push({
+          docId:     docSnap.id,
+          seasonKey,
+          name:      data.name || data.linkedPlayer || docSnap.id,
+          team:      s.team || '',
+          pa,
+          h:         Number(s.hits)     || 0,
+          bb,
+          hr:        Number(s.homeRuns) || 0,
+        });
+      });
+      log(`  Found ${players.length} players with PA > 0 for ${seasonId}`, 'success');
+
+      // ── Step 2: Load completed game scores for R/G ──────────────────────────
+      log('Step 2: Loading completed games for run environment...', 'game');
+      const gamesSnap = await window.getDocs(
+        window.query(
+          window.collection(window.db, 'seasons', seasonId, 'games'),
+          window.where('status', '==', 'completed')
+        )
+      );
+      let totalRuns = 0, numGames = 0;
+      gamesSnap.forEach(g => {
+        const d = g.data();
+        const hasWinner = d.winner && d.winner.trim() !== '';
+        const hs = Number(d.homeScore ?? d['home score'] ?? 0) || 0;
+        const as = Number(d.awayScore ?? d['away score'] ?? 0) || 0;
+        if (hasWinner || hs > 0 || as > 0) {
+          totalRuns += hs + as;
+          numGames++;
+        }
+      });
+
+      // Fallback: if status filter finds nothing, try fetching all and filtering
+      if (numGames === 0) {
+        log('  No completed status games found, fetching all and filtering...', 'info');
+        const allGamesSnap = await window.getDocs(
+          window.collection(window.db, 'seasons', seasonId, 'games')
+        );
+        allGamesSnap.forEach(g => {
+          const d = g.data();
+          const hs = Number(d.homeScore ?? d['home score'] ?? 0) || 0;
+          const as = Number(d.awayScore ?? d['away score'] ?? 0) || 0;
+          if (d.winner && d.winner.trim() !== '') {
+            totalRuns += hs + as;
+            numGames++;
+          }
+        });
+      }
+
+      const leagueRPG = numGames > 0 ? totalRuns / numGames : 14;
+      const RPW = leagueRPG * W.rpwMul;
+      log(`  ${numGames} completed games · ${totalRuns} total runs · ${leagueRPG.toFixed(1)} R/G · RPW=${RPW.toFixed(1)}`, 'success');
+
+      // ── Step 3: Compute wOBA per player ─────────────────────────────────────
+      log('Step 3: Computing wOBA and bWAR...', 'game');
+      const withWOBA = players.map(p => {
+        const nonHR = Math.max(0, p.h - p.hr);
+        const woba = (W.wBB * p.bb + W.wFlat * nonHR + W.wHR * p.hr) / p.pa;
+        return { ...p, woba };
+      });
+
+      // PA-weighted league average
+      const totalPA     = withWOBA.reduce((s, p) => s + p.pa, 0);
+      const leagueWOBA  = totalPA > 0
+        ? withWOBA.reduce((s, p) => s + p.woba * p.pa, 0) / totalPA : 0;
+      const replWOBA    = leagueWOBA * (W.replPct / 100);
+
+      log(`  League avg wOBA: ${leagueWOBA.toFixed(3)} · Replacement: ${replWOBA.toFixed(3)}`);
+
+      // ── Step 4: Compute final bWAR ───────────────────────────────────────────
+      const results = withWOBA.map(p => {
+        const rar     = (p.woba - replWOBA) * p.pa;
+        const bwarRaw = RPW > 0 ? rar / RPW : 0;
+        const bwarSimp = p.pa >= W.minPA ? Math.max(0, bwarRaw) : 0;
+        return { ...p, bwarSimp };
+      });
+
+      const qualified = results.filter(p => p.pa >= W.minPA);
+      const topPlayer = [...results].sort((a, b) => b.bwarSimp - a.bwarSimp)[0];
+
+      log(`  ${qualified.length} qualified players (≥${W.minPA} PA) · Top: ${topPlayer?.name} ${topPlayer?.bwarSimp?.toFixed(2)}`);
+
+      // Update stat cards
+      document.getElementById('bwarPlayersCalc').textContent  = results.length;
+      document.getElementById('bwarQualified').textContent    = qualified.length;
+      document.getElementById('bwarLeagueAvgDisplay').textContent = leagueWOBA.toFixed(3);
+
+      // ── Step 5: Preview or Write ─────────────────────────────────────────────
+      if (previewOnly) {
+        log('');
+        log('── Preview (top 20 by bWAR) ──', 'header');
+        [...results]
+          .sort((a, b) => b.bwarSimp - a.bwarSimp)
+          .slice(0, 20)
+          .forEach((p, i) => {
+            const qual = p.pa >= W.minPA ? '' : ' ⚠️ unqualified';
+            log(`  ${String(i+1).padStart(2)}. ${p.name} (${p.team}) — PA:${p.pa} H:${p.h} HR:${p.hr} BB:${p.bb} | wOBA:${p.woba.toFixed(3)} → bWAR:${p.bwarSimp.toFixed(2)}${qual}`, 'success');
+          });
+        log('');
+        log('Preview complete — no data written.', 'success');
+        document.getElementById('bwarWritten').textContent = '—';
+      } else {
+        log('');
+        log('Step 5: Writing bWAR to Firestore...', 'game');
+        let writtenCount = 0;
+        for (const p of results) {
+          try {
+            const docRef = window.doc(window.db, getAggregatedCollection(), p.docId);
+            await window.setDoc(docRef, {
+              seasons: { [p.seasonKey]: { bwarSimp: p.bwarSimp } }
+            }, { merge: true });
+            writtenCount++;
+          } catch (err) {
+            log(`  ✗ Error writing ${p.name}: ${err.message}`, 'error');
+          }
+        }
+        document.getElementById('bwarWritten').textContent = writtenCount;
+        log(`  ✓ Written bWAR for ${writtenCount} players`, 'success');
+        log('');
+        log('bWAR write complete.', 'success');
+      }
+
+    } catch (err) {
+      log(`✗ bWAR calculator error: ${err.message}`, 'error');
+      console.error(err);
+    } finally {
+      previewBtn.disabled = false;
+      writeBtn.disabled   = false;
     }
   };
 
