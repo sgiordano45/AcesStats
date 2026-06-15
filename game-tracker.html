@@ -2059,6 +2059,21 @@ useEffect(() => {
                 }
             };
 
+            const adjustInning = async (delta) => {
+                const currentInning = gameMetadata?.inning || gameState.inning;
+                const newInning = Math.max(1, currentInning + delta);
+                if (newInning === currentInning) return;
+                setGameState(prev => ({ ...prev, inning: newInning }));
+                try {
+                    await window.FirebaseGameTracker.updateGameMetadata(selectedGame.seasonId, selectedGame.id, {
+                        inning: newInning
+                    });
+                    console.log(`✅ Inning adjusted to ${newInning}`);
+                } catch (error) {
+                    console.error('Error adjusting inning:', error);
+                }
+            };
+
             const advanceToNextHalfInning = async () => {
                 const newState = { ...gameState };
                 newState.outs = 0;
@@ -3905,8 +3920,23 @@ const ViewerOnlyMessage = () => {
                     <div className="text-white p-5 rounded-xl mb-5 grid grid-cols-4 gap-4 text-center" style={{ background: 'linear-gradient(135deg, #2d5016 0%, #1a6b4a 100%)' }}>
                         <div>
                             <div className="text-sm opacity-90">Inning</div>
-                            <div className="text-2xl font-bold">
+                            <div className="text-2xl font-bold flex items-center justify-center gap-1">
+                                {userCanTrack && (
+                                    <button
+                                        onClick={() => adjustInning(-1)}
+                                        disabled={(gameMetadata?.inning || gameState.inning) <= 1}
+                                        className="w-7 h-7 rounded-full bg-white/20 hover:bg-white/30 disabled:opacity-30 disabled:cursor-not-allowed text-base font-bold"
+                                        title="Decrease inning"
+                                    >−</button>
+                                )}
                                 {(isHome && !gameState.isYourTeamBatting) || (!isHome && gameState.isYourTeamBatting) ? '▲' : '▼'} {gameMetadata?.inning || gameState.inning}
+                                {userCanTrack && (
+                                    <button
+                                        onClick={() => adjustInning(1)}
+                                        className="w-7 h-7 rounded-full bg-white/20 hover:bg-white/30 text-base font-bold"
+                                        title="Increase inning"
+                                    >+</button>
+                                )}
                             </div>
                             <div className="text-xs opacity-75 mt-1">
                                 {gameState.isYourTeamBatting ? `${selectedTeam} Batting` : `${opponentName} Batting`}
