@@ -723,6 +723,54 @@
       </div>
     </div>
 
+    <!-- Section: Merge Player Records -->
+    <div class="section">
+      <div class="section-header">
+        🔀 Merge Player Records
+      </div>
+      <div class="section-content">
+        <p>Copies all <code>playerStats/{sourceId}/games/*</code> and <code>playerStats/{sourceId}/seasons/*</code> documents into the target player, then marks the source <code>aggregatedPlayerStats</code> document as <code>migrated: true</code> so it is skipped by all aggregation and display logic. Source docs are <strong>not deleted</strong> — verify the merge looks correct, then remove them manually in the Firestore console.</p>
+
+        <div class="flex-row" style="margin-bottom: 1rem; align-items: flex-end; gap: 1rem;">
+          <div style="flex: 1;">
+            <label style="display:block; font-size:0.8rem; font-weight:600; color:#718096; margin-bottom:0.3rem;">SOURCE player ID (to retire)</label>
+            <input id="mergeSourceId" type="text" placeholder="e.g. tim_o'grady" style="width:100%; padding:0.5rem 0.75rem; border:1px solid #e2e8f0; border-radius:6px; font-size:0.9rem; font-family:monospace;">
+          </div>
+          <div style="flex: 1;">
+            <label style="display:block; font-size:0.8rem; font-weight:600; color:#718096; margin-bottom:0.3rem;">TARGET player ID (canonical)</label>
+            <input id="mergeTargetId" type="text" placeholder="e.g. tim_ogrady" style="width:100%; padding:0.5rem 0.75rem; border:1px solid #e2e8f0; border-radius:6px; font-size:0.9rem; font-family:monospace;">
+          </div>
+        </div>
+
+        <div class="flex-row" style="margin-bottom: 1rem;">
+          <button class="btn-secondary" onclick="runMergePlayer(true)">
+            👁️ Preview Merge
+          </button>
+          <button class="btn-warning" onclick="runMergePlayer(false)">
+            🔀 Execute Merge
+          </button>
+          <button onclick="clearOutput()" class="btn-secondary">
+            Clear Output
+          </button>
+        </div>
+
+        <div class="stats" id="mergeStatsDisplay" style="display: none;">
+          <div class="stat-card">
+            <div class="stat-number" id="mergeGamesCopied">0</div>
+            <div class="stat-label">Games Copied</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-number green" id="mergeSeasonsCopied">0</div>
+            <div class="stat-label">Seasons Copied</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-number blue" id="mergeAggMarked">—</div>
+            <div class="stat-label">Agg Doc Marked</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Section: bWAR Calculator -->
     <div class="section">
       <div class="section-header">
@@ -1186,7 +1234,7 @@
       let playerName;
       
       if (data.isAuthUser && data.linkedPlayer) {
-        legacyId = data.linkedPlayer.toLowerCase().replace(/\./g, '').replace(/\s+/g, '_');
+        legacyId = data.linkedPlayer.toLowerCase().replace(/\./g, '').replace(/'/g, '').replace(/\s+/g, '_');
         playerName = data.linkedPlayer;
       } else {
         legacyId = docSnap.id;
@@ -1472,7 +1520,7 @@
         let legacyId;
         if (data.isAuthUser && data.linkedPlayer) {
           // Auth user - derive legacyId from linkedPlayer name
-          legacyId = data.linkedPlayer.toLowerCase().replace(/\./g, '').replace(/\s+/g, '_');
+          legacyId = data.linkedPlayer.toLowerCase().replace(/\./g, '').replace(/'/g, '').replace(/\s+/g, '_');
         } else {
           // Legacy user - doc ID is the legacyId
           legacyId = docSnap.id;
@@ -1698,7 +1746,7 @@
         
         if (data.isAuthUser && data.linkedPlayer) {
           // Auth user - derive legacyId from linkedPlayer name
-          legacyId = data.linkedPlayer.toLowerCase().replace(/\./g, '').replace(/\s+/g, '_');
+          legacyId = data.linkedPlayer.toLowerCase().replace(/\./g, '').replace(/'/g, '').replace(/\s+/g, '_');
           log(`  Auth user: ${data.linkedPlayer} (${legacyId}) → docId: ${docId}`);
         } else {
           // Legacy user - doc ID is the legacyId
@@ -2319,6 +2367,126 @@
   };
 
   // ============================================
+  // MERGE PLAYER RECORDS
+  // ============================================
+
+  window.runMergePlayer = async function(previewOnly = true) {
+    const sourceId = document.getElementById('mergeSourceId').value.trim();
+    const targetId = document.getElementById('mergeTargetId').value.trim();
+    if (!sourceId || !targetId) { alert('Enter both source and target player IDs'); return; }
+    if (sourceId === targetId) { alert('Source and target cannot be the same'); return; }
+
+    log('═══════════════════════════════════════', 'header');
+    log(`Merge Player Records — ${previewOnly ? 'PREVIEW' : 'EXECUTE'}`, 'header');
+    log(`  Source (retire): ${sourceId}`, 'header');
+    log(`  Target (keep):   ${targetId}`, 'header');
+    log('═══════════════════════════════════════', 'header');
+
+    const statsDiv = document.getElementById('mergeStatsDisplay');
+    statsDiv.style.display = 'grid';
+
+    try {
+      // ── Games ───────────────────────────────────────────────────────────────
+      log('');
+      log('Step 1: Scanning source games...', 'game');
+      const sourceGamesRef = window.collection(window.db, 'playerStats', sourceId, 'games');
+      const sourceGamesSnap = await window.getDocs(sourceGamesRef);
+      log(`  Found ${sourceGamesSnap.size} game documents under playerStats/${sourceId}/games`);
+
+      const targetGamesRef = window.collection(window.db, 'playerStats', targetId, 'games');
+      const targetGamesSnap = await window.getDocs(targetGamesRef);
+      const targetGameIds = new Set(targetGamesSnap.docs.map(d => d.id));
+      log(`  Target already has ${targetGamesSnap.size} game documents`);
+
+      let gamesCopied = 0;
+      let gamesSkipped = 0;
+      for (const gameDoc of sourceGamesSnap.docs) {
+        if (targetGameIds.has(gameDoc.id)) {
+          log(`  ⚠️  Game ${gameDoc.id} already exists in target — skipping (target wins)`, 'warning');
+          gamesSkipped++;
+        } else {
+          if (!previewOnly) {
+            await window.setDoc(
+              window.doc(window.db, 'playerStats', targetId, 'games', gameDoc.id),
+              gameDoc.data()
+            );
+          } else {
+            log(`  → Would copy game ${gameDoc.id}`);
+          }
+          gamesCopied++;
+        }
+      }
+      log(`  Games to copy: ${gamesCopied} | Already in target (skipped): ${gamesSkipped}`, 'success');
+      document.getElementById('mergeGamesCopied').textContent = gamesCopied;
+
+      // ── Seasons ─────────────────────────────────────────────────────────────
+      log('');
+      log('Step 2: Scanning source seasons...', 'game');
+      const sourceSeasonsRef = window.collection(window.db, 'playerStats', sourceId, 'seasons');
+      const sourceSeasonsSnap = await window.getDocs(sourceSeasonsRef);
+      log(`  Found ${sourceSeasonsSnap.size} season documents under playerStats/${sourceId}/seasons`);
+
+      const targetSeasonsRef = window.collection(window.db, 'playerStats', targetId, 'seasons');
+      const targetSeasonsSnap = await window.getDocs(targetSeasonsRef);
+      const targetSeasonIds = new Set(targetSeasonsSnap.docs.map(d => d.id));
+      log(`  Target already has ${targetSeasonsSnap.size} season documents`);
+
+      let seasonsCopied = 0;
+      let seasonsSkipped = 0;
+      for (const seasonDoc of sourceSeasonsSnap.docs) {
+        if (targetSeasonIds.has(seasonDoc.id)) {
+          log(`  ⚠️  Season ${seasonDoc.id} already exists in target — skipping (target wins)`, 'warning');
+          seasonsSkipped++;
+        } else {
+          if (!previewOnly) {
+            await window.setDoc(
+              window.doc(window.db, 'playerStats', targetId, 'seasons', seasonDoc.id),
+              seasonDoc.data()
+            );
+          } else {
+            log(`  → Would copy season ${seasonDoc.id}`);
+          }
+          seasonsCopied++;
+        }
+      }
+      log(`  Seasons to copy: ${seasonsCopied} | Already in target (skipped): ${seasonsSkipped}`, 'success');
+      document.getElementById('mergeSeasonsCopied').textContent = seasonsCopied;
+
+      // ── Mark aggregatedPlayerStats source as migrated ─────────────────────
+      log('');
+      log('Step 3: aggregatedPlayerStats source doc...', 'game');
+      const aggSourceRef = window.doc(window.db, 'aggregatedPlayerStats', sourceId);
+      const aggSourceSnap = await window.getDoc(aggSourceRef);
+      if (aggSourceSnap.exists()) {
+        log(`  Found aggregatedPlayerStats/${sourceId}`);
+        if (!previewOnly) {
+          await window.setDoc(aggSourceRef, { migrated: true }, { merge: true });
+          log(`  ✅ Marked migrated: true`, 'success');
+        } else {
+          log(`  → Would set migrated: true on aggregatedPlayerStats/${sourceId}`);
+        }
+        document.getElementById('mergeAggMarked').textContent = previewOnly ? 'Preview' : '✅';
+      } else {
+        log(`  ℹ️  No aggregatedPlayerStats/${sourceId} doc found (may be under a different ID)`, 'warning');
+        document.getElementById('mergeAggMarked').textContent = 'N/A';
+      }
+
+      log('');
+      if (previewOnly) {
+        log('Preview complete — no data written. Review above then click Execute Merge.', 'success');
+      } else {
+        log(`✅ Merge complete! ${gamesCopied} games + ${seasonsCopied} seasons copied to ${targetId}.`, 'success');
+        log(`   Source docs at playerStats/${sourceId}/ are NOT deleted — remove them manually once you've verified.`, 'warning');
+        log(`   Re-run the main aggregator to rebuild ${targetId}'s season totals from the merged game history.`, 'success');
+      }
+
+    } catch (err) {
+      log(`❌ Error during merge: ${err.message}`, 'error');
+      console.error(err);
+    }
+  };
+
+  // ============================================
   // bWAR CALCULATOR
   // ============================================
 
@@ -2543,7 +2711,7 @@
         const docId = docSnap.id;
         let legacyId;
         if (data.isAuthUser && data.linkedPlayer) {
-          legacyId = data.linkedPlayer.toLowerCase().replace(/\./g, '').replace(/\s+/g, '_');
+          legacyId = data.linkedPlayer.toLowerCase().replace(/\./g, '').replace(/'/g, '').replace(/\s+/g, '_');
         } else {
           legacyId = docId;
         }
