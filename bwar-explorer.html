@@ -232,6 +232,41 @@
     margin-top: 0.5rem;
   }
 
+  .controls-section-title {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--admin);
+    margin: 1.25rem 0 0.5rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border);
+  }
+  .controls-hint {
+    font-size: 0.78rem;
+    color: var(--muted);
+    margin: 0 0 0.75rem;
+    line-height: 1.5;
+  }
+  .team-selector { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+  .team-check {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.4rem 0.85rem;
+    border: 1.5px solid var(--border);
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.82rem;
+    font-weight: 500;
+    user-select: none;
+    transition: all 0.15s;
+    background: white;
+  }
+  .team-check:hover { border-color: var(--admin); }
+  .team-check input { accent-color: var(--admin); cursor: pointer; }
+  .team-check.selected { border-color: var(--admin); background: #f5f3ff; color: var(--admin); }
+
   .section-title {
     font-size: 0.7rem;
     font-weight: 700;
@@ -347,7 +382,16 @@
   <div id="controlsCard" class="card hidden">
     <h2>🎛️ Weight Controls</h2>
     <div class="controls-grid" id="sliderGrid"></div>
-    <div class="controls-footer">
+    <div class="controls-section-title">📋 Teams with Full Hit Type Data</div>
+    <p class="controls-hint">
+      Check teams whose 2B/3B/HR were actually tracked (game tracker or PDF import with hit types).
+      Unchecked teams will have XBH imputed from league-average rates.
+    </p>
+    <div class="team-selector" id="teamSelector">
+      <span style="color:var(--muted);font-size:0.8rem;">Load a season to see teams</span>
+    </div>
+
+    <div class="controls-footer" style="margin-top:1.25rem;">
       <button class="btn btn-ghost" onclick="resetWeights()">Reset to Defaults</button>
       <button class="btn btn-primary" onclick="recalc()">Recalculate</button>
       <label>
@@ -498,6 +542,10 @@ window.loadData = async function() {
 
     rawPlayers = players.filter(p => (p.games || 0) > 0 && (p.atBats || 0) > 0);
 
+    // Build team selector from loaded player data
+    const teams = [...new Set(rawPlayers.map(p => p.team).filter(Boolean))].sort();
+    buildTeamSelector(teams);
+
     hideStatus();
     show('controlsCard');
     recalc();
@@ -507,6 +555,32 @@ window.loadData = async function() {
     console.error(e);
   }
 };
+
+// ─── Team Selector ────────────────────────────────────────────────────────────
+function buildTeamSelector(teams) {
+  const container = document.getElementById('teamSelector');
+  if (!teams.length) {
+    container.innerHTML = '<span style="color:var(--muted);font-size:0.8rem;">No teams found</span>';
+    return;
+  }
+  container.innerHTML = teams.map(t => `
+    <label class="team-check" id="teamLabel_${CSS.escape(t)}">
+      <input type="checkbox" value="${t}"
+        onchange="toggleTeamLabel('${t}', this.checked); if(document.getElementById('autoRecalc').checked) recalc();">
+      <span>${t}</span>
+    </label>
+  `).join('');
+}
+
+window.toggleTeamLabel = function(team, checked) {
+  const label = document.getElementById(`teamLabel_${CSS.escape(team)}`);
+  if (label) label.classList.toggle('selected', checked);
+};
+
+function getFullDataTeams() {
+  const checked = document.querySelectorAll('#teamSelector input:checked');
+  return new Set([...checked].map(el => el.value));
+}
 
 // ─── Core Calculation ─────────────────────────────────────────────────────────
 window.recalc = function() {
@@ -520,9 +594,10 @@ window.recalc = function() {
   const RPW       = leagueRPG * w.rpwMul;
 
   // ── Identify full-data vs imputed players ───────────────────────────────────
-  // A player has full hit-type data if any of doubles/triples/homeRuns is defined
+  // Full hit type data is determined by which teams you've checked in the team selector
+  const fullDataTeams = getFullDataTeams();
   const enriched = rawPlayers.map(p => {
-    const hasHitType = p.doubles !== undefined || p.triples !== undefined || p.homeRuns !== undefined;
+    const hasHitType = fullDataTeams.has(p.team);
     const ab  = Number(p.atBats)  || 0;
     const h   = Number(p.hits)    || 0;
     const bb  = Number(p.walks)   || 0;
@@ -613,10 +688,11 @@ window.recalc = function() {
   setText('ctxRepl',  replWOBA.toFixed(3));
   setText('ctxRPW',   RPW.toFixed(1));
   setText('ctxQual',  `${qualCount} / ${calcResults.length}`);
+  const fullTeamNames = [...getFullDataTeams()].join(', ') || 'none selected';
   setText('dataNoteEl',
-    `${fullCount} players with full hit-type data · ` +
-    `${imputedCount} players with imputed 2B/3B/HR (league rates: ` +
-    `.${Math.round(rate2B*100)}% 2B / .${Math.round(rate3B*100)}% 3B / .${Math.round(rateHR*100)}% HR of hits)`
+    `${fullCount} players on full-data teams (${fullTeamNames}) · ` +
+    `${imputedCount} players imputed (league XBH rates: ` +
+    `${Math.round(rate2B*100)}% 2B / ${Math.round(rate3B*100)}% 3B / ${Math.round(rateHR*100)}% HR of hits)`
   );
 
   setText('rpwInfo',
