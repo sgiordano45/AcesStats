@@ -133,19 +133,15 @@
   <h3 style="margin-top:0">🔀 Opponent Name Split Fix</h3>
   <p style="font-size:0.85rem;color:#718096;margin-top:0">
     Scans <code>aggregatedPlayerStats</code> for a bad <code>vsOpponent</code> key (e.g. "Aces Silver")
-    and merges those stats into the canonical opponent name (e.g. "Silver"), then removes the bad key.
-    Checks both <code>career.vsOpponent</code> and <code>seasons[*].vsOpponent</code>.
+    and <strong>deletes</strong> it from both <code>career.vsOpponent</code> and <code>seasons[*].vsOpponent</code>.
+    Use this after re-aggregating with the corrected opponent name — the correct split already has accurate
+    stats, and the bad key is a stale orphan that would cause double-counting.
   </p>
 
   <div style="display:flex;gap:0.75rem;flex-wrap:wrap;align-items:flex-end;margin-bottom:1rem;">
     <div>
-      <label style="font-size:0.82rem;font-weight:600;color:#4a5568;display:block;margin-bottom:0.25rem">Bad Opponent Name</label>
+      <label style="font-size:0.82rem;font-weight:600;color:#4a5568;display:block;margin-bottom:0.25rem">Bad Opponent Name to Delete</label>
       <input id="splitBadName" type="text" value="Aces Silver"
-        style="padding:0.4rem 0.75rem;border:1px solid #cbd5e0;border-radius:6px;font-size:0.9rem;width:180px">
-    </div>
-    <div>
-      <label style="font-size:0.82rem;font-weight:600;color:#4a5568;display:block;margin-bottom:0.25rem">Canonical Name (merge into)</label>
-      <input id="splitCanonName" type="text" value="Silver"
         style="padding:0.4rem 0.75rem;border:1px solid #cbd5e0;border-radius:6px;font-size:0.9rem;width:180px">
     </div>
   </div>
@@ -158,24 +154,22 @@
   </div>
 
   <button class="btn btn-primary" id="splitScanBtn" onclick="runSplitScan()">🔍 Scan for Bad Splits</button>
-  <button class="btn btn-danger"  id="splitFixBtn"  onclick="runSplitFix()" disabled>⚡ Merge & Fix All</button>
+  <button class="btn btn-danger"  id="splitFixBtn"  onclick="runSplitFix()" disabled>🗑️ Delete Bad Splits</button>
   <button class="btn btn-secondary" onclick="clearLog()">Clear Log</button>
 </div>
 
 <div class="card" id="splitPreviewCard" style="display:none">
-  <h3 style="margin-top:0">Preview — splits to merge</h3>
+  <h3 style="margin-top:0">Preview — orphan splits to delete</h3>
   <p style="font-size:0.85rem;color:#718096;">
-    Each row shows a bad split and how it will be merged into the canonical name.
-    If a canonical split already exists, the stats will be summed.
+    These bad splits will be <strong>deleted</strong>. The correct split already has accurate stats from re-aggregation.
   </p>
   <div style="overflow-x:auto">
     <table id="splitPreviewTable">
       <thead><tr>
         <th>Player</th><th>Doc ID</th><th>Location</th>
-        <th style="text-align:center">Bad Games</th>
-        <th style="text-align:center">Canon Games (existing)</th>
-        <th style="text-align:center">Merged Games</th>
-        <th style="text-align:center">Merged H/AB (AVG)</th>
+        <th style="text-align:center">Games (orphan)</th>
+        <th style="text-align:center">H/AB (orphan)</th>
+        <th style="text-align:center">Action</th>
       </tr></thead>
       <tbody id="splitPreviewBody"></tbody>
     </table>
@@ -1125,34 +1119,16 @@ setTimeout(() => {
 // OPPONENT NAME SPLIT FIXER
 // =============================================
 
-let splitScanResults = []; // [{ docId, playerName, data, locations: [{path, label, badStats, canonStats}] }]
+let splitScanResults = []; // [{ docId, playerName, locations: [{label, badStats}] }]
 
 function setSplitStat(id, val) {
   const el = document.getElementById(id);
   if (el) el.textContent = val;
 }
 
-function mergeVsOpponentStats(existing, toMerge) {
-  const numFields = ['games', 'atBats', 'hits', 'runs', 'walks', 'doubles', 'triples', 'homeRuns', 'rbi'];
-  const merged = {};
-  for (const f of numFields) {
-    merged[f] = (existing?.[f] || 0) + (toMerge?.[f] || 0);
-  }
-  merged.battingAverage = merged.atBats > 0
-    ? merged.hits / merged.atBats
-    : 0;
-  merged.onBasePercentage = (merged.atBats + merged.walks) > 0
-    ? (merged.hits + merged.walks) / (merged.atBats + merged.walks)
-    : 0;
-  return merged;
-}
-
 window.runSplitScan = async function() {
-  const badName   = document.getElementById('splitBadName').value.trim();
-  const canonName = document.getElementById('splitCanonName').value.trim();
-
-  if (!badName || !canonName) { alert('Both bad and canonical opponent names are required.'); return; }
-  if (badName === canonName)  { alert('Bad and canonical names cannot be the same.'); return; }
+  const badName = document.getElementById('splitBadName').value.trim();
+  if (!badName) { alert('Enter the bad opponent name to scan for.'); return; }
 
   splitScanResults = [];
   document.getElementById('splitScanBtn').disabled = true;
@@ -1164,11 +1140,11 @@ window.runSplitScan = async function() {
   setSplitStat('splitCntFixed', '—');
   setSplitStat('splitCntErr',   '—');
 
-  log(`[Split Fixer] Scanning aggregatedPlayerStats for vsOpponent key: "${badName}" → will merge into: "${canonName}"`);
+  log(`[Split Fixer] Scanning aggregatedPlayerStats for orphan vsOpponent key: "${badName}"`);
 
   try {
     const statsSnap = await getDocs(collection(db, 'aggregatedPlayerStats'));
-    log(`  Loaded ${statsSnap.size} aggregatedPlayerStats docs`);
+    log(`  Loaded ${statsSnap.size} docs`);
 
     let docsFound = 0;
     let locsFound = 0;
@@ -1182,31 +1158,21 @@ window.runSplitScan = async function() {
 
       // Check career.vsOpponent
       if (data.career?.vsOpponent?.[badName]) {
-        locations.push({
-          path:      'career.vsOpponent',
-          label:     'Career',
-          badStats:  data.career.vsOpponent[badName],
-          canonStats: data.career.vsOpponent[canonName] || null
-        });
+        locations.push({ label: 'Career', badStats: data.career.vsOpponent[badName] });
       }
 
       // Check seasons[*].vsOpponent
       const seasons = data.seasons || {};
       for (const seasonKey of Object.keys(seasons)) {
         if (seasons[seasonKey]?.vsOpponent?.[badName]) {
-          locations.push({
-            path:      `seasons.${seasonKey}.vsOpponent`,
-            label:     `Season: ${seasonKey}`,
-            badStats:  seasons[seasonKey].vsOpponent[badName],
-            canonStats: seasons[seasonKey].vsOpponent[canonName] || null
-          });
+          locations.push({ label: `Season: ${seasonKey}`, badStats: seasons[seasonKey].vsOpponent[badName] });
         }
       }
 
       if (locations.length > 0) {
         docsFound++;
         locsFound += locations.length;
-        splitScanResults.push({ docId: d.id, playerName, data, locations });
+        splitScanResults.push({ docId: d.id, playerName, locations });
       }
     });
 
@@ -1214,7 +1180,7 @@ window.runSplitScan = async function() {
     setSplitStat('splitCntLocs', locsFound);
 
     if (docsFound === 0) {
-      log(`  ✅ No docs found with vsOpponent key "${badName}" — nothing to fix!`);
+      log(`  ✅ No docs found with vsOpponent key "${badName}" — nothing to delete.`);
       document.getElementById('splitScanBtn').disabled = false;
       return;
     }
@@ -1223,19 +1189,16 @@ window.runSplitScan = async function() {
     const tbody = document.getElementById('splitPreviewBody');
     splitScanResults.forEach(r => {
       r.locations.forEach(loc => {
-        const merged  = mergeVsOpponentStats(loc.canonStats, loc.badStats);
-        const avgStr  = merged.atBats > 0
-          ? (merged.hits / merged.atBats).toFixed(3)
-          : '.000';
-        const tr = document.createElement('tr');
+        const bs     = loc.badStats;
+        const avgStr = bs.atBats > 0 ? (bs.hits / bs.atBats).toFixed(3) : '.000';
+        const tr     = document.createElement('tr');
         tr.innerHTML = `
           <td style="font-weight:600">${r.playerName}</td>
           <td style="font-family:monospace;font-size:0.78rem;color:#718096">${r.docId}</td>
           <td>${loc.label}</td>
-          <td style="text-align:center;color:#c53030;font-weight:600">${loc.badStats.games || 0}</td>
-          <td style="text-align:center;color:#718096">${loc.canonStats ? (loc.canonStats.games || 0) : '—'}</td>
-          <td style="text-align:center;font-weight:600;color:#2d5016">${merged.games}</td>
-          <td style="text-align:center">${merged.hits}/${merged.atBats} (${avgStr})</td>
+          <td style="text-align:center;color:#c53030;font-weight:600">${bs.games || 0}</td>
+          <td style="text-align:center">${bs.hits || 0}/${bs.atBats || 0} (${avgStr})</td>
+          <td style="text-align:center"><span class="tag tag-err">will delete</span></td>
         `;
         tbody.appendChild(tr);
       });
@@ -1243,8 +1206,8 @@ window.runSplitScan = async function() {
 
     document.getElementById('splitPreviewCard').style.display = 'block';
     document.getElementById('splitFixBtn').disabled = false;
-    log(`  Found ${docsFound} player doc(s) with ${locsFound} bad split location(s).`);
-    log('  Review the preview table, then click "Merge & Fix All" to apply.');
+    log(`  Found ${docsFound} player doc(s) with ${locsFound} orphan split location(s).`);
+    log('  Review the preview, then click "Delete Bad Splits" to remove them.');
 
   } catch (err) {
     log(`  ❌ Scan error: ${err.message}`);
@@ -1254,8 +1217,7 @@ window.runSplitScan = async function() {
 };
 
 window.runSplitFix = async function() {
-  const badName   = document.getElementById('splitBadName').value.trim();
-  const canonName = document.getElementById('splitCanonName').value.trim();
+  const badName = document.getElementById('splitBadName').value.trim();
 
   if (splitScanResults.length === 0) {
     log('[Split Fixer] No scan results — run scan first.');
@@ -1263,51 +1225,39 @@ window.runSplitFix = async function() {
   }
 
   const totalLocs = splitScanResults.reduce((s, r) => s + r.locations.length, 0);
-  const msg = `Merge ${totalLocs} bad split location(s) from "${badName}" → "${canonName}" across ${splitScanResults.length} player doc(s)?\n\nThis modifies aggregatedPlayerStats directly and cannot be undone.`;
-  if (!confirm(msg)) return;
+  if (!confirm(`Delete ${totalLocs} orphan split location(s) (key: "${badName}") across ${splitScanResults.length} player doc(s)?\n\nThe re-aggregated splits under the correct name will not be affected.`)) return;
 
   document.getElementById('splitFixBtn').disabled  = true;
   document.getElementById('splitScanBtn').disabled = true;
 
-  log(`\n[Split Fixer] Fixing ${splitScanResults.length} doc(s)…`);
+  log(`\n[Split Fixer] Deleting orphan "${badName}" splits from ${splitScanResults.length} doc(s)…`);
   let fixed = 0, errors = 0;
 
   for (const r of splitScanResults) {
     try {
-      // Re-read for freshest data in case page has been open a while
-      const docRef  = doc(db, 'aggregatedPlayerStats', r.docId);
-      const snap    = await getDoc(docRef);
+      const docRef = doc(db, 'aggregatedPlayerStats', r.docId);
+      const snap   = await getDoc(docRef);
       if (!snap.exists()) {
         log(`  ⚠️ Doc ${r.docId} not found — skipping`);
         continue;
       }
 
-      const data    = snap.data();
-      let modified  = false;
+      const data     = snap.data();
+      let modified   = false;
 
-      // Fix career.vsOpponent
+      // Delete from career.vsOpponent
       if (data.career?.vsOpponent?.[badName]) {
-        const merged = mergeVsOpponentStats(
-          data.career.vsOpponent[canonName],
-          data.career.vsOpponent[badName]
-        );
-        data.career.vsOpponent[canonName] = merged;
         delete data.career.vsOpponent[badName];
-        log(`  ✅ ${r.playerName} — career: merged "${badName}" → "${canonName}" (${merged.games} games)`);
+        log(`  🗑️ ${r.playerName} — deleted career vsOpponent["${badName}"]`);
         modified = true;
       }
 
-      // Fix seasons[*].vsOpponent
+      // Delete from seasons[*].vsOpponent
       const seasons = data.seasons || {};
       for (const seasonKey of Object.keys(seasons)) {
         if (seasons[seasonKey]?.vsOpponent?.[badName]) {
-          const merged = mergeVsOpponentStats(
-            seasons[seasonKey].vsOpponent[canonName],
-            seasons[seasonKey].vsOpponent[badName]
-          );
-          seasons[seasonKey].vsOpponent[canonName] = merged;
           delete seasons[seasonKey].vsOpponent[badName];
-          log(`  ✅ ${r.playerName} — season "${seasonKey}": merged "${badName}" → "${canonName}" (${merged.games} games)`);
+          log(`  🗑️ ${r.playerName} — deleted season "${seasonKey}" vsOpponent["${badName}"]`);
           modified = true;
         }
       }
@@ -1317,7 +1267,7 @@ window.runSplitFix = async function() {
         log(`  💾 Saved ${r.docId}`);
         fixed++;
       } else {
-        log(`  ℹ️ ${r.docId}: no bad splits found on re-read (already fixed?)`);
+        log(`  ℹ️ ${r.docId}: key not found on re-read (already deleted?)`);
       }
 
     } catch (err) {
@@ -1330,12 +1280,11 @@ window.runSplitFix = async function() {
   setSplitStat('splitCntErr',   errors);
 
   if (errors === 0) {
-    log(`\n🎉 Done! ${fixed} doc(s) updated. The "${badName}" split has been merged into "${canonName}" and removed.`);
+    log(`\n🎉 Done! Orphan "${badName}" splits removed from ${fixed} doc(s).`);
   } else {
     log(`\nFinished with ${fixed} fixed and ${errors} error(s). Review log above.`);
   }
 
-  // Clear preview so a stale re-run isn't tempting
   splitScanResults = [];
   document.getElementById('splitPreviewCard').style.display = 'none';
   document.getElementById('splitScanBtn').disabled = false;
