@@ -782,6 +782,18 @@
           <strong>Weights:</strong> wBB=0.30 · wFlat(1B/2B/3B)=0.70 · wHR=1.40 · Replacement=50% league avg · Min PA=20 · RPW=0.5×R/G
         </p>
 
+        <div style="margin-bottom:0.9rem;padding:0.65rem 0.9rem;background:#f0f4ff;border:1px solid #c3d0f5;border-radius:8px;display:flex;align-items:flex-start;gap:0.6rem;">
+          <input type="checkbox" id="bwarHistoricalRPW" style="width:16px;height:16px;margin-top:2px;cursor:pointer;">
+          <div>
+            <label for="bwarHistoricalRPW" style="font-size:0.875rem;font-weight:600;color:#3730a3;cursor:pointer;">
+              Use historical R/G for RPW (same season type)
+            </label>
+            <div style="font-size:0.78rem;color:#6366f1;margin-top:0.15rem;">
+              Averages R/G across all <strong>fall</strong> or <strong>summer</strong> seasons separately — stabilizes the run environment instead of using only the current season's games. Falls back to current season if no historical data matches.
+            </div>
+          </div>
+        </div>
+
         <div class="flex-row" style="margin-bottom: 1rem;">
           <button id="bwarPreviewBtn" class="btn-secondary" onclick="runBWARCalculator(true)">
             👁️ Preview bWAR
@@ -810,6 +822,14 @@
           <div class="stat-card">
             <div class="stat-number orange" id="bwarLeagueAvgDisplay">—</div>
             <div class="stat-label">League avg wOBA</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-number" id="bwarRPWDisplay" style="font-size:1.1rem;">—</div>
+            <div class="stat-label">RPW</div>
+          </div>
+          <div class="stat-card" style="grid-column:span 2">
+            <div style="font-size:0.78rem;color:#718096;word-break:break-all" id="bwarRPWSource">—</div>
+            <div class="stat-label">R/G Source</div>
           </div>
         </div>
       </div>
@@ -2549,45 +2569,72 @@
       log(`  Found ${players.length} players with PA > 0 for ${seasonId}`, 'success');
 
       // ── Step 2: Load completed game scores for R/G ──────────────────────────
-      log('Step 2: Loading completed games for run environment...', 'game');
-      const gamesSnap = await window.getDocs(
-        window.query(
-          window.collection(window.db, 'seasons', seasonId, 'games'),
-          window.where('status', '==', 'completed')
-        )
-      );
-      let totalRuns = 0, numGames = 0;
-      gamesSnap.forEach(g => {
-        const d = g.data();
-        const hasWinner = d.winner && d.winner.trim() !== '';
-        const hs = Number(d.homeScore ?? d['home score'] ?? 0) || 0;
-        const as = Number(d.awayScore ?? d['away score'] ?? 0) || 0;
-        if (hasWinner || hs > 0 || as > 0) {
-          totalRuns += hs + as;
-          numGames++;
-        }
-      });
+      const useHistoricalRPW = document.getElementById('bwarHistoricalRPW')?.checked ?? false;
+      // Detect season type: "fall" or "summer" (or null if neither keyword present)
+      const seasonType = seasonId.toLowerCase().includes('fall')
+        ? 'fall'
+        : seasonId.toLowerCase().includes('summer')
+          ? 'summer'
+          : null;
 
-      // Fallback: if status filter finds nothing, try fetching all and filtering
-      if (numGames === 0) {
-        log('  No completed status games found, fetching all and filtering...', 'info');
-        const allGamesSnap = await window.getDocs(
-          window.collection(window.db, 'seasons', seasonId, 'games')
+      let totalRuns = 0, numGames = 0;
+      let rpwSource = '';
+
+      // Helper: sum completed games from a single season subcollection
+      async function sumSeasonGames(sid) {
+        let r = 0, g = 0;
+        const snap = await window.getDocs(
+          window.query(window.collection(window.db, 'seasons', sid, 'games'), window.where('status', '==', 'completed'))
         );
-        allGamesSnap.forEach(g => {
-          const d = g.data();
+        snap.forEach(doc => {
+          const d = doc.data();
           const hs = Number(d.homeScore ?? d['home score'] ?? 0) || 0;
           const as = Number(d.awayScore ?? d['away score'] ?? 0) || 0;
-          if (d.winner && d.winner.trim() !== '') {
-            totalRuns += hs + as;
-            numGames++;
-          }
+          if (d.winner && d.winner.trim() !== '') { r += hs + as; g++; }
         });
+        // Fallback: no status=completed docs — scan all and check winner
+        if (g === 0) {
+          const all = await window.getDocs(window.collection(window.db, 'seasons', sid, 'games'));
+          all.forEach(doc => {
+            const d = doc.data();
+            const hs = Number(d.homeScore ?? d['home score'] ?? 0) || 0;
+            const as = Number(d.awayScore ?? d['away score'] ?? 0) || 0;
+            if (d.winner && d.winner.trim() !== '') { r += hs + as; g++; }
+          });
+        }
+        return { runs: r, games: g };
+      }
+
+      if (useHistoricalRPW && seasonType) {
+        log(`Step 2: Loading historical R/G across all ${seasonType} seasons...`, 'game');
+        const allSeasonsSnap = await window.getDocs(window.collection(window.db, 'seasons'));
+        const matchingSeasons = allSeasonsSnap.docs
+          .map(d => d.id)
+          .filter(id => id.toLowerCase().includes(seasonType))
+          .sort();
+
+        log(`  ${seasonType} seasons found: ${matchingSeasons.join(', ')}`);
+
+        for (const sid of matchingSeasons) {
+          const { runs, games } = await sumSeasonGames(sid);
+          const rpgStr = games > 0 ? (runs / games).toFixed(2) : '—';
+          log(`  ${sid}: ${games} games · ${runs} runs · ${rpgStr} R/G${sid === seasonId ? ' ← current' : ''}`);
+          totalRuns += runs;
+          numGames  += games;
+        }
+        rpwSource = `historical — ${matchingSeasons.length} ${seasonType} season(s): ${matchingSeasons.join(', ')}`;
+      } else {
+        log(`Step 2: Loading completed games for run environment (current season)...`, 'game');
+        const { runs, games } = await sumSeasonGames(seasonId);
+        totalRuns = runs;
+        numGames  = games;
+        rpwSource = `current season (${seasonId})`;
       }
 
       const leagueRPG = numGames > 0 ? totalRuns / numGames : 14;
       const RPW = leagueRPG * W.rpwMul;
-      log(`  ${numGames} completed games · ${totalRuns} total runs · ${leagueRPG.toFixed(1)} R/G · RPW=${RPW.toFixed(1)}`, 'success');
+      log(`  Total: ${numGames} games · ${totalRuns} runs · ${leagueRPG.toFixed(2)} R/G · RPW=${RPW.toFixed(2)}`, 'success');
+      log(`  R/G source: ${rpwSource}`);
 
       // ── Step 3: Compute wOBA per player ─────────────────────────────────────
       log('Step 3: Computing wOBA and bWAR...', 'game');
@@ -2619,9 +2666,11 @@
       log(`  ${qualified.length} qualified players (≥${W.minPA} PA) · Top: ${topPlayer?.name} ${topPlayer?.bwarSimp?.toFixed(2)}`);
 
       // Update stat cards
-      document.getElementById('bwarPlayersCalc').textContent  = results.length;
-      document.getElementById('bwarQualified').textContent    = qualified.length;
+      document.getElementById('bwarPlayersCalc').textContent      = results.length;
+      document.getElementById('bwarQualified').textContent        = qualified.length;
       document.getElementById('bwarLeagueAvgDisplay').textContent = leagueWOBA.toFixed(3);
+      document.getElementById('bwarRPWDisplay').textContent       = RPW.toFixed(2);
+      document.getElementById('bwarRPWSource').textContent        = rpwSource;
 
       // ── Step 5: Preview or Write ─────────────────────────────────────────────
       if (previewOnly) {
