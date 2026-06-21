@@ -176,6 +176,59 @@
   </div>
 </div>
 
+<!-- ===================== DIRECT DATE FIX ===================== -->
+<div class="card" id="directDateFixCard">
+  <h3 style="margin-top:0">📅 Direct Date Fix</h3>
+  <p style="font-size:0.85rem;color:#718096;margin-top:0">
+    Use when stats were submitted with the <strong>wrong game date</strong> — both <code>gameDocId</code>
+    and <code>gameDateFormatted</code> contain the bad date, so the Date Mismatch Scanner can't detect them.
+    This tool scans for docs with the bad date baked into <code>gameDocId</code>, finds the real game on the
+    correct date, and moves them in one step.
+  </p>
+
+  <div style="display:flex;gap:0.75rem;flex-wrap:wrap;align-items:flex-end;margin-bottom:1rem;">
+    <div>
+      <label style="font-size:0.82rem;font-weight:600;color:#4a5568;display:block;margin-bottom:0.25rem">Bad Date (as submitted)</label>
+      <input id="ddBadDate" type="text" placeholder="e.g. 6/19/2026"
+        style="padding:0.4rem 0.75rem;border:1px solid #cbd5e0;border-radius:6px;font-size:0.9rem;width:140px">
+    </div>
+    <div>
+      <label style="font-size:0.82rem;font-weight:600;color:#4a5568;display:block;margin-bottom:0.25rem">Correct Date</label>
+      <input id="ddCorrectDate" type="text" placeholder="e.g. 6/18/2026"
+        style="padding:0.4rem 0.75rem;border:1px solid #cbd5e0;border-radius:6px;font-size:0.9rem;width:140px">
+    </div>
+    <div>
+      <label style="font-size:0.82rem;font-weight:600;color:#4a5568;display:block;margin-bottom:0.25rem">Season</label>
+      <input id="ddSeason" type="text" value="2026-summer"
+        style="padding:0.4rem 0.75rem;border:1px solid #cbd5e0;border-radius:6px;font-size:0.9rem;width:150px">
+    </div>
+  </div>
+
+  <div class="stats-bar">
+    <div class="stat-box"><div class="stat-num" id="ddCntFound">—</div><div class="stat-lbl">Docs found</div></div>
+    <div class="stat-box"><div class="stat-num" id="ddCntMatched">—</div><div class="stat-lbl">Matched to game</div></div>
+    <div class="stat-box"><div class="stat-num" id="ddCntUnmatched">—</div><div class="stat-lbl">Unmatched</div></div>
+    <div class="stat-box"><div class="stat-num" id="ddCntFixed">—</div><div class="stat-lbl">Fixed</div></div>
+    <div class="stat-box"><div class="stat-num" id="ddCntErr">—</div><div class="stat-lbl">Errors</div></div>
+  </div>
+
+  <button class="btn btn-primary" id="ddScanBtn" onclick="runDirectDateScan()">🔍 Scan</button>
+  <button class="btn btn-danger"  id="ddFixBtn"  onclick="runDirectDateFix()" disabled>⚡ Fix All Matched</button>
+  <button class="btn btn-secondary" onclick="clearLog()">Clear Log</button>
+</div>
+
+<div class="card" id="ddPreviewCard" style="display:none">
+  <h3 style="margin-top:0">Preview — direct date fix</h3>
+  <div style="overflow-x:auto">
+    <table id="ddPreviewTable">
+      <thead><tr>
+        <th>Collection</th><th>Player ID</th><th>Current gameDocId</th><th>New gameDocId</th><th>Status</th>
+      </tr></thead>
+      <tbody id="ddPreviewBody"></tbody>
+    </table>
+  </div>
+</div>
+
 <!-- ===================== OUT-OF-PARK HR MANAGER ===================== -->
 <div class="card" id="ootpCard">
   <h3 style="margin-top:0">💣 Out-of-Park Home Run Tracker</h3>
@@ -1114,6 +1167,200 @@ const _origEnableButtons = window._origEnableButtons || null;
 setTimeout(() => {
   if (document.getElementById('ootpCard')) loadOotp();
 }, 2000);
+
+// =============================================
+// DIRECT DATE FIX
+// =============================================
+
+let ddResults = []; // { collName, playerId, oldDocId, newDocId, newGameId, data, matched }
+
+function setDdStat(id, val) { document.getElementById(id).textContent = val; }
+
+// Convert M/D/YYYY → M_D_YYYY pattern (what's baked into gameDocId after season prefix)
+function dateToDocPattern(dateStr) {
+  if (!dateStr) return null;
+  const d = parseFormattedDate(dateStr.trim());
+  if (!d) return null;
+  return `${d.getMonth() + 1}_${d.getDate()}_${d.getFullYear()}`;
+}
+
+window.runDirectDateScan = async function() {
+  const badDateStr     = document.getElementById('ddBadDate').value.trim();
+  const correctDateStr = document.getElementById('ddCorrectDate').value.trim();
+  const seasonId       = document.getElementById('ddSeason').value.trim();
+
+  if (!badDateStr || !correctDateStr || !seasonId) {
+    alert('All three fields are required.'); return;
+  }
+
+  const badPattern = dateToDocPattern(badDateStr);
+  if (!badPattern) { alert(`Cannot parse bad date: "${badDateStr}". Use M/D/YYYY.`); return; }
+
+  const correctDate = parseFormattedDate(correctDateStr);
+  if (!correctDate) { alert(`Cannot parse correct date: "${correctDateStr}". Use M/D/YYYY.`); return; }
+
+  ddResults = [];
+  document.getElementById('ddScanBtn').disabled = true;
+  document.getElementById('ddFixBtn').disabled  = true;
+  document.getElementById('ddPreviewCard').style.display = 'none';
+  document.getElementById('ddPreviewBody').innerHTML = '';
+  setDdStat('ddCntFound', '…'); setDdStat('ddCntMatched', '…');
+  setDdStat('ddCntUnmatched', '…'); setDdStat('ddCntFixed', '—'); setDdStat('ddCntErr', '—');
+
+  log(`[Direct Date Fix] Scanning for bad date "${badDateStr}" (pattern: "${badPattern}") in season "${seasonId}"`);
+  log(`  Correct date: "${correctDateStr}"`);
+
+  // Collect player IDs from rosters
+  const playerIds = new Set();
+  try {
+    const rostersSnap = await getDocs(collection(db, 'rosters'));
+    rostersSnap.forEach(rDoc => {
+      (rDoc.data().players || []).forEach(p => {
+        if (p.id) playerIds.add(p.id);
+        if (p.authId) playerIds.add(p.authId);
+      });
+    });
+    log(`  ${playerIds.size} player IDs from rosters`);
+  } catch (e) {
+    log(`  ❌ Error loading rosters: ${e.message}`);
+    document.getElementById('ddScanBtn').disabled = false;
+    return;
+  }
+
+  const colls = ['playerStats', 'pitchingStats'];
+  let found = 0, matched = 0, unmatched = 0;
+
+  for (const collName of colls) {
+    log(`Scanning ${collName}…`);
+    for (const playerId of playerIds) {
+      try {
+        const gamesSnap = await getDocs(collection(db, collName, playerId, 'games'));
+        if (gamesSnap.empty) continue;
+
+        for (const gDoc of gamesSnap.docs) {
+          const data = gDoc.data();
+          if (data.seasonId !== seasonId) continue;
+
+          // Check if the bad date pattern is baked into the gameDocId
+          const docId = gDoc.id;
+          if (!docId.includes(badPattern)) continue;
+
+          found++;
+          log(`  Found: ${collName}/${playerId}/games/${docId}`);
+          log(`    opponent=${data.opponent}  home=${data.isHome}  team=${data.teamId}`);
+
+          // Find the correct game using the correct date
+          // We override gameDateFormatted with the correct date for matching
+          const dataForMatch = { ...data, gameDateFormatted: correctDateStr };
+          const match = await findCorrectGameDocCached(
+            seasonId, correctDateStr, data.opponent, data.isHome, data.teamId, null
+          );
+
+          let newGameId = null, newDocId = null, isMatched = false;
+          if (match) {
+            newGameId  = match.docId;
+            newDocId   = `${seasonId}_${newGameId}`;
+            isMatched  = true;
+            matched++;
+            log(`    ✅ Matched → ${newDocId}`);
+          } else {
+            unmatched++;
+            log(`    ⚠️ No game found on ${correctDateStr} matching opponent "${data.opponent}" — will skip`);
+          }
+
+          ddResults.push({ collName, playerId, oldDocId: docId, newDocId, newGameId, data, matched: isMatched });
+        }
+      } catch (e) {
+        if (!e.message?.includes('permission')) continue;
+        log(`  ⚠️ Error reading ${collName}/${playerId}/games: ${e.message}`);
+      }
+    }
+  }
+
+  setDdStat('ddCntFound',     found);
+  setDdStat('ddCntMatched',   matched);
+  setDdStat('ddCntUnmatched', unmatched);
+
+  // Build preview table
+  const tbody = document.getElementById('ddPreviewBody');
+  ddResults.forEach(r => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${r.collName}</td>
+      <td style="font-family:monospace;font-size:0.78rem">${r.playerId}</td>
+      <td style="font-family:monospace;font-size:0.78rem;color:#c53030">${r.oldDocId}</td>
+      <td style="font-family:monospace;font-size:0.78rem;color:#276749">${r.matched ? r.newDocId : '—'}</td>
+      <td><span class="tag ${r.matched ? 'tag-ok' : 'tag-warn'}">${r.matched ? 'ready' : 'no match'}</span></td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  document.getElementById('ddPreviewCard').style.display = found > 0 ? 'block' : 'none';
+
+  if (matched > 0) {
+    document.getElementById('ddFixBtn').disabled = false;
+    log(`\nScan complete: ${found} docs found, ${matched} ready to fix, ${unmatched} unmatched.`);
+  } else if (found === 0) {
+    log(`\nNo docs found with date pattern "${badPattern}" in season "${seasonId}".`);
+    log('Double-check the bad date and season ID.');
+  } else {
+    log(`\nFound ${found} docs but could not match any to a game on "${correctDateStr}". Check that the correct date has a game in Firestore.`);
+  }
+
+  document.getElementById('ddScanBtn').disabled = false;
+};
+
+window.runDirectDateFix = async function() {
+  const correctDateStr = document.getElementById('ddCorrectDate').value.trim();
+  const toFix = ddResults.filter(r => r.matched);
+  if (toFix.length === 0) { log('Nothing to fix.'); return; }
+
+  if (!confirm(`Fix ${toFix.length} doc(s)? Each will be copied to the correct date path, gameDateFormatted updated, and the old doc deleted.`)) return;
+
+  document.getElementById('ddFixBtn').disabled  = true;
+  document.getElementById('ddScanBtn').disabled = true;
+
+  let fixed = 0, errors = 0;
+  log(`\n[Direct Date Fix] Fixing ${toFix.length} doc(s)…`);
+
+  for (const r of toFix) {
+    try {
+      const oldRef = doc(db, r.collName, r.playerId, 'games', r.oldDocId);
+      const newRef = doc(db, r.collName, r.playerId, 'games', r.newDocId);
+
+      const correctedData = {
+        ...r.data,
+        gameId:             r.newGameId,
+        gameDocId:          r.newDocId,
+        gameDateFormatted:  correctDateStr,
+        fixedFromDirectDateFix: true,
+        fixedAt:            new Date().toISOString()
+      };
+
+      await setDoc(newRef, correctedData);
+      log(`  ✅ Wrote ${r.collName}/${r.playerId}/games/${r.newDocId}`);
+
+      await deleteDoc(oldRef);
+      log(`  🗑️  Deleted ${r.collName}/${r.playerId}/games/${r.oldDocId}`);
+
+      fixed++;
+    } catch (e) {
+      log(`  ❌ Error: ${e.message}`);
+      errors++;
+    }
+  }
+
+  setDdStat('ddCntFixed', fixed);
+  setDdStat('ddCntErr',   errors);
+
+  if (errors === 0) {
+    log(`\n🎉 Done! ${fixed} doc(s) moved to correct date. Re-run aggregation to refresh aggregatedPlayerStats.`);
+  } else {
+    log(`\nFinished with ${fixed} fixed and ${errors} error(s).`);
+  }
+
+  document.getElementById('ddScanBtn').disabled = false;
+};
 
 // =============================================
 // OPPONENT NAME SPLIT FIXER
