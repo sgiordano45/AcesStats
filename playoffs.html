@@ -1541,75 +1541,121 @@
                 ? 'Projected Bracket'
                 : 'Official Bracket' + (playoffData.lockedAt ? ' · Locked ' + new Date(playoffData.lockedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '');
 
-            const allRounds = [
-                { label: 'Round 1',      series: playoffData.round1       || [] },
-                { label: 'Quarterfinals',series: playoffData.quarterfinals || [] },
-                { label: 'Semifinals',   series: playoffData.semifinals    || [] },
-                { label: 'Finals',       series: playoffData.finals        || [] }
-            ];
+            const r1 = playoffData.round1       || [];
+            const qf = playoffData.quarterfinals || [];
+            const sf = playoffData.semifinals    || [];
+            const fn = playoffData.finals        || [];
 
-            // Team row — logo + seed + name
+            // Split into left half (first 2 QFs) and right half (last 2 QFs)
+            const qfLeft  = [qf[0] || null, qf[1] || null];
+            const qfRight = [qf[2] || null, qf[3] || null];
+            const sfLeft  = sf[0] || null;
+            const sfRight = sf[1] || null;
+            const finalS  = fn[0] || null;
+
+            // Find which R1 play-in games feed into each QF (via team1.from / team2.from)
+            function r1FeedersFor(qfSeries) {
+                if (!qfSeries) return [];
+                const fromIds = [qfSeries.team1?.from, qfSeries.team2?.from].filter(Boolean);
+                return r1.filter(s => fromIds.includes(s.id));
+            }
+            const r1L0 = r1FeedersFor(qfLeft[0]);
+            const r1L1 = r1FeedersFor(qfLeft[1]);
+            const r1R0 = r1FeedersFor(qfRight[0]);
+            const r1R1 = r1FeedersFor(qfRight[1]);
+
+            // Team row — compact for narrow columns
             const teamRowHtml = (team, isWinner) => {
                 const logo = getTeamLogoUrl(team.name);
                 const logoHtml = logo
-                    ? `<img src="${logo}" width="22" height="22" style="object-fit:contain;flex-shrink:0;border-radius:3px;" onerror="this.style.visibility='hidden'">`
-                    : `<div style="width:22px;height:22px;flex-shrink:0;"></div>`;
+                    ? `<img src="${logo}" width="18" height="18" style="object-fit:contain;flex-shrink:0;border-radius:2px;" onerror="this.style.visibility='hidden'">`
+                    : `<div style="width:18px;height:18px;flex-shrink:0;"></div>`;
                 const bg     = isWinner ? 'rgba(26,107,74,0.55)' : 'rgba(0,0,0,0.38)';
-                const border = isWinner ? '1px solid #1a6b4a' : '1px solid transparent';
-                const color  = isWinner ? '#6ee7b7' : 'white';
-                const weight = isWinner ? '700' : '400';
-                return `
-                    <div style="display:flex;align-items:center;gap:7px;padding:7px 8px;background:${bg};border-radius:6px;margin-bottom:3px;border:${border};">
-                        ${logoHtml}
-                        <span style="color:#80DEEA;font-size:10px;font-weight:700;min-width:14px;text-align:center;">${team.seed || ''}</span>
-                        <span style="color:${color};font-size:12px;flex:1;font-weight:${weight};overflow:hidden;white-space:nowrap;text-overflow:ellipsis;">${team.name}</span>
-                    </div>`;
+                const border = isWinner ? '1px solid #1a6b4a'    : '1px solid transparent';
+                const color  = isWinner ? '#6ee7b7' : '#fff';
+                const weight = isWinner ? '700'     : '400';
+                return `<div style="display:flex;align-items:center;gap:5px;padding:5px 6px;background:${bg};border-radius:5px;margin-bottom:2px;border:${border};">
+                    ${logoHtml}
+                    <span style="color:#80DEEA;font-size:9px;font-weight:700;min-width:11px;text-align:center;">${team.seed || ''}</span>
+                    <span style="color:${color};font-size:10px;flex:1;font-weight:${weight};overflow:hidden;white-space:nowrap;text-overflow:ellipsis;">${team.name}</span>
+                </div>`;
             };
 
             const seriesCardHtml = (s) => {
+                if (!s) return '';
                 const t1 = getTeamDisplay(s.team1, s);
                 const t2 = getTeamDisplay(s.team2, s);
                 const t1win = s.winner === 1;
                 const t2win = s.winner === 2;
-                const sw1 = s.seriesWins1 || 0;
-                const sw2 = s.seriesWins2 || 0;
+                const sw1 = s.seriesWins1 || 0, sw2 = s.seriesWins2 || 0;
                 const status = s.winner
-                    ? `<span style="color:#6ee7b7;font-weight:700;">✓ ${t1win ? t1.name : t2.name} wins</span>`
-                    : (sw1 + sw2 > 0
-                        ? `<span style="color:#80DEEA;">${sw1}–${sw2}</span>`
-                        : '');
-
-                return `
-                    <div style="background:rgba(2,119,189,0.22);border:1px solid #0277BD;border-radius:8px;padding:9px;margin-bottom:10px;">
-                        ${teamRowHtml(t1, t1win)}
-                        ${teamRowHtml(t2, t2win)}
-                        ${status ? `<div style="text-align:center;font-size:10px;margin-top:5px;padding-top:4px;border-top:1px solid rgba(2,119,189,0.4);">${status}</div>` : ''}
-                    </div>`;
+                    ? `<div style="text-align:center;font-size:8px;margin-top:3px;padding-top:3px;border-top:1px solid rgba(2,119,189,0.4);color:#6ee7b7;font-weight:700;">✓ ${t1win ? t1.name : t2.name}</div>`
+                    : (sw1 + sw2 > 0 ? `<div style="text-align:center;font-size:8px;margin-top:3px;padding-top:3px;border-top:1px solid rgba(2,119,189,0.4);color:#80DEEA;">${sw1}–${sw2}</div>` : '');
+                return `<div style="background:rgba(2,119,189,0.22);border:1px solid #0277BD;border-radius:7px;padding:6px;">
+                    ${teamRowHtml(t1, t1win)}
+                    ${teamRowHtml(t2, t2win)}
+                    ${status}
+                </div>`;
             };
 
-            const roundColHtml = (label, series, justifyContent = 'flex-start') => `
-                <div style="flex:1;min-width:0;">
-                    <div style="text-align:center;font-size:10px;font-weight:700;color:#B3E5FC;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid rgba(2,119,189,0.4);">
-                        ${label}
+            // A column split into top half and bottom half, each containing one bracket slot
+            const splitColHtml = (w, topContent, botContent) => `
+                <div style="width:${w}px;flex-shrink:0;display:flex;flex-direction:column;gap:10px;">
+                    <div style="flex:1;display:flex;flex-direction:column;justify-content:center;">
+                        ${topContent || '<div></div>'}
                     </div>
-                    <div style="display:flex;flex-direction:column;justify-content:${justifyContent};">
-                        ${series.map(s => seriesCardHtml(s)).join('')}
+                    <div style="flex:1;display:flex;flex-direction:column;justify-content:center;">
+                        ${botContent || '<div></div>'}
                     </div>
                 </div>`;
 
+            // A full-height column with single centered content
+            const centerColHtml = (w, content) => `
+                <div style="width:${w}px;flex-shrink:0;display:flex;flex-direction:column;justify-content:center;">
+                    ${content || ''}
+                </div>`;
+
+            const finalsHtml = finalS
+                ? seriesCardHtml(finalS)
+                : `<div style="background:rgba(2,119,189,0.12);border:1px dashed #0277BD;border-radius:7px;padding:18px 6px;text-align:center;color:#4a6080;font-size:10px;">TBD</div>`;
+
+            // Column widths: r1(108) | qf(128) | sf(118) | finals(134) | sf(118) | qf(128) | r1(108)
+            // = 842 + 6 gaps×6px = 878 + 2×20px padding = 918 ≈ 920px card
             return `
-                <div style="width:920px;background:linear-gradient(135deg,#0b1929 0%,#0d2040 60%,#091525 100%);padding:26px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;border-radius:14px;">
-                    <div style="text-align:center;margin-bottom:20px;">
-                        <div style="color:#80DEEA;font-size:21px;font-weight:800;letter-spacing:0.5px;">🏆 2026 Summer Playoffs</div>
-                        <div style="color:#B3E5FC;font-size:12px;margin-top:5px;opacity:0.75;">${subtitle}</div>
+                <div style="width:920px;background:linear-gradient(135deg,#0b1929 0%,#0d2040 60%,#091525 100%);padding:20px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;border-radius:14px;">
+                    <div style="text-align:center;margin-bottom:14px;">
+                        <div style="color:#80DEEA;font-size:20px;font-weight:800;letter-spacing:0.5px;">🏆 Aces Playoffs</div>
+                        <div style="color:#B3E5FC;font-size:11px;margin-top:4px;opacity:0.75;">${subtitle}</div>
                     </div>
-                    <div style="display:flex;gap:12px;align-items:stretch;">
-                        ${roundColHtml('Round 1',       allRounds[0].series, 'space-around')}
-                        ${roundColHtml('Quarterfinals', allRounds[1].series, 'space-around')}
-                        ${roundColHtml('Semifinals',    allRounds[2].series, 'space-evenly')}
-                        ${roundColHtml('Finals',        allRounds[3].series, 'center')}
+                    <div style="display:flex;align-items:stretch;gap:6px;min-height:400px;">
+
+                        ${splitColHtml(108,
+                            r1L0.map(seriesCardHtml).join(''),
+                            r1L1.map(seriesCardHtml).join('')
+                        )}
+                        ${splitColHtml(128,
+                            seriesCardHtml(qfLeft[0]),
+                            seriesCardHtml(qfLeft[1])
+                        )}
+                        ${centerColHtml(118, seriesCardHtml(sfLeft))}
+
+                        <div style="width:134px;flex-shrink:0;display:flex;flex-direction:column;justify-content:center;align-items:center;">
+                            <div style="color:#FFD700;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:7px;text-align:center;">🏆 Finals</div>
+                            <div style="width:100%;">${finalsHtml}</div>
+                        </div>
+
+                        ${centerColHtml(118, seriesCardHtml(sfRight))}
+                        ${splitColHtml(128,
+                            seriesCardHtml(qfRight[0]),
+                            seriesCardHtml(qfRight[1])
+                        )}
+                        ${splitColHtml(108,
+                            r1R0.map(seriesCardHtml).join(''),
+                            r1R1.map(seriesCardHtml).join('')
+                        )}
+
                     </div>
-                    <div style="text-align:center;margin-top:16px;font-size:10px;color:#4a6080;letter-spacing:0.5px;">mountainsideaces.com</div>
+                    <div style="text-align:center;margin-top:12px;font-size:10px;color:#4a6080;letter-spacing:0.5px;">mountainsideaces.com</div>
                 </div>`;
         }
 
