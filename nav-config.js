@@ -17,8 +17,12 @@ export async function loadPageVisibility() {
   try {
     const cached   = localStorage.getItem('_navVisConfig');
     const cachedTs = parseInt(localStorage.getItem('_navVisConfigTs') || '0', 10);
-    if (cached && (Date.now() - cachedTs) < 15 * 60 * 1000) {
-      visibilityConfig = JSON.parse(cached);
+    const parsedCache = cached ? JSON.parse(cached) : null;
+    const cacheAge = Date.now() - cachedTs;
+    // Only use cache if: it exists, is fresh, AND is non-empty
+    // (empty cache = was written during a broken Firestore session, discard it)
+    if (parsedCache && Object.keys(parsedCache).length > 0 && cacheAge < 15 * 60 * 1000) {
+      visibilityConfig = parsedCache;
       configLoaded = true;
       console.log('✅ Page visibility loaded from localStorage cache');
       return visibilityConfig;
