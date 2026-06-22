@@ -4,11 +4,13 @@
 // Import Firebase SDK from CDN
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
 import { getAnalytics } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-analytics.js';
-import { 
+import {
   initializeFirestore,
-  collection, 
-  doc, 
-  getDocs, 
+  memoryLocalCache,
+  persistentLocalCache,
+  collection,
+  doc,
+  getDocs,
   getDoc,
   query,
   where,
@@ -33,26 +35,35 @@ const firebaseConfig = {
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 
-// Initialize Google Analytics
-const analytics = getAnalytics(app);
+// Analytics — safe to fail silently
+let analytics = null;
+try {
+  analytics = getAnalytics(app);
+} catch (e) {
+  console.warn('Analytics unavailable:', e.message);
+}
 
 // Detect Safari for cache strategy
 const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
 
-// Initialize Firestore with appropriate cache based on browser
-// Safari has issues with IndexedDB, so we use memory cache for better compatibility
+// Initialize Firestore with appropriate cache based on browser.
+// Safari desktop has unreliable IndexedDB under ITP — use memory cache there.
 const db = initializeFirestore(app, {
-  cache: isSafari ? 
-    { kind: 'MemoryLruCache', sizeBytes: 40 * 1024 * 1024 } : // 40 MB for Safari
-    { kind: 'IndexedDbLruCache', sizeBytes: 100 * 1024 * 1024 } // 100 MB for other browsers
+  localCache: isSafari ? memoryLocalCache() : persistentLocalCache()
 });
 
 console.log(`✅ Firestore initialized with ${isSafari ? 'Memory' : 'IndexedDB'} cache`);
 
 const storage = getStorage(app);
 
-// Initialize Firebase Cloud Messaging
-const messaging = getMessaging(app);
+// Firebase Cloud Messaging requires Push API — not supported in Safari desktop.
+// Wrap in try/catch so a missing Push API never breaks module initialization.
+let messaging = null;
+try {
+  messaging = getMessaging(app);
+} catch (e) {
+  console.warn('Firebase Messaging not supported in this browser:', e.message);
+}
 
 // Initialize Firebase Cloud Functions
 const functions = getFunctions(app);
