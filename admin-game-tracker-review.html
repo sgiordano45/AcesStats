@@ -1047,6 +1047,23 @@
             </h4>
             <div id="pitchingContent"></div>
           </div>
+
+          <!-- Hit Location Section -->
+          <div id="hitLocationSection" style="margin-top:2rem; padding-top:1.5rem; border-top:1px solid var(--border-color);">
+            <h4 style="margin: 0 0 0.5rem; display:flex; align-items:center; gap:0.5rem;">
+              <span>📍</span> Hit Location Data
+              <span id="hitLocCoverage" style="font-size:0.8rem; font-weight:400; color:var(--text-light); margin-left:0.5rem;"></span>
+            </h4>
+            <p style="font-size:0.85rem; color:var(--text-light); margin:0 0 1rem;">
+              Batted-ball zones tagged during the game (LF / LCF / CF / RCF / RF / 3B / SS / 2B / 1B / P / C).
+              Writing stores a <code>hitLocations</code> array on each player's game doc for future spray charts.
+              Runs independently — safe to run on already-converted games.
+            </p>
+            <div id="hitLocPreview" style="margin-bottom:1rem;"></div>
+            <button class="btn btn-primary" id="writeHitLocsBtn" onclick="writeHitLocations()" style="font-size:0.875rem; padding:0.6rem 1.25rem;">
+              📍 Write Hit Locations to Player Docs
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -1452,12 +1469,15 @@ function renderReviewPanel() {
 
   // Render batting stats with player matching
   renderBattingStats();
-  
+
   // Render play-by-play (editable)
   renderPlayByPlayEditable();
 
   // Render pitching section
   renderPitchingSection();
+
+  // Render hit location section
+  renderHitLocationSection();
   
   // Scroll to review panel
   panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -2457,6 +2477,158 @@ window.addYourPitcher = function() {
 window.removeYourPitcher = function(idx) {
   const row = document.getElementById('your-pitcher-row-' + idx);
   if (row) row.remove();
+};
+
+// ============================================
+// HIT LOCATION SECTION
+// ============================================
+
+// Play types considered batted balls (location makes sense)
+const BATTED_BALL_TYPES = new Set([
+  'single','double','triple','homerun',
+  'out','flyout','groundout','lineout','popout',
+  'error','fielders_choice','sacfly','doubleplay','sacrifice'
+]);
+
+// Build per-player hit location arrays from playByPlay
+function buildPlayerHitLocations(plays) {
+  const byPlayer = {};
+
+  (plays || []).forEach(play => {
+    if (!play.location) return;                     // no zone tagged — skip
+    if (!BATTED_BALL_TYPES.has(play.playType)) return; // not a batted ball
+
+    const name = play.batter;
+    if (!name) return;
+
+    if (!byPlayer[name]) byPlayer[name] = [];
+    byPlayer[name].push({
+      playType: play.playType,
+      location: play.location,
+      inning:   play.inning   || null,
+      isYourTeam: play.isYourTeam !== false
+    });
+  });
+
+  return byPlayer;  // { "Will Klippel": [{playType, location, inning}, ...], ... }
+}
+
+function renderHitLocationSection() {
+  const plays    = getWorkingPlays();
+  const byPlayer = buildPlayerHitLocations(plays);
+  const names    = Object.keys(byPlayer);
+  const totalTagged = plays.filter(p => p.location && BATTED_BALL_TYPES.has(p.playType)).length;
+  const totalBatted = plays.filter(p => BATTED_BALL_TYPES.has(p.playType)).length;
+
+  const coverageEl = document.getElementById('hitLocCoverage');
+  const previewEl  = document.getElementById('hitLocPreview');
+  const writeBtn   = document.getElementById('writeHitLocsBtn');
+
+  if (totalTagged === 0) {
+    coverageEl.textContent = '— no location data in this game';
+    previewEl.innerHTML = `
+      <div style="color:var(--text-light); font-size:0.875rem; padding:0.75rem 0;">
+        No batted-ball zones were tagged during this game. Hit location buttons appear in the tracker when confirming a play.
+      </div>`;
+    writeBtn.disabled = true;
+    return;
+  }
+
+  coverageEl.textContent = `${totalTagged} of ${totalBatted} batted balls tagged (${Math.round(totalTagged/totalBatted*100)}%)`;
+  writeBtn.disabled = false;
+
+  // Zone color coding
+  const zoneClass = z => ['LF','LCF','CF','RCF','RF'].includes(z)
+    ? 'background:#dbeafe;color:#1e40af;'
+    : 'background:#dcfce7;color:#166534;';
+
+  const rows = names.map(name => {
+    const locs  = byPlayer[name];
+    const zones = locs.map(l =>
+      `<span style="display:inline-block;padding:1px 6px;border-radius:4px;font-size:0.75rem;font-weight:700;margin:1px;${zoneClass(l.location)}">${l.location}</span>`
+    ).join('');
+    const match = findPlayerMatch(name);
+    const matchBadge = match
+      ? `<span style="font-size:0.72rem;background:#dcfce7;color:#166534;padding:1px 5px;border-radius:3px;margin-left:4px;">✓ ${match.legacyId}</span>`
+      : `<span style="font-size:0.72rem;background:#fef3c7;color:#92400e;padding:1px 5px;border-radius:3px;margin-left:4px;">⚠ unmatched</span>`;
+    return `
+      <tr>
+        <td style="font-weight:600;">${name}${matchBadge}</td>
+        <td style="text-align:center;">${locs.length}</td>
+        <td style="line-height:1.8;">${zones}</td>
+      </tr>`;
+  }).join('');
+
+  previewEl.innerHTML = `
+    <div style="overflow-x:auto;">
+      <table style="width:100%;border-collapse:collapse;font-size:0.875rem;">
+        <thead>
+          <tr style="background:#f1f5f9;">
+            <th style="padding:0.5rem 0.75rem;text-align:left;font-weight:600;color:var(--text-light);">Player</th>
+            <th style="padding:0.5rem 0.75rem;text-align:center;font-weight:600;color:var(--text-light);">Tagged Plays</th>
+            <th style="padding:0.5rem 0.75rem;text-align:left;font-weight:600;color:var(--text-light);">Zones</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows}
+        </tbody>
+      </table>
+    </div>`;
+}
+
+window.writeHitLocations = async function() {
+  if (!selectedGame) return;
+
+  const plays    = getWorkingPlays();
+  const byPlayer = buildPlayerHitLocations(plays);
+  const names    = Object.keys(byPlayer);
+
+  if (names.length === 0) {
+    showToast('No hit location data to write', 'warning');
+    return;
+  }
+
+  const seasonId  = selectedGame.seasonId;
+  const gameId    = selectedGame.gameId;
+  const gameDocId = `${seasonId}_${gameId}`;
+
+  const btn = document.getElementById('writeHitLocsBtn');
+  btn.disabled = true;
+  btn.innerHTML = '⏳ Writing...';
+
+  let written = 0, skipped = 0, errors = 0;
+
+  for (const name of names) {
+    const match = findPlayerMatch(name);
+    if (!match) {
+      console.warn(`⚠️ No roster match for "${name}" — skipping hit locations`);
+      skipped++;
+      continue;
+    }
+
+    try {
+      const docRef = doc(db, 'playerStats', match.legacyId, 'games', gameDocId);
+      await setDoc(docRef, {
+        hitLocations: byPlayer[name],
+        hitLocationUpdatedAt: serverTimestamp()
+      }, { merge: true });
+      written++;
+      console.log(`📍 Wrote ${byPlayer[name].length} location(s) for ${match.legacyId}`);
+    } catch (err) {
+      console.error(`❌ Error writing hit locations for ${name}:`, err);
+      errors++;
+    }
+  }
+
+  btn.disabled = false;
+  btn.innerHTML = '📍 Write Hit Locations to Player Docs';
+
+  if (errors === 0) {
+    showToast(`Hit locations written for ${written} player(s)${skipped ? `, ${skipped} skipped (unmatched)` : ''}`, 'success');
+    showMessage('success', `Hit location data written: ${written} player(s) updated.${skipped ? ` ${skipped} skipped (no roster match).` : ''}`);
+  } else {
+    showToast(`Written: ${written}, Errors: ${errors}`, 'error');
+  }
 };
 
 // ============================================

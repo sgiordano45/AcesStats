@@ -240,8 +240,12 @@ export async function disableAllNotifications(userId) {
  * Listen for foreground messages (when app is open)
  */
 export function onForegroundMessage(callback) {
+  if (!messaging) {
+    console.warn('⚠️ Firebase Messaging not available in this browser — skipping foreground handler');
+    return () => {};
+  }
   return onMessage(messaging, (payload) => {
-    console.log('ðŸ“¨ Foreground message received:', payload);
+    console.log('📨 Foreground message received:', payload);
     
     // Show notification even when app is open
     if (Notification.permission === 'granted') {
