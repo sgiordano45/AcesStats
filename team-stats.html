@@ -1089,20 +1089,29 @@
 
     console.log(`🎯 Running avg loaded: ${Object.entries(byTeam).map(([t,g]) => `${t}:${g.length}`).join(', ')}`);
 
-    // DEBUG: log all raw teamId values seen across all game docs
-    const rawTeamIds = {};
-    battingSnaps.forEach(snap => snap.forEach(d => {
-      const raw = d.data().teamId || 'undefined';
-      rawTeamIds[raw] = (rawTeamIds[raw] || 0) + 1;
-    }));
-    console.log('🔍 DEBUG raw teamId values in game docs:', rawTeamIds);
-
-    // DEBUG: log hits total per team bucket
-    const hitsByTeam = {};
-    for (const [t, games] of Object.entries(byTeamGame)) {
-      hitsByTeam[`"${t}"`] = games ? Object.values(games).reduce((s, g) => s + g.hits, 0) : 0;
-    }
-    console.log('🔍 DEBUG hits by team bucket:', hitsByTeam);
+    // DEBUG: per-player game doc counts for Teal and Gold
+    const debugTeams = new Set(['teal', 'gold']);
+    const docsPerPlayer = {};
+    const hitsPerPlayer = {};
+    battingSnaps.forEach((snap, idx) => {
+      const p = seasonPlayers[idx];
+      if (!p) return;
+      let teamMatch = false;
+      snap.forEach(d => { if (debugTeams.has((d.data().teamId || '').toLowerCase())) teamMatch = true; });
+      if (!teamMatch && snap.size === 0) return;
+      let docCount = 0, hitCount = 0;
+      snap.forEach(d => {
+        const team = (d.data().teamId || '').toLowerCase();
+        if (debugTeams.has(team)) { docCount++; hitCount += Number(d.data().hits) || 0; }
+      });
+      if (docCount > 0) {
+        const key = `${p.id}`;
+        docsPerPlayer[key] = docCount;
+        hitsPerPlayer[key] = hitCount;
+      }
+    });
+    console.log('🔍 DEBUG docs per player (Teal/Gold):', docsPerPlayer);
+    console.log('🔍 DEBUG hits per player (Teal/Gold):', hitsPerPlayer);
 
     runningDataCache[seasonId] = byTeam;
     return byTeam;
