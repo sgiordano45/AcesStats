@@ -981,9 +981,9 @@
   // aggregatedPlayerStats uses Firebase UID for auth users, but playerStats uses the
   // name-derived legacyId (e.g. "stephen_giordano"). Must match to find game docs.
   function playerStatsId(p) {
-    if (p.isAuthUser) {
-      return (p.name || '').toLowerCase().replace(/\./g, '').replace(/\s+/g, '_');
-    }
+    // Always use p.id (the aggregatedPlayerStats doc ID) — it matches the playerStats/{id}/games path.
+    // Previously auth users derived their path from p.name, but that breaks when the display name
+    // differs from the legacy game-doc ID (e.g. "Joseph Patanella" → "joseph_patanella" ≠ "joe_patanella").
     return p.id;
   }
 
@@ -1088,30 +1088,6 @@
     }
 
     console.log(`🎯 Running avg loaded: ${Object.entries(byTeam).map(([t,g]) => `${t}:${g.length}`).join(', ')}`);
-
-    // DEBUG: per-player game doc counts for Teal and Gold
-    const debugTeams = new Set(['teal', 'gold']);
-    const docsPerPlayer = {};
-    const hitsPerPlayer = {};
-    battingSnaps.forEach((snap, idx) => {
-      const p = seasonPlayers[idx];
-      if (!p) return;
-      let teamMatch = false;
-      snap.forEach(d => { if (debugTeams.has((d.data().teamId || '').toLowerCase())) teamMatch = true; });
-      if (!teamMatch && snap.size === 0) return;
-      let docCount = 0, hitCount = 0;
-      snap.forEach(d => {
-        const team = (d.data().teamId || '').toLowerCase();
-        if (debugTeams.has(team)) { docCount++; hitCount += Number(d.data().hits) || 0; }
-      });
-      if (docCount > 0) {
-        const key = `${p.id}`;
-        docsPerPlayer[key] = docCount;
-        hitsPerPlayer[key] = hitCount;
-      }
-    });
-    console.log('🔍 DEBUG docs per player (Teal/Gold):', docsPerPlayer);
-    console.log('🔍 DEBUG hits per player (Teal/Gold):', hitsPerPlayer);
 
     runningDataCache[seasonId] = byTeam;
     return byTeam;
