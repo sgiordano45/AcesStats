@@ -750,6 +750,32 @@ body {
         const totHR  = sum(teamBatting, 'homeRuns');
         const totRBI = sum(teamBatting, 'rbi');
 
+        const showAdvanced = totRBI > 0;
+
+        // SLG = (1B + 2×2B + 3×3B + 4×HR) / AB
+        // OBP = (H + BB) / (AB + BB)
+        // OPS = OBP + SLG
+        const calcSlg = (p) => {
+          const ab = p.atBats || 0;
+          if (ab === 0) return null;
+          const dbl = p.doubles || 0, tri = p.triples || 0, hr = p.homeRuns || 0;
+          const singles = (p.hits || 0) - dbl - tri - hr;
+          return (singles + 2*dbl + 3*tri + 4*hr) / ab;
+        };
+        const calcObp = (p) => {
+          const ab = p.atBats || 0, bb = p.walks || 0;
+          if (ab + bb === 0) return null;
+          return ((p.hits || 0) + bb) / (ab + bb);
+        };
+        const fmtSlg = (v) => v === null ? '---' : v.toFixed(3).replace(/^0/, '');
+        const fmtOps = (v) => v === null ? '---' : v.toFixed(3).replace(/^0/, '');
+
+        // Totals SLG/OPS
+        const totSingles = totH - tot2B - tot3B - totHR;
+        const totSlgVal  = totAB > 0 ? (totSingles + 2*tot2B + 3*tot3B + 4*totHR) / totAB : null;
+        const totObpVal  = (totAB + totBB) > 0 ? (totH + totBB) / (totAB + totBB) : null;
+        const totOpsVal  = (totSlgVal !== null && totObpVal !== null) ? totSlgVal + totObpVal : null;
+
         const wrapEl = document.createElement('div');
         wrapEl.className = 'stat-table-wrap';
         wrapEl.innerHTML = `
@@ -767,6 +793,7 @@ body {
                 <th>3B</th>
                 <th>HR</th>
                 <th>AVG</th>
+                ${showAdvanced ? '<th>SLG</th><th>OPS</th>' : ''}
               </tr>
             </thead>
             <tbody>
@@ -774,6 +801,9 @@ body {
                 const avg = (p.atBats || 0) > 0
                   ? (p.hits / p.atBats).toFixed(3).replace(/^0/, '')
                   : '---';
+                const slgVal = calcSlg(p);
+                const obpVal = calcObp(p);
+                const opsVal = (slgVal !== null && obpVal !== null) ? slgVal + obpVal : null;
                 const playerLegacyId = p._legacyId || null;
                 const playerPageId = (playerLegacyId && legacyToAuth[playerLegacyId]) || playerLegacyId;
                 const nameLink = playerPageId
@@ -790,6 +820,7 @@ body {
                   <td>${p.triples ?? 0}</td>
                   <td>${p.homeRuns ?? 0}</td>
                   <td>${avg}</td>
+                  ${showAdvanced ? `<td>${fmtSlg(slgVal)}</td><td>${fmtOps(opsVal)}</td>` : ''}
                 </tr>`;
               }).join('')}
             </tbody>
@@ -805,6 +836,7 @@ body {
                 <td>${tot3B}</td>
                 <td>${totHR}</td>
                 <td>${totAB > 0 ? (totH/totAB).toFixed(3).replace(/^0/,'') : '---'}</td>
+                ${showAdvanced ? `<td>${fmtSlg(totSlgVal)}</td><td>${fmtOps(totOpsVal)}</td>` : ''}
               </tr>
             </tfoot>
           </table>
