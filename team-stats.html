@@ -570,6 +570,7 @@
           <option value="triples_pg">3B/G — Triples per Game</option>
           <option value="rbis_pg">RBI/G — RBIs per Game</option>
           <option value="ra_pg">RA/G — Runs Allowed per Game</option>
+          <option value="run_diff_pg">+/- — Run Differential per Game</option>
         </select>
         <button class="share-chart-btn" id="shareRunningBtn">📤 Share</button>
       </div>
@@ -1185,6 +1186,7 @@
             case 'triples_pg': val = c3B / n; break;
             case 'rbis_pg':    val = cRBI / n; break;
             case 'ra_pg':      val = cRA / n; break;
+            case 'run_diff_pg': val = (cR - cRA) / n; break;
             default:           val = null;
           }
           data.push(val !== null ? Math.round(val * 10000) / 10000 : null);
@@ -1217,10 +1219,13 @@
 
       if (runningChart) { runningChart.destroy(); runningChart = null; }
 
-      const isRate = statKey === 'avg' || statKey === 'obp';
+      const isRate   = statKey === 'avg' || statKey === 'obp';
+      const isDiff   = statKey === 'run_diff_pg';
       const fmt = v => isRate
         ? (v < 1 ? '.' + Math.round(v * 1000).toString().padStart(3, '0') : v.toFixed(3))
-        : v.toFixed(2);
+        : isDiff
+          ? (v >= 0 ? '+' : '') + v.toFixed(2)
+          : v.toFixed(2);
 
       const ctx = document.getElementById('runningChart').getContext('2d');
       runningChart = new Chart(ctx, {
@@ -1235,10 +1240,14 @@
           },
           scales: {
             x: { grid: { color: '#f0f4f8' }, ticks: { font: { size: 11 } } },
-            y: { beginAtZero: false, grid: { color: '#f0f4f8' },
+            y: { beginAtZero: false,
+                 grid: { color: ctx => isDiff && ctx.tick.value === 0 ? '#888' : '#f0f4f8',
+                         lineWidth: ctx => isDiff && ctx.tick.value === 0 ? 2 : 1 },
                  ticks: { font: { size: 11 }, callback: v => isRate
                    ? '.' + Math.round(v * 1000).toString().padStart(3, '0')
-                   : v.toFixed(1) } }
+                   : isDiff
+                     ? (v >= 0 ? '+' : '') + v.toFixed(1)
+                     : v.toFixed(1) } }
           }
         }
       });
