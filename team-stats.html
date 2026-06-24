@@ -318,6 +318,23 @@
     }
     .share-standings-btn:hover { background: rgba(255,255,255,0.30); }
 
+    /* ── Share chart button ──────────────────────── */
+    .share-chart-btn {
+      background: var(--primary);
+      border: none;
+      color: white;
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 0.78rem;
+      font-weight: 700;
+      cursor: pointer;
+      letter-spacing: 0.03em;
+      transition: background 0.15s;
+      white-space: nowrap;
+      margin-left: auto;
+    }
+    .share-chart-btn:hover { background: #3a6b1e; }
+
     /* ── Share modal ─────────────────────────────── */
     .share-modal-overlay {
       display: none;
@@ -554,6 +571,7 @@
           <option value="rbis_pg">RBI/G — RBIs per Game</option>
           <option value="ra_pg">RA/G — Runs Allowed per Game</option>
         </select>
+        <button class="share-chart-btn" id="shareRunningBtn">📤 Share</button>
       </div>
       <p style="font-size:0.8rem;color:var(--text-light);margin:0 0 12px 0;">Cumulative per-game average through each game played — e.g., after Game 4 the value reflects the season average across all 4 games.</p>
       <div id="runningLoading" style="display:none;text-align:center;padding:20px;color:var(--text-light);">⏳ Loading game data…</div>
@@ -934,10 +952,48 @@
     }).catch(() => alert('Clipboard not available. Please copy manually.'));
   }
 
+  // ── Running avg share helpers ────────────────────────
+  function openRunningShareModal()  { document.getElementById('shareRunningModalOverlay').classList.add('active'); }
+  function closeRunningShareModal() { document.getElementById('shareRunningModalOverlay').classList.remove('active'); }
+
+  async function shareRunningChartImage() {
+    closeRunningShareModal();
+    const card = document.querySelector('#tab-running .trends-card');
+    if (!card) return;
+    try {
+      const seasonSel = document.getElementById('runningSeasonSel');
+      const statSel   = document.getElementById('runningStatSel');
+      const seasonLabel = seasonSel.options[seasonSel.selectedIndex]?.text?.replace(/\s+/g, '-') || 'season';
+      const statLabel   = statSel.options[statSel.selectedIndex]?.text?.split('—')[0]?.trim().replace(/\//g, '') || 'stat';
+      const canvas = await html2canvas(card, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
+      const link = document.createElement('a');
+      link.download = `aces-running-avg-${seasonLabel}-${statLabel}.png`;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+    } catch(e) {
+      console.error('Chart share failed:', e);
+      // Fallback: capture just the canvas element
+      const chartCanvas = document.getElementById('runningChart');
+      if (chartCanvas) {
+        const link = document.createElement('a');
+        link.download = 'aces-running-avg.png';
+        link.href = chartCanvas.toDataURL('image/png');
+        link.click();
+      } else {
+        alert('Could not capture chart image.');
+      }
+    }
+  }
+
+  const shareRunningBtn = document.getElementById('shareRunningBtn');
+  if (shareRunningBtn) shareRunningBtn.addEventListener('click', openRunningShareModal);
+
   // Expose to global scope for modal button onclick attributes
-  window.closeShareModal     = closeShareModal;
-  window.shareTeamStatsImage = shareTeamStatsImage;
-  window.shareTeamStatsText  = shareTeamStatsText;
+  window.closeShareModal        = closeShareModal;
+  window.shareTeamStatsImage    = shareTeamStatsImage;
+  window.shareTeamStatsText     = shareTeamStatsText;
+  window.closeRunningShareModal = closeRunningShareModal;
+  window.shareRunningChartImage = shareRunningChartImage;
 
   // ── Init ─────────────────────────────────────────────
   onAuthStateChanged(auth, async (user) => {
@@ -1092,16 +1148,6 @@
     }
 
     console.log(`🎯 Running avg loaded: ${Object.entries(byTeam).map(([t,g]) => `${t}:${g.length}`).join(', ')}`);
-
-    // DEBUG: show cumulative totals per team to compare with stats table
-    for (const [teamId, games] of Object.entries(byTeam)) {
-      const totals = games.reduce((acc, g) => ({
-        hits: acc.hits + g.hits, runs: acc.runs + g.runs,
-        ab: acc.ab + g.ab, walks: acc.walks + g.walks
-      }), { hits: 0, runs: 0, ab: 0, walks: 0 });
-      const n = games.length;
-      console.log(`📊 ${teamId}: ${n}G | H/G=${( totals.hits/n).toFixed(2)} R/G=${(totals.runs/n).toFixed(2)} AB/G=${(totals.ab/n).toFixed(2)} | totalH=${totals.hits} totalR=${totals.runs}`);
-    }
 
     runningDataCache[seasonId] = byTeam;
     return byTeam;
@@ -1399,6 +1445,24 @@
   document.getElementById('runningSeasonSel').addEventListener('change', renderRunningAvg);
   document.getElementById('runningStatSel').addEventListener('change', renderRunningAvg);
 </script>
+
+<!-- Running avg share modal -->
+<div class="share-modal-overlay" id="shareRunningModalOverlay" onclick="if(event.target===this)closeRunningShareModal()">
+  <div class="share-modal">
+    <h3>📤 Share Running Averages</h3>
+    <p>Download a PNG of the current chart.</p>
+    <div class="share-modal-options">
+      <button class="share-option-btn" onclick="shareRunningChartImage()">
+        <span class="share-option-icon">🖼️</span>
+        <div>
+          <div class="share-option-title">Save as Image</div>
+          <div class="share-option-desc">Download a PNG of the chart</div>
+        </div>
+      </button>
+    </div>
+    <button class="share-modal-cancel" onclick="closeRunningShareModal()">Cancel</button>
+  </div>
+</div>
 
 <!-- Share modal -->
 <div class="share-modal-overlay" id="shareModalOverlay" onclick="if(event.target===this)closeShareModal()">
