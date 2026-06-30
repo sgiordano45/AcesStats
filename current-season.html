@@ -2313,13 +2313,13 @@
           if (!teamStats[homeTeam]) {
             teamStats[homeTeam] = {
               name: homeTeam, wins: 0, losses: 0, ties: 0,
-              runsFor: 0, runsAgainst: 0, h2h: {}
+              runsFor: 0, runsAgainst: 0, h2h: {}, gameHistory: []
             };
           }
           if (!teamStats[awayTeam]) {
             teamStats[awayTeam] = {
               name: awayTeam, wins: 0, losses: 0, ties: 0,
-              runsFor: 0, runsAgainst: 0, h2h: {}
+              runsFor: 0, runsAgainst: 0, h2h: {}, gameHistory: []
             };
           }
 
@@ -2340,16 +2340,22 @@
             teamStats[awayTeam].ties++;
             teamStats[homeTeam].h2h[awayTeam].ties++;
             teamStats[awayTeam].h2h[homeTeam].ties++;
+            teamStats[homeTeam].gameHistory.push({ date: game.date, result: 'T' });
+            teamStats[awayTeam].gameHistory.push({ date: game.date, result: 'T' });
           } else if (winner === homeTeam) {
             teamStats[homeTeam].wins++;
             teamStats[awayTeam].losses++;
             teamStats[homeTeam].h2h[awayTeam].wins++;
             teamStats[awayTeam].h2h[homeTeam].losses++;
+            teamStats[homeTeam].gameHistory.push({ date: game.date, result: 'W' });
+            teamStats[awayTeam].gameHistory.push({ date: game.date, result: 'L' });
           } else if (winner === awayTeam) {
             teamStats[awayTeam].wins++;
             teamStats[homeTeam].losses++;
             teamStats[awayTeam].h2h[homeTeam].wins++;
             teamStats[homeTeam].h2h[awayTeam].losses++;
+            teamStats[awayTeam].gameHistory.push({ date: game.date, result: 'W' });
+            teamStats[homeTeam].gameHistory.push({ date: game.date, result: 'L' });
           }
         });
 
@@ -2367,7 +2373,7 @@
           return team;
         });
 
-        return standingsWithSOS.sort((a, b) => {
+        const sorted = standingsWithSOS.sort((a, b) => {
           // First: Win percentage
           if (a.winPct !== b.winPct) return b.winPct - a.winPct;
 
@@ -2392,6 +2398,41 @@
           // Sixth: Run Differential
           return b.runDifferential - a.runDifferential;
         });
+
+        // --- Last 5 games ---
+        sorted.forEach(team => {
+          const history = (team.gameHistory || [])
+            .slice()
+            .sort((a, b) => parseGameDate(b.date) - parseGameDate(a.date))
+            .slice(0, 5);
+          const w = history.filter(g => g.result === 'W').length;
+          const l = history.filter(g => g.result === 'L').length;
+          team.last5 = history.length > 0 ? `${w}-${l}` : '—';
+        });
+
+        // --- Remaining regular season games per team ---
+        const regularRemaining = (allSeasonGames || games).filter(g =>
+          (!g.winner || g.winner.trim() === '') && g.game_type === 'Regular'
+        );
+        sorted.forEach(team => {
+          team.remainingCount = regularRemaining.filter(g =>
+            g["home team"] === team.name || g["away team"] === team.name
+          ).length;
+        });
+
+        // --- Clinched seed: no team below can reach this team's win% ---
+        sorted.forEach((team, idx) => {
+          team.clinched = sorted.slice(idx + 1).every(other => {
+            const otherMaxWins = other.wins + other.remainingCount;
+            const otherTotalGames = other.wins + other.losses + other.ties + other.remainingCount;
+            const otherMaxWinPct = otherTotalGames > 0
+              ? (otherMaxWins + other.ties * 0.5) / otherTotalGames
+              : 0;
+            return team.winPct > otherMaxWinPct;
+          });
+        });
+
+        return sorted;
       }
 
       function compareHeadToHead(teamA, teamB) {
@@ -2419,10 +2460,11 @@
       function generateStandingsTable(title, standings, preseason = false) {
         const sosColumns = preseason ? '' : `
                 <th>SOS</th>
-                <th>Rem SOS</th>`;
+                <th>Rem SOS</th>
+                <th>L5</th>`;
         const sosFooter = preseason ? '' : `
           <div style="margin-top: 1rem; font-size: 0.85rem; color: var(--text-light);">
-            <strong>SOS:</strong> Schedule Strength | <strong>Rem SOS:</strong> Remaining Schedule Strength<br>
+            <strong>SOS:</strong> Schedule Strength | <strong>Rem SOS:</strong> Remaining Schedule Strength | <strong>L5:</strong> Last 5 games (W-L) | 🔒 = Seed clinched<br>
             <span style="color: #28a745;">Green</span> = easier, <span style="color: #ffc107;">Yellow</span> = average, <span style="color: #dc3545;">Red</span> = harder
           </div>`;
         return `
@@ -2452,7 +2494,7 @@
                     <td class="schedule-strength ${remSosFormatted.class}">${remSosFormatted.value}</td>`;
                 return `
                   <tr>
-                    <td style="text-align: center;">${index + 1}</td>
+                    <td style="text-align: center;">${index + 1}${team.clinched ? ' <span title="Seed clinched" style="font-size:0.8em;">🔒</span>' : ''}</td>
                     <td class="team-name"><a href="current-season-team.html?team=${encodeURIComponent(team.name)}" style="text-decoration: none; font-weight: 700;"><span data-team="${team.name}">${team.name}</span></a></td>
                     <td style="text-align: center;">${team.wins}</td>
                     <td style="text-align: center;">${team.losses}</td>
@@ -2462,6 +2504,7 @@
                     <td style="text-align: center;">${preseason ? '—' : team.runsAgainst}</td>
                     <td style="text-align: center;">${preseason ? '—' : (team.runDifferential >= 0 ? '+' : '') + team.runDifferential}</td>
                     ${sosCells}
+                    <td style="text-align: center;">${preseason ? '—' : (team.last5 || '—')}</td>
                     <td style="text-align: center;">${team.wins + team.losses + team.ties}</td>
                   </tr>
                 `;
