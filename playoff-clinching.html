@@ -43,6 +43,82 @@
     color: var(--text-dark);
   }
 
+  /* Share Button & Modal */
+  .share-seed-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(255,255,255,0.2);
+    color: white;
+    border: 1px solid rgba(255,255,255,0.4);
+    border-radius: 20px;
+    padding: 6px 14px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s;
+    flex-shrink: 0;
+  }
+  .share-seed-btn:hover { background: rgba(255,255,255,0.35); }
+
+  .share-modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 9999;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  .share-modal {
+    background: white;
+    border-radius: 16px;
+    padding: 1.75rem;
+    width: 100%;
+    max-width: 380px;
+    position: relative;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.25);
+  }
+  .share-modal-close {
+    position: absolute;
+    top: 12px;
+    right: 16px;
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    cursor: pointer;
+    color: #718096;
+    line-height: 1;
+  }
+  .share-modal h3 { margin: 0 0 0.4rem 0; font-size: 1.2rem; color: var(--primary-color); font-weight: 700; }
+  .share-modal p  { margin: 0 0 1.25rem 0; font-size: 0.88rem; color: #718096; }
+  .share-option-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.9rem;
+    width: 100%;
+    padding: 0.85rem 1rem;
+    border: 1.5px solid #e2e8f0;
+    border-radius: 10px;
+    background: white;
+    cursor: pointer;
+    font-size: 0.9rem;
+    color: #2d3748;
+    margin-bottom: 0.75rem;
+    text-align: left;
+    transition: border-color 0.2s, background 0.2s, color 0.2s;
+  }
+  .share-option-btn:last-child { margin-bottom: 0; }
+  .share-option-btn:hover { border-color: var(--primary-color); background: #f0f6ea; color: var(--primary-color); }
+  .share-option-btn.success { border-color: #16a34a; background: #f0fdf4; color: #16a34a; }
+  .share-option-icon { font-size: 1.5rem; flex-shrink: 0; }
+  .share-option-text { flex: 1; }
+  .share-option-title { font-weight: 700; font-size: 0.95rem; }
+  .share-option-desc { font-size: 0.8rem; font-weight: 400; color: #718096; margin-top: 1px; }
+  .share-option-btn:hover .share-option-desc,
+  .share-option-btn.success .share-option-desc { color: inherit; opacity: 0.75; }
+
   /* Loading Spinner */
   .loading-overlay {
     position: fixed;
@@ -456,6 +532,10 @@
       <div class="section-content">
 
         <!-- Quick Seed Summary Table -->
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:0.75rem; flex-wrap:wrap; gap:8px;">
+          <div style="font-weight:700; font-size:0.95rem; color:var(--text-dark);">📋 Seed Summary</div>
+          <button class="share-seed-btn" onclick="openSeedShareModal()" style="background:var(--primary-color); border-color:var(--primary-color);">📤 Share</button>
+        </div>
         <div id="seedSummaryWrap" style="overflow-x: auto; margin-bottom: 1.5rem;">
           <table class="clinching-table" id="seedSummaryTable">
             <thead>
@@ -510,6 +590,29 @@
           <strong>#3</strong> = locked into that seed | 
           <strong>#2-4</strong> = can finish anywhere in that range
         </div>
+      </div>
+    </div>
+
+    <!-- Seed Summary Share Modal -->
+    <div id="seedShareModal" class="share-modal-overlay" onclick="if(event.target===this) closeSeedShareModal()">
+      <div class="share-modal">
+        <button class="share-modal-close" onclick="closeSeedShareModal()">&times;</button>
+        <h3>🔗 Share Seed Summary</h3>
+        <p>Choose how you'd like to share the seeding snapshot:</p>
+        <button class="share-option-btn" id="seedShareImageBtn" onclick="shareSeedImage()">
+          <span class="share-option-icon">📷</span>
+          <span class="share-option-text">
+            <div class="share-option-title">Save as Image</div>
+            <div class="share-option-desc">Download a clean PNG — perfect for group chats</div>
+          </span>
+        </button>
+        <button class="share-option-btn" id="seedShareTextBtn" onclick="shareSeedText()">
+          <span class="share-option-icon">📋</span>
+          <span class="share-option-text">
+            <div class="share-option-title">Copy as Text</div>
+            <div class="share-option-desc">Copy a formatted seed table to clipboard</div>
+          </span>
+        </button>
       </div>
     </div>
 
@@ -2207,6 +2310,130 @@
     }
 
     document.addEventListener('DOMContentLoaded', loadData);
+
+    // ── Seed Summary Share ──────────────────────────────────────────────
+    function openSeedShareModal() {
+      document.getElementById('seedShareModal').style.display = 'flex';
+      ['seedShareImageBtn','seedShareTextBtn'].forEach(id => {
+        document.getElementById(id).classList.remove('success');
+      });
+      document.getElementById('seedShareImageBtn').innerHTML = `<span class="share-option-icon">📷</span><span class="share-option-text"><div class="share-option-title">Save as Image</div><div class="share-option-desc">Download a clean PNG — perfect for group chats</div></span>`;
+      document.getElementById('seedShareTextBtn').innerHTML = `<span class="share-option-icon">📋</span><span class="share-option-text"><div class="share-option-title">Copy as Text</div><div class="share-option-desc">Copy a formatted seed table to clipboard</div></span>`;
+    }
+
+    function closeSeedShareModal() {
+      document.getElementById('seedShareModal').style.display = 'none';
+    }
+
+    async function shareSeedImage() {
+      const btn = document.getElementById('seedShareImageBtn');
+      btn.innerHTML = `<span class="share-option-icon">⏳</span><span class="share-option-text"><div class="share-option-title">Generating image...</div><div class="share-option-desc">This may take a moment</div></span>`;
+
+      try {
+        if (!window.html2canvas) {
+          await new Promise((resolve, reject) => {
+            const s = document.createElement('script');
+            s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+            s.onload = resolve; s.onerror = reject;
+            document.head.appendChild(s);
+          });
+        }
+
+        const tableEl = document.getElementById('seedSummaryTable');
+        if (!tableEl) { alert('Table not loaded yet.'); return; }
+
+        const seasonLabel = document.querySelector('.header h1')?.textContent || 'Playoff Seeding';
+
+        const wrapper = document.createElement('div');
+        wrapper.style.cssText = `
+          position: fixed; top: -9999px; left: -9999px;
+          background: #ffffff; padding: 20px 24px 24px;
+          border-radius: 12px; width: 560px;
+          font-family: 'Inter', -apple-system, sans-serif;
+        `;
+
+        wrapper.innerHTML = `
+          <div style="background: linear-gradient(135deg, #ff6347 0%, #ff8c42 100%); border-radius: 10px 10px 0 0; padding: 14px 20px; margin: -20px -24px 0; display:flex; align-items:center; justify-content:space-between;">
+            <div style="color:white; font-weight:800; font-size:1.1rem;">🔒 Playoff Seeding Snapshot</div>
+            <div style="color:rgba(255,255,255,0.85); font-size:0.8rem; font-weight:600;">acessoftballreference.com</div>
+          </div>
+          <div style="margin-top:16px; font-weight:700; font-size:0.95rem; color:#2d5016; margin-bottom:8px;">Current Seed Standings</div>
+        `;
+
+        const tableClone = tableEl.cloneNode(true);
+        tableClone.style.cssText = 'width:100%; border-collapse:collapse; font-size:0.88rem;';
+        tableClone.querySelectorAll('th').forEach(th => {
+          th.style.cssText = 'background:#f0f6ea; color:#2d5016; font-weight:700; padding:8px 10px; text-align:left; border-bottom:2px solid #c6ddb8; font-size:0.82rem;';
+        });
+        tableClone.querySelectorAll('td').forEach(td => {
+          td.style.cssText = 'padding:8px 10px; border-bottom:1px solid #e2e8f0; font-size:0.88rem; color:#2d3748;';
+        });
+        tableClone.querySelectorAll('tbody tr:nth-child(even)').forEach(tr => {
+          tr.style.background = '#fafbfc';
+        });
+        // Strip inline badge styles — just show text
+        tableClone.querySelectorAll('.status-badge').forEach(badge => {
+          const span = document.createElement('span');
+          span.textContent = badge.textContent + ' ';
+          span.style.fontWeight = '700';
+          badge.replaceWith(span);
+        });
+
+        wrapper.appendChild(tableClone);
+
+        const footer = document.createElement('div');
+        footer.style.cssText = 'margin-top:12px; font-size:0.75rem; color:#718096; text-align:right;';
+        footer.textContent = 'Generated ' + new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        wrapper.appendChild(footer);
+
+        document.body.appendChild(wrapper);
+        const canvas = await html2canvas(wrapper, { scale: 2, backgroundColor: '#ffffff', useCORS: true, logging: false });
+        document.body.removeChild(wrapper);
+
+        const link = document.createElement('a');
+        link.download = `aces-seeds-${new Date().toISOString().slice(0,10)}.png`;
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+
+        btn.classList.add('success');
+        btn.innerHTML = `<span class="share-option-icon">✅</span><span class="share-option-text"><div class="share-option-title">Image saved!</div><div class="share-option-desc">Check your downloads folder</div></span>`;
+        setTimeout(() => closeSeedShareModal(), 2000);
+
+      } catch (err) {
+        console.error('Screenshot error:', err);
+        btn.innerHTML = `<span class="share-option-icon">📷</span><span class="share-option-text"><div class="share-option-title">Save as Image</div><div class="share-option-desc">Error — try again</div></span>`;
+        alert('Could not generate image. Try Copy as Text instead.');
+      }
+    }
+
+    function shareSeedText() {
+      const btn = document.getElementById('seedShareTextBtn');
+      const rows = document.querySelectorAll('#seedSummaryBody tr');
+      if (!rows.length) { alert('Table not loaded yet.'); return; }
+
+      const lines = ['🔒 Playoff Seeding Snapshot', ''];
+      lines.push(`${'#'.padEnd(4)}${'Team'.padEnd(12)}${'Record'.padEnd(10)}Seed Status`);
+      lines.push('─'.repeat(44));
+      rows.forEach(row => {
+        const cells = row.querySelectorAll('td');
+        if (cells.length < 4) return;
+        const seed   = cells[0].textContent.trim().padEnd(4);
+        const team   = cells[1].textContent.trim().slice(0,11).padEnd(12);
+        const record = cells[2].textContent.trim().padEnd(10);
+        const status = cells[3].textContent.trim();
+        lines.push(`${seed}${team}${record}${status}`);
+      });
+      lines.push('');
+      lines.push('acessoftballreference.com');
+
+      navigator.clipboard.writeText(lines.join('\n')).then(() => {
+        btn.classList.add('success');
+        btn.innerHTML = `<span class="share-option-icon">✅</span><span class="share-option-text"><div class="share-option-title">Copied!</div><div class="share-option-desc">Paste it anywhere</div></span>`;
+        setTimeout(() => closeSeedShareModal(), 2000);
+      }).catch(() => {
+        alert('Could not copy to clipboard.');
+      });
+    }
   </script>
   <script src="team-colors.js"></script>
 <!-- Load navigation -->
