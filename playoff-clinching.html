@@ -454,6 +454,24 @@
     <div class="section">
       <div class="section-header">🏆 Team-by-Team Seeding Scenarios</div>
       <div class="section-content">
+
+        <!-- Quick Seed Summary Table -->
+        <div id="seedSummaryWrap" style="overflow-x: auto; margin-bottom: 1.5rem;">
+          <table class="clinching-table" id="seedSummaryTable">
+            <thead>
+              <tr>
+                <th>Seed</th>
+                <th>Team</th>
+                <th>Record</th>
+                <th>Seed Status</th>
+              </tr>
+            </thead>
+            <tbody id="seedSummaryBody">
+              <tr><td colspan="4" class="loading">Loading...</td></tr>
+            </tbody>
+          </table>
+        </div>
+
         <div style="overflow-x: auto;">
           <table class="clinching-table">
             <thead>
@@ -2059,7 +2077,39 @@
       const tbody = document.getElementById('clinchingTableBody');
       tbody.innerHTML = '';
 
-      // Only show top 10 teams (all make playoffs)
+      // --- Quick seed summary table ---
+      const summaryBody = document.getElementById('seedSummaryBody');
+      summaryBody.innerHTML = '';
+      standings.slice(0, TOTAL_TEAMS).forEach((team, index) => {
+        const seed = index + 1;
+        const range = calculateSeedRange(team, standings, allGames);
+        const clinched = range.bestSeed === range.worstSeed;
+        const isPlayIn = seed > 5;
+
+        let seedLabel;
+        if (clinched) {
+          seedLabel = `<strong>Clinched #${range.bestSeed}</strong>`;
+        } else {
+          seedLabel = `#${range.bestSeed} – #${range.worstSeed}`;
+        }
+
+        const rowClass = isPlayIn ? 'status-danger' : 'status-safe';
+        const statusBadge = isPlayIn
+          ? `<span class="status-badge status-danger">Play-In</span>`
+          : `<span class="status-badge status-safe">Direct</span>`;
+
+        const summaryRow = document.createElement('tr');
+        summaryRow.innerHTML = `
+          <td><strong>#${seed}</strong></td>
+          <td class="team-name">${team.name}</td>
+          <td>${team.wins}-${team.losses}${team.ties > 0 ? `-${team.ties}` : ''}</td>
+          <td>${statusBadge} ${seedLabel}</td>
+        `;
+        summaryBody.appendChild(summaryRow);
+      });
+
+      // --- Detailed scenarios table ---
+      // Only show top 11 teams (all make playoffs)
       standings.slice(0, TOTAL_TEAMS).forEach((team, index) => {
         const seed = index + 1;
         const gamesLeft = calculateRemainingGames(allGames, team.name);
