@@ -2056,13 +2056,14 @@
     }
 
     let allGames = [];
+    let seasonLabel = 'Playoff Seeding';
 
     async function loadData() {
       try {
         console.log('🔄 Loading playoff seeding data...');
-        
+
         const capitalize = (str) => str ? str.charAt(0).toUpperCase() + str.slice(1) : "";
-        
+
         const season = await getCurrentSeason();
         console.log('📅 Current season:', season);
         
@@ -2071,6 +2072,8 @@
           showError();
           return;
         }
+
+        seasonLabel = `${season.year} ${capitalize(season.season || '')} Playoff Seeding`.trim();
 
         const gamesRaw = await getSeasonGames(season.id);
         console.log(`📊 Loaded ${gamesRaw.length} total games (raw)`);
@@ -2342,8 +2345,6 @@
         const tableEl = document.getElementById('seedSummaryTable');
         if (!tableEl) { alert('Table not loaded yet.'); return; }
 
-        const seasonLabel = document.querySelector('.header h1')?.textContent || 'Playoff Seeding';
-
         const wrapper = document.createElement('div');
         wrapper.style.cssText = `
           position: fixed; top: -9999px; left: -9999px;
@@ -2354,16 +2355,21 @@
 
         wrapper.innerHTML = `
           <div style="background: linear-gradient(135deg, #ff6347 0%, #ff8c42 100%); border-radius: 10px 10px 0 0; padding: 14px 20px; margin: -20px -24px 0; display:flex; align-items:center; justify-content:space-between;">
-            <div style="color:white; font-weight:800; font-size:1.1rem;">🔒 Playoff Seeding Snapshot</div>
+            <div style="color:white; font-weight:800; font-size:1.1rem;">🔒 ${seasonLabel}</div>
             <div style="color:rgba(255,255,255,0.85); font-size:0.8rem; font-weight:600;">acessoftballreference.com</div>
           </div>
           <div style="margin-top:16px; font-weight:700; font-size:0.95rem; color:#2d5016; margin-bottom:8px;">Current Seed Standings</div>
         `;
 
         const tableClone = tableEl.cloneNode(true);
-        tableClone.style.cssText = 'width:100%; border-collapse:collapse; font-size:0.88rem;';
+        tableClone.style.cssText = 'width:100%; border-collapse:collapse; font-size:0.88rem; table-layout:auto;';
+        // Remove sticky positioning from header so html2canvas renders it correctly
+        tableClone.querySelectorAll('thead, thead tr, thead th').forEach(el => {
+          el.style.position = 'static';
+          el.style.top = 'auto';
+        });
         tableClone.querySelectorAll('th').forEach(th => {
-          th.style.cssText = 'background:#f0f6ea; color:#2d5016; font-weight:700; padding:8px 10px; text-align:left; border-bottom:2px solid #c6ddb8; font-size:0.82rem;';
+          th.style.cssText = 'background:#f0f6ea; color:#2d5016; font-weight:700; padding:8px 10px; text-align:left; border-bottom:2px solid #c6ddb8; font-size:0.82rem; position:static;';
         });
         tableClone.querySelectorAll('td').forEach(td => {
           td.style.cssText = 'padding:8px 10px; border-bottom:1px solid #e2e8f0; font-size:0.88rem; color:#2d3748;';
@@ -2371,7 +2377,7 @@
         tableClone.querySelectorAll('tbody tr:nth-child(even)').forEach(tr => {
           tr.style.background = '#fafbfc';
         });
-        // Strip inline badge styles — just show text
+        // Strip badge classes — just show text
         tableClone.querySelectorAll('.status-badge').forEach(badge => {
           const span = document.createElement('span');
           span.textContent = badge.textContent + ' ';
