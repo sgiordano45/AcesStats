@@ -2420,25 +2420,34 @@
           ).length;
         });
 
-        // --- Clinched seed: locked from both above AND below ---
+        // --- Clinched seed: locked from both above AND below (worst-case vs best-case) ---
         sorted.forEach((team, idx) => {
-          const teamTotalWithRemaining = team.wins + team.losses + team.ties + team.remainingCount;
-          const teamMaxWinPct = teamTotalWithRemaining > 0
-            ? (team.wins + team.remainingCount + team.ties * 0.5) / teamTotalWithRemaining
+          const teamTotal = team.wins + team.losses + team.ties + team.remainingCount;
+          // Worst case: team loses all remaining games
+          const teamMinWinPct = teamTotal > 0
+            ? (team.wins + team.ties * 0.5) / teamTotal
+            : 0;
+          // Best case: team wins all remaining games
+          const teamMaxWinPct = teamTotal > 0
+            ? (team.wins + team.remainingCount + team.ties * 0.5) / teamTotal
             : 0;
 
-          // Can't be passed by any team below (no team below can reach this team's current win%)
+          // Can't be passed by any team below:
+          // Even if team loses all remaining AND team below wins all remaining,
+          // team's min win% must still exceed team below's max win%
           const cantFall = idx < sorted.length - 1
             ? sorted.slice(idx + 1).every(other => {
                 const otherTotal = other.wins + other.losses + other.ties + other.remainingCount;
                 const otherMaxWinPct = otherTotal > 0
                   ? (other.wins + other.remainingCount + other.ties * 0.5) / otherTotal
                   : 0;
-                return team.winPct > otherMaxWinPct;
+                return teamMinWinPct > otherMaxWinPct;
               })
-            : false; // Last place is never "clinched" by default — must also check cantRise
+            : false; // Last place can never clinch solely from below
 
-          // Can't rise above any team above (even winning all remaining can't beat them)
+          // Can't rise above any team above:
+          // Even if team wins all remaining AND team above loses all remaining,
+          // team's max win% must still be below team above's min win%
           const cantRise = idx > 0
             ? sorted.slice(0, idx).every(other => {
                 const otherTotal = other.wins + other.losses + other.ties + other.remainingCount;
@@ -2447,7 +2456,7 @@
                   : 0;
                 return teamMaxWinPct <= otherMinWinPct;
               })
-            : true; // First place has no one above — trivially can't rise
+            : true; // First place has no one above
 
           team.clinched = cantFall && cantRise;
         });
