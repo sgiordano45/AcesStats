@@ -2420,16 +2420,36 @@
           ).length;
         });
 
-        // --- Clinched seed: no team below can reach this team's win% ---
+        // --- Clinched seed: locked from both above AND below ---
         sorted.forEach((team, idx) => {
-          team.clinched = sorted.slice(idx + 1).every(other => {
-            const otherMaxWins = other.wins + other.remainingCount;
-            const otherTotalGames = other.wins + other.losses + other.ties + other.remainingCount;
-            const otherMaxWinPct = otherTotalGames > 0
-              ? (otherMaxWins + other.ties * 0.5) / otherTotalGames
-              : 0;
-            return team.winPct > otherMaxWinPct;
-          });
+          const teamTotalWithRemaining = team.wins + team.losses + team.ties + team.remainingCount;
+          const teamMaxWinPct = teamTotalWithRemaining > 0
+            ? (team.wins + team.remainingCount + team.ties * 0.5) / teamTotalWithRemaining
+            : 0;
+
+          // Can't be passed by any team below (no team below can reach this team's current win%)
+          const cantFall = idx < sorted.length - 1
+            ? sorted.slice(idx + 1).every(other => {
+                const otherTotal = other.wins + other.losses + other.ties + other.remainingCount;
+                const otherMaxWinPct = otherTotal > 0
+                  ? (other.wins + other.remainingCount + other.ties * 0.5) / otherTotal
+                  : 0;
+                return team.winPct > otherMaxWinPct;
+              })
+            : false; // Last place is never "clinched" by default — must also check cantRise
+
+          // Can't rise above any team above (even winning all remaining can't beat them)
+          const cantRise = idx > 0
+            ? sorted.slice(0, idx).every(other => {
+                const otherTotal = other.wins + other.losses + other.ties + other.remainingCount;
+                const otherMinWinPct = otherTotal > 0
+                  ? (other.wins + other.ties * 0.5) / otherTotal
+                  : 0;
+                return teamMaxWinPct <= otherMinWinPct;
+              })
+            : true; // First place has no one above — trivially can't rise
+
+          team.clinched = cantFall && cantRise;
         });
 
         return sorted;
