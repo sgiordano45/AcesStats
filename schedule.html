@@ -577,7 +577,8 @@ async function loadSchedule() {
                            (g.homeScore !== null && g.homeScore !== undefined &&
                             g.awayScore !== null && g.awayScore !== undefined &&
                             g.winner);
-        return { dp, key: gameKey(dp), home, away, time: g.time || '', isPlayoff, isComplete,
+        const isPlaceholder = !!g.isPlaceholder;
+        return { dp, key: gameKey(dp), home, away, time: g.time || '', isPlayoff, isPlaceholder, isComplete,
                  homeScore: g.homeScore ?? g['home score'] ?? null,
                  awayScore: g.awayScore ?? g['away score'] ?? null,
                  winner: g.winner ? capitalize(g.winner) : '' };
@@ -589,11 +590,23 @@ async function loadSchedule() {
         return (a.time || '').localeCompare(b.time || '');
       });
 
-    // Build team list
+    // Build team list — exclude placeholder seed/TBD labels
     const teams = new Set();
-    allGames.forEach(g => { teams.add(g.home); teams.add(g.away); });
+    allGames.forEach(g => {
+      if (!g.isPlaceholder) { teams.add(g.home); teams.add(g.away); }
+    });
     const sorted = [...teams].sort();
     const sel = document.getElementById('teamFilter');
+    // Add Playoffs option first
+    const pfOpt = document.createElement('option');
+    pfOpt.value = '__playoffs__';
+    pfOpt.textContent = '🏆 Playoffs';
+    sel.appendChild(pfOpt);
+    // Divider
+    const divider = document.createElement('option');
+    divider.disabled = true;
+    divider.textContent = '──────────';
+    sel.appendChild(divider);
     sorted.forEach(t => {
       const opt = document.createElement('option');
       opt.value = t;
@@ -635,16 +648,22 @@ async function loadSchedule() {
 // ── Filter handler ───────────────────────────────────────
 window.applyFilter = function() {
   activeFilter = document.getElementById('teamFilter').value;
-  const isMyTeam = myTeam && activeFilter === myTeam;
+  const isMyTeam = myTeam && activeFilter === myTeam && activeFilter !== '__playoffs__';
   document.getElementById('myTeamIndicator').style.display = isMyTeam ? 'flex' : 'none';
   updateStats();
   renderCalendar();
 };
 
 // ── Stats row ────────────────────────────────────────────
+function matchesFilter(g, filter) {
+  if (!filter) return true;
+  if (filter === '__playoffs__') return g.isPlayoff;
+  return g.home === filter || g.away === filter;
+}
+
 function updateStats() {
   const visible = activeFilter
-    ? allGames.filter(g => g.home === activeFilter || g.away === activeFilter)
+    ? allGames.filter(g => matchesFilter(g, activeFilter))
     : allGames;
 
   const completed = visible.filter(g => g.isComplete).length;
@@ -657,8 +676,9 @@ function updateStats() {
     : 0;
   document.getElementById('statMyGames').textContent = myTeam ? myCount : '—';
 
+  const filterLabel = activeFilter === '__playoffs__' ? 'Playoffs' : activeFilter;
   const meta = activeFilter
-    ? `Showing ${visible.length} game${visible.length !== 1 ? 's' : ''} for ${activeFilter}`
+    ? `Showing ${visible.length} game${visible.length !== 1 ? 's' : ''} for ${filterLabel}`
     : `${allGames.length} total games`;
   document.getElementById('filterMeta').textContent = meta;
   document.getElementById('legendRow').style.display = activeFilter ? 'flex' : 'none';
@@ -689,7 +709,7 @@ function renderCalendar() {
   byMonth.forEach(({ y, m, games }) => {
     // Visible games for this month under current filter
     const visibleGames = activeFilter
-      ? games.filter(g => g.home === activeFilter || g.away === activeFilter)
+      ? games.filter(g => matchesFilter(g, activeFilter))
       : games;
 
     // Skip month entirely if filtering and no games
@@ -751,12 +771,12 @@ function renderCalendar() {
       if (dayGames.length > 0) {
         // Check if any game involves the filtered team
         const hasMyGame = activeFilter
-          ? dayGames.some(g => g.home === activeFilter || g.away === activeFilter)
+          ? dayGames.some(g => matchesFilter(g, activeFilter))
           : (myTeam ? dayGames.some(g => g.home === myTeam || g.away === myTeam) : false);
 
         // If filtering, mark cells without matching games
         const hasFilterMatch = activeFilter
-          ? dayGames.some(g => g.home === activeFilter || g.away === activeFilter)
+          ? dayGames.some(g => matchesFilter(g, activeFilter))
           : true;
 
         if (activeFilter && !hasFilterMatch) {
@@ -769,7 +789,7 @@ function renderCalendar() {
 
         dayGames.forEach(g => {
           // In filter mode, skip chips that don't match
-          if (activeFilter && g.home !== activeFilter && g.away !== activeFilter) return;
+          if (activeFilter && !matchesFilter(g, activeFilter)) return;
 
           const isMyGame = myTeam && (g.home === myTeam || g.away === myTeam);
 
