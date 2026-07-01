@@ -534,6 +534,9 @@
         </header>
 
         <div class="edit-mode-toggle">
+            <button class="btn" id="publishPlaceholderBtn" onclick="publishPlaceholderSchedule()" style="display: none;">
+                📅 Publish Placeholder Schedule
+            </button>
             <button class="btn" id="lockBracketBtn" onclick="lockBracket()" style="display: none;">
                 🔒 Lock Bracket for Playoffs
             </button>
@@ -849,9 +852,17 @@
         }
 
         function updateLockButton() {
-            const lockBtn  = document.getElementById('lockBracketBtn');
-            const editBtn  = document.getElementById('editModeBtn');
-            const shareBtn = document.getElementById('shareBracketBtn');
+            const lockBtn        = document.getElementById('lockBracketBtn');
+            const placeholderBtn = document.getElementById('publishPlaceholderBtn');
+            const editBtn        = document.getElementById('editModeBtn');
+            const shareBtn       = document.getElementById('shareBracketBtn');
+
+            // Show placeholder schedule button when projected (before locking)
+            if (userCanManagePlayoffs && isProjected) {
+                placeholderBtn.style.display = 'inline-block';
+            } else {
+                placeholderBtn.style.display = 'none';
+            }
 
             // Only show lock button if user has permission, bracket is projected, and we have enough teams
             if (userCanManagePlayoffs && isProjected && teams.length >= 11) {
@@ -915,6 +926,80 @@
         // ---------------------------------------------------------------
         // createPlayoffGames — pre-create all 30 game docs (3 per series)
         // with the preset Summer 2026 schedule baked in.
+        // ---------------------------------------------------------------
+        // Publish placeholder game docs so the schedule shows playoff dates
+        // before seeding is finalized. Uses seed labels / "TBD" for team names.
+        // Same doc IDs as real games — lockBracket() overwrites them cleanly.
+        // ---------------------------------------------------------------
+        async function publishPlaceholderSchedule() {
+            if (!confirm('This will add placeholder playoff games to the schedule so players can see the dates. Team names will show as seeds or "TBD" until the bracket is locked. Continue?')) return;
+
+            const btn = document.getElementById('publishPlaceholderBtn');
+            btn.disabled = true;
+            btn.textContent = '⏳ Publishing…';
+
+            try {
+                const bracket = initializePlayoffBracket();
+                const gamesCollection = collection(db, 'seasons', currentSeason.id, 'games');
+
+                const allSeries = [
+                    ...(bracket.round1       || []),
+                    ...(bracket.quarterfinals|| []),
+                    ...(bracket.semifinals   || []),
+                    ...(bracket.finals       || [])
+                ];
+
+                function seedLabel(slot) {
+                    if (slot && slot.seed) return `Seed ${slot.seed}`;
+                    return 'TBD';
+                }
+
+                let count = 0;
+                for (const series of allSeries) {
+                    const home1Label = seedLabel(series.team1);
+                    const home2Label = seedLabel(series.team2);
+
+                    for (const g of series.games) {
+                        const gameId = `playoff_${series.id}_g${g.gameNum}`;
+                        const homeLabel = g.homeTeam === 1 ? home1Label : home2Label;
+                        const awayLabel = g.homeTeam === 1 ? home2Label : home1Label;
+
+                        const [yr, mo, dy] = g.date.split('-').map(Number);
+                        const [hh, mm]     = g.time.split(':').map(Number);
+                        const dateObj = new Date(yr, mo - 1, dy, hh, mm);
+
+                        await setDoc(doc(gamesCollection, gameId), {
+                            gameType:       'playoff',
+                            round:          series.round,
+                            seriesId:       series.id,
+                            gameNum:        g.gameNum,
+                            date:           Timestamp.fromDate(dateObj),
+                            time:           formatTime(g.time),
+                            homeTeamName:   homeLabel,
+                            awayTeamName:   awayLabel,
+                            ifNecessary:    g.ifNecessary,
+                            isPlaceholder:  true,
+                            homeScore:      null,
+                            awayScore:      null,
+                            winner:         null
+                        }, { merge: true });
+                        count++;
+                    }
+                }
+
+                btn.textContent = `✅ Published (${count} games)`;
+                setTimeout(() => {
+                    btn.disabled = false;
+                    btn.textContent = '📅 Publish Placeholder Schedule';
+                }, 3000);
+            } catch (err) {
+                console.error('Error publishing placeholder schedule:', err);
+                alert('Error publishing schedule. Check console for details.');
+                btn.disabled = false;
+                btn.textContent = '📅 Publish Placeholder Schedule';
+            }
+        }
+
         // ---------------------------------------------------------------
         async function createPlayoffGames() {
             console.log('📅 Creating playoff game docs (3 per series)...');
