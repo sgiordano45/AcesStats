@@ -1663,6 +1663,13 @@ async function loadExistingStatsForGame(gameId) {
             hits: battingData.hits || 0,
             runs: battingData.runs || 0,
             walks: battingData.walks || 0,
+            homeRuns: battingData.homeRuns || 0,
+            doubles: battingData.doubles || 0,
+            triples: battingData.triples || 0,
+            rbi: battingData.rbi || 0,
+            strikeouts: battingData.strikeouts || 0,
+            stolenBases: battingData.stolenBases || 0,
+            caughtStealing: battingData.caughtStealing || 0,
             inningsPitched: 0,
             runsAllowed: 0,
             hasBattingStats: true
@@ -1710,6 +1717,8 @@ async function loadExistingStatsForGame(gameId) {
         inputs[3].value = stats.walks;
         inputs[4].value = stats.inningsPitched;
         inputs[5].value = stats.runsAllowed;
+        const hrInput = document.getElementById(`hr_${index}`);
+        if (hrInput) hrInput.value = stats.homeRuns || 0;
         playedCheckbox.checked = true;
         inputs.forEach(input => input.disabled = false);
       } else {
@@ -1813,6 +1822,8 @@ async function submitStats() {
           if (existingBatting?.exists() && existingBatting.data()?.sourceType === 'gameTracker') {
             console.log('⚡ Skipping playerStats write for', playerStats.playerName, '— already set by gameTracker');
           } else {
+            // Preserve existing extras (doubles, triples, RBI, etc.) that this form doesn't edit
+            const prevBatting = existingBatting?.exists() ? existingBatting.data() : {};
             await setDoc(gameBattingRef, {
               gameId: selectedGameId,
               gameDocId: gameDocId,
@@ -1830,8 +1841,13 @@ async function submitStats() {
               hits: playerStats.hits,
               runs: playerStats.runs,
               walks: playerStats.walks,
-              doubles: 0, triples: 0, homeRuns: playerStats.homeRuns, rbi: 0,
-              strikeouts: 0, stolenBases: 0, caughtStealing: 0,
+              homeRuns: playerStats.homeRuns,
+              doubles: prevBatting.doubles || 0,
+              triples: prevBatting.triples || 0,
+              rbi: prevBatting.rbi || 0,
+              strikeouts: prevBatting.strikeouts || 0,
+              stolenBases: prevBatting.stolenBases || 0,
+              caughtStealing: prevBatting.caughtStealing || 0,
               submittedBy: currentUser.uid,
               submittedByName: currentUser.displayName || currentUser.email,
               submittedAt: serverTimestamp(),
