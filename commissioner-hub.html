@@ -286,7 +286,7 @@
 <script type="module">
   import { auth } from './firebase-auth.js';
   import { db, getDocs, collection, query, where, getDoc, doc } from './firebase-config.js';
-  import { getCurrentSeason, getSeasonGames } from './firebase-data.js';
+  import { getCurrentSeason, getSeasonGames, getAllPlayerStatsOptimized } from './firebase-data.js';
   import { onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
   import { NavigationComponent } from './nav-component.js';
 
@@ -328,6 +328,16 @@
   let _standings = [];
   let _tonightGames = [];
   let _allGames = [];
+
+  // Pre-generated canvases so clipboard write happens instantly in user gesture
+  let _standingsCanvas = null;
+  let _gamesCanvas = null;
+  let _seedsCanvas = null;
+
+  // Player data for top players feature
+  let _playerData = [];
+  let _rosterIds = {};   // { teamName: Set<playerId> }
+  let _splitsCache = {}; // { playerId: splitsData }
 
   // ── Helpers ───────────────────────────────────────────────────────────
   function cap(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : ''; }
@@ -423,6 +433,89 @@
     });
   }
 
+  // ── Player data + rosters + splits ───────────────────────────────────
+  async function loadPlayerDataAndRosters() {
+    try {
+      const players = await getAllPlayerStatsOptimized();
+      _playerData = [];
+      players.forEach(p => {
+        if (!p.seasons || typeof p.seasons !== 'object') return;
+        const matchingKeys = Object.keys(p.seasons).filter(k => k.startsWith(_seasonData.id));
+        matchingKeys.forEach(key => {
+          const s = p.seasons[key];
+          _playerData.push({
+            id: p.id || p.playerId || '',
+            name: p.name || p.displayName || p.id,
+            team: s.team || p.currentTeam || '',
+            atBats: Number(s.atBats) || 0,
+            AcesWar: s.acesBPI || s.AcesBPI || s.AcesWar || 'N/A',
+            careerAcesBPI: typeof p.career?.acesBPI === 'number' ? p.career.acesBPI : null,
+            careerAtBats: typeof p.career?.atBats === 'number' ? p.career.atBats : 0
+          });
+        });
+      });
+
+      // Only fetch rosters for tonight's teams
+      const tonightTeams = new Set();
+      _tonightGames.forEach(g => { tonightTeams.add(g['home team']); tonightTeams.add(g['away team']); });
+
+      await Promise.all([...tonightTeams].map(async (team) => {
+        try {
+          const snap = await getDoc(doc(db, 'rosters', `${_seasonData.id}-${team.toLowerCase()}`));
+          _rosterIds[team] = snap.exists()
+            ? new Set((snap.data().players || []).flatMap(p => [p.id, p.authId].filter(Boolean)))
+            : new Set();
+        } catch (e) { _rosterIds[team] = new Set(); }
+      }));
+
+      // Fetch splits for rostered players on tonight's teams
+      const allIds = [...new Set(Object.values(_rosterIds).flatMap(s => [...s]))];
+      await Promise.all(allIds.map(async (pid) => {
+        if (_splitsCache[pid]) return;
+        try {
+          const snap = await getDoc(doc(db, 'aggregatedPlayerStats2025Splits', pid));
+          if (snap.exists()) _splitsCache[pid] = snap.data();
+        } catch (e) { /* silent */ }
+      }));
+    } catch (err) {
+      console.warn('Player data load error:', err);
+    }
+  }
+
+  function getTopPlayers(teamName, opponentTeam) {
+    if (!_playerData.length) return [];
+    const roster = _rosterIds[teamName] || new Set();
+    const teamPlayers = _playerData.filter(p => p.team === teamName && (roster.size === 0 || roster.has(p.id)));
+
+    // Stage 1: vs-opponent splits OBP, ≥2 games
+    if (opponentTeam) {
+      const vsCandidates = teamPlayers.map(p => {
+        const vsOpp = _splitsCache[p.id]?.vsOpponent?.[opponentTeam];
+        return (vsOpp && vsOpp.games >= 2) ? { ...p, _rank: vsOpp.onBasePercentage || 0 } : null;
+      }).filter(Boolean).sort((a, b) => b._rank - a._rank).slice(0, 3);
+      if (vsCandidates.length > 0) return vsCandidates.map(p => p.name);
+    }
+
+    // Stage 2: season AcesWar with AB threshold
+    const teamGamesPlayed = _allGames.filter(g =>
+      g.winner && g.winner.trim() !== '' &&
+      (g['home team'] === teamName || g['away team'] === teamName)
+    ).length;
+    const minAB = teamGamesPlayed * 2;
+    const seasonCandidates = teamPlayers
+      .filter(p => typeof p.AcesWar === 'number' && p.atBats >= minAB)
+      .sort((a, b) => b.AcesWar - a.AcesWar)
+      .slice(0, 3);
+    if (seasonCandidates.length > 0) return seasonCandidates.map(p => p.name);
+
+    // Stage 3: career BPI
+    return teamPlayers
+      .filter(p => typeof p.careerAcesBPI === 'number' && p.careerAtBats >= 20)
+      .sort((a, b) => b.careerAcesBPI - a.careerAcesBPI)
+      .slice(0, 3)
+      .map(p => p.name);
+  }
+
   // ── Load Hub ──────────────────────────────────────────────────────────
   async function loadHub() {
     try {
@@ -446,6 +539,17 @@
       renderStandings();
       renderTonightGames();
       renderSeeds();
+
+      // Load player data + rosters/splits for tonight's teams in the background
+      loadPlayerDataAndRosters().then(() => {
+        renderTonightGames(); // re-render with top players
+        // Then pre-generate share canvases
+        return loadH2C();
+      }).then(() => Promise.all([
+        buildStandingsCanvas().then(c => { _standingsCanvas = c; }),
+        buildGamesCanvas().then(c => { _gamesCanvas = c; }),
+        buildSeedsCanvas().then(c => { _seedsCanvas = c; })
+      ])).catch(err => console.warn('Background load error:', err));
 
     } catch (err) {
       console.error('Hub load error:', err);
@@ -506,21 +610,40 @@
       return t ? `${t.wins}-${t.losses}` : '—';
     };
 
-    el.innerHTML = _tonightGames.map(g => `
-      <div class="game-pill">
-        <div style="text-align:center;flex:1;">
-          <div class="game-pill-team">${g['away team']}</div>
-          <div class="game-pill-record">${getRecord(g['away team'])}</div>
-        </div>
-        <div style="text-align:center;">
-          <div class="game-pill-at">@</div>
-          ${g.time ? `<div class="game-pill-time">${g.time}</div>` : ''}
-        </div>
-        <div style="text-align:center;flex:1;">
-          <div class="game-pill-team">${g['home team']}</div>
-          <div class="game-pill-record">${getRecord(g['home team'])}</div>
-        </div>
-      </div>`).join('');
+    el.innerHTML = _tonightGames.map(g => {
+      const away = g['away team'], home = g['home team'];
+      const awayPlayers = getTopPlayers(away, home);
+      const homePlayers = getTopPlayers(home, away);
+      const hasPlayers = awayPlayers.length > 0 || homePlayers.length > 0;
+      return `
+        <div class="game-pill" style="flex-direction:column;align-items:stretch;gap:0;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <div style="text-align:center;flex:1;">
+              <div class="game-pill-team">${away}</div>
+              <div class="game-pill-record">${getRecord(away)}</div>
+            </div>
+            <div style="text-align:center;">
+              <div class="game-pill-at">@</div>
+              ${g.time ? `<div class="game-pill-time">${g.time}</div>` : ''}
+            </div>
+            <div style="text-align:center;flex:1;">
+              <div class="game-pill-team">${home}</div>
+              <div class="game-pill-record">${getRecord(home)}</div>
+            </div>
+          </div>
+          ${hasPlayers ? `
+          <div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border-color);display:flex;gap:8px;">
+            <div style="flex:1;text-align:center;">
+              <div style="font-size:0.68rem;font-weight:700;color:var(--primary-color);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:3px;">${away}</div>
+              ${awayPlayers.map(p => `<div style="font-size:0.75rem;color:var(--text-dark);">${p}</div>`).join('')}
+            </div>
+            <div style="flex:1;text-align:center;">
+              <div style="font-size:0.68rem;font-weight:700;color:var(--primary-color);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:3px;">${home}</div>
+              ${homePlayers.map(p => `<div style="font-size:0.75rem;color:var(--text-dark);">${p}</div>`).join('')}
+            </div>
+          </div>` : ''}
+        </div>`;
+    }).join('');
 
     document.getElementById('gamesCopyBtn').disabled = false;
     document.getElementById('gamesSaveBtn').disabled = false;
@@ -567,241 +690,248 @@
     });
   }
 
-  async function handleCanvas(canvas, filename, mode, btn, origHTML) {
+  // ── Canvas builders (run in background after data loads) ──────────────
+  async function buildStandingsCanvas() {
+    if (!_standings.length) return null;
+    const seasonTitle = document.getElementById('seasonLabel').textContent;
+    const wrapper = document.createElement('div');
+    wrapper.style.cssText = `position:absolute;top:-9999px;left:-9999px;background:#ffffff;
+      padding:20px 24px 24px;border-radius:12px;width:700px;
+      font-family:'Inter',-apple-system,sans-serif;`;
+    wrapper.innerHTML = `
+      <div style="background:linear-gradient(135deg,#0ea5e9 0%,#f97316 100%);border-radius:10px 10px 0 0;
+        padding:14px 20px;margin:-20px -24px 0;display:flex;align-items:center;justify-content:space-between;">
+        <div style="color:white;font-weight:800;font-size:1.15rem;">${seasonTitle}</div>
+        <div style="color:rgba(255,255,255,0.85);font-size:0.8rem;font-weight:600;">acessoftballreference.com</div>
+      </div>
+      <div style="margin-top:16px;font-weight:700;font-size:1rem;color:#2d5016;margin-bottom:8px;">Regular Season Standings</div>`;
+    const rows = _standings.map((t, i) => {
+      const total = t.wins + t.losses + t.ties;
+      const pct = total > 0 ? (t.winPct * 100).toFixed(1) + '%' : '—';
+      const diff = t.runDiff >= 0 ? `+${t.runDiff}` : `${t.runDiff}`;
+      const bg = i % 2 === 1 ? 'background:#fafbfc;' : '';
+      return `<tr style="${bg}">
+        <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;text-align:center;">${i + 1}</td>
+        <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;font-weight:700;color:#2d5016;">${t.name}</td>
+        <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;text-align:center;">${t.wins}</td>
+        <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;text-align:center;">${t.losses}</td>
+        <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;text-align:center;">${t.ties}</td>
+        <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;text-align:center;color:#2d5016;font-weight:700;">${pct}</td>
+        <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;text-align:center;">${t.runsFor}</td>
+        <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;text-align:center;">${t.runsAgainst}</td>
+        <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;text-align:center;">${diff}</td>
+      </tr>`;
+    }).join('');
+    const thStyle = 'background:#f0f6ea;color:#2d5016;font-weight:700;padding:8px 10px;border-bottom:2px solid #c6ddb8;font-size:0.82rem;text-align:center;position:static;';
+    const table = document.createElement('table');
+    table.style.cssText = 'width:100%;border-collapse:collapse;font-size:0.88rem;';
+    table.innerHTML = `<thead><tr>
+      <th style="${thStyle}">#</th><th style="${thStyle}text-align:left;">Team</th>
+      <th style="${thStyle}">W</th><th style="${thStyle}">L</th><th style="${thStyle}">T</th>
+      <th style="${thStyle}">Win%</th><th style="${thStyle}">RF</th><th style="${thStyle}">RA</th><th style="${thStyle}">Diff</th>
+    </tr></thead><tbody>${rows}</tbody>`;
+    wrapper.appendChild(table);
+    const footer = document.createElement('div');
+    footer.style.cssText = 'margin-top:12px;font-size:0.75rem;color:#718096;text-align:right;';
+    footer.textContent = 'Generated ' + new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    wrapper.appendChild(footer);
+    document.body.appendChild(wrapper);
+    const canvas = await html2canvas(wrapper, { scale: 2, backgroundColor: '#ffffff', useCORS: true, logging: false });
+    document.body.removeChild(wrapper);
+    return canvas;
+  }
+
+  async function buildGamesCanvas() {
+    if (!_tonightGames.length) return null;
+    const getRecord = (name) => { const t = _standings.find(s => s.name === name); return t ? `${t.wins}-${t.losses}` : '—'; };
+    const getStanding = (name) => { const i = _standings.findIndex(s => s.name === name); return i >= 0 ? `#${i + 1} in standings` : ''; };
+    const tonightLabel = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+    const wrapper = document.createElement('div');
+    wrapper.style.cssText = `position:absolute;top:-9999px;left:-9999px;width:460px;background:#ffffff;
+      border-radius:16px;overflow:hidden;font-family:'Inter',-apple-system,sans-serif;`;
+    let html = `
+      <div style="background:linear-gradient(135deg,#2d5016 0%,#1a6b4a 100%);padding:14px 20px;
+        display:flex;align-items:center;justify-content:space-between;">
+        <div style="color:#fff;font-weight:800;font-size:1rem;">⚾ Tonight's Games</div>
+        <div style="color:rgba(255,255,255,0.8);font-size:0.75rem;font-weight:600;">acessoftballreference.com</div>
+      </div>
+      <div style="padding:6px 20px 4px;background:#f0fdf4;border-bottom:1px solid #d1fae5;">
+        <div style="font-size:0.78rem;font-weight:700;color:#2d5016;text-transform:uppercase;letter-spacing:0.5px;">${tonightLabel}</div>
+      </div>
+      <div style="padding:16px 20px;display:flex;flex-direction:column;gap:14px;">`;
+    _tonightGames.forEach(g => {
+      const away = g['away team'], home = g['home team'];
+      const awayPlayers = getTopPlayers(away, home);
+      const homePlayers = getTopPlayers(home, away);
+      const hasPlayers = awayPlayers.length > 0 || homePlayers.length > 0;
+      html += `<div style="background:#f8fafc;border-radius:12px;padding:14px 16px;border:1px solid #e2e8f0;">
+        ${g.time ? `<div style="font-size:0.72rem;color:#718096;font-weight:600;margin-bottom:10px;text-align:center;text-transform:uppercase;letter-spacing:0.4px;">${g.time}</div>` : ''}
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
+          <div style="text-align:center;flex:1;">
+            <img src="logos/${away.toLowerCase().replace(/\s+/g,'_')}.png" style="width:56px;height:56px;object-fit:contain;display:block;margin:0 auto 6px;" onerror="this.style.display='none'">
+            <div style="font-weight:800;font-size:0.95rem;color:#2d3748;">${away}</div>
+            <div style="font-size:0.75rem;color:#718096;">${getRecord(away)}</div>
+            <div style="font-size:0.68rem;color:#a0aec0;">${getStanding(away)}</div>
+          </div>
+          <div style="font-size:1.2rem;font-weight:900;color:#2d5016;flex-shrink:0;">@</div>
+          <div style="text-align:center;flex:1;">
+            <img src="logos/${home.toLowerCase().replace(/\s+/g,'_')}.png" style="width:56px;height:56px;object-fit:contain;display:block;margin:0 auto 6px;" onerror="this.style.display='none'">
+            <div style="font-weight:800;font-size:0.95rem;color:#2d3748;">${home}</div>
+            <div style="font-size:0.75rem;color:#718096;">${getRecord(home)}</div>
+            <div style="font-size:0.68rem;color:#a0aec0;">${getStanding(home)}</div>
+          </div>
+        </div>
+        ${hasPlayers ? `
+        <div style="display:flex;gap:10px;padding-top:10px;border-top:1px solid #e2e8f0;margin-top:12px;">
+          <div style="flex:1;text-align:center;">
+            <div style="font-size:0.68rem;font-weight:700;color:#2d5016;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:4px;">${away}</div>
+            ${awayPlayers.map(p => `<div style="font-size:0.78rem;color:#2d3748;padding:1px 0;">${p}</div>`).join('')}
+          </div>
+          <div style="flex:1;text-align:center;">
+            <div style="font-size:0.68rem;font-weight:700;color:#2d5016;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:4px;">${home}</div>
+            ${homePlayers.map(p => `<div style="font-size:0.78rem;color:#2d3748;padding:1px 0;">${p}</div>`).join('')}
+          </div>
+        </div>` : ''}
+      </div>`;
+    });
+    html += `<div style="font-size:0.68rem;color:#a0aec0;text-align:right;padding-top:2px;">
+      Generated ${new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}
+    </div></div>`;
+    wrapper.innerHTML = html;
+    document.body.appendChild(wrapper);
+    const canvas = await html2canvas(wrapper, { scale: 2, backgroundColor: '#ffffff', useCORS: true, logging: false });
+    document.body.removeChild(wrapper);
+    return canvas;
+  }
+
+  async function buildSeedsCanvas() {
+    if (!_standings.length) return null;
+    const DIRECT_SEEDS = 5;
+    const seasonTitle = document.getElementById('seasonLabel').textContent;
+    const wrapper = document.createElement('div');
+    wrapper.style.cssText = `position:absolute;top:-9999px;left:-9999px;background:#ffffff;
+      padding:20px 24px 24px;border-radius:12px;width:560px;
+      font-family:'Inter',-apple-system,sans-serif;`;
+    wrapper.innerHTML = `
+      <div style="background:linear-gradient(135deg,#ff6347 0%,#ff8c42 100%);border-radius:10px 10px 0 0;
+        padding:14px 20px;margin:-20px -24px 0;display:flex;align-items:center;justify-content:space-between;">
+        <div style="color:white;font-weight:800;font-size:1.1rem;">🔒 ${seasonTitle}</div>
+        <div style="color:rgba(255,255,255,0.85);font-size:0.8rem;font-weight:600;">acessoftballreference.com</div>
+      </div>
+      <div style="margin-top:16px;font-weight:700;font-size:0.95rem;color:#2d5016;margin-bottom:8px;">Current Playoff Seeding</div>`;
+    const thS = 'background:#f0f6ea;color:#2d5016;font-weight:700;padding:8px 10px;border-bottom:2px solid #c6ddb8;font-size:0.82rem;position:static;text-align:left;';
+    const rows = _standings.map((t, i) => {
+      const seed = i + 1;
+      const rec = `${t.wins}-${t.losses}${t.ties > 0 ? `-${t.ties}` : ''}`;
+      const pct = (t.wins + t.losses + t.ties) > 0 ? (t.winPct * 100).toFixed(1) + '%' : '—';
+      const isDirect = seed <= DIRECT_SEEDS;
+      const statusHTML = isDirect
+        ? `<span style="background:#dcfce7;color:#166534;border-radius:6px;padding:2px 8px;font-size:0.75rem;font-weight:700;">Direct</span>`
+        : `<span style="background:#fee2e2;color:#991b1b;border-radius:6px;padding:2px 8px;font-size:0.75rem;font-weight:700;">Play-In</span>`;
+      const bg = i % 2 === 1 ? 'background:#fafbfc;' : '';
+      return `<tr style="${bg}">
+        <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;font-weight:700;">#${seed}</td>
+        <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;font-weight:600;">${t.name}</td>
+        <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;">${rec}</td>
+        <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;color:#2d5016;font-weight:700;">${pct}</td>
+        <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;">${statusHTML}</td>
+      </tr>`;
+    }).join('');
+    const table = document.createElement('table');
+    table.style.cssText = 'width:100%;border-collapse:collapse;font-size:0.88rem;';
+    table.innerHTML = `<thead><tr>
+      <th style="${thS}">#</th><th style="${thS}">Team</th><th style="${thS}">Record</th>
+      <th style="${thS}">Win%</th><th style="${thS}">Status</th>
+    </tr></thead><tbody>${rows}</tbody>`;
+    wrapper.appendChild(table);
+    const footer = document.createElement('div');
+    footer.style.cssText = 'margin-top:12px;font-size:0.75rem;color:#718096;text-align:right;';
+    footer.textContent = 'Generated ' + new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    wrapper.appendChild(footer);
+    document.body.appendChild(wrapper);
+    const canvas = await html2canvas(wrapper, { scale: 2, backgroundColor: '#ffffff', useCORS: true, logging: false });
+    document.body.removeChild(wrapper);
+    return canvas;
+  }
+
+  // ── Instant clipboard/download from pre-generated canvas ──────────────
+  function useCanvas(canvas, filename, mode, btn, origHTML) {
     try {
       if (mode === 'copy') {
+        // Pass Promise directly to ClipboardItem — stays within user gesture
         const blobPromise = new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
-        await navigator.clipboard.write([new ClipboardItem({ 'image/png': blobPromise })]);
-        btn.classList.add('success');
-        btn.innerHTML = '✅ Copied!';
+        navigator.clipboard.write([new ClipboardItem({ 'image/png': blobPromise })]).then(() => {
+          btn.classList.add('success'); btn.innerHTML = '✅ Copied!';
+          setTimeout(() => { btn.classList.remove('success'); btn.innerHTML = origHTML; btn.disabled = false; }, 2500);
+        }).catch(err => {
+          console.error('Clipboard write failed:', err);
+          btn.innerHTML = origHTML; btn.disabled = false;
+        });
       } else {
         const link = document.createElement('a');
         link.download = filename;
         link.href = canvas.toDataURL('image/png');
         link.click();
-        btn.classList.add('success');
-        btn.innerHTML = '✅ Saved!';
+        btn.classList.add('success'); btn.innerHTML = '✅ Saved!';
+        setTimeout(() => { btn.classList.remove('success'); btn.innerHTML = origHTML; btn.disabled = false; }, 2500);
       }
     } catch (err) {
-      console.error('Share error:', err);
-      btn.innerHTML = origHTML;
+      console.error('Share error:', err); btn.innerHTML = origHTML; btn.disabled = false;
     }
-    setTimeout(() => { btn.classList.remove('success'); btn.innerHTML = origHTML; btn.disabled = false; }, 2500);
   }
 
-  // ── Share: Standings ──────────────────────────────────────────────────
+  // ── Share handlers — instant, no async before clipboard ───────────────
   window.shareStandingsImage = async function(mode) {
-    const btn = mode === 'copy'
-      ? document.getElementById('standingsCopyBtn')
-      : document.getElementById('standingsSaveBtn');
+    const btn = mode === 'copy' ? document.getElementById('standingsCopyBtn') : document.getElementById('standingsSaveBtn');
     const origHTML = btn.innerHTML;
-    btn.disabled = true; btn.innerHTML = '⏳ Generating…';
-
-    try {
-      await loadH2C();
-      const seasonTitle = document.getElementById('seasonLabel').textContent;
-
-      const wrapper = document.createElement('div');
-      wrapper.style.cssText = `position:absolute;top:-9999px;left:-9999px;background:#ffffff;
-        padding:20px 24px 24px;border-radius:12px;width:700px;
-        font-family:'Inter',-apple-system,sans-serif;`;
-
-      wrapper.innerHTML = `
-        <div style="background:linear-gradient(135deg,#0ea5e9 0%,#f97316 100%);border-radius:10px 10px 0 0;
-          padding:14px 20px;margin:-20px -24px 0;display:flex;align-items:center;justify-content:space-between;">
-          <div style="color:white;font-weight:800;font-size:1.15rem;">${seasonTitle}</div>
-          <div style="color:rgba(255,255,255,0.85);font-size:0.8rem;font-weight:600;">acessoftballreference.com</div>
-        </div>
-        <div style="margin-top:16px;font-weight:700;font-size:1rem;color:#2d5016;margin-bottom:8px;">Regular Season Standings</div>`;
-
-      const rows = _standings.map((t, i) => {
-        const total = t.wins + t.losses + t.ties;
-        const pct = total > 0 ? (t.winPct * 100).toFixed(1) + '%' : '—';
-        const diff = t.runDiff >= 0 ? `+${t.runDiff}` : `${t.runDiff}`;
-        const bg = i % 2 === 1 ? 'background:#fafbfc;' : '';
-        return `<tr style="${bg}">
-          <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;text-align:center;">${i + 1}</td>
-          <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;font-weight:700;color:#2d5016;">${t.name}</td>
-          <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;text-align:center;">${t.wins}</td>
-          <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;text-align:center;">${t.losses}</td>
-          <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;text-align:center;">${t.ties}</td>
-          <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;text-align:center;color:#2d5016;font-weight:700;">${pct}</td>
-          <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;text-align:center;">${t.runsFor}</td>
-          <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;text-align:center;">${t.runsAgainst}</td>
-          <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;text-align:center;">${diff}</td>
-        </tr>`;
-      }).join('');
-
-      const thStyle = 'background:#f0f6ea;color:#2d5016;font-weight:700;padding:8px 10px;border-bottom:2px solid #c6ddb8;font-size:0.82rem;text-align:center;position:static;';
-      const table = document.createElement('table');
-      table.style.cssText = 'width:100%;border-collapse:collapse;font-size:0.88rem;';
-      table.innerHTML = `<thead><tr>
-        <th style="${thStyle}">#</th>
-        <th style="${thStyle}text-align:left;">Team</th>
-        <th style="${thStyle}">W</th><th style="${thStyle}">L</th><th style="${thStyle}">T</th>
-        <th style="${thStyle}">Win%</th><th style="${thStyle}">RF</th><th style="${thStyle}">RA</th><th style="${thStyle}">Diff</th>
-      </tr></thead><tbody>${rows}</tbody>`;
-      wrapper.appendChild(table);
-
-      const footer = document.createElement('div');
-      footer.style.cssText = 'margin-top:12px;font-size:0.75rem;color:#718096;text-align:right;';
-      footer.textContent = 'Generated ' + new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-      wrapper.appendChild(footer);
-
-      document.body.appendChild(wrapper);
-      const canvas = await html2canvas(wrapper, { scale: 2, backgroundColor: '#ffffff', useCORS: true, logging: false });
-      document.body.removeChild(wrapper);
-      await handleCanvas(canvas, `aces-standings-${new Date().toISOString().slice(0,10)}.png`, mode, btn, origHTML);
-    } catch (err) {
-      console.error(err); btn.innerHTML = origHTML; btn.disabled = false;
+    btn.disabled = true;
+    if (_standingsCanvas) {
+      useCanvas(_standingsCanvas, `aces-standings-${new Date().toISOString().slice(0,10)}.png`, mode, btn, origHTML);
+    } else {
+      // Canvas not ready yet — build it now (will lose gesture for copy, but save still works)
+      btn.innerHTML = '⏳ Generating…';
+      try {
+        await loadH2C();
+        _standingsCanvas = await buildStandingsCanvas();
+        if (_standingsCanvas) useCanvas(_standingsCanvas, `aces-standings-${new Date().toISOString().slice(0,10)}.png`, mode, btn, origHTML);
+        else { btn.innerHTML = origHTML; btn.disabled = false; }
+      } catch(e) { btn.innerHTML = origHTML; btn.disabled = false; }
     }
   };
 
-  // ── Share: Tonight's Games ────────────────────────────────────────────
   window.shareGamesImage = async function(mode) {
     if (!_tonightGames.length) return;
-    const btn = mode === 'copy'
-      ? document.getElementById('gamesCopyBtn')
-      : document.getElementById('gamesSaveBtn');
+    const btn = mode === 'copy' ? document.getElementById('gamesCopyBtn') : document.getElementById('gamesSaveBtn');
     const origHTML = btn.innerHTML;
-    btn.disabled = true; btn.innerHTML = '⏳ Generating…';
-
-    try {
-      await loadH2C();
-      const getRecord = (name) => {
-        const t = _standings.find(s => s.name === name);
-        return t ? `${t.wins}-${t.losses}` : '—';
-      };
-      const getStanding = (name) => {
-        const i = _standings.findIndex(s => s.name === name);
-        return i >= 0 ? `#${i + 1} in standings` : '';
-      };
-
-      const tonightLabel = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
-      const seasonTitle = document.getElementById('seasonLabel').textContent;
-
-      const wrapper = document.createElement('div');
-      wrapper.style.cssText = `position:absolute;top:-9999px;left:-9999px;width:460px;background:#ffffff;
-        border-radius:16px;overflow:hidden;font-family:'Inter',-apple-system,sans-serif;`;
-
-      let html = `
-        <div style="background:linear-gradient(135deg,#2d5016 0%,#1a6b4a 100%);padding:14px 20px;
-          display:flex;align-items:center;justify-content:space-between;">
-          <div style="color:#fff;font-weight:800;font-size:1rem;">⚾ Tonight's Games</div>
-          <div style="color:rgba(255,255,255,0.8);font-size:0.75rem;font-weight:600;">acessoftballreference.com</div>
-        </div>
-        <div style="padding:6px 20px 4px;background:#f0fdf4;border-bottom:1px solid #d1fae5;">
-          <div style="font-size:0.78rem;font-weight:700;color:#2d5016;text-transform:uppercase;letter-spacing:0.5px;">${tonightLabel}</div>
-        </div>
-        <div style="padding:16px 20px;display:flex;flex-direction:column;gap:14px;">`;
-
-      _tonightGames.forEach(g => {
-        const away = g['away team'], home = g['home team'];
-        html += `
-          <div style="background:#f8fafc;border-radius:12px;padding:14px 16px;border:1px solid #e2e8f0;">
-            ${g.time ? `<div style="font-size:0.72rem;color:#718096;font-weight:600;margin-bottom:10px;text-align:center;text-transform:uppercase;letter-spacing:0.4px;">${g.time}</div>` : ''}
-            <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
-              <div style="text-align:center;flex:1;">
-                <img src="logos/${away.toLowerCase().replace(/\s+/g,'_')}.png"
-                  style="width:56px;height:56px;object-fit:contain;display:block;margin:0 auto 6px;" onerror="this.style.display='none'">
-                <div style="font-weight:800;font-size:0.95rem;color:#2d3748;">${away}</div>
-                <div style="font-size:0.75rem;color:#718096;">${getRecord(away)}</div>
-                <div style="font-size:0.68rem;color:#a0aec0;">${getStanding(away)}</div>
-              </div>
-              <div style="font-size:1.2rem;font-weight:900;color:#2d5016;flex-shrink:0;">@</div>
-              <div style="text-align:center;flex:1;">
-                <img src="logos/${home.toLowerCase().replace(/\s+/g,'_')}.png"
-                  style="width:56px;height:56px;object-fit:contain;display:block;margin:0 auto 6px;" onerror="this.style.display='none'">
-                <div style="font-weight:800;font-size:0.95rem;color:#2d3748;">${home}</div>
-                <div style="font-size:0.75rem;color:#718096;">${getRecord(home)}</div>
-                <div style="font-size:0.68rem;color:#a0aec0;">${getStanding(home)}</div>
-              </div>
-            </div>
-          </div>`;
-      });
-
-      html += `<div style="font-size:0.68rem;color:#a0aec0;text-align:right;padding-top:2px;">
-        Generated ${new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}
-      </div></div>`;
-
-      wrapper.innerHTML = html;
-      document.body.appendChild(wrapper);
-      const canvas = await html2canvas(wrapper, { scale: 2, backgroundColor: '#ffffff', useCORS: true, logging: false });
-      document.body.removeChild(wrapper);
-      await handleCanvas(canvas, `aces-tonight-${new Date().toISOString().slice(0,10)}.png`, mode, btn, origHTML);
-    } catch (err) {
-      console.error(err); btn.innerHTML = origHTML; btn.disabled = false;
+    btn.disabled = true;
+    if (_gamesCanvas) {
+      useCanvas(_gamesCanvas, `aces-tonight-${new Date().toISOString().slice(0,10)}.png`, mode, btn, origHTML);
+    } else {
+      btn.innerHTML = '⏳ Generating…';
+      try {
+        await loadH2C();
+        _gamesCanvas = await buildGamesCanvas();
+        if (_gamesCanvas) useCanvas(_gamesCanvas, `aces-tonight-${new Date().toISOString().slice(0,10)}.png`, mode, btn, origHTML);
+        else { btn.innerHTML = origHTML; btn.disabled = false; }
+      } catch(e) { btn.innerHTML = origHTML; btn.disabled = false; }
     }
   };
 
-  // ── Share: Seeds ──────────────────────────────────────────────────────
   window.shareSeedsImage = async function(mode) {
     if (!_standings.length) return;
-    const btn = mode === 'copy'
-      ? document.getElementById('seedsCopyBtn')
-      : document.getElementById('seedsSaveBtn');
+    const btn = mode === 'copy' ? document.getElementById('seedsCopyBtn') : document.getElementById('seedsSaveBtn');
     const origHTML = btn.innerHTML;
-    btn.disabled = true; btn.innerHTML = '⏳ Generating…';
-
-    try {
-      await loadH2C();
-      const DIRECT_SEEDS = 5;
-      const seasonTitle = document.getElementById('seasonLabel').textContent;
-
-      const wrapper = document.createElement('div');
-      wrapper.style.cssText = `position:absolute;top:-9999px;left:-9999px;background:#ffffff;
-        padding:20px 24px 24px;border-radius:12px;width:560px;
-        font-family:'Inter',-apple-system,sans-serif;`;
-
-      wrapper.innerHTML = `
-        <div style="background:linear-gradient(135deg,#ff6347 0%,#ff8c42 100%);border-radius:10px 10px 0 0;
-          padding:14px 20px;margin:-20px -24px 0;display:flex;align-items:center;justify-content:space-between;">
-          <div style="color:white;font-weight:800;font-size:1.1rem;">🔒 ${seasonTitle}</div>
-          <div style="color:rgba(255,255,255,0.85);font-size:0.8rem;font-weight:600;">acessoftballreference.com</div>
-        </div>
-        <div style="margin-top:16px;font-weight:700;font-size:0.95rem;color:#2d5016;margin-bottom:8px;">Current Playoff Seeding</div>`;
-
-      const thS = 'background:#f0f6ea;color:#2d5016;font-weight:700;padding:8px 10px;border-bottom:2px solid #c6ddb8;font-size:0.82rem;position:static;text-align:left;';
-      const rows = _standings.map((t, i) => {
-        const seed = i + 1;
-        const rec = `${t.wins}-${t.losses}${t.ties > 0 ? `-${t.ties}` : ''}`;
-        const pct = (t.wins + t.losses + t.ties) > 0 ? (t.winPct * 100).toFixed(1) + '%' : '—';
-        const isDirect = seed <= DIRECT_SEEDS;
-        const statusHTML = isDirect
-          ? `<span style="background:#dcfce7;color:#166534;border-radius:6px;padding:2px 8px;font-size:0.75rem;font-weight:700;">Direct</span>`
-          : `<span style="background:#fee2e2;color:#991b1b;border-radius:6px;padding:2px 8px;font-size:0.75rem;font-weight:700;">Play-In</span>`;
-        const bg = i % 2 === 1 ? 'background:#fafbfc;' : '';
-        return `<tr style="${bg}">
-          <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;font-weight:700;">#${seed}</td>
-          <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;font-weight:600;">${t.name}</td>
-          <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;">${rec}</td>
-          <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;color:#2d5016;font-weight:700;">${pct}</td>
-          <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;">${statusHTML}</td>
-        </tr>`;
-      }).join('');
-
-      const table = document.createElement('table');
-      table.style.cssText = 'width:100%;border-collapse:collapse;font-size:0.88rem;';
-      table.innerHTML = `<thead><tr>
-        <th style="${thS}">#</th>
-        <th style="${thS}">Team</th>
-        <th style="${thS}">Record</th>
-        <th style="${thS}">Win%</th>
-        <th style="${thS}">Status</th>
-      </tr></thead><tbody>${rows}</tbody>`;
-      wrapper.appendChild(table);
-
-      const footer = document.createElement('div');
-      footer.style.cssText = 'margin-top:12px;font-size:0.75rem;color:#718096;text-align:right;';
-      footer.textContent = 'Generated ' + new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-      wrapper.appendChild(footer);
-
-      document.body.appendChild(wrapper);
-      const canvas = await html2canvas(wrapper, { scale: 2, backgroundColor: '#ffffff', useCORS: true, logging: false });
-      document.body.removeChild(wrapper);
-      await handleCanvas(canvas, `aces-seeds-${new Date().toISOString().slice(0,10)}.png`, mode, btn, origHTML);
-    } catch (err) {
-      console.error(err); btn.innerHTML = origHTML; btn.disabled = false;
+    btn.disabled = true;
+    if (_seedsCanvas) {
+      useCanvas(_seedsCanvas, `aces-seeds-${new Date().toISOString().slice(0,10)}.png`, mode, btn, origHTML);
+    } else {
+      btn.innerHTML = '⏳ Generating…';
+      try {
+        await loadH2C();
+        _seedsCanvas = await buildSeedsCanvas();
+        if (_seedsCanvas) useCanvas(_seedsCanvas, `aces-seeds-${new Date().toISOString().slice(0,10)}.png`, mode, btn, origHTML);
+        else { btn.innerHTML = origHTML; btn.disabled = false; }
+      } catch(e) { btn.innerHTML = origHTML; btn.disabled = false; }
     }
   };
 </script>
