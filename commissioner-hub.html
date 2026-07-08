@@ -586,6 +586,18 @@
     document.getElementById('standingsSaveBtn').disabled = false;
   }
 
+  // ── Group tonight's games (handles doubleheaders) ────────────────────
+  function groupTonightGames() {
+    const matchupMap = new Map();
+    _tonightGames.forEach(g => {
+      const away = g['away team'], home = g['home team'];
+      const key = [away, home].map(t => t.toLowerCase()).sort().join('_');
+      if (!matchupMap.has(key)) matchupMap.set(key, { games: [], away, home });
+      matchupMap.get(key).games.push(g);
+    });
+    return matchupMap;
+  }
+
   // ── Render Tonight's Games ────────────────────────────────────────────
   function renderTonightGames() {
     const el = document.getElementById('gamesPreview');
@@ -605,27 +617,41 @@
       return;
     }
 
-    const getRecord = (teamName) => {
-      const t = _standings.find(s => s.name === teamName);
+    const getRecord = (name) => {
+      const t = _standings.find(s => s.name === name);
       return t ? `${t.wins}-${t.losses}` : '—';
     };
 
-    el.innerHTML = _tonightGames.map(g => {
-      const away = g['away team'], home = g['home team'];
-      const awayPlayers = getTopPlayers(away, home);
-      const homePlayers = getTopPlayers(home, away);
+    const groups = groupTonightGames();
+    el.innerHTML = [...groups.values()].map(({ games, away, home }) => {
+      const isDoubleHeader = games.length > 1;
+      const times = games.map(g => g.time).filter(Boolean).join(' & ');
+
+      // Merge players by team name across all games in group
+      const playerMap = new Map();
+      games.forEach(g => {
+        const a = g['away team'], h = g['home team'];
+        if (!playerMap.has(a)) playerMap.set(a, new Set());
+        if (!playerMap.has(h)) playerMap.set(h, new Set());
+        getTopPlayers(a, h).forEach(p => playerMap.get(a).add(p));
+        getTopPlayers(h, a).forEach(p => playerMap.get(h).add(p));
+      });
+      const awayPlayers = [...(playerMap.get(away) || [])];
+      const homePlayers = [...(playerMap.get(home) || [])];
       const hasPlayers = awayPlayers.length > 0 || homePlayers.length > 0;
+
       return `
         <div class="game-pill" style="flex-direction:column;align-items:stretch;gap:0;">
+          ${(times || isDoubleHeader) ? `
+          <div style="font-size:0.7rem;color:var(--text-light);font-weight:600;text-align:center;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:8px;">
+            ${[times, isDoubleHeader ? 'Doubleheader' : ''].filter(Boolean).join(' · ')}
+          </div>` : ''}
           <div style="display:flex;align-items:center;gap:8px;">
             <div style="text-align:center;flex:1;">
               <div class="game-pill-team">${away}</div>
               <div class="game-pill-record">${getRecord(away)}</div>
             </div>
-            <div style="text-align:center;">
-              <div class="game-pill-at">@</div>
-              ${g.time ? `<div class="game-pill-time">${g.time}</div>` : ''}
-            </div>
+            <div class="game-pill-at">@</div>
             <div style="text-align:center;flex:1;">
               <div class="game-pill-team">${home}</div>
               <div class="game-pill-record">${getRecord(home)}</div>
@@ -759,14 +785,27 @@
         <div style="font-size:0.78rem;font-weight:700;color:#2d5016;text-transform:uppercase;letter-spacing:0.5px;">${tonightLabel}</div>
       </div>
       <div style="padding:16px 20px;display:flex;flex-direction:column;gap:14px;">`;
-    _tonightGames.forEach(g => {
-      const away = g['away team'], home = g['home team'];
-      const awayPlayers = getTopPlayers(away, home);
-      const homePlayers = getTopPlayers(home, away);
+    groupTonightGames().forEach(({ games, away, home }) => {
+      const isDoubleHeader = games.length > 1;
+      const times = games.map(g => g.time).filter(Boolean).join(' & ');
+      const meta = [times, isDoubleHeader ? 'Doubleheader' : ''].filter(Boolean).join(' · ');
+
+      // Merge players by team across all games in the group
+      const playerMap = new Map();
+      games.forEach(g => {
+        const a = g['away team'], h = g['home team'];
+        if (!playerMap.has(a)) playerMap.set(a, new Set());
+        if (!playerMap.has(h)) playerMap.set(h, new Set());
+        getTopPlayers(a, h).forEach(p => playerMap.get(a).add(p));
+        getTopPlayers(h, a).forEach(p => playerMap.get(h).add(p));
+      });
+      const awayPlayers = [...(playerMap.get(away) || [])];
+      const homePlayers = [...(playerMap.get(home) || [])];
       const hasPlayers = awayPlayers.length > 0 || homePlayers.length > 0;
+
       html += `<div style="background:#f8fafc;border-radius:12px;padding:14px 16px;border:1px solid #e2e8f0;">
-        ${g.time ? `<div style="font-size:0.72rem;color:#718096;font-weight:600;margin-bottom:10px;text-align:center;text-transform:uppercase;letter-spacing:0.4px;">${g.time}</div>` : ''}
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
+        ${meta ? `<div style="font-size:0.72rem;color:#718096;font-weight:600;margin-bottom:10px;text-align:center;text-transform:uppercase;letter-spacing:0.4px;">${meta}</div>` : ''}
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;${hasPlayers ? 'margin-bottom:12px;' : ''}">
           <div style="text-align:center;flex:1;">
             <img src="logos/${away.toLowerCase().replace(/\s+/g,'_')}.png" style="width:56px;height:56px;object-fit:contain;display:block;margin:0 auto 6px;" onerror="this.style.display='none'">
             <div style="font-weight:800;font-size:0.95rem;color:#2d3748;">${away}</div>
@@ -782,7 +821,7 @@
           </div>
         </div>
         ${hasPlayers ? `
-        <div style="display:flex;gap:10px;padding-top:10px;border-top:1px solid #e2e8f0;margin-top:12px;">
+        <div style="display:flex;gap:10px;padding-top:10px;border-top:1px solid #e2e8f0;">
           <div style="flex:1;text-align:center;">
             <div style="font-size:0.68rem;font-weight:700;color:#2d5016;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:4px;">${away}</div>
             ${awayPlayers.map(p => `<div style="font-size:0.78rem;color:#2d3748;padding:1px 0;">${p}</div>`).join('')}
