@@ -516,6 +516,115 @@
       .map(p => p.name);
   }
 
+  // ── Seed range simulation (ported from playoff-clinching.html) ───────
+  function compareH2HFull(teamA, teamB) {
+    const aVsB = teamA.h2h?.[teamB.name];
+    const bVsA = teamB.h2h?.[teamA.name];
+    if (!aVsB || !bVsA) return 0;
+    const aP = (aVsB.wins + aVsB.losses) > 0 ? aVsB.wins / (aVsB.wins + aVsB.losses) : 0;
+    const bP = (bVsA.wins + bVsA.losses) > 0 ? bVsA.wins / (bVsA.wins + bVsA.losses) : 0;
+    return aP !== bP ? bP - aP : 0;
+  }
+
+  function remainingRegular(teamName) {
+    return _allGames.filter(g => {
+      const d = new Date(g.date);
+      return !isNaN(d) && d >= today &&
+        (!g.winner || g.winner.trim() === '') &&
+        g.game_type === 'Regular' &&
+        (g['home team'] === teamName || g['away team'] === teamName);
+    }).length;
+  }
+
+  function breakByRA(teams) {
+    return [...teams].sort((a, b) => {
+      if (a.runsAgainst !== b.runsAgainst) return a.runsAgainst - b.runsAgainst;
+      return (b.runsFor - b.runsAgainst) - (a.runsFor - a.runsAgainst);
+    });
+  }
+
+  function break2WayConservative(group, targetTeam, favorable) {
+    const [a, b] = group;
+    const hasTarget = a.name === targetTeam || b.name === targetTeam;
+    const h2h = compareH2HFull(a, b);
+    if (h2h !== 0) return h2h > 0 ? [b, a] : [a, b];
+    const anyLeft = a.gamesRemaining > 0 || b.gamesRemaining > 0;
+    if (anyLeft && hasTarget) {
+      if (favorable) return a.name === targetTeam ? [a, b] : [b, a];
+      else           return a.name === targetTeam ? [b, a] : [a, b];
+    }
+    return breakByRA(group);
+  }
+
+  function breakNWayConservative(group, targetTeam, favorable) {
+    const hasTarget = group.some(t => t.name === targetTeam);
+    const anyLeft   = group.some(t => t.gamesRemaining > 0);
+    if (anyLeft && hasTarget) {
+      return [...group].sort((a, b) => {
+        if (a.name === targetTeam) return favorable ? -1 : 1;
+        if (b.name === targetTeam) return favorable ? 1 : -1;
+        return breakByRA([a, b])[0].name === a.name ? -1 : 1;
+      });
+    }
+    return breakByRA(group);
+  }
+
+  function sortConservative(teams, targetTeam, favorable) {
+    const sorted = [...teams].sort((a, b) => b.winPct - a.winPct);
+    const groups = [];
+    let cur = [sorted[0]];
+    for (let i = 1; i < sorted.length; i++) {
+      if (Math.abs(sorted[i].winPct - sorted[i-1].winPct) < 0.0001) cur.push(sorted[i]);
+      else { groups.push(cur); cur = [sorted[i]]; }
+    }
+    groups.push(cur);
+    return groups.flatMap(g => {
+      if (g.length === 1) return g;
+      if (g.length === 2) return break2WayConservative(g, targetTeam, favorable);
+      return breakNWayConservative(g, targetTeam, favorable);
+    });
+  }
+
+  function simulateSeeds(targetTeam, targetWins, targetLosses, favorable) {
+    const hypo = _standings.map(team => {
+      if (team.name === targetTeam) {
+        const total = targetWins + targetLosses;
+        const added = total - (team.wins + team.losses);
+        return { ...team, wins: targetWins, losses: targetLosses,
+          winPct: total > 0 ? targetWins / total : 0, gamesRemaining: added };
+      }
+      const left = remainingRegular(team.name);
+      const targetLeft = remainingRegular(targetTeam);
+      let finalW, finalL;
+      if (targetLeft > 0) {
+        finalW = favorable ? team.wins : team.wins + left;
+        finalL = favorable ? team.losses + left : team.losses;
+      } else {
+        const couldTie = (team.wins + left >= targetWins) && (team.wins <= targetWins);
+        if (favorable) {
+          finalW = couldTie || team.wins > targetWins ? team.wins + left : team.wins;
+          finalL = couldTie || team.wins > targetWins ? team.losses : team.losses + left;
+        } else {
+          finalW = couldTie ? team.wins : team.wins + left;
+          finalL = couldTie ? team.losses + left : team.losses;
+        }
+      }
+      const total = finalW + finalL;
+      const added = total - (team.wins + team.losses);
+      return { ...team, wins: finalW, losses: finalL,
+        winPct: total > 0 ? finalW / total : 0, gamesRemaining: added };
+    });
+    const sorted = sortConservative(hypo, targetTeam, favorable);
+    return sorted.findIndex(t => t.name === targetTeam) + 1;
+  }
+
+  function getSeedRange(team) {
+    const left = remainingRegular(team.name);
+    const best  = simulateSeeds(team.name, team.wins + left, team.losses,       true);
+    const worst = simulateSeeds(team.name, team.wins,         team.losses + left, false);
+    return { best, worst, clinched: best === worst };
+  }
+
   // ── Load Hub ──────────────────────────────────────────────────────────
   async function loadHub() {
     try {
@@ -685,20 +794,24 @@
     const DIRECT_SEEDS = 5;
     const rows = _standings.map((t, i) => {
       const seed = i + 1;
-      const pct = (t.wins + t.losses + t.ties) > 0 ? (t.winPct * 100).toFixed(1) + '%' : '—';
+      const rec = `${t.wins}-${t.losses}${t.ties > 0 ? `-${t.ties}` : ''}`;
+      const range = getSeedRange(t);
+      const seedLabel = range.clinched
+        ? `<strong>🔒 #${range.best}</strong>`
+        : `#${range.best} – #${range.worst}`;
       const badge = seed <= DIRECT_SEEDS
         ? '<span class="badge-direct">Direct</span>'
         : '<span class="badge-playin">Play-In</span>';
       return `<tr>
         <td><strong>#${seed}</strong></td>
         <td>${t.name}</td>
-        <td>${t.wins}-${t.losses}${t.ties > 0 ? `-${t.ties}` : ''}</td>
-        <td>${pct}</td>
+        <td>${rec}</td>
+        <td>${seedLabel}</td>
         <td>${badge}</td>
       </tr>`;
     }).join('');
     el.innerHTML = `<table>
-      <thead><tr><th>#</th><th>Team</th><th>Record</th><th>Win%</th><th>Status</th></tr></thead>
+      <thead><tr><th>Now</th><th>Team</th><th>Record</th><th>Seed Range</th><th>Status</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>`;
     document.getElementById('seedsCopyBtn').disabled = false;
@@ -862,7 +975,10 @@
     const rows = _standings.map((t, i) => {
       const seed = i + 1;
       const rec = `${t.wins}-${t.losses}${t.ties > 0 ? `-${t.ties}` : ''}`;
-      const pct = (t.wins + t.losses + t.ties) > 0 ? (t.winPct * 100).toFixed(1) + '%' : '—';
+      const range = getSeedRange(t);
+      const seedLabel = range.clinched
+        ? `<strong>🔒 Clinched #${range.best}</strong>`
+        : `#${range.best} – #${range.worst}`;
       const isDirect = seed <= DIRECT_SEEDS;
       const statusHTML = isDirect
         ? `<span style="background:#dcfce7;color:#166534;border-radius:6px;padding:2px 8px;font-size:0.75rem;font-weight:700;">Direct</span>`
@@ -872,15 +988,15 @@
         <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;font-weight:700;">#${seed}</td>
         <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;font-weight:600;">${t.name}</td>
         <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;">${rec}</td>
-        <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;color:#2d5016;font-weight:700;">${pct}</td>
+        <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;">${seedLabel}</td>
         <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;">${statusHTML}</td>
       </tr>`;
     }).join('');
     const table = document.createElement('table');
     table.style.cssText = 'width:100%;border-collapse:collapse;font-size:0.88rem;';
     table.innerHTML = `<thead><tr>
-      <th style="${thS}">#</th><th style="${thS}">Team</th><th style="${thS}">Record</th>
-      <th style="${thS}">Win%</th><th style="${thS}">Status</th>
+      <th style="${thS}">Now</th><th style="${thS}">Team</th><th style="${thS}">Record</th>
+      <th style="${thS}">Seed Range</th><th style="${thS}">Status</th>
     </tr></thead><tbody>${rows}</tbody>`;
     wrapper.appendChild(table);
     const footer = document.createElement('div');
