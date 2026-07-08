@@ -1269,6 +1269,15 @@
     const HIT_TYPES = new Set(['single','double','triple','homerun']);
     const OUT_TYPES = new Set(['groundout','flyout','popup','sacfly','doubleplay','strikeout']);
 
+    // Normalize to "firstInitial + lastName" so Joe/Joseph, Will/William etc. match
+    function nameKey(name) {
+      if (!name) return '';
+      const parts = name.trim().split(/\s+/);
+      if (parts.length < 2) return name.toLowerCase().replace(/\s+/g, '');
+      return (parts[0][0] + parts[parts.length - 1]).toLowerCase();
+    }
+    const playerKey = nameKey(playerName);
+
     // Deterministic spiral jitter — stable per play index within a zone
     function jitterX(cx, spread, idx) {
       return cx + spread * Math.cos((idx * 137.5) * Math.PI / 180);
@@ -1286,7 +1295,7 @@
         const pbp  = data.playByPlay || [];
         pbp.forEach(play => {
           if (
-            play.batter === playerName &&
+            nameKey(play.batter) === playerKey &&
             play.isYourTeam === true &&
             play.location &&
             SPRAY_ZONES[play.location] &&
