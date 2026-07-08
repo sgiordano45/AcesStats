@@ -570,6 +570,20 @@
     <div class="badges-grid" id="badgesGrid"></div>
   </div>
 
+  <!-- Spray Chart -->
+  <div class="report-card" id="sprayChartCard" style="display:none">
+    <div class="card-title">Spray Chart <span id="sprayChartSeason" style="font-weight:400;opacity:0.65;font-size:0.85em;"></span></div>
+    <div style="display:flex;gap:1rem;align-items:center;justify-content:center;flex-wrap:wrap;padding:0.5rem 0 0.75rem;">
+      <span style="display:flex;align-items:center;gap:5px;font-size:0.8rem;"><svg width="12" height="12"><circle cx="6" cy="6" r="6" fill="#22c55e"/></svg> Hit</span>
+      <span style="display:flex;align-items:center;gap:5px;font-size:0.8rem;"><svg width="12" height="12"><circle cx="6" cy="6" r="6" fill="#ef4444"/></svg> Out</span>
+    </div>
+    <div style="display:flex;justify-content:center;">
+      <svg id="sprayChartSvg" viewBox="0 0 300 270" width="300" height="270" style="max-width:100%;"></svg>
+    </div>
+    <div id="sprayChartEmpty" style="text-align:center;color:#718096;font-size:0.85rem;padding:0.5rem 0;display:none;">No tracked at-bats with location data yet.</div>
+    <div id="sprayChartTotal" style="text-align:center;font-size:0.8rem;color:#718096;padding:0.4rem 0;"></div>
+  </div>
+
 </div><!-- /scoutingReport -->
 
 </div><!-- end .page-container -->
@@ -1105,6 +1119,7 @@
       scoutingReport.classList.remove('hidden');
       renderReport();
       renderBadges(badges);
+      loadSprayChart(currentPlayer.name, currentSeason);
 
     } catch(err) {
       console.error('Failed to load player:', err);
@@ -1196,6 +1211,178 @@
     }
     if (currentPlayer) renderReport();
   });
+
+  // ── Spray Chart ──────────────────────────────────────
+  async function loadSprayChart(playerName, season) {
+    const card  = document.getElementById('sprayChartCard');
+    const svg   = document.getElementById('sprayChartSvg');
+    const empty = document.getElementById('sprayChartEmpty');
+    const total = document.getElementById('sprayChartTotal');
+    const seasonLabel = document.getElementById('sprayChartSeason');
+
+    card.style.display = 'none';
+    svg.innerHTML = '';
+    empty.style.display = 'none';
+    total.textContent = '';
+
+    if (!playerName) return;
+
+    // Play types that are hits (green) or outs (red) with a batted-ball location
+    const HIT_TYPES  = new Set(['single','double','triple','homerun']);
+    const OUT_TYPES  = new Set(['groundout','flyout','popup','sacfly','doubleplay','strikeout']);
+
+    // Zone center coordinates on 300×270 SVG (home plate at bottom-center)
+    const ZONE_COORDS = {
+      LF:  { x: 42,  y: 62  },
+      LCF: { x: 92,  y: 38  },
+      CF:  { x: 150, y: 28  },
+      RCF: { x: 208, y: 38  },
+      RF:  { x: 258, y: 62  },
+      '3B':{ x: 78,  y: 158 },
+      SS:  { x: 108, y: 132 },
+      '2B':{ x: 192, y: 132 },
+      '1B':{ x: 222, y: 158 },
+      P:   { x: 150, y: 148 },
+      C:   { x: 150, y: 210 },
+    };
+
+    // Deterministic jitter so dots in the same zone spread out
+    function jitter(val, spread, idx) {
+      // Use idx to seed a pseudo-random offset that's stable per play
+      const angle = (idx * 137.5) % 360;
+      return val + spread * Math.cos(angle * Math.PI / 180);
+    }
+    function jitterY(val, spread, idx) {
+      const angle = (idx * 137.5) % 360;
+      return val + spread * Math.sin(angle * Math.PI / 180);
+    }
+
+    try {
+      const snap = await getDocs(collection(db, 'gameResults'));
+      const plays = [];
+
+      snap.forEach(docSnap => {
+        const data = docSnap.data();
+        const pbp  = data.playByPlay || [];
+        pbp.forEach(play => {
+          if (
+            play.batter === playerName &&
+            play.isYourTeam === true &&
+            play.location &&
+            ZONE_COORDS[play.location] &&
+            (HIT_TYPES.has(play.playType) || OUT_TYPES.has(play.playType))
+          ) {
+            plays.push({
+              location: play.location,
+              playType: play.playType,
+              isHit: HIT_TYPES.has(play.playType),
+              gameId: data.gameId,
+              seasonId: data.seasonId,
+            });
+          }
+        });
+      });
+
+      card.style.display = '';
+      seasonLabel.textContent = season ? `— ${season.displayName || season.id}` : '';
+
+      if (plays.length === 0) {
+        empty.style.display = '';
+        drawFieldBackground(svg);
+        return;
+      }
+
+      drawFieldBackground(svg);
+
+      // Group by zone to track count for jitter spread
+      const zoneCount = {};
+      plays.forEach(p => { zoneCount[p.location] = (zoneCount[p.location] || 0) + 1; });
+
+      // Draw dots — index within zone for jitter
+      const zoneIdx = {};
+      plays.forEach(p => {
+        const z   = ZONE_COORDS[p.location];
+        const idx = zoneIdx[p.location] = (zoneIdx[p.location] || 0) + 1;
+        const spread = Math.min(12, 4 + zoneCount[p.location] * 1.5);
+        const cx = jitter(z.x, spread, idx);
+        const cy = jitterY(z.y, spread, idx);
+
+        const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        circle.setAttribute('cx', cx.toFixed(1));
+        circle.setAttribute('cy', cy.toFixed(1));
+        circle.setAttribute('r', '6');
+        circle.setAttribute('fill', p.isHit ? '#22c55e' : '#ef4444');
+        circle.setAttribute('fill-opacity', '0.82');
+        circle.setAttribute('stroke', p.isHit ? '#16a34a' : '#dc2626');
+        circle.setAttribute('stroke-width', '1.2');
+        // Tooltip
+        const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+        title.textContent = `${p.location} — ${p.playType}`;
+        circle.appendChild(title);
+        svg.appendChild(circle);
+      });
+
+      const hits = plays.filter(p => p.isHit).length;
+      const outs = plays.filter(p => !p.isHit).length;
+      total.textContent = `${plays.length} tracked AB${plays.length !== 1 ? 's' : ''} with location data — ${hits} hit${hits !== 1 ? 's' : ''}, ${outs} out${outs !== 1 ? 's' : ''}`;
+
+    } catch(e) {
+      console.warn('Spray chart load failed:', e);
+    }
+  }
+
+  function drawFieldBackground(svg) {
+    const ns = 'http://www.w3.org/2000/svg';
+    const add = (el, attrs) => {
+      const node = document.createElementNS(ns, el);
+      Object.entries(attrs).forEach(([k, v]) => node.setAttribute(k, v));
+      svg.appendChild(node);
+      return node;
+    };
+
+    // Outfield arc
+    add('path', {
+      d: 'M 20 220 Q 150 -30 280 220 Z',
+      fill: '#d1fae5', stroke: '#6ee7b7', 'stroke-width': '1.5'
+    });
+    // Infield dirt (inner circle/diamond area)
+    add('polygon', {
+      points: '150,100 205,165 150,230 95,165',
+      fill: '#fde8c8', stroke: '#f59e0b', 'stroke-width': '1'
+    });
+    // Foul lines
+    add('line', { x1:150, y1:230, x2:20,  y2:220, stroke:'#94a3b8', 'stroke-width':'1', 'stroke-dasharray':'4,3' });
+    add('line', { x1:150, y1:230, x2:280, y2:220, stroke:'#94a3b8', 'stroke-width':'1', 'stroke-dasharray':'4,3' });
+    // Bases
+    [{ x:150,y:100 },{ x:205,y:165 },{ x:95,y:165 }].forEach(b => {
+      add('rect', { x:b.x-5, y:b.y-5, width:10, height:10, fill:'white', stroke:'#475569', 'stroke-width':'1.2', transform:`rotate(45,${b.x},${b.y})` });
+    });
+    // Home plate
+    add('polygon', { points:'150,225 158,233 155,242 145,242 142,233', fill:'white', stroke:'#475569', 'stroke-width':'1.2' });
+    // Pitcher's mound
+    add('circle', { cx:150, cy:155, r:6, fill:'#fde8c8', stroke:'#f59e0b', 'stroke-width':'1' });
+
+    // Zone labels
+    const labels = {
+      LF:'LF', LCF:'LCF', CF:'CF', RCF:'RCF', RF:'RF',
+      '3B':'3B', SS:'SS', '2B':'2B', '1B':'1B', P:'P', C:'C'
+    };
+    const ZONE_COORDS = {
+      LF:  { x:42,  y:62  }, LCF: { x:92,  y:38  }, CF:  { x:150, y:28  },
+      RCF: { x:208, y:38  }, RF:  { x:258, y:62  },
+      '3B':{ x:78,  y:158 }, SS:  { x:108, y:132 }, '2B':{ x:192, y:132 },
+      '1B':{ x:222, y:158 }, P:   { x:150, y:148 }, C:   { x:150, y:210 },
+    };
+    Object.entries(labels).forEach(([zone, label]) => {
+      const z = ZONE_COORDS[zone];
+      const t = add('text', {
+        x: z.x, y: z.y + 4,
+        'text-anchor':'middle', 'font-size':'9',
+        fill:'#64748b', 'font-weight':'600', 'font-family':'sans-serif'
+      });
+      t.textContent = label;
+    });
+  }
 
 </script>
 
