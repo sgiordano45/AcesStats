@@ -1213,6 +1213,43 @@
   });
 
   // ── Spray Chart ──────────────────────────────────────
+  // Field geometry: home plate at (150, 248), outfield radius 210px, foul lines at ±45° from vertical
+  // Left foul tip:  (150 - 210·sin45°, 248 - 210·cos45°) ≈ (2,  100)
+  // Right foul tip: (150 + 210·sin45°, 248 - 210·cos45°) ≈ (298, 100)
+  // Infield arc radius 105px
+  // Base distance 88px along 45° lines from home
+  //   2B: (150, 248-88)=(150,160)  1B: (150+62,248-62)=(212,186)  3B: (88,186)
+
+  const SPRAY_HOME = { x: 150, y: 248 };
+  const SPRAY_OF_R = 210;   // outfield radius
+  const SPRAY_IF_R = 105;   // infield arc radius
+  // Foul line endpoints (±45° from vertical, at outfield radius)
+  const SPRAY_FL_L = { x: SPRAY_HOME.x - SPRAY_OF_R * Math.sin(Math.PI/4), y: SPRAY_HOME.y - SPRAY_OF_R * Math.cos(Math.PI/4) };
+  const SPRAY_FL_R = { x: SPRAY_HOME.x + SPRAY_OF_R * Math.sin(Math.PI/4), y: SPRAY_HOME.y - SPRAY_OF_R * Math.cos(Math.PI/4) };
+  // Infield arc endpoints (same angles, infield radius)
+  const SPRAY_IF_L = { x: SPRAY_HOME.x - SPRAY_IF_R * Math.sin(Math.PI/4), y: SPRAY_HOME.y - SPRAY_IF_R * Math.cos(Math.PI/4) };
+  const SPRAY_IF_R2= { x: SPRAY_HOME.x + SPRAY_IF_R * Math.sin(Math.PI/4), y: SPRAY_HOME.y - SPRAY_IF_R * Math.cos(Math.PI/4) };
+  // Bases (88px from home along 45° diagonals)
+  const BD = 88;
+  const SPRAY_2B = { x: SPRAY_HOME.x,                                    y: SPRAY_HOME.y - BD };
+  const SPRAY_1B = { x: SPRAY_HOME.x + BD * Math.sin(Math.PI/4), y: SPRAY_HOME.y - BD * Math.cos(Math.PI/4) };
+  const SPRAY_3B = { x: SPRAY_HOME.x - BD * Math.sin(Math.PI/4), y: SPRAY_HOME.y - BD * Math.cos(Math.PI/4) };
+
+  // Zone dot-placement centers (adjusted to new geometry)
+  const SPRAY_ZONES = {
+    LF:  { x: 48,  y: 88  },
+    LCF: { x: 98,  y: 58  },
+    CF:  { x: 150, y: 42  },
+    RCF: { x: 202, y: 58  },
+    RF:  { x: 252, y: 88  },
+    '3B':{ x: Math.round(SPRAY_3B.x), y: Math.round(SPRAY_3B.y) },
+    SS:  { x: 112, y: 168 },
+    '2B':{ x: 188, y: 168 },
+    '1B':{ x: Math.round(SPRAY_1B.x), y: Math.round(SPRAY_1B.y) },
+    P:   { x: 150, y: 200 },
+    C:   { x: 150, y: 234 },
+  };
+
   async function loadSprayChart(playerName, season) {
     const card  = document.getElementById('sprayChartCard');
     const svg   = document.getElementById('sprayChartSvg');
@@ -1227,34 +1264,15 @@
 
     if (!playerName) return;
 
-    // Play types that are hits (green) or outs (red) with a batted-ball location
-    const HIT_TYPES  = new Set(['single','double','triple','homerun']);
-    const OUT_TYPES  = new Set(['groundout','flyout','popup','sacfly','doubleplay','strikeout']);
+    const HIT_TYPES = new Set(['single','double','triple','homerun']);
+    const OUT_TYPES = new Set(['groundout','flyout','popup','sacfly','doubleplay','strikeout']);
 
-    // Zone center coordinates on 300×270 SVG (home plate at bottom-center)
-    const ZONE_COORDS = {
-      LF:  { x: 42,  y: 62  },
-      LCF: { x: 92,  y: 38  },
-      CF:  { x: 150, y: 28  },
-      RCF: { x: 208, y: 38  },
-      RF:  { x: 258, y: 62  },
-      '3B':{ x: 78,  y: 158 },
-      SS:  { x: 108, y: 132 },
-      '2B':{ x: 192, y: 132 },
-      '1B':{ x: 222, y: 158 },
-      P:   { x: 150, y: 148 },
-      C:   { x: 150, y: 210 },
-    };
-
-    // Deterministic jitter so dots in the same zone spread out
-    function jitter(val, spread, idx) {
-      // Use idx to seed a pseudo-random offset that's stable per play
-      const angle = (idx * 137.5) % 360;
-      return val + spread * Math.cos(angle * Math.PI / 180);
+    // Deterministic spiral jitter — stable per play index within a zone
+    function jitterX(cx, spread, idx) {
+      return cx + spread * Math.cos((idx * 137.5) * Math.PI / 180);
     }
-    function jitterY(val, spread, idx) {
-      const angle = (idx * 137.5) % 360;
-      return val + spread * Math.sin(angle * Math.PI / 180);
+    function jitterY(cy, spread, idx) {
+      return cy + spread * Math.sin((idx * 137.5) * Math.PI / 180);
     }
 
     try {
@@ -1269,15 +1287,13 @@
             play.batter === playerName &&
             play.isYourTeam === true &&
             play.location &&
-            ZONE_COORDS[play.location] &&
+            SPRAY_ZONES[play.location] &&
             (HIT_TYPES.has(play.playType) || OUT_TYPES.has(play.playType))
           ) {
             plays.push({
               location: play.location,
               playType: play.playType,
               isHit: HIT_TYPES.has(play.playType),
-              gameId: data.gameId,
-              seasonId: data.seasonId,
             });
           }
         });
@@ -1286,39 +1302,37 @@
       card.style.display = '';
       seasonLabel.textContent = season ? `— ${season.displayName || season.id}` : '';
 
+      drawFieldBackground(svg);
+
       if (plays.length === 0) {
         empty.style.display = '';
-        drawFieldBackground(svg);
         return;
       }
 
-      drawFieldBackground(svg);
-
-      // Group by zone to track count for jitter spread
+      // Group by zone for jitter spread scaling
       const zoneCount = {};
       plays.forEach(p => { zoneCount[p.location] = (zoneCount[p.location] || 0) + 1; });
 
-      // Draw dots — index within zone for jitter
       const zoneIdx = {};
       plays.forEach(p => {
-        const z   = ZONE_COORDS[p.location];
-        const idx = zoneIdx[p.location] = (zoneIdx[p.location] || 0) + 1;
-        const spread = Math.min(12, 4 + zoneCount[p.location] * 1.5);
-        const cx = jitter(z.x, spread, idx);
-        const cy = jitterY(z.y, spread, idx);
+        const z      = SPRAY_ZONES[p.location];
+        const idx    = zoneIdx[p.location] = (zoneIdx[p.location] || 0) + 1;
+        const spread = Math.min(14, 3 + zoneCount[p.location] * 2);
+        const cx     = zoneCount[p.location] > 1 ? jitterX(z.x, spread, idx) : z.x;
+        const cy     = zoneCount[p.location] > 1 ? jitterY(z.y, spread, idx) : z.y;
 
-        const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        const ns = 'http://www.w3.org/2000/svg';
+        const circle = document.createElementNS(ns, 'circle');
         circle.setAttribute('cx', cx.toFixed(1));
         circle.setAttribute('cy', cy.toFixed(1));
-        circle.setAttribute('r', '6');
+        circle.setAttribute('r', '7');
         circle.setAttribute('fill', p.isHit ? '#22c55e' : '#ef4444');
-        circle.setAttribute('fill-opacity', '0.82');
-        circle.setAttribute('stroke', p.isHit ? '#16a34a' : '#dc2626');
-        circle.setAttribute('stroke-width', '1.2');
-        // Tooltip
-        const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
-        title.textContent = `${p.location} — ${p.playType}`;
-        circle.appendChild(title);
+        circle.setAttribute('fill-opacity', '0.85');
+        circle.setAttribute('stroke', 'white');
+        circle.setAttribute('stroke-width', '1.5');
+        const tt = document.createElementNS(ns, 'title');
+        tt.textContent = `${p.location} — ${p.playType}`;
+        circle.appendChild(tt);
         svg.appendChild(circle);
       });
 
@@ -1331,56 +1345,67 @@
     }
   }
 
-  function drawFieldBackground(svg) {
+  function drawFieldBackground(svgEl) {
     const ns = 'http://www.w3.org/2000/svg';
-    const add = (el, attrs) => {
-      const node = document.createElementNS(ns, el);
+    const add = (tag, attrs, parent) => {
+      const node = document.createElementNS(ns, tag);
       Object.entries(attrs).forEach(([k, v]) => node.setAttribute(k, v));
-      svg.appendChild(node);
+      (parent || svgEl).appendChild(node);
       return node;
     };
 
-    // Outfield arc
-    add('path', {
-      d: 'M 20 220 Q 150 -30 280 220 Z',
-      fill: '#d1fae5', stroke: '#6ee7b7', 'stroke-width': '1.5'
-    });
-    // Infield dirt (inner circle/diamond area)
-    add('polygon', {
-      points: '150,100 205,165 150,230 95,165',
-      fill: '#fde8c8', stroke: '#f59e0b', 'stroke-width': '1'
-    });
-    // Foul lines
-    add('line', { x1:150, y1:230, x2:20,  y2:220, stroke:'#94a3b8', 'stroke-width':'1', 'stroke-dasharray':'4,3' });
-    add('line', { x1:150, y1:230, x2:280, y2:220, stroke:'#94a3b8', 'stroke-width':'1', 'stroke-dasharray':'4,3' });
-    // Bases
-    [{ x:150,y:100 },{ x:205,y:165 },{ x:95,y:165 }].forEach(b => {
-      add('rect', { x:b.x-5, y:b.y-5, width:10, height:10, fill:'white', stroke:'#475569', 'stroke-width':'1.2', transform:`rotate(45,${b.x},${b.y})` });
-    });
-    // Home plate
-    add('polygon', { points:'150,225 158,233 155,242 145,242 142,233', fill:'white', stroke:'#475569', 'stroke-width':'1.2' });
-    // Pitcher's mound
-    add('circle', { cx:150, cy:155, r:6, fill:'#fde8c8', stroke:'#f59e0b', 'stroke-width':'1' });
+    const H  = SPRAY_HOME;
+    const R  = SPRAY_OF_R;
+    const Ri = SPRAY_IF_R;
+    const fl = SPRAY_FL_L, fr = SPRAY_FL_R;
+    const il = SPRAY_IF_L, ir = SPRAY_IF_R2;
+    const b1 = SPRAY_1B, b2 = SPRAY_2B, b3 = SPRAY_3B;
 
-    // Zone labels
-    const labels = {
-      LF:'LF', LCF:'LCF', CF:'CF', RCF:'RCF', RF:'RF',
-      '3B':'3B', SS:'SS', '2B':'2B', '1B':'1B', P:'P', C:'C'
-    };
-    const ZONE_COORDS = {
-      LF:  { x:42,  y:62  }, LCF: { x:92,  y:38  }, CF:  { x:150, y:28  },
-      RCF: { x:208, y:38  }, RF:  { x:258, y:62  },
-      '3B':{ x:78,  y:158 }, SS:  { x:108, y:132 }, '2B':{ x:192, y:132 },
-      '1B':{ x:222, y:158 }, P:   { x:150, y:148 }, C:   { x:150, y:210 },
-    };
-    Object.entries(labels).forEach(([zone, label]) => {
-      const z = ZONE_COORDS[zone];
-      const t = add('text', {
-        x: z.x, y: z.y + 4,
-        'text-anchor':'middle', 'font-size':'9',
-        fill:'#64748b', 'font-weight':'600', 'font-family':'sans-serif'
+    // ── Outfield grass (full fan) ─────────────────────────────────
+    add('path', {
+      d: `M ${fl.x.toFixed(1)} ${fl.y.toFixed(1)} A ${R} ${R} 0 0 1 ${fr.x.toFixed(1)} ${fr.y.toFixed(1)} L ${H.x} ${H.y} Z`,
+      fill: '#e8f4f0', stroke: '#b2d8cc', 'stroke-width': '1.5', 'stroke-linejoin': 'round'
+    });
+
+    // ── Infield arc (dirt/grass boundary) ─────────────────────────
+    add('path', {
+      d: `M ${il.x.toFixed(1)} ${il.y.toFixed(1)} A ${Ri} ${Ri} 0 0 1 ${ir.x.toFixed(1)} ${ir.y.toFixed(1)} L ${H.x} ${H.y} Z`,
+      fill: '#f0e6d6', stroke: '#d4b896', 'stroke-width': '1'
+    });
+
+    // ── Base paths (white lines on dirt) ──────────────────────────
+    add('polyline', {
+      points: `${H.x},${H.y} ${b1.x.toFixed(1)},${b1.y.toFixed(1)} ${b2.x},${b2.y} ${b3.x.toFixed(1)},${b3.y.toFixed(1)} ${H.x},${H.y}`,
+      fill: 'none', stroke: '#c4a882', 'stroke-width': '1.2'
+    });
+
+    // ── Foul lines ─────────────────────────────────────────────────
+    add('line', { x1:H.x, y1:H.y, x2:fl.x.toFixed(1), y2:fl.y.toFixed(1), stroke:'#b2d8cc', 'stroke-width':'1.2' });
+    add('line', { x1:H.x, y1:H.y, x2:fr.x.toFixed(1), y2:fr.y.toFixed(1), stroke:'#b2d8cc', 'stroke-width':'1.2' });
+
+    // ── Pitcher's mound ────────────────────────────────────────────
+    add('circle', { cx: H.x, cy: H.y - 48, r: 7, fill: '#e8d9c4', stroke: '#c4a882', 'stroke-width': '1' });
+
+    // ── Bases (small rotated squares) ─────────────────────────────
+    [b1, b2, b3].forEach(b => {
+      add('rect', {
+        x: (b.x - 5).toFixed(1), y: (b.y - 5).toFixed(1),
+        width: 10, height: 10,
+        fill: 'white', stroke: '#94a3b8', 'stroke-width': '1.2',
+        transform: `rotate(45,${b.x.toFixed(1)},${b.y.toFixed(1)})`
       });
-      t.textContent = label;
+    });
+
+    // ── Home plate (pentagon) ──────────────────────────────────────
+    add('polygon', {
+      points: `${H.x},${H.y-7} ${H.x+6},${H.y-2} ${H.x+4},${H.y+5} ${H.x-4},${H.y+5} ${H.x-6},${H.y-2}`,
+      fill: 'white', stroke: '#94a3b8', 'stroke-width': '1.2'
+    });
+
+    // ── Catcher's arc (semicircle below home) ─────────────────────
+    add('path', {
+      d: `M ${H.x-22},${H.y+6} A 22 22 0 0 0 ${H.x+22},${H.y+6}`,
+      fill: 'none', stroke: '#b2c4d4', 'stroke-width': '1', 'stroke-dasharray': '3,2'
     });
   }
 
