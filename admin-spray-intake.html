@@ -141,23 +141,40 @@
 </div>
 
 <script type="module">
-import { db } from './firebase-data.js';
-import { onAuthChange, getUserProfile } from './firebase-auth.js';
+import { auth } from './firebase-auth.js';
+import { db } from './firebase-config.js';
+import { onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
 import {
-  collection, getDocs, doc, setDoc, serverTimestamp
+  collection, getDocs, doc, getDoc, setDoc, serverTimestamp
 } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
 
-// ── Auth gate ────────────────────────────────────────────────────────────────
-onAuthChange(async user => {
+// ── Auth gate (same pattern as admin-content.html) ───────────────────────────
+onAuthStateChanged(auth, async user => {
   if (!user) { showGate(); return; }
-  const profile = await getUserProfile(user.uid);
-  if (!profile?.isAdmin && !profile?.role !== 'admin') {
-    // also check role field
-    if (!['admin','league_staff'].includes(profile?.role)) {
-      showGate(); return;
+
+  try {
+    const userSnap = await getDoc(doc(db, 'users', user.uid));
+    if (!userSnap.exists()) { showGate(); return; }
+
+    const p = userSnap.data();
+    const role     = (p.role     || '').toLowerCase();
+    const userRole = (p.userRole || '').toLowerCase();
+    const userType = (p.userType || '').toLowerCase();
+
+    const ok = p.isAdmin === true
+      || role     === 'admin' || role     === 'staff' || role     === 'league_staff' || role     === 'league-staff'
+      || userRole === 'admin' || userRole === 'staff'
+      || userType === 'admin' || userType === 'league-staff';
+
+    if (ok) {
+      document.getElementById('mainContent').classList.remove('hidden');
+    } else {
+      showGate();
     }
+  } catch (e) {
+    console.error('Auth check failed:', e);
+    showGate();
   }
-  document.getElementById('mainContent').classList.remove('hidden');
 });
 
 function showGate() {
