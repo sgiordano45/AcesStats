@@ -2614,7 +2614,10 @@ window.writeHitLocations = async function() {
       }, { merge: true });
 
       // Also write to unified sprayChartData collection for display on scouting-report / player pages
-      const sprayRef = doc(db, 'sprayChartData', match.legacyId);
+      // Use authId (Firebase UID) → roster id (snake_case) → name-derived legacyId
+      // to match whatever key the users collection and intake page used
+      const sprayPlayerId = match.authId || match.id || match.legacyId;
+      const sprayRef = doc(db, 'sprayChartData', sprayPlayerId);
       const gamePlays = byPlayer[name].map(l => ({
         result:   ['single','double','triple','homerun'].includes(l.playType) ? 'Hit' : 'Out',
         zone:     l.location,
@@ -2629,7 +2632,7 @@ window.writeHitLocations = async function() {
       }, { merge: true });
 
       written++;
-      console.log(`📍 Wrote ${byPlayer[name].length} location(s) for ${match.legacyId} → playerStats + sprayChartData`);
+      console.log(`📍 Wrote ${byPlayer[name].length} location(s) for ${match.legacyId} → playerStats | sprayChartData → ${sprayPlayerId}`);
     } catch (err) {
       console.error(`❌ Error writing hit locations for ${name}:`, err);
       errors++;
