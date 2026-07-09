@@ -88,7 +88,7 @@
       <div class="upload-zone" id="dropZone">
         <input type="file" id="csvFile" accept=".csv">
         <div class="icon">📂</div>
-        <p><strong onclick="document.getElementById('csvFile').click()">Choose a CSV file</strong> or drag and drop here</p>
+        <p><strong style="cursor:pointer;">Choose a CSV file</strong> or drag and drop here</p>
         <p style="font-size:0.8rem;margin-top:0.5rem;">Expected columns: player, result, svg_x, svg_y, x_ft, y_ft, distance_ft, angle_deg, zone</p>
       </div>
       <div style="margin-top:1rem;">
@@ -168,6 +168,7 @@ onAuthStateChanged(auth, async user => {
 
     if (ok) {
       document.getElementById('mainContent').classList.remove('hidden');
+      loadPlayers();  // defer until auth is confirmed
     } else {
       showGate();
     }
@@ -409,7 +410,7 @@ window.resetPage = function() {
   document.getElementById('uploadResult').textContent = '';
 };
 
-// ── File input / drag-drop ───────────────────────────────────────────────────
+// ── File handler ─────────────────────────────────────────────────────────────
 function handleFile(file) {
   if (!file || !file.name.endsWith('.csv')) { showToast('Please select a CSV file', 'error'); return; }
   if (!document.getElementById('sourceLabel').value) {
@@ -424,16 +425,6 @@ function handleFile(file) {
   reader.readAsText(file);
 }
 
-document.getElementById('csvFile').addEventListener('change', e => handleFile(e.target.files[0]));
-
-const dz = document.getElementById('dropZone');
-dz.addEventListener('dragover',  e => { e.preventDefault(); dz.classList.add('drag-over'); });
-dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'));
-dz.addEventListener('drop', e => {
-  e.preventDefault(); dz.classList.remove('drag-over');
-  handleFile(e.dataTransfer.files[0]);
-});
-
 // ── Toast ─────────────────────────────────────────────────────────────────────
 function showToast(msg, type = 'success') {
   const t = document.createElement('div');
@@ -443,8 +434,23 @@ function showToast(msg, type = 'success') {
   setTimeout(() => t.remove(), 4000);
 }
 
-// ── Boot ──────────────────────────────────────────────────────────────────────
-loadPlayers();
+// ── File input / event wiring (safe to attach at module load — elements exist in DOM) ──
+document.getElementById('csvFile').addEventListener('change', e => {
+  const file = e.target.files[0];
+  if (file) handleFile(file);
+});
+
+const dz = document.getElementById('dropZone');
+// Make the whole zone clickable
+dz.addEventListener('click', () => document.getElementById('csvFile').click());
+dz.addEventListener('dragover',  e => { e.preventDefault(); dz.classList.add('drag-over'); });
+dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'));
+dz.addEventListener('drop', e => {
+  e.preventDefault();
+  dz.classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (file) handleFile(file);
+});
 </script>
 </body>
 </html>
