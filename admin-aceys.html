@@ -164,28 +164,35 @@ import {
   collection, getDocs, doc, getDoc, setDoc, updateDoc, onSnapshot, serverTimestamp
 } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
 
-// ── Auth ──────────────────────────────────────────────────────────────────────
+// ── Auth (mirrors league-staff-admin.html pattern) ───────────────────────────
+let currentUser = null;
+
 onAuthStateChanged(auth, async user => {
   if (!user) { showGate(); return; }
+  currentUser = user;
+
   try {
-    const snap = await getDoc(doc(db, 'users', user.uid));
-    if (!snap.exists()) { showGate(); return; }
-    const p = snap.data();
-    const role = (p.role || '').toLowerCase();
-    const userRole = (p.userRole || '').toLowerCase();
-    const userType = (p.userType || '').toLowerCase();
-    const ok = p.isAdmin === true
-      || role === 'admin' || role === 'staff' || role === 'league_staff' || role === 'league-staff'
-      || userRole === 'admin' || userRole === 'staff'
-      || userType === 'admin' || userType === 'league-staff';
-    if (ok) {
-      document.getElementById('mainContent').classList.remove('hidden');
-      init();
-    } else {
-      showGate();
-    }
-  } catch(e) { console.error(e); showGate(); }
+    const userDoc = await getDoc(doc(db, 'users', user.uid));
+    if (!userDoc.exists()) { showGate(); return; }
+
+    const p = userDoc.data();
+    const isAdmin      = p.isAdmin === true
+                      || p.userRole === 'admin'
+                      || p.role    === 'admin';
+    const isLeagueStaff = p.isLeagueStaff === true
+                       || p.userRole === 'league-staff'
+                       || p.role    === 'league-staff'
+                       || p.userRole === 'league_staff'
+                       || p.role    === 'league_staff';
+
+    if (!isAdmin && !isLeagueStaff) { showGate(); return; }
+
+    document.getElementById('mainContent').classList.remove('hidden');
+    // Only start Firestore listeners AFTER auth confirms — prevents permission-denied errors
+    init();
+  } catch(e) { console.error('Auth check failed:', e); showGate(); }
 });
+
 function showGate() { document.getElementById('authGate').classList.remove('hidden'); }
 
 // ── Award definitions ─────────────────────────────────────────────────────────
