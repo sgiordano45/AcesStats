@@ -211,22 +211,22 @@ function idToName(id) {
 }
 
 function parseCSV(text) {
-  const lines = text.trim().split('\n');
-  const header = lines[0].split(',').map(h => h.trim().toLowerCase());
+  // Normalize line endings (handle \r\n and \r)
+  const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim().split('\n');
+  const header = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/[^a-z_]/g, ''));
   const idxOf  = col => header.indexOf(col);
 
-  return lines.slice(1).map(line => {
+  console.log('CSV header:', header);
+  console.log('CSV row count:', lines.length - 1);
+
+  return lines.slice(1).filter(l => l.trim()).map(line => {
     const cols = line.split(',');
     return {
-      player:       (cols[idxOf('player')] || '').trim(),
-      result:       (cols[idxOf('result')] || '').trim(),
-      svg_x:        parseFloat(cols[idxOf('svg_x')]),
-      svg_y:        parseFloat(cols[idxOf('svg_y')]),
-      x_ft:         parseFloat(cols[idxOf('x_ft')]),
-      y_ft:         parseFloat(cols[idxOf('y_ft')]),
+      player:       (cols[idxOf('player')]       || '').trim(),
+      result:       (cols[idxOf('result')]       || '').trim(),
       distance_ft:  parseFloat(cols[idxOf('distance_ft')]),
       angle_deg:    parseFloat(cols[idxOf('angle_deg')]),
-      zone:         (cols[idxOf('zone')] || '').trim(),
+      zone:         (cols[idxOf('zone')]         || '').trim(),
     };
   }).filter(r => r.player);
 }
@@ -412,15 +412,27 @@ window.resetPage = function() {
 
 // ── File handler ─────────────────────────────────────────────────────────────
 function handleFile(file) {
-  if (!file || !file.name.endsWith('.csv')) { showToast('Please select a CSV file', 'error'); return; }
+  if (!file) { showToast('No file received', 'error'); return; }
+  // Case-insensitive .csv check
+  if (!file.name.toLowerCase().endsWith('.csv')) {
+    showToast('Please select a CSV file', 'error'); return;
+  }
+  showToast(`Reading ${file.name}…`);
   if (!document.getElementById('sourceLabel').value) {
-    document.getElementById('sourceLabel').value = file.name.replace('.csv','');
+    document.getElementById('sourceLabel').value = file.name.replace(/\.csv$/i, '');
   }
   const reader = new FileReader();
+  reader.onerror = () => showToast('Failed to read file', 'error');
   reader.onload = e => {
-    csvRows = parseCSV(e.target.result);
-    if (!csvRows.length) { showToast('No data rows found in CSV', 'error'); return; }
-    buildReviewTable(csvRows, file.name);
+    try {
+      csvRows = parseCSV(e.target.result);
+      console.log('Parsed rows:', csvRows.length, csvRows[0]);
+      if (!csvRows.length) { showToast('No data rows found in CSV — check the file format', 'error'); return; }
+      buildReviewTable(csvRows, file.name);
+    } catch(err) {
+      console.error('Parse/render error:', err);
+      showToast('Error parsing CSV: ' + err.message, 'error');
+    }
   };
   reader.readAsText(file);
 }
