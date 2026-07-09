@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Aceys Admin — Aces</title>
+  <link rel="stylesheet" href="nav-styles.css">
+  <style>
+    :root {
+      --gold: #c9a227;
+      --gold-light: #f0d060;
+      --gold-dim: #7a5c10;
+      --dark: #12100e;
+      --dark2: #1e1a16;
+      --dark3: #2a2520;
+      --border: #3a342c;
+      --text: #f0e8d8;
+      --text-dim: #9a8c7a;
+      --primary: #2d5016;
+      --radius: 10px;
+      --shadow: 0 2px 12px rgba(0,0,0,0.4);
+    }
+    * { box-sizing: border-box; }
+    body { font-family: 'Inter', -apple-system, sans-serif; margin: 0; padding: 0; background: #1a1a1a; color: #f0e8d8; }
+    .page-header { background: linear-gradient(135deg, #1e1a16, #2a2218); border-bottom: 1px solid var(--border); padding: 1.5rem 2rem; }
+    .page-header h1 { margin: 0; font-size: 1.5rem; color: var(--gold); }
+    .page-header p { margin: 0.25rem 0 0; opacity: 0.7; font-size: 0.875rem; }
+    .container { max-width: 900px; margin: 2rem auto; padding: 0 1rem; }
+    .card { background: var(--dark2); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.5rem; margin-bottom: 1.5rem; box-shadow: var(--shadow); }
+    .card h2 { margin: 0 0 1.25rem; font-size: 1rem; color: var(--gold); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 700; }
+    .btn { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.6rem 1.25rem; border-radius: 8px; border: none; cursor: pointer; font-size: 0.9rem; font-weight: 600; transition: all 0.2s; }
+    .btn-gold { background: var(--gold); color: #12100e; }
+    .btn-gold:hover:not(:disabled) { background: var(--gold-light); }
+    .btn-danger { background: #7f1d1d; color: #fecaca; }
+    .btn-danger:hover:not(:disabled) { background: #991b1b; }
+    .btn-secondary { background: var(--dark3); color: var(--text); border: 1px solid var(--border); }
+    .btn-secondary:hover:not(:disabled) { background: #3a342c; }
+    .btn-sm { padding: 0.35rem 0.75rem; font-size: 0.8rem; }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .hidden { display: none !important; }
+    .auth-gate { display: flex; align-items: center; justify-content: center; min-height: 60vh; }
+    .auth-gate-inner { text-align: center; background: var(--dark2); border: 1px solid var(--border); border-radius: 12px; padding: 2.5rem; }
+    .auth-gate-inner h2 { color: var(--gold); }
+    .auth-gate-inner p { color: var(--text-dim); }
+
+    /* Award category list */
+    .award-list { display: flex; flex-direction: column; gap: 0.75rem; }
+    .award-item { background: var(--dark3); border: 1px solid var(--border); border-radius: 8px; padding: 1rem 1.25rem; display: flex; align-items: center; gap: 1rem; transition: border-color 0.2s; }
+    .award-item.revealed { border-color: var(--gold); }
+    .award-item.has-winner { border-color: #4a7c2e; }
+    .award-icon { font-size: 1.5rem; flex-shrink: 0; width: 2rem; text-align: center; }
+    .award-info { flex: 1; min-width: 0; }
+    .award-label { font-weight: 700; font-size: 0.95rem; color: var(--text); }
+    .award-sublabel { font-size: 0.78rem; color: var(--text-dim); margin-top: 2px; }
+    .award-winner { font-size: 0.85rem; color: var(--gold); margin-top: 4px; font-weight: 600; }
+    .award-actions { display: flex; gap: 0.5rem; flex-shrink: 0; flex-wrap: wrap; }
+    .award-status { font-size: 0.75rem; padding: 2px 8px; border-radius: 20px; font-weight: 700; }
+    .award-status.hidden-status { background: #3a342c; color: var(--text-dim); }
+    .award-status.revealed-status { background: #78350f; color: #fcd34d; }
+
+    /* Modal */
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 1rem; }
+    .modal { background: var(--dark2); border: 1px solid var(--border); border-radius: 12px; padding: 1.75rem; width: 100%; max-width: 520px; box-shadow: 0 8px 40px rgba(0,0,0,0.6); }
+    .modal h3 { margin: 0 0 1.25rem; color: var(--gold); font-size: 1.1rem; }
+    .form-group { margin-bottom: 1rem; }
+    .form-group label { display: block; font-size: 0.85rem; color: var(--text-dim); margin-bottom: 0.4rem; font-weight: 600; }
+    .form-group input, .form-group textarea, .form-group select { width: 100%; padding: 0.55rem 0.75rem; border: 1px solid var(--border); border-radius: 7px; background: var(--dark3); color: var(--text); font-size: 0.9rem; font-family: inherit; }
+    .form-group input:focus, .form-group textarea:focus, .form-group select:focus { outline: none; border-color: var(--gold); }
+    .form-group textarea { resize: vertical; min-height: 70px; }
+    .form-hint { font-size: 0.78rem; color: var(--text-dim); margin-top: 0.3rem; }
+    .modal-actions { display: flex; gap: 0.75rem; margin-top: 1.25rem; justify-content: flex-end; }
+
+    /* Toast */
+    .toast { position: fixed; bottom: 2rem; right: 2rem; background: var(--gold); color: #12100e; padding: 0.85rem 1.25rem; border-radius: 10px; box-shadow: 0 4px 16px rgba(0,0,0,0.4); font-weight: 700; z-index: 9999; animation: slideIn 0.3s ease; }
+    .toast.error { background: #991b1b; color: white; }
+    @keyframes slideIn { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+    /* Danger zone */
+    .danger-zone { border-color: #7f1d1d; }
+    .danger-zone h2 { color: #f87171; }
+
+    .section-divider { border: none; border-top: 1px solid var(--border); margin: 1.5rem 0; }
+
+    /* Team MVPs subsection */
+    .team-section-label { font-size: 0.8rem; color: var(--text-dim); font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; margin: 1.25rem 0 0.5rem; padding-bottom: 0.4rem; border-bottom: 1px solid var(--border); }
+  </style>
+</head>
+<body>
+
+<div id="authGate" class="auth-gate hidden">
+  <div class="auth-gate-inner">
+    <div style="font-size:2rem;margin-bottom:0.5rem;">🔐</div>
+    <h2>League Staff Only</h2>
+    <p>Sign in with a league staff or admin account to access the Aceys admin panel.</p>
+    <a href="signin.html" class="btn btn-gold" style="margin-top:1rem;">Sign In</a>
+  </div>
+</div>
+
+<div id="mainContent" class="hidden">
+  <div class="page-header">
+    <h1>🏆 Aceys Admin</h1>
+    <p>Set winners and control the reveal for the Aceys ceremony</p>
+  </div>
+
+  <div class="container">
+
+    <!-- Status bar -->
+    <div class="card" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:1rem;">
+      <div>
+        <div style="font-size:0.85rem;color:var(--text-dim);font-weight:600;text-transform:uppercase;letter-spacing:0.05em;">Ceremony Status</div>
+        <div id="statusSummary" style="color:var(--text);margin-top:0.25rem;font-size:0.95rem;">Loading…</div>
+      </div>
+      <div style="display:flex;gap:0.75rem;flex-wrap:wrap;">
+        <button class="btn btn-secondary btn-sm" onclick="resetAllReveals()">🔒 Hide All Reveals</button>
+        <button class="btn btn-gold" onclick="location.href='aceys-2026.html'" target="_blank">👁 Preview Public Page</button>
+      </div>
+    </div>
+
+    <!-- Individual Awards -->
+    <div class="card">
+      <h2>🏅 Individual Awards</h2>
+      <div class="award-list" id="awardList">
+        <div style="color:var(--text-dim);font-size:0.9rem;padding:1rem 0;">Loading awards…</div>
+      </div>
+    </div>
+
+    <!-- Team MVPs -->
+    <div class="card">
+      <h2>🦁 Team MVPs</h2>
+      <div class="award-list" id="teamMvpList">
+        <div style="color:var(--text-dim);font-size:0.9rem;padding:1rem 0;">Loading teams…</div>
+      </div>
+    </div>
+
+    <!-- Multi-winner Awards -->
+    <div class="card">
+      <h2>⭐ All Aces &amp; Gold Gloves</h2>
+      <div class="award-list" id="multiAwardList">
+        <div style="color:var(--text-dim);font-size:0.9rem;padding:1rem 0;">Loading…</div>
+      </div>
+    </div>
+
+  </div><!-- /container -->
+</div>
+
+<!-- Edit modal -->
+<div class="modal-overlay hidden" id="editModal">
+  <div class="modal">
+    <h3 id="modalTitle">Edit Award</h3>
+    <div id="modalBody"></div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-gold" onclick="saveAward()">💾 Save</button>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { auth } from './firebase-auth.js';
+import { db } from './firebase-config.js';
+import { onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
+import {
+  collection, getDocs, doc, getDoc, setDoc, updateDoc, onSnapshot, serverTimestamp
+} from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+
+// ── Auth ──────────────────────────────────────────────────────────────────────
+onAuthStateChanged(auth, async user => {
+  if (!user) { showGate(); return; }
+  try {
+    const snap = await getDoc(doc(db, 'users', user.uid));
+    if (!snap.exists()) { showGate(); return; }
+    const p = snap.data();
+    const role = (p.role || '').toLowerCase();
+    const userRole = (p.userRole || '').toLowerCase();
+    const userType = (p.userType || '').toLowerCase();
+    const ok = p.isAdmin === true
+      || role === 'admin' || role === 'staff' || role === 'league_staff' || role === 'league-staff'
+      || userRole === 'admin' || userRole === 'staff'
+      || userType === 'admin' || userType === 'league-staff';
+    if (ok) {
+      document.getElementById('mainContent').classList.remove('hidden');
+      init();
+    } else {
+      showGate();
+    }
+  } catch(e) { console.error(e); showGate(); }
+});
+function showGate() { document.getElementById('authGate').classList.remove('hidden'); }
+
+// ── Award definitions ─────────────────────────────────────────────────────────
+const INDIVIDUAL_AWARDS = [
+  { id: '2026_mvp',          label: 'League MVP',          icon: '🏆', multi: false },
+  { id: '2026_pitcher',      label: 'Pitcher of the Year', icon: '🥎', multi: false },
+  { id: '2026_rookie',       label: 'Rookie of the Year',  icon: '🌟', multi: false },
+  { id: '2026_comeback',     label: 'Comeback Player',     icon: '💪', multi: false },
+  { id: '2026_clutch',       label: 'Clutch Player',       icon: '🎯', multi: false },
+  { id: '2026_sportsmanship',label: 'Sportsmanship Award', icon: '🤝', multi: false },
+  { id: '2026_most-improved',label: 'Most Improved',       icon: '📈', multi: false },
+];
+
+const MULTI_AWARDS = [
+  { id: '2026_all-aces',     label: 'All Aces Team',       icon: '⭐', multi: true },
+  { id: '2026_gold-glove',   label: 'Gold Glove Team',     icon: '🥊', multi: true },
+];
+
+// Teams — will be populated from Firestore
+let TEAMS = [];
+
+// Current awards state from Firestore
+let awardsCache = {};
+let unsubscribe = null;
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+async function init() {
+  // Load teams
+  try {
+    const teamsSnap = await getDocs(collection(db, 'teams'));
+    TEAMS = teamsSnap.docs
+      .map(d => ({ id: d.id, name: d.data().teamName || d.data().name || d.id }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  } catch(e) {
+    console.error('Could not load teams', e);
+    TEAMS = [];
+  }
+
+  // Real-time listener on aceyAwards
+  if (unsubscribe) unsubscribe();
+  unsubscribe = onSnapshot(collection(db, 'aceyAwards'), snap => {
+    awardsCache = {};
+    snap.docs.forEach(d => { awardsCache[d.id] = d.data(); });
+    renderAll();
+  });
+}
+
+// ── Render ────────────────────────────────────────────────────────────────────
+function renderAll() {
+  renderList('awardList', INDIVIDUAL_AWARDS);
+  renderTeamMvps();
+  renderList('multiAwardList', MULTI_AWARDS);
+  updateStatusSummary();
+}
+
+function renderList(containerId, awards) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  el.innerHTML = awards.map(a => awardItemHtml(a)).join('');
+}
+
+function renderTeamMvps() {
+  const el = document.getElementById('teamMvpList');
+  if (!el) return;
+  if (!TEAMS.length) {
+    el.innerHTML = '<div style="color:var(--text-dim);font-size:0.9rem;padding:1rem 0;">No teams found in Firestore.</div>';
+    return;
+  }
+  el.innerHTML = TEAMS.map(team => {
+    const awardDef = { id: `2026_team-mvp_${team.id}`, label: `${team.name} MVP`, icon: '🦁', multi: false, team: team.name };
+    return awardItemHtml(awardDef);
+  }).join('');
+}
+
+function awardItemHtml(a) {
+  const data = awardsCache[a.id] || {};
+  const hasWinner = a.multi ? (data.playerNames && data.playerNames.length > 0) : !!data.playerName;
+  const isRevealed = !!data.revealed;
+  const winnerText = a.multi
+    ? (data.playerNames || []).join(', ')
+    : (data.playerName || '');
+
+  return `
+    <div class="award-item ${isRevealed ? 'revealed' : hasWinner ? 'has-winner' : ''}" data-id="${a.id}">
+      <div class="award-icon">${a.icon}</div>
+      <div class="award-info">
+        <div class="award-label">${a.label}</div>
+        ${a.team ? `<div class="award-sublabel">Team MVP — ${a.team}</div>` : ''}
+        ${winnerText ? `<div class="award-winner">🏆 ${winnerText}</div>` : `<div class="award-sublabel" style="margin-top:4px;">No winner set yet</div>`}
+        ${data.note ? `<div class="award-sublabel" style="margin-top:3px;">📝 ${data.note}</div>` : ''}
+      </div>
+      <div class="award-actions">
+        <span class="award-status ${isRevealed ? 'revealed-status' : 'hidden-status'}">${isRevealed ? '✨ Revealed' : '🔒 Hidden'}</span>
+        <button class="btn btn-secondary btn-sm" onclick="openEdit('${a.id}')">✏️ Edit</button>
+        ${isRevealed
+          ? `<button class="btn btn-secondary btn-sm" onclick="toggleReveal('${a.id}', false)">🔒 Hide</button>`
+          : `<button class="btn btn-gold btn-sm" onclick="toggleReveal('${a.id}', true)" ${!hasWinner ? 'disabled title="Set a winner first"' : ''}>✨ Reveal</button>`
+        }
+      </div>
+    </div>`;
+}
+
+function updateStatusSummary() {
+  const allIds = [
+    ...INDIVIDUAL_AWARDS.map(a => a.id),
+    ...MULTI_AWARDS.map(a => a.id),
+    ...TEAMS.map(t => `2026_team-mvp_${t.id}`),
+  ];
+  const total = allIds.length;
+  const withWinner = allIds.filter(id => {
+    const d = awardsCache[id];
+    if (!d) return false;
+    return d.playerName || (d.playerNames && d.playerNames.length > 0);
+  }).length;
+  const revealed = allIds.filter(id => awardsCache[id]?.revealed).length;
+  document.getElementById('statusSummary').textContent =
+    `${withWinner}/${total} winners set · ${revealed} revealed`;
+}
+
+// ── Edit modal ────────────────────────────────────────────────────────────────
+let currentEditId = null;
+let currentEditMulti = false;
+
+function openEdit(awardId) {
+  currentEditId = awardId;
+  // Find award def
+  const allDefs = [
+    ...INDIVIDUAL_AWARDS,
+    ...MULTI_AWARDS,
+    ...TEAMS.map(t => ({ id: `2026_team-mvp_${t.id}`, label: `${t.name} MVP`, icon: '🦁', multi: false }))
+  ];
+  const def = allDefs.find(a => a.id === awardId) || { label: awardId, multi: false };
+  currentEditMulti = def.multi;
+
+  const data = awardsCache[awardId] || {};
+  document.getElementById('modalTitle').textContent = `✏️ ${def.label}`;
+
+  const winnerVal = def.multi
+    ? (data.playerNames || []).join('\n')
+    : (data.playerName || '');
+
+  document.getElementById('modalBody').innerHTML = `
+    <div class="form-group">
+      <label>${def.multi ? 'Winners (one per line)' : 'Winner Name'}</label>
+      ${def.multi
+        ? `<textarea id="winnerInput" rows="5" placeholder="Player Name\nPlayer Name\n...">${winnerVal}</textarea>`
+        : `<input type="text" id="winnerInput" placeholder="Full name" value="${winnerVal}">`
+      }
+      ${def.multi ? '<div class="form-hint">Enter one player per line</div>' : ''}
+    </div>
+    <div class="form-group">
+      <label>Note (optional)</label>
+      <input type="text" id="noteInput" placeholder="e.g. unanimous vote" value="${data.note || ''}">
+    </div>
+  `;
+
+  document.getElementById('editModal').classList.remove('hidden');
+  setTimeout(() => document.getElementById('winnerInput').focus(), 100);
+}
+
+function closeModal() {
+  document.getElementById('editModal').classList.add('hidden');
+  currentEditId = null;
+}
+
+async function saveAward() {
+  if (!currentEditId) return;
+  const winnerRaw = document.getElementById('winnerInput').value.trim();
+  const note = document.getElementById('noteInput').value.trim();
+
+  const payload = { note };
+  if (currentEditMulti) {
+    payload.playerNames = winnerRaw ? winnerRaw.split('\n').map(s => s.trim()).filter(Boolean) : [];
+    payload.playerName = '';
+  } else {
+    payload.playerName = winnerRaw;
+    payload.playerNames = [];
+  }
+
+  try {
+    await setDoc(doc(db, 'aceyAwards', currentEditId), payload, { merge: true });
+    closeModal();
+    showToast('Winner saved!');
+  } catch(e) {
+    console.error(e);
+    showToast('Save failed: ' + e.message, true);
+  }
+}
+
+async function toggleReveal(awardId, reveal) {
+  try {
+    await setDoc(doc(db, 'aceyAwards', awardId), {
+      revealed: reveal,
+      revealedAt: reveal ? serverTimestamp() : null,
+    }, { merge: true });
+    showToast(reveal ? '✨ Revealed!' : '🔒 Hidden');
+  } catch(e) {
+    showToast('Error: ' + e.message, true);
+  }
+}
+
+async function resetAllReveals() {
+  if (!confirm('Hide all reveals on the public page? This cannot be undone automatically.')) return;
+  const allIds = [
+    ...INDIVIDUAL_AWARDS.map(a => a.id),
+    ...MULTI_AWARDS.map(a => a.id),
+    ...TEAMS.map(t => `2026_team-mvp_${t.id}`),
+  ];
+  try {
+    await Promise.all(allIds.map(id =>
+      setDoc(doc(db, 'aceyAwards', id), { revealed: false, revealedAt: null }, { merge: true })
+    ));
+    showToast('All awards hidden');
+  } catch(e) {
+    showToast('Error: ' + e.message, true);
+  }
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function showToast(msg, isError = false) {
+  const t = document.createElement('div');
+  t.className = 'toast' + (isError ? ' error' : '');
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 3000);
+}
+
+// Expose globals
+window.openEdit = openEdit;
+window.closeModal = closeModal;
+window.saveAward = saveAward;
+window.toggleReveal = toggleReveal;
+window.resetAllReveals = resetAllReveals;
+
+// Close modal on overlay click
+document.getElementById('editModal').addEventListener('click', e => {
+  if (e.target === document.getElementById('editModal')) closeModal();
+});
+</script>
+
+</body>
+</html>
