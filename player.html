@@ -2591,6 +2591,10 @@
       <span class="player-tab-icon">⚾</span>
       <span>Pitching</span>
     </button>
+    <button class="player-tab hidden" data-tab="spray" id="sprayTabBtn" onclick="switchToTab('spray')">
+      <span class="player-tab-icon">🎯</span>
+      <span>Spray</span>
+    </button>
   </div>
 
   <!-- Tab Navigation - Mobile -->
@@ -2601,6 +2605,7 @@
     <option value="awards">🏆 Awards</option>
     <option value="badges">🎖️ Badges</option>
     <option value="pitching" id="pitchingTabMobileOption" style="display:none">⚾ Pitching</option>
+    <option value="spray" id="sprayTabMobileOption" style="display:none">🎯 Spray Chart</option>
   </select>
 
   <!-- ==================== STATS TAB ==================== -->
@@ -2967,6 +2972,29 @@
     </div>
   </div><!-- End Pitching Tab -->
 
+  <!-- ==================== SPRAY CHART TAB ==================== -->
+  <div class="tab-panel" id="tabSpray">
+    <div style="padding:1rem 0;">
+      <div id="sprayChartLoading" style="text-align:center;padding:2rem;color:#718096;font-size:0.9rem;">
+        Loading spray chart…
+      </div>
+      <div id="sprayChartWrap" style="display:none;">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.5rem;margin-bottom:0.75rem;">
+          <h3 style="margin:0;font-size:1rem;color:#2d5016;">Batted Ball Spray Chart</h3>
+          <div style="display:flex;gap:1rem;font-size:0.8rem;">
+            <span style="display:flex;align-items:center;gap:4px;"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#22c55e;"></span>Hit</span>
+            <span style="display:flex;align-items:center;gap:4px;"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#ef4444;"></span>Out</span>
+          </div>
+        </div>
+        <svg id="sprayChartSvgPlayer" viewBox="0 0 300 270" style="width:100%;max-width:380px;display:block;margin:0 auto;"></svg>
+        <p id="sprayChartTotalPlayer" style="text-align:center;font-size:0.8rem;color:#718096;margin:0.5rem 0 0;"></p>
+      </div>
+      <div id="sprayChartEmpty" style="display:none;text-align:center;padding:2rem;color:#718096;font-size:0.9rem;">
+        No batted ball location data available yet.
+      </div>
+    </div>
+  </div><!-- End Spray Tab -->
+
 </div><!-- End page-container -->
 
 <!-- Badge Modal -->
@@ -3163,6 +3191,7 @@
   // TAB SWITCHING FUNCTIONALITY
   // =============================================
   var pitchingTabLoaded = false;  // must be here — switchToTab is non-module scope
+  var sprayTabLoaded    = false;
 
   function switchToTab(tabName) {
     // Update URL without reload
@@ -3190,6 +3219,12 @@
     if (tabName === 'pitching' && !pitchingTabLoaded) {
       pitchingTabLoaded = true;
       loadPitchingTab();
+    }
+
+    // Lazy-load spray chart tab on first open
+    if (tabName === 'spray' && !sprayTabLoaded) {
+      sprayTabLoaded = true;
+      if (typeof loadPlayerSprayChart === 'function') loadPlayerSprayChart();
     }
   }
 
@@ -4227,6 +4262,9 @@
 
     // Check for pitching data and reveal tab if found
     checkPitchingTabVisibility(legacyId);
+
+    // Check for spray chart data and reveal tab if found
+    checkSprayTabVisibility(legacyId);
 
     // Show tabs by removing hidden class - CSS media queries handle responsive display
     document.getElementById('playerTabs').classList.remove('hidden');
@@ -5748,6 +5786,147 @@
       // Silently ignore — tab stays hidden
     }
   }
+
+  // ── Spray chart field geometry (mirrors scouting-report.html) ────────────────
+  const _SC_HOME  = { x: 150, y: 248 };
+  const _SC_OF_R  = 210;
+  const _SC_IF_R  = 105;
+  const _SC_FL_L  = { x: _SC_HOME.x - _SC_OF_R * Math.sin(Math.PI/4), y: _SC_HOME.y - _SC_OF_R * Math.cos(Math.PI/4) };
+  const _SC_FL_R  = { x: _SC_HOME.x + _SC_OF_R * Math.sin(Math.PI/4), y: _SC_HOME.y - _SC_OF_R * Math.cos(Math.PI/4) };
+  const _SC_IF_L  = { x: _SC_HOME.x - _SC_IF_R * Math.sin(Math.PI/4), y: _SC_HOME.y - _SC_IF_R * Math.cos(Math.PI/4) };
+  const _SC_IF_R2 = { x: _SC_HOME.x + _SC_IF_R * Math.sin(Math.PI/4), y: _SC_HOME.y - _SC_IF_R * Math.cos(Math.PI/4) };
+  const _SC_BD    = 88;
+  const _SC_1B    = { x: _SC_HOME.x + _SC_BD * Math.sin(Math.PI/4), y: _SC_HOME.y - _SC_BD * Math.cos(Math.PI/4) };
+  const _SC_3B    = { x: _SC_HOME.x - _SC_BD * Math.sin(Math.PI/4), y: _SC_HOME.y - _SC_BD * Math.cos(Math.PI/4) };
+  const _SC_2B    = { x: _SC_HOME.x, y: _SC_HOME.y - _SC_BD * Math.SQRT2 };
+  const _SC_ZONES = {
+    LF:  { x: 48,  y: 88  }, LCF: { x: 98,  y: 58  }, CF:  { x: 150, y: 42  },
+    RCF: { x: 202, y: 58  }, RF:  { x: 252, y: 88  },
+    '3B':{ x: Math.round(_SC_3B.x), y: Math.round(_SC_3B.y) },
+    SS:  { x: 112, y: 158 }, '2B':{ x: 188, y: 158 },
+    '1B':{ x: Math.round(_SC_1B.x), y: Math.round(_SC_1B.y) },
+    P:   { x: 150, y: 208 }, C:   { x: 150, y: 236 },
+  };
+  const _SC_SCALE = 1.05;
+
+  function _scToSvg(angle_deg, distance_ft) {
+    const rad = angle_deg * Math.PI / 180;
+    return { x: _SC_HOME.x + distance_ft * Math.sin(rad) * _SC_SCALE,
+             y: _SC_HOME.y - distance_ft * Math.cos(rad) * _SC_SCALE };
+  }
+
+  function _scDrawField(svgEl) {
+    const ns  = 'http://www.w3.org/2000/svg';
+    const add = (tag, attrs) => {
+      const n = document.createElementNS(ns, tag);
+      Object.entries(attrs).forEach(([k,v]) => n.setAttribute(k, v));
+      svgEl.appendChild(n); return n;
+    };
+    add('path', { d:`M ${_SC_FL_L.x.toFixed(1)} ${_SC_FL_L.y.toFixed(1)} A ${_SC_OF_R} ${_SC_OF_R} 0 0 1 ${_SC_FL_R.x.toFixed(1)} ${_SC_FL_R.y.toFixed(1)} L ${_SC_HOME.x} ${_SC_HOME.y} Z`, fill:'#e8f4f0', stroke:'#b2d8cc', 'stroke-width':'1.5' });
+    add('path', { d:`M ${_SC_IF_L.x.toFixed(1)} ${_SC_IF_L.y.toFixed(1)} A ${_SC_IF_R} ${_SC_IF_R} 0 0 1 ${_SC_IF_R2.x.toFixed(1)} ${_SC_IF_R2.y.toFixed(1)} L ${_SC_HOME.x} ${_SC_HOME.y} Z`, fill:'#f0e6d6', stroke:'#d4b896', 'stroke-width':'1' });
+    add('polyline', { points:`${_SC_HOME.x},${_SC_HOME.y} ${_SC_1B.x.toFixed(1)},${_SC_1B.y.toFixed(1)} ${_SC_2B.x},${_SC_2B.y} ${_SC_3B.x.toFixed(1)},${_SC_3B.y.toFixed(1)} ${_SC_HOME.x},${_SC_HOME.y}`, fill:'none', stroke:'#c4a882', 'stroke-width':'1.2' });
+    add('line', { x1:_SC_HOME.x, y1:_SC_HOME.y, x2:_SC_FL_L.x.toFixed(1), y2:_SC_FL_L.y.toFixed(1), stroke:'#b2d8cc', 'stroke-width':'1.2' });
+    add('line', { x1:_SC_HOME.x, y1:_SC_HOME.y, x2:_SC_FL_R.x.toFixed(1), y2:_SC_FL_R.y.toFixed(1), stroke:'#b2d8cc', 'stroke-width':'1.2' });
+    add('circle', { cx:_SC_HOME.x, cy:_SC_HOME.y - 48, r:7, fill:'#e8d9c4', stroke:'#c4a882', 'stroke-width':'1' });
+    add('polygon', { points:`${_SC_HOME.x},${_SC_HOME.y+4} ${_SC_HOME.x-5},${_SC_HOME.y} ${_SC_HOME.x},${_SC_HOME.y-5} ${_SC_HOME.x+5},${_SC_HOME.y}`, fill:'white', stroke:'#999', 'stroke-width':'1' });
+  }
+
+  function _scAddDot(svgEl, cx, cy, isHit, label, precise) {
+    const ns = 'http://www.w3.org/2000/svg';
+    const c  = document.createElementNS(ns, 'circle');
+    c.setAttribute('cx', cx.toFixed(1)); c.setAttribute('cy', cy.toFixed(1));
+    c.setAttribute('r',  precise ? '5.5' : '7');
+    c.setAttribute('fill', isHit ? '#22c55e' : '#ef4444');
+    c.setAttribute('fill-opacity', precise ? '0.75' : '0.85');
+    c.setAttribute('stroke', 'white'); c.setAttribute('stroke-width', precise ? '1' : '1.5');
+    const tt = document.createElementNS(ns, 'title'); tt.textContent = label; c.appendChild(tt);
+    svgEl.appendChild(c);
+  }
+
+  // Check for sprayChartData and show tab if found
+  async function checkSprayTabVisibility(legacyId) {
+    if (!legacyId) return;
+    try {
+      const snap = await getDoc(doc(db, 'sprayChartData', legacyId));
+      if (snap.exists()) {
+        const data = snap.data();
+        const hasCSV  = (data.csvPlays || []).length > 0;
+        const hasGame = Object.values(data.gamePlays || {}).some(arr => arr.length > 0);
+        if (hasCSV || hasGame) {
+          document.getElementById('sprayTabBtn').classList.remove('hidden');
+          const mobileOpt = document.getElementById('sprayTabMobileOption');
+          if (mobileOpt) mobileOpt.style.display = '';
+          // Cache the data so loadPlayerSprayChart doesn't need to re-fetch
+          window._sprayData = { data, legacyId };
+        }
+      }
+    } catch(e) { /* silently ignore — tab stays hidden */ }
+  }
+
+  // Render the spray chart when the tab is first opened
+  window.loadPlayerSprayChart = async function() {
+    const loading = document.getElementById('sprayChartLoading');
+    const wrap    = document.getElementById('sprayChartWrap');
+    const empty   = document.getElementById('sprayChartEmpty');
+    const svgEl   = document.getElementById('sprayChartSvgPlayer');
+    const totalEl = document.getElementById('sprayChartTotalPlayer');
+
+    try {
+      // Use cached data if available, else re-fetch
+      let data, legacyId;
+      if (window._sprayData) {
+        ({ data, legacyId } = window._sprayData);
+      } else {
+        const pd = currentPlayerData?.resolvedPlayer;
+        if (!pd) { loading.textContent = 'Player data not ready.'; return; }
+        legacyId = pd.id;
+        const snap = await getDoc(doc(db, 'sprayChartData', legacyId));
+        if (!snap.exists()) { loading.style.display='none'; empty.style.display=''; return; }
+        data = snap.data();
+      }
+
+      const precisePlays = (data.csvPlays || []).filter(p => p.angle_deg != null && p.distance_ft != null);
+      const zonePlays    = [];
+      Object.values(data.gamePlays || {}).forEach(arr =>
+        (arr || []).forEach(p => { if (p.zone && _SC_ZONES[p.zone]) zonePlays.push(p); })
+      );
+
+      loading.style.display = 'none';
+
+      if (!precisePlays.length && !zonePlays.length) {
+        empty.style.display = ''; return;
+      }
+
+      svgEl.innerHTML = '';
+      _scDrawField(svgEl);
+
+      // Precise dots
+      precisePlays.forEach(p => {
+        const pos = _scToSvg(p.angle_deg, p.distance_ft);
+        if (Math.hypot(pos.x - _SC_HOME.x, pos.y - _SC_HOME.y) <= _SC_OF_R + 10)
+          _scAddDot(svgEl, pos.x, pos.y, p.result === 'Hit', `${p.zone||''} — ${p.result} (${Math.round(p.distance_ft)}ft)`, true);
+      });
+
+      // Zone dots with jitter
+      const zoneCount = {}, zoneIdx = {};
+      zonePlays.forEach(p => { zoneCount[p.zone] = (zoneCount[p.zone]||0)+1; });
+      zonePlays.forEach(p => {
+        const z = _SC_ZONES[p.zone], idx = zoneIdx[p.zone] = (zoneIdx[p.zone]||0)+1;
+        const spread = Math.min(14, 3 + zoneCount[p.zone]*2);
+        const cx = zoneCount[p.zone]>1 ? z.x + spread*Math.cos(idx*137.5*Math.PI/180) : z.x;
+        const cy = zoneCount[p.zone]>1 ? z.y + spread*Math.sin(idx*137.5*Math.PI/180) : z.y;
+        _scAddDot(svgEl, cx, cy, p.result==='Hit', `${p.zone} — ${p.playType||p.result}`, false);
+      });
+
+      const total = precisePlays.length + zonePlays.length;
+      const hits  = precisePlays.filter(p=>p.result==='Hit').length + zonePlays.filter(p=>p.result==='Hit').length;
+      totalEl.textContent = `${total} tracked AB${total!==1?'s':''} — ${hits} hit${hits!==1?'s':''}, ${total-hits} out${total-hits!==1?'s':''}${precisePlays.length?' (precise spray data)':''}`;
+      wrap.style.display = '';
+    } catch(e) {
+      console.warn('Spray chart load failed:', e);
+      loading.textContent = 'Failed to load spray chart.';
+    }
+  };
 
   window.loadPitchingTab = async function loadPitchingTab() {
     const loading = document.getElementById('pitchingLoading');
