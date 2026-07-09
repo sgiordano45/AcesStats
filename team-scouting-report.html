@@ -356,8 +356,9 @@
 
   <!-- Main data logic -->
   <script type="module">
-    import { getAllSeasons, getAllTeams, getSeasonPlayerStatsOptimized, getAllPlayerStatsOptimized } from './firebase-data.js';
+    import { db, getAllSeasons, getAllTeams, getSeasonPlayerStatsOptimized, getAllPlayerStatsOptimized } from './firebase-data.js';
     import { getTeamRosterDoc } from './firebase-roster.js';
+    import { doc, getDoc } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
 
     const seasonSel  = document.getElementById('seasonSel');
     const teamSel    = document.getElementById('teamSel');
@@ -494,6 +495,7 @@
 
         currentReportData = { sid, tid, players };
         render(sid, tid, players);
+        loadTeamSprayCharts(players);
         btnPrint.disabled = false;
       } catch (e) {
         rptCont.innerHTML = err(e);
@@ -523,7 +525,8 @@
       let careerAvg = (career?.battingAverage != null) ? career.battingAverage : (cab > 0 ? ch / cab : null);
       let careerObp = (career?.onBasePercentage != null) ? career.onBasePercentage : ((cab + cbb) > 0 ? (ch + cbb) / (cab + cbb) : null);
 
-      return { name, num, captain, ab, h, bb, g, avg, obp, careerAvg, careerObp, cab };
+      const id = rp?.id || rp?.legacyId || st?.id || null;
+      return { id, name, num, captain, ab, h, bb, g, avg, obp, careerAvg, careerObp, cab };
     }
 
     // ── Render the report ────────────────────────────────────────────────────
@@ -577,7 +580,7 @@
       const hasCareer  = cAvgStr || cObpStr;
 
       return `
-        <div class="p-card${p.captain ? ' captain' : ''}${large ? ' large' : ''}">
+        <div class="p-card${p.captain ? ' captain' : ''}${large ? ' large' : ''}" ${p.id ? `data-player-id="${p.id}"` : ''}>
           ${p.num != null ? `<div class="p-num">#${p.num}</div>` : ''}
           <div class="p-name${p.captain ? ' cap-mark' : ''}">${esc(p.name)}</div>
           <div class="p-row-lbl">Season</div>
@@ -603,6 +606,10 @@
               <div class="p-stat-val career${cObpStr ? '' : ' na'}">${cObpStr ?? '—'}</div>
             </div>
           </div>` : ''}
+          <div class="p-spray" style="display:none;margin-top:6px;">
+            <div class="p-row-lbl" style="margin-bottom:3px;">Spray</div>
+            <svg viewBox="0 0 300 270" style="width:100%;display:block;border-radius:4px;"></svg>
+          </div>
         </div>`;
     }
 
@@ -796,6 +803,106 @@
 
     function err(e) {
       return `<div class="state-card"><h3>Error</h3><p>${esc(e.message)}</p></div>`;
+    }
+
+    // ── Mini spray chart: field geometry ────────────────────────────────────────
+    const _TSC_HOME  = { x: 150, y: 248 };
+    const _TSC_OF_R  = 210, _TSC_IF_R = 105, _TSC_SCALE = 1.05;
+    const _TSC_FL_L  = { x: _TSC_HOME.x - _TSC_OF_R * Math.sin(Math.PI/4), y: _TSC_HOME.y - _TSC_OF_R * Math.cos(Math.PI/4) };
+    const _TSC_FL_R  = { x: _TSC_HOME.x + _TSC_OF_R * Math.sin(Math.PI/4), y: _TSC_HOME.y - _TSC_OF_R * Math.cos(Math.PI/4) };
+    const _TSC_IF_L  = { x: _TSC_HOME.x - _TSC_IF_R * Math.sin(Math.PI/4), y: _TSC_HOME.y - _TSC_IF_R * Math.cos(Math.PI/4) };
+    const _TSC_IF_R2 = { x: _TSC_HOME.x + _TSC_IF_R * Math.sin(Math.PI/4), y: _TSC_HOME.y - _TSC_IF_R * Math.cos(Math.PI/4) };
+    const _TSC_BD    = 88;
+    const _TSC_1B    = { x: _TSC_HOME.x + _TSC_BD * Math.sin(Math.PI/4), y: _TSC_HOME.y - _TSC_BD * Math.cos(Math.PI/4) };
+    const _TSC_3B    = { x: _TSC_HOME.x - _TSC_BD * Math.sin(Math.PI/4), y: _TSC_HOME.y - _TSC_BD * Math.cos(Math.PI/4) };
+    const _TSC_2B    = { x: _TSC_HOME.x, y: _TSC_HOME.y - _TSC_BD * Math.SQRT2 };
+    const _TSC_ZONES = {
+      LF:{x:48,y:88}, LCF:{x:98,y:58}, CF:{x:150,y:42}, RCF:{x:202,y:58}, RF:{x:252,y:88},
+      '3B':{x:Math.round(_TSC_3B.x),y:Math.round(_TSC_3B.y)}, SS:{x:112,y:158},
+      '2B':{x:188,y:158}, '1B':{x:Math.round(_TSC_1B.x),y:Math.round(_TSC_1B.y)},
+      P:{x:150,y:208}, C:{x:150,y:236},
+    };
+
+    function _tscDrawField(svgEl) {
+      const ns = 'http://www.w3.org/2000/svg';
+      const add = (tag, attrs) => {
+        const n = document.createElementNS(ns, tag);
+        Object.entries(attrs).forEach(([k,v]) => n.setAttribute(k,v));
+        svgEl.appendChild(n);
+      };
+      add('rect', { x:0, y:0, width:300, height:270, fill:'#f7fdf4' });
+      add('path', { d:`M ${_TSC_FL_L.x.toFixed(1)} ${_TSC_FL_L.y.toFixed(1)} A ${_TSC_OF_R} ${_TSC_OF_R} 0 0 1 ${_TSC_FL_R.x.toFixed(1)} ${_TSC_FL_R.y.toFixed(1)} L ${_TSC_HOME.x} ${_TSC_HOME.y} Z`, fill:'#e4f2ec', stroke:'#b2d8cc', 'stroke-width':'1.5' });
+      add('path', { d:`M ${_TSC_IF_L.x.toFixed(1)} ${_TSC_IF_L.y.toFixed(1)} A ${_TSC_IF_R} ${_TSC_IF_R} 0 0 1 ${_TSC_IF_R2.x.toFixed(1)} ${_TSC_IF_R2.y.toFixed(1)} L ${_TSC_HOME.x} ${_TSC_HOME.y} Z`, fill:'#ede8df', stroke:'#d4b896', 'stroke-width':'1' });
+      add('polyline', { points:`${_TSC_HOME.x},${_TSC_HOME.y} ${_TSC_1B.x.toFixed(1)},${_TSC_1B.y.toFixed(1)} ${_TSC_2B.x},${_TSC_2B.y} ${_TSC_3B.x.toFixed(1)},${_TSC_3B.y.toFixed(1)} ${_TSC_HOME.x},${_TSC_HOME.y}`, fill:'none', stroke:'#c4a882', 'stroke-width':'1' });
+      add('line', { x1:_TSC_HOME.x, y1:_TSC_HOME.y, x2:_TSC_FL_L.x.toFixed(1), y2:_TSC_FL_L.y.toFixed(1), stroke:'#b2d8cc', 'stroke-width':'1' });
+      add('line', { x1:_TSC_HOME.x, y1:_TSC_HOME.y, x2:_TSC_FL_R.x.toFixed(1), y2:_TSC_FL_R.y.toFixed(1), stroke:'#b2d8cc', 'stroke-width':'1' });
+    }
+
+    function _tscAddDot(svgEl, cx, cy, isHit, precise) {
+      const ns = 'http://www.w3.org/2000/svg';
+      const c  = document.createElementNS(ns, 'circle');
+      c.setAttribute('cx', cx.toFixed(1)); c.setAttribute('cy', cy.toFixed(1));
+      c.setAttribute('r', precise ? '4' : '5');
+      c.setAttribute('fill', isHit ? '#22c55e' : '#ef4444');
+      c.setAttribute('fill-opacity', precise ? '0.7' : '0.8');
+      c.setAttribute('stroke', 'white'); c.setAttribute('stroke-width', '0.8');
+      svgEl.appendChild(c);
+    }
+
+    // Fetch spray data for all players and inject mini charts into their cards
+    async function loadTeamSprayCharts(players) {
+      const withIds = players.filter(p => p.id);
+      if (!withIds.length) return;
+
+      // Fetch all in parallel
+      const results = await Promise.allSettled(
+        withIds.map(p => getDoc(doc(db, 'sprayChartData', p.id)).then(snap => ({ id: p.id, snap })))
+      );
+
+      results.forEach(r => {
+        if (r.status !== 'fulfilled') return;
+        const { id, snap } = r.value;
+        if (!snap.exists()) return;
+
+        const data         = snap.data();
+        const precisePlays = (data.csvPlays || []).filter(p => p.angle_deg != null && p.distance_ft != null);
+        const zonePlays    = [];
+        Object.values(data.gamePlays || {}).forEach(arr =>
+          (arr || []).forEach(p => { if (p.zone && _TSC_ZONES[p.zone]) zonePlays.push(p); })
+        );
+        if (!precisePlays.length && !zonePlays.length) return;
+
+        // Find the card and its spray slot
+        const card = document.querySelector(`[data-player-id="${id}"]`);
+        if (!card) return;
+        const slot  = card.querySelector('.p-spray');
+        const svgEl = slot?.querySelector('svg');
+        if (!slot || !svgEl) return;
+
+        _tscDrawField(svgEl);
+
+        // Precise dots
+        precisePlays.forEach(p => {
+          const rad = p.angle_deg * Math.PI / 180;
+          const cx  = _TSC_HOME.x + p.distance_ft * Math.sin(rad) * _TSC_SCALE;
+          const cy  = _TSC_HOME.y - p.distance_ft * Math.cos(rad) * _TSC_SCALE;
+          if (Math.hypot(cx - _TSC_HOME.x, cy - _TSC_HOME.y) <= _TSC_OF_R + 10)
+            _tscAddDot(svgEl, cx, cy, p.result === 'Hit', true);
+        });
+
+        // Zone dots with jitter
+        const zoneCount = {}, zoneIdx = {};
+        zonePlays.forEach(p => { zoneCount[p.zone] = (zoneCount[p.zone]||0)+1; });
+        zonePlays.forEach(p => {
+          const z = _TSC_ZONES[p.zone], idx = zoneIdx[p.zone] = (zoneIdx[p.zone]||0)+1;
+          const spread = Math.min(14, 3 + zoneCount[p.zone]*2);
+          const cx = zoneCount[p.zone]>1 ? z.x + spread*Math.cos(idx*137.5*Math.PI/180) : z.x;
+          const cy = zoneCount[p.zone]>1 ? z.y + spread*Math.sin(idx*137.5*Math.PI/180) : z.y;
+          _tscAddDot(svgEl, cx, cy, p.result==='Hit', false);
+        });
+
+        slot.style.display = '';
+      });
     }
 
     boot();
