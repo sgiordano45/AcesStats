@@ -2612,8 +2612,24 @@ window.writeHitLocations = async function() {
         hitLocations: byPlayer[name],
         hitLocationUpdatedAt: serverTimestamp()
       }, { merge: true });
+
+      // Also write to unified sprayChartData collection for display on scouting-report / player pages
+      const sprayRef = doc(db, 'sprayChartData', match.legacyId);
+      const gamePlays = byPlayer[name].map(l => ({
+        result:   ['single','double','triple','homerun'].includes(l.playType) ? 'Hit' : 'Out',
+        zone:     l.location,
+        playType: l.playType,
+        inning:   l.inning || null,
+        source:   'game-tracker',
+      }));
+      // Store per-game so re-running this doesn't duplicate plays
+      await setDoc(sprayRef, {
+        gamePlays: { [gameDocId]: gamePlays },
+        gameTrackerUpdatedAt: serverTimestamp(),
+      }, { merge: true });
+
       written++;
-      console.log(`📍 Wrote ${byPlayer[name].length} location(s) for ${match.legacyId}`);
+      console.log(`📍 Wrote ${byPlayer[name].length} location(s) for ${match.legacyId} → playerStats + sprayChartData`);
     } catch (err) {
       console.error(`❌ Error writing hit locations for ${name}:`, err);
       errors++;

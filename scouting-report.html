@@ -1126,7 +1126,7 @@
       scoutingReport.classList.remove('hidden');
       renderReport();
       renderBadges(badges);
-      loadSprayChart(currentPlayer.name, currentSeason);
+      loadSprayChart(currentPlayer.name, currentSeason, currentPlayer.id || null);
 
     } catch(err) {
       console.error('Failed to load player:', err);
@@ -1259,7 +1259,19 @@
     C:   { x: 150, y: 236 },
   };
 
-  async function loadSprayChart(playerName, season) {
+  // Scale: SVG outfield arc radius (210 units) ≈ 200 ft at this field
+  const SPRAY_FIELD_SCALE = 1.05;
+
+  // Convert precise angle + distance to SVG coordinates on this field
+  function sprayToSvg(angle_deg, distance_ft) {
+    const rad = angle_deg * Math.PI / 180;
+    return {
+      x: SPRAY_HOME.x + distance_ft * Math.sin(rad) * SPRAY_FIELD_SCALE,
+      y: SPRAY_HOME.y - distance_ft * Math.cos(rad) * SPRAY_FIELD_SCALE,
+    };
+  }
+
+  async function loadSprayChart(playerName, season, playerId) {
     const card  = document.getElementById('sprayChartCard');
     const svg   = document.getElementById('sprayChartSvg');
     const empty = document.getElementById('sprayChartEmpty');
@@ -1276,16 +1288,7 @@
     const HIT_TYPES = new Set(['single','double','triple','homerun']);
     const OUT_TYPES = new Set(['groundout','flyout','popup','sacfly','doubleplay','strikeout']);
 
-    // Normalize to "firstInitial + lastName" so Joe/Joseph, Will/William etc. match
-    function nameKey(name) {
-      if (!name) return '';
-      const parts = name.trim().split(/\s+/);
-      if (parts.length < 2) return name.toLowerCase().replace(/\s+/g, '');
-      return (parts[0][0] + parts[parts.length - 1]).toLowerCase();
-    }
-    const playerKey = nameKey(playerName);
-
-    // Deterministic spiral jitter — stable per play index within a zone
+    // Deterministic spiral jitter — for zone-based dots only
     function jitterX(cx, spread, idx) {
       return cx + spread * Math.cos((idx * 137.5) * Math.PI / 180);
     }
@@ -1293,70 +1296,121 @@
       return cy + spread * Math.sin((idx * 137.5) * Math.PI / 180);
     }
 
+    // Draw a single circle on the SVG
+    function addDot(svgEl, cx, cy, isHit, label, precise) {
+      const ns = 'http://www.w3.org/2000/svg';
+      const circle = document.createElementNS(ns, 'circle');
+      circle.setAttribute('cx', cx.toFixed(1));
+      circle.setAttribute('cy', cy.toFixed(1));
+      circle.setAttribute('r',  precise ? '5.5' : '7');
+      circle.setAttribute('fill', isHit ? '#22c55e' : '#ef4444');
+      circle.setAttribute('fill-opacity', precise ? '0.75' : '0.85');
+      circle.setAttribute('stroke', 'white');
+      circle.setAttribute('stroke-width', precise ? '1' : '1.5');
+      const tt = document.createElementNS(ns, 'title');
+      tt.textContent = label;
+      circle.appendChild(tt);
+      svgEl.appendChild(circle);
+    }
+
     try {
-      const snap = await getDocs(collection(db, 'gameResults'));
-      const plays = [];
+      // ── Try sprayChartData first (precise CSV + game-tracker zones) ──────────
+      let precisePlays = [];   // [{result, angle_deg, distance_ft, zone, source}]
+      let zonePlays    = [];   // [{result, zone, playType, source}]
+      let usedSprayDoc = false;
 
-      snap.forEach(docSnap => {
-        const data = docSnap.data();
-        const pbp  = data.playByPlay || [];
-        pbp.forEach(play => {
-          if (
-            nameKey(play.batter) === playerKey &&
-            play.isYourTeam === true &&
-            play.location &&
-            SPRAY_ZONES[play.location] &&
-            (HIT_TYPES.has(play.playType) || OUT_TYPES.has(play.playType))
-          ) {
-            plays.push({
-              location: play.location,
-              playType: play.playType,
-              isHit: HIT_TYPES.has(play.playType),
-            });
-          }
+      if (playerId) {
+        const spraySnap = await getDoc(doc(db, 'sprayChartData', playerId));
+        if (spraySnap.exists()) {
+          usedSprayDoc = true;
+          const data = spraySnap.data();
+
+          // CSV precise plays
+          (data.csvPlays || []).forEach(p => {
+            if (p.angle_deg != null && p.distance_ft != null) {
+              precisePlays.push(p);
+            }
+          });
+
+          // Game-tracker zone plays (keyed by gameDocId)
+          const gp = data.gamePlays || {};
+          Object.values(gp).forEach(arr => {
+            (arr || []).forEach(p => { if (p.zone && SPRAY_ZONES[p.zone]) zonePlays.push(p); });
+          });
+        }
+      }
+
+      // ── Fallback: scan gameResults (original behavior, no sprayChartData doc) ──
+      if (!usedSprayDoc) {
+        function nameKey(name) {
+          if (!name) return '';
+          const parts = name.trim().split(/\s+/);
+          if (parts.length < 2) return name.toLowerCase().replace(/\s+/g, '');
+          return (parts[0][0] + parts[parts.length - 1]).toLowerCase();
+        }
+        const playerKey = nameKey(playerName);
+
+        const snap = await getDocs(collection(db, 'gameResults'));
+        snap.forEach(docSnap => {
+          const data = docSnap.data();
+          (data.playByPlay || []).forEach(play => {
+            if (
+              nameKey(play.batter) === playerKey &&
+              play.isYourTeam === true &&
+              play.location &&
+              SPRAY_ZONES[play.location] &&
+              (HIT_TYPES.has(play.playType) || OUT_TYPES.has(play.playType))
+            ) {
+              zonePlays.push({
+                result:   HIT_TYPES.has(play.playType) ? 'Hit' : 'Out',
+                zone:     play.location,
+                playType: play.playType,
+                source:   'game-tracker',
+              });
+            }
+          });
         });
-      });
+      }
 
+      const totalPlays = precisePlays.length + zonePlays.length;
       card.style.display = '';
       seasonLabel.textContent = season ? `— ${season.displayName || season.id}` : '';
-
       drawFieldBackground(svg);
 
-      if (plays.length === 0) {
+      if (totalPlays === 0) {
         empty.style.display = '';
         return;
       }
 
-      // Group by zone for jitter spread scaling
-      const zoneCount = {};
-      plays.forEach(p => { zoneCount[p.location] = (zoneCount[p.location] || 0) + 1; });
-
-      const zoneIdx = {};
-      plays.forEach(p => {
-        const z      = SPRAY_ZONES[p.location];
-        const idx    = zoneIdx[p.location] = (zoneIdx[p.location] || 0) + 1;
-        const spread = Math.min(14, 3 + zoneCount[p.location] * 2);
-        const cx     = zoneCount[p.location] > 1 ? jitterX(z.x, spread, idx) : z.x;
-        const cy     = zoneCount[p.location] > 1 ? jitterY(z.y, spread, idx) : z.y;
-
-        const ns = 'http://www.w3.org/2000/svg';
-        const circle = document.createElementNS(ns, 'circle');
-        circle.setAttribute('cx', cx.toFixed(1));
-        circle.setAttribute('cy', cy.toFixed(1));
-        circle.setAttribute('r', '7');
-        circle.setAttribute('fill', p.isHit ? '#22c55e' : '#ef4444');
-        circle.setAttribute('fill-opacity', '0.85');
-        circle.setAttribute('stroke', 'white');
-        circle.setAttribute('stroke-width', '1.5');
-        const tt = document.createElementNS(ns, 'title');
-        tt.textContent = `${p.location} — ${p.playType}`;
-        circle.appendChild(tt);
-        svg.appendChild(circle);
+      // ── Render precise CSV dots ───────────────────────────────────────────────
+      precisePlays.forEach(p => {
+        const pos = sprayToSvg(p.angle_deg, p.distance_ft);
+        // keep dots inside the field arc with a small clamp
+        const dist = Math.hypot(pos.x - SPRAY_HOME.x, pos.y - SPRAY_HOME.y);
+        if (dist > SPRAY_OF_R + 10) return; // way out of bounds — skip
+        addDot(svg, pos.x, pos.y, p.result === 'Hit',
+          `${p.zone || ''} — ${p.result} (${Math.round(p.distance_ft)} ft)`, true);
       });
 
-      const hits = plays.filter(p => p.isHit).length;
-      const outs = plays.filter(p => !p.isHit).length;
-      total.textContent = `${plays.length} tracked AB${plays.length !== 1 ? 's' : ''} with location data — ${hits} hit${hits !== 1 ? 's' : ''}, ${outs} out${outs !== 1 ? 's' : ''}`;
+      // ── Render zone-based dots (with jitter) ─────────────────────────────────
+      const zoneCount = {};
+      zonePlays.forEach(p => { zoneCount[p.zone] = (zoneCount[p.zone] || 0) + 1; });
+      const zoneIdx = {};
+      zonePlays.forEach(p => {
+        const z      = SPRAY_ZONES[p.zone];
+        const idx    = zoneIdx[p.zone] = (zoneIdx[p.zone] || 0) + 1;
+        const spread = Math.min(14, 3 + zoneCount[p.zone] * 2);
+        const cx     = zoneCount[p.zone] > 1 ? jitterX(z.x, spread, idx) : z.x;
+        const cy     = zoneCount[p.zone] > 1 ? jitterY(z.y, spread, idx) : z.y;
+        addDot(svg, cx, cy, p.result === 'Hit',
+          `${p.zone} — ${p.playType || p.result}`, false);
+      });
+
+      const hits = precisePlays.filter(p => p.result === 'Hit').length
+                 + zonePlays.filter(p => p.result === 'Hit').length;
+      const outs = totalPlays - hits;
+      const srcNote = precisePlays.length > 0 ? ' (precise spray data)' : '';
+      total.textContent = `${totalPlays} tracked AB${totalPlays !== 1 ? 's' : ''} — ${hits} hit${hits !== 1 ? 's' : ''}, ${outs} out${outs !== 1 ? 's' : ''}${srcNote}`;
 
     } catch(e) {
       console.warn('Spray chart load failed:', e);
