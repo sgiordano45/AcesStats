@@ -47,6 +47,7 @@
     .award-list { display: flex; flex-direction: column; gap: 0.75rem; }
     .award-item { background: var(--dark3); border: 1px solid var(--border); border-radius: 8px; padding: 1rem 1.25rem; display: flex; align-items: center; gap: 1rem; transition: border-color 0.2s; }
     .award-item.revealed { border-color: var(--gold); }
+    .award-item.inactive-award { opacity: 0.55; }
     .award-item.has-winner { border-color: #4a7c2e; }
     .award-icon { font-size: 1.5rem; flex-shrink: 0; width: 2.5rem; text-align: center; }
     .award-icon img { width: 2.5rem; height: 2.5rem; object-fit: contain; }
@@ -141,7 +142,42 @@
       </div>
     </div>
 
+    <!-- Write-in / Custom Awards -->
+    <div class="card">
+      <h2 style="display:flex;align-items:center;justify-content:space-between;">
+        <span>✍️ Write-In Awards</span>
+        <button class="btn btn-gold btn-sm" onclick="openCreateWriteIn()">+ Add Award</button>
+      </h2>
+      <p style="color:var(--text-dim);font-size:0.85rem;margin:0 0 1rem;">Custom awards beyond the defaults. These show on the public page once marked active.</p>
+      <div class="award-list" id="writeInList">
+        <div style="color:var(--text-dim);font-size:0.9rem;padding:0.5rem 0;">No write-in awards yet.</div>
+      </div>
+    </div>
+
   </div><!-- /container -->
+</div>
+
+<!-- Create write-in modal -->
+<div class="modal-overlay hidden" id="writeInModal">
+  <div class="modal">
+    <h3>✍️ Add Write-In Award</h3>
+    <div class="form-group">
+      <label>Award Name</label>
+      <input type="text" id="wiNameInput" placeholder="e.g. Best Trash Talk">
+    </div>
+    <div class="form-group">
+      <label>Winner Name</label>
+      <input type="text" id="wiWinnerInput" placeholder="Full name">
+    </div>
+    <div class="form-group">
+      <label>Note (optional)</label>
+      <input type="text" id="wiNoteInput" placeholder="e.g. voted unanimously">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeWriteInModal()">Cancel</button>
+      <button class="btn btn-gold" onclick="saveWriteIn()">💾 Create Award</button>
+    </div>
+  </div>
 </div>
 
 <!-- Edit modal -->
@@ -252,7 +288,22 @@ function renderAll() {
   renderList('awardList', INDIVIDUAL_AWARDS);
   renderTeamMvps();
   renderList('multiAwardList', MULTI_AWARDS);
+  renderWriteIns();
   updateStatusSummary();
+}
+
+function renderWriteIns() {
+  const el = document.getElementById('writeInList');
+  if (!el) return;
+  // Write-ins are any aceyAwards docs with source === 'write-in'
+  const writeIns = Object.entries(awardsCache)
+    .filter(([, d]) => d.source === 'write-in')
+    .map(([id, d]) => ({ id, label: d.label || id, multi: false, icon: '🏆' }));
+  if (!writeIns.length) {
+    el.innerHTML = '<div style="color:var(--text-dim);font-size:0.9rem;padding:0.5rem 0;">No write-in awards yet.</div>';
+    return;
+  }
+  el.innerHTML = writeIns.map(a => awardItemHtml(a, { deletable: true })).join('');
 }
 
 function renderList(containerId, awards) {
@@ -274,30 +325,40 @@ function renderTeamMvps() {
   }).join('');
 }
 
-function awardItemHtml(a) {
+function awardItemHtml(a, opts = {}) {
   const data = awardsCache[a.id] || {};
   const hasWinner = a.multi ? (data.playerNames && data.playerNames.length > 0) : !!data.playerName;
   const isRevealed = !!data.revealed;
+  // active defaults to true for built-in awards; for write-ins stored in Firestore it's explicit
+  const isActive = data.active !== false;
   const winnerText = a.multi
     ? (data.playerNames || []).join(', ')
     : (data.playerName || '');
 
+  const activeToggle = `
+    <label style="display:flex;align-items:center;gap:0.35rem;font-size:0.78rem;color:var(--text-dim);cursor:pointer;">
+      <input type="checkbox" ${isActive ? 'checked' : ''} onchange="toggleActive('${a.id}', this.checked)" style="accent-color:var(--gold);">
+      Active this year
+    </label>`;
+
   return `
-    <div class="award-item ${isRevealed ? 'revealed' : hasWinner ? 'has-winner' : ''}" data-id="${a.id}">
+    <div class="award-item ${isRevealed ? 'revealed' : hasWinner ? 'has-winner' : ''} ${!isActive ? 'inactive-award' : ''}" data-id="${a.id}">
       <div class="award-icon">${a.img ? `<img src="${a.img}" alt="${a.label}">` : a.icon || '🏆'}</div>
       <div class="award-info">
-        <div class="award-label">${a.label}</div>
+        <div class="award-label" style="${!isActive ? 'opacity:0.45;' : ''}">${a.label}</div>
         ${a.team ? `<div class="award-sublabel">Team MVP — ${a.team}</div>` : ''}
         ${winnerText ? `<div class="award-winner">🏆 ${winnerText}</div>` : `<div class="award-sublabel" style="margin-top:4px;">No winner set yet</div>`}
         ${data.note ? `<div class="award-sublabel" style="margin-top:3px;">📝 ${data.note}</div>` : ''}
+        ${activeToggle}
       </div>
       <div class="award-actions">
         <span class="award-status ${isRevealed ? 'revealed-status' : 'hidden-status'}">${isRevealed ? '✨ Revealed' : '🔒 Hidden'}</span>
         <button class="btn btn-secondary btn-sm" onclick="openEdit('${a.id}')">✏️ Edit</button>
         ${isRevealed
           ? `<button class="btn btn-secondary btn-sm" onclick="toggleReveal('${a.id}', false)">🔒 Hide</button>`
-          : `<button class="btn btn-gold btn-sm" onclick="toggleReveal('${a.id}', true)" ${!hasWinner ? 'disabled title="Set a winner first"' : ''}>✨ Reveal</button>`
+          : `<button class="btn btn-gold btn-sm" onclick="toggleReveal('${a.id}', true)" ${!hasWinner || !isActive ? 'disabled title="' + (!isActive ? 'Mark active first' : 'Set a winner first') + '"' : ''}>✨ Reveal</button>`
         }
+        ${opts.deletable ? `<button class="btn btn-danger btn-sm" onclick="deleteWriteIn('${a.id}')">🗑</button>` : ''}
       </div>
     </div>`;
 }
@@ -329,9 +390,12 @@ function openEdit(awardId) {
   const allDefs = [
     ...INDIVIDUAL_AWARDS,
     ...MULTI_AWARDS,
-    ...TEAMS.map(t => ({ id: `2026_team-mvp_${t.id}`, label: `${t.name} MVP`, icon: '🦁', multi: false }))
+    ...TEAMS.map(t => ({ id: `2026_team-mvp_${t.id}`, label: `${t.name} MVP`, img: 'awards/team_mvp.png', multi: false }))
   ];
-  const def = allDefs.find(a => a.id === awardId) || { label: awardId, multi: false };
+  // Also check write-ins stored in Firestore cache
+  const cachedData = awardsCache[awardId] || {};
+  const def = allDefs.find(a => a.id === awardId)
+    || { label: cachedData.label || awardId, multi: cachedData.multi || false };
   currentEditMulti = def.multi;
 
   const data = awardsCache[awardId] || {};
@@ -401,6 +465,54 @@ async function toggleReveal(awardId, reveal) {
   }
 }
 
+async function toggleActive(awardId, active) {
+  try {
+    await setDoc(doc(db, 'aceyAwards', awardId), { active }, { merge: true });
+    showToast(active ? '✅ Marked active' : '⛔ Marked inactive');
+  } catch(e) { showToast('Error: ' + e.message, true); }
+}
+
+// ── Write-in awards ───────────────────────────────────────────────────────────
+function openCreateWriteIn() {
+  document.getElementById('wiNameInput').value = '';
+  document.getElementById('wiWinnerInput').value = '';
+  document.getElementById('wiNoteInput').value = '';
+  document.getElementById('writeInModal').classList.remove('hidden');
+  setTimeout(() => document.getElementById('wiNameInput').focus(), 100);
+}
+
+function closeWriteInModal() {
+  document.getElementById('writeInModal').classList.add('hidden');
+}
+
+async function saveWriteIn() {
+  const label = document.getElementById('wiNameInput').value.trim();
+  const playerName = document.getElementById('wiWinnerInput').value.trim();
+  const note = document.getElementById('wiNoteInput').value.trim();
+  if (!label) { showToast('Award name is required', true); return; }
+
+  // Generate a unique ID
+  const id = '2026_writein_' + label.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '_' + Date.now();
+  try {
+    await setDoc(doc(db, 'aceyAwards', id), {
+      label, playerName, note, source: 'write-in',
+      active: true, revealed: false, multi: false,
+      playerNames: [], revealedAt: null,
+    });
+    closeWriteInModal();
+    showToast('Write-in award created!');
+  } catch(e) { showToast('Error: ' + e.message, true); }
+}
+
+async function deleteWriteIn(awardId) {
+  if (!confirm('Delete this write-in award? This cannot be undone.')) return;
+  try {
+    const { deleteDoc } = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js');
+    await deleteDoc(doc(db, 'aceyAwards', awardId));
+    showToast('Award deleted');
+  } catch(e) { showToast('Error: ' + e.message, true); }
+}
+
 async function resetAllReveals() {
   if (!confirm('Hide all reveals on the public page? This cannot be undone automatically.')) return;
   const allIds = [
@@ -432,11 +544,19 @@ window.openEdit = openEdit;
 window.closeModal = closeModal;
 window.saveAward = saveAward;
 window.toggleReveal = toggleReveal;
+window.toggleActive = toggleActive;
 window.resetAllReveals = resetAllReveals;
+window.openCreateWriteIn = openCreateWriteIn;
+window.closeWriteInModal = closeWriteInModal;
+window.saveWriteIn = saveWriteIn;
+window.deleteWriteIn = deleteWriteIn;
 
-// Close modal on overlay click
+// Close modals on overlay click
 document.getElementById('editModal').addEventListener('click', e => {
   if (e.target === document.getElementById('editModal')) closeModal();
+});
+document.getElementById('writeInModal').addEventListener('click', e => {
+  if (e.target === document.getElementById('writeInModal')) closeWriteInModal();
 });
 </script>
 

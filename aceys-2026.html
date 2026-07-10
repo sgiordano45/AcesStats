@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>The Aceys 2026 🏆</title>
+  <title>The Aceys IV 🏆</title>
   <style>
     :root {
       --gold: #c9a227;
@@ -89,7 +89,7 @@
 
 <div class="hero">
   <span class="hero-trophy">🏆</span>
-  <h1>The Aceys</h1>
+  <h1>The Aceys IV</h1>
   <p class="subtitle">2026 League Awards Ceremony</p>
   <div class="hero-divider"></div>
 </div>
@@ -116,6 +116,13 @@
     <div class="section-title">⭐ All-League Teams</div>
     <hr class="section-rule">
     <div id="multiAwardList"></div>
+
+    <!-- Write-in / Special Awards (only shown if any exist) -->
+    <div id="writeInSection" style="display:none;">
+      <div class="section-title">🏆 Special Awards</div>
+      <hr class="section-rule">
+      <div id="writeInList"></div>
+    </div>
 
   </div>
 </div>
@@ -195,9 +202,11 @@ async function init() {
 
 // ── Render ────────────────────────────────────────────────────────────────────
 function renderAll() {
-  renderList('individualList', INDIVIDUAL_AWARDS);
+  // Only show awards that are active (default true for built-ins if not set)
+  renderList('individualList', INDIVIDUAL_AWARDS.filter(a => awardsCache[a.id]?.active !== false));
   renderTeamMvps();
-  renderList('multiAwardList', MULTI_AWARDS);
+  renderList('multiAwardList', MULTI_AWARDS.filter(a => awardsCache[a.id]?.active !== false));
+  renderWriteIns();
 }
 
 function renderList(containerId, awards) {
@@ -210,10 +219,23 @@ function renderTeamMvps() {
   const el = document.getElementById('teamMvpList');
   if (!el) return;
   if (!TEAMS.length) { el.innerHTML = '<p style="text-align:center;color:var(--text-dim);">No teams found.</p>'; return; }
-  el.innerHTML = TEAMS.map(team => {
+  const activeMvps = TEAMS.filter(team => awardsCache[`2026_team-mvp_${team.id}`]?.active !== false);
+  el.innerHTML = activeMvps.map(team => {
     const def = { id: `2026_team-mvp_${team.id}`, label: `${team.name} MVP`, img: 'awards/team_mvp.png', multi: false, team: team.name };
     return cardHtml(def);
   }).join('');
+}
+
+function renderWriteIns() {
+  const writeIns = Object.entries(awardsCache)
+    .filter(([, d]) => d.source === 'write-in' && d.active !== false)
+    .map(([id, d]) => ({ id, label: d.label || id, multi: false, icon: '🏆' }));
+  const section = document.getElementById('writeInSection');
+  const el = document.getElementById('writeInList');
+  if (!el || !section) return;
+  if (!writeIns.length) { section.style.display = 'none'; return; }
+  section.style.display = 'block';
+  el.innerHTML = writeIns.map(a => cardHtml(a)).join('');
 }
 
 function cardHtml(a) {
