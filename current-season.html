@@ -2490,10 +2490,11 @@
         const sosColumns = preseason ? '' : `
                 <th>SOS</th>
                 <th>Rem SOS</th>
-                <th>L5</th>`;
+                <th>L5</th>
+                <th title="Pythagorean Expected W-L based on runs scored vs allowed">PyW-L</th>`;
         const sosFooter = preseason ? '' : `
           <div style="margin-top: 1rem; font-size: 0.85rem; color: var(--text-light);">
-            <strong>SOS:</strong> Schedule Strength | <strong>Rem SOS:</strong> Remaining Schedule Strength | <strong>L5:</strong> Last 5 games (W-L) | 🔒 = Seed clinched<br>
+            <strong>SOS:</strong> Schedule Strength | <strong>Rem SOS:</strong> Remaining Schedule Strength | <strong>L5:</strong> Last 5 games (W-L) | <strong>PyW-L:</strong> Pythagorean expected W-L (RF²÷(RF²+RA²)) | 🔒 = Seed clinched<br>
             <span style="color: #28a745;">Green</span> = easier, <span style="color: #ffc107;">Yellow</span> = average, <span style="color: #dc3545;">Red</span> = harder
           </div>`;
         return `
@@ -2518,6 +2519,15 @@
               ${standings.map((team, index) => {
                 const sosFormatted = formatScheduleStrength(team.scheduleStrength);
                 const remSosFormatted = formatScheduleStrength(team.remainingScheduleStrength);
+                // Pythagorean W-L: expected wins = GP * RF² / (RF² + RA²)
+                let pythWL = '—';
+                if (!preseason && (team.runsFor > 0 || team.runsAgainst > 0)) {
+                  const gp = team.wins + team.losses + team.ties;
+                  const rf2 = team.runsFor * team.runsFor;
+                  const ra2 = team.runsAgainst * team.runsAgainst;
+                  const pyWins = rf2 + ra2 > 0 ? Math.round(gp * rf2 / (rf2 + ra2)) : 0;
+                  pythWL = `${pyWins}-${gp - pyWins}`;
+                }
                 const sosCells = preseason ? '' : `
                     <td class="schedule-strength ${sosFormatted.class}">${sosFormatted.value}</td>
                     <td class="schedule-strength ${remSosFormatted.class}">${remSosFormatted.value}</td>`;
@@ -2534,6 +2544,7 @@
                     <td style="text-align: center;">${preseason ? '—' : (team.runDifferential >= 0 ? '+' : '') + team.runDifferential}</td>
                     ${sosCells}
                     <td style="text-align: center;">${preseason ? '—' : (team.last5 || '—')}</td>
+                    <td style="text-align: center;">${pythWL}</td>
                     <td style="text-align: center;">${team.wins + team.losses + team.ties}</td>
                   </tr>
                 `;
