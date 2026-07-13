@@ -175,6 +175,15 @@ let awardsCache = {};
 let prevRevealed = new Set();
 const playerStatsCache = {}; // playerId/legacyId → { hitting, pitching, badges }
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
+// battingAverage may be stored as 0.677 (fraction) or already as .677 string
+function fmtAvg(val) {
+  if (val == null || isNaN(val)) return null;
+  // Values > 1 are likely stored as percentage — shouldn't happen, but guard
+  const v = val > 1 ? val / 100 : val;
+  return v.toFixed(3).replace(/^0/, ''); // ".677" not "0.677"
+}
+
 // ── Determine award category type ────────────────────────────────────────────
 const PITCHING_AWARD_IDS = new Set(['2026_pitcher']);
 function isPitchingAward(awardId) { return PITCHING_AWARD_IDS.has(awardId); }
@@ -202,7 +211,7 @@ async function fetchPlayerStats(awardId, data) {
           H:   s.hits       || 0,
           R:   s.runs       || 0,
           BB:  s.walks      || 0,
-          AVG: s.battingAverage != null ? Number(s.battingAverage).toFixed(3) : null,
+          AVG: s.battingAverage != null ? fmtAvg(Number(s.battingAverage)) : null,
           BPI: typeof s.acesBPI === 'number' ? s.acesBPI.toFixed(2) : null,
           WAR: typeof s.bwarSimp === 'number' ? s.bwarSimp.toFixed(2) : null,
           IP:  s.inningsPitched != null ? s.inningsPitched : null,
@@ -213,15 +222,23 @@ async function fetchPlayerStats(awardId, data) {
     }
   } catch(e) { /* stats unavailable */ }
 
-  // Badges
+  // Badges — try legacyId first (2026-summer_billy_sforza), then playerId (Firebase UID)
   try {
-    const badgeSnap = await getDoc(doc(db, 'playerBadges', `2026-summer_${pid}`));
-    if (badgeSnap.exists()) {
-      const bd = badgeSnap.data();
-      result.badges = Object.entries(bd.earned || {})
-        .map(([id, v]) => ({ id, ...v }))
-        .sort((a, b) => ({ gold: 0, silver: 1, bronze: 2 }[a.tier] ?? 3) - ({ gold: 0, silver: 1, bronze: 2 }[b.tier] ?? 3))
-        .slice(0, 8);
+    const legacyId = data.legacyId || null;
+    const candidates = [];
+    if (legacyId) candidates.push(`2026-summer_${legacyId}`);
+    if (data.playerId && data.playerId !== legacyId) candidates.push(`2026-summer_${data.playerId}`);
+
+    for (const badgeDocId of candidates) {
+      const badgeSnap = await getDoc(doc(db, 'playerBadges', badgeDocId));
+      if (badgeSnap.exists()) {
+        const bd = badgeSnap.data();
+        result.badges = Object.entries(bd.earned || {})
+          .map(([id, v]) => ({ id, ...v }))
+          .sort((a, b) => ({ gold: 0, silver: 1, bronze: 2 }[a.tier] ?? 3) - ({ gold: 0, silver: 1, bronze: 2 }[b.tier] ?? 3))
+          .slice(0, 8);
+        break; // found it, stop trying
+      }
     }
   } catch(e) { /* badges unavailable */ }
 
