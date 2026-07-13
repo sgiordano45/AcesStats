@@ -45,6 +45,18 @@
     .award-winner.hidden-winner { filter: blur(8px); opacity: 0.4; user-select: none; color: var(--text-dim); font-size: 1.2rem; }
     .award-note { font-size: 0.8rem; color: var(--text-dim); margin-top: 0.4rem; font-style: italic; font-family: 'Inter', sans-serif; }
 
+    /* Player stats panel */
+    .winner-stats { margin-top: 1rem; padding-top: 0.75rem; border-top: 1px solid rgba(201,162,39,0.2); font-family: 'Inter', sans-serif; }
+    .stats-grid { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.5rem 1.25rem; margin-bottom: 0.6rem; }
+    .stat-chip { text-align: center; }
+    .stat-chip .sv { font-size: 1.1rem; font-weight: 700; color: var(--gold-light); }
+    .stat-chip .sl { font-size: 0.65rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.08em; }
+    .badge-strip { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.4rem; margin-top: 0.5rem; }
+    .badge-chip { display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.2rem 0.55rem; border-radius: 20px; font-size: 0.72rem; font-weight: 700; background: rgba(201,162,39,0.15); border: 1px solid rgba(201,162,39,0.3); color: var(--gold-light); }
+    .badge-chip.gold   { background: rgba(212,175,55,0.25); border-color: #c9a227; color: #f0d060; }
+    .badge-chip.silver { background: rgba(160,160,160,0.2); border-color: #9ca3af; color: #d1d5db; }
+    .badge-chip.bronze { background: rgba(180,100,40,0.2); border-color: #92400e; color: #fbbf24; }
+
     /* Multi-winner list */
     .multi-winner-list { list-style: none; margin: 0; padding: 0; }
     .multi-winner-list li { font-size: 1.1rem; color: var(--gold-light); font-weight: 600; padding: 0.3rem 0; border-bottom: 1px solid rgba(201,162,39,0.15); letter-spacing: 0.02em; }
@@ -134,7 +146,7 @@
 <script type="module">
 import { db } from './firebase-config.js';
 import {
-  collection, onSnapshot, getDocs
+  collection, onSnapshot, getDocs, doc, getDoc
 } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
 
 // ── Award definitions (same order as admin page) ──────────────────────────────
@@ -160,7 +172,102 @@ const MULTI_AWARDS = [
 
 let TEAMS = [];
 let awardsCache = {};
-let prevRevealed = new Set(); // track newly revealed for confetti
+let prevRevealed = new Set();
+const playerStatsCache = {}; // playerId/legacyId → { hitting, pitching, badges }
+
+// ── Determine award category type ────────────────────────────────────────────
+const PITCHING_AWARD_IDS = new Set(['2026_pitcher']);
+function isPitchingAward(awardId) { return PITCHING_AWARD_IDS.has(awardId); }
+
+// ── Fetch player stats + badges ────────────────────────────────────────────
+async function fetchPlayerStats(awardId, data) {
+  const pid = data.playerId || data.legacyId;
+  if (!pid || !data.revealed) return null;
+
+  const cacheKey = pid + '_' + awardId;
+  if (playerStatsCache[cacheKey]) return playerStatsCache[cacheKey];
+
+  const result = { hitting: null, pitching: null, badges: [] };
+
+  try {
+    // Try aggregatedPlayerStats
+    const statsSnap = await getDoc(doc(db, 'aggregatedPlayerStats', pid));
+    if (statsSnap.exists()) {
+      const d = statsSnap.data();
+      // Find 2026-summer season key
+      const seasonKeys = Object.keys(d.seasons || {}).filter(k => k.startsWith('2026'));
+      if (seasonKeys.length > 0) {
+        const s = d.seasons[seasonKeys[0]];
+        result.hitting = {
+          H:   s.hits       || 0,
+          R:   s.runs       || 0,
+          BB:  s.walks      || 0,
+          AVG: s.battingAverage != null ? Number(s.battingAverage).toFixed(3) : null,
+          BPI: typeof s.acesBPI === 'number' ? s.acesBPI.toFixed(2) : null,
+          WAR: typeof s.bwarSimp === 'number' ? s.bwarSimp.toFixed(2) : null,
+          IP:  s.inningsPitched != null ? s.inningsPitched : null,
+          RA:  s.runsAllowed   != null ? s.runsAllowed    : null,
+        };
+        result.pitching = result.hitting; // same object, cardHtml picks fields
+      }
+    }
+  } catch(e) { /* stats unavailable */ }
+
+  // Badges
+  try {
+    const badgeSnap = await getDoc(doc(db, 'playerBadges', `2026-summer_${pid}`));
+    if (badgeSnap.exists()) {
+      const bd = badgeSnap.data();
+      result.badges = Object.entries(bd.earned || {})
+        .map(([id, v]) => ({ id, ...v }))
+        .sort((a, b) => ({ gold: 0, silver: 1, bronze: 2 }[a.tier] ?? 3) - ({ gold: 0, silver: 1, bronze: 2 }[b.tier] ?? 3))
+        .slice(0, 8);
+    }
+  } catch(e) { /* badges unavailable */ }
+
+  playerStatsCache[cacheKey] = result;
+  return result;
+}
+
+// After a reveal, load stats and inject into card
+async function injectPlayerStats(awardId, data) {
+  const stats = await fetchPlayerStats(awardId, data);
+  const cardEl = document.getElementById(`card-${awardId}`);
+  const panelEl = cardEl?.querySelector('.winner-stats');
+  if (!panelEl || !stats) return;
+
+  const s = stats.hitting;
+  if (!s) { panelEl.innerHTML = ''; return; }
+
+  const pitching = isPitchingAward(awardId);
+  let statHtml = '';
+
+  if (pitching && s.IP != null) {
+    statHtml = `
+      <div class="stats-grid">
+        <div class="stat-chip"><div class="sv">${s.IP}</div><div class="sl">IP</div></div>
+        ${s.RA != null ? `<div class="stat-chip"><div class="sv">${s.RA}</div><div class="sl">RA</div></div>` : ''}
+      </div>`;
+  } else if (!pitching && (s.H || s.R || s.BB || s.AVG)) {
+    statHtml = `
+      <div class="stats-grid">
+        ${s.H  != null ? `<div class="stat-chip"><div class="sv">${s.H}</div><div class="sl">H</div></div>` : ''}
+        ${s.R  != null ? `<div class="stat-chip"><div class="sv">${s.R}</div><div class="sl">R</div></div>` : ''}
+        ${s.BB != null ? `<div class="stat-chip"><div class="sv">${s.BB}</div><div class="sl">BB</div></div>` : ''}
+        ${s.AVG ? `<div class="stat-chip"><div class="sv">${s.AVG}</div><div class="sl">AVG</div></div>` : ''}
+        ${s.BPI ? `<div class="stat-chip"><div class="sv">${s.BPI}</div><div class="sl">AcesBPI</div></div>` : ''}
+        ${s.WAR ? `<div class="stat-chip"><div class="sv">${s.WAR}</div><div class="sl">bWAR</div></div>` : ''}
+      </div>`;
+  }
+
+  const badgeHtml = stats.badges.length
+    ? `<div class="badge-strip">${stats.badges.map(b =>
+        `<span class="badge-chip ${b.tier || ''}">${b.icon || '🎖️'} ${b.name || b.id}</span>`
+      ).join('')}</div>`
+    : '';
+
+  panelEl.innerHTML = statHtml + badgeHtml || '<div style="color:var(--text-dim);font-size:0.8rem;">No 2026 stats on file</div>';
+}
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 async function init() {
@@ -202,11 +309,27 @@ async function init() {
 
 // ── Render ────────────────────────────────────────────────────────────────────
 function renderAll() {
-  // Only show awards that are active (default true for built-ins if not set)
-  renderList('individualList', INDIVIDUAL_AWARDS.filter(a => awardsCache[a.id]?.active !== false));
+  const activeIndividual = INDIVIDUAL_AWARDS.filter(a => awardsCache[a.id]?.active !== false);
+  const activeMulti = MULTI_AWARDS.filter(a => awardsCache[a.id]?.active !== false);
+  renderList('individualList', activeIndividual);
   renderTeamMvps();
-  renderList('multiAwardList', MULTI_AWARDS.filter(a => awardsCache[a.id]?.active !== false));
+  renderList('multiAwardList', activeMulti);
   renderWriteIns();
+
+  // Inject stats for all revealed single-winner awards
+  const allSingle = [
+    ...activeIndividual,
+    ...TEAMS.map(t => ({ id: `2026_team-mvp_${t.id}`, multi: false })),
+    ...Object.entries(awardsCache)
+      .filter(([, d]) => d.source === 'write-in' && d.active !== false)
+      .map(([id]) => ({ id, multi: false })),
+  ];
+  allSingle.forEach(a => {
+    const data = awardsCache[a.id] || {};
+    if (data.revealed && (data.playerId || data.legacyId)) {
+      injectPlayerStats(a.id, data);
+    }
+  });
 }
 
 function renderList(containerId, awards) {
@@ -259,6 +382,9 @@ function cardHtml(a) {
     ? `<span class="award-icon"><img src="${a.img}" alt="${a.label}"></span>`
     : `<span class="award-icon">${a.icon || '🏆'}</span>`;
 
+  // Stats panel — only for revealed single-winner awards with a linked player
+  const showStats = revealed && !a.multi && (data.playerId || data.legacyId);
+
   return `
     <div class="award-card ${revealed ? 'revealed' : ''}" id="card-${a.id}">
       ${iconHtml}
@@ -267,6 +393,7 @@ function cardHtml(a) {
       ${winnerHtml}
       ${data.note && revealed ? `<div class="award-note">${data.note}</div>` : ''}
       ${!revealed && hasWinner ? `<div style="margin-top:0.75rem;font-size:0.78rem;color:var(--text-dim);font-family:'Inter',sans-serif;">🔒 Not yet revealed</div>` : ''}
+      <div class="winner-stats">${showStats ? '<div style="color:var(--text-dim);font-size:0.75rem;font-family:Inter,sans-serif;">Loading stats…</div>' : ''}</div>
     </div>`;
 }
 

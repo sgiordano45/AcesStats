@@ -72,6 +72,18 @@
     .form-hint { font-size: 0.78rem; color: var(--text-dim); margin-top: 0.3rem; }
     .modal-actions { display: flex; gap: 0.75rem; margin-top: 1.25rem; justify-content: flex-end; }
 
+    /* Player search */
+    .player-search-wrap { position: relative; }
+    .player-search-wrap input { width: 100%; }
+    .player-dropdown { position: absolute; left: 0; right: 0; top: 100%; background: var(--dark3); border: 1px solid var(--gold); border-top: none; border-radius: 0 0 8px 8px; z-index: 100; max-height: 220px; overflow-y: auto; }
+    .player-dropdown-item { padding: 0.5rem 0.75rem; cursor: pointer; font-size: 0.875rem; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 0.5rem; }
+    .player-dropdown-item:last-child { border-bottom: none; }
+    .player-dropdown-item:hover, .player-dropdown-item.active { background: rgba(201,162,39,0.15); }
+    .player-dropdown-item .p-name { font-weight: 600; color: var(--text); }
+    .player-dropdown-item .p-team { font-size: 0.75rem; color: var(--text-dim); margin-left: auto; }
+    .player-selected-tag { display: inline-flex; align-items: center; gap: 0.4rem; background: rgba(201,162,39,0.2); border: 1px solid var(--gold); border-radius: 6px; padding: 0.25rem 0.6rem; font-size: 0.8rem; margin-top: 0.4rem; color: var(--gold-light); }
+    .player-selected-tag button { background: none; border: none; color: var(--text-dim); cursor: pointer; padding: 0; font-size: 0.9rem; line-height: 1; }
+
     /* Toast */
     .toast { position: fixed; bottom: 2rem; right: 2rem; background: var(--gold); color: #12100e; padding: 0.85rem 1.25rem; border-radius: 10px; box-shadow: 0 4px 16px rgba(0,0,0,0.4); font-weight: 700; z-index: 9999; animation: slideIn 0.3s ease; }
     .toast.error { background: #991b1b; color: white; }
@@ -166,8 +178,12 @@
       <input type="text" id="wiNameInput" placeholder="e.g. Best Trash Talk">
     </div>
     <div class="form-group">
-      <label>Winner Name</label>
-      <input type="text" id="wiWinnerInput" placeholder="Full name">
+      <label>Winner</label>
+      <div class="player-search-wrap">
+        <input type="text" id="wiWinnerInput" placeholder="Search player…" autocomplete="off" oninput="searchPlayers(this.value, 'wiDropdown', 'wi')">
+        <div class="player-dropdown hidden" id="wiDropdown"></div>
+      </div>
+      <div id="wiSelectedPlayer"></div>
     </div>
     <div class="form-group">
       <label>Note (optional)</label>
@@ -261,6 +277,9 @@ let unsubscribe = null;
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 async function init() {
+  // Load players for search (background, non-blocking)
+  loadPlayers();
+
   // Load teams
   try {
     const teamsSnap = await getDocs(collection(db, 'teams'));
@@ -405,14 +424,22 @@ function openEdit(awardId) {
     ? (data.playerNames || []).join('\n')
     : (data.playerName || '');
 
+  const selectedPlayerHtml = !def.multi && data.playerId
+    ? `<div id="editSelectedPlayer"><span class="player-selected-tag">✅ ${data.playerName} <button onclick="clearEditPlayer()">×</button></span></div>`
+    : `<div id="editSelectedPlayer"></div>`;
+
   document.getElementById('modalBody').innerHTML = `
     <div class="form-group">
-      <label>${def.multi ? 'Winners (one per line)' : 'Winner Name'}</label>
+      <label>${def.multi ? 'Winners (one per line)' : 'Winner'}</label>
       ${def.multi
-        ? `<textarea id="winnerInput" rows="5" placeholder="Player Name\nPlayer Name\n...">${winnerVal}</textarea>`
-        : `<input type="text" id="winnerInput" placeholder="Full name" value="${winnerVal}">`
+        ? `<textarea id="winnerInput" rows="5" placeholder="Player Name\nPlayer Name\n...">${winnerVal}</textarea><div class="form-hint">Enter one player per line — no player link for multi-winner awards</div>`
+        : `<div class="player-search-wrap">
+             <input type="text" id="winnerInput" placeholder="Search player…" autocomplete="off"
+               value="${winnerVal}" oninput="searchPlayers(this.value, 'editDropdown', 'edit')">
+             <div class="player-dropdown hidden" id="editDropdown"></div>
+           </div>
+           ${selectedPlayerHtml}`
       }
-      ${def.multi ? '<div class="form-hint">Enter one player per line</div>' : ''}
     </div>
     <div class="form-group">
       <label>Note (optional)</label>
@@ -427,6 +454,7 @@ function openEdit(awardId) {
 function closeModal() {
   document.getElementById('editModal').classList.add('hidden');
   currentEditId = null;
+  _editSelectedPlayer = null;
 }
 
 async function saveAward() {
@@ -438,9 +466,16 @@ async function saveAward() {
   if (currentEditMulti) {
     payload.playerNames = winnerRaw ? winnerRaw.split('\n').map(s => s.trim()).filter(Boolean) : [];
     payload.playerName = '';
+    payload.playerId = null;
+    payload.legacyId = null;
   } else {
     payload.playerName = winnerRaw;
     payload.playerNames = [];
+    // Include selected player IDs if a player was picked from search
+    if (_editSelectedPlayer && _editSelectedPlayer.name === winnerRaw) {
+      payload.playerId  = _editSelectedPlayer.id  || null;
+      payload.legacyId  = _editSelectedPlayer.legacyId || null;
+    }
   }
 
   try {
@@ -474,15 +509,18 @@ async function toggleActive(awardId, active) {
 
 // ── Write-in awards ───────────────────────────────────────────────────────────
 function openCreateWriteIn() {
+  _wiSelectedPlayer = null;
   document.getElementById('wiNameInput').value = '';
   document.getElementById('wiWinnerInput').value = '';
   document.getElementById('wiNoteInput').value = '';
+  document.getElementById('wiSelectedPlayer').innerHTML = '';
   document.getElementById('writeInModal').classList.remove('hidden');
   setTimeout(() => document.getElementById('wiNameInput').focus(), 100);
 }
 
 function closeWriteInModal() {
   document.getElementById('writeInModal').classList.add('hidden');
+  _wiSelectedPlayer = null;
 }
 
 async function saveWriteIn() {
@@ -491,13 +529,14 @@ async function saveWriteIn() {
   const note = document.getElementById('wiNoteInput').value.trim();
   if (!label) { showToast('Award name is required', true); return; }
 
-  // Generate a unique ID
   const id = '2026_writein_' + label.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '_' + Date.now();
   try {
     await setDoc(doc(db, 'aceyAwards', id), {
       label, playerName, note, source: 'write-in',
       active: true, revealed: false, multi: false,
       playerNames: [], revealedAt: null,
+      playerId:  _wiSelectedPlayer?.id       || null,
+      legacyId:  _wiSelectedPlayer?.legacyId || null,
     });
     closeWriteInModal();
     showToast('Write-in award created!');
@@ -530,6 +569,98 @@ async function resetAllReveals() {
   }
 }
 
+// ── Player search ─────────────────────────────────────────────────────────────
+let allPlayers = [];          // loaded once after auth
+let _editSelectedPlayer = null;
+let _wiSelectedPlayer   = null;
+
+async function loadPlayers() {
+  try {
+    const snap = await getDocs(collection(db, 'users'));
+    const raw = snap.docs.map(d => ({
+      id: d.id,
+      displayName: d.data().displayName || d.data().name || idToName(d.id),
+      currentTeam: d.data().currentTeam || d.data().linkedTeam || '',
+      legacyId: d.data().legacyId || d.data().linkedPlayer?.replace(/\s+/g, '_').toLowerCase() || null,
+      isAuthUser: d.data().isAuthUser || d.data().authId || false,
+      migrated: d.data().migrated || false,
+    })).filter(p => !p.migrated && p.id && !p.id.startsWith('anon'));
+
+    // Deduplicate: prefer auth accounts — if a player has both, keep the auth doc
+    const byName = new Map();
+    raw.forEach(p => {
+      const key = p.displayName.toLowerCase();
+      const existing = byName.get(key);
+      if (!existing) { byName.set(key, p); return; }
+      // Keep the one with the longer UID (Firebase UIDs are 28 chars; legacy IDs are snake_case)
+      if (p.id.length > existing.id.length) byName.set(key, p);
+    });
+    allPlayers = Array.from(byName.values()).sort((a, b) => a.displayName.localeCompare(b.displayName));
+  } catch(e) { console.error('loadPlayers error', e); }
+}
+
+function idToName(id) {
+  return id.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+}
+
+function searchPlayers(query, dropdownId, context) {
+  const dropdown = document.getElementById(dropdownId);
+  if (!dropdown) return;
+  const q = query.trim().toLowerCase();
+  if (!q) { dropdown.classList.add('hidden'); return; }
+
+  const matches = allPlayers
+    .filter(p => p.displayName.toLowerCase().includes(q))
+    .slice(0, 10);
+
+  if (!matches.length) { dropdown.classList.add('hidden'); return; }
+
+  dropdown.innerHTML = matches.map((p, i) => `
+    <div class="player-dropdown-item" onclick="selectPlayer('${p.id}', '${p.displayName.replace(/'/g,"\\'")}', '${p.legacyId || ''}', '${p.currentTeam}', '${context}')">
+      <span class="p-name">${p.displayName}</span>
+      <span class="p-team">${p.currentTeam}</span>
+    </div>`).join('');
+  dropdown.classList.remove('hidden');
+}
+
+function selectPlayer(id, name, legacyId, team, context) {
+  const player = { id, name, legacyId: legacyId || null, team };
+  if (context === 'edit') {
+    _editSelectedPlayer = player;
+    document.getElementById('winnerInput').value = name;
+    document.getElementById('editDropdown').classList.add('hidden');
+    document.getElementById('editSelectedPlayer').innerHTML =
+      `<span class="player-selected-tag">✅ ${name} — ${team} <button onclick="clearEditPlayer()">×</button></span>`;
+  } else if (context === 'wi') {
+    _wiSelectedPlayer = player;
+    document.getElementById('wiWinnerInput').value = name;
+    document.getElementById('wiDropdown').classList.add('hidden');
+    document.getElementById('wiSelectedPlayer').innerHTML =
+      `<span class="player-selected-tag">✅ ${name} — ${team} <button onclick="clearWiPlayer()">×</button></span>`;
+  }
+}
+
+function clearEditPlayer() {
+  _editSelectedPlayer = null;
+  document.getElementById('editSelectedPlayer').innerHTML = '';
+  document.getElementById('winnerInput').value = '';
+  document.getElementById('winnerInput').focus();
+}
+
+function clearWiPlayer() {
+  _wiSelectedPlayer = null;
+  document.getElementById('wiSelectedPlayer').innerHTML = '';
+  document.getElementById('wiWinnerInput').value = '';
+  document.getElementById('wiWinnerInput').focus();
+}
+
+// Close dropdowns when clicking outside
+document.addEventListener('click', e => {
+  if (!e.target.closest('.player-search-wrap')) {
+    document.querySelectorAll('.player-dropdown').forEach(d => d.classList.add('hidden'));
+  }
+});
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function showToast(msg, isError = false) {
   const t = document.createElement('div');
@@ -550,6 +681,10 @@ window.openCreateWriteIn = openCreateWriteIn;
 window.closeWriteInModal = closeWriteInModal;
 window.saveWriteIn = saveWriteIn;
 window.deleteWriteIn = deleteWriteIn;
+window.searchPlayers = searchPlayers;
+window.selectPlayer = selectPlayer;
+window.clearEditPlayer = clearEditPlayer;
+window.clearWiPlayer = clearWiPlayer;
 
 // Close modals on overlay click
 document.getElementById('editModal').addEventListener('click', e => {
