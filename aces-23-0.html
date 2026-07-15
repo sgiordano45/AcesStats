@@ -846,16 +846,17 @@ import { collection, getDocs } from 'https://www.gstatic.com/firebasejs/10.7.1/f
 import { NavigationComponent } from './nav-component.js';
 
 // ——— Constants ———
-const SEASONS_ORDER = [
-  '2022-summer','2022-fall',
-  '2023-spring','2023-summer','2023-fall',
-  '2024-spring','2024-summer','2024-fall',
-  '2025-spring','2025-summer','2025-fall',
-  '2026-spring','2026-summer'
-];
 const PITCHER_MIN_SEASON = '2024-summer'; // Pitching data starts 2024-summer
-const ELIGIBLE_HITTER_SEASONS = SEASONS_ORDER; // All
-const ELIGIBLE_PITCHER_SEASONS = SEASONS_ORDER.filter(s => s >= PITCHER_MIN_SEASON);
+// Accept any season that matches year-word format (e.g. 2022-fall, 2025-spring)
+const SEASON_PATTERN = /^\d{4}-[a-z]+$/;
+
+function isValidSeason(seasonId) {
+  return SEASON_PATTERN.test(seasonId) && parseInt(seasonId) >= 2022;
+}
+function isPitcherEligibleSeason(seasonId) {
+  // Must be 2024-summer or later, compare lexicographically (works because year-season format)
+  return isValidSeason(seasonId) && seasonId >= PITCHER_MIN_SEASON;
+}
 
 // Round config: 4 hitters, then 1 pitcher
 const ROUND_CONFIG = [
@@ -963,7 +964,7 @@ function buildPools() {
     // Hitting seasons
     if (player.seasons && typeof player.seasons === 'object') {
       Object.entries(player.seasons).forEach(([seasonId, sData]) => {
-        if (!SEASONS_ORDER.includes(seasonId)) return;
+        if (!isValidSeason(seasonId)) return;
         const sub = (sData.sub || 'No').toString().toLowerCase();
         if (sub === 'yes') return; // exclude subs
         const team = (sData.team || player.currentTeam || '').toLowerCase();
@@ -993,7 +994,7 @@ function buildPools() {
     // Pitching seasons (2024-summer+)
     if (player.pitchingSeasons && typeof player.pitchingSeasons === 'object') {
       Object.entries(player.pitchingSeasons).forEach(([seasonId, sData]) => {
-        if (!ELIGIBLE_PITCHER_SEASONS.includes(seasonId)) return;
+        if (!isPitcherEligibleSeason(seasonId)) return;
         const sub = (sData.sub || 'No').toString().toLowerCase();
         if (sub === 'yes') return;
         const team = (sData.team || player.currentTeam || '').toLowerCase();
@@ -1075,13 +1076,12 @@ function startRound() {
 function eligiblePool() {
   const cfg = ROUND_CONFIG[currentRound];
   const pool = cfg.type === 'pitcher' ? pitcherPool : hitterPool;
-  const eligibleSeasons = cfg.type === 'pitcher' ? ELIGIBLE_PITCHER_SEASONS : ELIGIBLE_HITTER_SEASONS;
 
   // Filter keys where season not already used
   return Object.keys(pool).filter(key => {
     const [year, half, ...teamParts] = key.split('-');
     const seasonId = `${year}-${half}`;
-    return !usedSeasons.has(seasonId) && eligibleSeasons.includes(seasonId);
+    return !usedSeasons.has(seasonId);
   });
 }
 
