@@ -4230,16 +4230,20 @@
     // Store player data for splits
     currentPlayerData = playerData;
     
-    // Generate legacy ID for badge lookup (same format used by badge calculator)
-    // Prefer resolvedPlayer.id (actual Firestore key) over name-derived key to handle
-    // cases where display name differs from account name (e.g. "Joseph" vs "joe")
+    // Generate legacy ID for badge/stats lookup (same snake_case format used by badge calculator)
+    // Firebase UIDs are 28-char mixed-case alphanumeric — if resolvedPlayer.id looks like a UID,
+    // fall back to the name-derived snake_case ID which is what badges are actually keyed on.
     const nameDerivedId = playerName.toLowerCase().replace(/\./g, '').replace(/'/g, '').replace(/\s+/g, '_');
-    const legacyId = resolvedPlayer?.id || nameDerivedId;
+    const resolvedId = resolvedPlayer?.id || '';
+    const isFirebaseUid = resolvedId.length > 20 && /[A-Z]/.test(resolvedId);
+    const legacyId = isFirebaseUid ? nameDerivedId : (resolvedId || nameDerivedId);
+    // Also store the auth UID separately so fetchPlayerBadges can try both
+    const authUid = isFirebaseUid ? resolvedId : null;
     currentLegacyId = legacyId;
 
     // Fetch badges and titles in parallel
     const [playerBadges, playerTitles] = await Promise.all([
-      fetchPlayerBadges(legacyId),
+      fetchPlayerBadges(legacyId, authUid),
       fetchPlayerTitles(stats)
     ]);
     
@@ -4277,27 +4281,27 @@
   }
   
   // Fetch player badges from Firestore
-  async function fetchPlayerBadges(legacyId) {
+  // Tries legacyId first (snake_case name, e.g. "john_simeone"), then authUid as fallback.
+  // Badges are keyed as "{seasonId}_{legacyId}" by the badge calculator.
+  async function fetchPlayerBadges(legacyId, authUid = null) {
     try {
       const activeSeason = await getCurrentSeason();
       const currentSeasonId = activeSeason?.id || '2026-summer';
       const [year, season] = currentSeasonId.split('-');
       const seasonDisplay = `${year} ${season.charAt(0).toUpperCase() + season.slice(1)}`;
-      const badgeDocId = `${currentSeasonId}_${legacyId}`;
 
-      console.log(`Fetching badges for: ${badgeDocId}`);
+      // Build candidate doc IDs — legacy first, then UID fallback
+      const candidates = [`${currentSeasonId}_${legacyId}`];
+      if (authUid && authUid !== legacyId) candidates.push(`${currentSeasonId}_${authUid}`);
 
-      const badgeDocRef = doc(db, 'playerBadges', badgeDocId);
-      const badgeDocSnap = await getDoc(badgeDocRef);
-
-      if (badgeDocSnap.exists()) {
-        const data = badgeDocSnap.data();
-        console.log(`Found ${Object.keys(data.earned || {}).length} badges`);
-        return {
-          seasonId: currentSeasonId,
-          seasonDisplay,
-          ...data
-        };
+      for (const badgeDocId of candidates) {
+        console.log(`Fetching badges for: ${badgeDocId}`);
+        const badgeDocSnap = await getDoc(doc(db, 'playerBadges', badgeDocId));
+        if (badgeDocSnap.exists()) {
+          const data = badgeDocSnap.data();
+          console.log(`✅ Found ${Object.keys(data.earned || {}).length} badges at ${badgeDocId}`);
+          return { seasonId: currentSeasonId, seasonDisplay, ...data };
+        }
       }
 
       console.log('No badges found for this player/season');
