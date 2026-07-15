@@ -902,14 +902,20 @@ function formatName(raw) {
 }
 
 function hitterStrength(p) {
-  const bb = (typeof p.walks === 'number') ? p.walks : 0;
-  const bpi = (typeof p.acesBPI === 'number') ? p.acesBPI : 0;
-  return p.hits * 2 + p.runs * 1.5 + bpi * 10 + bb * 1;
+  const bpi = (typeof p.acesBPI === 'number') ? p.acesBPI : 50;
+  // BPI is 0-100, normed at 50 = league average. Use it as primary signal.
+  // Small hits/runs bonus adds flavor when BPI is similar.
+  // Target ranges: below avg (BPI ~35) → ~15, avg (BPI ~50) → ~22, good (BPI ~65) → ~29, elite (BPI ~80+) → ~36+
+  return bpi * 0.4 + p.hits * 0.2 + p.runs * 0.1;
 }
 
 function pitcherStrength(p) {
   const ip = parseFloat(p.ip) || 0;
-  return ip * 3 - p.ra * 2;
+  if (ip === 0) return 0;
+  // Rate-based: runs allowed per 7 innings (7-inning games).
+  // R7 ~1 (elite) → ~28, R7 ~4 (avg) → ~24, R7 ~8 (bad) → ~18, R7 ~15+ → ~12
+  const r7 = (p.ra / ip) * 7;
+  return Math.max(5, 30 - r7);
 }
 
 function comboKey(season, team) {
@@ -1363,7 +1369,7 @@ function renderRosterPanel() {
   if (roster.length > 0) {
     document.getElementById('strengthBarWrap').style.display = 'block';
     const total = roster.reduce((s,p) => s + p.strength, 0);
-    const max = 480; // calibrated max
+    const max = 200; // calibrated max
     const pct = Math.min(100, (total / max) * 100);
     document.getElementById('strengthFill').style.width = pct + '%';
     document.getElementById('strengthVal').textContent = total.toFixed(1);
@@ -1411,14 +1417,13 @@ function buildSimulateScreen() {
 }
 
 function computeRating(totalStrength) {
-  // Calibrated against actual Aces stat ranges:
-  // Weak player:    6H  3R  BPI 0.3  → strength ~14
-  // Average player: 12H 7R  BPI 1.5  → strength ~42
-  // Elite player:   22H 13R BPI 4.0  → strength ~90
-  // 4 avg hitters (168) + avg pitcher (12IP 7RA = 22) → 190 → rating ~40 (hard to go 23-0)
-  // 4 good hitters (240) + good pitcher (18IP 4RA = 46) → 286 → rating ~62 (~1% chance)
-  // 4 elite hitters (360) + elite pitcher (22IP 2RA = 62) → 422 → rating ~88 (~10-15% chance)
-  const maxRaw = 480;
+  // BPI is 0-100 normed at 50. Calibrated ranges:
+  // 4 below-avg hitters (BPI~35, ~15ea) + bad pitcher (~18)   = ~78  → rating ~39 → ~0% shot
+  // 4 avg hitters (BPI~50, ~22ea) + avg pitcher (~24)         = ~112 → rating ~56 → ~0% shot
+  // 4 good hitters (BPI~68, ~30ea) + good pitcher (~26)       = ~146 → rating ~73 → ~0.5% shot
+  // 4 elite hitters (BPI~82, ~36ea) + elite pitcher (~28)     = ~172 → rating ~86 → ~10% shot
+  // Perfect team (BPI~95, ~41ea) + perfect pitcher(~29)       = ~193 → capped at 95 → ~38% shot
+  const maxRaw = 200;
   return Math.min(95, Math.max(1, (totalStrength / maxRaw) * 100));
 }
 
