@@ -2434,27 +2434,32 @@
 
           // Can't be passed by any team below:
           // Even if team loses all remaining AND team below wins all remaining,
-          // team's min win% must still exceed team below's max win%
+          // team's min win% must STRICTLY exceed team below's max win%.
+          // If they can match win%, tiebreakers (H2H, RA) are still live — not clinched.
           const cantFall = idx < sorted.length - 1
             ? sorted.slice(idx + 1).every(other => {
                 const otherTotal = other.wins + other.losses + other.ties + other.remainingCount;
                 const otherMaxWinPct = otherTotal > 0
                   ? (other.wins + other.remainingCount + other.ties * 0.5) / otherTotal
                   : 0;
-                return teamMinWinPct > otherMaxWinPct;
+                // Use strict > with small epsilon to avoid float equality issues;
+                // equal win% means tiebreakers could still flip the seed
+                return teamMinWinPct - otherMaxWinPct > 0.0001;
               })
             : false; // Last place can never clinch solely from below
 
           // Can't rise above any team above:
           // Even if team wins all remaining AND team above loses all remaining,
-          // team's max win% must still be below team above's min win%
+          // team's max win% must remain strictly below team above's min win%.
+          // Equal win% = tiebreakers still in play = not clinched.
           const cantRise = idx > 0
             ? sorted.slice(0, idx).every(other => {
                 const otherTotal = other.wins + other.losses + other.ties + other.remainingCount;
                 const otherMinWinPct = otherTotal > 0
                   ? (other.wins + other.ties * 0.5) / otherTotal
                   : 0;
-                return teamMaxWinPct <= otherMinWinPct;
+                // Strict < : if they can match win%, tiebreakers could flip order
+                return teamMaxWinPct - otherMinWinPct < -0.0001;
               })
             : true; // First place has no one above
 
