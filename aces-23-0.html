@@ -903,10 +903,12 @@ function formatName(raw) {
 
 function hitterStrength(p) {
   const bpi = (typeof p.acesBPI === 'number') ? p.acesBPI : 50;
-  // BPI is 0-100, normed at 50 = league average. Use it as primary signal.
-  // Small hits/runs bonus adds flavor when BPI is similar.
-  // Target ranges: below avg (BPI ~35) → ~15, avg (BPI ~50) → ~22, good (BPI ~65) → ~29, elite (BPI ~80+) → ~36+
-  return bpi * 0.4 + p.hits * 0.2 + p.runs * 0.1;
+  // BPI actual range: 35 (worst) to 74 (all-time best), normed at 50.
+  // Normalize against real min/max so the full spread is used.
+  // Output range: 5 (BPI 33) to 45 (BPI 74)
+  const BPI_MIN = 33, BPI_MAX = 74;
+  const norm = Math.max(0, Math.min(1, (bpi - BPI_MIN) / (BPI_MAX - BPI_MIN)));
+  return 5 + norm * 40;
 }
 
 function pitcherStrength(p) {
@@ -1163,6 +1165,15 @@ window.spin = function() {
   }, 80);
 };
 
+function shuffleArray(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
 function renderPool(players) {
   const container = document.getElementById('playerPool');
   const poolSection = document.getElementById('poolSection');
@@ -1172,6 +1183,9 @@ function renderPool(players) {
   container.innerHTML = '';
   selectedPlayer = null;
   lockBtn.disabled = true;
+
+  // In AcesIQ mode, shuffle order so BPI ranking isn't obvious
+  const displayPlayers = gameMode === 'iq' ? shuffleArray(players) : players;
 
   if (players.length === 0) {
     noPool.style.display = 'block';
@@ -1191,7 +1205,7 @@ function renderPool(players) {
 
   container.classList.toggle('iq-mode', gameMode === 'iq');
 
-  players.forEach((p, i) => {
+  displayPlayers.forEach((p, i) => {
     const card = document.createElement('div');
     card.className = 'player-card';
     card.dataset.idx = i;
@@ -1423,6 +1437,11 @@ function computeRating(totalStrength) {
   // 4 good hitters (BPI~68, ~30ea) + good pitcher (~26)       = ~146 → rating ~73 → ~0.5% shot
   // 4 elite hitters (BPI~82, ~36ea) + elite pitcher (~28)     = ~172 → rating ~86 → ~10% shot
   // Perfect team (BPI~95, ~41ea) + perfect pitcher(~29)       = ~193 → capped at 95 → ~38% shot
+  // BPI 35–74 normalized. Ranges:
+  // Worst team (BPI 35 × 4 + bad pitcher)  → str ~40  → rating ~20 → 0% shot
+  // Avg team (BPI 50 × 4 + avg pitcher)    → str ~107 → rating ~53 → 0% shot
+  // Your 66-ish team + ok pitcher          → str ~159 → rating ~80 → 3% shot
+  // All-time best (BPI 74 × 4 + ace)       → str ~208 → capped 95  → 33% shot
   const maxRaw = 200;
   return Math.min(95, Math.max(1, (totalStrength / maxRaw) * 100));
 }
@@ -1434,16 +1453,16 @@ window.simulateSeason = function() {
   const totalStrength = roster.reduce((s,p) => s + p.strength, 0);
   const rating = computeRating(totalStrength);
 
-  // Win probability per game — steeper S-curve, shifted so 23-0 is genuinely hard:
-  // rating 30 → ~42% (weak team, basically impossible to go 23-0)
-  // rating 50 → ~52% (below avg — tough to win streaks)
-  // rating 65 → ~68% (good team — maybe 0.1% shot at 23-0)
-  // rating 78 → ~83% (very good — ~2% shot)
-  // rating 88 → ~92% (elite — ~13% shot)
-  // rating 95 → ~96% (best possible — ~38% shot at 23-0)
+  // Win probability per game — calibrated so 23-0 is genuinely rare:
+  // rating 40  → ~40% (weak, essentially impossible to go 23-0)
+  // rating 63  → ~58% (above avg BPIs ~63-66, ~0% shot)
+  // rating 70  → ~71% (good, ~0.04% shot)
+  // rating 80  → ~87% (very good, ~4% shot)
+  // rating 88  → ~93% (elite, ~18% shot)
+  // rating 95  → ~95% (best possible, ~33% shot)
   function gameWinProb(rating) {
-    const k = 0.11;
-    const mid = 72;
+    const k = 0.13;
+    const mid = 68;
     return 0.38 + 0.59 * (1 / (1 + Math.exp(-k * (rating - mid))));
   }
 
