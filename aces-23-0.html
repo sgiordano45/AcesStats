@@ -953,6 +953,18 @@ async function loadData() {
   }
 }
 
+// Parse a full season key like "2022-fall-orange" or "2025-spring-green"
+// Returns { seasonId: '2022-fall', team: 'orange' } or null if invalid
+function parseSeasonKey(fullKey) {
+  // Keys are like YYYY-term-team, where term is a single word (summer/fall/spring)
+  // and team could theoretically be multi-word (e.g. "red-sox") but in practice is one word
+  const match = fullKey.match(/^(\d{4}-[a-z]+)-(.+)$/);
+  if (!match) return null;
+  const seasonId = match[1];
+  const team = match[2].toLowerCase();
+  return { seasonId, team };
+}
+
 function buildPools() {
   hitterPool = {};
   pitcherPool = {};
@@ -961,14 +973,16 @@ function buildPools() {
     const displayName = formatName(player.name || player.displayName || player.userId || '');
     if (!displayName) return;
 
-    // Hitting seasons
+    // Hitting seasons — keys are "YYYY-term-team" e.g. "2022-fall-orange"
     if (player.seasons && typeof player.seasons === 'object') {
-      Object.entries(player.seasons).forEach(([seasonId, sData]) => {
+      Object.entries(player.seasons).forEach(([fullKey, sData]) => {
+        const parsed = parseSeasonKey(fullKey);
+        if (!parsed) return;
+        const { seasonId, team } = parsed;
         if (!isValidSeason(seasonId)) return;
+        if (!team) return;
         const sub = (sData.sub || 'No').toString().toLowerCase();
         if (sub === 'yes') return; // exclude subs
-        const team = (sData.team || player.currentTeam || '').toLowerCase();
-        if (!team) return;
         const atBats = Number(sData.atBats) || 0;
         if (atBats < 3) return; // minimal plate appearances
         const key = comboKey(seasonId, team);
@@ -991,14 +1005,16 @@ function buildPools() {
       });
     }
 
-    // Pitching seasons (2024-summer+)
+    // Pitching seasons — same key format "YYYY-term-team", 2024-summer+
     if (player.pitchingSeasons && typeof player.pitchingSeasons === 'object') {
-      Object.entries(player.pitchingSeasons).forEach(([seasonId, sData]) => {
+      Object.entries(player.pitchingSeasons).forEach(([fullKey, sData]) => {
+        const parsed = parseSeasonKey(fullKey);
+        if (!parsed) return;
+        const { seasonId, team } = parsed;
         if (!isPitcherEligibleSeason(seasonId)) return;
+        if (!team) return;
         const sub = (sData.sub || 'No').toString().toLowerCase();
         if (sub === 'yes') return;
-        const team = (sData.team || player.currentTeam || '').toLowerCase();
-        if (!team) return;
         const ipRaw = sData.inningsPitched;
         const ip = parseFloat(typeof ipRaw === 'string' ? ipRaw : (ipRaw || 0)) || 0;
         if (ip < 1) return;
@@ -1021,6 +1037,8 @@ function buildPools() {
   // Sort each pool by strength desc
   Object.values(hitterPool).forEach(arr => arr.sort((a,b) => hitterStrength(b) - hitterStrength(a)));
   Object.values(pitcherPool).forEach(arr => arr.sort((a,b) => pitcherStrength(b) - pitcherStrength(a)));
+  console.log(`✅ 23-0 pools built: ${Object.keys(hitterPool).length} hitter combos, ${Object.keys(pitcherPool).length} pitcher combos`);
+  console.log('Sample hitter keys:', Object.keys(hitterPool).slice(0, 5));
 }
 
 // ——— Mode ———
