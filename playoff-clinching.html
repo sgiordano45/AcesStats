@@ -764,10 +764,10 @@
       });
       
       const standings = Object.values(teamStats).map(team => {
-        const totalDecided = team.wins + team.losses;
+        const totalGames = team.wins + team.losses + team.ties;
         return {
           ...team,
-          winPct: totalDecided > 0 ? (team.wins / totalDecided) : 0,
+          winPct: totalGames > 0 ? (team.wins + team.ties * 0.5) / totalGames : 0,
           runDifferential: team.runsFor - team.runsAgainst
         };
       });
@@ -992,12 +992,13 @@
           const totalDecided = targetWins + targetLosses;
           // Track simulated games so conservative tiebreaker knows RA may have changed
           const simulatedGamesAdded = (targetWins + targetLosses) - (team.wins + team.losses);
+          const totalGamesWithTies = totalDecided + team.ties;
           return {
             ...team,
             wins: targetWins,
             losses: targetLosses,
-            gamesPlayed: totalDecided + team.ties,
-            winPct: totalDecided > 0 ? (targetWins / totalDecided) : 0,
+            gamesPlayed: totalGamesWithTies,
+            winPct: totalGamesWithTies > 0 ? (targetWins + team.ties * 0.5) / totalGamesWithTies : 0,
             gamesRemaining: simulatedGamesAdded
           };
         } else {
@@ -1021,38 +1022,70 @@
               finalLosses = team.losses;
             }
           } else {
-            // Target team is DONE - inverted logic for tiebreaker scenarios
-            // When a team is done, it's favorable if others DON'T tie with them
+            // Target team is DONE - decide whether ties help or hurt target
+            const targetTeamObj = currentStandings.find(t => t.name === targetTeam);
+            const couldTieWithTarget = (team.wins + otherGamesLeft >= targetWins) && (team.wins <= targetWins);
+
+            // Does target win H2H vs this team in a 2-way tie?
+            const h2hVsOther = targetTeamObj?.h2h?.[team.name];
+            const targetWinsH2H = h2hVsOther &&
+              (h2hVsOther.wins + h2hVsOther.losses) > 0 &&
+              h2hVsOther.wins > h2hVsOther.losses;
+
             if (favorableForTeam) {
-              // Favorable: others win to avoid tying with us (or lose to fall further behind)
-              // Check if this team could tie with target
-              const couldTieWithTarget = (team.wins + otherGamesLeft >= targetWins) && (team.wins <= targetWins);
               if (couldTieWithTarget) {
-                // This team could tie - have them win out to avoid the tie
-                finalWins = team.wins + otherGamesLeft;
-                finalLosses = team.losses;
+                if (targetWinsH2H) {
+                  // Tie benefits target via H2H → CREATE the tie (have them lose to tie record)
+                  // Find the exact loss count that creates the tie
+                  const winsNeededForTie = targetWins - team.wins;
+                  const lossesNeededForTie = otherGamesLeft - winsNeededForTie;
+                  if (winsNeededForTie >= 0 && lossesNeededForTie >= 0) {
+                    finalWins = team.wins + winsNeededForTie;
+                    finalLosses = team.losses + lossesNeededForTie;
+                  } else {
+                    // Can't construct exact tie — avoid
+                    finalWins = team.wins + otherGamesLeft;
+                    finalLosses = team.losses;
+                  }
+                } else {
+                  // Tie hurts target (lose H2H or H2H tied → RA tiebreaker, uncertain) → AVOID tie
+                  finalWins = team.wins + otherGamesLeft;
+                  finalLosses = team.losses;
+                }
               } else if (team.wins > targetWins) {
-                // Already ahead - have them win out to stay ahead
+                // Already ahead — keep them winning (can't help)
                 finalWins = team.wins + otherGamesLeft;
                 finalLosses = team.losses;
               } else {
-                // Behind and can't catch up - have them lose out
+                // Behind and can't catch up — have them lose out
                 finalWins = team.wins;
                 finalLosses = team.losses + otherGamesLeft;
               }
             } else {
-              // Unfavorable: others tie with us or pass us
-              const couldTieWithTarget = (team.wins + otherGamesLeft >= targetWins) && (team.wins <= targetWins);
+              // Unfavorable: worst case for target
               if (couldTieWithTarget) {
-                // This team could tie - have them lose to create the tie
-                finalWins = team.wins;
-                finalLosses = team.losses + otherGamesLeft;
+                if (targetWinsH2H) {
+                  // Tie would help target — so worst case is they DON'T tie (they win)
+                  finalWins = team.wins + otherGamesLeft;
+                  finalLosses = team.losses;
+                } else {
+                  // Tie hurts target — CREATE the tie (worst case)
+                  const winsNeededForTie = targetWins - team.wins;
+                  const lossesNeededForTie = otherGamesLeft - winsNeededForTie;
+                  if (winsNeededForTie >= 0 && lossesNeededForTie >= 0) {
+                    finalWins = team.wins + winsNeededForTie;
+                    finalLosses = team.losses + lossesNeededForTie;
+                  } else {
+                    finalWins = team.wins;
+                    finalLosses = team.losses + otherGamesLeft;
+                  }
+                }
               } else if (team.wins > targetWins) {
-                // Already ahead - have them win out to stay ahead
+                // Already ahead — win out to stay ahead
                 finalWins = team.wins + otherGamesLeft;
                 finalLosses = team.losses;
               } else {
-                // Behind - have them win out to try to catch/pass us
+                // Behind — win out to try to catch/pass target
                 finalWins = team.wins + otherGamesLeft;
                 finalLosses = team.losses;
               }
@@ -1062,12 +1095,13 @@
           const totalDecided = finalWins + finalLosses;
           // Track simulated games so conservative tiebreaker knows RA may have changed
           const simulatedGamesAdded = (finalWins + finalLosses) - (team.wins + team.losses);
+          const totalGamesWithTies = finalWins + finalLosses + team.ties;
           return {
             ...team,
             wins: finalWins,
             losses: finalLosses,
-            gamesPlayed: totalDecided + team.ties,
-            winPct: totalDecided > 0 ? (finalWins / totalDecided) : 0,
+            gamesPlayed: totalGamesWithTies,
+            winPct: totalGamesWithTies > 0 ? (finalWins + team.ties * 0.5) / totalGamesWithTies : 0,
             gamesRemaining: simulatedGamesAdded
           };
         }
@@ -1339,8 +1373,8 @@
                   ...t,
                   wins: finalWins,
                   losses: finalLosses,
-                  gamesPlayed: totalDecided + t.ties,
-                  winPct: totalDecided > 0 ? (finalWins / totalDecided) : 0
+                  gamesPlayed: finalWins + finalLosses + t.ties,
+                  winPct: (finalWins + finalLosses + t.ties) > 0 ? (finalWins + t.ties * 0.5) / (finalWins + finalLosses + t.ties) : 0
                 };
               }
               return t;
@@ -1366,8 +1400,8 @@
                   ...t,
                   wins: finalWins,
                   losses: finalLosses,
-                  gamesPlayed: totalDecided + t.ties,
-                  winPct: totalDecided > 0 ? (finalWins / totalDecided) : 0
+                  gamesPlayed: finalWins + finalLosses + t.ties,
+                  winPct: (finalWins + finalLosses + t.ties) > 0 ? (finalWins + t.ties * 0.5) / (finalWins + finalLosses + t.ties) : 0
                 };
               }
               return t;
@@ -1473,8 +1507,8 @@
                   ...t,
                   wins: finalWins,
                   losses: finalLosses,
-                  gamesPlayed: totalDecided + t.ties,
-                  winPct: totalDecided > 0 ? (finalWins / totalDecided) : 0
+                  gamesPlayed: finalWins + finalLosses + t.ties,
+                  winPct: (finalWins + finalLosses + t.ties) > 0 ? (finalWins + t.ties * 0.5) / (finalWins + finalLosses + t.ties) : 0
                 };
               }
               return t;
@@ -1642,18 +1676,18 @@
     function simulateOtherTeamRecord(targetTeam, currentStandings, finalWins, finalLosses) {
       const hypotheticalStandings = currentStandings.map(team => {
         if (team.name === targetTeam.name) {
-          const totalDecided = finalWins + finalLosses;
+          const totalGamesWithTies = finalWins + finalLosses + team.ties;
           return {
             ...team,
             wins: finalWins,
             losses: finalLosses,
-            gamesPlayed: totalDecided + team.ties,
-            winPct: totalDecided > 0 ? (finalWins / totalDecided) : 0
+            gamesPlayed: totalGamesWithTies,
+            winPct: totalGamesWithTies > 0 ? (finalWins + team.ties * 0.5) / totalGamesWithTies : 0
           };
         }
         return team;
       });
-      
+
       return sortWithTiebreakers(hypotheticalStandings);
     }
 
