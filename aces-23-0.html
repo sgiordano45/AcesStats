@@ -1363,7 +1363,7 @@ function renderRosterPanel() {
   if (roster.length > 0) {
     document.getElementById('strengthBarWrap').style.display = 'block';
     const total = roster.reduce((s,p) => s + p.strength, 0);
-    const max = 5 * 60; // rough max
+    const max = 480; // calibrated max
     const pct = Math.min(100, (total / max) * 100);
     document.getElementById('strengthFill').style.width = pct + '%';
     document.getElementById('strengthVal').textContent = total.toFixed(1);
@@ -1411,11 +1411,15 @@ function buildSimulateScreen() {
 }
 
 function computeRating(totalStrength) {
-  // Normalize to roughly 0-100
-  // 5 hitters at max → ~5 * 60 = 300 raw → 100 rating
-  // Typical good team → ~120 raw → ~60 rating
-  const maxRaw = 280;
-  return Math.min(99.9, Math.max(1, (totalStrength / maxRaw) * 100));
+  // Calibrated against actual Aces stat ranges:
+  // Weak player:    6H  3R  BPI 0.3  → strength ~14
+  // Average player: 12H 7R  BPI 1.5  → strength ~42
+  // Elite player:   22H 13R BPI 4.0  → strength ~90
+  // 4 avg hitters (168) + avg pitcher (12IP 7RA = 22) → 190 → rating ~40 (hard to go 23-0)
+  // 4 good hitters (240) + good pitcher (18IP 4RA = 46) → 286 → rating ~62 (~1% chance)
+  // 4 elite hitters (360) + elite pitcher (22IP 2RA = 62) → 422 → rating ~88 (~10-15% chance)
+  const maxRaw = 480;
+  return Math.min(95, Math.max(1, (totalStrength / maxRaw) * 100));
 }
 
 // ——— Season Simulation ———
@@ -1425,12 +1429,17 @@ window.simulateSeason = function() {
   const totalStrength = roster.reduce((s,p) => s + p.strength, 0);
   const rating = computeRating(totalStrength);
 
-  // Win probability per game: non-linear S-curve
-  // rating 50 → ~60% win chance, 70 → 78%, 85 → 91%, 95 → 97%, 99 → 99%
+  // Win probability per game — steeper S-curve, shifted so 23-0 is genuinely hard:
+  // rating 30 → ~42% (weak team, basically impossible to go 23-0)
+  // rating 50 → ~52% (below avg — tough to win streaks)
+  // rating 65 → ~68% (good team — maybe 0.1% shot at 23-0)
+  // rating 78 → ~83% (very good — ~2% shot)
+  // rating 88 → ~92% (elite — ~13% shot)
+  // rating 95 → ~96% (best possible — ~38% shot at 23-0)
   function gameWinProb(rating) {
-    const k = 0.08;
-    const mid = 58;
-    return 0.35 + 0.63 * (1 / (1 + Math.exp(-k * (rating - mid))));
+    const k = 0.11;
+    const mid = 72;
+    return 0.38 + 0.59 * (1 / (1 + Math.exp(-k * (rating - mid))));
   }
 
   const winProb = gameWinProb(rating);
