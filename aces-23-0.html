@@ -1115,11 +1115,31 @@ function eligiblePool() {
   const pool = cfg.type === 'pitcher' ? pitcherPool : hitterPool;
 
   // Filter keys where season not already used
-  return Object.keys(pool).filter(key => {
+  let unused = Object.keys(pool).filter(key => {
     const [year, half] = key.split('-');
     const seasonId = `${year}-${half}`;
     return !usedSeasons.has(seasonId);
   });
+
+  // For hitter rounds: always reserve at least 1 pitcher-eligible season for the pitcher round
+  if (cfg.type === 'hitter') {
+    const pitcherEligibleUnused = [...new Set(
+      Object.keys(pitcherPool)
+        .map(key => { const [year, half] = key.split('-'); return `${year}-${half}`; })
+        .filter(seasonId => !usedSeasons.has(seasonId))
+    )];
+    if (pitcherEligibleUnused.length === 1) {
+      const lastSeason = pitcherEligibleUnused[0];
+      const withoutLast = unused.filter(key => {
+        const [year, half] = key.split('-');
+        return `${year}-${half}` !== lastSeason;
+      });
+      // Only restrict if there are alternatives — otherwise let it through
+      if (withoutLast.length > 0) unused = withoutLast;
+    }
+  }
+
+  return unused;
 }
 
 window.spin = function() {
