@@ -1054,7 +1054,15 @@ window.setMode = function(mode) {
   gameMode = mode;
   document.getElementById('btnClassic').classList.toggle('active', mode === 'classic');
   document.getElementById('btnIQ').classList.toggle('active', mode === 'iq');
-  document.getElementById('playerPool').classList.toggle('iq-mode', mode === 'iq');
+  // Re-render the current pool so shuffle applies/unapplies immediately
+  if (currentCombo) {
+    const cfg = ROUND_CONFIG[currentRound];
+    const pool = cfg.type === 'pitcher' ? pitcherPool : hitterPool;
+    const players = pool[currentCombo.key] || [];
+    if (players.length > 0) renderPool(players);
+  } else {
+    document.getElementById('playerPool').classList.toggle('iq-mode', mode === 'iq');
+  }
 };
 
 // ——— Game Flow ———
@@ -1095,6 +1103,7 @@ function startRound() {
   document.getElementById('skipInfo').textContent = '';
   selectedPlayer = null;
   currentCombo = null;
+  isSpinning = false; // safety reset between rounds
 
   document.getElementById('playerPool').classList.toggle('iq-mode', gameMode === 'iq');
 }
@@ -1280,7 +1289,20 @@ function spinExcluding(blockedSeason, blockedTeam) {
   });
 
   if (eligible.length === 0) {
-    document.getElementById('slotSub').textContent = 'No more combos to skip to!';
+    // Refund the skip and restore the original pool so the player isn't stuck
+    if (blockedSeason !== null) {
+      seasonSkipsLeft++;
+      document.getElementById('seasonSkipCount').textContent = `(${seasonSkipsLeft})`;
+      document.getElementById('btnSeasonSkip').disabled = false;
+    }
+    if (blockedTeam !== null) {
+      teamSkipsLeft++;
+      document.getElementById('teamSkipCount').textContent = `(${teamSkipsLeft})`;
+      document.getElementById('btnTeamSkip').disabled = false;
+    }
+    document.getElementById('slotSub').textContent = 'No other combos available — pick from this one';
+    const origPlayers = pool[currentCombo.key] || [];
+    renderPool(origPlayers);
     isSpinning = false;
     return;
   }
