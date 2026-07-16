@@ -1814,8 +1814,18 @@
         } else if (tiedTeams.length === 1) {
           // 2-way tie - H2H applies
           const other = tiedTeams[0];
-          const tieDetails = generate2WayTieDetails(team, other, projectedWins, combo.wins, combo.losses);
-          details.push(`  Tied with ${other.name} at ${projectedRecord}:`);
+          const tieDetails = generate2WayTieDetails(team, other, projectedWins, projectedLosses, combo.wins, combo.losses);
+          // Show the OTHER team's actual matching record, not just Orange's record
+          const otherMatchRecord = findMatchingRecordForTie(team, projectedWins, projectedLosses, other);
+          const otherRecordStr = otherMatchRecord
+            ? (otherMatchRecord.finalTies > 0
+                ? `${otherMatchRecord.finalWins}-${otherMatchRecord.finalLosses}-${otherMatchRecord.finalTies}`
+                : `${otherMatchRecord.finalWins}-${otherMatchRecord.finalLosses}`)
+            : projectedRecord;
+          const tieRecordStr = (otherRecordStr !== projectedRecord)
+            ? `${other.name} at ${otherRecordStr} (same win%)`
+            : `${other.name} at ${projectedRecord}`;
+          details.push(`  Tied with ${tieRecordStr}:`);
           details.push(`  ${tieDetails}`);
         } else {
           // 3+ way tie - Runs Allowed applies
@@ -1876,9 +1886,35 @@
     }
 
     /**
+     * Given a target team's projected W-L and another team's current record,
+     * find the W/T/L additions the other team needs to match the target's win pct.
+     * Returns { winsToAdd, lossesToAdd, tiesToAdd, finalWins, finalLosses, finalTies } or null.
+     */
+    function findMatchingRecordForTie(targetTeam, targetProjWins, targetProjLosses, other) {
+      const targetTotal = targetProjWins + targetProjLosses + targetTeam.ties;
+      const targetWinPct = targetTotal > 0 ? (targetProjWins + targetTeam.ties * 0.5) / targetTotal : 0;
+      const otherGamesLeft = calculateRemainingGames(allGames, other.name);
+
+      for (let w = 0; w <= otherGamesLeft; w++) {
+        for (let t = 0; t <= otherGamesLeft - w; t++) {
+          const l = otherGamesLeft - w - t;
+          const fw = other.wins + w;
+          const fl = other.losses + l;
+          const ft = other.ties + t;
+          const total = fw + fl + ft;
+          const winPct = total > 0 ? (fw + ft * 0.5) / total : 0;
+          if (Math.abs(winPct - targetWinPct) < 0.0001) {
+            return { winsToAdd: w, lossesToAdd: l, tiesToAdd: t, finalWins: fw, finalLosses: fl, finalTies: ft };
+          }
+        }
+      }
+      return null;
+    }
+
+    /**
      * Generate details for 2-way tie (H2H tiebreaker)
      */
-    function generate2WayTieDetails(team, other, projectedWins, winsToAdd, lossesToAdd) {
+    function generate2WayTieDetails(team, other, projectedWins, projectedLosses, winsToAdd, lossesToAdd) {
       const teamName = team.name;
       const details = [];
       
@@ -1897,13 +1933,13 @@
         
         const teamWinsAll = (winsToAdd === teamGamesLeft);
         const teamLosesAll = (winsToAdd === 0);
-        
-        // For them to be tied at the same record, calculate what the other team needs
-        const otherProjectedWins = projectedWins;
-        const otherCurrentWins = other.wins;
-        const otherWinsToAdd = otherProjectedWins - otherCurrentWins;
-        const otherWinsAll = (otherWinsToAdd === otherGamesLeft);
-        const otherLosesAll = (otherWinsToAdd === 0);
+
+        // Find the other team's actual matching record by win pct (not just win count)
+        const otherMatch = findMatchingRecordForTie(team, projectedWins, projectedLosses, other);
+        const otherWinsToAdd = otherMatch ? otherMatch.winsToAdd : (projectedWins - other.wins);
+        const otherTiesToAdd = otherMatch ? otherMatch.tiesToAdd : 0;
+        const otherWinsAll = (otherWinsToAdd === otherGamesLeft && otherTiesToAdd === 0);
+        const otherLosesAll = (otherWinsToAdd === 0 && otherTiesToAdd === 0);
         
         // Determine the outcome of the direct matchup based on scenarios
         let directMatchupKnown = false;
