@@ -105,12 +105,13 @@ export const BADGE_DEFINITIONS = {
   ironMan: {
     id: 'ironMan',
     name: 'Iron Man',
-    category: 'hitting',
+    category: 'milestone',
     type: 'single',
     icon: '⛓️',
-    iconPath: '/assets/badges/hitting/iron-man',
-    description: 'Get at least 1 hit in every regular season game',
-    requirement: 'Hit in every game of the regular season'
+    iconPath: '/assets/badges/milestone/iron-man',
+    description: 'Play in every regular season and playoff game for your team',
+    requirement: 'Appear in all team games (regular season + playoffs) — awarded at end of season',
+    seasonEndOnly: true
   },
   
   tableSetter: {
@@ -411,9 +412,12 @@ export class BadgeCalculator {
     this.isPartialData = seasonId.startsWith('2025');
     
     // Load all game data for the season
-    const battingData = await this.loadBattingData(seasonId);
-    const pitchingData = await this.loadPitchingData(seasonId);
-    
+    const [battingData, pitchingData, scheduleData] = await Promise.all([
+      this.loadBattingData(seasonId),
+      this.loadPitchingData(seasonId),
+      this.loadScheduleData(seasonId)
+    ]);
+
     console.log(`📊 Loaded ${Object.keys(battingData).length} batters, ${Object.keys(pitchingData).length} pitchers`);
     
     // Get unique players
@@ -461,7 +465,7 @@ export class BadgeCalculator {
       const playerBatting = battingData[playerId] || { games: [], totals: {} };
       const playerPitching = pitchingData[playerId] || { games: [], totals: {} };
       
-      const badges = this.calculatePlayerBadges(playerId, playerBatting, playerPitching, battingData, pitchingData, openingDay, this.seasonComplete);
+      const badges = this.calculatePlayerBadges(playerId, playerBatting, playerPitching, battingData, pitchingData, openingDay, this.seasonComplete, scheduleData);
       
       if (Object.keys(badges.earned).length > 0) {
         results.playerBadges[playerId] = badges;
@@ -505,6 +509,31 @@ export class BadgeCalculator {
     console.log(`   Hidden: ${results.badgeSummary.hidden}`);
     
     return results;
+  }
+
+  /**
+   * Load total game counts per team from the season schedule.
+   * Used to determine whether a player appeared in every team game (Iron Man badge).
+   * Counts all games (regular season + playoffs) for each team.
+   */
+  async loadScheduleData(seasonId) {
+    const teamGameCounts = {};
+    try {
+      const gamesRef = this.collection(this.db, 'seasons', seasonId, 'games');
+      const gamesSnap = await this.getDocs(gamesRef);
+      gamesSnap.forEach(gameDoc => {
+        const data = gameDoc.data();
+        // Support both camelCase and snake_case field names
+        const home = (data.homeTeam || data['home team'] || '').toLowerCase().trim();
+        const away = (data.awayTeam || data['away team'] || '').toLowerCase().trim();
+        if (home && home !== 'tbd') teamGameCounts[home] = (teamGameCounts[home] || 0) + 1;
+        if (away && away !== 'tbd') teamGameCounts[away] = (teamGameCounts[away] || 0) + 1;
+      });
+      console.log(`📅 Loaded schedule for ${seasonId}: ${gamesSnap.size} games, team counts:`, teamGameCounts);
+    } catch (e) {
+      console.warn(`Could not load schedule for ${seasonId} (Iron Man badge will be skipped):`, e);
+    }
+    return teamGameCounts;
   }
 
   /**
@@ -693,7 +722,7 @@ export class BadgeCalculator {
   /**
    * Calculate all badges for a single player
    */
-  calculatePlayerBadges(playerId, battingData, pitchingData, allBattingData, allPitchingData, openingDay, seasonComplete = false) {
+  calculatePlayerBadges(playerId, battingData, pitchingData, allBattingData, allPitchingData, openingDay, seasonComplete = false, scheduleData = {}) {
     const earned = {};
     const progress = {};
     
@@ -751,16 +780,19 @@ export class BadgeCalculator {
         earned.bigGames = { ...bigGameBadge, value: maxRunsInGame, gameDate: bigGameEntry?.gameDate || null };
       }
 
-      // Iron Man - hit in every game (regular season only)
-      const regularGames = battingData.games.filter(g => !g.isPlayoff);
-      const gamesWithHits = regularGames.filter(g => (g.hits || 0) >= 1).length;
-      if (regularGames.length >= 10 && gamesWithHits === regularGames.length) {
-        earned.ironMan = {
-          badgeId: 'ironMan',
-          ...BADGE_DEFINITIONS.ironMan,
-          value: regularGames.length,
-          gameDate: regularGames[regularGames.length - 1]?.gameDate || null
-        };
+      // Iron Man - played in every game (regular season + playoffs), end of season only
+      if (seasonComplete) {
+        const teamId = (battingData.teamId || '').toLowerCase().trim();
+        const totalTeamGames = scheduleData[teamId] || 0;
+        const playerAppearances = battingData.games.length;
+        if (totalTeamGames > 0 && playerAppearances >= totalTeamGames) {
+          earned.ironMan = {
+            badgeId: 'ironMan',
+            ...BADGE_DEFINITIONS.ironMan,
+            value: playerAppearances,
+            gameDate: lastGame?.gameDate || null
+          };
+        }
       }
 
       // Table Setter - more walks than games
