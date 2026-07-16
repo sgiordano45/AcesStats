@@ -1782,21 +1782,24 @@
       for (const combo of combinationsToCheck) {
         const projectedWins = team.wins + combo.wins;
         const projectedLosses = team.losses + combo.losses;
-        const projectedRecord = `${projectedWins}-${projectedLosses}`;
-        
+        // Include existing ties in displayed record
+        const projectedRecord = team.ties > 0
+          ? `${projectedWins}-${projectedLosses}-${team.ties}`
+          : `${projectedWins}-${projectedLosses}`;
+
         // First, verify if this combination actually leads to the target seed
         const bestCaseSeed = simulateFinalStandings(teamName, projectedWins, projectedLosses, standings, true);
         const worstCaseSeed = simulateFinalStandings(teamName, projectedWins, projectedLosses, standings, false);
-        
+
         // Skip this combination if it doesn't lead to the target seed in any scenario
         if (targetSeed < bestCaseSeed || targetSeed > worstCaseSeed) {
           continue;
         }
-        
+
         details.push(`• <strong>${combo.label}</strong> (finish ${projectedRecord}):`);
-        
-        // Find teams we'd be tied with at this record
-        const tiedTeams = findPotentialTies(team, projectedWins, standings);
+
+        // Find teams we'd be tied with at this win pct (pass projectedLosses for pct comparison)
+        const tiedTeams = findPotentialTies(team, projectedWins, projectedLosses, standings);
         
         // Determine if this guarantees the target seed
         const guaranteesSeed = (bestCaseSeed === worstCaseSeed && bestCaseSeed === targetSeed);
@@ -1833,23 +1836,42 @@
     /**
      * Find teams that could end up tied at a specific win total
      */
-    function findPotentialTies(team, projectedWins, standings) {
+    function findPotentialTies(team, projectedWins, projectedLosses, standings) {
       const teamName = team.name;
       const tiedTeams = [];
-      
+
+      // Target team's projected win pct (include their existing ties)
+      const targetTotal = projectedWins + projectedLosses + team.ties;
+      const targetWinPct = targetTotal > 0 ? (projectedWins + team.ties * 0.5) / targetTotal : 0;
+
       for (const other of standings) {
         if (other.name === teamName) continue;
-        
+
         const otherGamesLeft = calculateRemainingGames(allGames, other.name);
-        const otherMaxWins = other.wins + otherGamesLeft;
-        const otherMinWins = other.wins;
-        
-        // Could they end up at our projected wins?
-        if (projectedWins >= otherMinWins && projectedWins <= otherMaxWins) {
+
+        // Check every possible W/T/L distribution for the other team's remaining games.
+        // A tie in win pct (not just win count) is what creates a standings tie.
+        let canMatchWinPct = false;
+        outer: for (let w = 0; w <= otherGamesLeft; w++) {
+          for (let t = 0; t <= otherGamesLeft - w; t++) {
+            const l = otherGamesLeft - w - t;
+            const fw = other.wins + w;
+            const fl = other.losses + l;
+            const ft = other.ties + t;
+            const total = fw + fl + ft;
+            const winPct = total > 0 ? (fw + ft * 0.5) / total : 0;
+            if (Math.abs(winPct - targetWinPct) < 0.0001) {
+              canMatchWinPct = true;
+              break outer;
+            }
+          }
+        }
+
+        if (canMatchWinPct) {
           tiedTeams.push(other);
         }
       }
-      
+
       return tiedTeams;
     }
 
