@@ -2472,15 +2472,26 @@
           // Can't rise above any team above:
           // Even if team wins all remaining AND team above loses all remaining,
           // team's max win% must remain strictly below team above's min win%.
-          // Equal win% = tiebreakers still in play = not clinched.
+          // Equal win% = check tiebreakers before calling it unlocked.
           const cantRise = idx > 0
             ? sorted.slice(0, idx).every(other => {
                 const otherTotal = other.wins + other.losses + other.ties + other.remainingCount;
                 const otherMinWinPct = otherTotal > 0
                   ? (other.wins + other.ties * 0.5) / otherTotal
                   : 0;
-                // Strict < : if they can match win%, tiebreakers could flip order
-                return teamMaxWinPct - otherMinWinPct < -0.0001;
+                // If team's best case is clearly below the other, can't rise — safe
+                if (teamMaxWinPct - otherMinWinPct < -0.0001) return true;
+                // Win% could tie — check if tiebreakers prevent team from jumping above other
+                if (Math.abs(teamMaxWinPct - otherMinWinPct) <= 0.0001) {
+                  // H2H tiebreaker: if other wins H2H, team can't pass them
+                  const h2hComp = compareHeadToHead(team, other);
+                  if (h2hComp > 0) return true;  // other wins H2H → team can't rise above
+                  if (h2hComp < 0) return false; // team wins H2H → could rise above
+                  // H2H tied → Runs Allowed: RA only increases, so if team already allows
+                  // more runs than other, team can never beat other on RA → can't rise above
+                  if (team.runsAgainst > other.runsAgainst) return true;
+                }
+                return false;
               })
             : true; // First place has no one above
 
