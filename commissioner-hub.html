@@ -260,6 +260,22 @@
         </div>
       </div>
 
+      <!-- Last Night's Box Scores -->
+      <div class="hub-card full-width" id="boxScoreCard">
+        <div class="hub-card-header">
+          <div class="hub-card-title"><span class="hub-card-icon">📋</span> Last Night's Box Scores</div>
+        </div>
+        <div class="hub-card-body">
+          <div id="boxScorePreview">
+            <div class="loading-msg">Loading results…</div>
+          </div>
+        </div>
+        <div class="hub-card-footer">
+          <button class="btn-share btn-copy" id="boxScoreCopyBtn" onclick="shareBoxScoreImage('copy')" disabled>📋 Copy Image</button>
+          <button class="btn-share btn-save" id="boxScoreSaveBtn" onclick="shareBoxScoreImage('save')" disabled>⬇️ Save</button>
+        </div>
+      </div>
+
       <!-- Bracket -->
       <div class="hub-card" id="bracketCard" style="grid-row: span 1;">
         <div class="hub-card-header">
@@ -333,6 +349,8 @@
   let _standingsCanvas = null;
   let _gamesCanvas = null;
   let _seedsCanvas = null;
+  let _boxScoreCanvas = null;
+  let _lastNightGames = [];
 
   // Player data for top players feature
   let _playerData = [];
@@ -648,6 +666,7 @@
       renderStandings();
       renderTonightGames();
       renderSeeds();
+      renderLastNightGames();
 
       // Load player data + rosters/splits for tonight's teams in the background
       loadPlayerDataAndRosters().then(() => {
@@ -657,7 +676,8 @@
       }).then(() => Promise.all([
         buildStandingsCanvas().then(c => { _standingsCanvas = c; }),
         buildGamesCanvas().then(c => { _gamesCanvas = c; }),
-        buildSeedsCanvas().then(c => { _seedsCanvas = c; })
+        buildSeedsCanvas().then(c => { _seedsCanvas = c; }),
+        buildBoxScoreCanvas().then(c => { _boxScoreCanvas = c; })
       ])).catch(err => console.warn('Background load error:', err));
 
     } catch (err) {
@@ -956,6 +976,145 @@
     return canvas;
   }
 
+  // ── Last Night's Box Scores ───────────────────────────────────────────
+
+  function parseGameDateLocal(dateStr) {
+    if (!dateStr) return null;
+    // Parse as local time to avoid UTC offset issues
+    const parts = String(dateStr).split('T')[0].split(/[\/\-]/);
+    if (parts.length === 3) {
+      // Could be M/D/YYYY or YYYY-MM-DD
+      const [a, b, c] = parts.map(Number);
+      return a > 31 ? new Date(a, b - 1, c) : new Date(c, a - 1, b);
+    }
+    return new Date(dateStr);
+  }
+
+  function getYesterdayStr() {
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  }
+
+  function renderLastNightGames() {
+    const el = document.getElementById('boxScorePreview');
+    const yesterdayStr = getYesterdayStr();
+
+    _lastNightGames = _allGames.filter(g => {
+      if (!g.winner || g.winner.trim() === '') return false;
+      const d = parseGameDateLocal(g.date);
+      if (!d || isNaN(d)) return false;
+      const ds = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+      return ds === yesterdayStr;
+    });
+
+    if (!_lastNightGames.length) {
+      el.innerHTML = '<div class="no-games">No completed games from last night.</div>';
+      document.getElementById('boxScoreCopyBtn').disabled = true;
+      document.getElementById('boxScoreSaveBtn').disabled = true;
+      return;
+    }
+
+    const dateLabel = new Date();
+    dateLabel.setDate(dateLabel.getDate() - 1);
+    const prettyDate = dateLabel.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+
+    el.innerHTML = `
+      <div style="font-size:0.78rem;font-weight:700;color:var(--text-light);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px;">${prettyDate}</div>
+      ${_lastNightGames.map(g => {
+        const home = g['home team'], away = g['away team'];
+        const hs = g['home score'] ?? '—', as = g['away score'] ?? '—';
+        const homeWon = g.winner === home;
+        const awayWon = g.winner === away;
+        const isPlayoff = g.game_type === 'Playoff';
+        return `
+          <div class="game-pill" style="flex-direction:column;align-items:stretch;gap:6px;">
+            ${isPlayoff ? `<div style="font-size:0.7rem;font-weight:700;color:#7c3aed;text-align:center;text-transform:uppercase;letter-spacing:0.4px;">🏆 Playoff</div>` : ''}
+            <div style="display:flex;align-items:center;gap:8px;">
+              <div style="flex:1;text-align:center;">
+                <div class="game-pill-team" style="${awayWon ? 'color:var(--primary-color);font-weight:900;' : ''}">${away}</div>
+                <div style="font-size:1.4rem;font-weight:900;color:${awayWon ? 'var(--primary-color)' : 'var(--text-light)'};">${as}</div>
+              </div>
+              <div style="display:flex;flex-direction:column;align-items:center;gap:2px;">
+                <div style="font-size:0.65rem;font-weight:700;color:var(--primary-color);background:#e6f3dc;border-radius:4px;padding:2px 6px;">FINAL</div>
+              </div>
+              <div style="flex:1;text-align:center;">
+                <div class="game-pill-team" style="${homeWon ? 'color:var(--primary-color);font-weight:900;' : ''}">${home}</div>
+                <div style="font-size:1.4rem;font-weight:900;color:${homeWon ? 'var(--primary-color)' : 'var(--text-light)'};">${hs}</div>
+              </div>
+            </div>
+          </div>`;
+      }).join('')}`;
+
+    document.getElementById('boxScoreCopyBtn').disabled = false;
+    document.getElementById('boxScoreSaveBtn').disabled = false;
+  }
+
+  async function buildBoxScoreCanvas() {
+    if (!_lastNightGames.length) return null;
+
+    const dateLabel = new Date();
+    dateLabel.setDate(dateLabel.getDate() - 1);
+    const prettyDate = dateLabel.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+    const seasonTitle = document.getElementById('seasonLabel').textContent;
+
+    const wrapper = document.createElement('div');
+    wrapper.style.cssText = `position:absolute;top:-9999px;left:-9999px;width:480px;background:#ffffff;
+      border-radius:16px;overflow:hidden;font-family:'Inter',-apple-system,sans-serif;`;
+
+    let html = `
+      <div style="background:linear-gradient(135deg,#2d5016 0%,#1a6b4a 100%);padding:14px 20px;
+        display:flex;align-items:center;justify-content:space-between;">
+        <div style="color:#fff;font-weight:800;font-size:1rem;">📋 Last Night's Results</div>
+        <div style="color:rgba(255,255,255,0.8);font-size:0.75rem;font-weight:600;">acessoftballreference.com</div>
+      </div>
+      <div style="padding:6px 20px 4px;background:#f0fdf4;border-bottom:1px solid #d1fae5;">
+        <div style="font-size:0.78rem;font-weight:700;color:#2d5016;text-transform:uppercase;letter-spacing:0.5px;">${prettyDate}</div>
+      </div>
+      <div style="padding:16px 20px;display:flex;flex-direction:column;gap:12px;">`;
+
+    _lastNightGames.forEach(g => {
+      const home = g['home team'], away = g['away team'];
+      const hs = g['home score'] ?? '—', as = g['away score'] ?? '—';
+      const homeWon = g.winner === home;
+      const awayWon = g.winner === away;
+      const isPlayoff = g.game_type === 'Playoff';
+
+      const winStyle = (won) => won
+        ? 'font-weight:900;color:#2d5016;'
+        : 'font-weight:600;color:#718096;';
+
+      html += `
+        <div style="background:#f8fafc;border-radius:12px;border:1px solid #e2e8f0;padding:14px 16px;">
+          ${isPlayoff ? `<div style="font-size:0.7rem;font-weight:700;color:#7c3aed;text-align:center;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:8px;">🏆 Playoff Game</div>` : ''}
+          <div style="display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:10px;">
+            <div style="text-align:center;">
+              <div style="font-size:0.95rem;${winStyle(awayWon)}">${away}</div>
+              <div style="font-size:2rem;font-weight:900;color:${awayWon ? '#2d5016' : '#a0aec0'};line-height:1.1;margin-top:4px;">${as}</div>
+            </div>
+            <div style="text-align:center;">
+              <div style="font-size:0.6rem;font-weight:800;color:#ffffff;background:#2d5016;border-radius:4px;padding:3px 7px;letter-spacing:0.5px;">FINAL</div>
+            </div>
+            <div style="text-align:center;">
+              <div style="font-size:0.95rem;${winStyle(homeWon)}">${home}</div>
+              <div style="font-size:2rem;font-weight:900;color:${homeWon ? '#2d5016' : '#a0aec0'};line-height:1.1;margin-top:4px;">${hs}</div>
+            </div>
+          </div>
+          <div style="text-align:center;font-size:0.72rem;color:#a0aec0;margin-top:8px;">Winner: <strong style="color:#2d5016;">${g.winner}</strong></div>
+        </div>`;
+    });
+
+    html += `<div style="font-size:0.68rem;color:#a0aec0;text-align:right;padding-top:2px;">
+      ${seasonTitle} · Generated ${new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}
+    </div></div>`;
+
+    wrapper.innerHTML = html;
+    document.body.appendChild(wrapper);
+    const canvas = await html2canvas(wrapper, { scale: 2, backgroundColor: '#ffffff', useCORS: true, logging: false });
+    document.body.removeChild(wrapper);
+    return canvas;
+  }
+
   async function buildSeedsCanvas() {
     if (!_standings.length) return null;
     const DIRECT_SEEDS = 5;
@@ -1067,6 +1226,25 @@
         await loadH2C();
         _gamesCanvas = await buildGamesCanvas();
         if (_gamesCanvas) useCanvas(_gamesCanvas, `aces-tonight-${new Date().toISOString().slice(0,10)}.png`, mode, btn, origHTML);
+        else { btn.innerHTML = origHTML; btn.disabled = false; }
+      } catch(e) { btn.innerHTML = origHTML; btn.disabled = false; }
+    }
+  };
+
+  window.shareBoxScoreImage = async function(mode) {
+    if (!_lastNightGames.length) return;
+    const btn = mode === 'copy' ? document.getElementById('boxScoreCopyBtn') : document.getElementById('boxScoreSaveBtn');
+    const origHTML = btn.innerHTML;
+    btn.disabled = true;
+    const dateStr = getYesterdayStr();
+    if (_boxScoreCanvas) {
+      useCanvas(_boxScoreCanvas, `aces-boxscores-${dateStr}.png`, mode, btn, origHTML);
+    } else {
+      btn.innerHTML = '⏳ Generating…';
+      try {
+        await loadH2C();
+        _boxScoreCanvas = await buildBoxScoreCanvas();
+        if (_boxScoreCanvas) useCanvas(_boxScoreCanvas, `aces-boxscores-${dateStr}.png`, mode, btn, origHTML);
         else { btn.innerHTML = origHTML; btn.disabled = false; }
       } catch(e) { btn.innerHTML = origHTML; btn.disabled = false; }
     }

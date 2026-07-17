@@ -2444,16 +2444,28 @@
           // Can't be passed by any team below:
           // Even if team loses all remaining AND team below wins all remaining,
           // team's min win% must STRICTLY exceed team below's max win%.
-          // If they can match win%, tiebreakers (H2H, RA) are still live — not clinched.
+          // If they can match win%, check tiebreakers — if those are also locked, still clinched.
           const cantFall = idx < sorted.length - 1
             ? sorted.slice(idx + 1).every(other => {
                 const otherTotal = other.wins + other.losses + other.ties + other.remainingCount;
                 const otherMaxWinPct = otherTotal > 0
                   ? (other.wins + other.remainingCount + other.ties * 0.5) / otherTotal
                   : 0;
-                // Use strict > with small epsilon to avoid float equality issues;
-                // equal win% means tiebreakers could still flip the seed
-                return teamMinWinPct - otherMaxWinPct > 0.0001;
+                // If team's min win% is clearly better, clinched over this opponent
+                if (teamMinWinPct - otherMaxWinPct > 0.0001) return true;
+                // Win% could tie — check if tiebreakers are deterministic
+                if (Math.abs(teamMinWinPct - otherMaxWinPct) <= 0.0001) {
+                  // Only 2-team tiebreakers are handled here (most common case)
+                  // H2H tiebreaker first
+                  const h2hComp = compareHeadToHead(team, other);
+                  if (h2hComp < 0) return true;  // team wins H2H → safe
+                  if (h2hComp > 0) return false; // other wins H2H → not safe
+                  // H2H tied → Runs Allowed tiebreaker
+                  // RA can only increase (never decrease), so if other already allows more runs
+                  // than team, other can never catch up — tiebreaker is locked
+                  if (other.runsAgainst > team.runsAgainst) return true;
+                }
+                return false;
               })
             : false; // Last place can never clinch solely from below
 
