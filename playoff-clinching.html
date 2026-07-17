@@ -1171,11 +1171,24 @@
       }
       
       // H2H is tied or N/A - would use Runs Allowed
-      // If either team has games remaining, margins are unknown
+      // If either team has games remaining, RA could change — but only upward (RA can never decrease).
+      // So if the team with games remaining already has MORE RA than the other, they can't catch up.
       const anyGamesRemaining = a.gamesRemaining > 0 || b.gamesRemaining > 0;
-      
+
       if (anyGamesRemaining && hasTarget) {
-        // Be conservative: assume worst case for target team
+        // Check if RA is actually deterministic despite remaining games:
+        // A team with remaining games can only INCREASE their RA (allow more runs, never fewer).
+        // So if the team with games left already trails on RA, RA is locked — use current values.
+        const teamWithGames = a.gamesRemaining > 0 ? a : b;
+        const teamDone = a.gamesRemaining > 0 ? b : a;
+        // Only one team has games remaining — check if the done team already leads on RA
+        if (b.gamesRemaining === 0 || a.gamesRemaining === 0) {
+          // teamWithGames already allows MORE runs than teamDone → can't improve → RA is decided
+          if (teamWithGames.runsAgainst >= teamDone.runsAgainst) {
+            return breakTieByRunsAllowed(group);
+          }
+        }
+        // RA is genuinely uncertain — be conservative: assume worst case for target team
         if (favorableForTarget) {
           // This is best-case scenario - target should be higher
           return a.name === targetTeam ? [a, b] : [b, a];
@@ -1184,7 +1197,7 @@
           return a.name === targetTeam ? [b, a] : [a, b];
         }
       }
-      
+
       // No games remaining or no target in tie - use current runs allowed
       return breakTieByRunsAllowed(group);
     }
