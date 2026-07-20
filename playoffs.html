@@ -798,28 +798,22 @@
                 });
 
             const standings = preliminaryStandings.sort((a, b) => {
-                // First: Win percentage
-                if (a.winPct !== b.winPct) return b.winPct - a.winPct;
+                // First: Win percentage (ties count as half-win)
+                if (Math.abs(a.winPct - b.winPct) > 0.00001) return b.winPct - a.winPct;
 
-                // Second: Total wins
-                if (a.wins !== b.wins) return b.wins - a.wins;
-
-                // Third: Fewest losses
-                if (a.losses !== b.losses) return a.losses - b.losses;
-
-                // Fourth: H2H — only if exactly 2 teams tied on win%, wins, AND losses
-                const teamsAtSameMark = preliminaryStandings.filter(t =>
-                    t.winPct === a.winPct && t.wins === a.wins && t.losses === a.losses
+                // Second: H2H — only if exactly 2 teams tied on win%
+                const teamsAtSamePct = preliminaryStandings.filter(t =>
+                    Math.abs(t.winPct - a.winPct) <= 0.00001
                 );
-                if (teamsAtSameMark.length === 2) {
+                if (teamsAtSamePct.length === 2) {
                     const h2hComp = compareHeadToHead(a, b);
                     if (h2hComp !== 0) return h2hComp;
                 }
 
-                // Fifth: Runs Against (fewest runs allowed)
+                // Third: Runs Against (fewest runs allowed)
                 if (a.runsAgainst !== b.runsAgainst) return a.runsAgainst - b.runsAgainst;
 
-                // Sixth: Run Differential
+                // Fourth: Run Differential
                 return b.runDifferential - a.runDifferential;
             });
 
@@ -830,7 +824,7 @@
                 teamName: team.name // Add teamName for compatibility
             }));
 
-            console.log('✅ Calculated playoff seeds:', playoffTeams.map(t => `${t.seed}. ${t.name} (${t.wins}-${t.losses})`));
+            console.log('✅ Calculated playoff seeds:', playoffTeams.map(t => `${t.seed}. ${t.name} (${t.wins}-${t.losses}${t.ties ? `-${t.ties}` : ''})`));
 
             return playoffTeams;
         }
@@ -897,7 +891,7 @@
                     seed: t.seed,
                     teamName: t.teamName,
                     teamId: t.id,
-                    record: `${t.wins}-${t.losses}`
+                    record: t.ties ? `${t.wins}-${t.losses}-${t.ties}` : `${t.wins}-${t.losses}`
                 }));
 
                 // Save to Firebase
@@ -1292,7 +1286,7 @@
                     seed: team.seed,
                     name: team.name || team.teamName,
                     teamId: team.id,
-                    record: (team.wins !== undefined) ? `(${team.wins}-${team.losses})` : ''
+                    record: (team.wins !== undefined) ? `(${team.wins}-${team.losses}${team.ties ? `-${team.ties}` : ''})` : ''
                 };
             }
             return null;
