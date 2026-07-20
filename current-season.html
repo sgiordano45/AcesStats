@@ -1660,7 +1660,7 @@
       let playerData = [];
       let pitchingData = [];
       const today = new Date();
-      today.setHours(0, 0, 0, 0);
+      today.setHours(23, 59, 59, 999);
 
       async function loadData() {
         try {
@@ -1844,10 +1844,16 @@
 
       function parseGameDate(dateStr) {
         if (!dateStr) return new Date(0);
-        // Parse YYYY-MM-DD as local time to avoid UTC midnight shifting the date
-        const parts = String(dateStr).split('T')[0].split('-');
-        if (parts.length === 3) {
-          return new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+        const s = String(dateStr).split('T')[0];
+        // YYYY-MM-DD (ISO / regular season format)
+        const isoParts = s.split('-');
+        if (isoParts.length === 3 && isoParts[0].length === 4) {
+          return new Date(Number(isoParts[0]), Number(isoParts[1]) - 1, Number(isoParts[2]));
+        }
+        // M/D/YYYY or MM/DD/YYYY (toLocaleDateString output from Timestamp dates)
+        const slashParts = s.split('/');
+        if (slashParts.length === 3) {
+          return new Date(Number(slashParts[2]), Number(slashParts[0]) - 1, Number(slashParts[1]));
         }
         return new Date(dateStr);
       }
@@ -2383,28 +2389,22 @@
         });
 
         const sorted = standingsWithSOS.sort((a, b) => {
-          // First: Win percentage
-          if (a.winPct !== b.winPct) return b.winPct - a.winPct;
+          // First: Win percentage (ties count as half-win)
+          if (Math.abs(a.winPct - b.winPct) > 0.00001) return b.winPct - a.winPct;
 
-          // Second: Total wins
-          if (a.wins !== b.wins) return b.wins - a.wins;
-
-          // Third: Fewest losses
-          if (a.losses !== b.losses) return a.losses - b.losses;
-
-          // Fourth: H2H — only if exactly 2 teams tied on win%, wins, AND losses
-          const teamsAtSameMark = standingsWithSOS.filter(t =>
-            t.winPct === a.winPct && t.wins === a.wins && t.losses === a.losses
+          // Second: H2H — only if exactly 2 teams tied on win%
+          const teamsAtSamePct = standingsWithSOS.filter(t =>
+            Math.abs(t.winPct - a.winPct) <= 0.00001
           );
-          if (teamsAtSameMark.length === 2) {
+          if (teamsAtSamePct.length === 2) {
             const h2hComp = compareHeadToHead(a, b);
             if (h2hComp !== 0) return h2hComp;
           }
 
-          // Fifth: Runs Against (fewest runs allowed)
+          // Third: Runs Against (fewest runs allowed)
           if (a.runsAgainst !== b.runsAgainst) return a.runsAgainst - b.runsAgainst;
 
-          // Sixth: Run Differential
+          // Fourth: Run Differential
           return b.runDifferential - a.runDifferential;
         });
 
