@@ -347,6 +347,41 @@
     text-decoration: none;
   }
 
+  /* Team Medal Table */
+  .team-medal-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+  }
+  .team-medal-table th {
+    text-align: center;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: var(--text-light);
+    border-bottom: 2px solid var(--border-color);
+  }
+  .team-medal-table th.team-col { text-align: left; }
+  .team-medal-table td {
+    text-align: center;
+    padding: 0.6rem 0.75rem;
+    border-bottom: 1px solid var(--border-color);
+    font-weight: 600;
+  }
+  .team-medal-table td.team-col { text-align: left; font-weight: 600; }
+  .team-medal-table tr:last-child td { border-bottom: none; }
+  .team-medal-table tr.top-team td { background: rgba(255, 215, 0, 0.06); }
+  .team-medal-rank {
+    width: 2rem;
+    color: var(--text-light);
+    font-weight: 400;
+    font-size: 0.85rem;
+  }
+  .medal-gold   { color: #b8860b; }
+  .medal-silver { color: #888; }
+  .medal-bronze { color: #8b4513; }
+  .medal-total  { color: var(--text-color); }
+
   .view-all-link:hover {
     text-decoration: underline;
   }
@@ -1002,6 +1037,21 @@
       </div>
     </div>
 
+    <!-- Team Badge Leaderboard -->
+    <div class="section">
+      <div class="section-header">
+        <span class="section-header-title">🏅 Team Medal Table</span>
+      </div>
+      <div class="section-content">
+        <div id="teamLeaderboardContent">
+          <div class="no-data">
+            <div class="no-data-icon">⏳</div>
+            <p class="no-data-message">Loading team standings...</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Search & Filter -->
     <div class="section">
       <div class="section-header">
@@ -1174,9 +1224,70 @@
       renderPartialDataBanner();
       renderSummary();
       renderLeaderboard();
+      renderTeamLeaderboard();
       renderRecentActivity();
       renderAllBadges();
       populateFilters();
+    }
+
+    function renderTeamLeaderboard() {
+      const container = document.getElementById('teamLeaderboardContent');
+
+      // Aggregate gold/silver/bronze by team from allPlayerBadges
+      const teamTotals = {};
+      Object.values(allPlayerBadges).forEach(player => {
+        const team = player.teamId;
+        if (!team) return;
+        if (!teamTotals[team]) teamTotals[team] = { team, gold: 0, silver: 0, bronze: 0 };
+        teamTotals[team].gold   += player.gold   || 0;
+        teamTotals[team].silver += player.silver || 0;
+        teamTotals[team].bronze += player.bronze || 0;
+      });
+
+      const rows = Object.values(teamTotals)
+        .filter(t => t.gold + t.silver + t.bronze > 0)
+        .sort((a, b) => {
+          if (b.gold   !== a.gold)   return b.gold   - a.gold;
+          if (b.silver !== a.silver) return b.silver - a.silver;
+          if (b.bronze !== a.bronze) return b.bronze - a.bronze;
+          return 0;
+        });
+
+      if (rows.length === 0) {
+        container.innerHTML = `
+          <div class="no-data">
+            <div class="no-data-icon">🏅</div>
+            <p class="no-data-message">No team badges yet</p>
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = `
+        <table class="team-medal-table">
+          <thead>
+            <tr>
+              <th class="team-col" colspan="2">Team</th>
+              <th>🥇</th>
+              <th>🥈</th>
+              <th>🥉</th>
+              <th>Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.map((t, i) => `
+              <tr class="${i === 0 ? 'top-team' : ''}">
+                <td class="team-medal-rank">${i + 1}</td>
+                <td class="team-col">${formatTeamName(t.team)}</td>
+                <td class="medal-gold">${t.gold || '—'}</td>
+                <td class="medal-silver">${t.silver || '—'}</td>
+                <td class="medal-bronze">${t.bronze || '—'}</td>
+                <td class="medal-total">${t.gold + t.silver + t.bronze}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
     }
 
     function renderPartialDataBanner() {
