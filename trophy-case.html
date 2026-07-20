@@ -381,6 +381,8 @@
   .medal-silver { color: #888; }
   .medal-bronze { color: #8b4513; }
   .medal-total  { color: var(--text-color); }
+  .team-medal-table th.sort-active { color: var(--primary-color); }
+  .team-medal-table th[data-sort]:hover { color: var(--primary-color); opacity: 0.8; }
 
   .view-all-link:hover {
     text-decoration: underline;
@@ -1230,10 +1232,11 @@
       populateFilters();
     }
 
-    function renderTeamLeaderboard() {
-      const container = document.getElementById('teamLeaderboardContent');
+    // Team medal table state
+    let teamMedalRows = [];
+    let teamMedalSort = { col: 'total', dir: -1 }; // default: total desc, gold tiebreaker
 
-      // Aggregate gold/silver/bronze by team by summing each player's earned badges
+    function buildTeamMedalRows() {
       const teamTotals = {};
       Object.values(allPlayerBadges).forEach(player => {
         const team = player.teamId;
@@ -1241,22 +1244,33 @@
         if (!teamTotals[team]) teamTotals[team] = { team, gold: 0, silver: 0, bronze: 0 };
         Object.values(player.earned || {}).forEach(badge => {
           const tier = badge.tier;
-          if (tier === 'gold')   teamTotals[team].gold++;
+          if (tier === 'gold')        teamTotals[team].gold++;
           else if (tier === 'silver') teamTotals[team].silver++;
           else if (tier === 'bronze') teamTotals[team].bronze++;
         });
       });
-
-      const rows = Object.values(teamTotals)
+      teamMedalRows = Object.values(teamTotals)
         .filter(t => t.gold + t.silver + t.bronze > 0)
-        .sort((a, b) => {
-          if (b.gold   !== a.gold)   return b.gold   - a.gold;
-          if (b.silver !== a.silver) return b.silver - a.silver;
-          if (b.bronze !== a.bronze) return b.bronze - a.bronze;
-          return 0;
-        });
+        .map(t => ({ ...t, total: t.gold + t.silver + t.bronze }));
+    }
 
-      if (rows.length === 0) {
+    function sortTeamMedalRows() {
+      const { col, dir } = teamMedalSort;
+      teamMedalRows.sort((a, b) => {
+        const primary = col === 'team'
+          ? formatTeamName(a.team).localeCompare(formatTeamName(b.team)) * dir
+          : (b[col] - a[col]) * dir;
+        if (primary !== 0) return primary;
+        // tiebreaker: total desc then gold desc (unless already sorting on those)
+        if (col !== 'total') { const d = b.total - a.total; if (d !== 0) return d; }
+        if (col !== 'gold')  { const d = b.gold  - a.gold;  if (d !== 0) return d; }
+        return 0;
+      });
+    }
+
+    function renderTeamMedalTable() {
+      const container = document.getElementById('teamLeaderboardContent');
+      if (teamMedalRows.length === 0) {
         container.innerHTML = `
           <div class="no-data">
             <div class="no-data-icon">🏅</div>
@@ -1266,31 +1280,58 @@
         return;
       }
 
+      const { col, dir } = teamMedalSort;
+      const arrow = dir === -1 ? ' ↓' : ' ↑';
+      const th = (id, label, cls = '') =>
+        `<th class="${cls} ${col === id ? 'sort-active' : ''}" data-sort="${id}" style="cursor:pointer;user-select:none;">${label}${col === id ? `<span style="font-size:0.75rem;">${arrow}</span>` : ''}</th>`;
+
       container.innerHTML = `
-        <table class="team-medal-table">
+        <table class="team-medal-table" id="teamMedalTable">
           <thead>
             <tr>
-              <th class="team-col" colspan="2">Team</th>
-              <th>🥇</th>
-              <th>🥈</th>
-              <th>🥉</th>
-              <th>Total</th>
+              <th style="width:2rem;"></th>
+              ${th('team',   'Team',  'team-col')}
+              ${th('gold',   '🥇')}
+              ${th('silver', '🥈')}
+              ${th('bronze', '🥉')}
+              ${th('total',  'Total')}
             </tr>
           </thead>
           <tbody>
-            ${rows.map((t, i) => `
+            ${teamMedalRows.map((t, i) => `
               <tr class="${i === 0 ? 'top-team' : ''}">
                 <td class="team-medal-rank">${i + 1}</td>
                 <td class="team-col">${formatTeamName(t.team)}</td>
-                <td class="medal-gold">${t.gold || '—'}</td>
+                <td class="medal-gold">${t.gold   || '—'}</td>
                 <td class="medal-silver">${t.silver || '—'}</td>
                 <td class="medal-bronze">${t.bronze || '—'}</td>
-                <td class="medal-total">${t.gold + t.silver + t.bronze}</td>
+                <td class="medal-total">${t.total}</td>
               </tr>
             `).join('')}
           </tbody>
         </table>
       `;
+
+      // Attach sort listeners
+      container.querySelectorAll('th[data-sort]').forEach(th => {
+        th.addEventListener('click', () => {
+          const newCol = th.dataset.sort;
+          if (teamMedalSort.col === newCol) {
+            teamMedalSort.dir *= -1; // flip direction
+          } else {
+            teamMedalSort.col = newCol;
+            teamMedalSort.dir = newCol === 'team' ? 1 : -1; // team asc, numbers desc
+          }
+          sortTeamMedalRows();
+          renderTeamMedalTable();
+        });
+      });
+    }
+
+    function renderTeamLeaderboard() {
+      buildTeamMedalRows();
+      sortTeamMedalRows();
+      renderTeamMedalTable();
     }
 
     function renderPartialDataBanner() {
