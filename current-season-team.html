@@ -2205,57 +2205,75 @@
     // Calculate standings
     const teamStats = {};
     allTeams.forEach(team => {
-      teamStats[team] = { 
-        name: team, 
-        wins: 0, 
-        losses: 0, 
-        runsFor: 0, 
+      teamStats[team] = {
+        name: team,
+        wins: 0,
+        losses: 0,
+        ties: 0,
+        runsFor: 0,
         runsAgainst: 0,
         h2h: {}
       };
     });
 
     allGames.forEach(g => {
-      const isPast = parseGameDate(g.date) < today;
+      const isPast = parseGameDate(g.date) <= today;
       const hasWinner = g.winner && g.winner.trim() !== "";
       if (!isPast || !hasWinner) return;
 
       const home = g["home team"];
       const away = g["away team"];
+      const winner = g.winner;
 
-      if (g.winner === home) {
-        if (teamStats[home]) teamStats[home].wins++;
-        if (teamStats[away]) teamStats[away].losses++;
-      } else if (g.winner === away) {
-        if (teamStats[away]) teamStats[away].wins++;
-        if (teamStats[home]) teamStats[home].losses++;
+      // Initialize H2H
+      if (teamStats[home] && !teamStats[home].h2h[away]) teamStats[home].h2h[away] = { wins: 0, losses: 0 };
+      if (teamStats[away] && !teamStats[away].h2h[home]) teamStats[away].h2h[home] = { wins: 0, losses: 0 };
+
+      if (winner === "Tie" || winner === "tie") {
+        if (teamStats[home]) teamStats[home].ties++;
+        if (teamStats[away]) teamStats[away].ties++;
+      } else if (winner === home) {
+        if (teamStats[home]) { teamStats[home].wins++; teamStats[home].h2h[away].wins++; }
+        if (teamStats[away]) { teamStats[away].losses++; teamStats[away].h2h[home].losses++; }
+      } else if (winner === away) {
+        if (teamStats[away]) { teamStats[away].wins++; teamStats[away].h2h[home].wins++; }
+        if (teamStats[home]) { teamStats[home].losses++; teamStats[home].h2h[away].losses++; }
       }
 
       // Track runs
       const homeScore = parseInt(g["home score"]) || 0;
       const awayScore = parseInt(g["away score"]) || 0;
-      
-      if (teamStats[home]) {
-        teamStats[home].runsFor += homeScore;
-        teamStats[home].runsAgainst += awayScore;
-      }
-      if (teamStats[away]) {
-        teamStats[away].runsFor += awayScore;
-        teamStats[away].runsAgainst += homeScore;
-      }
+      if (teamStats[home]) { teamStats[home].runsFor += homeScore; teamStats[home].runsAgainst += awayScore; }
+      if (teamStats[away]) { teamStats[away].runsFor += awayScore; teamStats[away].runsAgainst += homeScore; }
     });
 
-    // Sort teams by wins, then win percentage, then run differential
-    const sortedTeams = Object.values(teamStats).sort((a, b) => {
-      if (b.wins !== a.wins) return b.wins - a.wins;
-      
-      const wpA = (a.wins + a.losses) > 0 ? a.wins / (a.wins + a.losses) : 0;
-      const wpB = (b.wins + b.losses) > 0 ? b.wins / (b.wins + b.losses) : 0;
-      if (wpB !== wpA) return wpB - wpA;
-      
-      const rdA = a.runsFor - a.runsAgainst;
-      const rdB = b.runsFor - b.runsAgainst;
-      return rdB - rdA;
+    function compareH2H(a, b) {
+      const aVsB = a.h2h[b.name];
+      const bVsA = b.h2h[a.name];
+      if (!aVsB || !bVsA) return 0;
+      const aWinPct = (aVsB.wins + aVsB.losses) > 0 ? aVsB.wins / (aVsB.wins + aVsB.losses) : 0;
+      const bWinPct = (bVsA.wins + bVsA.losses) > 0 ? bVsA.wins / (bVsA.wins + bVsA.losses) : 0;
+      return bWinPct - aWinPct;
+    }
+
+    // Sort: win% → H2H (2-team ties) → runs allowed → run differential
+    const allStandings = Object.values(teamStats).map(t => {
+      const totalGames = t.wins + t.losses + t.ties;
+      t.winPct = totalGames > 0 ? (t.wins + t.ties * 0.5) / totalGames : 0;
+      return t;
+    });
+
+    const sortedTeams = allStandings.sort((a, b) => {
+      if (Math.abs(a.winPct - b.winPct) > 0.00001) return b.winPct - a.winPct;
+
+      const teamsAtSamePct = allStandings.filter(t => Math.abs(t.winPct - a.winPct) <= 0.00001);
+      if (teamsAtSamePct.length === 2) {
+        const h2hComp = compareH2H(a, b);
+        if (h2hComp !== 0) return h2hComp;
+      }
+
+      if (a.runsAgainst !== b.runsAgainst) return a.runsAgainst - b.runsAgainst;
+      return (b.runsFor - b.runsAgainst) - (a.runsFor - a.runsAgainst);
     });
 
     // Find position
