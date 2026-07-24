@@ -556,6 +556,22 @@ body {
       </div>
     </div>
 
+    <!-- Kathy's Creation -->
+    <div style="text-align:center;margin-bottom:1.25rem;">
+      <div style="display:inline-block;background:#fff8e1;border:2px dashed #f59e0b;border-radius:14px;padding:0.85rem 1.25rem;max-width:480px;width:100%;">
+        <div style="font-size:0.8rem;font-weight:700;color:#b45309;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.6rem;">🌟 Special Addition</div>
+        <div style="font-size:0.9rem;color:#78350f;margin-bottom:0.75rem;">Include <strong>Kathy's Creation</strong> — the mythical player (BPI 100 · bWAR 5.00)</div>
+        <div style="display:flex;gap:0.5rem;justify-content:center;flex-wrap:wrap;">
+          <button id="kathyBtnA" onclick="toggleKathy('A')" style="padding:0.4rem 1rem;border-radius:8px;border:2px solid #f59e0b;background:white;color:#b45309;font-weight:700;font-size:0.85rem;cursor:pointer;transition:all 0.15s;">
+            ➕ Add to Team A
+          </button>
+          <button id="kathyBtnB" onclick="toggleKathy('B')" style="padding:0.4rem 1rem;border-radius:8px;border:2px solid #f59e0b;background:white;color:#b45309;font-weight:700;font-size:0.85rem;cursor:pointer;transition:all 0.15s;">
+            ➕ Add to Team B
+          </button>
+        </div>
+      </div>
+    </div>
+
     <button class="analyze-btn" id="analyzeBtn" onclick="analyzeTrade()" disabled>
       ⚖️ Analyze Trade
     </button>
@@ -637,6 +653,41 @@ body {
   let selectedB = new Set();
   let teamAName = '';
   let teamBName = '';
+
+  const KATHY = { id: '__kathy__', name: "Kathy's Creation", acesBPI: 100, bwarSimp: 5.00, pa: 999, isKathy: true };
+  let kathyInTrade = null; // 'A' | 'B' | null
+
+  window.toggleKathy = function(side) {
+    if (kathyInTrade === side) {
+      // Remove
+      kathyInTrade = null;
+    } else {
+      kathyInTrade = side;
+    }
+    updateKathyButtons();
+    updateAnalyzeBtn();
+  };
+
+  function updateKathyButtons() {
+    const btnA = document.getElementById('kathyBtnA');
+    const btnB = document.getElementById('kathyBtnB');
+    if (kathyInTrade === 'A') {
+      btnA.textContent = '✅ In Trade (Team A)';
+      btnA.style.background = '#fef3c7';
+      btnB.textContent = '➕ Add to Team B';
+      btnB.style.background = 'white';
+    } else if (kathyInTrade === 'B') {
+      btnB.textContent = '✅ In Trade (Team B)';
+      btnB.style.background = '#fef3c7';
+      btnA.textContent = '➕ Add to Team A';
+      btnA.style.background = 'white';
+    } else {
+      btnA.textContent = '➕ Add to Team A';
+      btnA.style.background = 'white';
+      btnB.textContent = '➕ Add to Team B';
+      btnB.style.background = 'white';
+    }
+  }
 
   // -------------------------------------------------------
   // Boot
@@ -795,7 +846,7 @@ body {
 
   function updateAnalyzeBtn() {
     const ok = teamAName && teamBName && teamAName !== teamBName &&
-               (selectedA.size > 0 || selectedB.size > 0);
+               (selectedA.size > 0 || selectedB.size > 0 || kathyInTrade !== null);
     document.getElementById('analyzeBtn').disabled = !ok;
   }
 
@@ -803,14 +854,14 @@ body {
   // Analyze
   // -------------------------------------------------------
   window.analyzeTrade = function() {
-    const rosterA = teamRosters[teamAName] || [];
-    const rosterB = teamRosters[teamBName] || [];
+    const rosterA = [...(teamRosters[teamAName] || []), ...(kathyInTrade === 'A' ? [KATHY] : [])];
+    const rosterB = [...(teamRosters[teamBName] || []), ...(kathyInTrade === 'B' ? [KATHY] : [])];
 
-    const fromA = rosterA.filter(p => selectedA.has(p.id)); // going to B
-    const fromB = rosterB.filter(p => selectedB.has(p.id)); // going to A
+    const fromA = rosterA.filter(p => selectedA.has(p.id) || (p.isKathy && kathyInTrade === 'A')); // going to B
+    const fromB = rosterB.filter(p => selectedB.has(p.id) || (p.isKathy && kathyInTrade === 'B')); // going to A
 
-    const postRosterA = [...rosterA.filter(p => !selectedA.has(p.id)), ...fromB];
-    const postRosterB = [...rosterB.filter(p => !selectedB.has(p.id)), ...fromA];
+    const postRosterA = [...rosterA.filter(p => !fromA.includes(p)), ...fromB];
+    const postRosterB = [...rosterB.filter(p => !fromB.includes(p)), ...fromA];
 
     const teamStats = roster => {
       const valid = roster.filter(p => p.acesBPI != null);
@@ -923,6 +974,8 @@ body {
 
   window.resetTrade = function() {
     selectedA.clear(); selectedB.clear();
+    kathyInTrade = null;
+    updateKathyButtons();
     document.getElementById('resultsSection').style.display = 'none';
     document.getElementById('tradeBuilder').style.display = 'block';
     renderRoster('A'); renderRoster('B');
