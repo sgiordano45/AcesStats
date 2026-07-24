@@ -564,7 +564,7 @@ body {
 </div>
 
 <script type="module">
-  import { getCurrentSeason } from './firebase-data.js';
+  import { getCurrentSeason, getSeasonPlayerStatsOptimized } from './firebase-data.js';
   import { db, collection, getDocs } from './firebase-config.js';
   import { NavigationComponent } from './nav-component.js';
 
@@ -588,57 +588,61 @@ body {
       const currentSeason = await getCurrentSeason();
       if (!currentSeason) throw new Error('No active season found');
 
-      const seasonLabel = `${currentSeason.year} ${currentSeason.season.charAt(0).toUpperCase() + currentSeason.season.slice(1)} Season`;
+      const capitalize = s => s ? s.charAt(0).toUpperCase() + s.slice(1) : '';
+      const seasonLabel = `${currentSeason.year} ${capitalize(currentSeason.season)} Season`;
       document.getElementById('seasonLabel').textContent = seasonLabel;
 
       const seasonId = currentSeason.id;
-      const snap = await getDocs(collection(db, 'aggregatedPlayerStats'));
 
-      snap.forEach(docSnap => {
-        const data = docSnap.data();
-        if (data.migrated === true || !data.seasons) return;
-
-        // Only match keys for THIS season (e.g. "2026-summer-black")
-        const matchingKeys = Object.keys(data.seasons).filter(k => k.startsWith(seasonId + '-'));
-        if (matchingKeys.length === 0) return;
-
-        // Use the most recent key if player moved teams mid-season
-        const seasonKey = matchingKeys[matchingKeys.length - 1];
-        const s = data.seasons[seasonKey];
-
-        // Extract team from key suffix (e.g. "2026-summer-black" → "black")
-        const teamKey = seasonKey.slice(seasonId.length + 1);
-        if (!teamKey) return;
-        const team = teamKey.charAt(0).toUpperCase() + teamKey.slice(1);
-
-        const walks  = Number(s.walks || 0);
-        const hits   = Number(s.hits  || 0);
-        const hrs    = Number(s.homeRuns || 0);
-        const atBats = Number(s.atBats || 0);
-        const pa     = atBats + walks;
-
-        // Recalculate bwarSimp in case it's missing
-        const bwarCalc = pa >= 1
-          ? ((walks * 0.30) + ((hits - hrs) * 0.70) + (hrs * 1.40)) / pa - 0.20
-          : null;
-
-        const player = {
-          id: docSnap.id,
-          name: data.name || data.displayName || docSnap.id,
-          team,
-          pa,
-          acesBPI:  typeof s.acesBPI  === 'number' ? s.acesBPI  : (Number(s.acesBPI)  || null),
-          bwarSimp: typeof s.bwarSimp === 'number' ? s.bwarSimp : bwarCalc,
-        };
-
-        if (!teamRosters[team]) teamRosters[team] = [];
-        teamRosters[team].push(player);
+      // 1. Load all rosters docs for this season (same approach as current-season-team.html)
+      //    Doc IDs: "{seasonId}-{teamname}" e.g. "2026-summer-black"
+      const rostersSnap = await getDocs(collection(db, 'rosters'));
+      const rosterDocs = [];
+      rostersSnap.forEach(d => {
+        if (d.id.startsWith(seasonId + '-')) rosterDocs.push(d);
       });
 
-      // Sort each roster by BPI desc
-      Object.values(teamRosters).forEach(r =>
-        r.sort((a, b) => (b.acesBPI ?? -999) - (a.acesBPI ?? -999))
-      );
+      if (rosterDocs.length === 0) throw new Error(`No rosters found for season ${seasonId}`);
+
+      // 2. Load batting stats for the season (for BPI / bWAR)
+      const battingStats = await getSeasonPlayerStatsOptimized(seasonId);
+
+      // 3. Build teamRosters by joining roster players with their stats
+      rosterDocs.forEach(rosterDoc => {
+        const data = rosterDoc.data();
+        const teamKey = rosterDoc.id.slice(seasonId.length + 1); // "black"
+        if (!teamKey || !data.players || data.players.length === 0) return;
+        const teamName = capitalize(teamKey);
+
+        const players = data.players.map(rp => {
+          const stats = battingStats.find(b =>
+            (b.id && b.id === rp.id) ||
+            (b.playerId && b.playerId === rp.id) ||
+            (b.playerName && b.playerName === rp.name) ||
+            (b.name && b.name === rp.name)
+          );
+
+          const walks  = Number(stats?.walks  || 0);
+          const hits   = Number(stats?.hits   || 0);
+          const hrs    = Number(stats?.homeRuns || 0);
+          const atBats = Number(stats?.atBats  || 0);
+          const pa     = atBats + walks;
+          const bwarCalc = pa >= 1
+            ? ((walks * 0.30) + ((hits - hrs) * 0.70) + (hrs * 1.40)) / pa - 0.20
+            : null;
+
+          return {
+            id: rp.id || rp.name,
+            name: rp.name,
+            team: teamName,
+            pa,
+            acesBPI:  stats?.acesBPI  != null ? Number(stats.acesBPI)  : null,
+            bwarSimp: stats?.bwarSimp != null ? Number(stats.bwarSimp) : bwarCalc,
+          };
+        });
+
+        teamRosters[teamName] = players.sort((a, b) => (b.acesBPI ?? -999) - (a.acesBPI ?? -999));
+      });
 
       populateTeamSelects();
       document.getElementById('tradeBuilder').style.display = 'block';
