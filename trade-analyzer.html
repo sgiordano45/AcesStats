@@ -428,6 +428,44 @@ body {
 }
 .reset-btn:hover { background: var(--primary-color); color: white; transform: translateY(-2px); }
 
+/* Share modal */
+.share-modal-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.7);
+  z-index: 9998;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+.share-modal-overlay.active { display: flex; }
+.share-modal-box {
+  background: #1a1a2e;
+  border-radius: 16px;
+  padding: 1.5rem;
+  max-width: 540px;
+  width: 100%;
+  box-shadow: 0 24px 48px rgba(0,0,0,0.5);
+}
+.share-modal-title { color: #80DEEA; font-size: 1.1rem; font-weight: 800; text-align: center; margin-bottom: 0.75rem; }
+.share-preview-area { text-align: center; min-height: 60px; margin: 0.75rem 0; }
+.share-preview-area canvas { border-radius: 10px; max-width: 100%; }
+.share-actions { display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap; margin-top: 0.75rem; }
+.share-btn {
+  padding: 0.65rem 1.25rem;
+  border-radius: 10px;
+  font-weight: 700;
+  font-size: 0.9rem;
+  border: none;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+.share-btn:hover { opacity: 0.85; }
+.share-btn-copy     { background: #0277BD; color: white; }
+.share-btn-download { background: #7c3aed; color: white; }
+.share-btn-cancel   { background: rgba(255,255,255,0.1); color: white; }
+
 /* Mobile */
 @media (max-width: 768px) {
   .page-header h1 { font-size: 2.5rem; }
@@ -557,10 +595,30 @@ body {
     <!-- Team comparisons -->
     <div class="comparison-grid" id="comparisonGrid"></div>
 
-    <button class="reset-btn" onclick="resetTrade()">↩ Build Another Trade</button>
-    <div style="height:2rem;"></div>
+    <div style="display:flex;gap:1rem;justify-content:center;flex-wrap:wrap;margin-bottom:2rem;">
+      <button class="reset-btn" onclick="resetTrade()" style="max-width:260px;">↩ Build Another Trade</button>
+      <button class="reset-btn" onclick="openShareTrade()" style="max-width:260px;background:var(--primary-color);color:white;border-color:var(--primary-color);">📤 Share Trade</button>
+    </div>
+    <div style="height:1rem;"></div>
   </div>
 
+</div>
+
+<!-- Hidden off-screen card for html2canvas -->
+<div id="shareTradeCard" style="position:fixed;left:-9999px;top:0;pointer-events:none;"></div>
+
+<!-- Share Modal -->
+<div id="shareModal" class="share-modal-overlay">
+  <div class="share-modal-box">
+    <div class="share-modal-title">📤 Share Trade Analysis</div>
+    <div id="shareStatus" style="text-align:center;color:#a78bfa;font-size:0.85rem;">Generating image…</div>
+    <div class="share-preview-area" id="sharePreviewArea"></div>
+    <div class="share-actions">
+      <button class="share-btn share-btn-download" id="downloadBtn" onclick="downloadTradeImage()" style="display:none;">⬇️ Save Image</button>
+      <button class="share-btn share-btn-copy"     id="copyBtn"     onclick="copyTradeImage()"     style="display:none;">📋 Copy Image</button>
+      <button class="share-btn share-btn-cancel"   onclick="closeShareModal()">Close</button>
+    </div>
+  </div>
 </div>
 
 <script type="module">
@@ -786,6 +844,7 @@ body {
   const dCls = (v) => v == null ? 'delta-neu' : v > 0.005 ? 'delta-pos' : v < -0.005 ? 'delta-neg' : 'delta-neu';
 
   function renderResults(d) {
+    _lastTradeData = d; // store for share card
     document.getElementById('tradeBuilder').style.display = 'none';
     document.getElementById('resultsSection').style.display = 'block';
 
@@ -868,6 +927,145 @@ body {
     document.getElementById('tradeBuilder').style.display = 'block';
     renderRoster('A'); renderRoster('B');
     updateBaskets(); updateAnalyzeBtn();
+  };
+
+  // -------------------------------------------------------
+  // Share card
+  // -------------------------------------------------------
+  let _shareCanvas = null;
+  let _lastTradeData = null; // stored when renderResults is called
+
+  function buildTradeCardHtml(d) {
+    const fmt  = (v, dec=2) => v != null ? Number(v).toFixed(dec) : '—';
+    const fmtD = (v, dec=2) => { if (v==null) return '—'; return (v>=0?'+':'')+Number(v).toFixed(dec); };
+    const deltaColor = v => v == null ? '#94a3b8' : v > 0.005 ? '#4ade80' : v < -0.005 ? '#f87171' : '#fbbf24';
+
+    const diff = d.scoreA - d.scoreB;
+    const verdA = Math.abs(diff) < 0.5 ? 'even' : diff > 0 ? 'winner' : 'loser';
+    const verdB = Math.abs(diff) < 0.5 ? 'even' : diff > 0 ? 'loser'  : 'winner';
+    const emojiV = { winner:'🏆', loser:'📉', even:'🤝' };
+    const labelV = { winner:'WIN', loser:'LOSS', even:'EVEN' };
+    const colorV = { winner:'#4ade80', loser:'#f87171', even:'#fbbf24' };
+
+    const playerRow = p => `
+      <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.07);">
+        <span style="color:#80DEEA;font-size:11px;flex:1;font-weight:600;">${p.name}</span>
+        <span style="color:#B3E5FC;font-size:10px;">${p.from} → ${p.to}</span>
+        <span style="background:rgba(255,215,0,0.15);color:#FFD700;border-radius:4px;padding:1px 5px;font-size:10px;font-weight:700;">BPI ${p.acesBPI != null ? Number(p.acesBPI).toFixed(1) : '—'}</span>
+        <span style="background:rgba(74,222,128,0.15);color:#4ade80;border-radius:4px;padding:1px 5px;font-size:10px;font-weight:700;">bWAR ${p.bwarSimp != null ? Number(p.bwarSimp).toFixed(2) : '—'}</span>
+      </div>`;
+
+    const allMoving = [
+      ...d.fromA.map(p => ({...p, from: d.teamAName, to: d.teamBName})),
+      ...d.fromB.map(p => ({...p, from: d.teamBName, to: d.teamAName})),
+    ];
+
+    const statRowCard = (label, before, after, delta) => `
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.07);font-size:11px;">
+        <span style="color:#80DEEA;">${label}</span>
+        <span style="color:#94a3b8;">${before}</span>
+        <span style="color:#94a3b8;margin:0 4px;">→</span>
+        <span style="color:white;font-weight:700;">${after}</span>
+        <span style="color:${deltaColor(delta)};font-weight:700;min-width:40px;text-align:right;">${fmtD(delta)}</span>
+      </div>`;
+
+    const teamCard = (name, verd, pre, post, dBpi, dBwar) => `
+      <div style="flex:1;background:rgba(2,119,189,0.18);border:2px solid ${colorV[verd]};border-radius:10px;padding:12px;">
+        <div style="text-align:center;margin-bottom:8px;">
+          <div style="font-size:1.4rem;">${emojiV[verd]}</div>
+          <div style="color:white;font-weight:800;font-size:14px;">${name}</div>
+          <div style="display:inline-block;background:${colorV[verd]};color:#0b1929;border-radius:999px;padding:1px 8px;font-size:10px;font-weight:800;margin-top:3px;">${labelV[verd]}</div>
+        </div>
+        ${statRowCard('Avg BPI',  fmt(pre.bpiAvg,1),   fmt(post.bpiAvg,1),   dBpi)}
+        ${statRowCard('Tot bWAR', fmt(pre.bwarTotal),   fmt(post.bwarTotal),  dBwar)}
+        ${statRowCard('Roster',   pre.count,            post.count,           post.count - pre.count)}
+      </div>`;
+
+    return `
+      <div style="width:600px;background:linear-gradient(135deg,#0b1929 0%,#0d2040 60%,#091525 100%);padding:24px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;border-radius:16px;">
+        <div style="text-align:center;margin-bottom:16px;">
+          <div style="color:#FFD700;font-size:22px;font-weight:800;letter-spacing:0.5px;">⚖️ Trade Analysis</div>
+          <div style="color:#B3E5FC;font-size:12px;margin-top:4px;opacity:0.8;">${d.teamAName} ⇄ ${d.teamBName}</div>
+        </div>
+
+        <div style="background:rgba(255,255,255,0.05);border-radius:10px;padding:12px;margin-bottom:14px;">
+          <div style="color:#80DEEA;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">Players Moving</div>
+          ${allMoving.map(playerRow).join('')}
+        </div>
+
+        <div style="display:flex;gap:10px;margin-bottom:14px;">
+          ${teamCard(d.teamAName, verdA, d.preA, d.postA, d.dBpiA, d.dBwarA)}
+          ${teamCard(d.teamBName, verdB, d.preB, d.postB, d.dBpiB, d.dBwarB)}
+        </div>
+
+        <div style="text-align:center;font-size:10px;color:#4a6080;letter-spacing:0.5px;">acessoftballreference.com</div>
+      </div>`;
+  }
+
+  function loadHtml2Canvas() {
+    return new Promise((resolve, reject) => {
+      if (window.html2canvas) { resolve(window.html2canvas); return; }
+      const s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+      s.onload  = () => resolve(window.html2canvas);
+      s.onerror = () => reject(new Error('Failed to load html2canvas'));
+      document.head.appendChild(s);
+    });
+  }
+
+  window.openShareTrade = async function() {
+    if (!_lastTradeData) return;
+    document.getElementById('shareModal').classList.add('active');
+    document.getElementById('shareStatus').textContent = 'Generating image…';
+    document.getElementById('sharePreviewArea').innerHTML = '';
+    document.getElementById('downloadBtn').style.display = 'none';
+    document.getElementById('copyBtn').style.display = 'none';
+    _shareCanvas = null;
+
+    try {
+      const html2canvas = await loadHtml2Canvas();
+      const card = document.getElementById('shareTradeCard');
+      card.innerHTML = buildTradeCardHtml(_lastTradeData);
+      await new Promise(r => setTimeout(r, 100));
+
+      const canvas = await html2canvas(card.firstElementChild, {
+        backgroundColor: null, scale: 2, useCORS: true, logging: false, scrollX: 0, scrollY: 0
+      });
+      _shareCanvas = canvas;
+      canvas.style.borderRadius = '10px';
+      canvas.style.maxWidth = '100%';
+      document.getElementById('sharePreviewArea').appendChild(canvas);
+      document.getElementById('shareStatus').textContent = 'Save or copy the image to share.';
+      document.getElementById('downloadBtn').style.display = 'inline-block';
+      document.getElementById('copyBtn').style.display = 'inline-block';
+    } catch (err) {
+      document.getElementById('shareStatus').textContent = `Error: ${err.message}`;
+    }
+  };
+
+  window.closeShareModal = function() {
+    document.getElementById('shareModal').classList.remove('active');
+  };
+
+  window.downloadTradeImage = function() {
+    if (!_shareCanvas) return;
+    const link = document.createElement('a');
+    link.download = 'trade-analysis.png';
+    link.href = _shareCanvas.toDataURL('image/png');
+    link.click();
+  };
+
+  window.copyTradeImage = async function() {
+    if (!_shareCanvas) return;
+    try {
+      const blobPromise = new Promise(resolve => _shareCanvas.toBlob(resolve, 'image/png'));
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blobPromise })]);
+      const btn = document.getElementById('copyBtn');
+      btn.textContent = '✓ Copied!';
+      setTimeout(() => { btn.textContent = '📋 Copy Image'; }, 2000);
+    } catch (err) {
+      downloadTradeImage();
+    }
   };
 
   init();
