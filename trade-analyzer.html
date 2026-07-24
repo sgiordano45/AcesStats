@@ -1,0 +1,886 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<link rel="manifest" href="/manifest.json">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Trade Analyzer - Mountainside Aces</title>
+<meta name="theme-color" content="#2d5016">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="stylesheet" href="mobile-enhancements.css">
+<link rel="stylesheet" href="nav-styles.css">
+<style>
+  :root {
+    --primary: #2d5016;
+    --primary-light: #3d6b1f;
+    --accent: #ffd700;
+    --bg: #f5f7fa;
+    --card-bg: #ffffff;
+    --border: #e2e8f0;
+    --text: #2d3748;
+    --text-light: #718096;
+    --shadow: 0 2px 8px rgba(0,0,0,0.08);
+    --shadow-md: 0 4px 16px rgba(0,0,0,0.12);
+    --win-color: #22c55e;
+    --loss-color: #ef4444;
+    --neutral-color: #f59e0b;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+  }
+
+  .page-header {
+    background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
+    color: white;
+    padding: 1.5rem 1rem 1rem;
+    text-align: center;
+  }
+  .page-header h1 { font-size: 1.6rem; font-weight: 700; }
+  .page-header p { font-size: 0.85rem; opacity: 0.8; margin-top: 0.25rem; }
+
+  .container { max-width: 960px; margin: 0 auto; padding: 1.25rem 1rem 3rem; }
+
+  /* Loading */
+  #loadingState {
+    text-align: center;
+    padding: 3rem 1rem;
+    color: var(--text-light);
+  }
+  .spinner {
+    width: 40px; height: 40px;
+    border: 4px solid var(--border);
+    border-top-color: var(--primary);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin: 0 auto 1rem;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Trade Builder */
+  #tradeBuilder { display: none; }
+
+  .section-title {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--primary);
+    margin-bottom: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  /* Team cards row */
+  .teams-row {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 1.25rem;
+    flex-wrap: wrap;
+  }
+
+  .team-selector {
+    flex: 1;
+    min-width: 240px;
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1rem;
+    box-shadow: var(--shadow);
+  }
+  .team-selector label {
+    display: block;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-light);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 0.5rem;
+  }
+  .team-selector select {
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--text);
+    background: white;
+    cursor: pointer;
+  }
+
+  /* Arrow between teams */
+  .trade-arrow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+    color: var(--text-light);
+    padding: 0 0.25rem;
+    flex-shrink: 0;
+    align-self: center;
+  }
+
+  /* Player lists */
+  .roster-panel {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    gap: 0.75rem;
+    align-items: start;
+    margin-bottom: 1.25rem;
+  }
+
+  @media (max-width: 600px) {
+    .roster-panel { grid-template-columns: 1fr; }
+    .trade-arrow { transform: rotate(90deg); justify-self: center; }
+    .teams-row { flex-direction: column; }
+  }
+
+  .roster-list {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 0.75rem;
+    box-shadow: var(--shadow);
+    min-height: 200px;
+    max-height: 340px;
+    overflow-y: auto;
+  }
+  .roster-list-title {
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: var(--text-light);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 0.5rem;
+  }
+
+  .player-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem 0.25rem;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.15s;
+    font-size: 0.88rem;
+  }
+  .player-row:hover { background: #f0fdf4; }
+  .player-row.selected { background: #dcfce7; }
+
+  .player-check {
+    width: 18px; height: 18px;
+    border: 2px solid var(--border);
+    border-radius: 4px;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+    font-size: 0.7rem;
+    color: white;
+    background: white;
+    transition: all 0.15s;
+  }
+  .player-row.selected .player-check {
+    background: var(--primary);
+    border-color: var(--primary);
+  }
+
+  .player-name { font-weight: 600; flex: 1; }
+  .player-stats-mini {
+    font-size: 0.75rem;
+    color: var(--text-light);
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  /* Trade basket */
+  .trade-basket {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 0.75rem;
+    box-shadow: var(--shadow);
+    min-height: 100px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+  .basket-label {
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: var(--text-light);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 0.4rem;
+  }
+  .basket-chips {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    width: 100%;
+  }
+  .basket-chip {
+    background: #f0fdf4;
+    border: 1px solid #bbf7d0;
+    border-radius: 6px;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--primary);
+    text-align: center;
+  }
+  .basket-empty {
+    font-size: 0.8rem;
+    color: var(--text-light);
+    text-align: center;
+  }
+
+  /* Analyze button */
+  .analyze-btn {
+    display: block;
+    width: 100%;
+    max-width: 360px;
+    margin: 0 auto 1.5rem;
+    padding: 0.875rem;
+    background: var(--primary);
+    color: white;
+    font-size: 1rem;
+    font-weight: 700;
+    border: none;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: background 0.2s, transform 0.1s;
+    letter-spacing: 0.02em;
+  }
+  .analyze-btn:hover { background: var(--primary-light); }
+  .analyze-btn:active { transform: scale(0.98); }
+  .analyze-btn:disabled { background: #94a3b8; cursor: not-allowed; }
+
+  /* Results */
+  #resultsSection { display: none; }
+
+  .results-header {
+    text-align: center;
+    margin-bottom: 1.25rem;
+    padding: 1rem;
+    background: var(--card-bg);
+    border-radius: 12px;
+    box-shadow: var(--shadow);
+    border: 1px solid var(--border);
+  }
+  .results-header h2 { font-size: 1.1rem; font-weight: 700; margin-bottom: 0.25rem; }
+  .results-header p { font-size: 0.82rem; color: var(--text-light); }
+
+  .verdict-banner {
+    display: flex;
+    gap: 0.75rem;
+    margin-bottom: 1.25rem;
+    flex-wrap: wrap;
+  }
+
+  .verdict-card {
+    flex: 1;
+    min-width: 200px;
+    background: var(--card-bg);
+    border-radius: 12px;
+    padding: 1rem;
+    box-shadow: var(--shadow);
+    border: 2px solid transparent;
+    text-align: center;
+  }
+  .verdict-card.winner { border-color: var(--win-color); background: #f0fdf4; }
+  .verdict-card.loser  { border-color: var(--loss-color); background: #fef2f2; }
+  .verdict-card.even   { border-color: var(--neutral-color); background: #fffbeb; }
+
+  .verdict-emoji { font-size: 1.75rem; margin-bottom: 0.25rem; }
+  .verdict-team { font-size: 1rem; font-weight: 700; margin-bottom: 0.25rem; }
+  .verdict-label {
+    display: inline-block;
+    padding: 0.2rem 0.6rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 0.5rem;
+  }
+  .winner .verdict-label { background: var(--win-color); color: white; }
+  .loser  .verdict-label { background: var(--loss-color); color: white; }
+  .even   .verdict-label { background: var(--neutral-color); color: white; }
+  .verdict-delta { font-size: 0.85rem; color: var(--text-light); }
+
+  /* Comparison table */
+  .comparison-cards {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin-bottom: 1.25rem;
+  }
+  @media (max-width: 600px) {
+    .comparison-cards { grid-template-columns: 1fr; }
+    .verdict-banner { flex-direction: column; }
+  }
+
+  .comparison-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1rem;
+    box-shadow: var(--shadow);
+  }
+  .comparison-card-title {
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: var(--primary);
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 0.5rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .stat-compare-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.35rem 0;
+    font-size: 0.85rem;
+    border-bottom: 1px solid #f1f5f9;
+  }
+  .stat-compare-row:last-child { border-bottom: none; }
+  .stat-label { color: var(--text-light); font-size: 0.8rem; }
+  .stat-before { color: var(--text-light); }
+  .stat-after  { font-weight: 700; }
+  .stat-delta  { font-size: 0.78rem; font-weight: 600; }
+  .stat-delta.pos { color: var(--win-color); }
+  .stat-delta.neg { color: var(--loss-color); }
+  .stat-delta.neu { color: var(--neutral-color); }
+
+  .player-moving-table {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1rem;
+    box-shadow: var(--shadow);
+    margin-bottom: 1.25rem;
+    overflow-x: auto;
+  }
+  .player-moving-table table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.83rem;
+  }
+  .player-moving-table th {
+    text-align: left;
+    padding: 0.4rem 0.6rem;
+    color: var(--text-light);
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    border-bottom: 2px solid var(--border);
+  }
+  .player-moving-table td {
+    padding: 0.45rem 0.6rem;
+    border-bottom: 1px solid #f1f5f9;
+    vertical-align: middle;
+  }
+  .player-moving-table tr:last-child td { border-bottom: none; }
+  .arrow-cell { text-align: center; color: var(--text-light); }
+
+  .reset-btn {
+    display: block;
+    width: 100%;
+    max-width: 360px;
+    margin: 0 auto;
+    padding: 0.75rem;
+    background: white;
+    color: var(--primary);
+    font-size: 0.95rem;
+    font-weight: 600;
+    border: 2px solid var(--primary);
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .reset-btn:hover { background: var(--primary); color: white; }
+
+  .no-players { color: var(--text-light); font-size: 0.85rem; text-align: center; padding: 1.5rem 0; }
+</style>
+</head>
+<body>
+
+<div id="navPlaceholder"></div>
+
+<div class="page-header">
+  <h1>⚖️ Trade Analyzer</h1>
+  <p id="seasonLabel">Loading current season...</p>
+</div>
+
+<div class="container">
+
+  <div id="loadingState">
+    <div class="spinner"></div>
+    <p>Loading rosters &amp; stats...</p>
+  </div>
+
+  <div id="tradeBuilder">
+    <!-- Team selectors -->
+    <p class="section-title">Select Teams</p>
+    <div class="teams-row">
+      <div class="team-selector">
+        <label>Team A</label>
+        <select id="teamASelect" onchange="onTeamChange('A')">
+          <option value="">— Pick a team —</option>
+        </select>
+      </div>
+      <div class="trade-arrow">⇄</div>
+      <div class="team-selector">
+        <label>Team B</label>
+        <select id="teamBSelect" onchange="onTeamChange('B')">
+          <option value="">— Pick a team —</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Roster pickers -->
+    <p class="section-title">Select Players Involved</p>
+    <div class="roster-panel">
+      <!-- Team A roster -->
+      <div class="roster-list" id="rosterA">
+        <div class="roster-list-title" id="rosterATitle">Team A Roster</div>
+        <div class="no-players">Select Team A above</div>
+      </div>
+
+      <!-- Center basket -->
+      <div style="display:flex;flex-direction:column;gap:0.5rem;">
+        <div class="trade-basket">
+          <div class="basket-label">⬅ Sending</div>
+          <div class="basket-chips" id="basketA">
+            <div class="basket-empty">No players selected</div>
+          </div>
+        </div>
+        <div class="trade-basket">
+          <div class="basket-label">Sending ➡</div>
+          <div class="basket-chips" id="basketB">
+            <div class="basket-empty">No players selected</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Team B roster -->
+      <div class="roster-list" id="rosterB">
+        <div class="roster-list-title" id="rosterBTitle">Team B Roster</div>
+        <div class="no-players">Select Team B above</div>
+      </div>
+    </div>
+
+    <button class="analyze-btn" id="analyzeBtn" onclick="analyzeTrade()" disabled>
+      Analyze Trade
+    </button>
+  </div>
+
+  <!-- Results -->
+  <div id="resultsSection">
+    <div class="results-header">
+      <h2 id="resultsTitle">Trade Analysis</h2>
+      <p id="resultsSubtitle"></p>
+    </div>
+
+    <div class="verdict-banner" id="verdictBanner"></div>
+
+    <div class="player-moving-table">
+      <p class="comparison-card-title">Players Moving</p>
+      <table id="playersMovingTable">
+        <thead>
+          <tr>
+            <th>Player</th>
+            <th>From</th>
+            <th class="arrow-cell"></th>
+            <th>To</th>
+            <th>AcesBPI</th>
+            <th>bWAR</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <div class="comparison-cards">
+      <div class="comparison-card" id="compCardA"></div>
+      <div class="comparison-card" id="compCardB"></div>
+    </div>
+
+    <button class="reset-btn" onclick="resetTrade()">↩ Build Another Trade</button>
+  </div>
+</div>
+
+<script type="module">
+  import { getCurrentSeason } from './firebase-data.js';
+  import { db, collection, getDocs } from './firebase-config.js';
+  import { NavigationComponent } from './nav-component.js';
+
+  // Nav
+  const nav = new NavigationComponent('navPlaceholder');
+  nav.render();
+
+  // State
+  let currentSeason = null;
+  let allPlayers = [];       // All players with current-season stats
+  let teamRosters = {};      // { teamName: [player, ...] }
+  let selectedA = new Set(); // player ids selected from Team A
+  let selectedB = new Set(); // player ids selected from Team B
+  let teamAName = '';
+  let teamBName = '';
+
+  // -------------------------------------------------------
+  // Boot
+  // -------------------------------------------------------
+  async function init() {
+    try {
+      currentSeason = await getCurrentSeason();
+      if (!currentSeason) throw new Error('No active season found');
+
+      const seasonLabel = `${currentSeason.year} ${currentSeason.season.charAt(0).toUpperCase() + currentSeason.season.slice(1)} Season`;
+      document.getElementById('seasonLabel').textContent = seasonLabel;
+
+      // Load aggregated player stats and filter to current season
+      const seasonId = currentSeason.id; // e.g. "2026-summer"
+      const statsRef = collection(db, 'aggregatedPlayerStats');
+      const snap = await getDocs(statsRef);
+
+      snap.forEach(docSnap => {
+        const data = docSnap.data();
+        if (data.migrated === true || !data.seasons) return;
+
+        const matchingKeys = Object.keys(data.seasons).filter(k => k.startsWith(seasonId));
+        if (matchingKeys.length === 0) return;
+
+        const seasonKey = matchingKeys[0];
+        const s = data.seasons[seasonKey];
+        const team = seasonKey.split('-').slice(2).join('-') || data.currentTeam || '';
+        if (!team) return;
+
+        const games = (s.games || 0);
+        const atBats = (s.atBats || 0);
+        const walks  = (s.walks  || 0);
+        const hits   = (s.hits   || 0);
+        const hrs    = (s.homeRuns || 0);
+        const pa = atBats + walks;
+        const bwarSimp = pa >= 1
+          ? ((walks * 0.30) + ((hits - hrs) * 0.70) + (hrs * 1.40)) / Math.max(pa, 1) - 0.20
+          : null;
+
+        const player = {
+          id: docSnap.id,
+          name: data.name || data.displayName || docSnap.id,
+          team: team.charAt(0).toUpperCase() + team.slice(1),
+          teamKey: team,
+          games,
+          atBats,
+          walks,
+          hits,
+          homeRuns: hrs,
+          pa,
+          acesBPI: typeof s.acesBPI === 'number' ? s.acesBPI : (Number(s.acesBPI) || null),
+          bwarSimp: typeof s.bwarSimp === 'number' ? s.bwarSimp : bwarSimp,
+        };
+
+        allPlayers.push(player);
+        if (!teamRosters[player.team]) teamRosters[player.team] = [];
+        teamRosters[player.team].push(player);
+      });
+
+      // Sort rosters by BPI desc
+      Object.values(teamRosters).forEach(roster =>
+        roster.sort((a, b) => (b.acesBPI ?? -999) - (a.acesBPI ?? -999))
+      );
+
+      populateTeamSelects();
+      document.getElementById('loadingState').style.display = 'none';
+      document.getElementById('tradeBuilder').style.display = 'block';
+
+    } catch (err) {
+      document.getElementById('loadingState').innerHTML =
+        `<p style="color:#ef4444;">Error loading data: ${err.message}</p>`;
+      console.error(err);
+    }
+  }
+
+  function populateTeamSelects() {
+    const teams = Object.keys(teamRosters).sort();
+    ['teamASelect', 'teamBSelect'].forEach(id => {
+      const sel = document.getElementById(id);
+      teams.forEach(t => {
+        const opt = document.createElement('option');
+        opt.value = t;
+        opt.textContent = `${t} (${teamRosters[t].length})`;
+        sel.appendChild(opt);
+      });
+    });
+  }
+
+  // -------------------------------------------------------
+  // Team change
+  // -------------------------------------------------------
+  window.onTeamChange = function(side) {
+    const sel = document.getElementById(side === 'A' ? 'teamASelect' : 'teamBSelect');
+    const teamName = sel.value;
+
+    if (side === 'A') {
+      teamAName = teamName;
+      selectedA.clear();
+    } else {
+      teamBName = teamName;
+      selectedB.clear();
+    }
+
+    renderRoster(side);
+    updateBaskets();
+    updateAnalyzeBtn();
+  };
+
+  function renderRoster(side) {
+    const teamName = side === 'A' ? teamAName : teamBName;
+    const container = document.getElementById(`roster${side}`);
+    const title = document.getElementById(`roster${side}Title`);
+    const selected = side === 'A' ? selectedA : selectedB;
+
+    title.textContent = teamName ? `${teamName} — click to add to trade` : `Team ${side} Roster`;
+
+    if (!teamName || !teamRosters[teamName]) {
+      container.innerHTML = `<div class="roster-list-title">${title.textContent}</div><div class="no-players">Select a team above</div>`;
+      return;
+    }
+
+    const roster = teamRosters[teamName];
+    let html = `<div class="roster-list-title">${title.textContent}</div>`;
+    roster.forEach(p => {
+      const isSel = selected.has(p.id);
+      const bpi = p.acesBPI != null ? p.acesBPI.toFixed(1) : '—';
+      const bwar = p.bwarSimp != null ? p.bwarSimp.toFixed(2) : '—';
+      html += `
+        <div class="player-row ${isSel ? 'selected' : ''}" onclick="togglePlayer('${side}', '${p.id}')">
+          <div class="player-check">${isSel ? '✓' : ''}</div>
+          <div class="player-name">${p.name}</div>
+          <div class="player-stats-mini">BPI ${bpi} · bWAR ${bwar}</div>
+        </div>`;
+    });
+
+    container.innerHTML = html;
+  }
+
+  window.togglePlayer = function(side, playerId) {
+    const selected = side === 'A' ? selectedA : selectedB;
+    if (selected.has(playerId)) selected.delete(playerId);
+    else selected.add(playerId);
+    renderRoster(side);
+    updateBaskets();
+    updateAnalyzeBtn();
+  };
+
+  function updateBaskets() {
+    ['A', 'B'].forEach(side => {
+      const selected = side === 'A' ? selectedA : selectedB;
+      const basket = document.getElementById(`basket${side}`);
+      if (selected.size === 0) {
+        basket.innerHTML = '<div class="basket-empty">No players selected</div>';
+        return;
+      }
+      const teamName = side === 'A' ? teamAName : teamBName;
+      const roster = teamRosters[teamName] || [];
+      basket.innerHTML = [...selected].map(id => {
+        const p = roster.find(r => r.id === id);
+        return p ? `<div class="basket-chip">${p.name}</div>` : '';
+      }).join('');
+    });
+  }
+
+  function updateAnalyzeBtn() {
+    const btn = document.getElementById('analyzeBtn');
+    btn.disabled = !(teamAName && teamBName && teamAName !== teamBName &&
+                     (selectedA.size > 0 || selectedB.size > 0));
+  }
+
+  // -------------------------------------------------------
+  // Analyze
+  // -------------------------------------------------------
+  window.analyzeTrade = function() {
+    const rosterA = teamRosters[teamAName] || [];
+    const rosterB = teamRosters[teamBName] || [];
+
+    const playersFromA = rosterA.filter(p => selectedA.has(p.id)); // going to B
+    const playersFromB = rosterB.filter(p => selectedB.has(p.id)); // going to A
+
+    // Build post-trade rosters
+    const postA = [
+      ...rosterA.filter(p => !selectedA.has(p.id)),
+      ...playersFromB
+    ];
+    const postB = [
+      ...rosterB.filter(p => !selectedB.has(p.id)),
+      ...playersFromA
+    ];
+
+    // Team summary stats
+    const teamStats = (roster) => {
+      const valid = roster.filter(p => p.acesBPI != null);
+      const bpiAvg = valid.length > 0
+        ? valid.reduce((s, p) => s + p.acesBPI, 0) / valid.length
+        : null;
+      const bwarTotal = roster
+        .filter(p => p.bwarSimp != null)
+        .reduce((s, p) => s + p.bwarSimp, 0);
+      return { bpiAvg, bwarTotal, count: roster.length };
+    };
+
+    const preA  = teamStats(rosterA);
+    const preB  = teamStats(rosterB);
+    const postStatsA = teamStats(postA);
+    const postStatsB = teamStats(postB);
+
+    const deltaA_bpi  = postStatsA.bpiAvg  != null && preA.bpiAvg  != null ? postStatsA.bpiAvg  - preA.bpiAvg  : null;
+    const deltaA_bwar = postStatsA.bwarTotal - preA.bwarTotal;
+    const deltaB_bpi  = postStatsB.bpiAvg  != null && preB.bpiAvg  != null ? postStatsB.bpiAvg  - preB.bpiAvg  : null;
+    const deltaB_bwar = postStatsB.bwarTotal - preB.bwarTotal;
+
+    // Score each team: combined rank of bpi delta and bwar delta
+    const scoreA = (deltaA_bpi ?? 0) + (deltaA_bwar * 2);
+    const scoreB = (deltaB_bpi ?? 0) + (deltaB_bwar * 2);
+
+    renderResults({
+      teamAName, teamBName,
+      preA, preB, postStatsA, postStatsB,
+      deltaA_bpi, deltaA_bwar, deltaB_bpi, deltaB_bwar,
+      scoreA, scoreB,
+      playersFromA, playersFromB
+    });
+  };
+
+  function fmt(val, decimals = 2) {
+    return val != null ? val.toFixed(decimals) : '—';
+  }
+  function fmtDelta(val, decimals = 2) {
+    if (val == null) return '—';
+    const sign = val >= 0 ? '+' : '';
+    return `${sign}${val.toFixed(decimals)}`;
+  }
+  function deltaClass(val) {
+    if (val == null) return 'neu';
+    if (val > 0.005) return 'pos';
+    if (val < -0.005) return 'neg';
+    return 'neu';
+  }
+
+  function renderResults(d) {
+    document.getElementById('tradeBuilder').style.display = 'none';
+    document.getElementById('resultsSection').style.display = 'block';
+
+    // Title
+    const aNames = teamRosters[teamAName].filter(p => selectedA.has(p.id)).map(p => p.name).join(', ') || 'nobody';
+    const bNames = teamRosters[teamBName].filter(p => selectedB.has(p.id)).map(p => p.name).join(', ') || 'nobody';
+    document.getElementById('resultsTitle').textContent = 'Trade Analysis';
+    document.getElementById('resultsSubtitle').textContent =
+      `${d.teamAName} sends ${aNames} · ${d.teamBName} sends ${bNames}`;
+
+    // Verdicts
+    let verdictA, verdictB;
+    const diff = d.scoreA - d.scoreB;
+    if (Math.abs(diff) < 0.5) {
+      verdictA = verdictB = 'even';
+    } else if (diff > 0) {
+      verdictA = 'winner'; verdictB = 'loser';
+    } else {
+      verdictA = 'loser';  verdictB = 'winner';
+    }
+
+    const verdictLabel = { winner: '🏆 Winner', loser: '📉 Loser', even: '🤝 Even' };
+    const verdictEmoji = { winner: '🟢', loser: '🔴', even: '🟡' };
+
+    document.getElementById('verdictBanner').innerHTML = `
+      <div class="verdict-card ${verdictA}">
+        <div class="verdict-emoji">${verdictEmoji[verdictA]}</div>
+        <div class="verdict-team">${d.teamAName}</div>
+        <div class="verdict-label">${verdictLabel[verdictA]}</div>
+        <div class="verdict-delta">
+          BPI avg ${d.deltaA_bpi != null ? fmtDelta(d.deltaA_bpi, 1) : '—'} &nbsp;·&nbsp;
+          bWAR ${fmtDelta(d.deltaA_bwar)}
+        </div>
+      </div>
+      <div class="verdict-card ${verdictB}">
+        <div class="verdict-emoji">${verdictEmoji[verdictB]}</div>
+        <div class="verdict-team">${d.teamBName}</div>
+        <div class="verdict-label">${verdictLabel[verdictB]}</div>
+        <div class="verdict-delta">
+          BPI avg ${d.deltaB_bpi != null ? fmtDelta(d.deltaB_bpi, 1) : '—'} &nbsp;·&nbsp;
+          bWAR ${fmtDelta(d.deltaB_bwar)}
+        </div>
+      </div>
+    `;
+
+    // Players moving table
+    const tbody = document.querySelector('#playersMovingTable tbody');
+    const allMoving = [
+      ...d.playersFromA.map(p => ({ ...p, from: d.teamAName, to: d.teamBName })),
+      ...d.playersFromB.map(p => ({ ...p, from: d.teamBName, to: d.teamAName })),
+    ];
+    tbody.innerHTML = allMoving.map(p => `
+      <tr>
+        <td><strong>${p.name}</strong></td>
+        <td>${p.from}</td>
+        <td class="arrow-cell">→</td>
+        <td>${p.to}</td>
+        <td>${p.acesBPI != null ? p.acesBPI.toFixed(1) : '—'}</td>
+        <td>${p.bwarSimp != null ? p.bwarSimp.toFixed(2) : '—'}</td>
+      </tr>
+    `).join('');
+
+    // Comparison cards
+    const buildCard = (teamName, pre, post, deltaBpi, deltaBwar) => `
+      <div class="comparison-card-title">${teamName}</div>
+      <div class="stat-compare-row">
+        <span class="stat-label">Avg AcesBPI</span>
+        <span class="stat-before">${fmt(pre.bpiAvg, 1)}</span>
+        <span>→</span>
+        <span class="stat-after">${fmt(post.bpiAvg, 1)}</span>
+        <span class="stat-delta ${deltaClass(deltaBpi)}">${fmtDelta(deltaBpi, 1)}</span>
+      </div>
+      <div class="stat-compare-row">
+        <span class="stat-label">Total bWAR</span>
+        <span class="stat-before">${fmt(pre.bwarTotal)}</span>
+        <span>→</span>
+        <span class="stat-after">${fmt(post.bwarTotal)}</span>
+        <span class="stat-delta ${deltaClass(deltaBwar)}">${fmtDelta(deltaBwar)}</span>
+      </div>
+      <div class="stat-compare-row">
+        <span class="stat-label">Roster size</span>
+        <span class="stat-before">${pre.count}</span>
+        <span>→</span>
+        <span class="stat-after">${post.count}</span>
+        <span class="stat-delta neu">${fmtDelta(post.count - pre.count, 0)}</span>
+      </div>
+    `;
+
+    document.getElementById('compCardA').innerHTML = buildCard(d.teamAName, d.preA, d.postStatsA, d.deltaA_bpi, d.deltaA_bwar);
+    document.getElementById('compCardB').innerHTML = buildCard(d.teamBName, d.preB, d.postStatsB, d.deltaB_bpi, d.deltaB_bwar);
+  }
+
+  window.resetTrade = function() {
+    selectedA.clear();
+    selectedB.clear();
+    document.getElementById('resultsSection').style.display = 'none';
+    document.getElementById('tradeBuilder').style.display = 'block';
+    renderRoster('A');
+    renderRoster('B');
+    updateBaskets();
+    updateAnalyzeBtn();
+  };
+
+  init();
+</script>
+
+</body>
+</html>
