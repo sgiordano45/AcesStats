@@ -1999,13 +1999,11 @@ if (!navigator.onLine) updateConnectionStatus();
       const canvas = await html2canvas(wrapper, { scale:2, backgroundColor:'#ffffff', useCORS:true, logging:false });
       document.body.removeChild(wrapper);
 
-      const link = document.createElement('a');
-      link.download = `aces-${(d.awayTeam||'game').toLowerCase()}-vs-${(d.homeTeam||'game').toLowerCase()}-${new Date().toISOString().slice(0,10)}.png`;
-      link.href = canvas.toDataURL('image/png');
-      link.click();
+      const filename = `aces-${(d.awayTeam||'game').toLowerCase()}-vs-${(d.homeTeam||'game').toLowerCase()}-${new Date().toISOString().slice(0,10)}.png`;
+      await shareOrDownloadCanvas(canvas, filename);
 
       btn.classList.add('success');
-      btn.innerHTML = `<span class="share-card-opt-icon">✅</span><span><div class="share-card-opt-title">Image saved!</div><div class="share-card-opt-desc">Check your downloads folder</div></span>`;
+      btn.innerHTML = `<span class="share-card-opt-icon">✅</span><span><div class="share-card-opt-title">Done!</div><div class="share-card-opt-desc">Shared or saved successfully</div></span>`;
       setTimeout(closeCardShareModal, 2000);
 
     } catch(err) {
@@ -2204,13 +2202,10 @@ if (!navigator.onLine) updateConnectionStatus();
       const canvas = await html2canvas(wrapper, { scale:2, backgroundColor:'#ffffff', useCORS:true, logging:false });
       document.body.removeChild(wrapper);
 
-      const link = document.createElement('a');
       const dateSlug = new Date().toISOString().slice(0,10);
-      link.download = `aces-tonight-${dateSlug}.png`;
-      link.href = canvas.toDataURL('image/png');
-      link.click();
+      await shareOrDownloadCanvas(canvas, `aces-tonight-${dateSlug}.png`);
 
-      btn.innerHTML = '✅ Saved!';
+      btn.innerHTML = '✅ Done!';
       setTimeout(() => { btn.innerHTML = origLabel; btn.disabled = false; }, 2500);
 
     } catch(err) {
@@ -2218,6 +2213,29 @@ if (!navigator.onLine) updateConnectionStatus();
       btn.innerHTML = origLabel;
       btn.disabled = false;
     }
+  }
+
+  // Shared helper: use native share sheet on mobile, fall back to download on desktop
+  async function shareOrDownloadCanvas(canvas, filename) {
+    if (navigator.share && navigator.canShare) {
+      try {
+        const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+        const file = new File([blob], filename, { type: 'image/png' });
+        if (navigator.canShare({ files: [file] })) {
+          await navigator.share({ files: [file], title: 'Aces Game Preview' });
+          return;
+        }
+      } catch (err) {
+        // User cancelled or share failed — fall through to download
+        if (err.name === 'AbortError') return;
+        console.warn('navigator.share failed, falling back to download:', err);
+      }
+    }
+    // Desktop / unsupported: trigger download
+    const link = document.createElement('a');
+    link.download = filename;
+    link.href = canvas.toDataURL('image/png');
+    link.click();
   }
 </script>
 </body>
