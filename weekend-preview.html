@@ -2215,9 +2215,10 @@ if (!navigator.onLine) updateConnectionStatus();
     }
   }
 
-  // Shared helper: use native share sheet on mobile, fall back to download on desktop
+  // Shared helper: use native share sheet on mobile iOS/Android, download on desktop
   async function shareOrDownloadCanvas(canvas, filename) {
-    if (navigator.share && navigator.canShare) {
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    if (isMobile && navigator.share && navigator.canShare) {
       try {
         const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
         const file = new File([blob], filename, { type: 'image/png' });
@@ -2226,12 +2227,11 @@ if (!navigator.onLine) updateConnectionStatus();
           return;
         }
       } catch (err) {
-        // User cancelled or share failed — fall through to download
-        if (err.name === 'AbortError') return;
+        if (err.name === 'AbortError') return; // user cancelled — do nothing
         console.warn('navigator.share failed, falling back to download:', err);
       }
     }
-    // Desktop / unsupported: trigger download
+    // Desktop or unsupported: trigger direct download
     const link = document.createElement('a');
     link.download = filename;
     link.href = canvas.toDataURL('image/png');
