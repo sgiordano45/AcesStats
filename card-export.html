@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Aces Card Export</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <style>
     /* =====================================================
        PAGE UI STYLES
@@ -162,7 +162,12 @@
       position: fixed;
       left: -9999px;
       top: 0;
-      /* Each card: 3.5in × 5in — set explicit pixel sizes for consistent rendering */
+    }
+
+    /* Lock render cards to exactly 375×525px (5:7 ratio → 900×1260px at scale 2.4) */
+    #cardRenderArea .baseball-card {
+      width: 375px !important;
+      height: 525px !important;
     }
 
     /* =====================================================
@@ -572,12 +577,25 @@
 <div class="page-wrapper">
   <div class="header">
     <h1>⚾ Aces Card Export</h1>
-    <p>Generates a multi-page PDF of baseball cards for all current-season players.<br>
-       Front and back cards are included for each player.</p>
+    <p>Generates a ZIP of PNG card images for all current-season players,<br>
+       ready to upload to makeplayingcards.com.</p>
   </div>
 
   <div class="card-panel">
-    <button id="generateBtn">Generate PDF</button>
+
+    <div style="margin-bottom: 18px; padding: 14px 16px; background: #f7fafc; border: 1px solid #e2e8f0; border-radius: 8px;">
+      <div style="font-size: 0.85rem; font-weight: 700; color: #4a5568; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.5px;">Export Mode</div>
+      <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; margin-bottom: 8px; font-size: 0.95rem; color: #2d3748;">
+        <input type="radio" name="exportMode" value="both" checked style="accent-color: #2d5016;">
+        <span><strong>Both sides</strong> — front &amp; back PNGs per player</span>
+      </label>
+      <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 0.95rem; color: #2d3748;">
+        <input type="radio" name="exportMode" value="front" style="accent-color: #2d5016;">
+        <span><strong>Front only</strong> — for single-sided print runs</span>
+      </label>
+    </div>
+
+    <button id="generateBtn">Generate ZIP</button>
 
     <div id="progressArea">
       <div id="progressText">Loading players…</div>
@@ -918,15 +936,26 @@
 
   // -------------------------------------------------------
   // Capture a single element with html2canvas
+  // Returns a canvas at ~900×1260px (scale 2.4 on 375×525px card)
   // -------------------------------------------------------
   async function captureElement(el) {
     return html2canvas(el, {
-      scale: 2,
+      scale: 2.4,
       useCORS: true,
       allowTaint: false,
       backgroundColor: '#f5f0e1',
       logging: false
     });
+  }
+
+  // Convert a canvas to a PNG Blob
+  function canvasToBlob(canvas) {
+    return new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+  }
+
+  // Slugify a player name: "First Last" → "first-last"
+  function slugify(name) {
+    return name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9\-]/g, '');
   }
 
   // -------------------------------------------------------
@@ -958,7 +987,7 @@
   }
 
   // -------------------------------------------------------
-  // MAIN — Generate PDF
+  // MAIN — Generate ZIP of PNGs
   // -------------------------------------------------------
   document.getElementById('generateBtn').addEventListener('click', async () => {
     const btn = document.getElementById('generateBtn');
@@ -966,6 +995,10 @@
     const errorMsg = document.getElementById('errorMsg');
     const successMsg = document.getElementById('successMsg');
     const playerList = document.getElementById('playerList');
+
+    // Read export mode
+    const exportMode = document.querySelector('input[name="exportMode"]:checked').value;
+    const frontOnly = exportMode === 'front';
 
     btn.disabled = true;
     progressArea.style.display = 'block';
@@ -1017,17 +1050,14 @@
 
       setProgress(0, currentPlayers.length, `Found ${currentPlayers.length} players for ${seasonYear} ${capitalize(seasonName)}. Starting…`);
 
-      // 4. Initialize jsPDF (3.5in × 5in per page = 88.9mm × 127mm)
-      const { jsPDF } = window.jspdf;
-      const CARD_W_MM = 88.9;
-      const CARD_H_MM = 127;
-      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: [CARD_W_MM, CARD_H_MM] });
-      let firstPage = true;
+      // 4. Initialize JSZip
+      const zip = new JSZip();
 
       // 5. Capture each player sequentially
       for (let i = 0; i < currentPlayers.length; i++) {
         const player = currentPlayers[i];
         const displayName = formatPlayerName(player.name || player.displayName || player.id);
+        const slug = slugify(displayName);
         const li = listItems[player.id];
 
         setProgress(i, currentPlayers.length, `Generating card ${i + 1} of ${currentPlayers.length}: ${displayName}`);
@@ -1048,19 +1078,19 @@
           await waitForPhoto(photoEl, 3000);
 
           // Capture front
+          li.querySelector('.status-icon').textContent = '🎨';
+          setProgress(i, currentPlayers.length, `Capturing front… ${displayName}`);
           const frontCanvas = await captureElement(document.getElementById('cardFrontWrapper'));
+          const frontBlob = await canvasToBlob(frontCanvas);
+          zip.file(`front_${slug}.png`, frontBlob);
 
-          // Capture back
-          const backCanvas = await captureElement(document.getElementById('cardBackWrapper'));
-
-          // Add front page
-          if (!firstPage) pdf.addPage([CARD_W_MM, CARD_H_MM], 'portrait');
-          pdf.addImage(frontCanvas.toDataURL('image/png'), 'PNG', 0, 0, CARD_W_MM, CARD_H_MM);
-          firstPage = false;
-
-          // Add back page
-          pdf.addPage([CARD_W_MM, CARD_H_MM], 'portrait');
-          pdf.addImage(backCanvas.toDataURL('image/png'), 'PNG', 0, 0, CARD_W_MM, CARD_H_MM);
+          // Capture back (unless front-only mode)
+          if (!frontOnly) {
+            setProgress(i, currentPlayers.length, `Capturing back… ${displayName}`);
+            const backCanvas = await captureElement(document.getElementById('cardBackWrapper'));
+            const backBlob = await canvasToBlob(backCanvas);
+            zip.file(`back_${slug}.png`, backBlob);
+          }
 
           markPlayerDone(li, true);
         } catch (playerErr) {
@@ -1070,13 +1100,20 @@
         }
       }
 
-      setProgress(currentPlayers.length, currentPlayers.length, 'Done! Saving PDF…');
+      setProgress(currentPlayers.length, currentPlayers.length, 'Done! Building ZIP…');
 
-      // 6. Download
-      const filename = `aces-cards-${currentSeasonId}.pdf`;
-      pdf.save(filename);
+      // 6. Generate and download ZIP
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      const filename = `aces-cards-${currentSeasonId}.zip`;
+      const url = URL.createObjectURL(zipBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
 
-      successMsg.textContent = `✅ PDF saved as "${filename}" — ${currentPlayers.length} players, ${currentPlayers.length * 2} pages.`;
+      const modeLabel = frontOnly ? 'front only' : 'front + back';
+      successMsg.textContent = `✅ ZIP saved as "${filename}" — ${currentPlayers.length} players, ${modeLabel} PNGs (900×1260px).`;
       successMsg.style.display = 'block';
       setProgress(currentPlayers.length, currentPlayers.length, `Complete! ${currentPlayers.length} cards generated.`);
 
