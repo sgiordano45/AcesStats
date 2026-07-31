@@ -570,6 +570,15 @@
       opacity: 0.8;
       color: #ffffff !important;
     }
+
+    .card-back-team-logo {
+      position: absolute;
+      top: 6px;
+      right: 8px;
+      width: 52px;
+      height: 52px;
+      object-fit: contain;
+    }
   </style>
 </head>
 <body>
@@ -593,6 +602,12 @@
         <input type="radio" name="exportMode" value="front" style="accent-color: #2d5016;">
         <span><strong>Front only</strong> — for single-sided print runs</span>
       </label>
+      <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #e2e8f0;">
+        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 0.95rem; color: #2d3748;">
+          <input type="checkbox" id="testModeCheck" style="accent-color: #2d5016; width: 16px; height: 16px;">
+          <span><strong>Test mode</strong> — export 1 player only</span>
+        </label>
+      </div>
     </div>
 
     <button id="generateBtn">Generate ZIP</button>
@@ -676,6 +691,7 @@
         <div class="card-back-number" id="cardBackNumber"></div>
         <div class="card-back-name" id="cardBackName">Player Name</div>
         <div class="card-back-team" id="cardBackTeam">Team</div>
+        <img id="cardBackTeamLogo" class="card-back-team-logo" alt="Team Logo" style="display:none;">
       </div>
 
       <div class="card-back-vitals">
@@ -844,18 +860,18 @@
     }
     document.getElementById('cardPlayerPosition').textContent = positionText;
 
-    // Photo
+    // Photo — always use the <img> element; fall back to favicon.ico instead of ⚾
     const photoEl   = document.getElementById('cardPhoto');
     const photoPlaceholder = document.getElementById('cardPhotoPlaceholder');
     const photoURL  = info?.photo || null;
+    photoPlaceholder.style.display = 'none'; // never show the ⚾ placeholder
+    photoEl.style.display = 'block';
     if (photoURL) {
       photoEl.src = photoURL;
-      photoEl.style.display = 'block';
-      photoPlaceholder.style.display = 'none';
+      photoEl.onerror = () => { photoEl.src = 'favicon.ico'; photoEl.onerror = null; };
     } else {
-      photoEl.src = '';
-      photoEl.style.display = 'none';
-      photoPlaceholder.style.display = 'flex';
+      photoEl.src = 'favicon.ico';
+      photoEl.onerror = null;
     }
 
     // Career years
@@ -876,6 +892,13 @@
     document.getElementById('cardBackTeam').textContent = currentTeam;
     const backNumEl = document.getElementById('cardBackNumber');
     backNumEl.textContent = info?.number ? `#${info.number}` : '';
+
+    // Team logo on back
+    const teamLogoEl = document.getElementById('cardBackTeamLogo');
+    const teamSlug = currentTeam.toLowerCase().replace(/\s+/g, '_');
+    teamLogoEl.src = `logos/${teamSlug}.png`;
+    teamLogoEl.style.display = 'block';
+    teamLogoEl.onerror = () => { teamLogoEl.style.display = 'none'; teamLogoEl.onerror = null; };
 
     document.getElementById('cardBackPosition').textContent = position;
     document.getElementById('cardBackBats').textContent     = bats;
@@ -996,9 +1019,10 @@
     const successMsg = document.getElementById('successMsg');
     const playerList = document.getElementById('playerList');
 
-    // Read export mode
+    // Read export mode and test mode
     const exportMode = document.querySelector('input[name="exportMode"]:checked').value;
     const frontOnly = exportMode === 'front';
+    const testMode = document.getElementById('testModeCheck').checked;
 
     btn.disabled = true;
     progressArea.style.display = 'block';
@@ -1041,26 +1065,32 @@
         throw new Error(`No players found for season "${currentSeasonId}". Check that the season is active in Firebase.`);
       }
 
+      // Apply test mode — limit to 1 player
+      const playersToProcess = testMode ? currentPlayers.slice(0, 1) : currentPlayers;
+
       // 3. Build player list UI
       const listItems = {};
-      currentPlayers.forEach(p => {
+      playersToProcess.forEach(p => {
         const displayName = formatPlayerName(p.name || p.displayName || p.id);
         listItems[p.id] = addPlayerToList(displayName);
       });
 
-      setProgress(0, currentPlayers.length, `Found ${currentPlayers.length} players for ${seasonYear} ${capitalize(seasonName)}. Starting…`);
+      const startLabel = testMode
+        ? `Test mode: generating 1 card (of ${currentPlayers.length} total)`
+        : `Found ${currentPlayers.length} players for ${seasonYear} ${capitalize(seasonName)}. Starting…`;
+      setProgress(0, playersToProcess.length, startLabel);
 
       // 4. Initialize JSZip
       const zip = new JSZip();
 
       // 5. Capture each player sequentially
-      for (let i = 0; i < currentPlayers.length; i++) {
-        const player = currentPlayers[i];
+      for (let i = 0; i < playersToProcess.length; i++) {
+        const player = playersToProcess[i];
         const displayName = formatPlayerName(player.name || player.displayName || player.id);
         const slug = slugify(displayName);
         const li = listItems[player.id];
 
-        setProgress(i, currentPlayers.length, `Generating card ${i + 1} of ${currentPlayers.length}: ${displayName}`);
+        setProgress(i, playersToProcess.length, `Generating card ${i + 1} of ${playersToProcess.length}: ${displayName}`);
         markPlayerActive(li);
 
         try {
@@ -1079,14 +1109,14 @@
 
           // Capture front
           li.querySelector('.status-icon').textContent = '🎨';
-          setProgress(i, currentPlayers.length, `Capturing front… ${displayName}`);
+          setProgress(i, playersToProcess.length, `Capturing front… ${displayName}`);
           const frontCanvas = await captureElement(document.getElementById('cardFrontWrapper'));
           const frontBlob = await canvasToBlob(frontCanvas);
           zip.file(`front_${slug}.png`, frontBlob);
 
           // Capture back (unless front-only mode)
           if (!frontOnly) {
-            setProgress(i, currentPlayers.length, `Capturing back… ${displayName}`);
+            setProgress(i, playersToProcess.length, `Capturing back… ${displayName}`);
             const backCanvas = await captureElement(document.getElementById('cardBackWrapper'));
             const backBlob = await canvasToBlob(backCanvas);
             zip.file(`back_${slug}.png`, backBlob);
@@ -1100,11 +1130,11 @@
         }
       }
 
-      setProgress(currentPlayers.length, currentPlayers.length, 'Done! Building ZIP…');
+      setProgress(playersToProcess.length, playersToProcess.length, 'Done! Building ZIP…');
 
       // 6. Generate and download ZIP
       const zipBlob = await zip.generateAsync({ type: 'blob' });
-      const filename = `aces-cards-${currentSeasonId}.zip`;
+      const filename = testMode ? 'aces-cards-TEST.zip' : `aces-cards-${currentSeasonId}.zip`;
       const url = URL.createObjectURL(zipBlob);
       const a = document.createElement('a');
       a.href = url;
@@ -1113,9 +1143,10 @@
       URL.revokeObjectURL(url);
 
       const modeLabel = frontOnly ? 'front only' : 'front + back';
-      successMsg.textContent = `✅ ZIP saved as "${filename}" — ${currentPlayers.length} players, ${modeLabel} PNGs (900×1260px).`;
+      const testLabel = testMode ? ' [TEST MODE]' : '';
+      successMsg.textContent = `✅ ZIP saved as "${filename}" — ${playersToProcess.length} player(s), ${modeLabel} PNGs (900×1260px).${testLabel}`;
       successMsg.style.display = 'block';
-      setProgress(currentPlayers.length, currentPlayers.length, `Complete! ${currentPlayers.length} cards generated.`);
+      setProgress(playersToProcess.length, playersToProcess.length, `Complete! ${playersToProcess.length} card(s) generated.${testLabel}`);
 
     } catch (err) {
       console.error('Card export error:', err);
