@@ -1,0 +1,1094 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Aces Card Export</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <style>
+    /* =====================================================
+       PAGE UI STYLES
+       ===================================================== */
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: linear-gradient(135deg, #f7fafc 0%, #edf2f7 100%);
+      min-height: 100vh;
+      padding: 40px 20px;
+      color: #2d3748;
+    }
+
+    .page-wrapper {
+      max-width: 680px;
+      margin: 0 auto;
+    }
+
+    .header {
+      text-align: center;
+      margin-bottom: 40px;
+    }
+
+    .header h1 {
+      font-size: 2rem;
+      font-weight: 800;
+      color: #2d5016;
+      margin-bottom: 10px;
+    }
+
+    .header p {
+      color: #718096;
+      font-size: 1rem;
+      line-height: 1.6;
+    }
+
+    .card-panel {
+      background: white;
+      border-radius: 16px;
+      padding: 32px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+      margin-bottom: 24px;
+    }
+
+    #generateBtn {
+      display: block;
+      width: 100%;
+      padding: 16px 24px;
+      background: linear-gradient(135deg, #2d5016 0%, #1a6b4a 100%);
+      color: white;
+      border: none;
+      border-radius: 10px;
+      font-size: 1.1rem;
+      font-weight: 700;
+      cursor: pointer;
+      letter-spacing: 0.5px;
+      transition: opacity 0.2s, transform 0.1s;
+    }
+
+    #generateBtn:hover:not(:disabled) {
+      opacity: 0.92;
+      transform: translateY(-1px);
+    }
+
+    #generateBtn:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+
+    #progressArea {
+      display: none;
+      margin-top: 28px;
+    }
+
+    #progressText {
+      font-size: 0.95rem;
+      color: #4a5568;
+      margin-bottom: 10px;
+      font-weight: 500;
+      text-align: center;
+    }
+
+    .progress-track {
+      background: #e2e8f0;
+      border-radius: 99px;
+      height: 10px;
+      overflow: hidden;
+      margin-bottom: 20px;
+    }
+
+    #progressFill {
+      background: linear-gradient(90deg, #2d5016, #48bb78);
+      height: 100%;
+      width: 0%;
+      border-radius: 99px;
+      transition: width 0.4s ease;
+    }
+
+    #playerList {
+      list-style: none;
+      max-height: 320px;
+      overflow-y: auto;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+    }
+
+    #playerList li {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 14px;
+      font-size: 0.88rem;
+      border-bottom: 1px solid #f0f0f0;
+      color: #718096;
+    }
+
+    #playerList li:last-child { border-bottom: none; }
+
+    #playerList li.done { color: #2d5016; font-weight: 600; }
+    #playerList li.active { color: #2d5016; font-weight: 700; background: #f0fff4; }
+    #playerList li.error { color: #c53030; }
+
+    .status-icon { font-size: 1rem; width: 20px; text-align: center; flex-shrink: 0; }
+
+    #errorMsg {
+      display: none;
+      margin-top: 16px;
+      padding: 12px 16px;
+      background: #fff5f5;
+      border: 1px solid #fed7d7;
+      border-radius: 8px;
+      color: #c53030;
+      font-size: 0.9rem;
+    }
+
+    #successMsg {
+      display: none;
+      margin-top: 16px;
+      padding: 16px;
+      background: #f0fff4;
+      border: 1px solid #9ae6b4;
+      border-radius: 8px;
+      color: #276749;
+      font-size: 0.95rem;
+      font-weight: 600;
+      text-align: center;
+    }
+
+    /* =====================================================
+       OFF-SCREEN RENDER AREA
+       ===================================================== */
+    #cardRenderArea {
+      position: fixed;
+      left: -9999px;
+      top: 0;
+      /* Each card: 3.5in × 5in — set explicit pixel sizes for consistent rendering */
+    }
+
+    /* =====================================================
+       BASEBALL CARD STYLES
+       (copied from player.html, non-print rules only)
+       ===================================================== */
+
+    .baseball-card {
+      width: 3.5in;
+      height: 5in;
+      margin: 0;
+      background-color: #f5f0e1 !important;
+      border: 3px solid #8B4513;
+      border-radius: 12px;
+      overflow: hidden;
+      font-family: 'Georgia', serif;
+      position: relative;
+      box-sizing: border-box;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+      color-adjust: exact !important;
+    }
+
+    .card-front {
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+
+    .card-team-banner {
+      background-color: #2d5016 !important;
+      color: #ffffff !important;
+      text-align: center;
+      padding: 8px 10px;
+      position: relative;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+      color-adjust: exact !important;
+    }
+
+    .card-team-name {
+      font-size: 14px;
+      font-weight: bold;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      margin: 0;
+      color: #ffffff !important;
+    }
+
+    .card-league-name {
+      font-size: 9px;
+      margin-top: 2px;
+      letter-spacing: 1px;
+      color: #ffffff !important;
+    }
+
+    .card-photo-frame {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 12px;
+      background-color: #f5f0e1 !important;
+      position: relative;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+      color-adjust: exact !important;
+    }
+
+    .card-photo-frame::before {
+      content: '';
+      position: absolute;
+      top: 8px;
+      left: 8px;
+      right: 8px;
+      bottom: 8px;
+      border: 2px solid #8B4513;
+      border-radius: 8px;
+      pointer-events: none;
+    }
+
+    .card-photo {
+      width: 180px;
+      height: 180px;
+      object-fit: cover;
+      border-radius: 8px;
+      border: 3px solid #8B4513;
+    }
+
+    .card-photo-placeholder {
+      width: 180px;
+      height: 180px;
+      background-color: #2d5016 !important;
+      border-radius: 8px;
+      border: 3px solid #8B4513;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 80px;
+      color: rgba(255,255,255,0.3) !important;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+      color-adjust: exact !important;
+    }
+
+    .card-player-info {
+      background-color: #2d5016 !important;
+      color: #ffffff !important;
+      padding: 12px 15px;
+      text-align: center;
+      position: relative;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+      color-adjust: exact !important;
+    }
+
+    .card-player-number {
+      position: absolute;
+      top: -18px;
+      right: 15px;
+      background-color: #ffd700 !important;
+      color: #333333 !important;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 900;
+      font-size: 16px;
+      border: 2px solid #8B4513;
+      font-family: 'Arial Black', sans-serif;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+      color-adjust: exact !important;
+    }
+
+    .card-player-name {
+      font-size: 20px;
+      font-weight: bold;
+      margin: 0 0 4px 0;
+      color: #ffffff !important;
+    }
+
+    .card-player-nickname {
+      font-size: 11px;
+      font-style: italic;
+      margin-bottom: 6px;
+      color: #ffffff !important;
+    }
+
+    .card-player-position {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: #ffffff !important;
+    }
+
+    .card-stats-strip {
+      background-color: #f5f0e1 !important;
+      padding: 10px 12px;
+      border-top: 2px solid #8B4513;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+      color-adjust: exact !important;
+    }
+
+    .card-stats-row {
+      display: flex;
+      justify-content: space-around;
+      text-align: center;
+    }
+
+    .card-stat { flex: 1; }
+
+    .card-stat-value {
+      font-size: 16px;
+      font-weight: bold;
+      color: #2d5016 !important;
+      font-family: 'Arial Black', sans-serif;
+    }
+
+    .card-stat-label {
+      font-size: 8px;
+      color: #666666 !important;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-top: 2px;
+    }
+
+    .card-footer {
+      background-color: #8B4513 !important;
+      color: #ffffff !important;
+      text-align: center;
+      padding: 6px;
+      font-size: 8px;
+      letter-spacing: 1px;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+      color-adjust: exact !important;
+    }
+
+    .card-footer-year {
+      font-weight: bold;
+      color: #ffffff !important;
+    }
+
+    .card-captain-star {
+      position: absolute;
+      top: 8px;
+      left: 8px;
+      font-size: 24px;
+    }
+
+    /* === Card Back === */
+    .card-back {
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      background-color: #f5f0e1 !important;
+      font-family: 'Arial', sans-serif;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+      color-adjust: exact !important;
+      box-sizing: border-box;
+    }
+
+    .card-back * { box-sizing: border-box; }
+
+    .card-back-header {
+      background-color: #2d5016 !important;
+      color: #ffffff !important;
+      padding: 10px 12px;
+      text-align: center;
+      position: relative;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+
+    .card-back-number {
+      position: absolute;
+      top: 8px;
+      left: 10px;
+      font-size: 18px;
+      font-weight: 900;
+      color: #ffd700 !important;
+    }
+
+    .card-back-name {
+      font-size: 18px;
+      font-weight: bold;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: #ffffff !important;
+    }
+
+    .card-back-team {
+      font-size: 11px;
+      margin-top: 2px;
+      color: #ffffff !important;
+      opacity: 0.9;
+    }
+
+    .card-back-vitals {
+      display: flex;
+      justify-content: space-around;
+      padding: 8px 10px;
+      background-color: #e8e0cc !important;
+      border-bottom: 2px solid #8B4513;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+
+    .vital-item { text-align: center; }
+
+    .vital-label {
+      display: block;
+      font-size: 8px;
+      color: #666666 !important;
+      font-weight: bold;
+      letter-spacing: 0.5px;
+    }
+
+    .vital-value {
+      display: block;
+      font-size: 12px;
+      font-weight: bold;
+      color: #2d5016 !important;
+    }
+
+    .card-back-stats-section {
+      flex: 1;
+      padding: 6px 4px;
+      overflow: hidden;
+      width: 100%;
+      max-width: 100%;
+      box-sizing: border-box;
+    }
+
+    .card-back-stats-title {
+      font-size: 9px;
+      font-weight: bold;
+      text-align: center;
+      color: #8B4513 !important;
+      letter-spacing: 1px;
+      margin-bottom: 6px;
+      border-bottom: 1px solid #8B4513;
+      padding-bottom: 4px;
+    }
+
+    .card-back-stats-table {
+      width: 100% !important;
+      min-width: 100%;
+      max-width: 100%;
+      border-collapse: collapse;
+      font-size: 8px;
+      table-layout: fixed !important;
+      display: table;
+    }
+
+    .card-back-stats-table th {
+      background-color: #2d5016 !important;
+      color: #ffffff !important;
+      padding: 4px 1px;
+      font-weight: bold;
+      text-align: center;
+      font-size: 7px;
+      letter-spacing: 0.3px;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+
+    .card-back-stats-table th:nth-child(1),
+    .card-back-stats-table td:nth-child(1) { width: 14%; }
+    .card-back-stats-table th:nth-child(2),
+    .card-back-stats-table td:nth-child(2) { width: 13%; }
+    .card-back-stats-table th:nth-child(3),
+    .card-back-stats-table td:nth-child(3) { width: 9%; }
+    .card-back-stats-table th:nth-child(4),
+    .card-back-stats-table td:nth-child(4) { width: 11%; }
+    .card-back-stats-table th:nth-child(5),
+    .card-back-stats-table td:nth-child(5) { width: 10%; }
+    .card-back-stats-table th:nth-child(6),
+    .card-back-stats-table td:nth-child(6) { width: 9%; }
+    .card-back-stats-table th:nth-child(7),
+    .card-back-stats-table td:nth-child(7) { width: 10%; }
+    .card-back-stats-table th:nth-child(8),
+    .card-back-stats-table td:nth-child(8) { width: 14%; }
+
+    .card-back-stats-table td {
+      padding: 3px 1px;
+      text-align: center;
+      border-bottom: 1px solid #d4c9b0;
+      color: #333333 !important;
+      font-size: 8px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .card-back-stats-table tbody tr:nth-child(even) {
+      background-color: #ebe5d5 !important;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+
+    .card-back-stats-table tfoot tr {
+      background-color: #d4c9b0 !important;
+      font-weight: bold;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+
+    .card-back-stats-table tfoot td {
+      border-top: 2px solid #8B4513;
+      color: #2d5016 !important;
+      font-weight: bold;
+    }
+
+    .card-back-footer {
+      background-color: #8B4513 !important;
+      color: #ffffff !important;
+      padding: 6px;
+      text-align: center;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+
+    .card-back-logo {
+      font-size: 9px;
+      font-weight: bold;
+      letter-spacing: 1px;
+      color: #ffffff !important;
+    }
+
+    .card-back-copyright {
+      font-size: 7px;
+      margin-top: 2px;
+      opacity: 0.8;
+      color: #ffffff !important;
+    }
+  </style>
+</head>
+<body>
+
+<div class="page-wrapper">
+  <div class="header">
+    <h1>⚾ Aces Card Export</h1>
+    <p>Generates a multi-page PDF of baseball cards for all current-season players.<br>
+       Front and back cards are included for each player.</p>
+  </div>
+
+  <div class="card-panel">
+    <button id="generateBtn">Generate PDF</button>
+
+    <div id="progressArea">
+      <div id="progressText">Loading players…</div>
+      <div class="progress-track">
+        <div id="progressFill"></div>
+      </div>
+      <ul id="playerList"></ul>
+    </div>
+
+    <div id="errorMsg"></div>
+    <div id="successMsg"></div>
+  </div>
+</div>
+
+<!-- =========================================================
+     OFF-SCREEN CARD RENDER AREA
+     Both cards live here permanently; we swap their content
+     for each player and capture them one at a time.
+     ========================================================= -->
+<div id="cardRenderArea">
+
+  <!-- FRONT -->
+  <div class="baseball-card" id="cardFrontWrapper">
+    <div class="card-front">
+      <div class="card-team-banner">
+        <div class="card-team-name" id="cardTeamName">Team Name</div>
+        <div class="card-league-name">Mountainside Aces Softball League</div>
+      </div>
+
+      <div class="card-photo-frame">
+        <img class="card-photo" id="cardPhoto" alt="Player" crossorigin="anonymous" style="display:none;">
+        <div class="card-photo-placeholder" id="cardPhotoPlaceholder">⚾</div>
+      </div>
+
+      <div class="card-player-info">
+        <div class="card-player-number" id="cardPlayerNumber" style="display:none;"></div>
+        <div class="card-captain-star" id="cardCaptainStar" style="display:none;">⭐</div>
+        <div class="card-player-name" id="cardPlayerName">Player Name</div>
+        <div class="card-player-nickname" id="cardPlayerNickname" style="display:none;"></div>
+        <div class="card-player-position" id="cardPlayerPosition">Position</div>
+      </div>
+
+      <div class="card-stats-strip">
+        <div class="card-stats-row">
+          <div class="card-stat">
+            <div class="card-stat-value" id="cardStatGames">0</div>
+            <div class="card-stat-label">Games</div>
+          </div>
+          <div class="card-stat">
+            <div class="card-stat-value" id="cardStatBA">.000</div>
+            <div class="card-stat-label">AVG</div>
+          </div>
+          <div class="card-stat">
+            <div class="card-stat-value" id="cardStatHits">0</div>
+            <div class="card-stat-label">Hits</div>
+          </div>
+          <div class="card-stat">
+            <div class="card-stat-value" id="cardStatRuns">0</div>
+            <div class="card-stat-label">Runs</div>
+          </div>
+          <div class="card-stat">
+            <div class="card-stat-value" id="cardStatOBP">.000</div>
+            <div class="card-stat-label">OBP</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card-footer">
+        <span class="card-footer-year" id="cardCareerYears">Career Years</span> • MOUNTAINSIDE ACES
+      </div>
+    </div>
+  </div>
+
+  <!-- BACK -->
+  <div class="baseball-card" id="cardBackWrapper">
+    <div class="card-back">
+      <div class="card-back-header">
+        <div class="card-back-number" id="cardBackNumber"></div>
+        <div class="card-back-name" id="cardBackName">Player Name</div>
+        <div class="card-back-team" id="cardBackTeam">Team</div>
+      </div>
+
+      <div class="card-back-vitals">
+        <div class="vital-item">
+          <span class="vital-label">POS</span>
+          <span class="vital-value" id="cardBackPosition">-</span>
+        </div>
+        <div class="vital-item">
+          <span class="vital-label">BATS</span>
+          <span class="vital-value" id="cardBackBats">-</span>
+        </div>
+        <div class="vital-item">
+          <span class="vital-label">THROWS</span>
+          <span class="vital-value" id="cardBackThrows">-</span>
+        </div>
+        <div class="vital-item" id="cardBackCaptainVital" style="display:none;">
+          <span class="vital-label">ROLE</span>
+          <span class="vital-value">Captain ⭐</span>
+        </div>
+      </div>
+
+      <div class="card-back-stats-section">
+        <div class="card-back-stats-title">YEAR-BY-YEAR STATISTICS</div>
+        <table class="card-back-stats-table">
+          <thead>
+            <tr>
+              <th>YR/SN</th>
+              <th>TEAM</th>
+              <th>G</th>
+              <th>AB</th>
+              <th>H</th>
+              <th>R</th>
+              <th>BB</th>
+              <th>AVG</th>
+            </tr>
+          </thead>
+          <tbody id="cardBackStatsBody"></tbody>
+          <tfoot id="cardBackStatsFoot"></tfoot>
+        </table>
+      </div>
+
+      <div class="card-back-footer">
+        <div class="card-back-logo">⚾ MOUNTAINSIDE ACES ⚾</div>
+        <div class="card-back-copyright">acessoftballreference.com</div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- #cardRenderArea -->
+
+<script type="module">
+  import {
+    getAllPlayerStatsOptimized,
+    getCurrentSeason,
+    seasonsObjectToArray,
+    getAllPlayers
+  } from './firebase-data.js';
+
+  // -------------------------------------------------------
+  // Utility helpers (mirrors player.html)
+  // -------------------------------------------------------
+  function capitalize(str) {
+    return str ? str.charAt(0).toUpperCase() + str.slice(1) : '';
+  }
+
+  function formatPlayerName(name) {
+    if (!name) return '';
+    const sep = name.includes(' ') ? ' ' : name.includes('_') ? '_' : null;
+    if (sep) {
+      return name.split(sep)
+        .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+        .join(' ');
+    }
+    return name.charAt(0).toUpperCase() + name.slice(1).toLowerCase();
+  }
+
+  // Convert the raw aggregated player doc into an allStats array
+  // (same processing as player.html's main load function)
+  function buildStatsArray(resolvedPlayer) {
+    const allStats = [];
+    const seasonsArray = seasonsObjectToArray(resolvedPlayer);
+
+    seasonsArray.forEach(season => {
+      let year = '';
+      let seasonName = '';
+      if (season.seasonId) {
+        const parts = season.seasonId.split('-');
+        if (parts.length >= 2) { year = parts[0]; seasonName = parts[1]; }
+      }
+      if (!year && season.year) year = season.year;
+      if (!seasonName && season.season) seasonName = season.season;
+
+      const isSub = season.sub === 'Yes' || season.sub === 'yes' || season.sub === true;
+
+      allStats.push({
+        name: formatPlayerName(resolvedPlayer.name || resolvedPlayer.displayName || resolvedPlayer.id),
+        team: capitalize(season.team || resolvedPlayer.currentTeam || ''),
+        year,
+        season: capitalize(seasonName),
+        games: Number(season.games) || 0,
+        atBats: Number(season.atBats) || 0,
+        hits: Number(season.hits) || 0,
+        runs: Number(season.runs) || 0,
+        walks: Number(season.walks) || 0,
+        sub: isSub ? 'Yes' : 'No'
+      });
+    });
+
+    const seasonOrder = { Fall: 3, Summer: 2, Spring: 1 };
+    allStats.sort((a, b) => {
+      if (a.year !== b.year) return b.year.localeCompare(a.year);
+      return (seasonOrder[b.season] || 0) - (seasonOrder[a.season] || 0);
+    });
+
+    return allStats;
+  }
+
+  // Calculate totals for the card front stat strip
+  function calculateCardTotals(stats) {
+    let games = 0, atBats = 0, hits = 0, runs = 0, walks = 0;
+    stats.forEach(s => {
+      games += s.games; atBats += s.atBats; hits += s.hits;
+      runs += s.runs; walks += s.walks;
+    });
+    const BA  = atBats > 0 ? hits / atBats : 0;
+    const OBP = atBats + walks > 0 ? (hits + walks) / (atBats + walks) : 0;
+    return { games, atBats, hits, runs, walks, BA, OBP };
+  }
+
+  // -------------------------------------------------------
+  // Populate card DOM with player data
+  // -------------------------------------------------------
+  function populateCard(playerName, stats, info) {
+    const regularStats = stats.filter(s => s.sub === 'No');
+    const currentTeam  = stats[0]?.team || 'Unknown Team';
+    const position     = info?.position || '-';
+    const bats         = info?.bats || info?.batting || '-';
+    const throws       = info?.throws || info?.throwing || '-';
+    const isCaptain    = info?.captain && info.captain.toLowerCase() === 'yes';
+
+    // — FRONT —
+    document.getElementById('cardTeamName').textContent = currentTeam;
+    document.getElementById('cardPlayerName').textContent = playerName;
+
+    const numEl = document.getElementById('cardPlayerNumber');
+    if (info?.number) {
+      numEl.textContent = info.number;
+      numEl.style.display = 'flex';
+    } else {
+      numEl.style.display = 'none';
+    }
+
+    const nickEl = document.getElementById('cardPlayerNickname');
+    if (info?.nickname) {
+      nickEl.textContent = `"${info.nickname}"`;
+      nickEl.style.display = 'block';
+    } else {
+      nickEl.style.display = 'none';
+    }
+
+    document.getElementById('cardCaptainStar').style.display = isCaptain ? 'block' : 'none';
+
+    let positionText = position;
+    if (bats !== '-' || throws !== '-') {
+      positionText += ` • ${bats !== '-' ? 'Bats: ' + bats : ''}${bats !== '-' && throws !== '-' ? ' / ' : ''}${throws !== '-' ? 'Throws: ' + throws : ''}`;
+    }
+    document.getElementById('cardPlayerPosition').textContent = positionText;
+
+    // Photo
+    const photoEl   = document.getElementById('cardPhoto');
+    const photoPlaceholder = document.getElementById('cardPhotoPlaceholder');
+    const photoURL  = info?.photo || null;
+    if (photoURL) {
+      photoEl.src = photoURL;
+      photoEl.style.display = 'block';
+      photoPlaceholder.style.display = 'none';
+    } else {
+      photoEl.src = '';
+      photoEl.style.display = 'none';
+      photoPlaceholder.style.display = 'flex';
+    }
+
+    // Career years
+    const years = [...new Set(regularStats.map(s => s.year))].sort();
+    const careerYearsText = years.length > 0 ? `${years[0]} - ${years[years.length - 1]}` : 'N/A';
+    document.getElementById('cardCareerYears').textContent = careerYearsText;
+
+    // Stat strip
+    const totals = calculateCardTotals(regularStats);
+    document.getElementById('cardStatGames').textContent = totals.games;
+    document.getElementById('cardStatHits').textContent  = totals.hits;
+    document.getElementById('cardStatRuns').textContent  = totals.runs;
+    document.getElementById('cardStatBA').textContent    = totals.BA.toFixed(3);
+    document.getElementById('cardStatOBP').textContent   = totals.OBP.toFixed(3);
+
+    // — BACK —
+    document.getElementById('cardBackName').textContent = playerName;
+    document.getElementById('cardBackTeam').textContent = currentTeam;
+    const backNumEl = document.getElementById('cardBackNumber');
+    backNumEl.textContent = info?.number ? `#${info.number}` : '';
+
+    document.getElementById('cardBackPosition').textContent = position;
+    document.getElementById('cardBackBats').textContent     = bats;
+    document.getElementById('cardBackThrows').textContent   = throws;
+    document.getElementById('cardBackCaptainVital').style.display = isCaptain ? 'block' : 'none';
+
+    // Year-by-year table
+    const sortedStats = [...regularStats].sort((a, b) => {
+      if (a.year !== b.year) return a.year.localeCompare(b.year);
+      const seasonOrder = { Spring: 1, Summer: 2, Fall: 3 };
+      return (seasonOrder[a.season] || 0) - (seasonOrder[b.season] || 0);
+    });
+
+    const statsBody = document.getElementById('cardBackStatsBody');
+    const statsFoot = document.getElementById('cardBackStatsFoot');
+
+    statsBody.innerHTML = sortedStats.map(s => {
+      const avg = s.atBats > 0 ? (s.hits / s.atBats).toFixed(3) : '.000';
+      const teamAbbr = s.team.length > 5 ? s.team.substring(0, 4) + '.' : s.team;
+      const seasonAbbr = s.season.substring(0, 2).toUpperCase();
+      return `<tr>
+        <td>${s.year.slice(-2)}${seasonAbbr}</td>
+        <td>${teamAbbr}</td>
+        <td>${s.games}</td>
+        <td>${s.atBats}</td>
+        <td>${s.hits}</td>
+        <td>${s.runs}</td>
+        <td>${s.walks}</td>
+        <td>${avg}</td>
+      </tr>`;
+    }).join('');
+
+    const careerAvg = totals.atBats > 0 ? (totals.hits / totals.atBats).toFixed(3) : '.000';
+    statsFoot.innerHTML = `<tr>
+      <td>TOT</td><td>-</td>
+      <td>${totals.games}</td><td>${totals.atBats}</td>
+      <td>${totals.hits}</td><td>${totals.runs}</td>
+      <td>${totals.walks}</td><td>${careerAvg}</td>
+    </tr>`;
+  }
+
+  // -------------------------------------------------------
+  // Wait for the card photo to finish loading (or timeout)
+  // -------------------------------------------------------
+  function waitForPhoto(imgEl, timeout = 3000) {
+    return new Promise(resolve => {
+      if (!imgEl.src || imgEl.style.display === 'none') {
+        resolve(); return;
+      }
+      if (imgEl.complete && imgEl.naturalWidth > 0) {
+        resolve(); return;
+      }
+      const timer = setTimeout(resolve, timeout);
+      imgEl.onload  = () => { clearTimeout(timer); resolve(); };
+      imgEl.onerror = () => { clearTimeout(timer); resolve(); };
+    });
+  }
+
+  // -------------------------------------------------------
+  // Capture a single element with html2canvas
+  // -------------------------------------------------------
+  async function captureElement(el) {
+    return html2canvas(el, {
+      scale: 2,
+      useCORS: true,
+      allowTaint: false,
+      backgroundColor: '#f5f0e1',
+      logging: false
+    });
+  }
+
+  // -------------------------------------------------------
+  // UI helpers
+  // -------------------------------------------------------
+  function setProgress(current, total, label) {
+    const pct = total > 0 ? Math.round((current / total) * 100) : 0;
+    document.getElementById('progressFill').style.width = pct + '%';
+    document.getElementById('progressText').textContent = label;
+  }
+
+  function addPlayerToList(playerName) {
+    const li = document.createElement('li');
+    li.id = 'pl-' + CSS.escape(playerName);
+    li.innerHTML = `<span class="status-icon">⏳</span><span>${playerName}</span>`;
+    document.getElementById('playerList').appendChild(li);
+    return li;
+  }
+
+  function markPlayerDone(li, success) {
+    li.className = success ? 'done' : 'error';
+    li.querySelector('.status-icon').textContent = success ? '✅' : '⚠️';
+  }
+
+  function markPlayerActive(li) {
+    li.className = 'active';
+    li.querySelector('.status-icon').textContent = '🎨';
+    li.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  // -------------------------------------------------------
+  // MAIN — Generate PDF
+  // -------------------------------------------------------
+  document.getElementById('generateBtn').addEventListener('click', async () => {
+    const btn = document.getElementById('generateBtn');
+    const progressArea = document.getElementById('progressArea');
+    const errorMsg = document.getElementById('errorMsg');
+    const successMsg = document.getElementById('successMsg');
+    const playerList = document.getElementById('playerList');
+
+    btn.disabled = true;
+    progressArea.style.display = 'block';
+    errorMsg.style.display = 'none';
+    successMsg.style.display = 'none';
+    playerList.innerHTML = '';
+
+    try {
+      // 1. Load season + players in parallel
+      setProgress(0, 1, 'Fetching current season…');
+      const [activeSeason, allPlayersRaw, allUserInfo] = await Promise.all([
+        getCurrentSeason(),
+        getAllPlayerStatsOptimized(),
+        getAllPlayers()
+      ]);
+
+      const currentSeasonId = activeSeason?.id || '2026-summer';
+      const [seasonYear, seasonName] = currentSeasonId.split('-');
+
+      // Build playerInfo lookup by displayName
+      const infoMap = {};
+      allUserInfo.forEach(u => {
+        if (u.displayName) infoMap[u.displayName] = u;
+      });
+
+      // 2. Filter to current-season players
+      const currentPlayers = allPlayersRaw.filter(p => {
+        if (!p.seasons) return false;
+        return Object.keys(p.seasons).some(k => k.startsWith(currentSeasonId));
+      });
+
+      // Sort alphabetically
+      currentPlayers.sort((a, b) => {
+        const na = formatPlayerName(a.name || a.displayName || a.id);
+        const nb = formatPlayerName(b.name || b.displayName || b.id);
+        return na.localeCompare(nb);
+      });
+
+      if (currentPlayers.length === 0) {
+        throw new Error(`No players found for season "${currentSeasonId}". Check that the season is active in Firebase.`);
+      }
+
+      // 3. Build player list UI
+      const listItems = {};
+      currentPlayers.forEach(p => {
+        const displayName = formatPlayerName(p.name || p.displayName || p.id);
+        listItems[p.id] = addPlayerToList(displayName);
+      });
+
+      setProgress(0, currentPlayers.length, `Found ${currentPlayers.length} players for ${seasonYear} ${capitalize(seasonName)}. Starting…`);
+
+      // 4. Initialize jsPDF (3.5in × 5in per page = 88.9mm × 127mm)
+      const { jsPDF } = window.jspdf;
+      const CARD_W_MM = 88.9;
+      const CARD_H_MM = 127;
+      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: [CARD_W_MM, CARD_H_MM] });
+      let firstPage = true;
+
+      // 5. Capture each player sequentially
+      for (let i = 0; i < currentPlayers.length; i++) {
+        const player = currentPlayers[i];
+        const displayName = formatPlayerName(player.name || player.displayName || player.id);
+        const li = listItems[player.id];
+
+        setProgress(i, currentPlayers.length, `Generating card ${i + 1} of ${currentPlayers.length}: ${displayName}`);
+        markPlayerActive(li);
+
+        try {
+          // Build stats
+          const stats = buildStatsArray(player);
+
+          // Get info from the users collection lookup
+          const info = infoMap[displayName] || infoMap[player.name] || null;
+
+          // Populate the DOM
+          populateCard(displayName, stats, info);
+
+          // Wait for photo
+          const photoEl = document.getElementById('cardPhoto');
+          await waitForPhoto(photoEl, 3000);
+
+          // Capture front
+          const frontCanvas = await captureElement(document.getElementById('cardFrontWrapper'));
+
+          // Capture back
+          const backCanvas = await captureElement(document.getElementById('cardBackWrapper'));
+
+          // Add front page
+          if (!firstPage) pdf.addPage([CARD_W_MM, CARD_H_MM], 'portrait');
+          pdf.addImage(frontCanvas.toDataURL('image/png'), 'PNG', 0, 0, CARD_W_MM, CARD_H_MM);
+          firstPage = false;
+
+          // Add back page
+          pdf.addPage([CARD_W_MM, CARD_H_MM], 'portrait');
+          pdf.addImage(backCanvas.toDataURL('image/png'), 'PNG', 0, 0, CARD_W_MM, CARD_H_MM);
+
+          markPlayerDone(li, true);
+        } catch (playerErr) {
+          console.error(`Error generating card for ${displayName}:`, playerErr);
+          markPlayerDone(li, false);
+          // Continue with next player rather than aborting
+        }
+      }
+
+      setProgress(currentPlayers.length, currentPlayers.length, 'Done! Saving PDF…');
+
+      // 6. Download
+      const filename = `aces-cards-${currentSeasonId}.pdf`;
+      pdf.save(filename);
+
+      successMsg.textContent = `✅ PDF saved as "${filename}" — ${currentPlayers.length} players, ${currentPlayers.length * 2} pages.`;
+      successMsg.style.display = 'block';
+      setProgress(currentPlayers.length, currentPlayers.length, `Complete! ${currentPlayers.length} cards generated.`);
+
+    } catch (err) {
+      console.error('Card export error:', err);
+      errorMsg.textContent = '❌ ' + (err.message || 'An unexpected error occurred. Check the browser console for details.');
+      errorMsg.style.display = 'block';
+      setProgress(0, 1, 'Error — see message above.');
+    } finally {
+      btn.disabled = false;
+    }
+  });
+</script>
+</body>
+</html>
