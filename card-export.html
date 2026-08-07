@@ -1164,7 +1164,7 @@
       const currentSeasonId = activeSeason?.id || '2026-summer';
       const [seasonYear, seasonName] = currentSeasonId.split('-');
 
-      // Build playerInfo lookup by displayName
+      // Build playerInfo lookup by displayName (users collection — has photos)
       const infoMap = {};
       allUserInfo.forEach(u => {
         if (u.displayName) infoMap[u.displayName] = u;
@@ -1174,6 +1174,26 @@
       const currentPlayers = allPlayersRaw.filter(p => {
         if (!p.seasons) return false;
         return Object.keys(p.seasons).some(k => k.startsWith(currentSeasonId));
+      });
+
+      // Fetch roster docs for all teams (source of truth for number/bats/throws)
+      const genTeamSet = new Set();
+      currentPlayers.forEach(p => {
+        const stats = buildStatsArray(p);
+        const team = stats[0]?.team;
+        if (team) genTeamSet.add(team);
+      });
+      const genRosterInfoMap = {};
+      const genRosterResults = await Promise.allSettled(
+        [...genTeamSet].map(team => getTeamRosterDoc(team.toLowerCase(), currentSeasonId))
+      );
+      genRosterResults.forEach(r => {
+        if (r.status === 'fulfilled' && Array.isArray(r.value)) {
+          r.value.forEach(rp => {
+            const rName = formatPlayerName(rp.name || rp.displayName || '');
+            if (rName) genRosterInfoMap[rName] = rp;
+          });
+        }
       });
 
       // Sort alphabetically
@@ -1219,8 +1239,15 @@
           // Build stats
           const stats = buildStatsArray(player);
 
-          // Get info from the users collection lookup
-          const info = infoMap[displayName] || infoMap[player.name] || null;
+          // Merge user profile (photo) + roster doc (number/bats/throws)
+          const userInfo   = infoMap[displayName] || infoMap[player.name] || null;
+          const rosterInfo = genRosterInfoMap[displayName] || null;
+          const info = {
+            ...userInfo,
+            number: rosterInfo?.number ?? userInfo?.number ?? null,
+            bats:   rosterInfo?.bats   ?? userInfo?.bats   ?? userInfo?.batting  ?? null,
+            throws: rosterInfo?.throws ?? userInfo?.throws ?? userInfo?.throwing ?? null,
+          };
 
           // Populate the DOM
           populateCard(displayName, stats, info);
