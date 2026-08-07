@@ -649,9 +649,22 @@
       font-weight: 700;
       letter-spacing: 0.4px;
       white-space: nowrap;
+      cursor: pointer;
+      user-select: none;
     }
 
+    .scan-table th:hover { background: #3a6b1e; }
+
     .scan-table th:not(:first-child) { text-align: center; }
+
+    .scan-table th::after {
+      content: ' ⇅';
+      opacity: 0.4;
+      font-size: 0.75em;
+    }
+
+    .scan-table th.sort-asc::after  { content: ' ↑'; opacity: 1; }
+    .scan-table th.sort-desc::after { content: ' ↓'; opacity: 1; }
 
     .scan-table td {
       padding: 6px 10px;
@@ -688,12 +701,12 @@
       <table class="scan-table">
         <thead>
           <tr>
-            <th>Player</th>
-            <th>Team</th>
-            <th>Photo</th>
-            <th>#</th>
-            <th>Bats</th>
-            <th>Throws</th>
+            <th data-col="0">Player</th>
+            <th data-col="1">Team</th>
+            <th data-col="2">Photo</th>
+            <th data-col="3">#</th>
+            <th data-col="4">Bats</th>
+            <th data-col="5">Throws</th>
           </tr>
         </thead>
         <tbody id="scanTableBody"></tbody>
@@ -1342,6 +1355,39 @@
       }
 
       scanResults.style.display = 'block';
+
+      // Wire up sortable headers
+      let sortCol = -1, sortAsc = true;
+      document.querySelectorAll('.scan-table th[data-col]').forEach(th => {
+        th.addEventListener('click', () => {
+          const col = parseInt(th.dataset.col);
+          if (sortCol === col) {
+            sortAsc = !sortAsc;
+          } else {
+            sortCol = col;
+            sortAsc = true;
+          }
+
+          // Update header indicators
+          document.querySelectorAll('.scan-table th').forEach(h => h.classList.remove('sort-asc', 'sort-desc'));
+          th.classList.add(sortAsc ? 'sort-asc' : 'sort-desc');
+
+          // Sort rows
+          const tbody = document.getElementById('scanTableBody');
+          const rows = Array.from(tbody.querySelectorAll('tr'));
+          rows.sort((a, b) => {
+            const aText = a.cells[col]?.textContent.trim() || '';
+            const bText = b.cells[col]?.textContent.trim() || '';
+            // For check columns, sort ✅ before ❌ ascending
+            const aVal = aText.includes('✅') ? 0 : aText.includes('❌') ? 1 : aText.toLowerCase();
+            const bVal = bText.includes('✅') ? 0 : bText.includes('❌') ? 1 : bText.toLowerCase();
+            if (aVal < bVal) return sortAsc ? -1 : 1;
+            if (aVal > bVal) return sortAsc ? 1 : -1;
+            return 0;
+          });
+          rows.forEach(r => tbody.appendChild(r));
+        });
+      });
 
     } catch (err) {
       console.error('Scan error:', err);
