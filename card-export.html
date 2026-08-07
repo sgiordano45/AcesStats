@@ -872,6 +872,8 @@
     getAllPlayers
   } from './firebase-data.js';
 
+  import { getTeamRosterDoc } from './firebase-roster.js';
+
   // -------------------------------------------------------
   // Utility helpers (mirrors player.html)
   // -------------------------------------------------------
@@ -1300,7 +1302,7 @@
 
       const currentSeasonId = activeSeason?.id || '2026-summer';
 
-      // Build info lookup by displayName
+      // Build info lookup by displayName from users collection
       const infoMap = {};
       allUserInfo.forEach(u => { if (u.displayName) infoMap[u.displayName] = u; });
 
@@ -1308,6 +1310,28 @@
       const currentPlayers = allPlayersRaw.filter(p => {
         if (!p.seasons) return false;
         return Object.keys(p.seasons).some(k => k.startsWith(currentSeasonId));
+      });
+
+      // Collect unique teams to fetch roster docs
+      const teamSet = new Set();
+      currentPlayers.forEach(p => {
+        const stats = buildStatsArray(p);
+        const team = stats[0]?.team;
+        if (team) teamSet.add(team);
+      });
+
+      // Fetch all roster docs in parallel and build a name→rosterPlayer lookup
+      const rosterInfoMap = {};
+      const rosterResults = await Promise.allSettled(
+        [...teamSet].map(team => getTeamRosterDoc(team.toLowerCase(), currentSeasonId))
+      );
+      rosterResults.forEach(r => {
+        if (r.status === 'fulfilled' && Array.isArray(r.value)) {
+          r.value.forEach(rp => {
+            const rName = formatPlayerName(rp.name || rp.displayName || '');
+            if (rName) rosterInfoMap[rName] = rp;
+          });
+        }
       });
 
       // Sort alphabetically
@@ -1323,16 +1347,26 @@
 
       scanTableBody.innerHTML = currentPlayers.map(p => {
         const displayName = formatPlayerName(p.name || p.displayName || p.id);
-        const info = infoMap[displayName] || infoMap[p.name] || null;
+
+        // Merge: user profile (has photo) + roster doc (has number/bats/throws)
+        const userInfo   = infoMap[displayName] || infoMap[p.name] || null;
+        const rosterInfo = rosterInfoMap[displayName] || null;
+
+        // Photo only comes from user profile
+        const hasPhoto  = !!(userInfo?.photo);
+
+        // number/bats/throws: check roster doc first (source of truth), fall back to user profile
+        const number = rosterInfo?.number ?? userInfo?.number ?? null;
+        const bats   = rosterInfo?.bats   ?? userInfo?.bats   ?? userInfo?.batting  ?? null;
+        const throws_ = rosterInfo?.throws ?? userInfo?.throws ?? userInfo?.throwing ?? null;
+
+        const hasNumber = !!(number && String(number).trim() !== '');
+        const hasBats   = !!(bats   && bats   !== '-');
+        const hasThrows = !!(throws_ && throws_ !== '-');
 
         // Derive current team from most recent season
         const stats = buildStatsArray(p);
         const currentTeam = stats[0]?.team || '—';
-
-        const hasPhoto   = !!(info?.photo);
-        const hasNumber  = !!(info?.number);
-        const hasBats    = !!(info?.bats || info?.batting) && (info?.bats || info?.batting) !== '-';
-        const hasThrows  = !!(info?.throws || info?.throwing) && (info?.throws || info?.throwing) !== '-';
 
         const incomplete = !hasPhoto || !hasNumber || !hasBats || !hasThrows;
         if (incomplete) incompleteCount++;
