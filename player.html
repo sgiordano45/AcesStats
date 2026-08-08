@@ -2792,7 +2792,17 @@
             <!-- Populated by JS -->
           </div>
         </div>
-        
+
+        <!-- Summer/Fall Split -->
+        <div class="split-card">
+          <div class="split-card-header">
+            ☀️🍂 Summer vs Fall
+          </div>
+          <div class="split-card-content" id="seasonTypeSplitContent">
+            <!-- Populated by JS -->
+          </div>
+        </div>
+
       </div>
       
       <!-- Opponent Breakdown -->
@@ -5521,6 +5531,71 @@
     return career;
   }
 
+  // Build summer vs fall splits from both data sources
+  function buildSeasonTypeSplits() {
+    const summer = { games: 0, atBats: 0, hits: 0, runs: 0, walks: 0 };
+    const fall = { games: 0, atBats: 0, hits: 0, runs: 0, walks: 0 };
+
+    function accumulateFromSource(sourceData) {
+      if (!sourceData?.seasons) return;
+      Object.entries(sourceData.seasons).forEach(([key, season]) => {
+        let bucket = null;
+        if (key.endsWith('-summer')) bucket = summer;
+        else if (key.endsWith('-fall')) bucket = fall;
+        if (!bucket) return;
+        const addStats = (s) => {
+          if (!s) return;
+          bucket.games += s.games || 0;
+          bucket.atBats += s.atBats || 0;
+          bucket.hits += s.hits || 0;
+          bucket.runs += s.runs || 0;
+          bucket.walks += s.walks || 0;
+        };
+        if (season.splits) {
+          addStats(season.splits.regular);
+          addStats(season.splits.playoff);
+        }
+        // Also check top-level stats on the season if no splits sub-object
+        if (!season.splits) addStats(season);
+      });
+    }
+
+    if (currentSplitsFilter === 'career') {
+      accumulateFromSource(splits2025Data);
+      accumulateFromSource(splitsMainData);
+    } else {
+      // Single season selected — figure out which type it is
+      const key = currentSplitsFilter;
+      const isSummer = key.endsWith('-summer');
+      const isFall = key.endsWith('-fall');
+      const bucket = isSummer ? summer : isFall ? fall : null;
+      if (bucket) {
+        const season2025 = splits2025Data?.seasons?.[key];
+        const seasonMain = splitsMainData?.seasons?.[key];
+        [season2025, seasonMain].forEach(season => {
+          if (!season) return;
+          if (season.splits) {
+            [season.splits.regular, season.splits.playoff].forEach(s => {
+              if (!s) return;
+              bucket.games += s.games || 0;
+              bucket.atBats += s.atBats || 0;
+              bucket.hits += s.hits || 0;
+              bucket.runs += s.runs || 0;
+              bucket.walks += s.walks || 0;
+            });
+          }
+        });
+      }
+    }
+
+    [summer, fall].forEach(s => {
+      s.battingAverage = s.atBats > 0 ? s.hits / s.atBats : 0;
+      s.onBasePercentage = (s.atBats + s.walks) > 0 ? (s.hits + s.walks) / (s.atBats + s.walks) : 0;
+    });
+
+    return { summer, fall };
+  }
+
   // Build combined career vsOpponent from all main collection seasons
   function buildCareerVsOpponentFromMain() {
     if (!splitsMainData?.seasons) return {};
@@ -5605,6 +5680,7 @@
     
     renderPlayoffSplit(splits);
     renderHomeAwaySplit(splits);
+    renderSeasonTypeSplit();
     renderOpponentBreakdown(vsOpponent);
   }
   
@@ -5692,6 +5768,46 @@
     `;
   }
   
+  function renderSeasonTypeSplit() {
+    const content = document.getElementById('seasonTypeSplitContent');
+    const { summer, fall } = buildSeasonTypeSplits();
+
+    if (summer.games === 0 && fall.games === 0) {
+      content.innerHTML = `<div style="padding: 2rem; text-align: center; color: #718096;">No game data available.</div>`;
+      return;
+    }
+
+    const summerAvg = formatSplitsAvg(summer.battingAverage);
+    const summerOBP = formatSplitsAvg(summer.onBasePercentage);
+    const fallAvg = formatSplitsAvg(fall.battingAverage);
+    const fallOBP = formatSplitsAvg(fall.onBasePercentage);
+
+    const avgClass = highlightBetter(summer.battingAverage || 0, fall.battingAverage || 0);
+    const obpClass = highlightBetter(summer.onBasePercentage || 0, fall.onBasePercentage || 0);
+
+    content.innerHTML = `
+      <table class="split-table">
+        <thead>
+          <tr><th>Split</th><th>G</th><th>AB</th><th>H</th><th>R</th><th>BB</th><th>AVG</th><th>OBP</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><div class="split-label"><span class="split-icon">☀️</span> Summer</div></td>
+            <td>${summer.games}</td><td>${summer.atBats}</td><td>${summer.hits}</td>
+            <td>${summer.runs}</td><td>${summer.walks}</td>
+            <td class="${avgClass[0]}">${summerAvg}</td><td class="${obpClass[0]}">${summerOBP}</td>
+          </tr>
+          <tr>
+            <td><div class="split-label"><span class="split-icon">🍂</span> Fall</div></td>
+            <td>${fall.games}</td><td>${fall.atBats}</td><td>${fall.hits}</td>
+            <td>${fall.runs}</td><td>${fall.walks}</td>
+            <td class="${avgClass[1]}">${fallAvg}</td><td class="${obpClass[1]}">${fallOBP}</td>
+          </tr>
+        </tbody>
+      </table>
+    `;
+  }
+
   function renderOpponentBreakdown(vsOpponent) {
     const tbody = document.getElementById('opponentTableBody');
     
