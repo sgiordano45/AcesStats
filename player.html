@@ -3727,7 +3727,8 @@
   let currentLegacyId = null;
   let splits2025Data = null;
 
-  let splitsMainData = null; // aggregatedPlayerStats seasons for 2026+
+  let splitsMainData = null; // aggregatedPlayerStats seasons for 2026+ (with splits sub-object only)
+  let splitsAllSeasons = null; // aggregatedPlayerStats ALL seasons including 2024 (for summer/fall card)
   let splitsGameStats = [];
   let currentSplitsFilter = 'career';
   
@@ -5315,12 +5316,19 @@
       // Load 2026+ splits from aggregatedPlayerStats (already fetched, passed in)
       if (resolvedPlayer?.seasons) {
         const mainSeasons = {};
+        const allSeasons = {};
         Object.entries(resolvedPlayer.seasons).forEach(([seasonId, seasonData]) => {
+          // allSeasons: every season regardless of splits sub-object (for summer/fall card)
+          if (!SPLITS_2025_SEASONS.includes(seasonId)) {
+            allSeasons[seasonId] = seasonData;
+          }
+          // splitsMainData: only seasons with game-level splits data
           if (!SPLITS_2025_SEASONS.includes(seasonId) && seasonData.splits) {
             mainSeasons[seasonId] = seasonData;
           }
         });
         splitsMainData = Object.keys(mainSeasons).length > 0 ? { seasons: mainSeasons } : null;
+        splitsAllSeasons = Object.keys(allSeasons).length > 0 ? { seasons: allSeasons } : null;
         if (splitsMainData) console.log('✅ Loaded main splits data for:', Object.keys(mainSeasons).join(', '));
       }
       
@@ -5562,7 +5570,7 @@
 
     if (currentSplitsFilter === 'career') {
       accumulateFromSource(splits2025Data);
-      accumulateFromSource(splitsMainData);
+      accumulateFromSource(splitsAllSeasons); // includes 2024 and all years without splits sub-object
     } else {
       // Single season selected — figure out which type it is
       const key = currentSplitsFilter;
@@ -5571,8 +5579,8 @@
       const bucket = isSummer ? summer : isFall ? fall : null;
       if (bucket) {
         const season2025 = splits2025Data?.seasons?.[key];
-        const seasonMain = splitsMainData?.seasons?.[key];
-        [season2025, seasonMain].forEach(season => {
+        const seasonAll = splitsAllSeasons?.seasons?.[key];
+        [season2025, seasonAll].forEach(season => {
           if (!season) return;
           if (season.splits) {
             [season.splits.regular, season.splits.playoff].forEach(s => {
@@ -5583,6 +5591,13 @@
               bucket.runs += s.runs || 0;
               bucket.walks += s.walks || 0;
             });
+          } else {
+            // No splits sub-object — use top-level season totals (e.g. 2024 seasons)
+            bucket.games += season.games || 0;
+            bucket.atBats += season.atBats || 0;
+            bucket.hits += season.hits || 0;
+            bucket.runs += season.runs || 0;
+            bucket.walks += season.walks || 0;
           }
         });
       }
