@@ -2863,7 +2863,7 @@
       <div class="splits-no-data hidden" id="splitsNoDataMessage">
         <div style="font-size: 4rem; margin-bottom: 1rem; opacity: 0.3;">📊</div>
         <h3>Game-Level Data Not Available</h3>
-        <p>Detailed game-by-game statistics are available starting with the 2025 Fall season.</p>
+        <p>No splits data is available for this player.</p>
       </div>
       
     </div>
@@ -5381,10 +5381,10 @@
       });
       if (has2025Splits) return true;
     }
-    
+
     // Check career splits from 2025 collection
     if (splits2025Data?.careerSplits?.splits) {
-      const hasCareerSplits = splits2025Data.careerSplits.splits.home?.games > 0 || 
+      const hasCareerSplits = splits2025Data.careerSplits.splits.home?.games > 0 ||
                              splits2025Data.careerSplits.splits.away?.games > 0;
       if (hasCareerSplits) return true;
     }
@@ -5397,7 +5397,15 @@
       });
       if (hasMainSplits) return true;
     }
-    
+
+    // Check for any seasons with basic stats (pre-2025 seasons)
+    if (splitsAllSeasons?.seasons) {
+      const hasBasicStats = Object.values(splitsAllSeasons.seasons).some(season =>
+        (season.games > 0 || season.atBats > 0)
+      );
+      if (hasBasicStats) return true;
+    }
+
     return false;
   }
   
@@ -5412,7 +5420,7 @@
   function populateSplitsSeasonFilter() {
     const filterSelect = document.getElementById('splitsSeasonFilter');
     const eligibleSeasons = new Set();
-    
+
     // Add 2025 seasons from splits collection
     if (splits2025Data?.seasons) {
       Object.keys(splits2025Data.seasons)
@@ -5420,10 +5428,20 @@
         .forEach(s => eligibleSeasons.add(s));
     }
 
-    // Add 2026+ seasons from main collection
+    // Add 2026+ seasons from main collection (with game-level splits)
     if (splitsMainData?.seasons) {
       Object.keys(splitsMainData.seasons)
         .filter(s => splitsMainData.seasons[s].splits)
+        .forEach(s => eligibleSeasons.add(s));
+    }
+
+    // Add all seasons with basic stats (pre-2025 seasons without game-level splits)
+    if (splitsAllSeasons?.seasons) {
+      Object.keys(splitsAllSeasons.seasons)
+        .filter(s => {
+          const season = splitsAllSeasons.seasons[s];
+          return (season.games > 0 || season.atBats > 0);
+        })
         .forEach(s => eligibleSeasons.add(s));
     }
     
@@ -5548,8 +5566,9 @@
       if (!sourceData?.seasons) return;
       Object.entries(sourceData.seasons).forEach(([key, season]) => {
         let bucket = null;
-        if (key.endsWith('-summer')) bucket = summer;
-        else if (key.endsWith('-fall')) bucket = fall;
+        const parts = key.split('-');
+        if (parts[1] === 'summer') bucket = summer;
+        else if (parts[1] === 'fall') bucket = fall;
         if (!bucket) return;
         const addStats = (s) => {
           if (!s) return;
@@ -5574,8 +5593,9 @@
     } else {
       // Single season selected — figure out which type it is
       const key = currentSplitsFilter;
-      const isSummer = key.endsWith('-summer');
-      const isFall = key.endsWith('-fall');
+      const keyParts = key.split('-');
+      const isSummer = keyParts[1] === 'summer';
+      const isFall = keyParts[1] === 'fall';
       const bucket = isSummer ? summer : isFall ? fall : null;
       if (bucket) {
         const season2025 = splits2025Data?.seasons?.[key];
@@ -5683,20 +5703,32 @@
   function renderAllSplits() {
     const splits = getSplitsData();
     const vsOpponent = getVsOpponentData();
-    
-    if (!splits || (splits.home?.games === 0 && splits.away?.games === 0)) {
+    const { summer, fall } = buildSeasonTypeSplits();
+    const hasGameLevelSplits = splits && (splits.home?.games > 0 || splits.away?.games > 0);
+    const hasSeasonTypeData = summer.games > 0 || fall.games > 0;
+
+    if (!hasGameLevelSplits && !hasSeasonTypeData) {
       document.getElementById('splitsGrid').style.display = 'none';
       document.getElementById('opponentSection').style.display = 'none';
       return;
     }
-    
+
     document.getElementById('splitsGrid').style.display = 'grid';
-    document.getElementById('opponentSection').style.display = 'block';
-    
-    renderPlayoffSplit(splits);
-    renderHomeAwaySplit(splits);
+
+    if (hasGameLevelSplits) {
+      renderPlayoffSplit(splits);
+      renderHomeAwaySplit(splits);
+      document.getElementById('opponentSection').style.display = 'block';
+      renderOpponentBreakdown(vsOpponent);
+    } else {
+      // Pre-2025 season: no game-level splits, show placeholder in detail cards
+      const noDataMsg = `<div style="padding: 2rem; text-align: center; color: #718096;">Game-level data not available for this season.</div>`;
+      document.getElementById('playoffSplitContent').innerHTML = noDataMsg;
+      document.getElementById('homeAwaySplitContent').innerHTML = noDataMsg;
+      document.getElementById('opponentSection').style.display = 'none';
+    }
+
     renderSeasonTypeSplit();
-    renderOpponentBreakdown(vsOpponent);
   }
   
   function renderPlayoffSplit(splits) {
