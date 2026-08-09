@@ -1171,10 +1171,13 @@
       });
 
       // Secondary lookup: stats-doc-id → auth-linked UID doc (the one with playerPhotoURL)
-      // UID docs have mergedFromProfile = "matt_leonardelli" etc., linking them to the stats doc
+      // UID docs have mergedFromProfile = "matt_leonardelli" (legacy underscore format).
+      // p.id may be "Matt Leonardelli" (display-name format) so index by BOTH mergedFromProfile
+      // AND displayName so either lookup style finds the right UID doc.
       const uidDocMap = {};
       allUserInfo.forEach(u => {
         if (u.mergedFromProfile) uidDocMap[u.mergedFromProfile] = u;
+        if (u.displayName) uidDocMap[u.displayName] = u;
       });
 
       // 2. Filter to current-season players
@@ -1256,7 +1259,8 @@
           // Resolve photo fields: the name-matched userInfo doc (legacy) may lack photos.
           // The UID-based doc (uidDocMap[player.id]) always has photo fields if the player
           // linked their account. Overlay photo fields from it when the name-matched doc lacks them.
-          const uidDoc = uidDocMap[player.id] || null;
+          const playerStatsName = formatPlayerName(player.name || player.displayName || player.id);
+          const uidDoc = uidDocMap[player.id] || uidDocMap[playerStatsName] || null;
           const resolvedUserInfo = (userInfo && uidDoc && userInfo !== uidDoc)
             ? {
                 ...userInfo,
@@ -1359,8 +1363,12 @@
       allUserInfo.forEach(u => { if (u.displayName) infoMap[u.displayName] = u; });
 
       // Secondary lookup: stats-doc-id → auth-linked UID doc (the one with playerPhotoURL)
+      // Index by both mergedFromProfile AND displayName so p.id in either format finds the UID doc.
       const uidDocMap = {};
-      allUserInfo.forEach(u => { if (u.mergedFromProfile) uidDocMap[u.mergedFromProfile] = u; });
+      allUserInfo.forEach(u => {
+        if (u.mergedFromProfile) uidDocMap[u.mergedFromProfile] = u;
+        if (u.displayName) uidDocMap[u.displayName] = u;
+      });
 
       // Filter to current-season players
       const currentPlayers = allPlayersRaw.filter(p => {
@@ -1406,7 +1414,7 @@
 
         // Merge: user profile (has photo) + roster doc (has number/bats/throws)
         const nameInfo   = infoMap[statsName] || infoMap[p.name] || null;
-        const uidDoc     = uidDocMap[p.id] || null;
+        const uidDoc     = uidDocMap[p.id] || uidDocMap[statsName] || null;
         // Overlay photo fields from UID doc when the name-matched legacy doc lacks them
         const userInfo   = (nameInfo && uidDoc && nameInfo !== uidDoc)
           ? {
