@@ -1014,6 +1014,10 @@ async function loadWeekendData() {
     
     console.log(`✅ Mapped: ${allGames.length} games, ${playerData.length} player records`);
 
+    // Expose raw player docs + season ID for finals share card roster section
+    window._acesAllPlayers = players;
+    window._acesCurrentSeasonId = currentSeasonData.id;
+
     await loadRostersAndSplits();
 
     generateWeekendPreview();
@@ -1775,6 +1779,7 @@ function createGameCard(game, cardIdx = 0) {
     awayStandingText, homeStandingText,
     awayTopPlayers, homeTopPlayers,
     gameType: game.game_type,
+    round: game.round || "",
     awayLogoPath, homeLogoPath
   };
 
@@ -1904,10 +1909,35 @@ if (!navigator.onLine) updateConnectionStatus();
   let _activeShareKey = null;
   let _activeCardId   = null;
 
+  function _getGameTier(d) {
+    const round = (d.round || '').toLowerCase();
+    if (/championship|finals?/.test(round)) return 'finals';
+    if (d.gameType === 'Playoff') return 'playoff';
+    return 'regular';
+  }
+
   function openCardShareModal(shareKey, cardId) {
     _activeShareKey = shareKey;
     _activeCardId   = cardId;
     const d = (window._shareCardData || {})[shareKey] || {};
+    const tier = _getGameTier(d);
+
+    // Style modal header based on game tier
+    const modal = document.querySelector('#cardShareModal .share-card-modal');
+    const h3 = modal ? modal.querySelector('h3') : null;
+    if (h3) {
+      if (tier === 'finals') {
+        h3.textContent = '🏆 Share Championship Game';
+        h3.style.color = '#92650a';
+      } else if (tier === 'playoff') {
+        h3.textContent = '🏆 Share Playoff Matchup';
+        h3.style.color = '#4a148c';
+      } else {
+        h3.textContent = '📤 Share Matchup';
+        h3.style.color = '';
+      }
+    }
+
     document.getElementById('cardShareModalSubtitle').textContent =
       d.awayTeam && d.homeTeam ? `${d.awayTeam} @ ${d.homeTeam}` : 'Choose how to share this game';
     // Reset buttons
@@ -1915,7 +1945,10 @@ if (!navigator.onLine) updateConnectionStatus();
       const btn = document.getElementById(id);
       btn.classList.remove('success');
     });
-    document.getElementById('cardShareImgBtn').innerHTML = `<span class="share-card-opt-icon">🖼️</span><span><div class="share-card-opt-title">Save as Image</div><div class="share-card-opt-desc">Download a PNG — perfect for group chats</div></span>`;
+    const imgDesc = tier === 'finals' ? 'Download a championship-themed PNG' :
+                    tier === 'playoff' ? 'Download a playoff-themed PNG' :
+                    'Download a PNG — perfect for group chats';
+    document.getElementById('cardShareImgBtn').innerHTML = `<span class="share-card-opt-icon">🖼️</span><span><div class="share-card-opt-title">Save as Image</div><div class="share-card-opt-desc">${imgDesc}</div></span>`;
     document.getElementById('cardShareTxtBtn').innerHTML = `<span class="share-card-opt-icon">📋</span><span><div class="share-card-opt-title">Copy as Text</div><div class="share-card-opt-desc">Copy a quick matchup summary to clipboard</div></span>`;
     document.getElementById('cardShareModal').style.display = 'flex';
   }
@@ -1924,6 +1957,106 @@ if (!navigator.onLine) updateConnectionStatus();
     document.getElementById('cardShareModal').style.display = 'none';
     _activeShareKey = null;
     _activeCardId   = null;
+  }
+
+  function _buildFinalsRosterHtml(awayTeam, homeTeam, theme) {
+    const allPlayers = window._acesAllPlayers || [];
+    const seasonId   = window._acesCurrentSeasonId || '';
+    if (!allPlayers.length || !seasonId) return '';
+
+    function getTeamRoster(teamName) {
+      const teamLower = teamName.toLowerCase();
+      const teamSlug  = teamLower.replace(/\s+/g, '-');
+      const batters  = [];
+      const pitchers = [];
+
+      allPlayers.forEach(player => {
+        const name = player.name || player.displayName || player.playerName || '';
+
+        // Batting
+        if (player.seasons) {
+          const keys = Object.keys(player.seasons).filter(k =>
+            k === `${seasonId}-${teamLower}` || k === `${seasonId}-${teamSlug}`
+          );
+          if (keys.length) {
+            const s = player.seasons[keys[0]];
+            const avg = typeof s.battingAverage === 'number' ? s.battingAverage :
+                        (typeof s.acesBPI === 'number' ? s.acesBPI : null);
+            const ab  = Number(s.atBats) || 0;
+            if (avg !== null && ab >= 3) batters.push({ name, avg, ab });
+          }
+        }
+
+        // Pitching
+        if (player.pitchingSeasons) {
+          const keys = Object.keys(player.pitchingSeasons).filter(k =>
+            k === `${seasonId}-${teamLower}` || k === `${seasonId}-${teamSlug}`
+          );
+          if (keys.length) {
+            const s = player.pitchingSeasons[keys[0]];
+            const era = typeof s.earnedRunAverage === 'number' ? s.earnedRunAverage : null;
+            if (s.inningsPitched || s.runsAllowed) {
+              pitchers.push({ name, era, runsAllowed: Number(s.runsAllowed) || 0 });
+            }
+          }
+        }
+      });
+
+      batters.sort((a, b) => b.avg - a.avg);
+      pitchers.sort((a, b) => {
+        if (a.era !== null && b.era !== null) return a.era - b.era;
+        if (a.era !== null) return -1;
+        if (b.era !== null) return 1;
+        return a.runsAllowed - b.runsAllowed;
+      });
+
+      return { topBatters: batters.slice(0, 9), topPitcher: pitchers[0] || null };
+    }
+
+    const away = getTeamRoster(awayTeam);
+    const home = getTeamRoster(homeTeam);
+    if (!away.topBatters.length && !home.topBatters.length) return '';
+
+    const fmtAvg = v => typeof v === 'number' ? v.toFixed(3).replace(/^0\./, '.') : '---';
+    const fmtEra = v => typeof v === 'number' ? v.toFixed(2) : '---';
+
+    function buildCol(teamName, roster) {
+      const rows = roster.topBatters.map((p, i) => `
+        <div style="display:flex;align-items:baseline;gap:3px;padding:1px 0;font-size:0.66rem;line-height:1.35;color:#3d2400;">
+          <span style="color:#b8860b;font-weight:700;min-width:13px;">${i + 1}.</span>
+          <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${p.name}</span>
+          <span style="font-weight:800;color:#7c5c00;flex-shrink:0;margin-left:3px;">${fmtAvg(p.avg)}</span>
+        </div>`).join('');
+
+      const pitcherHtml = roster.topPitcher ? `
+        <div style="margin-top:5px;padding-top:4px;border-top:1px solid rgba(246,200,75,0.6);">
+          <div style="font-size:0.58rem;font-weight:800;color:#92650a;text-transform:uppercase;letter-spacing:0.6px;margin-bottom:2px;">⚾ Top Arm</div>
+          <div style="display:flex;align-items:baseline;gap:3px;font-size:0.66rem;color:#3d2400;">
+            <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${roster.topPitcher.name}</span>
+            <span style="font-weight:800;color:#7c5c00;flex-shrink:0;">${fmtEra(roster.topPitcher.era)} ERA</span>
+          </div>
+        </div>` : '';
+
+      return `
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:0.63rem;font-weight:900;text-transform:uppercase;letter-spacing:0.5px;color:#7c5c00;margin-bottom:4px;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${teamName}</div>
+          <div style="display:flex;justify-content:space-between;font-size:0.58rem;font-weight:700;color:#b8860b;margin-bottom:2px;padding-bottom:2px;border-bottom:1px solid rgba(246,200,75,0.5);">
+            <span>Batter</span><span>AVG</span>
+          </div>
+          ${rows}
+          ${pitcherHtml}
+        </div>`;
+    }
+
+    return `
+      <div style="background:#fffbf0;border-radius:9px;padding:9px 11px;border:1px solid #f6c84b;margin-top:12px;">
+        <div style="font-size:0.62rem;font-weight:800;text-transform:uppercase;letter-spacing:0.8px;color:#92650a;margin-bottom:7px;text-align:center;">📋 Season Rosters</div>
+        <div style="display:flex;gap:8px;align-items:flex-start;">
+          ${buildCol(awayTeam, away)}
+          <div style="width:1px;background:#f6d365;flex-shrink:0;align-self:stretch;"></div>
+          ${buildCol(homeTeam, home)}
+        </div>
+      </div>`;
   }
 
   async function shareCardImage() {
@@ -1941,6 +2074,59 @@ if (!navigator.onLine) updateConnectionStatus();
       }
 
       const d = (window._shareCardData || {})[_activeShareKey] || {};
+      const tier = _getGameTier(d);
+
+      // Theme config per tier
+      const theme = tier === 'finals' ? {
+        headerBg:     'linear-gradient(135deg,#7c5c00 0%,#c8900a 50%,#7c5c00 100%)',
+        headerLabel:  '🏆 Championship Night',
+        accentColor:  '#92650a',
+        badgeBg:      'linear-gradient(135deg,#f6d365 0%,#fda085 100%)',
+        badgeText:    '🏆 CHAMPIONSHIP',
+        badgeColor:   '#5a3e00',
+        bodyBg:       'linear-gradient(180deg,#fffbf0 0%,#fff8e1 100%)',
+        borderColor:  '#f6c84b',
+        playersBg:    '#fffbf0',
+        playersBorder:'#f6d365',
+        vsColor:      '#92650a',
+        teamColor:    '#2d1a00',
+        stamp: `<div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-8deg);font-size:2.6rem;font-weight:900;color:rgba(198,140,10,0.13);letter-spacing:-1px;white-space:nowrap;pointer-events:none;user-select:none;">FINALS</div>`
+      } : tier === 'playoff' ? {
+        headerBg:     'linear-gradient(135deg,#1a237e 0%,#4a148c 100%)',
+        headerLabel:  '🏆 Playoff Preview',
+        accentColor:  '#4a148c',
+        badgeBg:      'linear-gradient(135deg,#6a1b9a 0%,#1a237e 100%)',
+        badgeText:    '🏆 PLAYOFFS',
+        badgeColor:   '#fff',
+        bodyBg:       'linear-gradient(180deg,#f5f3ff 0%,#ede7f6 100%)',
+        borderColor:  '#9c6ee8',
+        playersBg:    '#f3e8ff',
+        playersBorder:'#c084fc',
+        vsColor:      '#6a1b9a',
+        teamColor:    '#1a0533',
+        stamp: `<div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-8deg);font-size:2.6rem;font-weight:900;color:rgba(106,27,154,0.09);letter-spacing:-1px;white-space:nowrap;pointer-events:none;user-select:none;">PLAYOFFS</div>`
+      } : {
+        headerBg:     'linear-gradient(135deg,#2d5016 0%,#1a6b4a 100%)',
+        headerLabel:  '⚾ Weekend Preview',
+        accentColor:  '#2d5016',
+        badgeBg:      null,
+        badgeText:    null,
+        badgeColor:   null,
+        bodyBg:       '#ffffff',
+        borderColor:  '#e2e8f0',
+        playersBg:    '#f8fafc',
+        playersBorder:'#e2e8f0',
+        vsColor:      '#2d5016',
+        teamColor:    '#2d3748',
+        stamp:        ''
+      };
+
+      const roundLabel = d.round ? d.round : (tier === 'finals' ? 'Championship' : tier === 'playoff' ? 'Playoffs' : '');
+
+      // Pre-compute finals roster section (sync — data already in window._acesAllPlayers)
+      const finalsRosterHtml = tier === 'finals'
+        ? _buildFinalsRosterHtml(d.awayTeam || '', d.homeTeam || '', theme)
+        : '';
 
       // Build off-screen render
       const wrapper = document.createElement('div');
@@ -1952,46 +2138,54 @@ if (!navigator.onLine) updateConnectionStatus();
         box-shadow:0 4px 24px rgba(0,0,0,0.12);
       `;
 
-      const awayColor = getTeamHex(d.awayTeam);
-      const homeColor = getTeamHex(d.homeTeam);
-
       wrapper.innerHTML = `
-        <div style="background:linear-gradient(135deg,#2d5016 0%,#1a6b4a 100%);padding:14px 20px;display:flex;align-items:center;justify-content:space-between;">
-          <div style="color:#fff;font-weight:800;font-size:1rem;">⚾ Weekend Preview</div>
+        <div style="background:${theme.headerBg};padding:14px 20px;display:flex;align-items:center;justify-content:space-between;">
+          <div style="color:#fff;font-weight:800;font-size:1rem;">${theme.headerLabel}</div>
           <div style="color:rgba(255,255,255,0.8);font-size:0.75rem;font-weight:600;">acessoftballreference.com</div>
         </div>
-        <div style="padding:20px 24px;">
-          <div style="font-size:0.78rem;color:#718096;font-weight:600;margin-bottom:12px;text-transform:uppercase;letter-spacing:0.5px;">${d.gameDateTime || ''} · ${d.gameType || 'Regular'} Season</div>
+        ${tier !== 'regular' ? `
+        <div style="background:${theme.badgeBg};padding:6px 20px;text-align:center;">
+          <span style="color:${tier === 'finals' ? '#5a3e00' : '#fff'};font-weight:900;font-size:0.8rem;letter-spacing:1.5px;text-transform:uppercase;">${theme.badgeText}${roundLabel && roundLabel.toLowerCase() !== (tier === 'finals' ? 'championship' : 'playoffs') ? ' · ' + roundLabel : ''}</span>
+        </div>` : ''}
+        <div style="background:${theme.bodyBg};padding:20px 24px;position:relative;">
+          ${theme.stamp}
+          <div style="font-size:0.78rem;color:#718096;font-weight:600;margin-bottom:12px;text-transform:uppercase;letter-spacing:0.5px;">${d.gameDateTime || ''}</div>
           <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px;">
             <div style="text-align:center;flex:1;">
               <img src="${d.awayLogoPath || ''}" style="width:72px;height:72px;object-fit:contain;display:block;margin:0 auto 8px;" onerror="this.style.display='none';">
-              <div style="font-weight:800;font-size:1.05rem;color:#2d3748;">${d.awayTeam || ''}</div>
+              <div style="font-weight:800;font-size:1.05rem;color:${theme.teamColor};">${d.awayTeam || ''}</div>
               <div style="font-size:0.8rem;color:#718096;margin-top:2px;">${d.awayRecordText || ''}</div>
               <div style="font-size:0.72rem;color:#a0aec0;">${d.awayStandingText || ''}</div>
             </div>
-            <div style="text-align:center;font-size:1.4rem;font-weight:900;color:#2d5016;flex-shrink:0;">@</div>
+            <div style="text-align:center;flex-shrink:0;">
+              <div style="font-size:1.4rem;font-weight:900;color:${theme.vsColor};">@</div>
+              ${tier === 'finals' ? '<div style="font-size:0.65rem;font-weight:800;color:#92650a;letter-spacing:1px;margin-top:2px;">WIN OR GO HOME</div>' : ''}
+              ${tier === 'playoff' ? '<div style="font-size:0.65rem;font-weight:800;color:#6a1b9a;letter-spacing:1px;margin-top:2px;">WIN OR GO HOME</div>' : ''}
+            </div>
             <div style="text-align:center;flex:1;">
               <img src="${d.homeLogoPath || ''}" style="width:72px;height:72px;object-fit:contain;display:block;margin:0 auto 8px;" onerror="this.style.display='none';">
-              <div style="font-weight:800;font-size:1.05rem;color:#2d3748;">${d.homeTeam || ''}</div>
+              <div style="font-weight:800;font-size:1.05rem;color:${theme.teamColor};">${d.homeTeam || ''}</div>
               <div style="font-size:0.8rem;color:#718096;margin-top:2px;">${d.homeRecordText || ''}</div>
               <div style="font-size:0.72rem;color:#a0aec0;">${d.homeStandingText || ''} in standings</div>
             </div>
           </div>
           ${(d.awayTopPlayers?.length || d.homeTopPlayers?.length) ? `
-          <div style="background:#f8fafc;border-radius:10px;padding:12px 14px;border:1px solid #e2e8f0;">
+          <div style="background:${theme.playersBg};border-radius:10px;padding:12px 14px;border:1px solid ${theme.playersBorder};">
             <div style="font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#718096;margin-bottom:8px;text-align:center;">Key Players</div>
             <div style="display:flex;gap:12px;">
               <div style="flex:1;text-align:center;">
-                <div style="font-size:0.72rem;font-weight:600;color:#2d5016;margin-bottom:4px;">${d.awayTeam}</div>
+                <div style="font-size:0.72rem;font-weight:600;color:${theme.accentColor};margin-bottom:4px;">${d.awayTeam}</div>
                 ${(d.awayTopPlayers || []).map(p => `<div style="font-size:0.82rem;color:#2d3748;padding:2px 0;">${p}</div>`).join('')}
               </div>
               <div style="flex:1;text-align:center;">
-                <div style="font-size:0.72rem;font-weight:600;color:#2d5016;margin-bottom:4px;">${d.homeTeam}</div>
+                <div style="font-size:0.72rem;font-weight:600;color:${theme.accentColor};margin-bottom:4px;">${d.homeTeam}</div>
                 ${(d.homeTopPlayers || []).map(p => `<div style="font-size:0.82rem;color:#2d3748;padding:2px 0;">${p}</div>`).join('')}
               </div>
             </div>
           </div>` : ''}
-          <div style="margin-top:12px;font-size:0.72rem;color:#a0aec0;text-align:right;">Generated ${new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</div>
+          ${finalsRosterHtml}
+          ${tier === 'finals' ? `<div style="margin-top:10px;text-align:center;font-size:0.82rem;font-weight:700;color:#92650a;letter-spacing:0.5px;">🏆 The biggest game of the season 🏆</div>` : ''}
+          <div style="margin-top:10px;font-size:0.72rem;color:#a0aec0;text-align:right;">Generated ${new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</div>
         </div>
       `;
 
@@ -2025,14 +2219,49 @@ if (!navigator.onLine) updateConnectionStatus();
   function shareCardText() {
     const btn = document.getElementById('cardShareTxtBtn');
     const d = (window._shareCardData || {})[_activeShareKey] || {};
+    const tier = _getGameTier(d);
+    const roundLabel = d.round || '';
 
-    const lines = [
-      `⚾ ${d.awayTeam} @ ${d.homeTeam}`,
-      `📅 ${d.gameDateTime || ''}`,
-      '',
-      `${d.awayTeam}: ${d.awayRecordText || '—'} (${d.awayStandingText || '—'} in standings)`,
-      `${d.homeTeam}: ${d.homeRecordText || '—'} (${d.homeStandingText || '—'} in standings)`,
-    ];
+    let lines = [];
+
+    if (tier === 'finals') {
+      lines = [
+        `🏆🔥 CHAMPIONSHIP NIGHT 🔥🏆`,
+        ``,
+        `${d.awayTeam} vs. ${d.homeTeam}`,
+        `📅 ${d.gameDateTime || ''}`,
+        roundLabel ? `🏆 ${roundLabel}` : '',
+        ``,
+        `The biggest game of the season — winner takes all.`,
+        ``,
+        `${d.awayTeam}: ${d.awayRecordText || '—'} (${d.awayStandingText || '—'} in standings)`,
+        `${d.homeTeam}: ${d.homeRecordText || '—'} (${d.homeStandingText || '—'} in standings)`,
+      ].filter(l => l !== undefined);
+    } else if (tier === 'playoff') {
+      lines = [
+        `🏆 PLAYOFF TIME`,
+        ``,
+        `${d.awayTeam} @ ${d.homeTeam}`,
+        `📅 ${d.gameDateTime || ''}`,
+        roundLabel ? `Round: ${roundLabel}` : '',
+        ``,
+        `Win or go home — it all comes down to tonight.`,
+        ``,
+        `${d.awayTeam}: ${d.awayRecordText || '—'} (${d.awayStandingText || '—'} in standings)`,
+        `${d.homeTeam}: ${d.homeRecordText || '—'} (${d.homeStandingText || '—'} in standings)`,
+      ].filter(l => l !== undefined);
+    } else {
+      lines = [
+        `⚾ ${d.awayTeam} @ ${d.homeTeam}`,
+        `📅 ${d.gameDateTime || ''}`,
+        '',
+        `${d.awayTeam}: ${d.awayRecordText || '—'} (${d.awayStandingText || '—'} in standings)`,
+        `${d.homeTeam}: ${d.homeRecordText || '—'} (${d.homeStandingText || '—'} in standings)`,
+      ];
+    }
+
+    // Remove blank roundLabel lines
+    lines = lines.filter(l => l !== '');
 
     if (d.awayTopPlayers?.length || d.homeTopPlayers?.length) {
       lines.push('');
@@ -2118,14 +2347,48 @@ if (!navigator.onLine) updateConnectionStatus();
         box-shadow:0 4px 24px rgba(0,0,0,0.12);
       `;
 
+      // Detect if any of tonight's games are playoffs/finals for header theming
+      const hasFinalsTonight = tonightCards.some(c => _getGameTier(c) === 'finals');
+      const hasPlayoffTonight = !hasFinalsTonight && tonightCards.some(c => _getGameTier(c) === 'playoff');
+
+      const tonightHeaderBg = hasFinalsTonight
+        ? 'linear-gradient(135deg,#7c5c00 0%,#c8900a 50%,#7c5c00 100%)'
+        : hasPlayoffTonight
+        ? 'linear-gradient(135deg,#1a237e 0%,#4a148c 100%)'
+        : 'linear-gradient(135deg,#2d5016 0%,#1a6b4a 100%)';
+
+      const tonightHeaderLabel = hasFinalsTonight
+        ? '🏆 Championship Night'
+        : hasPlayoffTonight
+        ? '🏆 Playoff Night'
+        : '⚾ Tonight\'s Games';
+
+      const tonightSubheaderBg = hasFinalsTonight
+        ? '#fffbf0'
+        : hasPlayoffTonight
+        ? '#f5f3ff'
+        : '#f0fdf4';
+
+      const tonightSubheaderBorder = hasFinalsTonight
+        ? '#f6d365'
+        : hasPlayoffTonight
+        ? '#c084fc'
+        : '#d1fae5';
+
+      const tonightSubheaderColor = hasFinalsTonight
+        ? '#92650a'
+        : hasPlayoffTonight
+        ? '#4a148c'
+        : '#2d5016';
+
       // Header
       let html = `
-        <div style="background:linear-gradient(135deg,#2d5016 0%,#1a6b4a 100%);padding:14px 20px;display:flex;align-items:center;justify-content:space-between;">
-          <div style="color:#fff;font-weight:800;font-size:1rem;">⚾ Tonight's Games</div>
+        <div style="background:${tonightHeaderBg};padding:14px 20px;display:flex;align-items:center;justify-content:space-between;">
+          <div style="color:#fff;font-weight:800;font-size:1rem;">${tonightHeaderLabel}</div>
           <div style="color:rgba(255,255,255,0.8);font-size:0.75rem;font-weight:600;">acessoftballreference.com</div>
         </div>
-        <div style="padding:6px 20px 4px;background:#f0fdf4;border-bottom:1px solid #d1fae5;">
-          <div style="font-size:0.78rem;font-weight:700;color:#2d5016;text-transform:uppercase;letter-spacing:0.5px;">${tonightLabel}</div>
+        <div style="padding:6px 20px 4px;background:${tonightSubheaderBg};border-bottom:1px solid ${tonightSubheaderBorder};">
+          <div style="font-size:0.78rem;font-weight:700;color:${tonightSubheaderColor};text-transform:uppercase;letter-spacing:0.5px;">${tonightLabel}</div>
         </div>
         <div style="padding:16px 20px;display:flex;flex-direction:column;gap:14px;">
       `;
@@ -2159,35 +2422,94 @@ if (!navigator.onLine) updateConnectionStatus();
         const awayPlayers = [...(teamPlayerMap.get(awayTeam) || [])];
         const homePlayers = [...(teamPlayerMap.get(homeTeam) || [])];
 
+        // Determine tier for this matchup group
+        const blockTier = _getGameTier(d);
+        const blockTheme = blockTier === 'finals' ? {
+          wrapperBg:    'linear-gradient(135deg,#7c5c00 0%,#c8900a 50%,#7c5c00 100%)',
+          innerBg:      'linear-gradient(180deg,#fffbf0 0%,#fff8e1 100%)',
+          border:       '#f6c84b',
+          badgeBg:      'linear-gradient(135deg,#f6d365 0%,#fda085 100%)',
+          badgeText:    '🏆 CHAMPIONSHIP',
+          badgeColor:   '#5a3e00',
+          metaColor:    '#92650a',
+          vsColor:      '#92650a',
+          teamColor:    '#2d1a00',
+          playerLabel:  '#92650a',
+          playerDiv:    '#f6d365',
+          footerText:   `<div style="text-align:center;font-size:0.72rem;font-weight:700;color:#92650a;margin-top:10px;letter-spacing:0.5px;">🏆 Biggest game of the season 🏆</div>`
+        } : blockTier === 'playoff' ? {
+          wrapperBg:    'linear-gradient(135deg,#1a237e 0%,#4a148c 100%)',
+          innerBg:      'linear-gradient(180deg,#f5f3ff 0%,#ede7f6 100%)',
+          border:       '#9c6ee8',
+          badgeBg:      'linear-gradient(135deg,#6a1b9a 0%,#1a237e 100%)',
+          badgeText:    '🏆 PLAYOFFS',
+          badgeColor:   '#fff',
+          metaColor:    '#6a1b9a',
+          vsColor:      '#6a1b9a',
+          teamColor:    '#1a0533',
+          playerLabel:  '#6a1b9a',
+          playerDiv:    '#c084fc',
+          footerText:   `<div style="text-align:center;font-size:0.72rem;font-weight:700;color:#6a1b9a;margin-top:10px;letter-spacing:0.5px;">⚔️ Win or go home</div>`
+        } : {
+          wrapperBg:    null,
+          innerBg:      '#f8fafc',
+          border:       '#e2e8f0',
+          badgeBg:      null,
+          badgeText:    null,
+          badgeColor:   null,
+          metaColor:    '#718096',
+          vsColor:      '#2d5016',
+          teamColor:    '#2d3748',
+          playerLabel:  '#2d5016',
+          playerDiv:    '#e2e8f0',
+          footerText:   ''
+        };
+
+        const roundLabelBlock = d.round || '';
+        const metaLabel = blockTier !== 'regular'
+          ? `${times ? times + ' · ' : ''}${roundLabelBlock || (blockTier === 'finals' ? 'Championship' : 'Playoffs')}${games.length > 1 ? ' · Doubleheader' : ''}`
+          : `${times ? times + ' · ' : ''}${d.gameType || 'Regular'} Season${games.length > 1 ? ' · Doubleheader' : ''}`;
+
+        const wrapperDiv = blockTier !== 'regular'
+          ? `<div style="background:${blockTheme.wrapperBg};border-radius:14px;padding:3px;">`
+          : `<div style="border-radius:12px;">`;
+
         html += `
-          <div style="background:#f8fafc;border-radius:12px;padding:14px 16px;border:1px solid #e2e8f0;">
-            <div style="font-size:0.72rem;color:#718096;font-weight:600;margin-bottom:10px;text-align:center;text-transform:uppercase;letter-spacing:0.4px;">
-              ${times ? times + ' · ' : ''}${d.gameType || 'Regular'} Season${games.length > 1 ? ' · Doubleheader' : ''}
+          ${wrapperDiv}
+          ${blockTier !== 'regular' ? `<div style="background:${blockTheme.badgeBg};border-radius:11px 11px 0 0;padding:5px 16px;text-align:center;"><span style="color:${blockTheme.badgeColor};font-weight:900;font-size:0.72rem;letter-spacing:1.2px;">${blockTheme.badgeText}</span></div>` : ''}
+          <div style="background:${blockTheme.innerBg};border-radius:${blockTier !== 'regular' ? '0 0 11px 11px' : '12px'};padding:14px 16px;border:${blockTier === 'regular' ? '1px solid ' + blockTheme.border : 'none'};">
+            <div style="font-size:0.72rem;color:${blockTheme.metaColor};font-weight:600;margin-bottom:10px;text-align:center;text-transform:uppercase;letter-spacing:0.4px;">
+              ${metaLabel}
             </div>
             <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px;">
               <div style="text-align:center;flex:1;">
                 <img src="${d.awayLogoPath || ''}" style="width:64px;height:64px;object-fit:contain;display:block;margin:0 auto 6px;" onerror="this.style.display='none';">
-                <div style="font-weight:800;font-size:0.95rem;color:#2d3748;">${awayTeam}</div>
+                <div style="font-weight:800;font-size:0.95rem;color:${blockTheme.teamColor};">${awayTeam}</div>
                 <div style="font-size:0.75rem;color:#718096;">${d.awayRecordText || ''}</div>
               </div>
-              <div style="font-size:1.2rem;font-weight:900;color:#2d5016;flex-shrink:0;">@</div>
+              <div style="text-align:center;flex-shrink:0;">
+                <div style="font-size:1.2rem;font-weight:900;color:${blockTheme.vsColor};">@</div>
+                ${blockTier !== 'regular' ? `<div style="font-size:0.6rem;font-weight:800;color:${blockTheme.vsColor};letter-spacing:0.8px;margin-top:2px;">WIN OR</div><div style="font-size:0.6rem;font-weight:800;color:${blockTheme.vsColor};letter-spacing:0.8px;">GO HOME</div>` : ''}
+              </div>
               <div style="text-align:center;flex:1;">
                 <img src="${d.homeLogoPath || ''}" style="width:64px;height:64px;object-fit:contain;display:block;margin:0 auto 6px;" onerror="this.style.display='none';">
-                <div style="font-weight:800;font-size:0.95rem;color:#2d3748;">${homeTeam}</div>
+                <div style="font-weight:800;font-size:0.95rem;color:${blockTheme.teamColor};">${homeTeam}</div>
                 <div style="font-size:0.75rem;color:#718096;">${d.homeRecordText || ''}</div>
               </div>
             </div>
             ${(awayPlayers.length || homePlayers.length) ? `
-            <div style="display:flex;gap:10px;padding-top:10px;border-top:1px solid #e2e8f0;">
+            <div style="display:flex;gap:10px;padding-top:10px;border-top:1px solid ${blockTheme.playerDiv};">
               <div style="flex:1;text-align:center;">
-                <div style="font-size:0.68rem;font-weight:700;color:#2d5016;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:4px;">${awayTeam}</div>
+                <div style="font-size:0.68rem;font-weight:700;color:${blockTheme.playerLabel};text-transform:uppercase;letter-spacing:0.4px;margin-bottom:4px;">${awayTeam}</div>
                 ${awayPlayers.map(p => `<div style="font-size:0.78rem;color:#2d3748;padding:1px 0;">${p}</div>`).join('')}
               </div>
               <div style="flex:1;text-align:center;">
-                <div style="font-size:0.68rem;font-weight:700;color:#2d5016;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:4px;">${homeTeam}</div>
+                <div style="font-size:0.68rem;font-weight:700;color:${blockTheme.playerLabel};text-transform:uppercase;letter-spacing:0.4px;margin-bottom:4px;">${homeTeam}</div>
                 ${homePlayers.map(p => `<div style="font-size:0.78rem;color:#2d3748;padding:1px 0;">${p}</div>`).join('')}
               </div>
             </div>` : ''}
+            ${blockTheme.footerText}
+          </div>
           </div>
         `;
       });
