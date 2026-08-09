@@ -515,6 +515,7 @@ export async function getTeamRosterDoc(teamId, seasonId) {
         position: p.position || '-',
         bats: p.bats || '-',
         throws: p.throws || '-',
+        cardName: p.cardName || '',
         isAuthUser: isAuthUser
       };
     });
