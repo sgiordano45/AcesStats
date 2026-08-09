@@ -545,6 +545,87 @@
       font-size: 0.78rem; font-weight: 600;
     }
     #legacymatchAlert { margin-top: 1rem; }
+
+    /* ===== Player Profile Sync tool ===== */
+    .profsync-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.87rem;
+      margin-top: 1rem;
+    }
+    .profsync-table th {
+      background: var(--primary-color);
+      color: white;
+      padding: 0.65rem 0.75rem;
+      text-align: left;
+      font-weight: 600;
+    }
+    .profsync-table td {
+      padding: 0.5rem 0.75rem;
+      border-bottom: 1px solid var(--border-color);
+      vertical-align: middle;
+    }
+    .profsync-table tr:hover td { background: #f7fafc; }
+    .profsync-table tr.profsync-match td { background: #f7fafc; color: #718096; }
+    .profsync-table tr.profsync-mismatch td { background: #fffaf0; }
+    .profsync-table tr.profsync-missing td { background: #fff5f5; }
+    .profsync-table tr.profsync-nolink td { background: #f7fafc; color: #a0aec0; }
+    .profsync-table tr.profsync-player-top td { border-top: 2px solid #cbd5e0; }
+    .tag-profsync-match {
+      display: inline-block;
+      background: #e6fffa; color: #22543d;
+      border: 1px solid #9ae6b4;
+      border-radius: 4px; padding: 2px 8px;
+      font-size: 0.8rem; font-weight: 600;
+    }
+    .tag-profsync-mismatch {
+      display: inline-block;
+      background: #fffbeb; color: #92400e;
+      border: 1px solid #fcd34d;
+      border-radius: 4px; padding: 2px 8px;
+      font-size: 0.8rem; font-weight: 600;
+    }
+    .tag-profsync-missing {
+      display: inline-block;
+      background: #fff5f5; color: #c53030;
+      border: 1px solid #feb2b2;
+      border-radius: 4px; padding: 2px 8px;
+      font-size: 0.8rem; font-weight: 600;
+    }
+    .tag-profsync-val {
+      display: inline-block;
+      background: #ebf8ff; color: #2b6cb0;
+      border: 1px solid #90cdf4;
+      border-radius: 4px; padding: 2px 8px;
+      font-size: 0.8rem;
+    }
+    .btn-to-roster {
+      background: #3182ce;
+      color: white;
+      padding: 0.28rem 0.6rem;
+      font-size: 0.77rem;
+      border-radius: 5px;
+      border: none;
+      cursor: pointer;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .btn-to-roster:hover { background: #2b6cb0; }
+    .btn-to-roster:disabled { background: #cbd5e0; cursor: not-allowed; }
+    .btn-to-profile {
+      background: #805ad5;
+      color: white;
+      padding: 0.28rem 0.6rem;
+      font-size: 0.77rem;
+      border-radius: 5px;
+      border: none;
+      cursor: pointer;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .btn-to-profile:hover { background: #6b46c1; }
+    .btn-to-profile:disabled { background: #cbd5e0; cursor: not-allowed; }
+    #profileSyncAlert { margin-top: 1rem; }
   </style>
 </head>
 <body>
@@ -759,6 +840,51 @@
             </tr>
           </thead>
           <tbody id="legacymatchTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ==================== PLAYER PROFILE SYNC ==================== -->
+    <hr class="section-divider">
+
+    <div class="card">
+      <h2>&#x1F501; Player Profile Sync</h2>
+      <div class="info-box">
+        <strong>What this does:</strong> Compares four fields &mdash; position, jersey number, throwing side, and batting side &mdash; between each player's roster entry and their user profile doc. Shows all matches and mismatches, and lets you update in either direction.<br><br>
+        <strong>Use when:</strong> Players have updated their profile but the roster doesn't reflect it (or vice versa), and you want a field-by-field view before deciding which side is authoritative.
+      </div>
+      <div class="form-group">
+        <label for="profileSyncSeasonSelect">Select Season:</label>
+        <select id="profileSyncSeasonSelect">
+          <option value="">-- Select a season --</option>
+        </select>
+      </div>
+      <div id="profileSyncAlert" class="alert"></div>
+      <div class="button-group">
+        <button class="btn-primary" id="profileSyncScanBtn" disabled>&#x1F50D; Scan Player Profiles</button>
+        <button class="btn-secondary btn-patch-all" id="profileSyncUpdateAllRosterBtn" disabled>&#x26A1; Update All &rarr; Roster</button>
+        <button class="btn-secondary btn-patch-all" id="profileSyncUpdateAllProfileBtn" disabled>&#x26A1; Update All &rarr; Profile</button>
+      </div>
+    </div>
+
+    <div class="card" id="profileSyncResultCard" style="display: none;">
+      <h2>&#x1F4CB; Profile Sync Results</h2>
+      <div class="authid-summary" id="profileSyncSummary"></div>
+      <div style="overflow-x: auto;">
+        <table class="profsync-table" id="profileSyncTable">
+          <thead>
+            <tr>
+              <th>Player</th>
+              <th>Team</th>
+              <th>Field</th>
+              <th>Roster Value</th>
+              <th>Profile Value</th>
+              <th>Status</th>
+              <th>&rarr; Roster</th>
+              <th>&rarr; Profile</th>
+            </tr>
+          </thead>
+          <tbody id="profileSyncTableBody"></tbody>
         </table>
       </div>
     </div>
@@ -2270,6 +2396,491 @@
 
     onAuthStateChanged(authLM, async (user) => {
       if (user) await populateLMSeasonSelect();
+    });
+  </script>
+
+  <script type="module">
+    import { getApp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
+    import { getFirestore, collection, getDocs, doc, getDoc, updateDoc } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
+    import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js';
+
+    const appPS = getApp();
+    const dbPS = getFirestore(appPS);
+    const authPS = getAuth(appPS);
+
+    // The four fields we compare, in display order
+    const PS_FIELDS = [
+      { key: 'position', label: 'Position' },
+      { key: 'number',   label: 'Jersey #' },
+      { key: 'throws',   label: 'Throws'   },
+      { key: 'bats',     label: 'Bats'     },
+    ];
+
+    // Treat null / '' / '-' as "not set"
+    function psNorm(v) {
+      if (v == null) return null;
+      const s = String(v).trim();
+      return (s === '' || s === '-') ? null : s;
+    }
+
+    function showPSAlert(msg, type) {
+      const el = document.getElementById('profileSyncAlert');
+      el.textContent = msg;
+      el.className = `alert show alert-${type}`;
+      setTimeout(() => el.classList.remove('show'), 7000);
+    }
+
+    // ── Season dropdown ──────────────────────────────────────────────
+    async function populatePSSeasonSelect() {
+      try {
+        const snap = await getDocs(collection(dbPS, 'seasons'));
+        const sel  = document.getElementById('profileSyncSeasonSelect');
+        sel.innerHTML = '<option value="">-- Select a season --</option>';
+        const seasons = [];
+        snap.forEach(d => {
+          const data = d.data();
+          seasons.push({ id: d.id, name: `${data.year} ${data.season.charAt(0).toUpperCase() + data.season.slice(1)}`, data });
+        });
+        seasons.sort((a, b) => {
+          if (b.data.year !== a.data.year) return b.data.year - a.data.year;
+          const order = { summer: 0, fall: 1, winter: 2, spring: 3 };
+          return order[a.data.season] - order[b.data.season];
+        });
+        seasons.forEach(s => {
+          const opt = document.createElement('option');
+          opt.value = s.id;
+          opt.textContent = s.name;
+          sel.appendChild(opt);
+        });
+        sel.addEventListener('change', e => {
+          document.getElementById('profileSyncScanBtn').disabled = !e.target.value;
+          document.getElementById('profileSyncUpdateAllRosterBtn').disabled  = true;
+          document.getElementById('profileSyncUpdateAllProfileBtn').disabled = true;
+          document.getElementById('profileSyncResultCard').style.display = 'none';
+        });
+      } catch (err) {
+        console.error('PS: season load error', err);
+      }
+    }
+
+    // ── State ────────────────────────────────────────────────────────
+    // Each entry = one (player × field) row that has an actionable difference
+    // { rosterDocId, playerIndex, field, playerName, team, rosterVal, profileVal, profileUid, rowId, status }
+    let psMismatches = [];
+
+    // ── Scan ─────────────────────────────────────────────────────────
+    document.getElementById('profileSyncScanBtn').addEventListener('click', async () => {
+      const seasonId = document.getElementById('profileSyncSeasonSelect').value;
+      if (!seasonId) return;
+
+      const scanBtn = document.getElementById('profileSyncScanBtn');
+      scanBtn.disabled  = true;
+      scanBtn.textContent = 'Scanning…';
+      psMismatches = [];
+
+      document.getElementById('profileSyncUpdateAllRosterBtn').disabled  = true;
+      document.getElementById('profileSyncUpdateAllProfileBtn').disabled = true;
+
+      try {
+        // Load roster docs for this season
+        const rostersSnap = await getDocs(collection(dbPS, 'rosters'));
+        const rosterDocs  = [];
+        rostersSnap.forEach(d => {
+          if (d.id.startsWith(seasonId + '-')) rosterDocs.push({ id: d.id, data: d.data() });
+        });
+
+        if (rosterDocs.length === 0) {
+          showPSAlert('No roster docs found for this season. Run Roster Sync first.', 'warning');
+          scanBtn.disabled = false;
+          scanBtn.textContent = '🔍 Scan Player Profiles';
+          return;
+        }
+
+        // Pre-load all user profiles — build two lookup maps
+        // authProfileMap[uid]      -> { number, position, bats, throws }
+        // legacyProfileMap[legId]  -> { number, position, bats, throws }  (via mergedFromProfile)
+        const usersSnap = await getDocs(collection(dbPS, 'users'));
+        const authProfileMap   = {};
+        const legacyProfileMap = {};
+        usersSnap.forEach(u => {
+          const d = u.data();
+          const profile = {
+            number:   psNorm(d.number),
+            position: psNorm(d.position),
+            bats:     psNorm(d.bats),
+            throws:   psNorm(d.throws),
+            uid:      u.id,
+          };
+          authProfileMap[u.id] = profile;
+          if (d.mergedFromProfile) legacyProfileMap[d.mergedFromProfile] = profile;
+        });
+
+        const tbody = document.getElementById('profileSyncTableBody');
+        tbody.innerHTML = '';
+
+        let countMatch = 0, countMismatch = 0, countMissingRoster = 0,
+            countMissingProfile = 0, countNoLink = 0;
+        let canUpdateRoster = false, canUpdateProfile = false;
+
+        for (const rosterDoc of rosterDocs) {
+          const teamName = rosterDoc.data.teamName || rosterDoc.id.replace(seasonId + '-', '');
+          const players  = rosterDoc.data.players || [];
+
+          players.forEach((player, pIdx) => {
+            // Look up the linked profile
+            const profileData = (player.authId && authProfileMap[player.authId])
+                              || (player.id   && legacyProfileMap[player.id])
+                              || null;
+
+            PS_FIELDS.forEach((field, fIdx) => {
+              const rosterVal  = psNorm(player[field.key]);
+              const profileVal = profileData ? psNorm(profileData[field.key]) : null;
+              const profileUid = profileData ? profileData.uid : null;
+              const rowId = `ps-row-${rosterDoc.id}-${pIdx}-${field.key}`;
+
+              // Determine status
+              let status, rowClass, statusTag;
+              if (!profileData) {
+                status = 'no_link'; rowClass = 'profsync-nolink';
+                statusTag = '<span style="color:#a0aec0; font-size:0.82rem;">No profile</span>';
+                countNoLink++;
+              } else if (rosterVal === profileVal) {
+                // Covers both-null AND value match
+                status = 'match'; rowClass = 'profsync-match';
+                statusTag = '<span class="tag-profsync-match">Match</span>';
+                countMatch++;
+              } else if (!rosterVal && profileVal) {
+                status = 'missing_roster'; rowClass = 'profsync-missing';
+                statusTag = '<span class="tag-profsync-missing">Missing in roster</span>';
+                countMissingRoster++;
+              } else if (rosterVal && !profileVal) {
+                status = 'missing_profile'; rowClass = 'profsync-missing';
+                statusTag = '<span class="tag-profsync-missing">Missing in profile</span>';
+                countMissingProfile++;
+              } else {
+                status = 'mismatch'; rowClass = 'profsync-mismatch';
+                statusTag = '<span class="tag-profsync-mismatch">Mismatch</span>';
+                countMismatch++;
+              }
+
+              // Determine button availability
+              const canRoster  = profileData && profileVal && status !== 'match';
+              const canProfile = profileData && rosterVal  && status !== 'match';
+
+              if (canRoster)  canUpdateRoster  = true;
+              if (canProfile) canUpdateProfile = true;
+
+              // Track for bulk update
+              if (status !== 'match' && status !== 'no_link') {
+                psMismatches.push({
+                  rosterDocId: rosterDoc.id,
+                  playerIndex: pIdx,
+                  field:       field.key,
+                  playerName:  player.name,
+                  team:        teamName,
+                  rosterVal,
+                  profileVal,
+                  profileUid,
+                  rowId,
+                  status,
+                });
+              }
+
+              // Display values
+              const rosterDisplay  = rosterVal  ? `<span class="tag-profsync-val">${escPS(rosterVal)}</span>`
+                                                : '<span style="color:#a0aec0;">—</span>';
+              const profileDisplay = profileVal ? `<span class="tag-profsync-val">${escPS(profileVal)}</span>`
+                                                : '<span style="color:#a0aec0;">—</span>';
+
+              const toRosterBtn  = canRoster
+                ? `<button class="btn-to-roster"
+                     data-doc="${rosterDoc.id}" data-idx="${pIdx}"
+                     data-field="${field.key}" data-val="${escPS(profileVal)}"
+                     data-rowid="${rowId}">Use profile</button>`
+                : '<span style="color:#cbd5e0; font-size:0.78rem;">—</span>';
+
+              const toProfileBtn = canProfile
+                ? `<button class="btn-to-profile"
+                     data-uid="${profileUid}" data-field="${field.key}"
+                     data-val="${escPS(rosterVal)}" data-rowid="${rowId}">Use roster</button>`
+                : '<span style="color:#cbd5e0; font-size:0.78rem;">—</span>';
+
+              const tr = document.createElement('tr');
+              tr.className = rowClass + (fIdx === 0 ? ' profsync-player-top' : '');
+              tr.id = rowId;
+              tr.innerHTML = `
+                <td>${fIdx === 0 ? `<strong>${escPS(player.name || '—')}</strong>` : ''}</td>
+                <td>${fIdx === 0 ? escPS(teamName) : ''}</td>
+                <td style="font-weight:600; color:#4a5568;">${field.label}</td>
+                <td>${rosterDisplay}</td>
+                <td>${profileDisplay}</td>
+                <td>${statusTag}</td>
+                <td>${toRosterBtn}</td>
+                <td>${toProfileBtn}</td>
+              `;
+              tbody.appendChild(tr);
+            });
+          });
+        }
+
+        // Wire up row-level button clicks via delegation
+        tbody.addEventListener('click', e => {
+          const rBtn = e.target.closest('.btn-to-roster[data-doc]');
+          if (rBtn && !rBtn.disabled) {
+            psUpdateRoster(rBtn.dataset.doc, parseInt(rBtn.dataset.idx), rBtn.dataset.field, rBtn.dataset.val, rBtn);
+            return;
+          }
+          const pBtn = e.target.closest('.btn-to-profile[data-uid]');
+          if (pBtn && !pBtn.disabled) {
+            psUpdateProfile(pBtn.dataset.uid, pBtn.dataset.field, pBtn.dataset.val, pBtn);
+          }
+        });
+
+        // Summary stats
+        document.getElementById('profileSyncSummary').innerHTML = `
+          <div class="authid-stat" style="border-color:#9ae6b4;">
+            <div class="val" style="color:#276749;">${countMatch}</div>
+            <div class="lbl">Match</div>
+          </div>
+          <div class="authid-stat" style="border-color:#fcd34d;">
+            <div class="val" style="color:#92400e;">${countMismatch}</div>
+            <div class="lbl">Mismatch</div>
+          </div>
+          <div class="authid-stat" style="border-color:#feb2b2;">
+            <div class="val" style="color:#c53030;">${countMissingRoster}</div>
+            <div class="lbl">Missing in Roster</div>
+          </div>
+          <div class="authid-stat" style="border-color:#feb2b2;">
+            <div class="val" style="color:#c53030;">${countMissingProfile}</div>
+            <div class="lbl">Missing in Profile</div>
+          </div>
+          <div class="authid-stat">
+            <div class="val" style="color:#a0aec0;">${countNoLink}</div>
+            <div class="lbl">No Profile</div>
+          </div>
+        `;
+
+        document.getElementById('profileSyncResultCard').style.display = 'block';
+        document.getElementById('profileSyncUpdateAllRosterBtn').disabled  = !canUpdateRoster;
+        document.getElementById('profileSyncUpdateAllProfileBtn').disabled = !canUpdateProfile;
+
+        const totalDiff = countMismatch + countMissingRoster + countMissingProfile;
+        showPSAlert(
+          totalDiff > 0
+            ? `Scan complete — ${totalDiff} field difference(s) found across ${PS_FIELDS.length}-field comparison.`
+            : 'Scan complete — all fields match.',
+          totalDiff > 0 ? 'warning' : 'success'
+        );
+
+      } catch (err) {
+        console.error('PS scan error:', err);
+        showPSAlert('Error during scan: ' + err.message, 'error');
+      }
+
+      scanBtn.disabled = false;
+      scanBtn.textContent = '🔍 Scan Player Profiles';
+    });
+
+    // ── Single update: write profile value → roster ───────────────
+    async function psUpdateRoster(rosterDocId, playerIndex, field, newVal, btn) {
+      btn.disabled = true;
+      btn.textContent = '…';
+      try {
+        const ref  = doc(dbPS, 'rosters', rosterDocId);
+        const snap = await getDoc(ref);
+        if (!snap.exists()) throw new Error('Roster doc not found');
+
+        const players = [...(snap.data().players || [])];
+        players[playerIndex] = { ...players[playerIndex], [field]: newVal };
+        await updateDoc(ref, { players, updatedAt: new Date().toISOString() });
+
+        btn.textContent = '✓ Done';
+        btn.style.background = '#48bb78';
+
+        // Mark row as resolved
+        const row = document.getElementById(btn.dataset.rowid || btn.closest('tr')?.id);
+        if (row) psMarkRowResolved(row, 'roster', newVal);
+
+        // Remove from bulk list
+        psMismatches = psMismatches.filter(
+          m => !(m.rosterDocId === rosterDocId && m.playerIndex === playerIndex && m.field === field)
+        );
+        document.getElementById('profileSyncUpdateAllRosterBtn').disabled  = !psMismatches.some(m => m.profileVal);
+        document.getElementById('profileSyncUpdateAllProfileBtn').disabled = !psMismatches.some(m => m.rosterVal);
+
+      } catch (err) {
+        console.error('psUpdateRoster error:', err);
+        btn.textContent = 'Error';
+        btn.style.background = '#f56565';
+        btn.disabled = false;
+        showPSAlert('Error updating roster: ' + err.message, 'error');
+      }
+    }
+
+    // ── Single update: write roster value → profile ───────────────
+    async function psUpdateProfile(uid, field, newVal, btn) {
+      btn.disabled = true;
+      btn.textContent = '…';
+      try {
+        const ref = doc(dbPS, 'users', uid);
+        await updateDoc(ref, { [field]: newVal, updatedAt: new Date().toISOString() });
+
+        btn.textContent = '✓ Done';
+        btn.style.background = '#48bb78';
+
+        // Mark row as resolved
+        const row = document.getElementById(btn.dataset.rowid || btn.closest('tr')?.id);
+        if (row) psMarkRowResolved(row, 'profile', newVal);
+
+        // Remove from bulk list
+        psMismatches = psMismatches.filter(
+          m => !(m.profileUid === uid && m.field === field)
+        );
+        document.getElementById('profileSyncUpdateAllRosterBtn').disabled  = !psMismatches.some(m => m.profileVal);
+        document.getElementById('profileSyncUpdateAllProfileBtn').disabled = !psMismatches.some(m => m.rosterVal);
+
+      } catch (err) {
+        console.error('psUpdateProfile error:', err);
+        btn.textContent = 'Error';
+        btn.style.background = '#f56565';
+        btn.disabled = false;
+        showPSAlert('Error updating profile: ' + err.message, 'error');
+      }
+    }
+
+    // ── Visual row update after a successful single write ─────────
+    function psMarkRowResolved(row, updatedSide, resolvedVal) {
+      row.className = row.className.replace('profsync-mismatch', 'profsync-match')
+                                   .replace('profsync-missing',  'profsync-match');
+      // cols: 0=Player, 1=Team, 2=Field, 3=Roster, 4=Profile, 5=Status, 6=→Roster, 7=→Profile
+      const valTag = `<span class="tag-profsync-val">${escPS(resolvedVal)}</span>`;
+      if (updatedSide === 'roster')  row.cells[3].innerHTML = valTag;
+      if (updatedSide === 'profile') row.cells[4].innerHTML = valTag;
+      row.cells[5].innerHTML = '<span class="tag-profsync-match">Match</span>';
+      row.cells[6].innerHTML = '<span style="color:#a0aec0; font-size:0.78rem;">—</span>';
+      row.cells[7].innerHTML = '<span style="color:#a0aec0; font-size:0.78rem;">—</span>';
+    }
+
+    // ── Bulk: Update All → Roster (copy profile values to roster) ─
+    document.getElementById('profileSyncUpdateAllRosterBtn').addEventListener('click', async () => {
+      const toUpdate = psMismatches.filter(m => m.profileVal);
+      if (toUpdate.length === 0) return;
+
+      const btn = document.getElementById('profileSyncUpdateAllRosterBtn');
+      btn.disabled = true;
+      btn.textContent = 'Updating…';
+
+      // Group by (rosterDocId, playerIndex) to batch field writes per player
+      const grouped = {};
+      toUpdate.forEach(m => {
+        const key = `${m.rosterDocId}::${m.playerIndex}`;
+        if (!grouped[key]) grouped[key] = { rosterDocId: m.rosterDocId, playerIndex: m.playerIndex, fields: [] };
+        grouped[key].fields.push(m);
+      });
+
+      let successCount = 0, errorCount = 0;
+
+      for (const { rosterDocId, playerIndex, fields } of Object.values(grouped)) {
+        try {
+          const ref  = doc(dbPS, 'rosters', rosterDocId);
+          const snap = await getDoc(ref);
+          if (!snap.exists()) { errorCount += fields.length; continue; }
+
+          const players = [...(snap.data().players || [])];
+          fields.forEach(m => {
+            players[playerIndex] = { ...players[playerIndex], [m.field]: m.profileVal };
+          });
+          await updateDoc(ref, { players, updatedAt: new Date().toISOString() });
+
+          fields.forEach(m => {
+            const row = document.getElementById(m.rowId);
+            if (row) psMarkRowResolved(row, 'roster', m.profileVal);
+          });
+          successCount += fields.length;
+        } catch (err) {
+          console.error('psUpdateAllRoster error for', rosterDocId, err);
+          errorCount += fields.length;
+        }
+      }
+
+      // Clear resolved entries
+      const resolvedKeys = new Set(toUpdate.map(m => `${m.rosterDocId}::${m.playerIndex}::${m.field}`));
+      psMismatches = psMismatches.filter(
+        m => !resolvedKeys.has(`${m.rosterDocId}::${m.playerIndex}::${m.field}`)
+      );
+
+      btn.textContent = '⚡ Update All → Roster';
+      btn.disabled = !psMismatches.some(m => m.profileVal);
+      document.getElementById('profileSyncUpdateAllProfileBtn').disabled = !psMismatches.some(m => m.rosterVal);
+
+      showPSAlert(
+        successCount > 0
+          ? `Updated ${successCount} field(s) in roster.${errorCount > 0 ? ` ${errorCount} failed.` : ''}`
+          : 'All updates failed. Check console.',
+        errorCount === 0 ? 'success' : 'warning'
+      );
+    });
+
+    // ── Bulk: Update All → Profile (copy roster values to profile) ─
+    document.getElementById('profileSyncUpdateAllProfileBtn').addEventListener('click', async () => {
+      const toUpdate = psMismatches.filter(m => m.rosterVal);
+      if (toUpdate.length === 0) return;
+
+      const btn = document.getElementById('profileSyncUpdateAllProfileBtn');
+      btn.disabled = true;
+      btn.textContent = 'Updating…';
+
+      // Group by profileUid to batch per user doc
+      const grouped = {};
+      toUpdate.forEach(m => {
+        if (!grouped[m.profileUid]) grouped[m.profileUid] = [];
+        grouped[m.profileUid].push(m);
+      });
+
+      let successCount = 0, errorCount = 0;
+
+      for (const [uid, fields] of Object.entries(grouped)) {
+        try {
+          const updates = {};
+          fields.forEach(m => { updates[m.field] = m.rosterVal; });
+          updates.updatedAt = new Date().toISOString();
+          await updateDoc(doc(dbPS, 'users', uid), updates);
+
+          fields.forEach(m => {
+            const row = document.getElementById(m.rowId);
+            if (row) psMarkRowResolved(row, 'profile', m.rosterVal);
+          });
+          successCount += fields.length;
+        } catch (err) {
+          console.error('psUpdateAllProfile error for uid', uid, err);
+          errorCount += fields.length;
+        }
+      }
+
+      // Clear resolved entries
+      const resolvedKeys = new Set(toUpdate.map(m => `${m.profileUid}::${m.field}`));
+      psMismatches = psMismatches.filter(
+        m => !resolvedKeys.has(`${m.profileUid}::${m.field}`)
+      );
+
+      btn.textContent = '⚡ Update All → Profile';
+      btn.disabled = !psMismatches.some(m => m.rosterVal);
+      document.getElementById('profileSyncUpdateAllRosterBtn').disabled = !psMismatches.some(m => m.profileVal);
+
+      showPSAlert(
+        successCount > 0
+          ? `Updated ${successCount} field(s) in profiles.${errorCount > 0 ? ` ${errorCount} failed.` : ''}`
+          : 'All updates failed. Check console.',
+        errorCount === 0 ? 'success' : 'warning'
+      );
+    });
+
+    function escPS(s) {
+      return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    onAuthStateChanged(authPS, async user => {
+      if (user) await populatePSSeasonSelect();
     });
   </script>
 
