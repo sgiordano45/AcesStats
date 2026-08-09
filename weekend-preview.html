@@ -1016,6 +1016,7 @@ async function loadWeekendData() {
 
     // Expose raw player docs + season ID for finals share card roster section
     window._acesAllPlayers = players;
+    window._acesPlayerData = playerData; // processed records with numeric AcesWar/atBats/team
     window._acesCurrentSeasonId = currentSeasonData.id;
 
     await loadRostersAndSplits();
@@ -1960,58 +1961,22 @@ if (!navigator.onLine) updateConnectionStatus();
   }
 
   function _buildFinalsRosterHtml(awayTeam, homeTeam, theme) {
-    const allPlayers = window._acesAllPlayers || [];
-    const seasonId   = window._acesCurrentSeasonId || '';
-    if (!allPlayers.length || !seasonId) return '';
+    // Use the pre-processed playerData (window._acesPlayerData) — already has numeric AcesWar/atBats/team
+    const processed = window._acesPlayerData || [];
+    if (!processed.length) return '';
 
     function getTeamRoster(teamName) {
       const teamLower = teamName.toLowerCase();
-      const teamSlug  = teamLower.replace(/\s+/g, '-');
-      const batters  = [];
-      const pitchers = [];
+      // Match by team field (already extracted from season key)
+      const teamPlayers = processed.filter(p => (p.team || '').toLowerCase() === teamLower);
 
-      allPlayers.forEach(player => {
-        const name = player.name || player.displayName || player.playerName || '';
+      const batters = teamPlayers
+        .filter(p => typeof p.AcesWar === 'number' && p.atBats >= 3)
+        .sort((a, b) => b.AcesWar - a.AcesWar)
+        .slice(0, 9)
+        .map(p => ({ name: p.name, avg: p.AcesWar, ab: p.atBats }));
 
-        // Batting
-        if (player.seasons) {
-          const keys = Object.keys(player.seasons).filter(k =>
-            k === `${seasonId}-${teamLower}` || k === `${seasonId}-${teamSlug}`
-          );
-          if (keys.length) {
-            const s = player.seasons[keys[0]];
-            // Sort by acesBPI (AcesWar) — fall back to battingAverage
-            const rawBpi = s.acesBPI ?? s.AcesBPI ?? s.AcesWar ?? s.battingAverage ?? null;
-            const avg = (rawBpi != null && rawBpi !== 'N/A') ? parseFloat(rawBpi) : null;
-            const ab  = Number(s.atBats) || 0;
-            if (avg !== null && !isNaN(avg) && ab >= 3) batters.push({ name, avg, ab });
-          }
-        }
-
-        // Pitching
-        if (player.pitchingSeasons) {
-          const keys = Object.keys(player.pitchingSeasons).filter(k =>
-            k === `${seasonId}-${teamLower}` || k === `${seasonId}-${teamSlug}`
-          );
-          if (keys.length) {
-            const s = player.pitchingSeasons[keys[0]];
-            const era = typeof s.earnedRunAverage === 'number' ? s.earnedRunAverage : null;
-            if (s.inningsPitched || s.runsAllowed) {
-              pitchers.push({ name, era, runsAllowed: Number(s.runsAllowed) || 0 });
-            }
-          }
-        }
-      });
-
-      batters.sort((a, b) => b.avg - a.avg);
-      pitchers.sort((a, b) => {
-        if (a.era !== null && b.era !== null) return a.era - b.era;
-        if (a.era !== null) return -1;
-        if (b.era !== null) return 1;
-        return a.runsAllowed - b.runsAllowed;
-      });
-
-      return { topBatters: batters.slice(0, 9), topPitcher: pitchers[0] || null };
+      return { topBatters: batters, topPitcher: null };
     }
 
     const away = getTeamRoster(awayTeam);
