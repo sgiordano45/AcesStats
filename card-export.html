@@ -1164,18 +1164,19 @@
       const currentSeasonId = activeSeason?.id || '2026-summer';
       const [seasonYear, seasonName] = currentSeasonId.split('-');
 
+      // Filter out migrated legacy placeholder docs — they share a displayName with the UID doc
+      // but have no photo fields and would overwrite the real doc in the lookup maps.
+      const activeUserInfo = allUserInfo.filter(u => !u.migrated);
+
       // Build playerInfo lookup by displayName (users collection — has photos)
       const infoMap = {};
-      allUserInfo.forEach(u => {
+      activeUserInfo.forEach(u => {
         if (u.displayName) infoMap[u.displayName] = u;
       });
 
-      // Secondary lookup: stats-doc-id → auth-linked UID doc (the one with playerPhotoURL)
-      // UID docs have mergedFromProfile = "matt_leonardelli" (legacy underscore format).
-      // p.id may be "Matt Leonardelli" (display-name format) so index by BOTH mergedFromProfile
-      // AND displayName so either lookup style finds the right UID doc.
+      // Secondary lookup keyed by mergedFromProfile (legacy ID) AND displayName
       const uidDocMap = {};
-      allUserInfo.forEach(u => {
+      activeUserInfo.forEach(u => {
         if (u.mergedFromProfile) uidDocMap[u.mergedFromProfile] = u;
         if (u.displayName) uidDocMap[u.displayName] = u;
       });
@@ -1358,14 +1359,16 @@
 
       const currentSeasonId = activeSeason?.id || '2026-summer';
 
+      // Filter migrated placeholders — they share displayName with the UID doc but have no photos
+      const activeUserInfo = allUserInfo.filter(u => !u.migrated);
+
       // Build info lookup by displayName from users collection
       const infoMap = {};
-      allUserInfo.forEach(u => { if (u.displayName) infoMap[u.displayName] = u; });
+      activeUserInfo.forEach(u => { if (u.displayName) infoMap[u.displayName] = u; });
 
-      // Secondary lookup: stats-doc-id → auth-linked UID doc (the one with playerPhotoURL)
-      // Index by both mergedFromProfile AND displayName so p.id in either format finds the UID doc.
+      // Secondary lookup keyed by mergedFromProfile AND displayName
       const uidDocMap = {};
-      allUserInfo.forEach(u => {
+      activeUserInfo.forEach(u => {
         if (u.mergedFromProfile) uidDocMap[u.mergedFromProfile] = u;
         if (u.displayName) uidDocMap[u.displayName] = u;
       });
@@ -1429,8 +1432,9 @@
         // Prefer user-entered names (correct casing) over normalized stats names
         const displayName = userInfo?.preferredDisplayName || userInfo?.displayName || statsName;
 
-        // Photo check: playerPhotoURL (explicit upload) → profilePhotoURL → photoURL (Google OAuth)
-        const hasPhoto  = !!(userInfo?.playerPhotoURL || userInfo?.profilePhotoURL || userInfo?.photoURL);
+        // Photo check: only count explicitly uploaded photos (playerPhotoURL / profilePhotoURL).
+        // photoURL is the low-res Google OAuth thumbnail — not suitable for cards, not counted here.
+        const hasPhoto  = !!(userInfo?.playerPhotoURL || userInfo?.profilePhotoURL);
 
         // number/bats/throws: check roster doc first (source of truth), fall back to user profile
         const number = rosterInfo?.number ?? userInfo?.number ?? null;
