@@ -987,7 +987,7 @@
     // Photo — player photo (Firebase) → team logo → Aces logo last resort
     const photoEl   = document.getElementById('cardPhoto');
     const photoPlaceholder = document.getElementById('cardPhotoPlaceholder');
-    const photoURL  = info?.profilePhotoURL || info?.photoURL || info?.photo || null;
+    const photoURL  = info?.playerPhotoURL || info?.profilePhotoURL || info?.photoURL || null;
     const teamSlugForPhoto = currentTeam.toLowerCase().replace(/\s+/g, '_');
     const teamLogoFallback = `logos/${teamSlugForPhoto}.png`;
     photoPlaceholder.style.display = 'none'; // never show the ⚾ placeholder
@@ -1213,7 +1213,9 @@
       // 3. Build player list UI
       const listItems = {};
       playersToProcess.forEach(p => {
-        const displayName = formatPlayerName(p.name || p.displayName || p.id);
+        const statsName = formatPlayerName(p.name || p.displayName || p.id);
+        const pUserInfo = infoMap[statsName] || infoMap[p.name] || null;
+        const displayName = pUserInfo?.preferredDisplayName || pUserInfo?.displayName || statsName;
         listItems[p.id] = addPlayerToList(displayName);
       });
 
@@ -1228,9 +1230,14 @@
       // 5. Capture each player sequentially
       for (let i = 0; i < playersToProcess.length; i++) {
         const player = playersToProcess[i];
-        const displayName = formatPlayerName(player.name || player.displayName || player.id);
-        const slug = slugify(displayName);
+        const statsName = formatPlayerName(player.name || player.displayName || player.id);
         const li = listItems[player.id];
+
+        // Prefer user-entered names (correct casing) over normalized stats names
+        const userInfo   = infoMap[statsName] || infoMap[player.name] || null;
+        const rosterInfo = genRosterInfoMap[statsName] || null;
+        const displayName = userInfo?.preferredDisplayName || userInfo?.displayName || statsName;
+        const slug = slugify(displayName);
 
         setProgress(i, playersToProcess.length, `Generating card ${i + 1} of ${playersToProcess.length}: ${displayName}`);
         markPlayerActive(li);
@@ -1240,8 +1247,6 @@
           const stats = buildStatsArray(player);
 
           // Merge user profile (photo) + roster doc (number/bats/throws)
-          const userInfo   = infoMap[displayName] || infoMap[player.name] || null;
-          const rosterInfo = genRosterInfoMap[displayName] || null;
           const info = {
             ...userInfo,
             number: rosterInfo?.number ?? userInfo?.number ?? null,
@@ -1373,14 +1378,17 @@
       let incompleteCount = 0;
 
       scanTableBody.innerHTML = currentPlayers.map(p => {
-        const displayName = formatPlayerName(p.name || p.displayName || p.id);
+        const statsName = formatPlayerName(p.name || p.displayName || p.id);
 
         // Merge: user profile (has photo) + roster doc (has number/bats/throws)
-        const userInfo   = infoMap[displayName] || infoMap[p.name] || null;
-        const rosterInfo = rosterInfoMap[displayName] || null;
+        const userInfo   = infoMap[statsName] || infoMap[p.name] || null;
+        const rosterInfo = rosterInfoMap[statsName] || null;
 
-        // Photo only comes from user profile
-        const hasPhoto  = !!(userInfo?.profilePhotoURL || userInfo?.photoURL || userInfo?.photo);
+        // Prefer user-entered names (correct casing) over normalized stats names
+        const displayName = userInfo?.preferredDisplayName || userInfo?.displayName || statsName;
+
+        // Photo check: playerPhotoURL (explicit upload) → profilePhotoURL → photoURL (Google OAuth)
+        const hasPhoto  = !!(userInfo?.playerPhotoURL || userInfo?.profilePhotoURL || userInfo?.photoURL);
 
         // number/bats/throws: check roster doc first (source of truth), fall back to user profile
         const number = rosterInfo?.number ?? userInfo?.number ?? null;
