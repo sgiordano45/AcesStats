@@ -2423,6 +2423,14 @@
       return (s === '' || s === '-') ? null : s;
     }
 
+    // Guard: returns true if a value must NOT be written to Firestore
+    // (null, undefined, empty string, or the placeholder dash)
+    function psIsBlank(v) {
+      if (v == null) return true;
+      const s = String(v).trim();
+      return s === '' || s === '-';
+    }
+
     function showPSAlert(msg, type) {
       const el = document.getElementById('profileSyncAlert');
       el.textContent = msg;
@@ -2596,6 +2604,7 @@
                 ? `<button class="btn-to-roster"
                      data-doc="${rosterDoc.id}" data-idx="${pIdx}"
                      data-field="${field.key}" data-val="${escPS(profileVal)}"
+                     data-playername="${escPS(player.name || '')}"
                      data-rowid="${rowId}">Use profile</button>`
                 : '<span style="color:#cbd5e0; font-size:0.78rem;">—</span>';
 
@@ -2627,7 +2636,7 @@
         tbody.addEventListener('click', e => {
           const rBtn = e.target.closest('.btn-to-roster[data-doc]');
           if (rBtn && !rBtn.disabled) {
-            psUpdateRoster(rBtn.dataset.doc, parseInt(rBtn.dataset.idx), rBtn.dataset.field, rBtn.dataset.val, rBtn);
+            psUpdateRoster(rBtn.dataset.doc, parseInt(rBtn.dataset.idx), rBtn.dataset.field, rBtn.dataset.val, rBtn, rBtn.dataset.playername || '');
             return;
           }
           const pBtn = e.target.closest('.btn-to-profile[data-uid]');
@@ -2682,7 +2691,12 @@
     });
 
     // ── Single update: write profile value → roster ───────────────
-    async function psUpdateRoster(rosterDocId, playerIndex, field, newVal, btn) {
+    async function psUpdateRoster(rosterDocId, playerIndex, field, newVal, btn, playerName) {
+      // Never write a blank value over existing data
+      if (psIsBlank(newVal)) {
+        console.warn(`psUpdateRoster: refusing to write blank value for field "${field}" on player "${playerName}"`);
+        return;
+      }
       btn.disabled = true;
       btn.textContent = '…';
       try {
@@ -2691,7 +2705,21 @@
         if (!snap.exists()) throw new Error('Roster doc not found');
 
         const players = [...(snap.data().players || [])];
-        players[playerIndex] = { ...players[playerIndex], [field]: newVal };
+
+        // Verify the stored index still points to the correct player.
+        // If the array was modified between scan and write, fall back to name search.
+        let idx = playerIndex;
+        if (playerName && players[idx]?.name !== playerName) {
+          const found = players.findIndex(p => p.name === playerName);
+          if (found >= 0) {
+            console.warn(`psUpdateRoster: index ${playerIndex} shifted for "${playerName}"; using found index ${found}`);
+            idx = found;
+          } else {
+            throw new Error(`Player "${playerName}" not found in live roster array`);
+          }
+        }
+
+        players[idx] = { ...players[idx], [field]: newVal };
         await updateDoc(ref, { players, updatedAt: new Date().toISOString() });
 
         btn.textContent = '✓ Done';
@@ -2705,8 +2733,8 @@
         psMismatches = psMismatches.filter(
           m => !(m.rosterDocId === rosterDocId && m.playerIndex === playerIndex && m.field === field)
         );
-        document.getElementById('profileSyncUpdateAllRosterBtn').disabled  = !psMismatches.some(m => m.profileVal);
-        document.getElementById('profileSyncUpdateAllProfileBtn').disabled = !psMismatches.some(m => m.rosterVal);
+        document.getElementById('profileSyncUpdateAllRosterBtn').disabled  = !psMismatches.some(m => !psIsBlank(m.profileVal));
+        document.getElementById('profileSyncUpdateAllProfileBtn').disabled = !psMismatches.some(m => !psIsBlank(m.rosterVal));
 
       } catch (err) {
         console.error('psUpdateRoster error:', err);
@@ -2719,6 +2747,11 @@
 
     // ── Single update: write roster value → profile ───────────────
     async function psUpdateProfile(uid, field, newVal, btn) {
+      // Never write a blank value over existing data
+      if (psIsBlank(newVal)) {
+        console.warn(`psUpdateProfile: refusing to write blank value for field "${field}" on uid "${uid}"`);
+        return;
+      }
       btn.disabled = true;
       btn.textContent = '…';
       try {
@@ -2736,8 +2769,8 @@
         psMismatches = psMismatches.filter(
           m => !(m.profileUid === uid && m.field === field)
         );
-        document.getElementById('profileSyncUpdateAllRosterBtn').disabled  = !psMismatches.some(m => m.profileVal);
-        document.getElementById('profileSyncUpdateAllProfileBtn').disabled = !psMismatches.some(m => m.rosterVal);
+        document.getElementById('profileSyncUpdateAllRosterBtn').disabled  = !psMismatches.some(m => !psIsBlank(m.profileVal));
+        document.getElementById('profileSyncUpdateAllProfileBtn').disabled = !psMismatches.some(m => !psIsBlank(m.rosterVal));
 
       } catch (err) {
         console.error('psUpdateProfile error:', err);
@@ -2763,55 +2796,79 @@
 
     // ── Bulk: Update All → Roster (copy profile values to roster) ─
     document.getElementById('profileSyncUpdateAllRosterBtn').addEventListener('click', async () => {
-      const toUpdate = psMismatches.filter(m => m.profileVal);
+      // Only process entries where profileVal is genuinely non-blank
+      const toUpdate = psMismatches.filter(m => !psIsBlank(m.profileVal));
       if (toUpdate.length === 0) return;
 
       const btn = document.getElementById('profileSyncUpdateAllRosterBtn');
       btn.disabled = true;
       btn.textContent = 'Updating…';
 
-      // Group by (rosterDocId, playerIndex) to batch field writes per player
+      // Group by rosterDocId only — read each doc ONCE and apply all player/field
+      // updates in a single write, eliminating redundant reads and race conditions.
       const grouped = {};
       toUpdate.forEach(m => {
-        const key = `${m.rosterDocId}::${m.playerIndex}`;
-        if (!grouped[key]) grouped[key] = { rosterDocId: m.rosterDocId, playerIndex: m.playerIndex, fields: [] };
-        grouped[key].fields.push(m);
+        if (!grouped[m.rosterDocId]) grouped[m.rosterDocId] = [];
+        grouped[m.rosterDocId].push(m);
       });
 
       let successCount = 0, errorCount = 0;
 
-      for (const { rosterDocId, playerIndex, fields } of Object.values(grouped)) {
+      for (const [rosterDocId, items] of Object.entries(grouped)) {
         try {
           const ref  = doc(dbPS, 'rosters', rosterDocId);
           const snap = await getDoc(ref);
-          if (!snap.exists()) { errorCount += fields.length; continue; }
+          if (!snap.exists()) { errorCount += items.length; continue; }
 
           const players = [...(snap.data().players || [])];
-          fields.forEach(m => {
-            players[playerIndex] = { ...players[playerIndex], [m.field]: m.profileVal };
-          });
-          await updateDoc(ref, { players, updatedAt: new Date().toISOString() });
+          const applied = [];
 
-          fields.forEach(m => {
-            const row = document.getElementById(m.rowId);
-            if (row) psMarkRowResolved(row, 'roster', m.profileVal);
+          items.forEach(m => {
+            // Double-guard: skip if value is blank (should never happen after filter, but be safe)
+            if (psIsBlank(m.profileVal)) {
+              console.warn(`Bulk→Roster: skipping blank profileVal for "${m.playerName}" field "${m.field}"`);
+              return;
+            }
+            // Verify the stored index still points to the correct player.
+            // Fall back to a name search if the array was modified since the scan.
+            let idx = m.playerIndex;
+            if (players[idx]?.name !== m.playerName) {
+              const found = players.findIndex(p => p.name === m.playerName);
+              if (found < 0) {
+                console.warn(`Bulk→Roster: player "${m.playerName}" not found in live array for ${rosterDocId}; skipping`);
+                errorCount++;
+                return;
+              }
+              console.warn(`Bulk→Roster: index ${idx} shifted for "${m.playerName}"; using found index ${found}`);
+              idx = found;
+            }
+            players[idx] = { ...players[idx], [m.field]: m.profileVal };
+            applied.push(m);
           });
-          successCount += fields.length;
+
+          if (applied.length > 0) {
+            await updateDoc(ref, { players, updatedAt: new Date().toISOString() });
+            applied.forEach(m => {
+              const row = document.getElementById(m.rowId);
+              if (row) psMarkRowResolved(row, 'roster', m.profileVal);
+            });
+            successCount += applied.length;
+          }
         } catch (err) {
           console.error('psUpdateAllRoster error for', rosterDocId, err);
-          errorCount += fields.length;
+          errorCount += items.length;
         }
       }
 
-      // Clear resolved entries
+      // Clear resolved entries from the mismatch list
       const resolvedKeys = new Set(toUpdate.map(m => `${m.rosterDocId}::${m.playerIndex}::${m.field}`));
       psMismatches = psMismatches.filter(
         m => !resolvedKeys.has(`${m.rosterDocId}::${m.playerIndex}::${m.field}`)
       );
 
       btn.textContent = '⚡ Update All → Roster';
-      btn.disabled = !psMismatches.some(m => m.profileVal);
-      document.getElementById('profileSyncUpdateAllProfileBtn').disabled = !psMismatches.some(m => m.rosterVal);
+      btn.disabled = !psMismatches.some(m => !psIsBlank(m.profileVal));
+      document.getElementById('profileSyncUpdateAllProfileBtn').disabled = !psMismatches.some(m => !psIsBlank(m.rosterVal));
 
       showPSAlert(
         successCount > 0
@@ -2823,7 +2880,8 @@
 
     // ── Bulk: Update All → Profile (copy roster values to profile) ─
     document.getElementById('profileSyncUpdateAllProfileBtn').addEventListener('click', async () => {
-      const toUpdate = psMismatches.filter(m => m.rosterVal);
+      // Only process entries where rosterVal is genuinely non-blank
+      const toUpdate = psMismatches.filter(m => !psIsBlank(m.rosterVal));
       if (toUpdate.length === 0) return;
 
       const btn = document.getElementById('profileSyncUpdateAllProfileBtn');
@@ -2833,6 +2891,10 @@
       // Group by profileUid to batch per user doc
       const grouped = {};
       toUpdate.forEach(m => {
+        if (!m.profileUid) {
+          console.warn(`Bulk→Profile: no profileUid for "${m.playerName}" field "${m.field}"; skipping`);
+          return;
+        }
         if (!grouped[m.profileUid]) grouped[m.profileUid] = [];
         grouped[m.profileUid].push(m);
       });
@@ -2842,30 +2904,40 @@
       for (const [uid, fields] of Object.entries(grouped)) {
         try {
           const updates = {};
-          fields.forEach(m => { updates[m.field] = m.rosterVal; });
+          fields.forEach(m => {
+            // Double-guard: never write a blank value to a profile field
+            if (psIsBlank(m.rosterVal)) {
+              console.warn(`Bulk→Profile: skipping blank rosterVal for "${m.playerName}" field "${m.field}"`);
+              return;
+            }
+            updates[m.field] = m.rosterVal;
+          });
+          // Skip the write entirely if nothing survived the guard
+          if (Object.keys(updates).length === 0) continue;
           updates.updatedAt = new Date().toISOString();
           await updateDoc(doc(dbPS, 'users', uid), updates);
 
           fields.forEach(m => {
+            if (psIsBlank(m.rosterVal)) return;
             const row = document.getElementById(m.rowId);
             if (row) psMarkRowResolved(row, 'profile', m.rosterVal);
           });
-          successCount += fields.length;
+          successCount += Object.keys(updates).length - 1; // subtract updatedAt
         } catch (err) {
           console.error('psUpdateAllProfile error for uid', uid, err);
           errorCount += fields.length;
         }
       }
 
-      // Clear resolved entries
+      // Clear resolved entries from the mismatch list
       const resolvedKeys = new Set(toUpdate.map(m => `${m.profileUid}::${m.field}`));
       psMismatches = psMismatches.filter(
         m => !resolvedKeys.has(`${m.profileUid}::${m.field}`)
       );
 
       btn.textContent = '⚡ Update All → Profile';
-      btn.disabled = !psMismatches.some(m => m.rosterVal);
-      document.getElementById('profileSyncUpdateAllRosterBtn').disabled = !psMismatches.some(m => m.profileVal);
+      btn.disabled = !psMismatches.some(m => !psIsBlank(m.rosterVal));
+      document.getElementById('profileSyncUpdateAllRosterBtn').disabled = !psMismatches.some(m => !psIsBlank(m.profileVal));
 
       showPSAlert(
         successCount > 0
