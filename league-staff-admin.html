@@ -1558,6 +1558,10 @@
         <span class="icon">📧</span>
         <span class="hide-mobile">Email</span>
       </button>
+      <button class="tab-btn" data-tab="statsexport" onclick="switchTab('statsexport')">
+        <span class="icon">📊</span>
+        <span class="hide-mobile">Stats Export</span>
+      </button>
     </div>
 
     <!-- ============================================ -->
@@ -2098,6 +2102,39 @@
       </div>
     </div>
 
+    <!-- ============================================ -->
+    <!-- TAB: STATS EXPORT -->
+    <!-- ============================================ -->
+    <div class="tab-content" id="tab-statsexport">
+      <div class="section">
+        <div class="section-header">
+          📊 Season Stats Export
+        </div>
+        <div class="section-content">
+          <p style="color: var(--text-light); margin-bottom: 1.5rem;">
+            Download a full season stats spreadsheet as an Excel file. Select a season below, then click Download.
+          </p>
+
+          <div class="season-selector">
+            <label>Season:</label>
+            <select id="statsExportSeasonSelect">
+              <option value="">Loading seasons...</option>
+            </select>
+          </div>
+
+          <div class="btn-group">
+            <button class="btn btn-primary" onclick="exportStatsSpreadsheet()">
+              📥 Download Spreadsheet
+            </button>
+          </div>
+
+          <p id="statsExportStatus" style="margin-top: 1rem; font-size: 0.9rem; color: var(--text-light);">
+            Open this tab to load player data.
+          </p>
+        </div>
+      </div>
+    </div>
+
   </div>
 </div>
 
@@ -2325,6 +2362,11 @@
     // Lazy-init email tab on first open
     if (tabName === 'email') {
       initEmailTab();
+    }
+
+    // Lazy-init stats export tab on first open
+    if (tabName === 'statsexport') {
+      initStatsExport();
     }
   };
 
@@ -4375,6 +4417,157 @@ All recipients will be BCC'd.`)) return;
       listEl.innerHTML = '<div style="padding:1.5rem; color:var(--danger-color);">Error loading history</div>';
     }
   }
+
+  // ========================================
+  // STATS EXPORT TAB
+  // ========================================
+
+  let statsExportPlayers = null; // cached after first load
+
+  async function initStatsExport() {
+    if (statsExportPlayers !== null) return; // already loaded
+
+    const status = document.getElementById('statsExportStatus');
+    const seasonSelect = document.getElementById('statsExportSeasonSelect');
+    status.textContent = 'Fetching player data...';
+    status.style.color = 'var(--text-light)';
+
+    try {
+      const allPlayers = await getAllPlayerStatsOptimized();
+      statsExportPlayers = allPlayers;
+
+      // Collect all unique base season IDs (strip team-color suffixes like '2025-fall-orange')
+      const seasonSet = new Set();
+      allPlayers.forEach(player => {
+        if (!player.seasons) return;
+        Object.keys(player.seasons).forEach(key => {
+          const parts = key.split('-');
+          if (parts.length >= 2) {
+            seasonSet.add(parts[0] + '-' + parts[1]);
+          }
+        });
+      });
+
+      // Sort newest first
+      const seasons = Array.from(seasonSet).sort((a, b) => b.localeCompare(a));
+
+      seasonSelect.innerHTML = '<option value="career">All seasons (career)</option>';
+      seasons.forEach(s => {
+        const opt = document.createElement('option');
+        opt.value = s;
+        opt.textContent = s;
+        seasonSelect.appendChild(opt);
+      });
+
+      if (seasons.length > 0) seasonSelect.value = seasons[0];
+
+      status.textContent = `Ready — ${allPlayers.length} players found`;
+      status.style.color = 'var(--success-color)';
+
+    } catch (err) {
+      console.error('Stats export load error:', err);
+      status.textContent = 'Error loading player data: ' + err.message;
+      status.style.color = 'var(--danger-color)';
+    }
+  }
+
+  window.exportStatsSpreadsheet = async function() {
+    const seasonSelect = document.getElementById('statsExportSeasonSelect');
+    const selectedSeason = seasonSelect.value;
+    const status = document.getElementById('statsExportStatus');
+
+    if (!statsExportPlayers) {
+      showToast('Player data not loaded yet', 'error');
+      return;
+    }
+
+    try {
+      let rows = [];
+      let filename;
+      let sheetName;
+
+      if (selectedSeason === 'career') {
+        // One row per player-season combination
+        statsExportPlayers.forEach(player => {
+          const name = player.name || player.displayName || '';
+          if (!player.seasons) return;
+          Object.entries(player.seasons).forEach(([seasonKey, s]) => {
+            rows.push({
+              'Player Name': name,
+              'Season': seasonKey,
+              'Team': s.team || '',
+              'G': s.games ?? '',
+              'AB': s.atBats ?? '',
+              'H': s.hits ?? '',
+              'R': s.runs ?? '',
+              'BB': s.walks ?? '',
+              'AVG': s.battingAverage != null ? Number(s.battingAverage).toFixed(3) : '',
+              'OBP': s.onBasePercentage != null ? Number(s.onBasePercentage).toFixed(3) : ''
+            });
+          });
+        });
+        rows.sort((a, b) => {
+          const nc = a['Player Name'].localeCompare(b['Player Name']);
+          return nc !== 0 ? nc : a['Season'].localeCompare(b['Season']);
+        });
+        filename = 'aces-stats-career.xlsx';
+        sheetName = 'Career Stats';
+
+      } else {
+        // One row per player for the selected season (match keys that start with the base season ID)
+        statsExportPlayers.forEach(player => {
+          const name = player.name || player.displayName || '';
+          if (!player.seasons) return;
+          const matchingKeys = Object.keys(player.seasons).filter(k => k.startsWith(selectedSeason));
+          matchingKeys.forEach(key => {
+            const s = player.seasons[key];
+            rows.push({
+              'Player Name': name,
+              'Team': s.team || '',
+              'G': s.games ?? '',
+              'AB': s.atBats ?? '',
+              'H': s.hits ?? '',
+              'R': s.runs ?? '',
+              'BB': s.walks ?? '',
+              'AVG': s.battingAverage != null ? Number(s.battingAverage).toFixed(3) : '',
+              'OBP': s.onBasePercentage != null ? Number(s.onBasePercentage).toFixed(3) : '',
+              'AcesBPI': s.acesBPI != null ? Number(s.acesBPI).toFixed(1) : ''
+            });
+          });
+        });
+        // Qualifying players (AB >= 10) sorted by AVG desc, non-qualifying after
+        rows.sort((a, b) => {
+          const aQual = (Number(a['AB']) || 0) >= 10;
+          const bQual = (Number(b['AB']) || 0) >= 10;
+          if (aQual && !bQual) return -1;
+          if (!aQual && bQual) return 1;
+          return (parseFloat(b['AVG']) || 0) - (parseFloat(a['AVG']) || 0);
+        });
+        filename = `aces-stats-${selectedSeason}.xlsx`;
+        sheetName = selectedSeason;
+      }
+
+      if (rows.length === 0) {
+        showToast('No data found for selected season', 'warning');
+        return;
+      }
+
+      const ws = XLSX.utils.json_to_sheet(rows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, sheetName);
+      XLSX.writeFile(wb, filename);
+
+      status.textContent = `Downloaded: ${filename} (${rows.length} rows)`;
+      status.style.color = 'var(--success-color)';
+      showToast(`Downloaded ${filename}`, 'success');
+
+    } catch (err) {
+      console.error('Stats export error:', err);
+      status.textContent = 'Export failed: ' + err.message;
+      status.style.color = 'var(--danger-color)';
+      showToast('Export failed: ' + err.message, 'error');
+    }
+  };
 
   // ========================================
   // UTILITY FUNCTIONS
