@@ -859,6 +859,11 @@
         <div id="cardBackChampionYears" style="font-size:9px; font-weight:bold; color:#3d3200; margin-top:2px;"></div>
       </div>
 
+      <div id="cardBackAwards" style="display:none; text-align:center; padding:4px 8px; margin:4px 6px 0; background:#e8f4fd; border:1px solid #a0c8e8; border-radius:6px;">
+        <div style="font-size:8px; font-weight:bold; color:#1a4a6e; letter-spacing:1px;">🏅 AWARDS & HONORS</div>
+        <div id="cardBackAwardsList" style="font-size:8px; color:#1a4a6e; margin-top:2px; line-height:1.4;"></div>
+      </div>
+
       <img class="card-back-team-logo" src="icons/icon-512.png" alt="Aces">
 
       <div class="card-back-footer">
@@ -876,6 +881,7 @@
     getCurrentSeason,
     seasonsObjectToArray,
     getAllPlayers,
+    getAllAwards,
     db, doc, getDoc
   } from './firebase-data.js';
   import { collection, getDocs } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
@@ -956,7 +962,7 @@
   // -------------------------------------------------------
   // Populate card DOM with player data
   // -------------------------------------------------------
-  function populateCard(playerName, stats, info, champSeasons = []) {
+  function populateCard(playerName, stats, info, champSeasons = [], playerAwards = []) {
     const regularStats = stats.filter(s => s.sub === 'No');
     const currentTeam  = stats[0]?.team || 'Unknown Team';
     const position     = info?.position || '-';
@@ -1078,6 +1084,21 @@
     } else {
       champDiv.style.display = 'none';
     }
+
+    // Awards banner
+    const awardsDiv  = document.getElementById('cardBackAwards');
+    const awardsList = document.getElementById('cardBackAwardsList');
+    if (playerAwards.length > 0) {
+      const sorted = [...playerAwards].sort((a, b) => (a.seasonId || '').localeCompare(b.seasonId || ''));
+      awardsList.innerHTML = sorted.map(a => {
+        const [yr, sn] = (a.seasonId || '').split('-');
+        const label = `${yr || ''} ${capitalize(sn || '')}`.trim();
+        return `<div>${label} ${a.category || 'Award'}</div>`;
+      }).join('');
+      awardsDiv.style.display = 'block';
+    } else {
+      awardsDiv.style.display = 'none';
+    }
   }
 
   // -------------------------------------------------------
@@ -1173,16 +1194,26 @@
     try {
       // 1. Load season + players in parallel
       setProgress(0, 1, 'Fetching current season…');
-      const [activeSeason, allPlayersRaw, allUserInfo, championsSnap] = await Promise.all([
+      const [activeSeason, allPlayersRaw, allUserInfo, championsSnap, allAwardsRaw] = await Promise.all([
         getCurrentSeason(),
         getAllPlayerStatsOptimized(),
         getAllPlayers(),
-        getDocs(collection(db, 'champions'))
+        getDocs(collection(db, 'champions')),
+        getAllAwards()
       ]);
 
       // Build championMap: { 'seasonId' → 'TeamName' }
       const championMap = {};
       championsSnap.forEach(d => { championMap[d.id] = d.data().team || ''; });
+
+      // Build awardsMap: { 'normalized playerName' → [award, ...] }
+      const awardsMap = {};
+      allAwardsRaw.forEach(a => {
+        if (!a.playerName) return;
+        const key = a.playerName.trim().toLowerCase();
+        if (!awardsMap[key]) awardsMap[key] = [];
+        awardsMap[key].push(a);
+      });
 
       const currentSeasonId = activeSeason?.id || '2026-summer';
       const [seasonYear, seasonName] = currentSeasonId.split('-');
@@ -1318,8 +1349,13 @@
           }
           champSeasons.sort();
 
+          // Find awards for this player (match on stats name or display name)
+          const nameKey = displayName.trim().toLowerCase();
+          const statsKey = statsName.trim().toLowerCase();
+          const playerAwards = awardsMap[nameKey] || awardsMap[statsKey] || [];
+
           // Populate the DOM
-          populateCard(displayName, stats, info, champSeasons);
+          populateCard(displayName, stats, info, champSeasons, playerAwards);
 
           // Wait for photo
           const photoEl = document.getElementById('cardPhoto');
