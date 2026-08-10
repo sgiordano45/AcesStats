@@ -1336,17 +1336,20 @@
           };
 
           // Determine championship seasons for this player
+          // Use the resolved stats array (which has team properly filled in)
+          // rather than player.seasons directly (older entries may lack .team)
           const champSeasons = [];
-          if (player.seasons) {
-            Object.entries(player.seasons).forEach(([sid, sData]) => {
-              const champTeam = championMap[sid];
-              if (champTeam && sData.team &&
-                  champTeam.toLowerCase() === sData.team.toLowerCase()) {
-                const [yr, sn] = sid.split('-');
-                champSeasons.push(`${yr} ${capitalize(sn || '')}`);
-              }
-            });
-          }
+          const seenChampSids = new Set();
+          stats.forEach(s => {
+            if (!s.team || !s.year || !s.season) return;
+            const sid = `${s.year}-${s.season.toLowerCase()}`;
+            if (seenChampSids.has(sid)) return;
+            const champTeam = championMap[sid];
+            if (champTeam && champTeam.toLowerCase() === s.team.toLowerCase()) {
+              champSeasons.push(`${s.year} ${s.season}`);
+              seenChampSids.add(sid);
+            }
+          });
           champSeasons.sort();
 
           // Find awards for this player (match on stats name or display name)
