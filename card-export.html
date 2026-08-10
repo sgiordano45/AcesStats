@@ -854,6 +854,11 @@
         </table>
       </div>
 
+      <div id="cardBackChampions" style="display:none; text-align:center; padding:4px 8px; margin:4px 6px 0; background:#ffd700; border-radius:6px;">
+        <div style="font-size:8px; font-weight:bold; color:#3d3200; letter-spacing:1px;">🏆 CHAMPIONSHIP SEASON(S)</div>
+        <div id="cardBackChampionYears" style="font-size:9px; font-weight:bold; color:#3d3200; margin-top:2px;"></div>
+      </div>
+
       <img class="card-back-team-logo" src="icons/icon-512.png" alt="Aces">
 
       <div class="card-back-footer">
@@ -870,8 +875,10 @@
     getAllPlayerStatsOptimized,
     getCurrentSeason,
     seasonsObjectToArray,
-    getAllPlayers
+    getAllPlayers,
+    db, doc, getDoc
   } from './firebase-data.js';
+  import { collection, getDocs } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
 
   import { getTeamRosterDoc } from './firebase-roster.js';
 
@@ -949,7 +956,7 @@
   // -------------------------------------------------------
   // Populate card DOM with player data
   // -------------------------------------------------------
-  function populateCard(playerName, stats, info) {
+  function populateCard(playerName, stats, info, champSeasons = []) {
     const regularStats = stats.filter(s => s.sub === 'No');
     const currentTeam  = stats[0]?.team || 'Unknown Team';
     const position     = info?.position || '-';
@@ -988,7 +995,7 @@
     // Photo — player photo (Firebase) → team logo → Aces logo last resort
     const photoEl   = document.getElementById('cardPhoto');
     const photoPlaceholder = document.getElementById('cardPhotoPlaceholder');
-    const photoURL  = info?.playerPhotoURL || info?.profilePhotoURL || info?.photoURL || null;
+    const photoURL  = info?.playerPhotoURL || info?.profilePhotoURL || null;
     const teamSlugForPhoto = currentTeam.toLowerCase().replace(/\s+/g, '_');
     const teamLogoFallback = `logos/${teamSlugForPhoto}.png`;
     photoPlaceholder.style.display = 'none'; // never show the ⚾ placeholder
@@ -1061,6 +1068,16 @@
       <td>${totals.hits}</td><td>${totals.runs}</td>
       <td>${totals.walks}</td><td>${careerAvg}</td>
     </tr>`;
+
+    // Championship banner
+    const champDiv  = document.getElementById('cardBackChampions');
+    const champYears = document.getElementById('cardBackChampionYears');
+    if (champSeasons.length > 0) {
+      champYears.textContent = champSeasons.join(' • ');
+      champDiv.style.display = 'block';
+    } else {
+      champDiv.style.display = 'none';
+    }
   }
 
   // -------------------------------------------------------
@@ -1156,11 +1173,16 @@
     try {
       // 1. Load season + players in parallel
       setProgress(0, 1, 'Fetching current season…');
-      const [activeSeason, allPlayersRaw, allUserInfo] = await Promise.all([
+      const [activeSeason, allPlayersRaw, allUserInfo, championsSnap] = await Promise.all([
         getCurrentSeason(),
         getAllPlayerStatsOptimized(),
-        getAllPlayers()
+        getAllPlayers(),
+        getDocs(collection(db, 'champions'))
       ]);
+
+      // Build championMap: { 'seasonId' → 'TeamName' }
+      const championMap = {};
+      championsSnap.forEach(d => { championMap[d.id] = d.data().team || ''; });
 
       const currentSeasonId = activeSeason?.id || '2026-summer';
       const [seasonYear, seasonName] = currentSeasonId.split('-');
@@ -1273,16 +1295,31 @@
               }
             : (userInfo || uidDoc);
 
-          // Merge user profile (photo) + roster doc (number/bats/throws)
+          // Merge user profile (photo) + roster doc (number/position/bats/throws)
           const info = {
             ...resolvedUserInfo,
-            number: rosterInfo?.number ?? resolvedUserInfo?.number ?? null,
-            bats:   rosterInfo?.bats   ?? resolvedUserInfo?.bats   ?? resolvedUserInfo?.batting  ?? null,
-            throws: rosterInfo?.throws ?? resolvedUserInfo?.throws ?? resolvedUserInfo?.throwing ?? null,
+            position: rosterInfo?.position ?? resolvedUserInfo?.position ?? null,
+            number:   rosterInfo?.number   ?? resolvedUserInfo?.number   ?? null,
+            bats:     rosterInfo?.bats     ?? resolvedUserInfo?.bats     ?? resolvedUserInfo?.batting  ?? null,
+            throws:   rosterInfo?.throws   ?? resolvedUserInfo?.throws   ?? resolvedUserInfo?.throwing ?? null,
           };
 
+          // Determine championship seasons for this player
+          const champSeasons = [];
+          if (player.seasons) {
+            Object.entries(player.seasons).forEach(([sid, sData]) => {
+              const champTeam = championMap[sid];
+              if (champTeam && sData.team &&
+                  champTeam.toLowerCase() === sData.team.toLowerCase()) {
+                const [yr, sn] = sid.split('-');
+                champSeasons.push(`${yr} ${capitalize(sn || '')}`);
+              }
+            });
+          }
+          champSeasons.sort();
+
           // Populate the DOM
-          populateCard(displayName, stats, info);
+          populateCard(displayName, stats, info, champSeasons);
 
           // Wait for photo
           const photoEl = document.getElementById('cardPhoto');
