@@ -947,6 +947,12 @@
     </div>
   </div>
 
+  <!-- Player Context Menu -->
+  <div id="playerContextMenu" style="display:none; position:fixed; z-index:9999; background:#fff; border:1px solid #e2e8f0; border-radius:8px; box-shadow:0 4px 16px rgba(0,0,0,0.15); min-width:160px; overflow:hidden;">
+    <div id="ctxToggleOOT" style="padding:10px 16px; cursor:pointer; font-size:14px; font-weight:500; color:#2d3748;" onmouseenter="this.style.background='#f7fafc'" onmouseleave="this.style.background='#fff'">Mark as OOT</div>
+    <div id="ctxRemove" style="padding:10px 16px; cursor:pointer; font-size:14px; color:#e53e3e; border-top:1px solid #f0f0f0;" onmouseenter="this.style.background='#fff5f5'" onmouseleave="this.style.background='#fff'">Remove player</div>
+  </div>
+
   <script type="module">
     import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
     import { 
@@ -2629,6 +2635,115 @@
       }, 3000);
     }
     
+    // ========================================
+    // CONTEXT MENU (right-click / long-press)
+    // ========================================
+    let ctxPlayer = null;
+    let ctxFromTeam = null;
+    let longPressTimer = null;
+    const contextMenu = document.getElementById('playerContextMenu');
+    const ctxToggleOOT = document.getElementById('ctxToggleOOT');
+    const ctxRemove = document.getElementById('ctxRemove');
+
+    function findPlayer(playerId) {
+      for (const teamName of Object.keys(teams)) {
+        const p = teams[teamName].players.find(p => p.id === playerId);
+        if (p) return { player: p, fromTeam: teamName };
+      }
+      const unavail = unavailablePlayers.find(p => p.id === playerId);
+      if (unavail) return { player: unavail, fromTeam: 'unavailable' };
+      const unassigned = unassignedPlayers.find(p => p.id === playerId);
+      if (unassigned) return { player: unassigned, fromTeam: 'unassigned' };
+      return null;
+    }
+
+    function showContextMenu(e, playerId) {
+      e.preventDefault();
+      const found = findPlayer(playerId);
+      if (!found) return;
+      ctxPlayer = found.player;
+      ctxFromTeam = found.fromTeam;
+      ctxToggleOOT.textContent = ctxPlayer.oot ? 'Remove OOT' : 'Mark as OOT';
+      contextMenu.style.display = 'block';
+      const x = Math.min(e.clientX, window.innerWidth - 180);
+      const y = Math.min(e.clientY, window.innerHeight - 100);
+      contextMenu.style.left = x + 'px';
+      contextMenu.style.top = y + 'px';
+    }
+
+    function hideContextMenu() {
+      contextMenu.style.display = 'none';
+      ctxPlayer = null;
+      ctxFromTeam = null;
+    }
+
+    ctxToggleOOT.addEventListener('click', () => {
+      if (!ctxPlayer) return;
+      ctxPlayer.oot = !ctxPlayer.oot;
+      saveRosterChanges();
+      renderTeams();
+      renderUnavailable();
+      renderUnassigned();
+      hideContextMenu();
+    });
+
+    ctxRemove.addEventListener('click', () => {
+      if (!ctxPlayer || !ctxFromTeam) return;
+      if (ctxFromTeam === 'unavailable') {
+        unavailablePlayers = unavailablePlayers.filter(p => p.id !== ctxPlayer.id);
+      } else if (ctxFromTeam === 'unassigned') {
+        unassignedPlayers = unassignedPlayers.filter(p => p.id !== ctxPlayer.id);
+      } else {
+        teams[ctxFromTeam].players = teams[ctxFromTeam].players.filter(p => p.id !== ctxPlayer.id);
+      }
+      saveRosterChanges();
+      renderTeams();
+      renderUnavailable();
+      renderUnassigned();
+      hideContextMenu();
+    });
+
+    document.addEventListener('click', (e) => {
+      if (!contextMenu.contains(e.target)) hideContextMenu();
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') hideContextMenu();
+    });
+
+    function addContextMenuListeners(card) {
+      const playerId = card.dataset.playerId;
+      if (!playerId) return;
+
+      card.addEventListener('contextmenu', (e) => showContextMenu(e, playerId));
+
+      // Long-press for mobile
+      card.addEventListener('touchstart', (e) => {
+        longPressTimer = setTimeout(() => {
+          const touch = e.touches[0];
+          showContextMenu({ preventDefault: () => {}, clientX: touch.clientX, clientY: touch.clientY }, playerId);
+        }, 500);
+      }, { passive: true });
+      card.addEventListener('touchend', () => clearTimeout(longPressTimer));
+      card.addEventListener('touchmove', () => clearTimeout(longPressTimer));
+    }
+
+    // Patch render functions to wire context menu after each render
+    const _origSetupDnD = setupDragAndDrop;
+    setupDragAndDrop = function() {
+      _origSetupDnD();
+      document.querySelectorAll('.team-card .player-card').forEach(addContextMenuListeners);
+    };
+    const _origSetupUnavail = setupUnavailableDrag;
+    setupUnavailableDrag = function() {
+      _origSetupUnavail();
+      document.querySelectorAll('.unavailable-player.player-card').forEach(addContextMenuListeners);
+    };
+    const _origSetupUnassigned = setupUnassignedDrag;
+    setupUnassignedDrag = function() {
+      _origSetupUnassigned();
+      document.querySelectorAll('#unassignedPlayersGrid .player-card').forEach(addContextMenuListeners);
+    };
+
     // Clean up on page unload
     window.addEventListener('beforeunload', () => {
       if (unsubscribeRoster) unsubscribeRoster();
