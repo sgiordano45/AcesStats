@@ -1120,16 +1120,29 @@
 
   // -------------------------------------------------------
   // Capture a single element with html2canvas
-  // Returns a canvas at ~900×1260px (scale 2.4 on 375×525px card)
+  // Output: 972×1332px PNG (900×1260px card + 36px bleed per side at 300 DPI)
+  // 36px bleed @ 300 DPI = 15px CSS at scale 2.4
   // -------------------------------------------------------
   async function captureElement(el) {
-    return html2canvas(el, {
+    // Wrap in a bleed container so background extends 36px beyond card edges
+    const bleedWrapper = document.createElement('div');
+    bleedWrapper.style.cssText = 'padding:15px; background:#f5f0e1; display:inline-block; line-height:0;';
+    el.parentNode.insertBefore(bleedWrapper, el);
+    bleedWrapper.appendChild(el);
+
+    const canvas = await html2canvas(bleedWrapper, {
       scale: 2.4,
       useCORS: true,
       allowTaint: false,
       backgroundColor: '#f5f0e1',
       logging: false
     });
+
+    // Restore original DOM position
+    bleedWrapper.parentNode.insertBefore(el, bleedWrapper);
+    bleedWrapper.parentNode.removeChild(bleedWrapper);
+
+    return canvas;
   }
 
   // Convert a canvas to a PNG Blob
