@@ -1121,16 +1121,12 @@
   // -------------------------------------------------------
   // Capture a single element with html2canvas
   // Output: 972×1332px PNG (900×1260px card + 36px bleed per side at 300 DPI)
-  // 36px bleed @ 300 DPI = 15px CSS at scale 2.4
+  // Bleed is added by compositing onto a larger canvas — no DOM changes.
   // -------------------------------------------------------
   async function captureElement(el) {
-    // Wrap in a bleed container so background extends 36px beyond card edges
-    const bleedWrapper = document.createElement('div');
-    bleedWrapper.style.cssText = 'padding:15px; background:#f5f0e1; display:inline-block; line-height:0;';
-    el.parentNode.insertBefore(bleedWrapper, el);
-    bleedWrapper.appendChild(el);
+    const BLEED = 36; // pixels at 300 DPI output resolution
 
-    const canvas = await html2canvas(bleedWrapper, {
+    const cardCanvas = await html2canvas(el, {
       scale: 2.4,
       useCORS: true,
       allowTaint: false,
@@ -1138,11 +1134,16 @@
       logging: false
     });
 
-    // Restore original DOM position
-    bleedWrapper.parentNode.insertBefore(el, bleedWrapper);
-    bleedWrapper.parentNode.removeChild(bleedWrapper);
+    // Composite onto a canvas 36px larger on each side
+    const bleedCanvas = document.createElement('canvas');
+    bleedCanvas.width  = cardCanvas.width  + BLEED * 2;
+    bleedCanvas.height = cardCanvas.height + BLEED * 2;
+    const ctx = bleedCanvas.getContext('2d');
+    ctx.fillStyle = '#f5f0e1';
+    ctx.fillRect(0, 0, bleedCanvas.width, bleedCanvas.height);
+    ctx.drawImage(cardCanvas, BLEED, BLEED);
 
-    return canvas;
+    return bleedCanvas;
   }
 
   // Convert a canvas to a PNG Blob
