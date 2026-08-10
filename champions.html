@@ -1422,7 +1422,7 @@
     // Calculate record if we have games
     const record = calculateTeamRecord(champion, seasonData.games);
     if (record) {
-      infoHtml = `⚾ ${record.wins}-${record.losses}${record.ties ? '-' + record.ties : ''} Overall`;
+      infoHtml = `⚾ ${record.wins}-${record.losses}${record.ties ? '-' + record.ties : ''} Regular Season`;
     }
     
     // Add runner-up if available
@@ -1497,21 +1497,25 @@
     }
 
     games.forEach(game => {
+      // Regular season only
+      const gameType = (game.gameType || game.game_type || '').toLowerCase();
+      if (gameType === 'playoff') return;
+
       const home = getTeamName(game, 'home').toLowerCase().replace(/\s+/g, '').replace(/_/g, '');
       const away = getTeamName(game, 'away').toLowerCase().replace(/\s+/g, '').replace(/_/g, '');
       const winner = (game.winner || game.Winner || '').toLowerCase().replace(/\s+/g, '').replace(/_/g, '');
-      
+
       // Check if this team played in this game
       const teamIsHome = home === teamLower || home.includes(teamLower) || teamLower.includes(home);
       const teamIsAway = away === teamLower || away.includes(teamLower) || teamLower.includes(away);
-      
+
       if (!teamIsHome && !teamIsAway) return;
-      
-      // Only count completed games with scores
-      const homeScore = game.homeScore || game['home score'];
-      const awayScore = game.awayScore || game['away score'];
-      if (homeScore === undefined || awayScore === undefined) return;
-      
+
+      // Only count completed games — use != null so score of 0 is valid
+      const homeScore = game.homeScore != null ? game.homeScore : game['home score'];
+      const awayScore = game.awayScore != null ? game.awayScore : game['away score'];
+      if (homeScore == null || awayScore == null) return;
+
       if (winner === 'tie') {
         ties++;
       } else if (winner.includes(teamLower) || teamLower.includes(winner)) {
