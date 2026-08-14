@@ -725,10 +725,10 @@
         <span><strong>Front only</strong> — for single-sided print runs</span>
       </label>
       <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #e2e8f0;">
-        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 0.95rem; color: #2d3748;">
-          <input type="checkbox" id="testModeCheck" style="accent-color: #2d5016; width: 16px; height: 16px;">
-          <span><strong>Test mode</strong> — export 1 player only</span>
-        </label>
+        <div style="font-size: 0.85rem; font-weight: 700; color: #4a5568; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px;">Specific Player (optional)</div>
+        <input type="text" id="playerFilterInput" placeholder="Type a player name to export just that player…"
+          style="width:100%; padding: 8px 12px; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 0.9rem; color: #2d3748; outline: none;">
+        <div style="font-size: 0.78rem; color: #a0aec0; margin-top: 5px;">Leave blank to export all players. Partial names work (e.g. "eric" matches Eric Denmitz).</div>
       </div>
     </div>
 
@@ -1003,7 +1003,7 @@
     const photoPlaceholder = document.getElementById('cardPhotoPlaceholder');
     const photoURL  = info?.playerPhotoURL || info?.profilePhotoURL || null;
     const teamSlugForPhoto = currentTeam.toLowerCase().replace(/\s+/g, '_');
-    const teamLogoFallback = `logos/${teamSlugForPhoto}.png`;
+    const teamLogoFallback = `logos/${teamSlugForPhoto}.png?v=${Date.now()}`;
     photoPlaceholder.style.display = 'none'; // never show the ⚾ placeholder
     photoEl.style.display = 'block';
     if (photoURL) {
@@ -1195,10 +1195,11 @@
     const successMsg = document.getElementById('successMsg');
     const playerList = document.getElementById('playerList');
 
-    // Read export mode and test mode
+    // Read export mode and player filter
     const exportMode = document.querySelector('input[name="exportMode"]:checked').value;
     const frontOnly = exportMode === 'front';
-    const testMode = document.getElementById('testModeCheck').checked;
+    const playerFilter = document.getElementById('playerFilterInput').value.trim().toLowerCase();
+    const testMode = false; // replaced by player filter
 
     btn.disabled = true;
     progressArea.style.display = 'block';
@@ -1287,8 +1288,10 @@
         throw new Error(`No players found for season "${currentSeasonId}". Check that the season is active in Firebase.`);
       }
 
-      // Apply test mode — limit to 1 player
-      const playersToProcess = testMode ? currentPlayers.slice(0, 1) : currentPlayers;
+      // Apply player filter if set, otherwise export all
+      const playersToProcess = playerFilter
+        ? currentPlayers.filter(p => p.name.toLowerCase().includes(playerFilter))
+        : currentPlayers;
 
       // 3. Build player list UI
       const listItems = {};
@@ -1300,8 +1303,8 @@
         listItems[p.id] = addPlayerToList(displayName);
       });
 
-      const startLabel = testMode
-        ? `Test mode: generating 1 card (of ${currentPlayers.length} total)`
+      const startLabel = playerFilter
+        ? `Filter "${playerFilter}": ${playersToProcess.length} match(es) of ${currentPlayers.length} players. Starting…`
         : `Found ${currentPlayers.length} players for ${seasonYear} ${capitalize(seasonName)}. Starting…`;
       setProgress(0, playersToProcess.length, startLabel);
 
@@ -1407,7 +1410,7 @@
 
       // 6. Generate and download ZIP
       const zipBlob = await zip.generateAsync({ type: 'blob' });
-      const filename = testMode ? 'aces-cards-TEST.zip' : `aces-cards-${currentSeasonId}.zip`;
+      const filename = playerFilter ? `aces-cards-${playerFilter.replace(/\s+/g,'-')}.zip` : `aces-cards-${currentSeasonId}.zip`;
       const url = URL.createObjectURL(zipBlob);
       const a = document.createElement('a');
       a.href = url;
@@ -1416,10 +1419,10 @@
       URL.revokeObjectURL(url);
 
       const modeLabel = frontOnly ? 'front only' : 'front + back';
-      const testLabel = testMode ? ' [TEST MODE]' : '';
-      successMsg.textContent = `✅ ZIP saved as "${filename}" — ${playersToProcess.length} player(s), ${modeLabel} PNGs (with bleed).${testLabel}`;
+      const filterLabel = playerFilter ? ` [filter: "${playerFilter}"]` : '';
+      successMsg.textContent = `✅ ZIP saved as "${filename}" — ${playersToProcess.length} player(s), ${modeLabel} PNGs (with bleed).${filterLabel}`;
       successMsg.style.display = 'block';
-      setProgress(playersToProcess.length, playersToProcess.length, `Complete! ${playersToProcess.length} card(s) generated.${testLabel}`);
+      setProgress(playersToProcess.length, playersToProcess.length, `Complete! ${playersToProcess.length} card(s) generated.${filterLabel}`);
 
     } catch (err) {
       console.error('Card export error:', err);
