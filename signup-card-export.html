@@ -3,18 +3,73 @@
 <head>
   <meta charset="UTF-8">
   <title>Aces Signup Card Export</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
       font-family: 'Georgia', serif;
-      background: #f0ede4;
+      background: linear-gradient(135deg, #f7fafc 0%, #edf2f7 100%);
+      min-height: 100vh;
       padding: 40px 20px;
       display: flex;
       flex-direction: column;
       align-items: center;
       gap: 40px;
+      color: #2d3748;
     }
+
+    /* ── Export UI Panel ── */
+    .export-panel {
+      width: 420px;
+      background: white;
+      border-radius: 16px;
+      padding: 28px 32px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+      text-align: center;
+    }
+    .export-panel h1 {
+      font-size: 1.5rem;
+      font-weight: 800;
+      color: #2d5016;
+      margin-bottom: 6px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+    .export-panel p {
+      color: #718096;
+      font-size: 0.9rem;
+      margin-bottom: 20px;
+      font-family: -apple-system, sans-serif;
+      line-height: 1.5;
+    }
+    #exportBtn {
+      display: block;
+      width: 100%;
+      padding: 14px 24px;
+      background: linear-gradient(135deg, #2d5016 0%, #1a6b4a 100%);
+      color: white;
+      border: none;
+      border-radius: 10px;
+      font-size: 1rem;
+      font-weight: 700;
+      cursor: pointer;
+      font-family: -apple-system, sans-serif;
+      letter-spacing: 0.4px;
+      transition: opacity 0.2s, transform 0.1s;
+    }
+    #exportBtn:hover:not(:disabled) { opacity: 0.92; transform: translateY(-1px); }
+    #exportBtn:disabled { opacity: 0.55; cursor: not-allowed; }
+    #statusMsg {
+      display: none;
+      margin-top: 14px;
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 0.88rem;
+      font-family: -apple-system, sans-serif;
+      font-weight: 600;
+    }
+    #statusMsg.success { background: #f0fff4; border: 1px solid #9ae6b4; color: #276749; }
+    #statusMsg.error   { background: #fff5f5; border: 1px solid #fed7d7; color: #c53030; }
 
     .page-label {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -317,10 +372,18 @@
 </head>
 <body>
 
+  <!-- Export UI -->
+  <div class="export-panel">
+    <h1>⚾ Signup Card Export</h1>
+    <p>Downloads both signup cards as individual PNGs at print resolution (900×1260px + bleed), matching the player card format.</p>
+    <button id="exportBtn">Export PNGs</button>
+    <div id="statusMsg"></div>
+  </div>
+
   <p class="page-label">Side 1 — Why Join</p>
 
   <!-- ══════════════ CARD SIDE 1 ══════════════ -->
-  <div class="baseball-card">
+  <div class="baseball-card" id="card-side1">
 
     <div class="card-header">
       <div class="team-name">⚾ Mountainside Aces</div>
@@ -427,7 +490,7 @@
   <p class="page-label">Side 2 — How to Join</p>
 
   <!-- ══════════════ CARD SIDE 2 ══════════════ -->
-  <div class="baseball-card">
+  <div class="baseball-card" id="card-side2">
 
     <div class="card-header">
       <div class="team-name">⚾ Mountainside Aces</div>
@@ -498,6 +561,76 @@
 
     <div class="card-footer">How to Join · Side 2 of 2</div>
   </div>
+
+  <script>
+    async function captureCard(el) {
+      const BLEED = 72;
+      const cardCanvas = await html2canvas(el, {
+        scale: 2.4,
+        useCORS: true,
+        allowTaint: false,
+        backgroundColor: '#f5f0e1',
+        logging: false
+      });
+      const bleedCanvas = document.createElement('canvas');
+      bleedCanvas.width  = cardCanvas.width  + BLEED * 2;
+      bleedCanvas.height = cardCanvas.height + BLEED * 2;
+      const ctx = bleedCanvas.getContext('2d');
+      ctx.fillStyle = '#f5f0e1';
+      ctx.fillRect(0, 0, bleedCanvas.width, bleedCanvas.height);
+      ctx.drawImage(cardCanvas, BLEED, BLEED);
+      return bleedCanvas;
+    }
+
+    function downloadCanvas(canvas, filename) {
+      return new Promise(resolve => {
+        canvas.toBlob(blob => {
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = filename;
+          a.click();
+          setTimeout(() => URL.revokeObjectURL(url), 1000);
+          resolve();
+        }, 'image/png');
+      });
+    }
+
+    document.getElementById('exportBtn').addEventListener('click', async () => {
+      const btn = document.getElementById('exportBtn');
+      const statusMsg = document.getElementById('statusMsg');
+      btn.disabled = true;
+      btn.textContent = 'Exporting…';
+      statusMsg.style.display = 'none';
+
+      try {
+        const side1 = document.getElementById('card-side1');
+        const side2 = document.getElementById('card-side2');
+
+        btn.textContent = 'Rendering Side 1…';
+        const canvas1 = await captureCard(side1);
+        await downloadCanvas(canvas1, 'signup-card-side1.png');
+
+        // Small delay so both downloads don't clash
+        await new Promise(r => setTimeout(r, 400));
+
+        btn.textContent = 'Rendering Side 2…';
+        const canvas2 = await captureCard(side2);
+        await downloadCanvas(canvas2, 'signup-card-side2.png');
+
+        statusMsg.className = 'success';
+        statusMsg.textContent = '✅ Both PNGs downloaded — signup-card-side1.png & signup-card-side2.png';
+        statusMsg.style.display = 'block';
+      } catch (err) {
+        statusMsg.className = 'error';
+        statusMsg.textContent = '⚠️ Export failed: ' + err.message;
+        statusMsg.style.display = 'block';
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Export PNGs';
+      }
+    });
+  </script>
 
 </body>
 </html>
