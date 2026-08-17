@@ -412,13 +412,27 @@ export class BadgeCalculator {
     this.isPartialData = seasonId.startsWith('2025');
     
     // Load all game data for the season
-    const [battingData, pitchingData, scheduleData] = await Promise.all([
+    const [battingData, pitchingData] = await Promise.all([
       this.loadBattingData(seasonId),
-      this.loadPitchingData(seasonId),
-      this.loadScheduleData(seasonId)
+      this.loadPitchingData(seasonId)
     ]);
 
     console.log(`📊 Loaded ${Object.keys(battingData).length} batters, ${Object.keys(pitchingData).length} pitchers`);
+
+    // Compute total games per team from batting data (unique game IDs across all players on each team).
+    // This covers regular season + playoffs without needing a separate schedule lookup.
+    const teamGameIds = {};
+    Object.values(battingData).forEach(player => {
+      const tid = (player.teamId || '').toLowerCase().trim();
+      if (!tid) return;
+      if (!teamGameIds[tid]) teamGameIds[tid] = new Set();
+      player.games.forEach(g => teamGameIds[tid].add(g.id));
+    });
+    const teamTotalGames = {};
+    Object.entries(teamGameIds).forEach(([tid, ids]) => {
+      teamTotalGames[tid] = ids.size;
+    });
+    console.log('🏟️ Team game totals (from batting data):', teamTotalGames);
     
     // Get unique players
     const allPlayerIds = new Set([
@@ -465,7 +479,7 @@ export class BadgeCalculator {
       const playerBatting = battingData[playerId] || { games: [], totals: {} };
       const playerPitching = pitchingData[playerId] || { games: [], totals: {} };
       
-      const badges = this.calculatePlayerBadges(playerId, playerBatting, playerPitching, battingData, pitchingData, openingDay, this.seasonComplete, scheduleData);
+      const badges = this.calculatePlayerBadges(playerId, playerBatting, playerPitching, battingData, pitchingData, openingDay, this.seasonComplete, teamTotalGames);
       
       if (Object.keys(badges.earned).length > 0) {
         results.playerBadges[playerId] = badges;
@@ -524,8 +538,10 @@ export class BadgeCalculator {
       gamesSnap.forEach(gameDoc => {
         const data = gameDoc.data();
         // Support both camelCase and snake_case field names
-        const home = (data.homeTeam || data['home team'] || '').toLowerCase().trim();
-        const away = (data.awayTeam || data['away team'] || '').toLowerCase().trim();
+        // Normalize to slug format (lowercase, spaces → underscores) to match teamId in batting data
+        const normalize = str => (str || '').toLowerCase().trim().replace(/\s+/g, '_');
+        const home = normalize(data.homeTeam || data['home team'] || '');
+        const away = normalize(data.awayTeam || data['away team'] || '');
         if (home && home !== 'tbd') teamGameCounts[home] = (teamGameCounts[home] || 0) + 1;
         if (away && away !== 'tbd') teamGameCounts[away] = (teamGameCounts[away] || 0) + 1;
       });
@@ -722,7 +738,7 @@ export class BadgeCalculator {
   /**
    * Calculate all badges for a single player
    */
-  calculatePlayerBadges(playerId, battingData, pitchingData, allBattingData, allPitchingData, openingDay, seasonComplete = false, scheduleData = {}) {
+  calculatePlayerBadges(playerId, battingData, pitchingData, allBattingData, allPitchingData, openingDay, seasonComplete = false, teamTotalGames = {}) {
     const earned = {};
     const progress = {};
     
@@ -780,12 +796,12 @@ export class BadgeCalculator {
         earned.bigGames = { ...bigGameBadge, value: maxRunsInGame, gameDate: bigGameEntry?.gameDate || null };
       }
 
-      // Iron Man - played in every game (regular season + playoffs), end of season only
+      // Iron Man - played in every team game (regular season + playoffs), end of season only
       if (seasonComplete) {
-        const teamId = (battingData.teamId || '').toLowerCase().trim();
-        const totalTeamGames = scheduleData[teamId] || 0;
+        const tid = (battingData.teamId || '').toLowerCase().trim();
+        const totalTeamGames = teamTotalGames[tid] || 0;
         const playerAppearances = battingData.games.length;
-        if (totalTeamGames > 0 && playerAppearances >= totalTeamGames) {
+        if (totalTeamGames > 0 && playerAppearances === totalTeamGames) {
           earned.ironMan = {
             badgeId: 'ironMan',
             ...BADGE_DEFINITIONS.ironMan,
