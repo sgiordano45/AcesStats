@@ -113,17 +113,17 @@
     .file-upload-input { display: none; }
     .upload-icon { font-size: 2.5rem; margin-bottom: 0.75rem; }
 
-    /* ── DH Warning Banner ── */
+    /* ── Bye Week Alert Banner ── */
     .dh-warnings-banner {
-      background: #fffbeb;
-      border: 1.5px solid #f59e0b;
+      background: #fef9c3;
+      border: 1.5px solid #ca8a04;
       border-radius: 10px;
       padding: 1rem 1.25rem;
       margin-bottom: 1.5rem;
     }
     .dh-warnings-banner h3 {
       font-size: 1rem;
-      color: #92400e;
+      color: #78350f;
       margin-bottom: 0.5rem;
       display: flex; align-items: center; gap: 0.5rem;
     }
@@ -463,7 +463,8 @@
           <h2>⚖️ Schedule Editor</h2>
 
           <div class="legend">
-            <div class="legend-item"><span class="indicator indicator-danger">🚨</span> Large gap (2+ hrs) between games — Check this!</div>
+            <div class="legend-item"><span>🕐</span> Use "Balance Time Slots" to spread 8 AM – 1 PM slots evenly across all teams</div>
+            <div class="legend-item"><span>🚨</span> Fall: bye weeks should not occur — use the banner above to identify them</div>
           </div>
 
           <div class="schedule-table-container">
@@ -486,7 +487,7 @@
 
           <div class="export-actions">
             <button class="btn btn-secondary" onclick="balanceDays()" id="balanceDaysBtn" style="display:none;">⚖️ Balance Days</button>
-            <button class="btn btn-secondary" onclick="balanceByes()" id="balanceByesBtn" style="display:none;">📅 Balance Byes</button>
+            <button class="btn btn-secondary" onclick="balanceTimeSlots()" id="balanceByesBtn" style="display:none;">🕐 Balance Time Slots</button>
             <button class="btn btn-primary" onclick="downloadCSV()">💾 Download CSV</button>
             <button class="btn btn-secondary" onclick="exportToFirebase()">☁️ Export to Firebase</button>
           </div>
@@ -656,57 +657,36 @@
     }
 
     // ══════════════════════════════════════════
-    // DH WARNING BANNER
+    // BYE WEEK ALERT BANNER (Fall: no byes allowed)
     // ══════════════════════════════════════════
     function renderDHWarnings() {
-      // Group games by week number
-      const weekMap = {};
-      schedule.forEach(g => {
-        const w = g.week;
-        if (!weekMap[w]) weekMap[w] = [];
-        weekMap[w].push(g);
+      const allWeeks = [...new Set(schedule.map(g => parseInt(g.week)))].sort((a, b) => a - b);
+      const byeMap   = {};
+
+      teams.forEach(team => {
+        const teamWeeks = new Set(
+          schedule.filter(g => g.homeTeam === team || g.awayTeam === team).map(g => parseInt(g.week))
+        );
+        const byes = allWeeks.filter(w => !teamWeeks.has(w));
+        if (byes.length > 0) byeMap[team] = byes;
       });
 
-      // A double-header = two games on the same date (any team)
-      // We count distinct DH pairs per week (each date with 2+ games = 1 DH per game pair sharing that date)
-      // Simpler / more useful: count unique "date slots" that have exactly 2 games that day league-wide
-      // The generator produces 5 games per Sunday (10 teams = 5 DH games). We flag weeks < 5 DHs before week 12.
+      const banner = document.getElementById('dhWarningBanner');
 
-      const banner    = document.getElementById('dhWarningBanner');
-      const badWeeks  = [];
-
-      const MAX_WEEK = 12; // flag only weeks before week 12
-
-      Object.entries(weekMap).forEach(([weekNum, games]) => {
-        const wn = parseInt(weekNum);
-        if (wn >= MAX_WEEK) return;
-
-        // Count DHs: group by date, count how many pairs of games share a date
-        const dateCount = {};
-        games.forEach(g => { dateCount[g.date] = (dateCount[g.date] || 0) + 1; });
-
-        // Each "date" with N games = floor(N/2) double-headers
-        let dhCount = 0;
-        Object.values(dateCount).forEach(n => { dhCount += Math.floor(n / 2); });
-
-        if (dhCount < 5) {
-          badWeeks.push({ week: wn, dhCount });
-        }
-      });
-
-      if (badWeeks.length === 0) {
+      if (Object.keys(byeMap).length === 0) {
         banner.classList.add('hidden');
         return;
       }
 
       banner.classList.remove('hidden');
       banner.innerHTML = `
-        <h3>⚠️ Weeks with fewer than 5 double-headers (before Week 12)</h3>
+        <h3>Bye Weeks Detected — Fall rules require every team to play every week</h3>
         <div class="dh-warning-items">
-          ${badWeeks.map(w =>
-            `<span class="dh-warning-chip">⚠ Week ${w.week} — ${w.dhCount} DH${w.dhCount !== 1 ? 's' : ''}</span>`
+          ${Object.entries(byeMap).sort(([a],[b]) => a.localeCompare(b)).map(([team, weeks]) =>
+            `<span class="dh-warning-chip">${team}: Week${weeks.length > 1 ? 's' : ''} ${weeks.join(', ')}</span>`
           ).join('')}
         </div>
+        <p style="font-size:0.85rem;color:#92400e;margin-top:0.5rem;">Use the editor to add or move games for these teams.</p>
       `;
     }
 
@@ -740,24 +720,8 @@
     }
 
     function getGameWarnings(game, index) {
-      const warnings = [];
-      [game.homeTeam, game.awayTeam].forEach(team => {
-        const sameDayGames = schedule.filter((g, i) =>
-          i !== index && g.date === game.date &&
-          (g.homeTeam === team || g.awayTeam === team)
-        );
-        if (sameDayGames.length > 0) {
-          const times = [game.time, ...sameDayGames.map(g => g.time)].sort();
-          let maxGap = 0;
-          for (let i = 1; i < times.length; i++) {
-            maxGap = Math.max(maxGap, getTimeGapHours(times[i - 1], times[i]));
-          }
-          if (maxGap >= 2) {
-            warnings.push({ type: 'danger',  icon: '🚨', message: `${team}: large gap (${maxGap.toFixed(1)}h) between games` });
-          }
-        }
-      });
-      return warnings;
+      // Fall mode: DH gaps are expected (1 PM slot). No DH warnings generated.
+      return [];
     }
 
     function getTimeGapHours(t1, t2) {
@@ -1174,170 +1138,75 @@
     };
 
     // ══════════════════════════════════════════
-    // BALANCE BYES
+    // BALANCE TIME SLOTS (Fall)
+    // Swaps time assignments within each Sunday to spread
+    // 8 AM – 1 PM slots evenly across all teams.
     // ══════════════════════════════════════════
-    window.balanceByes = function() {
+    window.balanceTimeSlots = function() {
       const statusEl = document.getElementById('balanceByesStatus');
-      statusEl.textContent = 'Balancing bye weeks...';
+      statusEl.textContent = 'Balancing time slots...';
 
-      const getISO  = g => parseDateToISO(g.date);
-      const dayOfISO = iso => new Date(iso + 'T12:00:00').getDay(); // 0=Sun
-
-      // Build a map of week → anchor dates by day-of-week
-      // e.g. weekDates[3][1] = '2026-06-08' means week 3's Monday is June 8
-      function buildWeekDateMap() {
-        const map = {}; // map[week][dayIdx] = iso
-        schedule.forEach(g => {
-          const wk = parseInt(g.week);
-          if (wk < 2 || wk > 11) return;
-          const iso = getISO(g);
-          if (!iso) return;
-          if (!map[wk]) map[wk] = {};
-          const d = dayOfISO(iso);
-          if (!map[wk][d]) map[wk][d] = iso;
-        });
-        return map;
-      }
-
-      // Get DH pairs for weeks 2-11: { week, dayIdx, idxs[] }
-      function getDHPairsWithDay() {
-        const byDateWeek = {};
-        schedule.forEach((g, i) => {
-          const wk = parseInt(g.week);
-          if (wk < 2 || wk > 11) return;
-          const iso = getISO(g);
-          if (!iso) return;
-          const key = `${wk}|${iso}`;
-          if (!byDateWeek[key]) byDateWeek[key] = { week: wk, iso, dayIdx: dayOfISO(iso), idxs: [] };
-          byDateWeek[key].idxs.push(i);
-        });
-        return Object.values(byDateWeek).filter(p => p.idxs.length >= 2);
-      }
-
-      // Compute bye week spread score — sum of squared gaps between consecutive bye weeks per team
-      // Lower = better spread. Also penalize back-to-back byes heavily.
-      function byeSpreadScore(sched) {
-        const allWeeks = [...new Set(sched.map(g => parseInt(g.week)))]
-          .filter(w => w >= 1 && w <= 11)
-          .sort((a, b) => a - b);
-        const wk1Games = sched.filter(g => parseInt(g.week) === 1);
-        const wk1Dates = wk1Games.map(g => parseDateToISO(g.date)).filter(Boolean).sort();
-        const odDate   = wk1Dates[0];
-
-        const teamByes = {};
-        const allTeams = [...new Set(sched.flatMap(g => [g.homeTeam, g.awayTeam]))];
-
-        allTeams.forEach(team => {
-          const isWeekBye = w => {
-            const tg = sched.filter(g => parseInt(g.week) === w && (g.homeTeam === team || g.awayTeam === team));
-            if (w !== 1) return tg.length === 0;
-            return tg.filter(g => parseDateToISO(g.date) !== odDate).length === 0;
-          };
-          teamByes[team] = allWeeks.filter(w => isWeekBye(w));
-        });
-
-        let score = 0;
-        Object.values(teamByes).forEach(byes => {
-          if (byes.length < 2) return;
-          // Penalize back-to-back byes heavily, reward even spread
-          for (let i = 1; i < byes.length; i++) {
-            const gap = byes[i] - byes[i - 1];
-            if (gap === 1) score += 100; // back-to-back = very bad
-            else score += Math.max(0, 4 - gap) * 10; // gaps < 4 weeks still penalized
-          }
-        });
-
-        // Penalize weeks where more than 1 team is on bye simultaneously (weeks 2-11 only)
-        const byesPerWeek = {};
-        Object.values(teamByes).forEach(byes => {
-          byes.forEach(w => {
-            if (w === 1) return; // week 1 is special — 3 teams sit, skip
-            byesPerWeek[w] = (byesPerWeek[w] || 0) + 1;
+      // Compute total time-slot variance across all teams (lower = better balanced)
+      function timeSlotVariance(sched) {
+        const teamSlots = {};
+        sched.forEach(g => {
+          [g.homeTeam, g.awayTeam].forEach(team => {
+            if (!teamSlots[team]) teamSlots[team] = {};
+            teamSlots[team][g.time] = (teamSlots[team][g.time] || 0) + 1;
           });
         });
-        Object.values(byesPerWeek).forEach(count => {
-          if (count > 1) score += (count - 1) * 10000; // treat as essentially impossible
+        let totalVar = 0;
+        Object.values(teamSlots).forEach(slots => {
+          const vals = Object.values(slots);
+          if (vals.length < 2) return;
+          const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
+          vals.forEach(v => { totalVar += (v - mean) ** 2; });
         });
-
-        return score;
+        return totalVar;
       }
 
-      // Check if swapping two pairs across weeks would cause a double-booking
-      // (a team already has a game in the target week on that day)
-      function wouldDoubleBook(pairA, pairB, weekDateMap) {
-        // pairA moving to pairB's week, pairB moving to pairA's week
-        const teamsA = new Set(pairA.idxs.flatMap(i => [schedule[i].homeTeam, schedule[i].awayTeam]));
-        const teamsB = new Set(pairB.idxs.flatMap(i => [schedule[i].homeTeam, schedule[i].awayTeam]));
-
-        const newIsoForA = weekDateMap[pairB.week]?.[pairA.dayIdx];
-        const newIsoForB = weekDateMap[pairA.week]?.[pairB.dayIdx];
-
-        if (!newIsoForA || !newIsoForB) return true; // target week doesn't have that day — skip
-
-        // Check if any team in pairA already has a game in pairB's week (excluding pairB itself)
-        for (const team of teamsA) {
-          const conflict = schedule.some((g, i) =>
-            !pairB.idxs.includes(i) &&
-            parseInt(g.week) === pairB.week &&
-            parseDateToISO(g.date) === newIsoForA &&
-            (g.homeTeam === team || g.awayTeam === team)
-          );
-          if (conflict) return true;
-        }
-        // Check if any team in pairB already has a game in pairA's week (excluding pairA itself)
-        for (const team of teamsB) {
-          const conflict = schedule.some((g, i) =>
-            !pairA.idxs.includes(i) &&
-            parseInt(g.week) === pairA.week &&
-            parseDateToISO(g.date) === newIsoForB &&
-            (g.homeTeam === team || g.awayTeam === team)
-          );
-          if (conflict) return true;
-        }
-        return false;
-      }
+      // Group game indices by date — only swap times within the same date
+      // so matchups and dates never change, only which slot a game is played at
+      const byDate = {};
+      schedule.forEach((g, i) => {
+        if (!byDate[g.date]) byDate[g.date] = [];
+        byDate[g.date].push(i);
+      });
 
       let improved = true;
       let passes = 0;
       let totalSwaps = 0;
 
-      while (improved && passes < 20) {
+      while (improved && passes < 40) {
         improved = false;
         passes++;
-        const weekDateMap = buildWeekDateMap();
-        const pairs = getDHPairsWithDay();
 
-        for (let a = 0; a < pairs.length; a++) {
-          for (let b = a + 1; b < pairs.length; b++) {
-            const pA = pairs[a];
-            const pB = pairs[b];
-            if (pA.week === pB.week) continue; // same week, nothing to do
-            if (pA.dayIdx !== pB.dayIdx) continue; // different day — keep same day of week
+        for (const idxs of Object.values(byDate)) {
+          if (idxs.length < 2) continue;
+          // Try every pair of time-slot swaps on this date
+          for (let a = 0; a < idxs.length; a++) {
+            for (let b = a + 1; b < idxs.length; b++) {
+              const ia = idxs[a], ib = idxs[b];
+              if (schedule[ia].time === schedule[ib].time) continue;
 
-            if (wouldDoubleBook(pA, pB, weekDateMap)) continue;
+              const before = timeSlotVariance(schedule);
 
-            const newIsoA = weekDateMap[pB.week]?.[pA.dayIdx];
-            const newIsoB = weekDateMap[pA.week]?.[pB.dayIdx];
-            if (!newIsoA || !newIsoB) continue;
+              // Swap times
+              const tmp = schedule[ia].time;
+              schedule[ia].time = schedule[ib].time;
+              schedule[ib].time = tmp;
 
-            const before = byeSpreadScore(schedule);
+              const after = timeSlotVariance(schedule);
 
-            // Apply swap
-            pA.idxs.forEach(i => { schedule[i].date = formatDate(newIsoA); schedule[i].week = pB.week; });
-            pB.idxs.forEach(i => { schedule[i].date = formatDate(newIsoB); schedule[i].week = pA.week; });
-
-            const after = byeSpreadScore(schedule);
-
-            if (after < before - 0.001) {
-              improved = true;
-              totalSwaps++;
-              // Update pair references
-              pairs[a] = { ...pA, week: pB.week, iso: newIsoA };
-              pairs[b] = { ...pB, week: pA.week, iso: newIsoB };
-            } else {
-              // Revert
-              pA.idxs.forEach(i => { schedule[i].date = formatDate(pA.iso); schedule[i].week = pA.week; });
-              pB.idxs.forEach(i => { schedule[i].date = formatDate(pB.iso); schedule[i].week = pB.week; });
+              if (after < before - 0.001) {
+                improved = true;
+                totalSwaps++;
+              } else {
+                // Revert
+                const tmp2 = schedule[ia].time;
+                schedule[ia].time = schedule[ib].time;
+                schedule[ib].time = tmp2;
+              }
             }
           }
         }
@@ -1345,8 +1214,8 @@
 
       renderAll();
       statusEl.textContent = totalSwaps > 0
-        ? `✅ Byes balanced — ${totalSwaps} swap${totalSwaps !== 1 ? 's' : ''} across ${passes} pass${passes !== 1 ? 'es' : ''}`
-        : `✅ Bye weeks already well spread — no swaps needed`;
+        ? `✅ Time slots balanced — ${totalSwaps} swap${totalSwaps !== 1 ? 's' : ''} across ${passes} pass${passes !== 1 ? 'es' : ''}`
+        : `✅ Time slots already well balanced — no swaps needed`;
     };
 
   </script>
