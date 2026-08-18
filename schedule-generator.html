@@ -2129,59 +2129,76 @@
 
       sessions.forEach(session => {
         const cap = session.games;
-        const allowDouble = session.isSunday && cap === 6;
+        const is11Sunday = session.isSunday && cap === 6 && is11Team;
         const teamApps = {};
         const sessionGames = [];
 
-        // PASS 0 — 11-team Sundays: reserve exactly 1 extraTeamId game first.
-        // This guarantees X plays every Sunday and prevents weeknight greed from
-        // consuming X's pool appearances before later Sundays can use them.
-        if (allowDouble && is11Team && extraTeamId) {
-          for (let pi = 0; pi < finalPool.length && sessionGames.length < 1; pi++) {
+        if (is11Sunday) {
+          // Step 1: Reserve extraTeamId's game first (so X plays every Sunday)
+          if (extraTeamId) {
+            for (let pi = 0; pi < finalPool.length; pi++) {
+              if (poolUsed[pi]) continue;
+              const g = finalPool[pi];
+              if (g.home.id !== extraTeamId && g.away.id !== extraTeamId) continue;
+              poolUsed[pi] = true;
+              teamApps[g.home.id] = (teamApps[g.home.id] || 0) + 1;
+              teamApps[g.away.id] = (teamApps[g.away.id] || 0) + 1;
+              sessionGames.push(g);
+              break;
+            }
+          }
+
+          // Step 2: Fill games 2 through cap-1 with strict "each team at most once" rule.
+          // No dt-constraint here — that's what was blocking games 5 and 6.
+          for (let pi = 0; pi < finalPool.length && sessionGames.length < cap - 1; pi++) {
             if (poolUsed[pi]) continue;
             const g = finalPool[pi];
-            if (g.home.id !== extraTeamId && g.away.id !== extraTeamId) continue;
+            if ((teamApps[g.home.id] || 0) >= 1 || (teamApps[g.away.id] || 0) >= 1) continue;
             poolUsed[pi] = true;
             teamApps[g.home.id] = (teamApps[g.home.id] || 0) + 1;
             teamApps[g.away.id] = (teamApps[g.away.id] || 0) + 1;
             sessionGames.push(g);
           }
-        }
 
-        // Fill remaining slots
-        for (let pi = 0; pi < finalPool.length && sessionGames.length < cap; pi++) {
-          if (poolUsed[pi]) continue;
-          const g = finalPool[pi];
-          const ha = teamApps[g.home.id] || 0;
-          const aa = teamApps[g.away.id] || 0;
-
-          if (allowDouble) {
-            if (ha >= 2 || aa >= 2) continue;
-            // extraTeamId must play exactly once per Sunday — block a second appearance
-            if (is11Team && extraTeamId) {
-              if ((g.home.id === extraTeamId && ha >= 1) ||
-                  (g.away.id === extraTeamId && aa >= 1)) continue;
-            }
-            const dt = Object.entries(teamApps).find(([, c]) => c >= 2);
-            if (dt) {
-              if (ha === 1 && g.home.id !== dt[0]) continue;
-              if (aa === 1 && g.away.id !== dt[0]) continue;
+          // Step 3: Place the final game — pair the missing team (0 appearances) with
+          // any 1-appearance non-X team. That team becomes the "double" (moves to 1pm).
+          if (sessionGames.length === cap - 1) {
+            const missingTeam = teams.find(t => !(teamApps[t.id]));
+            if (missingTeam) {
+              for (let pi = 0; pi < finalPool.length; pi++) {
+                if (poolUsed[pi]) continue;
+                const g = finalPool[pi];
+                const involvesM = g.home.id === missingTeam.id || g.away.id === missingTeam.id;
+                if (!involvesM) continue;
+                const otherId = g.home.id === missingTeam.id ? g.away.id : g.home.id;
+                if (otherId === extraTeamId) continue; // X must not be the double
+                poolUsed[pi] = true;
+                teamApps[g.home.id] = (teamApps[g.home.id] || 0) + 1;
+                teamApps[g.away.id] = (teamApps[g.away.id] || 0) + 1;
+                sessionGames.push(g);
+                break;
+              }
             }
           } else {
-            if (ha >= 1 || aa >= 1) continue;
+            // Fallback: couldn't fill cap-1 with strict rule, loosen to allow a double
+            for (let pi = 0; pi < finalPool.length && sessionGames.length < cap; pi++) {
+              if (poolUsed[pi]) continue;
+              const g = finalPool[pi];
+              const ha = teamApps[g.home.id] || 0;
+              const aa = teamApps[g.away.id] || 0;
+              if (ha >= 2 || aa >= 2) continue;
+              if (extraTeamId && ((g.home.id === extraTeamId && ha >= 1) || (g.away.id === extraTeamId && aa >= 1))) continue;
+              poolUsed[pi] = true;
+              teamApps[g.home.id] = ha + 1;
+              teamApps[g.away.id] = aa + 1;
+              sessionGames.push(g);
+            }
           }
 
-          poolUsed[pi] = true;
-          teamApps[g.home.id] = ha + 1;
-          teamApps[g.away.id] = aa + 1;
-          sessionGames.push(g);
-        }
-
-        // For 11-team Sundays: move the double team's 2nd game to the last (1pm) slot
-        if (allowDouble) {
-          const dt = Object.entries(teamApps).find(([, c]) => c >= 2);
-          if (dt) {
-            const dtId = dt[0];
+          // Move the double team's 2nd game to the last slot (1:00 PM)
+          const dtEntry = Object.entries(teamApps).find(([, c]) => c >= 2);
+          if (dtEntry) {
+            const dtId = dtEntry[0];
             const dhIdx = sessionGames.findIndex((g, idx) =>
               (g.home.id === dtId || g.away.id === dtId) &&
               sessionGames.slice(0, idx).some(p => p.home.id === dtId || p.away.id === dtId)
@@ -2189,6 +2206,19 @@
             if (dhIdx > 0 && dhIdx < sessionGames.length - 1) {
               sessionGames.push(sessionGames.splice(dhIdx, 1)[0]);
             }
+          }
+
+        } else {
+          // Standard fill: 10-team Sundays, partial Sundays (5 games), weeknights (2 games)
+          // Each team plays at most once per session.
+          for (let pi = 0; pi < finalPool.length && sessionGames.length < cap; pi++) {
+            if (poolUsed[pi]) continue;
+            const g = finalPool[pi];
+            if ((teamApps[g.home.id] || 0) >= 1 || (teamApps[g.away.id] || 0) >= 1) continue;
+            poolUsed[pi] = true;
+            teamApps[g.home.id] = (teamApps[g.home.id] || 0) + 1;
+            teamApps[g.away.id] = (teamApps[g.away.id] || 0) + 1;
+            sessionGames.push(g);
           }
         }
 
