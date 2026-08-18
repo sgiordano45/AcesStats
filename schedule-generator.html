@@ -2133,8 +2133,10 @@
         const teamApps = {};
         const sessionGames = [];
 
-        // Weeknight 11-team: prioritize one extraTeamId game first
-        if (!session.isSunday && is11Team && extraTeamId) {
+        // PASS 0 — 11-team Sundays: reserve exactly 1 extraTeamId game first.
+        // This guarantees X plays every Sunday and prevents weeknight greed from
+        // consuming X's pool appearances before later Sundays can use them.
+        if (allowDouble && is11Team && extraTeamId) {
           for (let pi = 0; pi < finalPool.length && sessionGames.length < 1; pi++) {
             if (poolUsed[pi]) continue;
             const g = finalPool[pi];
@@ -2155,6 +2157,11 @@
 
           if (allowDouble) {
             if (ha >= 2 || aa >= 2) continue;
+            // extraTeamId must play exactly once per Sunday — block a second appearance
+            if (is11Team && extraTeamId) {
+              if ((g.home.id === extraTeamId && ha >= 1) ||
+                  (g.away.id === extraTeamId && aa >= 1)) continue;
+            }
             const dt = Object.entries(teamApps).find(([, c]) => c >= 2);
             if (dt) {
               if (ha === 1 && g.home.id !== dt[0]) continue;
