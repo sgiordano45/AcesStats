@@ -725,7 +725,7 @@
     <a href="offseason.html" class="back-button">Back to Offseason Hub</a>
     <div class="header-content">
       <h1>📅 Schedule Generator</h1>
-      <p>Create balanced schedules for summer (22 games, 11 teams) or fall (12 games) seasons with automatic time slot assignment</p>
+      <p>Create balanced schedules for summer (22 games, 11 teams) or fall (13 games per team) seasons with automatic time slot assignment</p>
     </div>
   </div>
 
@@ -768,7 +768,7 @@
             <select id="seasonType">
               <option value="">-- Select Season Type --</option>
               <option value="summer">Summer</option>
-              <option value="fall">Fall (12 games per team)</option>
+              <option value="fall">Fall (13 games per team)</option>
             </select>
           </div>
 
@@ -2073,27 +2073,48 @@
         const weekNum = i + 1;
         const maxGames = Math.min(gamesPerSunday, targetGames - out.length);
         const teamApps = {}; // appearances for each team this Sunday
-        let dhTeamId = null;  // the one team allowed to appear twice (11-team DH)
         const sundayGames = [];
 
+        // ── 11-team: two-pass Sunday fill ──────────────────────────────────
+        // Pass 1 (11-team only): if extraTeamId is set, find their 2 games first
+        // so they are always the DH team — not whichever team the random pool
+        // happens to double up first.
+        let dhTeamId = null;
+        if (is11Team && extraTeamId) {
+          let found = 0;
+          for (let pi = 0; pi < finalPool.length && found < 2; pi++) {
+            if (poolUsed[pi]) continue;
+            const g = finalPool[pi];
+            const isExtra = g.home.id === extraTeamId || g.away.id === extraTeamId;
+            if (!isExtra) continue;
+            const otherId = g.home.id === extraTeamId ? g.away.id : g.home.id;
+            if ((teamApps[otherId] || 0) >= 1) continue; // opponent already played
+            if ((teamApps[extraTeamId] || 0) >= 2) break;  // already have 2 games
+            poolUsed[pi] = true;
+            teamApps[g.home.id] = (teamApps[g.home.id] || 0) + 1;
+            teamApps[g.away.id] = (teamApps[g.away.id] || 0) + 1;
+            sundayGames.push(g);
+            found++;
+          }
+          if (found >= 1) dhTeamId = extraTeamId; // confirmed DH team for this Sunday
+        }
+
+        // Pass 2: fill remaining slots — each team plays at most once (except dhTeamId)
         for (let pi = 0; pi < finalPool.length && sundayGames.length < maxGames; pi++) {
           if (poolUsed[pi]) continue;
           const g = finalPool[pi];
           const ha = teamApps[g.home.id] || 0;
           const aa = teamApps[g.away.id] || 0;
-          const maxApp = is11Team ? 2 : 1;
 
-          if (ha >= maxApp || aa >= maxApp) continue; // team already at limit
+          // For 11-team: dhTeamId already placed; everyone else limited to 1 appearance
+          const homeMax = (is11Team && g.home.id === dhTeamId) ? 2 : 1;
+          const awayMax = (is11Team && g.away.id === dhTeamId) ? 2 : 1;
+          if (ha >= homeMax || aa >= awayMax) continue;
 
-          if (is11Team) {
-            // At most one DH team per Sunday
-            const homeWantsDH = ha === 1;
-            const awayWantsDH = aa === 1;
-            if (homeWantsDH && awayWantsDH) continue; // can't DH both at once
-            if (homeWantsDH && dhTeamId !== null && dhTeamId !== g.home.id) continue;
-            if (awayWantsDH && dhTeamId !== null && dhTeamId !== g.away.id) continue;
-            if (homeWantsDH) dhTeamId = g.home.id;
-            if (awayWantsDH) dhTeamId = g.away.id;
+          // Never allow a second DH team to emerge
+          if (is11Team && dhTeamId !== null) {
+            if (ha === 1 && g.home.id !== dhTeamId) continue;
+            if (aa === 1 && g.away.id !== dhTeamId) continue;
           }
 
           poolUsed[pi] = true;
