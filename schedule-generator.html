@@ -840,18 +840,19 @@
                 <span><strong>Skip teacher convention week (Nov 4–6)</strong></span>
               </label>
               <p style="font-size: 0.9rem; color: var(--text-light); margin-top: 0.5rem; margin-left: 0.25rem;">
-                Unchecked: 68 regular season games over 9 weeknight sessions. Checked: 66 games, Nov 4–6 skipped, season extends to Nov 19.
+                Unchecked: includes Nov 4–6 weeknights (more games available). Checked: skips Nov 4–6, season extends to Nov 19.
               </p>
             </div>
 
             <!-- Fall info card -->
             <div class="info-card">
-              <strong>🍂 Fall League — Fixed Date Schedule (Sep 13 – Dec 6, 2025)</strong>
+              <strong>Fall League — Fixed Date Schedule (Sep 13 – Dec 6)</strong>
               <ul style="margin-left: 1.5rem; margin-top: 0.5rem;">
                 <li><strong>10 Sundays:</strong> Sep 13, 20, 27 · Oct 4, 11, 18, 25 · Nov 1, 8, 15</li>
-                <li><strong>10 teams:</strong> 5 games/Sunday (8am–12pm) + 2 weeknight games/session → 68 or 66 total</li>
-                <li><strong>11 teams:</strong> 6 games/Sunday (8am–1pm) + weeknight games; one team plays 14 (select in Step 3)</li>
-                <li><strong>Target:</strong> ~13 games per team · <strong>Playoffs:</strong> Double elimination, championship Dec 6</li>
+                <li><strong>10 teams:</strong> 65 regular season games (13 per team) — Sundays filled first, then weeknights</li>
+                <li><strong>11 teams:</strong> 72 regular season games (13/team avg) — all 11 teams play every Sunday, one team plays a DH (6 games/Sunday, 8am–1pm)</li>
+                <li><strong>H2H:</strong> Every team plays each other at least 1x, no more than 2x</li>
+                <li><strong>Playoffs:</strong> Double elimination after regular season, championship Dec 6</li>
               </ul>
             </div>
           </div>
@@ -1746,7 +1747,7 @@
       const numTeamsForSummary = scheduleConfig.selectedTeams.length;
       const gamesPerTeam = scheduleConfig.seasonType === 'summer'
         ? scheduleConfig.summerGamesPerTeam
-        : 13; // Fall: always 13-game season
+        : (numTeamsForSummary === 11 ? '13–14' : '13'); // Fall: 65 games (10t) or 72 (11t)
       const gameDays = scheduleConfig.seasonType === 'fall' ? 'Sundays + Thu/Fri weeknights' : 'Sun–Thu';
       
       let restrictionsText = '';
@@ -1769,12 +1770,9 @@
       
       let fallModelInfo = '';
       if (scheduleConfig.seasonType === 'fall') {
-        const skipLabel = scheduleConfig.skipTeacherConvention ? 'Skipping Nov 4–6' : 'Including Nov 4–6';
-        fallModelInfo = `<br>${skipLabel}`;
-        if (scheduleConfig.selectedTeams.length === 11 && scheduleConfig.fallExtraTeamId) {
-          const extra = scheduleConfig.selectedTeams.find(t => t.id === scheduleConfig.fallExtraTeamId);
-          fallModelInfo += ` • Extra game team: ${extra ? extra.name : '—'}`;
-        }
+        const skipLabel = scheduleConfig.skipTeacherConvention ? 'Skipping Nov 4–6 weeknights' : 'Including Nov 4–6 weeknights';
+        const fallTarget = numTeamsForSummary === 11 ? 72 : Math.floor(numTeamsForSummary * 13 / 2);
+        fallModelInfo = `<br>Target: ${fallTarget} total games • ${skipLabel} • Sundays filled first`;
       }
 
       const summary = `
@@ -1808,9 +1806,12 @@
         scheduleConfig.generatedSchedule = finalSchedule;
         displaySchedule(finalSchedule);
         const maxWeek = finalSchedule.reduce((max, g) => Math.max(max, g.week || 0), 0);
+        const fallTeamCounts = Object.fromEntries(teams.map(t => [t.id, 0]));
+        finalSchedule.forEach(g => { fallTeamCounts[g.home.id]++; fallTeamCounts[g.away.id]++; });
+        const fallAvg = (Object.values(fallTeamCounts).reduce((a,b)=>a+b,0) / teams.length).toFixed(1);
         document.getElementById('totalGames').textContent = finalSchedule.length;
         document.getElementById('weeksNeeded').textContent = maxWeek || '—';
-        document.getElementById('avgGamesPerTeam').textContent = '~13';
+        document.getElementById('avgGamesPerTeam').textContent = fallAvg;
         const balanceScore = calculateBalanceScore(finalSchedule, teams);
         document.getElementById('homeAwayBalance').innerHTML =
           `${balanceScore}% <span class="balance-indicator ${getBalanceClass(balanceScore)}">${getBalanceLabel(balanceScore)}</span>`;
@@ -1923,14 +1924,16 @@
       const is11Team = teams.length === 11;
       const skipConvention = scheduleConfig.skipTeacherConvention || false;
       const extraTeamId = scheduleConfig.fallExtraTeamId || null;
-      const year = 2025;
+      const year = parseInt(scheduleConfig.seasonYear) || 2025;
 
       function makeDate(month, day) { return new Date(year, month - 1, day, 12, 0, 0); }
 
       // ── Time slots ──────────────────────────────────────────────────────────
-      const sundaySlots = is11Team
-        ? ['8:00 AM', '9:00 AM', '10:00 AM', '11:00 AM', '12:00 PM', '1:00 PM']
-        : ['8:00 AM', '9:00 AM', '10:00 AM', '11:00 AM', '12:00 PM'];
+      // 10 teams: 5 games/Sunday (8am–12pm)
+      // 11 teams: 6 games/Sunday (8am–12pm + 1pm DH slot) — no byes, one team plays DH
+      const sundaySlots10 = ['8:00 AM', '9:00 AM', '10:00 AM', '11:00 AM', '12:00 PM'];
+      const sundaySlots11 = ['8:00 AM', '9:00 AM', '10:00 AM', '11:00 AM', '12:00 PM', '1:00 PM'];
+      const sundaySlots  = is11Team ? sundaySlots11 : sundaySlots10;
       const gamesPerSunday = is11Team ? 6 : 5;
       const wkTimes2 = ['7:45 PM', '8:45 PM'];
       const wkTimes3 = ['6:45 PM', '7:45 PM', '8:45 PM'];
@@ -2000,106 +2003,150 @@
         return a;
       }
 
-      function buildRRRounds(teamList) {
-        const arr = teamList.length % 2 !== 0 ? [...teamList, {id:'BYE',name:'BYE'}] : [...teamList];
-        const n = arr.length;
-        const rounds = [];
-        const a = [...arr];
-        for (let r = 0; r < n - 1; r++) {
-          const roundPairs = [];
-          for (let i = 0; i < n / 2; i++) roundPairs.push({home: a[i], away: a[n-1-i]});
-          rounds.push(roundPairs);
-          a.splice(1, 0, a.pop());
-        }
-        return rounds;
+      // ── H2H-Balanced matchup pool ─────────────────────────────────────────
+      // Target: 10 teams → 65 games (13/team), 11 teams → 72 games (avg ~13.1/team)
+      // Phase 1: Every pair plays exactly once (full round-robin).
+      // Phase 2: Add rematches (home/away flipped) until pool covers target.
+      //          Teams with fewest games get rematches first; no pair exceeds 2 meetings.
+
+      const targetGames = is11Team ? 72 : Math.floor(teams.length * 13 / 2);
+      const getPairKey = (a, b) => [a.id, b.id].sort().join('|');
+
+      // All unique pairs
+      const allPairs = [];
+      for (let i = 0; i < teams.length; i++)
+        for (let j = i + 1; j < teams.length; j++)
+          allPairs.push([teams[i], teams[j]]);
+
+      const pairCount = Object.fromEntries(allPairs.map(([a,b]) => [getPairKey(a,b), 0]));
+      const teamGames = Object.fromEntries(teams.map(t => [t.id, 0]));
+      const pool = [];
+
+      // Phase 1: each pair once, random home/away
+      for (const [t1, t2] of shuffle(allPairs)) {
+        const [home, away] = Math.random() < 0.5 ? [t1, t2] : [t2, t1];
+        pool.push({ home, away });
+        teamGames[home.id]++; teamGames[away.id]++;
+        pairCount[getPairKey(t1, t2)]++;
       }
 
-      // Build a shuffled flat pool of matchups (multiple Berger passes)
-      function buildMatchupPool(teamList, neededCount) {
-        const pool = [];
-        let pass = 0;
-        while (pool.length < neededCount + 20 && pass < 15) {
-          const arr = pass % 2 === 0 ? [...teamList] : shuffle(teamList);
-          for (const round of buildRRRounds(arr)) {
-            for (const pair of round) {
-              if (pair.home.id !== 'BYE' && pair.away.id !== 'BYE') {
-                pool.push({home: pair.home, away: pair.away});
-              }
-            }
-          }
-          pass++;
+      // Phase 2: rematches until pool reaches targetGames
+      let safety = 0;
+      while (pool.length < targetGames && safety++ < 3000) {
+        const sorted = [...teams].sort((a, b) => teamGames[a.id] - teamGames[b.id]);
+        let added = false;
+        for (const team of sorted) {
+          const opps = teams
+            .filter(o => o.id !== team.id && pairCount[getPairKey(team, o)] < 2)
+            .sort((a, b) => teamGames[a.id] - teamGames[b.id]);
+          if (!opps.length) continue;
+          const opp = opps[0];
+          // Flip home/away from first meeting
+          const prior = pool.find(m =>
+            (m.home.id === team.id && m.away.id === opp.id) ||
+            (m.home.id === opp.id  && m.away.id === team.id));
+          const home = (prior && prior.home.id === team.id) ? opp : team;
+          const away = (home.id === team.id) ? opp : team;
+          pool.push({ home, away });
+          teamGames[home.id]++; teamGames[away.id]++;
+          pairCount[getPairKey(team, opp)]++;
+          added = true; break;
         }
-        return shuffle(pool);
+        if (!added) break;
       }
 
-      // ── Build matchup pool ────────────────────────────────────────────────
-      // Sunday games: 10 × gamesPerSunday
-      // Weeknight games: sessions × 2, plus 1 extra for 11-team extra-game team
-      const sundayGameCount = 10 * gamesPerSunday;
-      const wkGameCount = wkSessions.length * 2 + (is11Team ? 1 : 0);
-      const totalNeeded = sundayGameCount + wkGameCount;
+      const finalPool = shuffle(pool);
+      const poolUsed = new Array(finalPool.length).fill(false);
 
-      const pool = buildMatchupPool(teams, totalNeeded);
-      let poolIdx = 0;
-
-      // ── Assign Sunday games ───────────────────────────────────────────────
+      // ── Assign Sunday games (priority) ────────────────────────────────────
+      // Fill Sundays first. Stop as soon as we reach targetGames.
+      //
+      // 10 teams: 5 games/Sunday — each team plays exactly once.
+      // 11 teams: 6 games/Sunday — all 11 teams play; exactly one team plays a
+      //   DH (appears twice). The DH team's second game goes in the 1pm slot.
+      //   No byes. The DH team rotates across Sundays.
       const out = [];
       let gameNumber = 1;
 
       sundayDates.forEach((sunday, i) => {
+        if (out.length >= targetGames) return;
         const weekNum = i + 1;
-        for (let s = 0; s < gamesPerSunday && poolIdx < pool.length; s++) {
-          const game = Object.assign({}, pool[poolIdx++]);
-          game.date = new Date(sunday);
-          game.time = sundaySlots[s];
-          game.week = weekNum;
-          game.gameNumber = gameNumber++;
-          out.push(game);
+        const maxGames = Math.min(gamesPerSunday, targetGames - out.length);
+        const teamApps = {}; // appearances for each team this Sunday
+        let dhTeamId = null;  // the one team allowed to appear twice (11-team DH)
+        const sundayGames = [];
+
+        for (let pi = 0; pi < finalPool.length && sundayGames.length < maxGames; pi++) {
+          if (poolUsed[pi]) continue;
+          const g = finalPool[pi];
+          const ha = teamApps[g.home.id] || 0;
+          const aa = teamApps[g.away.id] || 0;
+          const maxApp = is11Team ? 2 : 1;
+
+          if (ha >= maxApp || aa >= maxApp) continue; // team already at limit
+
+          if (is11Team) {
+            // At most one DH team per Sunday
+            const homeWantsDH = ha === 1;
+            const awayWantsDH = aa === 1;
+            if (homeWantsDH && awayWantsDH) continue; // can't DH both at once
+            if (homeWantsDH && dhTeamId !== null && dhTeamId !== g.home.id) continue;
+            if (awayWantsDH && dhTeamId !== null && dhTeamId !== g.away.id) continue;
+            if (homeWantsDH) dhTeamId = g.home.id;
+            if (awayWantsDH) dhTeamId = g.away.id;
+          }
+
+          poolUsed[pi] = true;
+          teamApps[g.home.id] = ha + 1;
+          teamApps[g.away.id] = aa + 1;
+          sundayGames.push(g);
         }
+
+        // For 11 teams: move the DH team's second game to the last slot (1pm)
+        if (is11Team && dhTeamId) {
+          const dhIdx = sundayGames.findIndex((g, idx) => {
+            const isDHTeam = g.home.id === dhTeamId || g.away.id === dhTeamId;
+            const isSecond = isDHTeam && sundayGames.slice(0, idx).some(
+              prev => prev.home.id === dhTeamId || prev.away.id === dhTeamId
+            );
+            return isSecond;
+          });
+          if (dhIdx > 0 && dhIdx < sundayGames.length - 1) {
+            sundayGames.push(sundayGames.splice(dhIdx, 1)[0]);
+          }
+        }
+
+        sundayGames.forEach((game, s) => {
+          const g = Object.assign({}, game);
+          g.date = new Date(sunday);
+          g.time = sundaySlots[s];
+          g.week = weekNum;
+          g.gameNumber = gameNumber++;
+          if (is11Team && dhTeamId && s === sundayGames.length - 1 &&
+              (game.home.id === dhTeamId || game.away.id === dhTeamId)) {
+            g.isDoubleHeader = true;
+          }
+          out.push(g);
+        });
       });
 
-      // ── Assign weeknight games ────────────────────────────────────────────
-      // For 11-team: find the best session to place the extra-game team's bonus game.
-      // Look for a session where that team has no Sunday game that day.
-      let extraSessionIdx = -1;
-      if (is11Team && extraTeamId) {
-        for (let si = 0; si < wkSessions.length; si++) {
-          const sessionTs = wkSessions[si].date.getTime();
-          const alreadyPlaying = out.some(g =>
-            g.date.getTime() === sessionTs &&
-            (g.home.id === extraTeamId || g.away.id === extraTeamId)
-          );
-          if (!alreadyPlaying) { extraSessionIdx = si; break; }
-        }
-        // Fallback: use middle session
-        if (extraSessionIdx === -1) extraSessionIdx = Math.floor(wkSessions.length / 2);
-      }
-
-      wkSessions.forEach((session, si) => {
-        const isExtraSession = is11Team && si === extraSessionIdx;
-        const gamesThisNight = isExtraSession ? 3 : 2;
-        const times = isExtraSession ? wkTimes3 : wkTimes2;
-
-        for (let g = 0; g < gamesThisNight; g++) {
-          if (g === 2 && is11Team && extraTeamId) {
-            // 3rd slot: swap forward the first remaining pool entry involving extraTeamId
-            let found = false;
-            for (let k = poolIdx; k < pool.length; k++) {
-              if (pool[k].home.id === extraTeamId || pool[k].away.id === extraTeamId) {
-                const tmp = pool[poolIdx]; pool[poolIdx] = pool[k]; pool[k] = tmp;
-                found = true;
-                break;
-              }
-            }
-          }
-          if (poolIdx >= pool.length) break;
-          const game = Object.assign({}, pool[poolIdx++]);
+      // ── Assign weeknight games (remaining to reach target) ────────────────
+      // Each weeknight session hosts 2 games. Stop when target is met.
+      wkSessions.forEach((session) => {
+        if (out.length >= targetGames) return;
+        const cap = Math.min(2, targetGames - out.length);
+        let placed = 0;
+        for (let pi = 0; pi < finalPool.length && placed < cap; pi++) {
+          if (poolUsed[pi]) continue;
+          poolUsed[pi] = true;
+          const game = Object.assign({}, finalPool[pi]);
           game.date = new Date(session.date);
-          game.time = times[g];
+          game.time = wkTimes2[placed];
           game.week = session.week;
           game.gameNumber = gameNumber++;
           game.isWeeknight = true;
           out.push(game);
+          placed++;
         }
       });
 
