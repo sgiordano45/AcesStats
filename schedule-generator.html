@@ -1552,6 +1552,13 @@
           extraTeamGroup.style.display = 'block';
           extraTeamSelect.innerHTML = '<option value="">-- Select team --</option>' +
             scheduleConfig.selectedTeams.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
+          // Restore previously selected value so navigating back/forward doesn't reset it
+          if (scheduleConfig.fallExtraTeamId) {
+            extraTeamSelect.value = scheduleConfig.fallExtraTeamId;
+          }
+          extraTeamSelect.onchange = () => {
+            scheduleConfig.fallExtraTeamId = extraTeamSelect.value || null;
+          };
         } else {
           extraTeamGroup.style.display = 'none';
         }
@@ -1915,85 +1922,28 @@
 
 
     function assignFallSchedule(schedule) {
-      // Fixed date template schedule for 2025 fall season.
-      // 10 teams: 5 games/Sunday (slots 8am–12pm), 2 games/weeknight session → 68 or 66 total
-      // 11 teams: 6 games/Sunday (slots 8am–1pm), 2 games/weeknight session + 1 extra for fallExtraTeamId
-      // skipTeacherConvention: false = include Nov 4-6 block (9 sessions); true = skip, add Nov 18-19 (8 sessions)
+      // Fixed-date schedule for 2026 fall season.
+      // Dates and per-day game counts come directly from the approved schedule spreadsheet.
+      // Four scenarios: TC/No-TC x 11/10 teams.
+      //
+      // 11 teams: 1 selected team plays 14 games (fallExtraTeamId); all others play 13.
+      //   Total appearances: 14 + 10x13 = 144 -> 72 games.
+      // 10 teams: all 10 teams play 13 games each.
+      //   Total appearances: 10x13 = 130 -> 65 games.
+      //
+      // On Sundays with 11 teams (6 games), one team naturally plays twice -- whoever
+      // the pool assigns. That team's second game is moved to the last (1pm) slot.
+      // The fallExtraTeamId team is NOT forced into the double slot -- it simply
+      // accumulates its extra game through pool composition.
 
       const teams = scheduleConfig.selectedTeams;
       const is11Team = teams.length === 11;
       const skipConvention = scheduleConfig.skipTeacherConvention || false;
       const extraTeamId = scheduleConfig.fallExtraTeamId || null;
-      const year = parseInt(scheduleConfig.seasonYear) || 2025;
+      const year = parseInt(scheduleConfig.seasonYear) || 2026;
 
       function makeDate(month, day) { return new Date(year, month - 1, day, 12, 0, 0); }
 
-      // ── Time slots ──────────────────────────────────────────────────────────
-      // 10 teams: 5 games/Sunday (8am–12pm)
-      // 11 teams: 6 games/Sunday (8am–12pm + 1pm DH slot) — no byes, one team plays DH
-      const sundaySlots10 = ['8:00 AM', '9:00 AM', '10:00 AM', '11:00 AM', '12:00 PM'];
-      const sundaySlots11 = ['8:00 AM', '9:00 AM', '10:00 AM', '11:00 AM', '12:00 PM', '1:00 PM'];
-      const sundaySlots  = is11Team ? sundaySlots11 : sundaySlots10;
-      const gamesPerSunday = is11Team ? 6 : 5;
-      const wkTimes2 = ['7:45 PM', '8:45 PM'];
-      const wkTimes3 = ['6:45 PM', '7:45 PM', '8:45 PM'];
-
-      // ── Sunday dates (fixed for 2025) ────────────────────────────────────
-      const sundayDates = [
-        makeDate(9,13), makeDate(9,20), makeDate(9,27),
-        makeDate(10,4), makeDate(10,11), makeDate(10,18), makeDate(10,25),
-        makeDate(11,1), makeDate(11,8), makeDate(11,15)
-      ];
-
-      // ── Weeknight sessions (each is one date with a week number) ─────────
-      // Block 1 — always included: Wed Oct 28, Thu Oct 29, Fri Oct 30 (week 7)
-      const wkSessions = [
-        {date: makeDate(10,28), week:7},
-        {date: makeDate(10,29), week:7},
-        {date: makeDate(10,30), week:7},
-      ];
-      // Block 2 — teacher convention week: Wed Nov 4, Thu Nov 5, Fri Nov 6 (week 8)
-      if (!skipConvention) {
-        wkSessions.push(
-          {date: makeDate(11,4), week:8},
-          {date: makeDate(11,5), week:8},
-          {date: makeDate(11,6), week:8}
-        );
-      }
-      // Block 3 — always included: Wed Nov 11, Thu Nov 12, Fri Nov 13 (week 9)
-      wkSessions.push(
-        {date: makeDate(11,11), week:9},
-        {date: makeDate(11,12), week:9},
-        {date: makeDate(11,13), week:9}
-      );
-      // Block 4 — skip-only extra sessions: Wed Nov 18, Thu Nov 19 (week 10)
-      if (skipConvention) {
-        wkSessions.push(
-          {date: makeDate(11,18), week:10},
-          {date: makeDate(11,19), week:10}
-        );
-      }
-
-      // ── Playoff dates (stored on config for displaySchedule) ─────────────
-      scheduleConfig._fallPlayoffDates = skipConvention
-        ? [
-            {date: makeDate(11,20), dow:'Fri'},
-            {date: makeDate(11,22), dow:'Sun'},
-            {date: makeDate(11,27), dow:'Fri'},
-            {date: makeDate(11,29), dow:'Sun'},
-            {date: makeDate(12,6),  dow:'Sun', isChampionship: true},
-          ]
-        : [
-            {date: makeDate(11,18), dow:'Wed'},
-            {date: makeDate(11,19), dow:'Thu'},
-            {date: makeDate(11,20), dow:'Fri'},
-            {date: makeDate(11,22), dow:'Sun'},
-            {date: makeDate(11,27), dow:'Fri'},
-            {date: makeDate(11,29), dow:'Sun'},
-            {date: makeDate(12,6),  dow:'Sun', isChampionship: true},
-          ];
-
-      // ── Helpers ───────────────────────────────────────────────────────────
       function shuffle(arr) {
         const a = [...arr];
         for (let i = a.length - 1; i > 0; i--) {
@@ -2003,16 +1953,116 @@
         return a;
       }
 
-      // ── H2H-Balanced matchup pool ─────────────────────────────────────────
-      // Target: 10 teams → 65 games (13/team), 11 teams → 72 games (avg ~13.1/team)
-      // Phase 1: Every pair plays exactly once (full round-robin).
-      // Phase 2: Add rematches (home/away flipped) until pool covers target.
-      //          Teams with fewest games get rematches first; no pair exceeds 2 meetings.
+      // -- Fixed session arrays (date, game count, week, day type) --
+      // Each scenario sourced from the approved fall schedule spreadsheet.
+      let sessions;
 
-      const targetGames = is11Team ? 72 : Math.floor(teams.length * 13 / 2);
+      if (is11Team && !skipConvention) {
+        // TC 11 Team -- 72 games
+        sessions = [
+          { date: makeDate(9,13),  games: 6, week: 1,  isSunday: true  },
+          { date: makeDate(9,20),  games: 6, week: 2,  isSunday: true  },
+          { date: makeDate(9,27),  games: 6, week: 3,  isSunday: true  },
+          { date: makeDate(10,4),  games: 6, week: 4,  isSunday: true  },
+          { date: makeDate(10,11), games: 6, week: 5,  isSunday: true  },
+          { date: makeDate(10,18), games: 6, week: 6,  isSunday: true  },
+          { date: makeDate(10,25), games: 6, week: 7,  isSunday: true  },
+          { date: makeDate(10,28), games: 2, week: 7,  isSunday: false },
+          { date: makeDate(10,29), games: 2, week: 7,  isSunday: false },
+          { date: makeDate(10,30), games: 2, week: 7,  isSunday: false },
+          { date: makeDate(11,1),  games: 6, week: 8,  isSunday: true  },
+          { date: makeDate(11,4),  games: 2, week: 8,  isSunday: false },
+          { date: makeDate(11,5),  games: 2, week: 8,  isSunday: false },
+          { date: makeDate(11,6),  games: 2, week: 8,  isSunday: false },
+          { date: makeDate(11,8),  games: 6, week: 9,  isSunday: true  },
+          { date: makeDate(11,11), games: 2, week: 9,  isSunday: false },
+          { date: makeDate(11,12), games: 2, week: 9,  isSunday: false },
+          { date: makeDate(11,13), games: 2, week: 9,  isSunday: false },
+        ];
+      } else if (is11Team && skipConvention) {
+        // No TC 11 Team -- 72 games
+        sessions = [
+          { date: makeDate(9,13),  games: 6, week: 1,  isSunday: true  },
+          { date: makeDate(9,20),  games: 6, week: 2,  isSunday: true  },
+          { date: makeDate(9,27),  games: 6, week: 3,  isSunday: true  },
+          { date: makeDate(10,4),  games: 6, week: 4,  isSunday: true  },
+          { date: makeDate(10,11), games: 6, week: 5,  isSunday: true  },
+          { date: makeDate(10,18), games: 6, week: 6,  isSunday: true  },
+          { date: makeDate(10,25), games: 6, week: 7,  isSunday: true  },
+          { date: makeDate(10,28), games: 2, week: 7,  isSunday: false },
+          { date: makeDate(10,29), games: 2, week: 7,  isSunday: false },
+          { date: makeDate(10,30), games: 2, week: 7,  isSunday: false },
+          { date: makeDate(11,1),  games: 6, week: 8,  isSunday: true  },
+          { date: makeDate(11,8),  games: 6, week: 9,  isSunday: true  },
+          { date: makeDate(11,11), games: 2, week: 9,  isSunday: false },
+          { date: makeDate(11,12), games: 2, week: 9,  isSunday: false },
+          { date: makeDate(11,13), games: 2, week: 9,  isSunday: false },
+          { date: makeDate(11,15), games: 6, week: 10, isSunday: true  },
+        ];
+      } else if (!is11Team && !skipConvention) {
+        // TC 10 Team -- 65 games
+        sessions = [
+          { date: makeDate(9,13),  games: 5, week: 1,  isSunday: true  },
+          { date: makeDate(9,20),  games: 5, week: 2,  isSunday: true  },
+          { date: makeDate(9,27),  games: 5, week: 3,  isSunday: true  },
+          { date: makeDate(10,4),  games: 5, week: 4,  isSunday: true  },
+          { date: makeDate(10,11), games: 5, week: 5,  isSunday: true  },
+          { date: makeDate(10,18), games: 5, week: 6,  isSunday: true  },
+          { date: makeDate(10,25), games: 5, week: 7,  isSunday: true  },
+          { date: makeDate(10,28), games: 2, week: 7,  isSunday: false },
+          { date: makeDate(10,29), games: 2, week: 7,  isSunday: false },
+          { date: makeDate(10,30), games: 2, week: 7,  isSunday: false },
+          { date: makeDate(11,1),  games: 5, week: 8,  isSunday: true  },
+          { date: makeDate(11,4),  games: 2, week: 8,  isSunday: false },
+          { date: makeDate(11,5),  games: 2, week: 8,  isSunday: false },
+          { date: makeDate(11,6),  games: 2, week: 8,  isSunday: false },
+          { date: makeDate(11,8),  games: 5, week: 9,  isSunday: true  },
+          { date: makeDate(11,11), games: 2, week: 9,  isSunday: false },
+          { date: makeDate(11,12), games: 2, week: 9,  isSunday: false },
+          { date: makeDate(11,13), games: 2, week: 9,  isSunday: false },
+          { date: makeDate(11,15), games: 2, week: 10, isSunday: true  },
+        ];
+      } else {
+        // No TC 10 Team -- 65 games
+        // Spreadsheet shows extra sessions after 11/15; using 11/18 (Wed, 2 games) + 11/19 (Thu, 1 game)
+        // so playoffs can begin 11/20 (Fri) as shown in spreadsheet.
+        sessions = [
+          { date: makeDate(9,13),  games: 5, week: 1,  isSunday: true  },
+          { date: makeDate(9,20),  games: 5, week: 2,  isSunday: true  },
+          { date: makeDate(9,27),  games: 5, week: 3,  isSunday: true  },
+          { date: makeDate(10,4),  games: 5, week: 4,  isSunday: true  },
+          { date: makeDate(10,11), games: 5, week: 5,  isSunday: true  },
+          { date: makeDate(10,18), games: 5, week: 6,  isSunday: true  },
+          { date: makeDate(10,25), games: 5, week: 7,  isSunday: true  },
+          { date: makeDate(10,28), games: 2, week: 7,  isSunday: false },
+          { date: makeDate(10,29), games: 2, week: 7,  isSunday: false },
+          { date: makeDate(10,30), games: 2, week: 7,  isSunday: false },
+          { date: makeDate(11,1),  games: 5, week: 8,  isSunday: true  },
+          { date: makeDate(11,8),  games: 5, week: 9,  isSunday: true  },
+          { date: makeDate(11,11), games: 2, week: 9,  isSunday: false },
+          { date: makeDate(11,12), games: 2, week: 9,  isSunday: false },
+          { date: makeDate(11,13), games: 2, week: 9,  isSunday: false },
+          { date: makeDate(11,15), games: 5, week: 10, isSunday: true  },
+          { date: makeDate(11,18), games: 2, week: 10, isSunday: false },
+          { date: makeDate(11,19), games: 1, week: 10, isSunday: false },
+        ];
+      }
+
+      const targetGames = sessions.reduce((sum, s) => sum + s.games, 0);
+
+      // -- Time slots --
+      const sundaySlots5 = ['8:00 AM', '9:00 AM', '10:00 AM', '11:00 AM', '12:00 PM'];
+      const sundaySlots6 = ['8:00 AM', '9:00 AM', '10:00 AM', '11:00 AM', '12:00 PM', '1:00 PM'];
+      const sundaySlots2 = ['11:00 AM', '12:00 PM'];
+      const wkSlots      = ['7:45 PM', '8:45 PM'];
+
+      // -- H2H-balanced matchup pool --
+      // Phase 1: every pair plays once (full round-robin).
+      // Phase 2: rematches until pool reaches targetGames.
+      //   - For 11-team: fallExtraTeamId capped at 14 appearances; gets tie-break priority.
+      //   - No pair may meet more than twice.
+
       const getPairKey = (a, b) => [a.id, b.id].sort().join('|');
-
-      // All unique pairs
       const allPairs = [];
       for (let i = 0; i < teams.length; i++)
         for (let j = i + 1; j < teams.length; j++)
@@ -2022,7 +2072,7 @@
       const teamGames = Object.fromEntries(teams.map(t => [t.id, 0]));
       const pool = [];
 
-      // Phase 1: each pair once, random home/away
+      // Phase 1
       for (const [t1, t2] of shuffle(allPairs)) {
         const [home, away] = Math.random() < 0.5 ? [t1, t2] : [t2, t1];
         pool.push({ home, away });
@@ -2030,18 +2080,26 @@
         pairCount[getPairKey(t1, t2)]++;
       }
 
-      // Phase 2: rematches until pool reaches targetGames
+      // Phase 2
+      const extraTeamPoolTarget = (is11Team && extraTeamId) ? 14 : null;
       let safety = 0;
       while (pool.length < targetGames && safety++ < 3000) {
-        const sorted = [...teams].sort((a, b) => teamGames[a.id] - teamGames[b.id]);
+        const eligible = [...teams]
+          .filter(t => !(extraTeamPoolTarget && t.id === extraTeamId && teamGames[t.id] >= extraTeamPoolTarget))
+          .sort((a, b) => {
+            const diff = teamGames[a.id] - teamGames[b.id];
+            if (diff !== 0) return diff;
+            if (extraTeamId && a.id === extraTeamId) return -1;
+            if (extraTeamId && b.id === extraTeamId) return 1;
+            return 0;
+          });
         let added = false;
-        for (const team of sorted) {
+        for (const team of eligible) {
           const opps = teams
             .filter(o => o.id !== team.id && pairCount[getPairKey(team, o)] < 2)
             .sort((a, b) => teamGames[a.id] - teamGames[b.id]);
           if (!opps.length) continue;
           const opp = opps[0];
-          // Flip home/away from first meeting
           const prior = pool.find(m =>
             (m.home.id === team.id && m.away.id === opp.id) ||
             (m.home.id === opp.id  && m.away.id === team.id));
@@ -2056,134 +2114,110 @@
       }
 
       const finalPool = shuffle(pool);
-      const poolUsed = new Array(finalPool.length).fill(false);
+      const poolUsed  = new Array(finalPool.length).fill(false);
 
-      // ── Assign Sunday games (priority) ────────────────────────────────────
-      // Fill Sundays first. Stop as soon as we reach targetGames.
-      //
-      // 10 teams: 5 games/Sunday — each team plays exactly once.
-      // 11 teams: 6 games/Sunday — all 11 teams play; exactly one team plays a
-      //   DH (appears twice). The DH team's second game goes in the 1pm slot.
-      //   No byes. The DH team rotates across Sundays.
+      // -- Assign games to sessions --
+      // Sundays: each team plays at most once, EXCEPT on 11-team days (6 games)
+      //   where exactly one team plays twice -- whoever falls that way in the pool.
+      //   That team's second game is moved to the last slot (1:00 PM).
+      // Weeknights: each team plays at most once per session.
+      //   For 11-team: try to slot an extraTeamId game first so they accumulate
+      //   their extra appearance.
+
       const out = [];
       let gameNumber = 1;
 
-      sundayDates.forEach((sunday, i) => {
-        if (out.length >= targetGames) return;
-        const weekNum = i + 1;
-        const maxGames = Math.min(gamesPerSunday, targetGames - out.length);
-        const teamApps = {}; // appearances for each team this Sunday
-        const sundayGames = [];
+      sessions.forEach(session => {
+        const cap = session.games;
+        const allowDouble = session.isSunday && cap === 6;
+        const teamApps = {};
+        const sessionGames = [];
 
-        // ── 11-team: two-pass Sunday fill ──────────────────────────────────
-        // Pass 1 (11-team only): if extraTeamId is set, find their 2 games first
-        // so they are always the DH team — not whichever team the random pool
-        // happens to double up first.
-        let dhTeamId = null;
-        if (is11Team && extraTeamId) {
-          let found = 0;
-          for (let pi = 0; pi < finalPool.length && found < 2; pi++) {
+        // Weeknight 11-team: prioritize one extraTeamId game first
+        if (!session.isSunday && is11Team && extraTeamId) {
+          for (let pi = 0; pi < finalPool.length && sessionGames.length < 1; pi++) {
             if (poolUsed[pi]) continue;
             const g = finalPool[pi];
-            const isExtra = g.home.id === extraTeamId || g.away.id === extraTeamId;
-            if (!isExtra) continue;
-            const otherId = g.home.id === extraTeamId ? g.away.id : g.home.id;
-            if ((teamApps[otherId] || 0) >= 1) continue; // opponent already played
-            if ((teamApps[extraTeamId] || 0) >= 2) break;  // already have 2 games
+            if (g.home.id !== extraTeamId && g.away.id !== extraTeamId) continue;
             poolUsed[pi] = true;
             teamApps[g.home.id] = (teamApps[g.home.id] || 0) + 1;
             teamApps[g.away.id] = (teamApps[g.away.id] || 0) + 1;
-            sundayGames.push(g);
-            found++;
+            sessionGames.push(g);
           }
-          if (found >= 1) dhTeamId = extraTeamId; // confirmed DH team for this Sunday
         }
 
-        // Pass 2: fill remaining slots — each team plays at most once (except dhTeamId)
-        for (let pi = 0; pi < finalPool.length && sundayGames.length < maxGames; pi++) {
+        // Fill remaining slots
+        for (let pi = 0; pi < finalPool.length && sessionGames.length < cap; pi++) {
           if (poolUsed[pi]) continue;
           const g = finalPool[pi];
           const ha = teamApps[g.home.id] || 0;
           const aa = teamApps[g.away.id] || 0;
 
-          // For 11-team: dhTeamId already placed; everyone else limited to 1 appearance
-          const homeMax = (is11Team && g.home.id === dhTeamId) ? 2 : 1;
-          const awayMax = (is11Team && g.away.id === dhTeamId) ? 2 : 1;
-          if (ha >= homeMax || aa >= awayMax) continue;
-
-          // Never allow a second DH team to emerge
-          if (is11Team && dhTeamId !== null) {
-            if (ha === 1 && g.home.id !== dhTeamId) continue;
-            if (aa === 1 && g.away.id !== dhTeamId) continue;
+          if (allowDouble) {
+            if (ha >= 2 || aa >= 2) continue;
+            const dt = Object.entries(teamApps).find(([, c]) => c >= 2);
+            if (dt) {
+              if (ha === 1 && g.home.id !== dt[0]) continue;
+              if (aa === 1 && g.away.id !== dt[0]) continue;
+            }
+          } else {
+            if (ha >= 1 || aa >= 1) continue;
           }
 
           poolUsed[pi] = true;
           teamApps[g.home.id] = ha + 1;
           teamApps[g.away.id] = aa + 1;
-          sundayGames.push(g);
+          sessionGames.push(g);
         }
 
-        // For 11 teams: move the DH team's second game to the last slot (1pm)
-        if (is11Team && dhTeamId) {
-          const dhIdx = sundayGames.findIndex((g, idx) => {
-            const isDHTeam = g.home.id === dhTeamId || g.away.id === dhTeamId;
-            const isSecond = isDHTeam && sundayGames.slice(0, idx).some(
-              prev => prev.home.id === dhTeamId || prev.away.id === dhTeamId
+        // For 11-team Sundays: move the double team's 2nd game to the last (1pm) slot
+        if (allowDouble) {
+          const dt = Object.entries(teamApps).find(([, c]) => c >= 2);
+          if (dt) {
+            const dtId = dt[0];
+            const dhIdx = sessionGames.findIndex((g, idx) =>
+              (g.home.id === dtId || g.away.id === dtId) &&
+              sessionGames.slice(0, idx).some(p => p.home.id === dtId || p.away.id === dtId)
             );
-            return isSecond;
-          });
-          if (dhIdx > 0 && dhIdx < sundayGames.length - 1) {
-            sundayGames.push(sundayGames.splice(dhIdx, 1)[0]);
+            if (dhIdx > 0 && dhIdx < sessionGames.length - 1) {
+              sessionGames.push(sessionGames.splice(dhIdx, 1)[0]);
+            }
           }
         }
 
-        sundayGames.forEach((game, s) => {
+        // Determine time slots for this session
+        let slots;
+        if (session.isSunday) {
+          slots = cap === 6 ? sundaySlots6 : cap === 5 ? sundaySlots5 : sundaySlots2;
+        } else {
+          slots = wkSlots;
+        }
+
+        sessionGames.forEach((game, s) => {
           const g = Object.assign({}, game);
-          g.date = new Date(sunday);
-          g.time = sundaySlots[s];
-          g.week = weekNum;
+          g.date    = new Date(session.date);
+          g.time    = slots[s] || slots[slots.length - 1];
+          g.week    = session.week;
           g.gameNumber = gameNumber++;
-          if (is11Team && dhTeamId && s === sundayGames.length - 1 &&
-              (game.home.id === dhTeamId || game.away.id === dhTeamId)) {
-            g.isDoubleHeader = true;
-          }
+          if (!session.isSunday) g.isWeeknight = true;
           out.push(g);
         });
       });
 
-      // ── Assign weeknight games (remaining to reach target) ────────────────
-      // Each weeknight session hosts 2 games. Stop when target is met.
-      wkSessions.forEach((session) => {
-        if (out.length >= targetGames) return;
-        const cap = Math.min(2, targetGames - out.length);
-        let placed = 0;
-        for (let pi = 0; pi < finalPool.length && placed < cap; pi++) {
-          if (poolUsed[pi]) continue;
-          poolUsed[pi] = true;
-          const game = Object.assign({}, finalPool[pi]);
-          game.date = new Date(session.date);
-          game.time = wkTimes2[placed];
-          game.week = session.week;
-          game.gameNumber = gameNumber++;
-          game.isWeeknight = true;
-          out.push(game);
-          placed++;
-        }
-      });
-
-      // ── Log per-team counts ───────────────────────────────────────────────
+      // -- Log per-team counts --
       const teamCounts = Object.fromEntries(teams.map(t => [t.id, 0]));
       out.forEach(g => {
         if (teamCounts[g.home.id] !== undefined) teamCounts[g.home.id]++;
         if (teamCounts[g.away.id] !== undefined) teamCounts[g.away.id]++;
       });
-      console.log(`📋 Fall schedule: ${out.length} games, ${wkSessions.length} weeknight sessions, skipConvention=${skipConvention}`);
+      console.log(`Fall schedule (${is11Team?'11':'10'}-team, ${skipConvention?'No TC':'TC'}): ${out.length} games`);
       console.log('Per-team:', Object.fromEntries(teams.map(t => [t.name, teamCounts[t.id]])));
 
-      // ── Write output ──────────────────────────────────────────────────────
+      // -- Write output --
       schedule.length = 0;
       out.forEach(g => schedule.push(g));
     }
+
 
     function assignSummerSchedule(schedule) {
       const dhTimeSlots = ['7:45 PM', '8:45 PM'];
