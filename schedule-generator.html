@@ -2058,10 +2058,9 @@
 
       // -- H2H-balanced matchup pool --
       // Phase 1: every pair plays once (full round-robin).
-      // Phase 2: target-driven rematches.
-      //   - Each team has an explicit target: extraTeamId=14, others=13 (11-team);
-      //     all=13 (10-team). Only pair teams that BOTH still need more appearances.
-      //   - No pair may meet more than twice.
+      // Phase 2: fewest-games-first rematches — always reaches targetGames (no stuck).
+      // Phase 3: swap one game so extraTeamId ends up with exactly 14 (11-team only).
+      //   No pair may meet more than twice total.
 
       const getPairKey = (a, b) => [a.id, b.id].sort().join('|');
       const allPairs = [];
@@ -2079,31 +2078,18 @@
         pairCount[getPairKey(t1, t2)]++;
       }
 
-      // Phase 2: target-driven
-      // Each team's per-game target: extraTeamId gets 14, all others get 13.
-      const p2Apps = Object.fromEntries(teams.map(t => [t.id, 0]));
-      pool.forEach(g => { p2Apps[g.home.id]++; p2Apps[g.away.id]++; });
-      const gameTarget = t => (is11Team && extraTeamId && t.id === extraTeamId) ? 14 : 13;
-      const stillNeeds = t => gameTarget(t) - p2Apps[t.id];
+      // Phase 2: fewest-games-first — always completes, no endgame-stuck risk
+      const teamGames = Object.fromEntries(teams.map(t => [t.id, 0]));
+      pool.forEach(g => { teamGames[g.home.id]++; teamGames[g.away.id]++; });
 
       let safety = 0;
       while (pool.length < targetGames && safety++ < 3000) {
-        // Eligible = teams that still need more appearances, sorted by deficit desc, extraTeamId first on ties
-        const eligible = teams
-          .filter(t => stillNeeds(t) > 0)
-          .sort((a, b) => {
-            const diff = stillNeeds(b) - stillNeeds(a); // most deficit first
-            if (diff !== 0) return diff;
-            if (extraTeamId && a.id === extraTeamId) return -1;
-            if (extraTeamId && b.id === extraTeamId) return 1;
-            return 0;
-          });
+        const sorted = [...teams].sort((a, b) => teamGames[a.id] - teamGames[b.id]);
         let added = false;
-        for (const team of eligible) {
-          // Only pair with teams that also still need appearances and haven't played twice
-          const opps = eligible
+        for (const team of sorted) {
+          const opps = [...teams]
             .filter(o => o.id !== team.id && pairCount[getPairKey(team, o)] < 2)
-            .sort((a, b) => stillNeeds(b) - stillNeeds(a));
+            .sort((a, b) => teamGames[a.id] - teamGames[b.id]);
           if (!opps.length) continue;
           const opp = opps[0];
           const prior = pool.find(m =>
@@ -2112,11 +2098,44 @@
           const home = (prior && prior.home.id === team.id) ? opp : team;
           const away = (home.id === team.id) ? opp : team;
           pool.push({ home, away });
-          p2Apps[home.id]++; p2Apps[away.id]++;
+          teamGames[home.id]++; teamGames[away.id]++;
           pairCount[getPairKey(team, opp)]++;
           added = true; break;
         }
         if (!added) break;
+      }
+
+      // Phase 3: ensure extraTeamId has exactly 14 pool appearances (11-team only).
+      // Phase 2 reliably reaches 72 games but may give a different team the 14th spot.
+      // Fix: find who has 14, swap one of their games for an extraTeamId game.
+      if (is11Team && extraTeamId) {
+        Object.keys(teamGames).forEach(k => teamGames[k] = 0);
+        pool.forEach(g => { teamGames[g.home.id]++; teamGames[g.away.id]++; });
+
+        if (teamGames[extraTeamId] !== 14) {
+          const over = teams.find(t => t.id !== extraTeamId && teamGames[t.id] === 14);
+          const extraTeamObj = teams.find(t => t.id === extraTeamId);
+          if (over && extraTeamObj) {
+            for (let i = 0; i < pool.length; i++) {
+              const g = pool[i];
+              if (g.home.id !== over.id && g.away.id !== over.id) continue;
+              const oppObj = g.home.id === over.id ? g.away : g.home;
+              if (oppObj.id === extraTeamId) continue; // skip games already involving extraTeamId
+              // Check pair limit: extraTeamId vs oppObj must not already be at 2
+              const alreadyPlayed = pool.filter(pg =>
+                (pg.home.id === extraTeamId && pg.away.id === oppObj.id) ||
+                (pg.home.id === oppObj.id   && pg.away.id === extraTeamId)
+              ).length;
+              if (alreadyPlayed >= 2) continue;
+              // Valid swap: replace 'over' with extraTeamId in this slot
+              pool[i] = {
+                home: g.home.id === over.id ? extraTeamObj : g.home,
+                away: g.away.id === over.id ? extraTeamObj : g.away
+              };
+              break;
+            }
+          }
+        }
       }
 
       const finalPool = shuffle(pool);
