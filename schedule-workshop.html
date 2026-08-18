@@ -421,6 +421,84 @@
       .stat-mini-row { grid-template-columns: repeat(3, 1fr); }
       .opponents-grid { grid-template-columns: 1fr; }
     }
+
+    /* ── Sortable Headers ── */
+    .schedule-table th.sortable {
+      cursor: pointer;
+      user-select: none;
+      white-space: nowrap;
+    }
+    .schedule-table th.sortable:hover { background: #3a6b1e; }
+    .sort-icon { margin-left: 0.3rem; opacity: 0.5; font-size: 0.8rem; }
+    .sort-icon.active { opacity: 1; }
+
+    /* ── Opponent Matchup Grid ── */
+    .opp-grid-section {
+      background: white;
+      border-radius: 12px;
+      padding: 1.75rem 2rem;
+      box-shadow: var(--shadow-sm);
+      margin-top: 1.5rem;
+    }
+    .opp-grid-section h2 { color: var(--primary-color); margin-bottom: 1rem; font-size: 1.4rem; }
+    .opp-grid-controls {
+      display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem; flex-wrap: wrap;
+    }
+    .opp-sort-label { font-size: 0.85rem; color: var(--text-light); font-weight: 600; }
+    .opp-sort-select {
+      padding: 0.4rem 0.75rem; border-radius: 6px;
+      border: 1.5px solid var(--border-color); font-size: 0.875rem; cursor: pointer;
+    }
+    .opp-grid-scroll { overflow-x: auto; }
+    .opp-grid-table {
+      border-collapse: collapse;
+      font-size: 0.88rem;
+    }
+    .opp-grid-table th, .opp-grid-table td {
+      border: 1px solid var(--border-color);
+      padding: 0.5rem 0.6rem;
+      text-align: center;
+      white-space: nowrap;
+    }
+    .opp-grid-table th {
+      background: var(--primary-color);
+      color: white;
+      font-weight: 700;
+      position: sticky; top: 0; z-index: 10;
+    }
+    .opp-grid-table .ogg-row-header {
+      background: var(--primary-color);
+      color: white;
+      font-weight: 700;
+      text-align: left;
+      position: sticky; left: 0; z-index: 5;
+      padding: 0.5rem 0.75rem;
+    }
+    .opp-grid-table .ogg-corner {
+      background: var(--primary-color);
+      position: sticky; left: 0; top: 0; z-index: 15;
+    }
+    .ogg-diag { background: #f0f4f8; color: var(--text-light); font-style: italic; }
+    .ogg-0 { background: #f8f9fa; color: #adb5bd; }
+    .ogg-1 { background: #e8f5e9; color: #2e7d32; font-weight: 600; }
+    .ogg-2 { background: #c8e6c9; color: #1b5e20; font-weight: 700; }
+    .ogg-3 { background: #a5d6a7; color: #1b5e20; font-weight: 800; }
+    .ogg-4plus { background: #66bb6a; color: #fff; font-weight: 800; }
+    .ogg-cell-count { font-size: 1rem; display: block; }
+    .ogg-cell-label { font-size: 0.7rem; margin-top: 1px; opacity: 0.75; }
+    .opp-grid-legend {
+      display: flex; gap: 1rem; flex-wrap: wrap; margin-top: 0.75rem;
+      font-size: 0.8rem; color: var(--text-light);
+    }
+    .opp-grid-legend span {
+      display: inline-flex; align-items: center; gap: 0.3rem;
+    }
+    .opp-legend-dot {
+      width: 14px; height: 14px; border-radius: 3px; display: inline-block;
+      border: 1px solid rgba(0,0,0,0.1);
+    }
+    .ogg-total-cell { background: #edf2f7; font-weight: 700; color: var(--text-dark); border-left: 2px solid var(--border-color); }
+    .ogg-total-header { background: #1a6b4a !important; border-left: 2px solid rgba(255,255,255,0.3) !important; }
   </style>
   <link rel="stylesheet" href="mobile-enhancements.css">
 </head>
@@ -471,12 +549,12 @@
             <table class="schedule-table">
               <thead>
                 <tr>
-                  <th>Wk</th>
-                  <th>Date</th>
+                  <th class="sortable" onclick="sortBy('week')">Wk<span class="sort-icon" id="sort-week">↕</span></th>
+                  <th class="sortable" onclick="sortBy('date')">Date<span class="sort-icon" id="sort-date">↕</span></th>
                   <th>Day</th>
-                  <th>Time</th>
-                  <th>Home Team</th>
-                  <th>Away Team</th>
+                  <th class="sortable" onclick="sortBy('time')">Time<span class="sort-icon" id="sort-time">↕</span></th>
+                  <th class="sortable" onclick="sortBy('homeTeam')">Home Team<span class="sort-icon" id="sort-homeTeam">↕</span></th>
+                  <th class="sortable" onclick="sortBy('awayTeam')">Away Team<span class="sort-icon" id="sort-awayTeam">↕</span></th>
                   <th>Swap</th>
                   <th>⚠</th>
                 </tr>
@@ -488,11 +566,13 @@
           <div class="export-actions">
             <button class="btn btn-secondary" onclick="balanceDays()" id="balanceDaysBtn" style="display:none;">⚖️ Balance Days</button>
             <button class="btn btn-secondary" onclick="balanceTimeSlots()" id="balanceByesBtn" style="display:none;">🕐 Balance Time Slots</button>
+            <button class="btn btn-secondary" onclick="groupDoubleheaders()" id="groupDHBtn" style="display:none;">👯 Group Doubleheaders</button>
             <button class="btn btn-primary" onclick="downloadCSV()">💾 Download CSV</button>
             <button class="btn btn-secondary" onclick="exportToFirebase()">☁️ Export to Firebase</button>
           </div>
           <div id="balanceStatus" style="font-size:0.85rem;color:var(--secondary-color);margin-top:0.4rem;"></div>
           <div id="balanceByesStatus" style="font-size:0.85rem;color:var(--secondary-color);margin-top:0.2rem;"></div>
+          <div id="groupDHStatus" style="font-size:0.85rem;color:var(--secondary-color);margin-top:0.2rem;"></div>
           <div id="exportStatus"></div>
         </div>
 
@@ -562,6 +642,30 @@
         </div><!-- /analyzer-panel -->
 
       </div><!-- /workshop-layout -->
+
+      <!-- ══ OPPONENT MATCHUP GRID ══ -->
+      <div class="opp-grid-section">
+        <h2>🔁 Opponent Matchup Grid</h2>
+        <div class="opp-grid-controls">
+          <span class="opp-sort-label">Sort teams by:</span>
+          <select class="opp-sort-select" id="oppGridSort" onchange="renderOpponentGrid()">
+            <option value="alpha">Alphabetical</option>
+            <option value="total-desc">Most Games (↓)</option>
+            <option value="total-asc">Fewest Games (↑)</option>
+          </select>
+        </div>
+        <div class="opp-grid-scroll">
+          <div id="opponentGridContainer"></div>
+        </div>
+        <div class="opp-grid-legend">
+          <span><span class="opp-legend-dot ogg-0" style="background:#f8f9fa;border-color:#dee2e6;"></span>0 games</span>
+          <span><span class="opp-legend-dot" style="background:#e8f5e9;border-color:#a5d6a7;"></span>1 game</span>
+          <span><span class="opp-legend-dot" style="background:#c8e6c9;border-color:#81c784;"></span>2 games</span>
+          <span><span class="opp-legend-dot" style="background:#a5d6a7;border-color:#4caf50;"></span>3 games</span>
+          <span><span class="opp-legend-dot" style="background:#66bb6a;border-color:#388e3c;"></span>4+ games</span>
+        </div>
+      </div>
+
     </div><!-- /workshopContent -->
 
   </div><!-- /container -->
@@ -587,6 +691,8 @@
     let teams     = new Set();
     let timeSlots = new Set();
     let analyzerTeam = null;
+    let sortField = null;   // current sort column
+    let sortAsc   = true;   // sort direction
 
     // ── File Upload ──
     const uploadArea = document.getElementById('uploadArea');
@@ -612,6 +718,7 @@
           document.getElementById('workshopContent').classList.remove('hidden');
           document.getElementById('balanceDaysBtn').style.display = '';
           document.getElementById('balanceByesBtn').style.display = '';
+          document.getElementById('groupDHBtn').style.display = '';
           analyzerTeam = Array.from(teams).sort()[0];
           renderAll();
         } catch (err) {
@@ -654,6 +761,7 @@
       renderDHWarnings();
       renderSchedule();
       renderAnalyzer();
+      renderOpponentGrid();
     }
 
     // ══════════════════════════════════════════
@@ -693,9 +801,57 @@
     // ══════════════════════════════════════════
     // BALANCER / SCHEDULE TABLE
     // ══════════════════════════════════════════
+
+    // Sort by column — toggle direction if same field
+    window.sortBy = function(field) {
+      if (sortField === field) {
+        sortAsc = !sortAsc;
+      } else {
+        sortField = field;
+        sortAsc = true;
+      }
+      renderSchedule();
+    };
+
+    function getSortValue(game, field) {
+      switch (field) {
+        case 'week':     return game.week;
+        case 'date':     return parseDateToISO(game.date) || '';
+        case 'time':     return getTimeHour(game.time);
+        case 'homeTeam': return game.homeTeam.toLowerCase();
+        case 'awayTeam': return game.awayTeam.toLowerCase();
+        default:         return '';
+      }
+    }
+
     function renderSchedule() {
+      // Build sorted display order (indices into schedule[])
+      let displayIndices = [...Array(schedule.length).keys()];
+      if (sortField) {
+        displayIndices.sort((a, b) => {
+          const va = getSortValue(schedule[a], sortField);
+          const vb = getSortValue(schedule[b], sortField);
+          const cmp = va < vb ? -1 : va > vb ? 1 : 0;
+          return sortAsc ? cmp : -cmp;
+        });
+      }
+
+      // Update sort icons
+      ['week','date','time','homeTeam','awayTeam'].forEach(f => {
+        const el = document.getElementById('sort-' + f);
+        if (!el) return;
+        if (sortField === f) {
+          el.textContent = sortAsc ? '↑' : '↓';
+          el.classList.add('active');
+        } else {
+          el.textContent = '↕';
+          el.classList.remove('active');
+        }
+      });
+
       const tbody = document.getElementById('scheduleBody');
-      tbody.innerHTML = schedule.map((game, idx) => {
+      tbody.innerHTML = displayIndices.map(idx => {
+        const game = schedule[idx];
         const warnings    = getGameWarnings(game, idx);
         const warningHTML = warnings.map(w =>
           `<span class="indicator indicator-${w.type}" data-tooltip="${w.message}">${w.icon}</span>`
@@ -1024,6 +1180,163 @@
     // ══════════════════════════════════════════
     // BALANCE DAYS
     // ══════════════════════════════════════════
+    // ══════════════════════════════════════════
+    // OPPONENT MATCHUP GRID
+    // ══════════════════════════════════════════
+    function renderOpponentGrid() {
+      const allTeams = Array.from(teams).sort();
+      if (allTeams.length === 0) return;
+
+      // Build game count matrix: matrix[row][col] = games between row-team and col-team
+      const matrix = {};
+      allTeams.forEach(t => { matrix[t] = {}; allTeams.forEach(u => { matrix[t][u] = 0; }); });
+      schedule.forEach(g => {
+        if (matrix[g.homeTeam] && matrix[g.awayTeam]) {
+          matrix[g.homeTeam][g.awayTeam]++;
+          matrix[g.awayTeam][g.homeTeam]++;
+        }
+      });
+
+      // Totals per team
+      const totals = {};
+      allTeams.forEach(t => {
+        totals[t] = allTeams.reduce((sum, u) => sum + (t !== u ? matrix[t][u] : 0), 0);
+      });
+
+      // Sort teams based on dropdown
+      const sortMode = document.getElementById('oppGridSort')?.value || 'alpha';
+      let sortedTeams = [...allTeams];
+      if (sortMode === 'total-desc') sortedTeams.sort((a, b) => totals[b] - totals[a]);
+      else if (sortMode === 'total-asc') sortedTeams.sort((a, b) => totals[a] - totals[b]);
+      // else alpha (already sorted)
+
+      // Cell class by count
+      function cellClass(count) {
+        if (count === 0) return 'ogg-0';
+        if (count === 1) return 'ogg-1';
+        if (count === 2) return 'ogg-2';
+        if (count === 3) return 'ogg-3';
+        return 'ogg-4plus';
+      }
+
+      // Build table
+      let html = '<table class="opp-grid-table"><thead><tr>';
+      html += '<th class="ogg-corner" style="min-width:90px;text-align:left;padding:0.5rem 0.75rem;">Team ↓ vs →</th>';
+      sortedTeams.forEach(t => {
+        html += `<th style="min-width:68px;">${t}</th>`;
+      });
+      html += '<th class="ogg-total-header" style="min-width:60px;">Total</th>';
+      html += '</tr></thead><tbody>';
+
+      sortedTeams.forEach(rowTeam => {
+        html += `<tr><td class="ogg-row-header">${rowTeam}</td>`;
+        sortedTeams.forEach(colTeam => {
+          if (rowTeam === colTeam) {
+            html += '<td class="ogg-diag">—</td>';
+          } else {
+            const count = matrix[rowTeam][colTeam];
+            const cls   = cellClass(count);
+            const label = count === 0 ? '—' : (count === 1 ? 'game' : 'games');
+            html += `<td class="${cls}">
+              <span class="ogg-cell-count">${count === 0 ? '—' : count}</span>
+              ${count > 0 ? `<span class="ogg-cell-label">${label}</span>` : ''}
+            </td>`;
+          }
+        });
+        html += `<td class="ogg-total-cell">${totals[rowTeam]}</td>`;
+        html += '</tr>';
+      });
+
+      html += '</tbody></table>';
+      document.getElementById('opponentGridContainer').innerHTML = html;
+    }
+
+    // ══════════════════════════════════════════
+    // GROUP DOUBLEHEADERS
+    // Reorders schedule so that on days with multiple games,
+    // teams playing 2+ games that day have their games adjacent.
+    // ══════════════════════════════════════════
+    window.groupDoubleheaders = function() {
+      const statusEl = document.getElementById('groupDHStatus');
+
+      // Group game indices by ISO date
+      const byDate = {};
+      schedule.forEach((g, i) => {
+        const iso = parseDateToISO(g.date) || g.date;
+        if (!byDate[iso]) byDate[iso] = [];
+        byDate[iso].push(i);
+      });
+
+      let totalMoves = 0;
+      const newOrder = []; // will hold reordered indices
+
+      // Sort dates chronologically
+      const sortedDates = Object.keys(byDate).sort();
+
+      sortedDates.forEach(iso => {
+        const idxs = byDate[iso];
+        if (idxs.length < 2) {
+          idxs.forEach(i => newOrder.push(i));
+          return;
+        }
+
+        // Find teams with 2+ games on this date (DH teams)
+        const teamAppearances = {};
+        idxs.forEach(i => {
+          const g = schedule[i];
+          teamAppearances[g.homeTeam] = (teamAppearances[g.homeTeam] || 0) + 1;
+          teamAppearances[g.awayTeam] = (teamAppearances[g.awayTeam] || 0) + 1;
+        });
+        const dhTeams = new Set(Object.entries(teamAppearances).filter(([,c]) => c >= 2).map(([t]) => t));
+
+        if (dhTeams.size === 0) {
+          idxs.forEach(i => newOrder.push(i));
+          return;
+        }
+
+        // Greedy grouping: place DH-team games adjacent
+        const remaining = [...idxs];
+        const ordered = [];
+        const used = new Set();
+
+        remaining.forEach(i => {
+          if (used.has(i)) return;
+          used.add(i);
+          ordered.push(i);
+          const g = schedule[i];
+          // If home or away is a DH team, find their partner game and insert next
+          const dhTeamInGame = [g.homeTeam, g.awayTeam].find(t => dhTeams.has(t));
+          if (dhTeamInGame) {
+            // Find the partner game(s) for this DH team (not yet used)
+            remaining.forEach(j => {
+              if (!used.has(j)) {
+                const gj = schedule[j];
+                if (gj.homeTeam === dhTeamInGame || gj.awayTeam === dhTeamInGame) {
+                  used.add(j);
+                  ordered.push(j);
+                  totalMoves++;
+                }
+              }
+            });
+          }
+        });
+
+        ordered.forEach(i => newOrder.push(i));
+      });
+
+      // Rebuild schedule in new order
+      const reordered = newOrder.map(i => schedule[i]);
+      schedule.splice(0, schedule.length, ...reordered);
+
+      // Reset sort (schedule is now in grouped order)
+      sortField = null; sortAsc = true;
+
+      renderAll();
+      statusEl.textContent = totalMoves > 0
+        ? `✅ Grouped — ${totalMoves} doubleheader game${totalMoves !== 1 ? 's' : ''} moved to be adjacent`
+        : `✅ Already grouped — no changes needed`;
+    };
+
     window.balanceDays = function() {
       const statusEl = document.getElementById('balanceStatus');
       statusEl.textContent = 'Balancing...';
