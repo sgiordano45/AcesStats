@@ -746,6 +746,10 @@
     let sortField = null;   // current sort column
     let sortAsc   = true;   // sort direction
 
+    // ── Share card data (populated by render functions) ──
+    let _shareOppData  = null;   // { matrix, sortedTeams }
+    let _shareTimeData = null;   // { teamSlots, sortedTeams, sortedSlots }
+
     // ── File Upload ──
     const uploadArea = document.getElementById('uploadArea');
     const fileInput  = document.getElementById('fileInput');
@@ -1305,6 +1309,9 @@
       else if (sortMode === 'total-asc') sortedTeams.sort((a, b) => totals[a] - totals[b]);
       // else alpha (already sorted)
 
+      // Save for share card
+      _shareOppData = { matrix, sortedTeams, totals };
+
       // Cell class by count
       function cellClass(count) {
         if (count === 0) return 'ogg-0';
@@ -1380,6 +1387,9 @@
       // Expected count per slot per team if perfectly balanced
       const leagueGames = schedule.length;
       const expectedPerSlot = leagueGames > 0 ? (leagueGames * 2) / (allTeams.length * slots.length) : 0;
+
+      // Save for share card
+      _shareTimeData = { teamSlots, sortedTeams: allTeams, sortedSlots: slots, colTotals, teamTotals, maxCount };
 
       function cellBg(count) {
         if (count === 0) return '#f8f9fa';
@@ -1753,43 +1763,113 @@
       });
     }
 
-    function buildGridShareCard(type) {
-      const isOpp  = type === 'opp';
-      const title  = isOpp ? '🔁 Opponent Matchup Grid' : '🕐 League-Wide Time Distribution';
-      const srcId  = isOpp ? 'opponentGridContainer' : 'timeDistContainer';
-      const tableHTML = document.getElementById(srcId)?.innerHTML || '';
+    // Shared inline style helpers
+    const CARD_FONT = "'Segoe UI',Arial,sans-serif";
+    const HDR_BG    = "linear-gradient(135deg,#2d5016 0%,#1a6b4a 100%)";
+    const TH_STYLE  = `background:linear-gradient(135deg,#2d5016,#1a6b4a);color:#fff;font-weight:700;padding:10px 12px;font-size:13px;text-align:center;border:1px solid #1a6b4a;white-space:nowrap;`;
+    const TH_ROW    = `background:linear-gradient(135deg,#2d5016,#1a6b4a);color:#fff;font-weight:700;padding:10px 14px;font-size:13px;text-align:left;border:1px solid #1a6b4a;white-space:nowrap;`;
+    const TD_BASE   = `padding:9px 12px;font-size:13px;text-align:center;border:1px solid #dee2e6;`;
 
+    function oppCellStyle(count) {
+      if (count === 0) return `${TD_BASE}background:#f8f9fa;color:#adb5bd;`;
+      const bgs = ['','#e8f5e9','#c8e6c9','#a5d6a7','#66bb6a'];
+      const cls = ['','#2e7d32','#1b5e20','#1b5e20','#fff'];
+      const i = Math.min(count, 4);
+      return `${TD_BASE}background:${bgs[i]};color:${cls[i]};font-weight:${count>=3?800:600};`;
+    }
+
+    function timeCellStyle(count, maxCount) {
+      if (count === 0) return `${TD_BASE}background:#f8f9fa;color:#adb5bd;`;
+      const intensity = count / maxCount;
+      const r = Math.round(232 - intensity * 110);
+      const g = Math.round(245 - intensity * 100);
+      const b = Math.round(232 - intensity * 130);
+      const textColor = intensity > 0.6 ? '#1b5e20' : '#2e7d32';
+      return `${TD_BASE}background:rgb(${r},${g},${b});color:${textColor};font-weight:${count>=3?800:600};`;
+    }
+
+    function cardShell(title, tableHTML) {
       return `<div style="
-        background:#fff;
-        border-radius:14px;
-        overflow:hidden;
-        font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
-        box-shadow:0 4px 24px rgba(0,0,0,0.15);
-        min-width:500px;
-      ">
-        <!-- Header -->
-        <div style="
-          background:linear-gradient(135deg,#2d5016 0%,#1a6b4a 100%);
-          padding:1rem 1.5rem;
-          display:flex;align-items:center;justify-content:space-between;
+          background:#fff;border-radius:16px;overflow:hidden;
+          font-family:${CARD_FONT};
+          box-shadow:0 8px 32px rgba(0,0,0,0.18);
+          display:inline-block;min-width:400px;
         ">
-          <div style="color:white;font-size:1.15rem;font-weight:800;">${title}</div>
-          <div style="color:rgba(255,255,255,0.8);font-size:0.78rem;font-weight:600;">⚾ Mountainside Aces</div>
+        <div style="background:${HDR_BG};padding:18px 24px;display:flex;align-items:center;justify-content:space-between;">
+          <div style="color:#fff;font-size:17px;font-weight:800;letter-spacing:-0.3px;">${title}</div>
+          <div style="color:rgba(255,255,255,0.85);font-size:12px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;">Mountainside Aces</div>
         </div>
-        <!-- Table -->
-        <div style="padding:1.25rem;overflow:auto;">
-          ${tableHTML}
+        <div style="padding:20px 24px;overflow:auto;">
+          <table style="border-collapse:collapse;font-family:${CARD_FONT};">
+            ${tableHTML}
+          </table>
         </div>
-        <!-- Footer watermark -->
-        <div style="
-          background:#f7fafc;border-top:1px solid #e2e8f0;
-          padding:0.5rem 1.25rem;font-size:0.75rem;color:#718096;
-          display:flex;justify-content:space-between;
-        ">
+        <div style="background:#f7fafc;border-top:1px solid #e2e8f0;padding:8px 24px;display:flex;justify-content:space-between;font-size:11px;color:#94a3b8;font-family:${CARD_FONT};">
           <span>Schedule Workshop</span>
           <span>stats.mountainsideaces.com</span>
         </div>
       </div>`;
+    }
+
+    function buildGridShareCard(type) {
+      if (type === 'opp') {
+        if (!_shareOppData) return '<div>No data</div>';
+        const { matrix, sortedTeams, totals } = _shareOppData;
+
+        let thead = `<tr><th style="${TH_STYLE}text-align:left;">vs</th>`;
+        sortedTeams.forEach(t => { thead += `<th style="${TH_STYLE}">${t}</th>`; });
+        thead += `<th style="${TH_STYLE}background:#1a6b4a;border-left:2px solid rgba(255,255,255,0.3);">Total</th></tr>`;
+
+        let tbody = '';
+        sortedTeams.forEach(row => {
+          tbody += `<tr><td style="${TH_ROW}">${row}</td>`;
+          sortedTeams.forEach(col => {
+            if (row === col) {
+              tbody += `<td style="${TD_BASE}background:#f0f4f8;color:#94a3b8;font-style:italic;">—</td>`;
+            } else {
+              const count = matrix[row][col] || 0;
+              tbody += `<td style="${oppCellStyle(count)}">${count === 0 ? '—' : count}</td>`;
+            }
+          });
+          tbody += `<td style="${TD_BASE}background:#edf2f7;font-weight:700;color:#2d3748;border-left:2px solid #cbd5e0;">${totals[row]}</td></tr>`;
+        });
+
+        // Slot total footer row
+        tbody += `<tr><td style="${TH_ROW}font-size:11px;opacity:0.85;">Opp Total</td>`;
+        sortedTeams.forEach(col => {
+          const total = sortedTeams.reduce((s, r) => s + (r !== col ? (matrix[r][col] || 0) : 0), 0);
+          tbody += `<td style="${TD_BASE}background:#edf2f7;font-weight:700;color:#2d3748;">${total}</td>`;
+        });
+        tbody += `<td style="${TD_BASE}background:#e2e8f0;"></td></tr>`;
+
+        return cardShell('Opponent Matchup Grid', thead + tbody);
+
+      } else {
+        if (!_shareTimeData) return '<div>No data</div>';
+        const { teamSlots, sortedTeams, sortedSlots, colTotals, teamTotals, maxCount } = _shareTimeData;
+
+        let thead = `<tr><th style="${TH_STYLE}text-align:left;min-width:80px;">Team</th>`;
+        sortedSlots.forEach(s => { thead += `<th style="${TH_STYLE}min-width:72px;">${s}</th>`; });
+        thead += `<th style="${TH_STYLE}background:#1a6b4a;border-left:2px solid rgba(255,255,255,0.3);">Total</th></tr>`;
+
+        let tbody = '';
+        sortedTeams.forEach(t => {
+          tbody += `<tr><td style="${TH_ROW}">${t}</td>`;
+          sortedSlots.forEach(s => {
+            const count = teamSlots[t][s] || 0;
+            tbody += `<td style="${timeCellStyle(count, maxCount)}">${count === 0 ? '—' : count}</td>`;
+          });
+          tbody += `<td style="${TD_BASE}background:#edf2f7;font-weight:700;color:#2d3748;border-left:2px solid #cbd5e0;">${teamTotals[t]}</td></tr>`;
+        });
+
+        // Slot totals footer
+        tbody += `<tr><td style="${TH_ROW}font-size:11px;opacity:0.85;">Slot Total</td>`;
+        sortedSlots.forEach(s => { tbody += `<td style="${TD_BASE}background:#edf2f7;font-weight:700;color:#2d3748;">${colTotals[s]}</td>`; });
+        const grandTotal = Object.values(colTotals).reduce((a,b)=>a+b,0);
+        tbody += `<td style="${TD_BASE}background:#e2e8f0;font-weight:800;color:#2d3748;border-left:2px solid #cbd5e0;">${grandTotal}</td></tr>`;
+
+        return cardShell('League-Wide Time Distribution', thead + tbody);
+      }
     }
 
     window.openShareGrid = async function(type) {
