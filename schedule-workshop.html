@@ -577,6 +577,7 @@
           <div class="legend">
             <div class="legend-item"><span>🕐</span> Use "Balance Time Slots" to spread 8 AM – 1 PM slots evenly across all teams</div>
             <div class="legend-item"><span>🚨</span> Fall: bye weeks should not occur — use the banner above to identify them</div>
+            <div class="legend-item"><span>📊</span> MOLSKI = time-slot spread (40) + home/away split (20) + day mix vs league (40) — lower is fairer</div>
           </div>
 
           <div class="schedule-table-container">
@@ -1027,19 +1028,61 @@
       return data;
     }
 
-    function calculateMOLSKI(teamData) {
-      let score = 0;
-      const dayDist  = Object.values(teamData.dayBreakdown);
-      const timeDist = Object.values(teamData.timeBreakdown);
+    // ── Build league-wide day & time distributions (used by MOLSKI) ──
+    function getLeagueDistributions() {
+      const leagueDayDist  = {};
+      const leagueTimeDist = {};
+      schedule.forEach(g => {
+        // Each game counts once toward league day/time totals
+        const iso = parseDateToISO(g.date);
+        if (iso) {
+          const day = new Date(iso + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long' });
+          leagueDayDist[day] = (leagueDayDist[day] || 0) + 1;
+        }
+        leagueTimeDist[g.time] = (leagueTimeDist[g.time] || 0) + 1;
+      });
+      return { leagueDayDist, leagueTimeDist };
+    }
 
-      const variance = (arr) => {
-        const avg = arr.reduce((a,b) => a+b, 0) / arr.length;
-        return arr.reduce((s, v) => s + Math.pow(v - avg, 2), 0) / arr.length;
-      };
-      score += Math.min(40, Math.sqrt(variance(dayDist))  * 8);
-      score += Math.min(40, Math.sqrt(variance(timeDist)) * 8);
-      const total = teamData.homeGames + teamData.awayGames;
-      score += Math.min(20, (Math.abs(teamData.homeGames - total / 2) / total) * 100);
+    // Compare a team's distribution to the league's expected distribution.
+    // Returns 0 (matches league perfectly) → ~1+ (heavily skewed vs league).
+    // Uses root-mean-squared deviation of fractions — so Sunday-heavy leagues
+    // don't penalise teams for playing mostly on Sundays.
+    function distributionDeviation(teamDist, leagueDist) {
+      const leagueTotal = Object.values(leagueDist).reduce((a,b) => a+b, 0);
+      const teamTotal   = Object.values(teamDist).reduce((a,b) => a+b, 0);
+      if (leagueTotal === 0 || teamTotal === 0) return 0;
+      let sumSq = 0;
+      Object.keys(leagueDist).forEach(key => {
+        const expected = leagueDist[key] / leagueTotal;
+        const actual   = (teamDist[key]  || 0) / teamTotal;
+        sumSq += Math.pow(actual - expected, 2);
+      });
+      return Math.sqrt(sumSq);
+    }
+
+    function calculateMOLSKI(teamData) {
+      const { leagueDayDist, leagueTimeDist } = getLeagueDistributions();
+      const teamTotal = teamData.homeGames + teamData.awayGames;
+      let score = 0;
+
+      // ① Time-slot spread vs league expectation (up to 40 pts)
+      //    Penalises a team whose times deviate from the league's slot mix.
+      const timeDev = distributionDeviation(teamData.timeBreakdown, leagueTimeDist);
+      score += Math.min(40, timeDev * 60);
+
+      // ② Home / Away split (up to 20 pts)
+      //    Simple deviation from 50-50.
+      if (teamTotal > 0) {
+        score += Math.min(20, (Math.abs(teamData.homeGames - teamTotal / 2) / teamTotal) * 100);
+      }
+
+      // ③ Day distribution vs league expectation (up to 40 pts)
+      //    Compares each team's day mix to the ACTUAL league day mix,
+      //    so a 92%-Sunday league doesn't penalise everyone for playing Sundays.
+      const dayDev = distributionDeviation(teamData.dayBreakdown, leagueDayDist);
+      score += Math.min(40, dayDev * 60);
+
       return Math.round(score);
     }
 
