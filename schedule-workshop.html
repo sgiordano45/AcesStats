@@ -499,6 +499,40 @@
     }
     .ogg-total-cell { background: #edf2f7; font-weight: 700; color: var(--text-dark); border-left: 2px solid var(--border-color); }
     .ogg-total-header { background: #1a6b4a !important; border-left: 2px solid rgba(255,255,255,0.3) !important; }
+
+    /* ── Share button & modal ── */
+    .btn-share-grid {
+      padding: 0.45rem 1rem;
+      background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+      color: white; border: none; border-radius: 7px;
+      font-size: 0.85rem; font-weight: 600; cursor: pointer;
+      display: inline-flex; align-items: center; gap: 0.4rem;
+      transition: all 0.2s ease;
+    }
+    .btn-share-grid:hover { opacity: 0.88; transform: translateY(-1px); box-shadow: var(--shadow-md); }
+    .share-modal-overlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,0.6); z-index: 9000;
+      align-items: center; justify-content: center;
+    }
+    .share-modal-overlay.active { display: flex; }
+    .share-modal-box {
+      background: #1e1e2e; border-radius: 16px;
+      padding: 1.75rem; max-width: 740px; width: 95%;
+      box-shadow: 0 24px 60px rgba(0,0,0,0.5);
+    }
+    .share-modal-title { font-size: 1.2rem; font-weight: 700; color: #fff; margin-bottom: 0.75rem; }
+    .share-preview-area {
+      background: #12121e; border-radius: 10px; padding: 0.75rem;
+      min-height: 100px; margin-bottom: 1rem;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .share-preview-area canvas { border-radius: 8px; max-width: 100%; }
+    .share-actions { display: flex; gap: 0.75rem; flex-wrap: wrap; justify-content: flex-end; }
+    .share-actions .btn-dl  { background: #22c55e; color: #fff; border: none; padding: 0.6rem 1.25rem; border-radius: 8px; font-weight: 600; cursor: pointer; }
+    .share-actions .btn-cp  { background: #3b82f6; color: #fff; border: none; padding: 0.6rem 1.25rem; border-radius: 8px; font-weight: 600; cursor: pointer; }
+    .share-actions .btn-cls { background: #4b5563; color: #fff; border: none; padding: 0.6rem 1.25rem; border-radius: 8px; font-weight: 600; cursor: pointer; }
+    #shareGridStatus { font-size: 0.88rem; color: #a5b4fc; margin-bottom: 0.75rem; min-height: 1.2em; }
   </style>
   <link rel="stylesheet" href="mobile-enhancements.css">
 </head>
@@ -645,7 +679,10 @@
 
       <!-- ══ OPPONENT MATCHUP GRID ══ -->
       <div class="opp-grid-section">
-        <h2>🔁 Opponent Matchup Grid</h2>
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.75rem;margin-bottom:1rem;">
+          <h2 style="margin:0;">🔁 Opponent Matchup Grid</h2>
+          <button class="btn-share-grid" onclick="openShareGrid('opp')">📤 Share Image</button>
+        </div>
         <div class="opp-grid-controls">
           <span class="opp-sort-label">Sort teams by:</span>
           <select class="opp-sort-select" id="oppGridSort" onchange="renderOpponentGrid()">
@@ -668,7 +705,10 @@
 
       <!-- ══ LEAGUE TIME DISTRIBUTION ══ -->
       <div class="opp-grid-section" style="margin-top:1.5rem;">
-        <h2>🕐 League-Wide Time Distribution</h2>
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.75rem;margin-bottom:0.5rem;">
+          <h2 style="margin:0;">🕐 League-Wide Time Distribution</h2>
+          <button class="btn-share-grid" onclick="openShareGrid('time')">📤 Share Image</button>
+        </div>
         <p style="font-size:0.88rem;color:var(--text-light);margin-bottom:1.25rem;">
           How many times each team plays each time slot — spot imbalances across the whole league at a glance.
         </p>
@@ -1653,7 +1693,145 @@
         : `✅ Time slots already well balanced — no swaps needed`;
     };
 
+    // ══════════════════════════════════════════
+    // SHARE GRID IMAGE (Opponent Grid + Time Distribution)
+    // ══════════════════════════════════════════
+    let _shareGridCanvas = null;
+    let _shareGridFilename = 'schedule-grid.png';
+
+    function loadHtml2Canvas() {
+      return new Promise((resolve, reject) => {
+        if (window.html2canvas) { resolve(window.html2canvas); return; }
+        const s = document.createElement('script');
+        s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+        s.onload  = () => resolve(window.html2canvas);
+        s.onerror = () => reject(new Error('Failed to load html2canvas'));
+        document.head.appendChild(s);
+      });
+    }
+
+    function buildGridShareCard(type) {
+      const isOpp  = type === 'opp';
+      const title  = isOpp ? '🔁 Opponent Matchup Grid' : '🕐 League-Wide Time Distribution';
+      const srcId  = isOpp ? 'opponentGridContainer' : 'timeDistContainer';
+      const tableHTML = document.getElementById(srcId)?.innerHTML || '';
+
+      return `<div style="
+        background:#fff;
+        border-radius:14px;
+        overflow:hidden;
+        font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+        box-shadow:0 4px 24px rgba(0,0,0,0.15);
+        min-width:500px;
+      ">
+        <!-- Header -->
+        <div style="
+          background:linear-gradient(135deg,#2d5016 0%,#1a6b4a 100%);
+          padding:1rem 1.5rem;
+          display:flex;align-items:center;justify-content:space-between;
+        ">
+          <div style="color:white;font-size:1.15rem;font-weight:800;">${title}</div>
+          <div style="color:rgba(255,255,255,0.8);font-size:0.78rem;font-weight:600;">⚾ Mountainside Aces</div>
+        </div>
+        <!-- Table -->
+        <div style="padding:1.25rem;overflow:auto;">
+          ${tableHTML}
+        </div>
+        <!-- Footer watermark -->
+        <div style="
+          background:#f7fafc;border-top:1px solid #e2e8f0;
+          padding:0.5rem 1.25rem;font-size:0.75rem;color:#718096;
+          display:flex;justify-content:space-between;
+        ">
+          <span>Schedule Workshop</span>
+          <span>stats.mountainsideaces.com</span>
+        </div>
+      </div>`;
+    }
+
+    window.openShareGrid = async function(type) {
+      if (!schedule.length) { alert('Load a schedule first.'); return; }
+      _shareGridFilename = type === 'opp' ? 'opponent-matchup-grid.png' : 'time-distribution.png';
+
+      const modal = document.getElementById('shareGridModal');
+      document.getElementById('shareGridTitle').textContent = type === 'opp' ? '📤 Share Opponent Grid' : '📤 Share Time Distribution';
+      document.getElementById('shareGridStatus').textContent = 'Generating image…';
+      document.getElementById('shareGridPreview').innerHTML = '';
+      document.getElementById('shareGridDownload').style.display = 'none';
+      document.getElementById('shareGridCopy').style.display    = 'none';
+      _shareGridCanvas = null;
+      modal.classList.add('active');
+
+      try {
+        const html2canvas = await loadHtml2Canvas();
+        const card = document.getElementById('shareGridCard');
+        card.innerHTML = buildGridShareCard(type);
+        await new Promise(r => setTimeout(r, 120));
+
+        const canvas = await html2canvas(card.firstElementChild, {
+          backgroundColor: null,
+          scale: 2,
+          useCORS: true,
+          logging: false,
+          scrollX: 0, scrollY: 0
+        });
+
+        _shareGridCanvas = canvas;
+        canvas.style.borderRadius = '8px';
+        canvas.style.maxWidth = '100%';
+        document.getElementById('shareGridPreview').appendChild(canvas);
+        document.getElementById('shareGridStatus').textContent = 'Tap "Save Image" to download or "Copy Image" to share.';
+        document.getElementById('shareGridDownload').style.display = 'inline-block';
+        document.getElementById('shareGridCopy').style.display    = 'inline-block';
+
+      } catch (err) {
+        console.error('Share grid error:', err);
+        document.getElementById('shareGridStatus').textContent = `Error: ${err.message}`;
+      }
+    };
+
+    window.closeShareGridModal = function() {
+      document.getElementById('shareGridModal').classList.remove('active');
+    };
+
+    window.downloadGridImage = function() {
+      if (!_shareGridCanvas) return;
+      const a = document.createElement('a');
+      a.download = _shareGridFilename;
+      a.href = _shareGridCanvas.toDataURL('image/png');
+      a.click();
+    };
+
+    window.copyGridImage = async function() {
+      if (!_shareGridCanvas) return;
+      try {
+        const blobPromise = new Promise(r => _shareGridCanvas.toBlob(r, 'image/png'));
+        await navigator.clipboard.write([new ClipboardItem({ 'image/png': blobPromise })]);
+        const btn = document.getElementById('shareGridCopy');
+        btn.textContent = '✓ Copied!';
+        setTimeout(() => { btn.textContent = '📋 Copy Image'; }, 2000);
+      } catch {
+        downloadGridImage();
+      }
+    };
+
   </script>
+  <!-- Share modal -->
+  <div id="shareGridModal" class="share-modal-overlay">
+    <div class="share-modal-box">
+      <div class="share-modal-title" id="shareGridTitle">📤 Share Image</div>
+      <div id="shareGridStatus">Generating image…</div>
+      <div class="share-preview-area" id="shareGridPreview"></div>
+      <div class="share-actions">
+        <button class="btn-dl"  id="shareGridDownload" onclick="downloadGridImage()" style="display:none;">💾 Save Image</button>
+        <button class="btn-cp"  id="shareGridCopy"     onclick="copyGridImage()"     style="display:none;">📋 Copy Image</button>
+        <button class="btn-cls" onclick="closeShareGridModal()">Close</button>
+      </div>
+    </div>
+  </div>
+  <!-- Off-screen capture card -->
+  <div id="shareGridCard" style="position:fixed;left:-9999px;top:0;pointer-events:none;"></div>
+
   <script src="mobile-enhancements.js"></script>
 </body>
 </html>
