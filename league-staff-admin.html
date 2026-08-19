@@ -2905,6 +2905,13 @@
     updateExportSection();
   }
 
+  // Safely embed a JS value inside an HTML attribute quoted with double quotes.
+  // JSON.stringify adds double quotes which would close the attribute early;
+  // replacing them with &quot; lets the browser unescape them before parsing the JS.
+  function attrJson(val) {
+    return JSON.stringify(val).replace(/"/g, '&quot;');
+  }
+
   // ── Assignment table render ─────────────────────────────────
   function renderAssignmentTable() {
     const tbody = document.getElementById('assignmentTableBody');
@@ -2951,7 +2958,7 @@
       } else if (row.isReview) {
         // Candidate dropdown
         matchCell = `
-          <select class="candidate-select" onchange="selectCandidate(${JSON.stringify(row.uploadedName)}, this.value, this)">
+          <select class="candidate-select" onchange="selectCandidate(${attrJson(row.uploadedName)}, this.value, this)">
             <option value="">— pick a match —</option>
             ${row.candidates.map((c,ci) => `<option value="${ci}">${c.player.name} (${c.score}% · ${c.lastTeam})</option>`).join('')}
             <option value="new">🆕 New player (no history)</option>
@@ -2978,13 +2985,13 @@
 
       const destBtns = `
         <div class="dest-btns">
-          ${canKeep ? `<button class="dest-btn ${dest==='keep'?'active-keep':''}" onclick="setDest(${JSON.stringify(row.uploadedName)},'keep')">${keepLabel}</button>` : ''}
-          <button class="dest-btn ${dest==='draft'?'active-draft':''}" onclick="setDest(${JSON.stringify(row.uploadedName)},'draft')">🏊 Draft Pool</button>
-          <button class="dest-btn ${dest==='skip'?'active-skip':''}" onclick="setDest(${JSON.stringify(row.uploadedName)},'skip')">⏭ Skip</button>
+          ${canKeep ? `<button class="dest-btn ${dest==='keep'?'active-keep':''}" onclick="setDest(${attrJson(row.uploadedName)},'keep')">${keepLabel}</button>` : ''}
+          <button class="dest-btn ${dest==='draft'?'active-draft':''}" onclick="setDest(${attrJson(row.uploadedName)},'draft')">🏊 Draft Pool</button>
+          <button class="dest-btn ${dest==='skip'?'active-skip':''}" onclick="setDest(${attrJson(row.uploadedName)},'skip')">⏭ Skip</button>
         </div>`;
 
       return `
-        <tr data-name="${row.uploadedName}" class="${!dest?'needs-review':''} ${matchHidden||filterHidden?'hidden-row':''}">
+        <tr data-name="${row.uploadedName.replace(/"/g, '&quot;')}" class="${!dest?'needs-review':''} ${matchHidden||filterHidden?'hidden-row':''}">
           <td><span class="uploaded-name">${row.uploadedName}</span></td>
           <td>${matchCell}</td>
           <td>${row.lastTeam ? `<span style="font-size:.82rem;font-weight:600;color:${teamColorImport(row.lastTeam)}">${row.lastTeam}</span>${disbandedTeams.includes(row.lastTeam)?'<br><span style="font-size:.7rem;color:var(--danger-color);font-weight:700">DISBANDED</span>':''}` : '<span style="color:var(--text-light);font-size:.8rem">—</span>'}</td>
