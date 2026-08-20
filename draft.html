@@ -239,6 +239,13 @@
     .toast.error { background:var(--red);color:#fff; }
     .toast.info { background:var(--blue);color:#fff; }
 
+    /* Audio Arm Button */
+    .audio-arm-wrap { margin-top:1.5rem;display:flex;flex-direction:column;align-items:center;gap:.6rem; }
+    .audio-arm-btn { display:inline-flex;align-items:center;gap:.6rem;padding:.7rem 1.4rem;border-radius:10px;border:1px solid var(--border);background:rgba(255,255,255,.06);color:var(--text-muted);font-size:.88rem;font-weight:600;cursor:pointer;transition:all .2s;font-family:'DM Sans',sans-serif; }
+    .audio-arm-btn:hover { background:rgba(255,255,255,.12);border-color:var(--accent);color:var(--text); }
+    .audio-arm-btn.armed { border-color:var(--green);background:rgba(16,185,129,.1);color:var(--green); }
+    .audio-arm-note { font-size:.75rem;color:var(--text-muted); }
+
     /* Responsive */
     @media(max-width:900px) {
       .draft-layout { grid-template-columns:1fr;grid-template-rows:auto auto auto auto;height:auto;overflow:visible; }
@@ -254,6 +261,8 @@
   </style>
 </head>
 <body>
+
+<audio id="draftIntroAudio" src="https://www.redringtones.com/wp-content/uploads/2022/03/nfl-draft-sound.mp3" preload="auto"></audio>
 
 <div id="loadingOverlay">
   <div class="load-ball">⚾</div>
@@ -355,6 +364,10 @@
     <h2 style="font-family:'Bebas Neue',sans-serif;font-size:2.5rem;letter-spacing:2px;color:var(--accent);margin-bottom:.75rem;">Draft Not Started</h2>
     <p style="color:var(--text-muted);">The draft hasn't begun yet. This page will update automatically when it goes live.</p>
     <p style="margin-top:.75rem;font-size:1rem;color:var(--accent);">🕗 Draft goes live at <strong>8:30 PM Eastern</strong></p>
+    <div class="audio-arm-wrap">
+      <button class="audio-arm-btn" id="audioArmBtn" onclick="armDraftAudio()">🔊 Enable Draft Intro Sound</button>
+      <span class="audio-arm-note">Click to hear the fanfare when the draft kicks off</span>
+    </div>
   </div>
 </div>
 
@@ -447,6 +460,33 @@
 
   // ── State ──────────────────────────────────────────────────
   let currentUser = null, userProfile = null, canView = false, canPick = false;
+  let audioArmed = false;
+
+  // ── Draft Intro Audio ──────────────────────────────────────
+  window.armDraftAudio = () => {
+    const audio = document.getElementById('draftIntroAudio');
+    if (!audio) return;
+    // Must call play() inside a user-gesture handler to satisfy browser autoplay policy
+    audio.volume = 1;
+    audio.play().then(() => {
+      audio.pause();
+      audio.currentTime = 0;
+      audioArmed = true;
+      const btn = document.getElementById('audioArmBtn');
+      if (btn) { btn.textContent = '✅ Sound Armed — Ready!'; btn.classList.add('armed'); btn.disabled = true; }
+    }).catch(() => {
+      const btn = document.getElementById('audioArmBtn');
+      if (btn) btn.textContent = '⚠️ Could not enable audio — try again';
+    });
+  };
+
+  function playDraftIntro() {
+    const audio = document.getElementById('draftIntroAudio');
+    if (!audio) return;
+    audio.currentTime = 0;
+    audio.volume = 1;
+    audio.play().catch(() => {}); // ignore if blocked
+  }
   let offseasonTeams    = {};   // { teamName: { maxRoster, players[] } }
   let unassignedPlayers = [];   // draft pool from offseasonRosters.unassignedPlayers
   let seasonType        = 'fall-to-summer';
@@ -705,6 +745,7 @@
         offseasonTeamsSnapshot:offseasonTeams
       });
       activateDraftUI(); subscribeToLiveDraft(); showPhase('phaseDraft'); renderDraftPhase();
+      playDraftIntro();
       toast('Draft started! 🎉','success');
     } catch(e) { console.error(e); toast('Error starting draft: '+e.message,'error'); }
   };
@@ -749,7 +790,9 @@
       const d = snap.data(), prev = currentPickIndex;
       draftPicks=d.picks||[]; currentPickIndex=d.currentPickIndex||0;
       if (d.status==='active' && !document.getElementById('phaseDraft').classList.contains('active')) {
-        restoreState(d); activateDraftUI(); showPhase('phaseDraft'); renderDraftPhase(); return;
+        restoreState(d); activateDraftUI(); showPhase('phaseDraft'); renderDraftPhase();
+        if (audioArmed) playDraftIntro();
+        return;
       }
       if (d.status==='complete') { clearTimer(); showPhase('phaseComplete'); renderCompletePage(); return; }
       if (prev!==currentPickIndex) renderDraftPhase();
