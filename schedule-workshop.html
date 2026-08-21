@@ -660,13 +660,6 @@
               <div id="aTimeBreakdown"></div>
             </div>
 
-            <!-- Time by week chart -->
-            <div class="analyzer-section">
-              <h3>📈 Time Slots by Week</h3>
-              <p style="font-size:0.8rem;color:var(--text-light);margin-bottom:0.75rem;">Each dot is a game; the line connects your first game each week. Bye weeks show as gaps.</p>
-              <div id="aTimeChart"></div>
-            </div>
-
             <!-- Opponents -->
             <div class="analyzer-section">
               <h3>⚾ Opponents</h3>
@@ -723,6 +716,20 @@
         <div class="opp-grid-scroll">
           <div id="timeDistContainer"></div>
         </div>
+      </div>
+
+      <!-- ══ TIME SLOTS BY WEEK CHART ══ -->
+      <div class="opp-grid-section" style="margin-top:1.5rem;" id="timeByWeekSection" style="display:none;">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.75rem;margin-bottom:0.75rem;">
+          <h2 style="margin:0;">📈 Time Slots by Week</h2>
+          <select id="timeChartTeamSelect" class="opp-sort-select" onchange="renderTimeByWeekChartSection()">
+            <option value="">— select a team —</option>
+          </select>
+        </div>
+        <p style="font-size:0.88rem;color:var(--text-light);margin-bottom:1rem;">
+          Each dot is a game. Gold = doubleheader. Dashed line = bye week gap. Spot if a team is locked into early or late slots all season.
+        </p>
+        <div id="timeByWeekChart" style="overflow-x:auto;"></div>
       </div>
 
     </div><!-- /workshopContent -->
@@ -826,6 +833,7 @@
       renderAnalyzer();
       renderOpponentGrid();
       renderTimeDistribution();
+      populateTimeChartTeamSelect();
     }
 
     // ══════════════════════════════════════════
@@ -1114,87 +1122,121 @@
       return h;
     }
 
-    function renderTimeByWeekChart(d) {
+    // ── Time-by-week SVG chart ──────────────────────────────────────────────
+    function buildTimeByWeekSVG(teamName) {
+      // Use the raw schedule array (has .week) — buildScheduleData strips it
       const allWeeks = [...new Set(schedule.map(g => parseInt(g.week)))].sort((a,b)=>a-b);
       const allSlots = [...new Set(schedule.map(g => g.time).filter(Boolean))]
                          .sort((a,b) => getTimeHour(a) - getTimeHour(b));
-      if (!allSlots.length || !allWeeks.length) return '<div style="color:#999;font-size:0.85rem;padding:0.5rem 0;">No data</div>';
+      if (!allSlots.length || !allWeeks.length)
+        return '<p style="color:#999;font-size:0.9rem;">No schedule data yet.</p>';
 
-      const W = 520, H = 160;
-      const PAD = { top:14, right:14, bottom:28, left:60 };
-      const CW  = W - PAD.left - PAD.right;
-      const CH  = H - PAD.top  - PAD.bottom;
+      const W = 760, H = 220;
+      const PAD = { top:18, right:20, bottom:40, left:80 };
+      const CW = W - PAD.left - PAD.right;
+      const CH = H - PAD.top  - PAD.bottom;
 
-      const xOf  = w => allWeeks.length < 2
+      const xOf = w => allWeeks.length < 2
         ? PAD.left + CW / 2
         : PAD.left + ((w - allWeeks[0]) / (allWeeks[allWeeks.length-1] - allWeeks[0])) * CW;
-      const yOf  = s => allSlots.length < 2
+      const yOf = s => allSlots.length < 2
         ? PAD.top + CH / 2
         : PAD.top + (allSlots.indexOf(s) / (allSlots.length - 1)) * CH;
 
-      // grid + y labels
       let svg = '';
+
+      // Horizontal grid lines + y-axis labels
       allSlots.forEach(s => {
         const y = yOf(s);
         svg += `<line x1="${PAD.left}" y1="${y}" x2="${W-PAD.right}" y2="${y}" stroke="#e2e8f0" stroke-width="1"/>`;
-        svg += `<text x="${PAD.left-6}" y="${y+4}" text-anchor="end" font-size="10" font-family="'Segoe UI',Arial,sans-serif" fill="#94a3b8">${s}</text>`;
+        svg += `<text x="${PAD.left-8}" y="${y+4}" text-anchor="end" font-size="11" font-family="'Segoe UI',Arial,sans-serif" fill="#64748b">${s}</text>`;
       });
 
-      // x axis ticks (week labels — thin them if > 16 weeks)
-      const step = allWeeks.length > 16 ? 2 : 1;
-      allWeeks.forEach((w,i) => {
-        if (i % step !== 0) return;
+      // Vertical tick lines + x-axis labels (thin if many weeks)
+      const step = allWeeks.length > 18 ? 2 : 1;
+      allWeeks.forEach((w, i) => {
         const x = xOf(w);
         svg += `<line x1="${x}" y1="${PAD.top}" x2="${x}" y2="${H-PAD.bottom}" stroke="#f1f5f9" stroke-width="1"/>`;
-        svg += `<text x="${x}" y="${H-PAD.bottom+14}" text-anchor="middle" font-size="10" font-family="'Segoe UI',Arial,sans-serif" fill="#94a3b8">W${w}</text>`;
+        if (i % step === 0) {
+          svg += `<text x="${x}" y="${H-PAD.bottom+16}" text-anchor="middle" font-size="11" font-family="'Segoe UI',Arial,sans-serif" fill="#94a3b8">W${w}</text>`;
+        }
       });
 
-      // build week→[times] for this team
+      // Axis border lines
+      svg += `<line x1="${PAD.left}" y1="${PAD.top}" x2="${PAD.left}" y2="${H-PAD.bottom}" stroke="#cbd5e1" stroke-width="1"/>`;
+      svg += `<line x1="${PAD.left}" y1="${H-PAD.bottom}" x2="${W-PAD.right}" y2="${H-PAD.bottom}" stroke="#cbd5e1" stroke-width="1"/>`;
+
+      // Build week→[times] from raw schedule for the selected team
       const wkMap = {};
-      d.games.forEach(g => {
+      schedule.forEach(g => {
+        if (g.homeTeam !== teamName && g.awayTeam !== teamName) return;
         const w = parseInt(g.week);
         if (!wkMap[w]) wkMap[w] = [];
         if (g.time) wkMap[w].push(g.time);
       });
       const playedWeeks = allWeeks.filter(w => wkMap[w] && wkMap[w].length);
 
-      // lines connecting first slot of each consecutive played week
+      // Lines connecting the earliest game of each consecutive played week
       for (let i = 0; i < playedWeeks.length - 1; i++) {
         const w1 = playedWeeks[i], w2 = playedWeeks[i+1];
-        const t1 = wkMap[w1].sort((a,b)=>getTimeHour(a)-getTimeHour(b))[0];
-        const t2 = wkMap[w2].sort((a,b)=>getTimeHour(a)-getTimeHour(b))[0];
-        if (!allSlots.includes(t1) || !allSlots.includes(t2)) return;
-        // dashed line if there's a bye week between them
-        const gap = w2 - w1 > 1;
+        const t1 = [...wkMap[w1]].sort((a,b)=>getTimeHour(a)-getTimeHour(b))[0];
+        const t2 = [...wkMap[w2]].sort((a,b)=>getTimeHour(a)-getTimeHour(b))[0];
+        if (!allSlots.includes(t1) || !allSlots.includes(t2)) continue;
+        const byeGap = w2 - w1 > 1;
         svg += `<line x1="${xOf(w1)}" y1="${yOf(t1)}" x2="${xOf(w2)}" y2="${yOf(t2)}"
-                  stroke="#1a6b4a" stroke-width="1.8" stroke-opacity="0.55"
-                  ${gap ? 'stroke-dasharray="4 3"' : ''}/>`;
+                  stroke="#1a6b4a" stroke-width="2" stroke-opacity="0.6"
+                  ${byeGap ? 'stroke-dasharray="5 4"' : ''}/>`;
       }
 
-      // dots — all games
+      // Dots for every game
       playedWeeks.forEach(w => {
         const sorted = [...wkMap[w]].sort((a,b)=>getTimeHour(a)-getTimeHour(b));
-        sorted.forEach((t, ti) => {
+        sorted.forEach(t => {
           if (!allSlots.includes(t)) return;
-          const x = xOf(w), y = yOf(t);
           const isDH = sorted.length > 1;
-          svg += `<circle cx="${x}" cy="${y}" r="${isDH?5:4.5}"
-                    fill="${isDH?'#f59e0b':'#1a6b4a'}" stroke="white" stroke-width="1.5">
+          svg += `<circle cx="${xOf(w)}" cy="${yOf(t)}" r="${isDH?6:5}"
+                    fill="${isDH?'#f59e0b':'#1a6b4a'}" stroke="white" stroke-width="2">
                     <title>Week ${w}: ${t}${isDH?' (DH)':''}</title>
                   </circle>`;
         });
       });
 
-      // legend
-      svg += `<circle cx="${PAD.left}" cy="${H-2}" r="4" fill="#1a6b4a"/>`;
-      svg += `<text x="${PAD.left+8}" y="${H+1}" font-size="9" font-family="'Segoe UI',Arial,sans-serif" fill="#64748b">Regular</text>`;
-      svg += `<circle cx="${PAD.left+65}" cy="${H-2}" r="4" fill="#f59e0b"/>`;
-      svg += `<text x="${PAD.left+73}" y="${H+1}" font-size="9" font-family="'Segoe UI',Arial,sans-serif" fill="#64748b">Doubleheader</text>`;
-      svg += `<line x1="${PAD.left+158}" y1="${H-2}" x2="${PAD.left+173}" y2="${H-2}" stroke="#1a6b4a" stroke-width="1.8" stroke-dasharray="4 3"/>`;
-      svg += `<text x="${PAD.left+177}" y="${H+1}" font-size="9" font-family="'Segoe UI',Arial,sans-serif" fill="#64748b">Bye gap</text>`;
+      // Legend (inside the SVG viewBox below the chart)
+      const LY = H - PAD.bottom + 28;
+      svg += `<circle cx="${PAD.left}" cy="${LY}" r="5" fill="#1a6b4a"/>`;
+      svg += `<text x="${PAD.left+10}" y="${LY+4}" font-size="11" font-family="'Segoe UI',Arial,sans-serif" fill="#475569">Regular game</text>`;
+      svg += `<circle cx="${PAD.left+110}" cy="${LY}" r="5" fill="#f59e0b"/>`;
+      svg += `<text x="${PAD.left+120}" y="${LY+4}" font-size="11" font-family="'Segoe UI',Arial,sans-serif" fill="#475569">Doubleheader</text>`;
+      svg += `<line x1="${PAD.left+228}" y1="${LY}" x2="${PAD.left+248}" y2="${LY}" stroke="#1a6b4a" stroke-width="2" stroke-dasharray="5 4"/>`;
+      svg += `<text x="${PAD.left+253}" y="${LY+4}" font-size="11" font-family="'Segoe UI',Arial,sans-serif" fill="#475569">Bye gap</text>`;
 
-      return `<svg viewBox="0 0 ${W} ${H+12}" style="width:100%;height:auto;display:block;overflow:visible;"
-                xmlns="http://www.w3.org/2000/svg">${svg}</svg>`;
+      return `<svg viewBox="0 0 ${W} ${H+14}" style="width:100%;max-width:${W}px;height:auto;display:block;overflow:visible;" xmlns="http://www.w3.org/2000/svg">${svg}</svg>`;
+    }
+
+    window.renderTimeByWeekChartSection = function() {
+      const sel    = document.getElementById('timeChartTeamSelect');
+      const team   = sel ? sel.value : '';
+      const target = document.getElementById('timeByWeekChart');
+      if (!target) return;
+      if (!team) {
+        target.innerHTML = '<p style="color:#94a3b8;font-size:0.9rem;padding:0.5rem 0;">Select a team above to view their time-slot chart.</p>';
+        return;
+      }
+      target.innerHTML = buildTimeByWeekSVG(team);
+    };
+
+    function populateTimeChartTeamSelect() {
+      const sel = document.getElementById('timeChartTeamSelect');
+      if (!sel) return;
+      const allTeams = [...teams].sort();
+      const cur = sel.value;
+      sel.innerHTML = '<option value="">— select a team —</option>' +
+        allTeams.map(t => `<option value="${t}" ${t===cur?'selected':''}>${t}</option>`).join('');
+      // Auto-select first team if none chosen yet
+      if (!cur && allTeams.length) {
+        sel.value = allTeams[0];
+      }
+      renderTimeByWeekChartSection();
     }
 
     function renderAnalyzer() {
@@ -1275,9 +1317,6 @@
               <div class="progress-bar"><div class="progress-fill" style="width:${pct}%"></div></div>
             </div>`;
           }).join('');
-
-      // Time-by-week chart
-      document.getElementById('aTimeChart').innerHTML = renderTimeByWeekChart(d);
 
       // Opponents
       document.getElementById('aOpponents').innerHTML =
