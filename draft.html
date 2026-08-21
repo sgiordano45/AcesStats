@@ -459,7 +459,7 @@
   const DRAFT_ID     = 'current';
 
   // ── State ──────────────────────────────────────────────────
-  let currentUser = null, userProfile = null, canView = false, canPick = false;
+  let currentUser = null, userProfile = null, canView = false, canPick = false, canAdmin = false;
   let audioArmed = false;
 
   // ── Draft Intro Audio ──────────────────────────────────────
@@ -525,8 +525,9 @@
         }
         const role = userProfile.role || userProfile.userRole || '';
         const tr   = userProfile.teamRoles || {};
-        canView = true;
-        canPick = ['league-staff','admin'].includes(role) ||
+        canView  = true;
+        canAdmin = ['league-staff','admin'].includes(role);
+        canPick  = canAdmin ||
           Object.values(tr).some(r => ['captain','team-staff'].includes(r?.role) && r?.status==='active');
       }
     } catch(e) { console.error(e); }
@@ -571,8 +572,8 @@
       if (d.status === 'complete')  { restoreState(d); showPhase('phaseComplete'); renderCompletePage(); return; }
     }
     renderSetupPhase();
-    showPhase(canPick ? 'phaseSetup' : 'phaseWaiting');
-    if (!canPick) subscribeToLiveDraft(); // watch for draft to start
+    showPhase(canAdmin ? 'phaseSetup' : 'phaseWaiting');
+    if (!canAdmin) subscribeToLiveDraft(); // watch for draft to start
   }
 
   function restoreState(d) {
@@ -765,7 +766,7 @@
       document.getElementById('liveBadge').style.display='flex';
     }
     document.getElementById('roundBadge').style.display='inline';
-    if (canPick) {
+    if (canAdmin) {
       document.getElementById('resetDraftBtn').style.display='inline-flex';
       document.getElementById('undoPickBtn').style.display='inline-flex';
     }
@@ -803,7 +804,7 @@
   function renderDraftPhase() {
     renderClockBar(); renderPlayerList(); renderBoard(); renderRosters(); startTimerIfEnabled(); updateHeaderRound();
     const undoBtn = document.getElementById('undoPickBtn');
-    if (undoBtn && canPick) undoBtn.style.display = draftPicks.length ? 'inline-flex' : 'none';
+    if (undoBtn && canAdmin) undoBtn.style.display = draftPicks.length ? 'inline-flex' : 'none';
   }
 
   const draftedIds = () => new Set(draftPicks.filter(p=>p.player).map(p=>p.player.id));
@@ -811,8 +812,8 @@
 
   function renderClockBar() {
     const done = currentPickIndex >= snakeOrder.length;
-    document.getElementById('completeBtn').style.display = done && canPick ? 'inline-flex' : 'none';
-    document.getElementById('skipBtn').style.display     = done || !canPick ? 'none' : 'inline-flex';
+    document.getElementById('completeBtn').style.display = done && canAdmin ? 'inline-flex' : 'none';
+    document.getElementById('skipBtn').style.display     = done || !canAdmin ? 'none' : 'inline-flex';
     if (done) {
       const t=document.getElementById('clockTeam'); t.textContent='ALL PICKS COMPLETE'; t.style.color='var(--green)';
       clearTimer(); return;
