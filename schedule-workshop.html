@@ -577,7 +577,7 @@
           <div class="legend">
             <div class="legend-item"><span>🕐</span> Use "Balance Time Slots" to spread 8 AM – 1 PM slots evenly across all teams</div>
             <div class="legend-item"><span>🚨</span> Fall: bye weeks should not occur — use the banner above to identify them</div>
-            <div class="legend-item"><span>📊</span> MOLSKI = time-slot spread (55) + day mix vs league (45) — lower is fairer</div>
+            <div class="legend-item"><span>📊</span> MOLSKI = time-slot spread (40) + slot quality vs league (15) + day mix vs league (45) — lower is fairer</div>
           </div>
 
           <div class="schedule-table-container">
@@ -1080,16 +1080,42 @@
       return Math.sqrt(sumSq);
     }
 
+    // Desirability by hour-of-day (1 = worst, 6 = best).
+    // Evening slots map to their daytime equivalents:
+    //   7pm(19) = 8am(8)=3,  8pm(20) = 10am(10)=6,  9pm(21) = 11am(11)=4
+    const SLOT_DESIRABILITY = { 13:1, 12:2, 8:3, 19:3, 11:4, 21:4, 9:5, 10:6, 20:6 };
+
+    function getSlotDesirability(time) {
+      const h = getTimeHour(time);
+      return SLOT_DESIRABILITY[h] ?? 3; // unknown slots default to middle
+    }
+
+    function weightedAvgDesirability(timeBreakdown) {
+      let total = 0, count = 0;
+      Object.entries(timeBreakdown).forEach(([t, n]) => {
+        total += getSlotDesirability(t) * n;
+        count += n;
+      });
+      return count > 0 ? total / count : 3;
+    }
+
     function calculateMOLSKI(teamData) {
       const { leagueDayDist, leagueTimeDist } = getLeagueDistributions();
       let score = 0;
 
-      // ① Time-slot spread vs league expectation (up to 55 pts)
-      //    Penalises a team whose times deviate from the league's slot mix.
+      // ① Time-slot spread vs league expectation (up to 40 pts)
+      //    Penalises a team concentrated in fewer slots than the league.
       const timeDev = distributionDeviation(teamData.timeBreakdown, leagueTimeDist);
-      score += Math.min(55, timeDev * 82.5);
+      score += Math.min(40, timeDev * 60);
 
-      // ② Day distribution vs league expectation (up to 45 pts)
+      // ② Time-slot quality vs league average (up to 15 pts)
+      //    Penalises a team whose games skew toward less-desirable slots
+      //    compared to the league's weighted average desirability (1–6 scale).
+      const teamDesir   = weightedAvgDesirability(teamData.timeBreakdown);
+      const leagueDesir = weightedAvgDesirability(leagueTimeDist);
+      score += Math.min(15, Math.max(0, leagueDesir - teamDesir) * 10);
+
+      // ③ Day distribution vs league expectation (up to 45 pts)
       //    Compares each team's day mix to the ACTUAL league day mix,
       //    so a 92%-Sunday league doesn't penalise everyone for playing Sundays.
       const dayDev = distributionDeviation(teamData.dayBreakdown, leagueDayDist);
