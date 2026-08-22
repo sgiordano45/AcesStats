@@ -546,6 +546,34 @@
     }
     #legacymatchAlert { margin-top: 1rem; }
 
+    /* ===== Field Copy Summer->Fall tool ===== */
+    .fieldcopy-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+      margin-top: 1rem;
+    }
+    .fieldcopy-table th {
+      background: var(--primary-color);
+      color: white;
+      padding: 0.65rem 0.75rem;
+      text-align: left;
+      font-weight: 600;
+    }
+    .fieldcopy-table td {
+      padding: 0.5rem 0.75rem;
+      border-bottom: 1px solid var(--border-color);
+      vertical-align: middle;
+    }
+    .fieldcopy-table tr:hover td { background: var(--hover-color); }
+    .fc-copy   td { background: #f0fff4; }
+    .fc-same   td { background: #f7fafc; color: #718096; }
+    .fc-no-summer td { background: #fffbeb; color: #92400e; }
+    .tag-fc-copy   { background: #48bb78; color: white; padding: 0.15rem 0.5rem; border-radius: 10px; font-size: 0.75rem; font-weight: 600; }
+    .tag-fc-same   { background: #a0aec0; color: white; padding: 0.15rem 0.5rem; border-radius: 10px; font-size: 0.75rem; font-weight: 600; }
+    .tag-fc-skip   { background: #ed8936; color: white; padding: 0.15rem 0.5rem; border-radius: 10px; font-size: 0.75rem; font-weight: 600; }
+    #fieldCopyAlert { margin-top: 1rem; }
+
     /* ===== Player Profile Sync tool ===== */
     .profsync-table {
       width: 100%;
@@ -885,6 +913,44 @@
             </tr>
           </thead>
           <tbody id="profileSyncTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ===== Field Copy: 2026 Summer → Fall ===== -->
+    <hr style="margin:2rem 0; border:none; border-top:2px solid var(--border-color);">
+    <div class="card">
+      <h2>&#x1F4CB; Copy Fields: 2026 Summer &#x2192; 2026 Fall</h2>
+      <div class="info-box">
+        <strong>Source:</strong> rosters/2026-summer-{team}<br>
+        <strong>Target:</strong> rosters/2026-fall-{team}<br>
+        Copies <strong>number</strong>, <strong>position</strong>, <strong>throws</strong>, and <strong>bats</strong>
+        from each summer roster player to the matching fall roster player (matched by <code>id</code>, then <code>name</code>).
+        Blank / dash summer values are skipped.
+      </div>
+      <div id="fieldCopyAlert" class="alert"></div>
+      <div class="button-group">
+        <button class="btn-primary"   id="fieldCopyScanBtn">&#x1F50D; Scan Fields</button>
+        <button class="btn-secondary btn-patch-all" id="fieldCopyApplyBtn" disabled>&#x26A1; Copy All to Fall</button>
+      </div>
+    </div>
+
+    <div class="card" id="fieldCopyResultCard" style="display: none;">
+      <h3>Field Copy Preview</h3>
+      <div class="authid-summary" id="fieldCopySummary"></div>
+      <div style="overflow-x:auto;">
+        <table class="fieldcopy-table" id="fieldCopyTable">
+          <thead>
+            <tr>
+              <th>Player</th>
+              <th>Team</th>
+              <th>Field</th>
+              <th>Summer Value</th>
+              <th>Fall Value (current)</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="fieldCopyTableBody"></tbody>
         </table>
       </div>
     </div>
@@ -2953,6 +3019,207 @@
 
     onAuthStateChanged(authPS, async user => {
       if (user) await populatePSSeasonSelect();
+    });
+  </script>
+
+  <!-- ===== Field Copy: 2026 Summer → Fall script ===== -->
+  <script type="module">
+    import { getApp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
+    import { getFirestore, collection, getDocs, doc, writeBatch } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
+    import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js';
+
+    const appFC   = getApp();
+    const dbFC    = getFirestore(appFC);
+    const authFC  = getAuth(appFC);
+
+    const COPY_FIELDS = ['number', 'position', 'throws', 'bats'];
+    const BLANK       = v => v === undefined || v === null || String(v).trim() === '' || String(v).trim() === '-';
+
+    // rows collected during scan: { team, playerName, field, summerVal, fallVal, fallDocId, fallPlayerIndex }
+    let fcRows = [];
+
+    function fcAlert(msg, type = 'error') {
+      const el = document.getElementById('fieldCopyAlert');
+      el.textContent = msg;
+      el.className   = `alert ${type === 'success' ? 'alert-success' : type === 'info' ? 'alert-info' : 'alert-error'}`;
+      el.style.display = msg ? 'block' : 'none';
+    }
+
+    function escFC(s) {
+      return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    document.getElementById('fieldCopyScanBtn').addEventListener('click', async () => {
+      fcRows = [];
+      fcAlert('');
+      const scanBtn  = document.getElementById('fieldCopyScanBtn');
+      const applyBtn = document.getElementById('fieldCopyApplyBtn');
+      scanBtn.disabled  = true;
+      applyBtn.disabled = true;
+      document.getElementById('fieldCopyResultCard').style.display = 'none';
+      fcAlert('Scanning rosters…', 'info');
+
+      try {
+        // Load all rosters docs
+        const snap = await getDocs(collection(dbFC, 'rosters'));
+        const summerDocs = {};
+        const fallDocs   = {};
+
+        snap.forEach(d => {
+          const id = d.id;
+          if (id.startsWith('2026-summer-')) summerDocs[id] = { id, data: d.data() };
+          if (id.startsWith('2026-fall-'))   fallDocs[id]   = { id, data: d.data() };
+        });
+
+        const summerKeys = Object.keys(summerDocs);
+        if (!summerKeys.length) { fcAlert('No 2026-summer-* roster docs found.'); scanBtn.disabled = false; return; }
+
+        // Build rows
+        summerKeys.forEach(sumId => {
+          const teamName = sumId.replace('2026-summer-', '');
+          const fallId   = `2026-fall-${teamName}`;
+          const sumData  = summerDocs[sumId].data;
+          const fallData = fallDocs[fallId]?.data;
+
+          const sumPlayers  = sumData.players  || [];
+          const fallPlayers = fallData?.players || [];
+
+          sumPlayers.forEach(sp => {
+            // Find matching fall player by id, then by name (case-insensitive)
+            let fallIdx = fallPlayers.findIndex(fp => fp.id && sp.id && fp.id === sp.id);
+            if (fallIdx === -1) {
+              const spName = (sp.name || '').toLowerCase().trim();
+              fallIdx = fallPlayers.findIndex(fp => (fp.name || '').toLowerCase().trim() === spName);
+            }
+
+            const fp = fallIdx !== -1 ? fallPlayers[fallIdx] : null;
+
+            COPY_FIELDS.forEach(field => {
+              const sumVal  = sp[field];
+              const fallVal = fp ? fp[field] : undefined;
+
+              if (BLANK(sumVal)) {
+                // Summer value blank — skip but still record for display
+                fcRows.push({ team: teamName, playerName: sp.name || sp.id || '?', field,
+                              summerVal: sumVal, fallVal, fallDocId: fallId, fallPlayerIndex: fallIdx,
+                              status: 'skip' });
+              } else if (!fp) {
+                // Player not found in fall roster — skip
+                fcRows.push({ team: teamName, playerName: sp.name || sp.id || '?', field,
+                              summerVal: sumVal, fallVal: '(player not in fall)', fallDocId: fallId, fallPlayerIndex: -1,
+                              status: 'skip' });
+              } else if (String(sumVal).trim() === String(fallVal ?? '').trim()) {
+                fcRows.push({ team: teamName, playerName: sp.name || sp.id || '?', field,
+                              summerVal: sumVal, fallVal, fallDocId: fallId, fallPlayerIndex: fallIdx,
+                              status: 'same' });
+              } else {
+                fcRows.push({ team: teamName, playerName: sp.name || sp.id || '?', field,
+                              summerVal: sumVal, fallVal, fallDocId: fallId, fallPlayerIndex: fallIdx,
+                              status: 'copy' });
+              }
+            });
+          });
+        });
+
+        // Render table
+        const tbody = document.getElementById('fieldCopyTableBody');
+        const copyCount = fcRows.filter(r => r.status === 'copy').length;
+        const sameCount = fcRows.filter(r => r.status === 'same').length;
+        const skipCount = fcRows.filter(r => r.status === 'skip').length;
+
+        document.getElementById('fieldCopySummary').innerHTML =
+          `<span class="tag-fc-copy">${copyCount} to copy</span>&nbsp;
+           <span class="tag-fc-same">${sameCount} already match</span>&nbsp;
+           <span class="tag-fc-skip">${skipCount} skipped (blank summer or player missing)</span>`;
+
+        tbody.innerHTML = fcRows.map(r => {
+          const cls  = r.status === 'copy' ? 'fc-copy' : r.status === 'same' ? 'fc-same' : 'fc-no-summer';
+          const tag  = r.status === 'copy' ? `<span class="tag-fc-copy">Copy</span>`
+                     : r.status === 'same' ? `<span class="tag-fc-same">Same</span>`
+                     :                       `<span class="tag-fc-skip">Skip</span>`;
+          return `<tr class="${cls}">
+            <td>${escFC(r.playerName)}</td>
+            <td>${escFC(r.team)}</td>
+            <td>${escFC(r.field)}</td>
+            <td>${escFC(r.summerVal ?? '—')}</td>
+            <td>${escFC(r.fallVal   ?? '—')}</td>
+            <td>${tag}</td>
+          </tr>`;
+        }).join('');
+
+        document.getElementById('fieldCopyResultCard').style.display = 'block';
+        applyBtn.disabled = copyCount === 0;
+        fcAlert(copyCount > 0
+          ? `Found ${copyCount} field value${copyCount !== 1 ? 's' : ''} to copy. Review above, then click "Copy All to Fall".`
+          : 'All fields already match — nothing to copy.', copyCount > 0 ? 'info' : 'success');
+
+      } catch (err) {
+        console.error(err);
+        fcAlert('Error scanning rosters: ' + err.message);
+      } finally {
+        scanBtn.disabled = false;
+      }
+    });
+
+    document.getElementById('fieldCopyApplyBtn').addEventListener('click', async () => {
+      const toApply = fcRows.filter(r => r.status === 'copy');
+      if (!toApply.length) { fcAlert('Nothing to copy.'); return; }
+
+      const applyBtn = document.getElementById('fieldCopyApplyBtn');
+      const scanBtn  = document.getElementById('fieldCopyScanBtn');
+      applyBtn.disabled = true;
+      scanBtn.disabled  = true;
+      fcAlert('Applying changes…', 'info');
+
+      try {
+        // Load fall roster docs we need to update, group by fallDocId
+        const snap = await getDocs(collection(dbFC, 'rosters'));
+        const fallDataMap = {};
+        snap.forEach(d => { if (d.id.startsWith('2026-fall-')) fallDataMap[d.id] = d.data(); });
+
+        // Build updated players arrays per fall doc
+        const updatesMap = {}; // fallDocId -> players array (mutable clone)
+        toApply.forEach(r => {
+          if (!updatesMap[r.fallDocId]) {
+            const existing = fallDataMap[r.fallDocId];
+            if (!existing) return;
+            updatesMap[r.fallDocId] = JSON.parse(JSON.stringify(existing.players || []));
+          }
+          const players = updatesMap[r.fallDocId];
+          if (r.fallPlayerIndex >= 0 && r.fallPlayerIndex < players.length) {
+            players[r.fallPlayerIndex][r.field] = r.summerVal;
+          }
+        });
+
+        // Write in batches (500 ops max per batch)
+        const BATCH_SIZE = 400;
+        const docIds = Object.keys(updatesMap);
+        for (let i = 0; i < docIds.length; i += BATCH_SIZE) {
+          const batch = writeBatch(dbFC);
+          docIds.slice(i, i + BATCH_SIZE).forEach(docId => {
+            batch.update(doc(dbFC, 'rosters', docId), { players: updatesMap[docId] });
+          });
+          await batch.commit();
+        }
+
+        // Mark applied rows as same
+        toApply.forEach(r => { r.fallVal = r.summerVal; r.status = 'same'; });
+        fcRows.filter(r => r.status === 'copy').forEach(r => { r.status = 'same'; });
+
+        fcAlert(`Done! ${toApply.length} field value${toApply.length !== 1 ? 's' : ''} copied to fall rosters.`, 'success');
+        applyBtn.disabled = true;
+      } catch (err) {
+        console.error(err);
+        fcAlert('Error applying changes: ' + err.message);
+        applyBtn.disabled = false;
+      } finally {
+        scanBtn.disabled = false;
+      }
+    });
+
+    onAuthStateChanged(authFC, user => {
+      if (!user) return;
+      document.getElementById('fieldCopyScanBtn').disabled = false;
     });
   </script>
 
