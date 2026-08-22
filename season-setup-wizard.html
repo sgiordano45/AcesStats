@@ -1615,6 +1615,7 @@ Matt Leonardelli,Green</pre>
 
     let rosterCsvRows = [];       // { csvName, team, matchedDoc, matchedName, status }
     let rosterApplied = false;
+    let allUsers = [];            // module-scope so manual-match dropdown can read it
 
     function setupRosterListeners() {
       const input = document.getElementById('rosterCsvInput');
@@ -1681,13 +1682,18 @@ Matt Leonardelli,Green</pre>
       document.getElementById('rosterPreviewSection').style.display = 'block';
       document.getElementById('rosterPreviewBody').innerHTML = '<tr><td colspan="4" style="padding:1rem; text-align:center;">⚾ Matching players...</td></tr>';
 
-      let allUsers = [];
+      allUsers = [];
       try {
         const snapshot = await getDocs(collection(db, 'users'));
         snapshot.forEach(d => {
           const data = d.data();
           if (!data.migrated) allUsers.push({ docId: d.id, ...data });
         });
+        // Pre-sort once for dropdown reuse
+        allUsers.sort((a, b) =>
+          (a.displayName || a.linkedPlayer || '').toLowerCase()
+            .localeCompare((b.displayName || b.linkedPlayer || '').toLowerCase())
+        );
       } catch (err) {
         alert('Error loading users: ' + err.message);
         return;
@@ -1733,39 +1739,60 @@ Matt Leonardelli,Green</pre>
     function renderRosterPreview(unknownTeams) {
       const tbody = document.getElementById('rosterPreviewBody');
       const statusIcons = {
-        'will-update': '✅',
-        'already-set': '✔️',
-        'no-user':     '⚠️',
-        'unknown-team':'❌'
+        'will-update':       '✅',
+        'manually-matched':  '✅',
+        'already-set':       '✔️',
+        'no-user':           '⚠️',
+        'unknown-team':      '❌'
       };
       const statusLabels = {
-        'will-update':  'Will update',
-        'already-set':  'Already correct',
-        'no-user':      'No matching user',
-        'unknown-team': 'Unknown team'
+        'will-update':       'Will update',
+        'manually-matched':  'Will update (manual)',
+        'already-set':       'Already correct',
+        'no-user':           'No matching user',
+        'unknown-team':      'Unknown team'
       };
       const statusColors = {
-        'will-update':  '#dcfce7',
-        'already-set':  '#f0fdf4',
-        'no-user':      '#fef9c3',
-        'unknown-team': '#fee2e2'
+        'will-update':       '#dcfce7',
+        'manually-matched':  '#dcfce7',
+        'already-set':       '#f0fdf4',
+        'no-user':           '#fef9c3',
+        'unknown-team':      '#fee2e2'
       };
 
-      tbody.innerHTML = rosterCsvRows.map(row => `
+      // Build user dropdown options once (allUsers is already sorted)
+      const userOptions = allUsers.map(u => {
+        const label = u.displayName || u.linkedPlayer || u.docId;
+        return `<option value="${u.docId}">${label}</option>`;
+      }).join('');
+
+      tbody.innerHTML = rosterCsvRows.map((row, i) => {
+        // Matched-user cell: dropdown for unmatched rows (no-user), plain text otherwise
+        let matchedCell;
+        if (row.status === 'no-user') {
+          matchedCell = `
+            <select onchange="manualMatchUser(${i}, this.value)"
+              style="font-size:0.8rem; padding:0.25rem 0.4rem; border:1px solid var(--border-color); border-radius:4px; max-width:170px; width:100%;">
+              <option value="">-- pick a user --</option>
+              ${userOptions}
+            </select>`;
+        } else {
+          matchedCell = `${row.matchedName || '—'}
+            ${row.matchedName && row.currentTeam ? `<br><small style="font-size:0.75rem;">Currently: ${row.currentTeam}</small>` : ''}`;
+        }
+
+        return `
         <tr style="border-top: 1px solid var(--border-color); background: ${statusColors[row.status]}20;">
           <td style="padding: 0.5rem 0.75rem;">${row.csvName}</td>
           <td style="padding: 0.5rem 0.75rem;">${row.resolvedTeam || row.csvTeam}</td>
-          <td style="padding: 0.5rem 0.75rem; color: var(--text-light);">
-            ${row.matchedName || '—'}
-            ${row.matchedName && row.currentTeam ? `<br><small style="font-size:0.75rem;">Currently: ${row.currentTeam}</small>` : ''}
-          </td>
+          <td style="padding: 0.5rem 0.75rem; color: var(--text-light);">${matchedCell}</td>
           <td style="padding: 0.5rem 0.75rem;">
             <span style="font-size:0.85rem;">${statusIcons[row.status]} ${statusLabels[row.status]}</span>
           </td>
-        </tr>
-      `).join('');
+        </tr>`;
+      }).join('');
 
-      const willUpdate = rosterCsvRows.filter(r => r.status === 'will-update').length;
+      const willUpdate = rosterCsvRows.filter(r => r.status === 'will-update' || r.status === 'manually-matched').length;
       const alreadySet = rosterCsvRows.filter(r => r.status === 'already-set').length;
       const noUser    = rosterCsvRows.filter(r => r.status === 'no-user').length;
       const badTeam   = rosterCsvRows.filter(r => r.status === 'unknown-team').length;
@@ -1781,14 +1808,28 @@ Matt Leonardelli,Green</pre>
         document.getElementById('rosterUnknownTeams').style.display = 'none';
       }
 
-      document.getElementById('rosterApplyStatus').textContent = '';
+      document.getElementById('rosterApplyStatus').textContent =
+        noUser > 0 ? `${noUser} player${noUser !== 1 ? 's' : ''} unmatched — use the dropdown to assign them manually.` : '';
       // Show Next button now that CSV is parsed (step is optional, but allow direct proceed)
       document.getElementById('step4Next').style.display = willUpdate > 0 ? 'inline-flex' : 'none';
       document.getElementById('step4SkipBtn').textContent = willUpdate > 0 ? 'Skip →' : 'Continue →';
     }
 
+    // Manual match: admin picks a user from the dropdown for a no-user row
+    window.manualMatchUser = function(rowIndex, docId) {
+      if (!docId) return;
+      const user = allUsers.find(u => u.docId === docId);
+      if (!user) return;
+      const row = rosterCsvRows[rowIndex];
+      row.matchedDoc  = user.docId;
+      row.matchedName = user.displayName || user.linkedPlayer || user.docId;
+      row.currentTeam = user.linkedTeam || '—';
+      row.status = (user.linkedTeam === row.resolvedTeam) ? 'already-set' : 'manually-matched';
+      renderRosterPreview(null);
+    };
+
     window.applyRosterAssignments = async function() {
-      const toUpdate = rosterCsvRows.filter(r => r.status === 'will-update');
+      const toUpdate = rosterCsvRows.filter(r => r.status === 'will-update' || r.status === 'manually-matched');
       if (toUpdate.length === 0) {
         document.getElementById('rosterApplyStatus').textContent = 'Nothing to update.';
         return;
