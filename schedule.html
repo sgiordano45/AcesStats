@@ -499,6 +499,21 @@ function formatTime(t) {
   return t;
 }
 
+function timeToMinutes(t) {
+  if (!t) return 9999;
+  const m = t.match(/(\d+):(\d+)\s*(AM|PM)/i);
+  if (!m) return 9999;
+  let h = parseInt(m[1]);
+  const min = parseInt(m[2]);
+  const period = m[3].toUpperCase();
+  if (period === 'AM') {
+    if (h === 12) h = 0;       // 12:xx AM → midnight
+  } else {
+    if (h !== 12) h += 12;     // 1–11 PM → 13–23
+  }
+  return h * 60 + min;
+}
+
 function capitalize(s) {
   return s ? s.charAt(0).toUpperCase() + s.slice(1) : '';
 }
@@ -587,7 +602,7 @@ async function loadSchedule() {
       .sort((a, b) => {
         const diff = (a.dp.y - b.dp.y) || (a.dp.m - b.dp.m) || (a.dp.day - b.dp.day);
         if (diff !== 0) return diff;
-        return (a.time || '').localeCompare(b.time || '');
+        return timeToMinutes(a.time) - timeToMinutes(b.time);
       });
 
     // Build team list — exclude placeholder seed/TBD labels
@@ -757,7 +772,7 @@ function renderCalendar() {
     // Day cells
     for (let day = 1; day <= daysInMonth; day++) {
       const key = `${y}-${m}-${day}`;
-      const dayGames = byDay.get(key) || [];
+      const dayGames = (byDay.get(key) || []).sort((a, b) => timeToMinutes(a.time) - timeToMinutes(b.time));
       const cell = document.createElement('div');
       cell.className = 'cal-cell';
       if (key === todayStr) cell.classList.add('today');
