@@ -4285,8 +4285,9 @@
   async function fetchEmailRecipients(includeNames) {
     const audience = document.getElementById('emailAudience').value;
 
-    // Build set of active roster authIds when needed
-    let activeAuthIds = new Set();
+    // Build sets of active roster authIds and legacyIds when needed
+    let activeAuthIds  = new Set(); // uid from player.authId
+    let activePlayerIds = new Set(); // snake_case legacyId from player.id
     if (audience === 'active') {
       const seasonId = document.getElementById('emailActiveSeason').value;
       if (!seasonId) throw new Error('Please select a season for Active Players');
@@ -4295,6 +4296,7 @@
         if (!rDoc.id.startsWith(seasonId + '-')) return;
         (rDoc.data().players || []).forEach(p => {
           if (p.authId) activeAuthIds.add(p.authId);
+          if (p.id)     activePlayerIds.add(p.id);  // legacyId (snake_case name)
         });
       });
     }
@@ -4309,7 +4311,13 @@
       if (d.migrated) return;
       if (d.userRole === 'fan' || d.userRole === 'family') return;
       if (audience === 'linked' && !d.linkedPlayer) return;
-      if (audience === 'active' && !activeAuthIds.has(docSnap.id)) return;
+      if (audience === 'active') {
+        const linkedLegacy = (d.linkedPlayer || '').toLowerCase().trim().replace(/\s+/g, '_');
+        const isActive = activeAuthIds.has(docSnap.id)       // user doc keyed by uid with authId on roster
+                      || activePlayerIds.has(docSnap.id)     // user doc keyed by legacyId (no account)
+                      || (linkedLegacy && activePlayerIds.has(linkedLegacy)); // uid-keyed doc linked by name
+        if (!isActive) return;
+      }
       if (audience === 'captains') {
         const isCaptain = d.isCaptain === true ||
           (d.teamRoles && Object.values(d.teamRoles).some(r => r === 'captain'));
