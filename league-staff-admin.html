@@ -1966,7 +1966,15 @@
                   <option value="all">📣 All Members (everyone in users collection)</option>
                   <option value="linked">🏅 Linked Players Only (active players with accounts)</option>
                   <option value="captains">🧢 Captains Only</option>
+                  <option value="active">🟢 Active Players Only (on current rosters)</option>
                   <option value="team">🎽 Specific Team(s)</option>
+                </select>
+              </div>
+
+              <div class="form-group" id="emailActiveSeasonGroup" style="display:none;">
+                <label>Season</label>
+                <select id="emailActiveSeason" onchange="updateEmailAudience()">
+                  <option value="">Loading seasons...</option>
                 </select>
               </div>
 
@@ -4236,6 +4244,14 @@
     const audience = document.getElementById('emailAudience').value;
     const teamGroup = document.getElementById('emailTeamFilterGroup');
     teamGroup.style.display = audience === 'team' ? 'block' : 'none';
+    const activeSeasonGroup = document.getElementById('emailActiveSeasonGroup');
+    activeSeasonGroup.style.display = audience === 'active' ? 'block' : 'none';
+    if (audience === 'active') {
+      const sel = document.getElementById('emailActiveSeason');
+      if (allSeasons.length && (sel.options.length === 0 || sel.options[0].value === '')) {
+        sel.innerHTML = allSeasons.map(s => `<option value="${s.id}">${s.year} ${capitalize(s.season)}</option>`).join('');
+      }
+    }
     document.getElementById('emailRecipientListWrap').style.display = 'none';
     await updateEmailRecipientCount();
   };
@@ -4268,6 +4284,21 @@
 
   async function fetchEmailRecipients(includeNames) {
     const audience = document.getElementById('emailAudience').value;
+
+    // Build set of active roster authIds when needed
+    let activeAuthIds = new Set();
+    if (audience === 'active') {
+      const seasonId = document.getElementById('emailActiveSeason').value;
+      if (!seasonId) throw new Error('Please select a season for Active Players');
+      const rostersSnap = await getDocs(collection(db, 'rosters'));
+      rostersSnap.forEach(rDoc => {
+        if (!rDoc.id.startsWith(seasonId + '-')) return;
+        (rDoc.data().players || []).forEach(p => {
+          if (p.authId) activeAuthIds.add(p.authId);
+        });
+      });
+    }
+
     const snapshot = await getDocs(collection(db, 'users'));
     const results = [];
     snapshot.forEach(docSnap => {
@@ -4278,6 +4309,7 @@
       if (d.migrated) return;
       if (d.userRole === 'fan' || d.userRole === 'family') return;
       if (audience === 'linked' && !d.linkedPlayer) return;
+      if (audience === 'active' && !activeAuthIds.has(docSnap.id)) return;
       if (audience === 'captains') {
         const isCaptain = d.isCaptain === true ||
           (d.teamRoles && Object.values(d.teamRoles).some(r => r === 'captain'));
@@ -4340,8 +4372,12 @@
       showToast('No recipients found for this audience', 'error'); return;
     }
 
+    const activeSeasonLabel = audience === 'active'
+      ? (() => { const sel = document.getElementById('emailActiveSeason'); return sel.options[sel.selectedIndex]?.text || 'Unknown Season'; })()
+      : '';
     const audienceLabel = audience === 'all' ? 'All Members'
       : audience === 'linked' ? 'Linked Players'
+      : audience === 'active' ? `Active Players (${activeSeasonLabel})`
       : audience === 'captains' ? 'Captains'
       : 'Teams: ' + emailSelectedTeams.join(', ');
 
