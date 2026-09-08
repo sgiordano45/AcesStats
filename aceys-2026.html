@@ -185,16 +185,23 @@ function fmtAvg(val) {
   return v.toFixed(3).replace(/^0/, ''); // ".677" not "0.677"
 }
 
+// ── Normalize winners to array ───────────────────────────────────────────────
+function getWinners(data) {
+  if (data.players?.length > 0) return data.players;
+  if (data.playerName) return [{ name: data.playerName, playerId: data.playerId || null, legacyId: data.legacyId || null }];
+  return [];
+}
+
 // ── Determine award category type ────────────────────────────────────────────
 const PITCHING_AWARD_IDS = new Set(['2026_pitcher']);
 function isPitchingAward(awardId) { return PITCHING_AWARD_IDS.has(awardId); }
 
 // ── Fetch player stats + badges ────────────────────────────────────────────
-async function fetchPlayerStats(awardId, data) {
-  const pid = data.playerId || data.legacyId;
-  if (!pid || !data.revealed) return null;
+async function fetchPlayerStats(winner, awardId) {
+  const pid = winner.playerId || winner.legacyId;
+  if (!pid) return null;
 
-  const cacheKey = pid + '_' + awardId;
+  const cacheKey = pid + '_' + (awardId || '');
   if (playerStatsCache[cacheKey]) return playerStatsCache[cacheKey];
 
   const result = { hitting: null, pitching: null, badges: [] };
@@ -225,10 +232,10 @@ async function fetchPlayerStats(awardId, data) {
 
   // Badges — try legacyId first (2026-summer_billy_sforza), then playerId (Firebase UID)
   try {
-    const legacyId = data.legacyId || null;
+    const legacyId = winner.legacyId || null;
     const candidates = [];
     if (legacyId) candidates.push(`2026-summer_${legacyId}`);
-    if (data.playerId && data.playerId !== legacyId) candidates.push(`2026-summer_${data.playerId}`);
+    if (winner.playerId && winner.playerId !== legacyId) candidates.push(`2026-summer_${winner.playerId}`);
 
     for (const badgeDocId of candidates) {
       const badgeSnap = await getDoc(doc(db, 'playerBadges', badgeDocId));
@@ -249,42 +256,71 @@ async function fetchPlayerStats(awardId, data) {
 
 // After a reveal, load stats and inject into card
 async function injectPlayerStats(awardId, data) {
-  const stats = await fetchPlayerStats(awardId, data);
   const cardEl = document.getElementById(`card-${awardId}`);
   const panelEl = cardEl?.querySelector('.winner-stats');
-  if (!panelEl || !stats) return;
+  if (!panelEl) return;
 
-  const s = stats.hitting;
-  if (!s) { panelEl.innerHTML = ''; return; }
+  const winners = getWinners(data);
+  const linked = winners.filter(w => w.playerId || w.legacyId);
+  if (!linked.length) return;
 
   const pitching = isPitchingAward(awardId);
-  let statHtml = '';
+  const multiPlayer = linked.length > 1;
+  const parts = [];
 
-  if (pitching && s.IP != null) {
-    statHtml = `
-      <div class="stats-grid">
-        <div class="stat-chip"><div class="sv">${s.IP}</div><div class="sl">IP</div></div>
-        ${s.RA != null ? `<div class="stat-chip"><div class="sv">${s.RA}</div><div class="sl">RA</div></div>` : ''}
-      </div>`;
-  } else if (!pitching && (s.H || s.R || s.BB || s.AVG)) {
-    statHtml = `
-      <div class="stats-grid">
-        ${s.H  != null ? `<div class="stat-chip"><div class="sv">${s.H}</div><div class="sl">H</div></div>` : ''}
-        ${s.R  != null ? `<div class="stat-chip"><div class="sv">${s.R}</div><div class="sl">R</div></div>` : ''}
-        ${s.BB != null ? `<div class="stat-chip"><div class="sv">${s.BB}</div><div class="sl">BB</div></div>` : ''}
-        ${s.AVG ? `<div class="stat-chip"><div class="sv">${s.AVG}</div><div class="sl">AVG</div></div>` : ''}
-        ${s.BPI ? `<div class="stat-chip"><div class="sv">${s.BPI}</div><div class="sl">AcesBPI</div></div>` : ''}
-        ${s.WAR ? `<div class="stat-chip"><div class="sv">${s.WAR}</div><div class="sl">bWAR</div></div>` : ''}
-      </div>`;
+  for (const winner of linked) {
+    const stats = await fetchPlayerStats(winner, awardId);
+    if (!stats) continue;
+    const s = stats.hitting;
+    let statHtml = '';
+
+    if (pitching) {
+      // Pitcher award: show pitching stats + hitting stats
+      const pitchPart = s && s.IP != null ? `
+        <div class="stats-grid">
+          <div class="stat-chip"><div class="sv">${s.IP}</div><div class="sl">IP</div></div>
+          ${s.RA != null ? `<div class="stat-chip"><div class="sv">${s.RA}</div><div class="sl">RA</div></div>` : ''}
+        </div>` : '';
+      const hitPart = s && (s.H || s.AVG) ? `
+        <div class="stats-grid">
+          ${s.H  != null ? `<div class="stat-chip"><div class="sv">${s.H}</div><div class="sl">H</div></div>` : ''}
+          ${s.R  != null ? `<div class="stat-chip"><div class="sv">${s.R}</div><div class="sl">R</div></div>` : ''}
+          ${s.AVG ? `<div class="stat-chip"><div class="sv">${s.AVG}</div><div class="sl">AVG</div></div>` : ''}
+          ${s.BPI ? `<div class="stat-chip"><div class="sv">${s.BPI}</div><div class="sl">AcesBPI</div></div>` : ''}
+        </div>` : '';
+      statHtml = pitchPart + hitPart;
+    } else if (s && (s.H || s.R || s.BB || s.AVG)) {
+      statHtml = `
+        <div class="stats-grid">
+          ${s.H  != null ? `<div class="stat-chip"><div class="sv">${s.H}</div><div class="sl">H</div></div>` : ''}
+          ${s.R  != null ? `<div class="stat-chip"><div class="sv">${s.R}</div><div class="sl">R</div></div>` : ''}
+          ${s.BB != null ? `<div class="stat-chip"><div class="sv">${s.BB}</div><div class="sl">BB</div></div>` : ''}
+          ${s.AVG ? `<div class="stat-chip"><div class="sv">${s.AVG}</div><div class="sl">AVG</div></div>` : ''}
+          ${s.BPI ? `<div class="stat-chip"><div class="sv">${s.BPI}</div><div class="sl">AcesBPI</div></div>` : ''}
+          ${s.WAR ? `<div class="stat-chip"><div class="sv">${s.WAR}</div><div class="sl">bWAR</div></div>` : ''}
+        </div>`;
+    }
+
+    const badgeHtml = stats.badges?.length
+      ? `<div class="badge-strip">${stats.badges.map(b =>
+          `<span class="badge-chip ${b.tier || ''}">${b.icon || '🎖️'} ${b.name || b.id}</span>`
+        ).join('')}</div>`
+      : '';
+
+    if (statHtml || badgeHtml) {
+      const label = multiPlayer
+        ? `<div style="font-size:0.75rem;font-weight:700;color:var(--gold);margin-bottom:0.3rem;text-align:center;font-family:Inter,sans-serif;">${winner.name}</div>`
+        : '';
+      const wrapper = multiPlayer
+        ? `<div style="padding:0.6rem 0;border-bottom:1px solid rgba(201,162,39,0.1);">${label}${statHtml}${badgeHtml}</div>`
+        : `${statHtml}${badgeHtml}`;
+      parts.push(wrapper);
+    }
   }
 
-  const badgeHtml = stats.badges.length
-    ? `<div class="badge-strip">${stats.badges.map(b =>
-        `<span class="badge-chip ${b.tier || ''}">${b.icon || '🎖️'} ${b.name || b.id}</span>`
-      ).join('')}</div>`
-    : '';
-
-  panelEl.innerHTML = statHtml + badgeHtml || '<div style="color:var(--text-dim);font-size:0.8rem;">No 2026 stats on file</div>';
+  panelEl.innerHTML = parts.length
+    ? parts.join('')
+    : '<div style="color:var(--text-dim);font-size:0.8rem;">No 2026 stats on file</div>';
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
@@ -344,7 +380,8 @@ function renderAll() {
   ];
   allSingle.forEach(a => {
     const data = awardsCache[a.id] || {};
-    if (data.revealed && (data.playerId || data.legacyId)) {
+    const _ws = getWinners(data);
+    if (data.revealed && _ws.some(w => w.playerId || w.legacyId)) {
       injectPlayerStats(a.id, data);
     }
   });
@@ -382,7 +419,10 @@ function renderWriteIns() {
 function cardHtml(a) {
   const data = awardsCache[a.id] || {};
   const revealed = !!data.revealed;
-  const hasWinner = a.multi ? (data.playerNames && data.playerNames.length > 0) : !!data.playerName;
+  const indWinners = a.multi ? [] : getWinners(data);
+  const hasWinner = a.multi
+    ? (data.playerNames && data.playerNames.length > 0)
+    : indWinners.length > 0;
 
   let winnerHtml;
   if (!hasWinner) {
@@ -391,17 +431,22 @@ function cardHtml(a) {
     const cls = revealed ? '' : ' hidden-winner';
     const names = (data.playerNames || []).map(n => `<li>${n}</li>`).join('');
     winnerHtml = `<ul class="multi-winner-list${cls}">${names}</ul>`;
-  } else {
+  } else if (indWinners.length === 1) {
     const cls = revealed ? '' : ' hidden-winner';
-    winnerHtml = `<div class="award-winner${cls}">${data.playerName || ''}</div>`;
+    winnerHtml = `<div class="award-winner${cls}">${indWinners[0].name}</div>`;
+  } else {
+    // Multiple co-winners for an individual award
+    const cls = revealed ? '' : ' hidden-winner';
+    const names = indWinners.map(w => `<li>${w.name}</li>`).join('');
+    winnerHtml = `<ul class="multi-winner-list${cls}">${names}</ul>`;
   }
 
   const iconHtml = a.img
     ? `<span class="award-icon"><img src="${a.img}" alt="${a.label}"></span>`
     : `<span class="award-icon">${a.icon || '🏆'}</span>`;
 
-  // Stats panel — only for revealed single-winner awards with a linked player
-  const showStats = revealed && !a.multi && (data.playerId || data.legacyId);
+  // Stats panel — for revealed individual awards with any linked player
+  const showStats = revealed && !a.multi && indWinners.some(w => w.playerId || w.legacyId);
 
   return `
     <div class="award-card ${revealed ? 'revealed' : ''}" id="card-${a.id}">

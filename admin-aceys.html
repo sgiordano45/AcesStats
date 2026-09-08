@@ -347,13 +347,14 @@ function renderTeamMvps() {
 
 function awardItemHtml(a, opts = {}) {
   const data = awardsCache[a.id] || {};
-  const hasWinner = a.multi ? (data.playerNames && data.playerNames.length > 0) : !!data.playerName;
+  const hasWinner = a.multi ? (data.playerNames && data.playerNames.length > 0)
+    : (data.players?.length > 0 || !!data.playerName);
   const isRevealed = !!data.revealed;
   // active defaults to true for built-in awards; for write-ins stored in Firestore it's explicit
   const isActive = data.active !== false;
   const winnerText = a.multi
     ? (data.playerNames || []).join(', ')
-    : (data.playerName || '');
+    : (data.players?.length > 0 ? data.players.map(p => p.name).join(', ') : (data.playerName || ''));
 
   const activeToggle = `
     <label style="display:flex;align-items:center;gap:0.35rem;font-size:0.78rem;color:var(--text-dim);cursor:pointer;">
@@ -423,23 +424,28 @@ function openEdit(awardId) {
 
   const winnerVal = def.multi
     ? (data.playerNames || []).join('\n')
-    : (data.playerName || '');
+    : '';
 
-  const selectedPlayerHtml = !def.multi && data.playerId
-    ? `<div id="editSelectedPlayer"><span class="player-selected-tag">✅ ${data.playerName} <button onclick="clearEditPlayer()">×</button></span></div>`
-    : `<div id="editSelectedPlayer"></div>`;
+  // Pre-load existing players for non-multi awards
+  if (!def.multi) {
+    _editSelectedPlayers = data.players?.length > 0
+      ? data.players.map(p => ({ name: p.name, playerId: p.playerId || null, legacyId: p.legacyId || null, team: '' }))
+      : (data.playerName ? [{ name: data.playerName, playerId: data.playerId || null, legacyId: data.legacyId || null, team: '' }] : []);
+  }
 
   document.getElementById('modalBody').innerHTML = `
     <div class="form-group">
-      <label>${def.multi ? 'Winners (one per line)' : 'Winner'}</label>
+      <label>${def.multi ? 'Winners (one per line)' : 'Winner(s)'}</label>
       ${def.multi
         ? `<textarea id="winnerInput" rows="5" placeholder="Player Name\nPlayer Name\n...">${winnerVal}</textarea><div class="form-hint">Enter one player per line — no player link for multi-winner awards</div>`
         : `<div class="player-search-wrap">
-             <input type="text" id="winnerInput" placeholder="Search player…" autocomplete="off"
-               value="${winnerVal}" oninput="searchPlayers(this.value, 'editDropdown', 'edit')">
+             <input type="text" id="winnerInput" placeholder="Search and select player(s)…" autocomplete="off"
+               oninput="searchPlayers(this.value, 'editDropdown', 'edit')"
+               onkeydown="addEditPlayerFromInput(event)">
              <div class="player-dropdown hidden" id="editDropdown"></div>
            </div>
-           ${selectedPlayerHtml}`
+           <div id="editSelectedPlayers" style="display:flex;flex-wrap:wrap;gap:0.4rem;margin-top:0.5rem;"></div>
+           <div class="form-hint">Search and click to add. Multiple co-winners supported. Press Enter to add without a player link.</div>`
       }
     </div>
     <div class="form-group">
@@ -447,6 +453,7 @@ function openEdit(awardId) {
       <input type="text" id="noteInput" placeholder="e.g. unanimous vote" value="${data.note || ''}">
     </div>
   `;
+  if (!def.multi) renderEditPlayerTags();
 
   document.getElementById('editModal').classList.remove('hidden');
   setTimeout(() => document.getElementById('winnerInput').focus(), 100);
@@ -455,7 +462,7 @@ function openEdit(awardId) {
 function closeModal() {
   document.getElementById('editModal').classList.add('hidden');
   currentEditId = null;
-  _editSelectedPlayer = null;
+  _editSelectedPlayers = [];
 }
 
 async function saveAward() {
@@ -470,13 +477,21 @@ async function saveAward() {
     payload.playerId = null;
     payload.legacyId = null;
   } else {
-    payload.playerName = winnerRaw;
-    payload.playerNames = [];
-    // Include selected player IDs if a player was picked from search
-    if (_editSelectedPlayer && _editSelectedPlayer.name === winnerRaw) {
-      payload.playerId  = _editSelectedPlayer.id  || null;
-      payload.legacyId  = _editSelectedPlayer.legacyId || null;
+    // If there's text in the input not yet added, include it
+    if (winnerRaw && !_editSelectedPlayers.find(p => p.name === winnerRaw)) {
+      _editSelectedPlayers.push({ name: winnerRaw, playerId: null, legacyId: null, team: '' });
     }
+    payload.players = _editSelectedPlayers.map(p => ({
+      name: p.name,
+      playerId: p.playerId || null,
+      legacyId: p.legacyId || null,
+    }));
+    payload.playerNames = [];
+    // Backward-compat: primary winner = first player
+    const primary = _editSelectedPlayers[0] || null;
+    payload.playerName = primary?.name || '';
+    payload.playerId   = primary?.playerId || null;
+    payload.legacyId   = primary?.legacyId || null;
   }
 
   try {
@@ -572,8 +587,8 @@ async function resetAllReveals() {
 
 // ── Player search ─────────────────────────────────────────────────────────────
 let allPlayers = [];          // loaded once after auth
-let _editSelectedPlayer = null;
-let _wiSelectedPlayer   = null;
+let _editSelectedPlayers = [];
+let _wiSelectedPlayer    = null;
 
 async function loadPlayers() {
   try {
@@ -627,11 +642,12 @@ function searchPlayers(query, dropdownId, context) {
 function selectPlayer(id, name, legacyId, team, context) {
   const player = { id, name, legacyId: legacyId || null, team };
   if (context === 'edit') {
-    _editSelectedPlayer = player;
-    document.getElementById('winnerInput').value = name;
+    if (!_editSelectedPlayers.find(p => p.name === name)) {
+      _editSelectedPlayers.push(player);
+    }
+    document.getElementById('winnerInput').value = '';
     document.getElementById('editDropdown').classList.add('hidden');
-    document.getElementById('editSelectedPlayer').innerHTML =
-      `<span class="player-selected-tag">✅ ${name} — ${team} <button onclick="clearEditPlayer()">×</button></span>`;
+    renderEditPlayerTags();
   } else if (context === 'wi') {
     _wiSelectedPlayer = player;
     document.getElementById('wiWinnerInput').value = name;
@@ -641,11 +657,30 @@ function selectPlayer(id, name, legacyId, team, context) {
   }
 }
 
-function clearEditPlayer() {
-  _editSelectedPlayer = null;
-  document.getElementById('editSelectedPlayer').innerHTML = '';
-  document.getElementById('winnerInput').value = '';
-  document.getElementById('winnerInput').focus();
+function renderEditPlayerTags() {
+  const el = document.getElementById('editSelectedPlayers');
+  if (!el) return;
+  el.innerHTML = _editSelectedPlayers.map((p, i) =>
+    `<span class="player-selected-tag">✅ ${p.name}${p.team ? ` — ${p.team}` : ''} <button onclick="removeEditPlayer(${i})">×</button></span>`
+  ).join('');
+}
+
+function removeEditPlayer(idx) {
+  _editSelectedPlayers.splice(idx, 1);
+  renderEditPlayerTags();
+}
+
+function addEditPlayerFromInput(e) {
+  if (e.key !== 'Enter') return;
+  const val = e.target.value.trim();
+  if (!val) return;
+  if (!_editSelectedPlayers.find(p => p.name === val)) {
+    _editSelectedPlayers.push({ name: val, playerId: null, legacyId: null, team: '' });
+    renderEditPlayerTags();
+  }
+  e.target.value = '';
+  document.getElementById('editDropdown').classList.add('hidden');
+  e.preventDefault();
 }
 
 function clearWiPlayer() {
@@ -684,7 +719,9 @@ window.saveWriteIn = saveWriteIn;
 window.deleteWriteIn = deleteWriteIn;
 window.searchPlayers = searchPlayers;
 window.selectPlayer = selectPlayer;
-window.clearEditPlayer = clearEditPlayer;
+window.renderEditPlayerTags = renderEditPlayerTags;
+window.removeEditPlayer = removeEditPlayer;
+window.addEditPlayerFromInput = addEditPlayerFromInput;
 window.clearWiPlayer = clearWiPlayer;
 
 // Close modals on overlay click
