@@ -198,6 +198,7 @@ function isPitchingAward(awardId) { return PITCHING_AWARD_IDS.has(awardId); }
 
 // ── Fetch player stats + badges ────────────────────────────────────────────
 async function fetchPlayerStats(winner, awardId) {
+  // aggregatedPlayerStats is keyed by Auth UID (playerId) when available, else legacyId
   const pid = winner.playerId || winner.legacyId;
   if (!pid) return null;
 
@@ -207,37 +208,44 @@ async function fetchPlayerStats(winner, awardId) {
   const result = { hitting: null, pitching: null, badges: [] };
 
   try {
-    // Try aggregatedPlayerStats
     const statsSnap = await getDoc(doc(db, 'aggregatedPlayerStats', pid));
     if (statsSnap.exists()) {
       const d = statsSnap.data();
-      // Find 2026-summer season key
-      // Prefer '2026-summer'; fall back to any '2026' key
+
+      // Batting — prefer '2026-summer'; fall back to any '2026' key
       const seasonKey = (d.seasons || {})['2026-summer'] ? '2026-summer'
         : Object.keys(d.seasons || {}).find(k => k.startsWith('2026'));
       if (seasonKey) {
         const s = d.seasons[seasonKey];
         result.hitting = {
-          H:   s.hits       || 0,
-          R:   s.runs       || 0,
-          BB:  s.walks      || 0,
+          H:   s.hits  != null ? Number(s.hits)  : 0,
+          R:   s.runs  != null ? Number(s.runs)  : 0,
+          BB:  s.walks != null ? Number(s.walks) : 0,
           AVG: s.battingAverage != null ? fmtAvg(Number(s.battingAverage)) : null,
-          BPI: typeof s.acesBPI === 'number' ? s.acesBPI.toFixed(2) : null,
+          BPI: typeof s.acesBPI  === 'number' ? s.acesBPI.toFixed(2)  : null,
           WAR: typeof s.bwarSimp === 'number' ? s.bwarSimp.toFixed(2) : null,
-          IP:  s.inningsPitched != null ? s.inningsPitched : null,
-          RA:  s.runsAllowed   != null ? s.runsAllowed    : null,
         };
-        result.pitching = result.hitting; // same object, cardHtml picks fields
+      }
+
+      // Pitching — stored in pitchingSeasons map, prefer '2026-summer'
+      const pitchKey = (d.pitchingSeasons || {})['2026-summer'] ? '2026-summer'
+        : Object.keys(d.pitchingSeasons || {}).find(k => k.startsWith('2026'));
+      if (pitchKey) {
+        const ps = d.pitchingSeasons[pitchKey];
+        result.pitching = {
+          IP: ps.inningsPitched != null ? Number(ps.inningsPitched) : null,
+          RA: ps.runsAllowed    != null ? Number(ps.runsAllowed)    : null,
+        };
       }
     }
   } catch(e) { /* stats unavailable */ }
 
   // Badges — try legacyId first (2026-summer_billy_sforza), then playerId (Firebase UID)
   try {
-    const legacyId = winner.legacyId || null;
+    const badgeLegacyId = winner.legacyId || null;
     const candidates = [];
-    if (legacyId) candidates.push(`2026-summer_${legacyId}`);
-    if (winner.playerId && winner.playerId !== legacyId) candidates.push(`2026-summer_${winner.playerId}`);
+    if (badgeLegacyId) candidates.push(`2026-summer_${badgeLegacyId}`);
+    if (winner.playerId && winner.playerId !== badgeLegacyId) candidates.push(`2026-summer_${winner.playerId}`);
 
     for (const badgeDocId of candidates) {
       const badgeSnap = await getDoc(doc(db, 'playerBadges', badgeDocId));
