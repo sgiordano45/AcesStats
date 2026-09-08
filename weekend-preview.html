@@ -469,6 +469,25 @@ body {
 .share-tonight-btn:hover { background: #1a6b4a; }
 .share-tonight-btn:active { transform: scale(0.97); }
 .share-tonight-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+.share-week-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  margin-left: 8px;
+  padding: 8px 16px;
+  background: #1565c0;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.1s;
+}
+.share-week-btn:hover { background: #0d47a1; }
+.share-week-btn:active { transform: scale(0.97); }
+.share-week-btn:disabled { opacity: 0.6; cursor: not-allowed; }
 
 /* Share button on each card */
 .card-share-btn {
@@ -1644,6 +1663,7 @@ function generateWeekendPreview() {
     <h3>Upcoming Games</h3>
     <p>${weekendGames.length} games scheduled for ${dateRangeText}</p>
     <button class="share-tonight-btn" onclick="shareTonightGames()">📤 Share Tonight's Games</button>
+    <button class="share-week-btn" onclick="shareWeekGames()">📅 Share This Week's Games</button>
   `;
 
   const gamesGridElement = document.getElementById('gamesGrid');
@@ -2506,6 +2526,193 @@ if (!navigator.onLine) updateConnectionStatus();
   }
 
   // Shared helper: use native share sheet on mobile iOS/Android, download on desktop
+  // ── Share This Week's Games ───────────────────────────────────────────────
+  async function shareWeekGames() {
+    const btn = document.querySelector('.share-week-btn');
+    if (!btn) return;
+    const origLabel = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '⏳ Generating…';
+
+    try {
+      if (!window.html2canvas) {
+        await new Promise((resolve, reject) => {
+          const s = document.createElement('script');
+          s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+          s.onload = resolve; s.onerror = reject;
+          document.head.appendChild(s);
+        });
+      }
+
+      const todayNorm = new Date();
+      todayNorm.setHours(0, 0, 0, 0);
+      const nextWeek = new Date(todayNorm);
+      nextWeek.setDate(todayNorm.getDate() + 7);
+
+      const allCards = Object.values(window._shareCardData || {});
+      const weekCards = allCards.filter(d => {
+        if (!d.rawDate) return false;
+        const parsed = new Date(d.rawDate);
+        if (isNaN(parsed)) return false;
+        const p = new Date(parsed); p.setHours(0, 0, 0, 0);
+        return p >= todayNorm && p <= nextWeek;
+      });
+
+      if (!weekCards.length) {
+        btn.innerHTML = origLabel; btn.disabled = false;
+        alert('No upcoming games found for this week.');
+        return;
+      }
+
+      // Group by date, then canonical matchup within each date
+      const byDate = new Map();
+      weekCards.forEach(d => {
+        const parsed = new Date(d.rawDate);
+        const p = new Date(parsed); p.setHours(0, 0, 0, 0);
+        const dateKey = p.toISOString().slice(0, 10);
+        if (!byDate.has(dateKey)) byDate.set(dateKey, { date: p, matchups: new Map() });
+        const mk = [d.awayTeam, d.homeTeam].map(t => t.toLowerCase()).sort().join('_');
+        const entry = byDate.get(dateKey);
+        if (!entry.matchups.has(mk)) entry.matchups.set(mk, { games: [] });
+        entry.matchups.get(mk).games.push(d);
+      });
+
+      const sortedDates = [...byDate.entries()].sort((a, b) => a[1].date - b[1].date);
+      const firstDate = sortedDates[0][1].date;
+      const lastDate  = sortedDates[sortedDates.length - 1][1].date;
+      const rangeLabel = firstDate.toDateString() === lastDate.toDateString()
+        ? firstDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
+        : firstDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+          + ' – '
+          + lastDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+      const hasAnyPlayoff = weekCards.some(c => _getGameTier(c) !== 'regular');
+      const headerBg = hasAnyPlayoff
+        ? 'linear-gradient(135deg,#1a237e 0%,#4a148c 100%)'
+        : 'linear-gradient(135deg,#2d5016 0%,#1a6b4a 100%)';
+
+      const wrapper = document.createElement('div');
+      wrapper.style.cssText = [
+        'position:fixed','top:-9999px','left:-9999px',
+        'width:460px','background:#ffffff',
+        'border-radius:16px','overflow:hidden',
+        "font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif",
+        'box-shadow:0 4px 24px rgba(0,0,0,0.12)'
+      ].join(';') + ';';
+
+      let html = `
+        <div style="background:${headerBg};padding:14px 20px;display:flex;align-items:center;justify-content:space-between;">
+          <div style="color:#fff;font-weight:800;font-size:1rem;">&#x1F4C5; This Week's Games</div>
+          <div style="color:rgba(255,255,255,0.8);font-size:0.75rem;font-weight:600;">acessoftballreference.com</div>
+        </div>
+        <div style="padding:6px 20px 4px;background:#f0fdf4;border-bottom:1px solid #d1fae5;">
+          <div style="font-size:0.78rem;font-weight:700;color:#2d5016;text-transform:uppercase;letter-spacing:0.5px;">${rangeLabel}</div>
+        </div>
+        <div style="padding:12px 20px;display:flex;flex-direction:column;gap:10px;">
+      `;
+
+      sortedDates.forEach(([, { date, matchups }]) => {
+        const dayLabel = date.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+        html += `<div style="font-size:0.78rem;font-weight:800;color:#2d5016;text-transform:uppercase;letter-spacing:0.6px;padding:6px 0 2px;border-bottom:2px solid #d1fae5;">${dayLabel}</div>`;
+
+        matchups.forEach(({ games }) => {
+          const d = games[0];
+          const blockTier = _getGameTier(d);
+
+          const themes = {
+            finals:  { innerBg:'linear-gradient(180deg,#fffbf0 0%,#fff8e1 100%)', border:'#f6c84b', badgeBg:'linear-gradient(135deg,#f6d365 0%,#fda085 100%)', badgeText:'&#x1F3C6; CHAMPIONSHIP', badgeColor:'#5a3e00', metaColor:'#92650a', vsColor:'#92650a', teamColor:'#2d1a00' },
+            playoff: { innerBg:'linear-gradient(180deg,#f5f3ff 0%,#ede7f6 100%)', border:'#9c6ee8', badgeBg:'linear-gradient(135deg,#6a1b9a 0%,#1a237e 100%)', badgeText:'&#x1F3C6; PLAYOFFS', badgeColor:'#fff', metaColor:'#6a1b9a', vsColor:'#6a1b9a', teamColor:'#1a0533' },
+            regular: { innerBg:'#f8fafc', border:'#e2e8f0', badgeBg:null, badgeText:null, badgeColor:null, metaColor:'#718096', vsColor:'#2d5016', teamColor:'#2d3748' }
+          };
+          const t = themes[blockTier] || themes.regular;
+
+          const times = games.map(g => {
+            const raw = g.gameTime || '';
+            if (!raw) return '';
+            if (/^\d{1,2}:\d{2}$/.test(raw)) {
+              const [h, m] = raw.split(':').map(Number);
+              const pd = h >= 12 ? 'PM' : 'AM';
+              const dh = h === 0 ? 12 : h > 12 ? h - 12 : h;
+              return `${dh}:${String(m).padStart(2,'0')} ${pd}`;
+            }
+            return raw;
+          }).filter(Boolean).join(' & ');
+
+          const metaLabel = `${times ? times + ' &middot; ' : ''}${d.gameType || 'Regular'} Season${games.length > 1 ? ' &middot; DH' : ''}`;
+
+          const teamPlayerMap = new Map();
+          games.forEach(g => {
+            [g.awayTeam, g.homeTeam].forEach(tm => { if (!teamPlayerMap.has(tm)) teamPlayerMap.set(tm, new Set()); });
+            (g.awayTopPlayers || []).forEach(p => teamPlayerMap.get(g.awayTeam).add(p));
+            (g.homeTopPlayers || []).forEach(p => teamPlayerMap.get(g.homeTeam).add(p));
+          });
+          const awayPlayers = [...(teamPlayerMap.get(d.awayTeam) || [])];
+          const homePlayers = [...(teamPlayerMap.get(d.homeTeam) || [])];
+          const hasPlayers  = awayPlayers.length || homePlayers.length;
+
+          const radii = blockTier !== 'regular' ? '0 0 10px 10px' : '10px';
+          const borderStyle = blockTier === 'regular' ? `1px solid ${t.border}` : 'none';
+
+          html += blockTier !== 'regular'
+            ? `<div style="background:${t.badgeBg};border-radius:11px 11px 0 0;padding:4px 12px;text-align:center;"><span style="color:${t.badgeColor};font-weight:900;font-size:0.68rem;letter-spacing:1px;">${t.badgeText}</span></div>`
+            : '';
+
+          html += `
+            <div style="background:${t.innerBg};border-radius:${radii};padding:12px 14px;border:${borderStyle};">
+              <div style="font-size:0.68rem;color:${t.metaColor};font-weight:600;margin-bottom:8px;text-align:center;text-transform:uppercase;letter-spacing:0.4px;">${metaLabel}</div>
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:${hasPlayers ? '10px' : '0'};">
+                <div style="text-align:center;flex:1;">
+                  <img src="${d.awayLogoPath || ''}" style="width:52px;height:52px;object-fit:contain;display:block;margin:0 auto 4px;" onerror="this.style.display='none';">
+                  <div style="font-weight:800;font-size:0.88rem;color:${t.teamColor};">${d.awayTeam}</div>
+                  <div style="font-size:0.7rem;color:#718096;">${d.awayRecordText || ''}</div>
+                </div>
+                <div style="text-align:center;flex-shrink:0;font-size:1.1rem;font-weight:900;color:${t.vsColor};">@</div>
+                <div style="text-align:center;flex:1;">
+                  <img src="${d.homeLogoPath || ''}" style="width:52px;height:52px;object-fit:contain;display:block;margin:0 auto 4px;" onerror="this.style.display='none';">
+                  <div style="font-weight:800;font-size:0.88rem;color:${t.teamColor};">${d.homeTeam}</div>
+                  <div style="font-size:0.7rem;color:#718096;">${d.homeRecordText || ''}</div>
+                </div>
+              </div>
+              ${hasPlayers ? `
+              <div style="display:flex;gap:8px;padding-top:8px;border-top:1px solid ${t.border};">
+                <div style="flex:1;text-align:center;">
+                  <div style="font-size:0.62rem;font-weight:700;color:${t.vsColor};text-transform:uppercase;letter-spacing:0.4px;margin-bottom:3px;">${d.awayTeam}</div>
+                  ${awayPlayers.map(p => `<div style="font-size:0.72rem;color:#2d3748;padding:1px 0;">${p}</div>`).join('')}
+                </div>
+                <div style="flex:1;text-align:center;">
+                  <div style="font-size:0.62rem;font-weight:700;color:${t.vsColor};text-transform:uppercase;letter-spacing:0.4px;margin-bottom:3px;">${d.homeTeam}</div>
+                  ${homePlayers.map(p => `<div style="font-size:0.72rem;color:#2d3748;padding:1px 0;">${p}</div>`).join('')}
+                </div>
+              </div>` : ''}
+            </div>
+          `;
+        });
+      });
+
+      html += `
+          <div style="font-size:0.65rem;color:#a0aec0;text-align:right;padding-top:2px;">Generated ${new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</div>
+        </div>
+      `;
+
+      wrapper.innerHTML = html;
+      document.body.appendChild(wrapper);
+      const canvas = await html2canvas(wrapper, { scale:2, backgroundColor:'#ffffff', useCORS:true, logging:false });
+      document.body.removeChild(wrapper);
+
+      const dateSlug = new Date().toISOString().slice(0,10);
+      await shareOrDownloadCanvas(canvas, `aces-week-${dateSlug}.png`);
+
+      btn.innerHTML = '✅ Done!';
+      setTimeout(() => { btn.innerHTML = origLabel; btn.disabled = false; }, 2500);
+
+    } catch(err) {
+      console.error('shareWeekGames error:', err);
+      btn.innerHTML = origLabel;
+      btn.disabled = false;
+    }
+  }
+
+
   async function shareOrDownloadCanvas(canvas, filename) {
     const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
     if (isMobile && navigator.share && navigator.canShare) {
