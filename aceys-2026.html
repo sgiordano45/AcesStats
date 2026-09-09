@@ -93,9 +93,46 @@
 
     /* Confetti canvas */
     #confettiCanvas { position: fixed; inset: 0; pointer-events: none; z-index: 9999; }
+
+    /* ── Projector Mode ── */
+    body.projector-mode {
+      --gold:       #ffd700;
+      --gold-light: #ffe866;
+      --gold-glow:  rgba(255,215,0,0.55);
+      --dark:       #000000;
+      --dark2:      #0c0c0c;
+      --dark3:      #161616;
+      --border:     #4a4020;
+      --text:       #ffffff;
+      --text-dim:   #c8b878;
+    }
+    body.projector-mode .award-card { border-width: 2px; }
+    body.projector-mode .award-card.revealed { box-shadow: 0 0 32px rgba(255,215,0,0.35); }
+    body.projector-mode .award-label,
+    body.projector-mode .award-sublabel,
+    body.projector-mode .award-note { color: #bfaa60; }
+    body.projector-mode .award-winner { font-size: 1.75rem; text-shadow: 0 0 20px rgba(255,232,102,0.6); }
+    body.projector-mode .stat-chip .sv { font-size: 1.25rem; }
+    body.projector-mode .stat-chip .sl { color: #b0a060; font-size: 0.7rem; }
+    body.projector-mode .multi-winner-list li { font-size: 1.25rem; }
+    body.projector-mode .hero h1 { text-shadow: 0 0 40px rgba(255,215,0,0.6); }
+    body.projector-mode .section-title { font-size: 1.2rem; }
+
+    /* Projector toggle button */
+    .projector-toggle {
+      position: fixed; bottom: 1.25rem; right: 1.25rem; z-index: 9998;
+      background: rgba(13,11,8,0.9); border: 1px solid var(--border);
+      color: var(--text-dim); font-family: 'Inter', sans-serif;
+      font-size: 0.72rem; font-weight: 700; letter-spacing: 0.08em;
+      text-transform: uppercase; padding: 0.5rem 0.9rem; border-radius: 999px;
+      cursor: pointer; transition: all 0.2s; opacity: 0.55;
+    }
+    .projector-toggle:hover { opacity: 1; border-color: var(--gold); color: var(--gold); }
+    body.projector-mode .projector-toggle { border-color: var(--gold); color: var(--gold); opacity: 0.8; }
   </style>
 </head>
 <body>
+  <button class="projector-toggle" onclick="toggleProjector()" id="projectorBtn">&#9654; Projector</button>
 
 <canvas id="confettiCanvas"></canvas>
 
@@ -233,8 +270,9 @@ async function fetchPlayerStats(winner, awardId) {
       if (pitchKey) {
         const ps = d.pitchingSeasons[pitchKey];
         result.pitching = {
-          IP: ps.inningsPitched != null ? Number(ps.inningsPitched) : null,
-          RA: ps.runsAllowed    != null ? Number(ps.runsAllowed)    : null,
+          IP:  ps.inningsPitched     != null ? Number(ps.inningsPitched)             : null,
+          RA:  ps.runsAllowed        != null ? Number(ps.runsAllowed)                : null,
+          ERA: ps.earnedRunAverage   != null ? Number(ps.earnedRunAverage).toFixed(2): null,
         };
       }
     }
@@ -290,7 +328,8 @@ async function injectPlayerStats(awardId, data) {
       const pitchPart = ps && ps.IP != null ? `
         <div class="stats-grid">
           <div class="stat-chip"><div class="sv">${ps.IP}</div><div class="sl">IP</div></div>
-          ${ps.RA != null ? `<div class="stat-chip"><div class="sv">${ps.RA}</div><div class="sl">RA</div></div>` : ''}
+          ${ps.RA  != null ? `<div class="stat-chip"><div class="sv">${ps.RA}</div><div class="sl">RA</div></div>` : ''}
+          ${ps.ERA != null ? `<div class="stat-chip"><div class="sv">${ps.ERA}</div><div class="sl">ERA</div></div>` : ''}
         </div>` : '';
       const hitPart = s && (s.H || s.AVG) ? `
         <div class="stats-grid">
@@ -536,6 +575,17 @@ window.addEventListener('resize', () => {
 });
 
 init();
+
+// ── Projector mode toggle ─────────────────────────────────────────────────
+function toggleProjector() {
+  const on = document.body.classList.toggle('projector-mode');
+  document.getElementById('projectorBtn').textContent = on ? '⏸ Projector' : '▶ Projector';
+  try { localStorage.setItem('aceys_projector', on ? '1' : '0'); } catch(e) {}
+}
+try { if (localStorage.getItem('aceys_projector') === '1') {
+  document.body.classList.add('projector-mode');
+  document.getElementById('projectorBtn').textContent = '⏸ Projector';
+}} catch(e) {}
 </script>
 
 </body>
