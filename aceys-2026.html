@@ -168,11 +168,52 @@
     }
     .green-toggle:hover { opacity: 1; border-color: #22c55e; color: #4ade80; }
     body.green-mode .green-toggle { border-color: #22c55e; color: #4ade80; opacity: 0.8; }
+
+    /* ── Bright Mode ── */
+    body.bright-mode {
+      --gold:       #8a6800;
+      --gold-light: #7a5c00;
+      --gold-glow:  rgba(138,104,0,0.35);
+      --dark:       #fffdf5;
+      --dark2:      #ffffff;
+      --dark3:      #fef9e8;
+      --border:     #d4aa30;
+      --text:       #1a1200;
+      --text-dim:   #6b5a2a;
+    }
+    body.bright-mode .award-card { box-shadow: 0 2px 18px rgba(138,104,0,0.12); }
+    body.bright-mode .award-card.revealed { border-color: #c9a227; box-shadow: 0 0 24px rgba(138,104,0,0.2); }
+    body.bright-mode .award-winner { color: #8a6800; text-shadow: none; font-size: 1.75rem; }
+    body.bright-mode .hero h1 { text-shadow: 0 0 24px rgba(138,104,0,0.3); }
+    body.bright-mode .section-title { font-size: 1.2rem; }
+    body.bright-mode .stat-chip .sv { color: #8a6800; font-size: 1.25rem; }
+    body.bright-mode .stat-chip .sl { color: #6b5a2a; }
+    body.bright-mode .multi-winner-list li { color: #8a6800; font-size: 1.25rem; }
+    body.bright-mode .badge-chip { border-color: #d4aa30; color: #8a6800; background: rgba(212,170,48,0.15); }
+    body.bright-mode .badge-chip.gold { border-color: #c9a227; color: #7a5c00; background: rgba(201,162,39,0.2); }
+    body.bright-mode .hero-divider { background: linear-gradient(to right, transparent, #c9a227, transparent); }
+    body.bright-mode .award-label,
+    body.bright-mode .award-sublabel,
+    body.bright-mode .award-note { color: #6b5a2a; }
+    body.bright-mode .page-footer { border-top-color: #d4aa30; }
+
+    /* Bright mode toggle button */
+    .bright-toggle {
+      position: fixed; bottom: 1.25rem; right: 16rem; z-index: 9998;
+      background: rgba(13,11,8,0.9); border: 1px solid #d4aa30;
+      color: #c9a227; font-family: 'Inter', sans-serif;
+      font-size: 0.72rem; font-weight: 700; letter-spacing: 0.08em;
+      text-transform: uppercase; padding: 0.5rem 0.9rem; border-radius: 999px;
+      cursor: pointer; transition: all 0.2s; opacity: 0.55;
+    }
+    .bright-toggle:hover { opacity: 1; border-color: #f0d060; color: #f0d060; }
+    body.bright-mode .bright-toggle { background: #fffdf5; border-color: #c9a227; color: #8a6800; opacity: 0.85; }
   </style>
 </head>
 <body>
-  <button class="green-toggle" onclick="toggleGreen()" id="greenBtn">&#9654; Green</button>
-  <button class="projector-toggle" onclick="toggleProjector()" id="projectorBtn">&#9654; Projector</button>
+  <button class="bright-toggle" onclick="window.toggleBright()" id="brightBtn">&#9654; Bright</button>
+  <button class="green-toggle" onclick="window.toggleGreen()" id="greenBtn">&#9654; Green</button>
+  <button class="projector-toggle" onclick="window.toggleProjector()" id="projectorBtn">&#9654; Projector</button>
 
 <canvas id="confettiCanvas"></canvas>
 
@@ -616,25 +657,43 @@ window.addEventListener('resize', () => {
 
 init();
 
-// ── Projector mode toggle ─────────────────────────────────────────────────
-window.toggleProjector = function() {
-  const on = document.body.classList.toggle('projector-mode');
-  document.getElementById('projectorBtn').textContent = on ? '⏸ Projector' : '▶ Projector';
-  try { localStorage.setItem('aceys_projector', on ? '1' : '0'); } catch(e) {}
-};
-window.toggleGreen = function() {
-  const on = document.body.classList.toggle('green-mode');
-  document.getElementById('greenBtn').textContent = on ? '⏸ Green' : '▶ Green';
-  try { localStorage.setItem('aceys_green', on ? '1' : '0'); } catch(e) {}
-};
-try { if (localStorage.getItem('aceys_projector') === '1') {
-  document.body.classList.add('projector-mode');
-  document.getElementById('projectorBtn').textContent = '⏸ Projector';
-}} catch(e) {}
-try { if (localStorage.getItem('aceys_green') === '1') {
-  document.body.classList.add('green-mode');
-  document.getElementById('greenBtn').textContent = '⏸ Green';
-}} catch(e) {}
+// ── Display Mode Toggles (mutually exclusive) ─────────────────────────────
+(function() {
+  const MODES = [
+    { cls: 'projector-mode', key: 'aceys_projector', btnId: 'projectorBtn', label: 'Projector' },
+    { cls: 'green-mode',     key: 'aceys_green',     btnId: 'greenBtn',     label: 'Green'     },
+    { cls: 'bright-mode',    key: 'aceys_bright',    btnId: 'brightBtn',    label: 'Bright'    },
+  ];
+
+  function applyMode(activeKey) {
+    MODES.forEach(m => {
+      const on = m.key === activeKey;
+      document.body.classList.toggle(m.cls, on);
+      try { localStorage.setItem(m.key, on ? '1' : '0'); } catch(e) {}
+      const btn = document.getElementById(m.btnId);
+      if (btn) btn.textContent = (on ? '⏸ ' : '▶ ') + m.label;
+    });
+  }
+
+  window.toggleProjector = function() {
+    const already = document.body.classList.contains('projector-mode');
+    applyMode(already ? null : 'aceys_projector');
+  };
+  window.toggleGreen = function() {
+    const already = document.body.classList.contains('green-mode');
+    applyMode(already ? null : 'aceys_green');
+  };
+  window.toggleBright = function() {
+    const already = document.body.classList.contains('bright-mode');
+    applyMode(already ? null : 'aceys_bright');
+  };
+
+  // Restore saved mode on load (only one can be active)
+  try {
+    const saved = MODES.find(m => localStorage.getItem(m.key) === '1');
+    if (saved) applyMode(saved.key);
+  } catch(e) {}
+})();
 </script>
 
 </body>
