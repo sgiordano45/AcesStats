@@ -30,8 +30,7 @@ export const ROSTER_SIZE = Object.values(DFS_SLOTS).reduce((a, b) => a + b, 0); 
 // Captains often can't (or don't) pin a player to a specific LF/CF/RF/etc,
 // so the generic 'IF' / 'OF' values are common in practice — those have to
 // satisfy their DFS group too, not just the specific ones. 'IF/OF' means
-// dual-eligible for both. 'DH'/'UT'/'Flex'/'-' have no fixed defensive
-// group and stay UTIL-only, same as truly unset.
+// dual-eligible for both, same as the generic utility tags below.
 export const POSITION_GROUPS = {
   IF: ['1B', '2B', '3B', 'SS', 'IF'],
   OF: ['LF', 'CF', 'RF', 'OF'],
@@ -39,12 +38,17 @@ export const POSITION_GROUPS = {
   P: ['P']
 };
 
+// Generic "can play anywhere in the field" tags — eligible for both IF and
+// OF slots (not C/P, which need real position-specific skill). Only a
+// truly unset position ('-'/blank/missing) stays UTIL-only.
+const UTILITY_TAGS = ['UT', 'UTIL', 'FLEX', 'DH'];
+
 /**
  * Normalize a roster position value into the DFS group(s) it satisfies.
- * Handles single values ('LF', 'IF', 'OF', ...) and slash-compound values
- * like 'IF/OF'. Case/whitespace-insensitive since roster data isn't
- * perfectly consistent. DH/UT/Flex/'-'/unset all return [] (no fixed
- * defensive group -> UTIL only).
+ * Handles single values ('LF', 'IF', 'OF', ...), slash-compound values
+ * like 'IF/OF', and generic utility tags (UT/Flex/DH -> both IF and OF).
+ * Case/whitespace-insensitive since roster data isn't perfectly
+ * consistent. Only a truly unset/blank position returns [] (UTIL-only).
  */
 export function positionGroupsFor(position) {
   if (!position) return [];
@@ -55,6 +59,10 @@ export function positionGroupsFor(position) {
     if (POSITION_GROUPS.OF.includes(part) && !groups.includes('OF')) groups.push('OF');
     if (POSITION_GROUPS.C.includes(part) && !groups.includes('C')) groups.push('C');
     if (POSITION_GROUPS.P.includes(part) && !groups.includes('P')) groups.push('P');
+    if (UTILITY_TAGS.includes(part)) {
+      if (!groups.includes('IF')) groups.push('IF');
+      if (!groups.includes('OF')) groups.push('OF');
+    }
   });
   return groups;
 }
