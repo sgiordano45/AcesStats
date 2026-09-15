@@ -79,7 +79,7 @@ export function eligibleSlotsForPosition(position) {
 // SALARY
 // ============================================================
 
-export const SALARY_CAP = 50000;
+export const SALARY_CAP = 60000;
 export const SALARY_MIN = 3000;
 export const SALARY_MAX = 10000;
 export const SALARY_STEP = 100;
