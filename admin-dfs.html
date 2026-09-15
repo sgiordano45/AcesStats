@@ -175,7 +175,7 @@
 
     <div class="card">
       <h2>1. Pick a Week</h2>
-      <p class="subtitle">Weeks come straight from that season's schedule (the same <code>week</code> field schedule-generator writes on each game).</p>
+      <p class="subtitle">Weeks are Sunday&ndash;Saturday buckets built from each game's actual date (not the schedule's <code>week</code> field, which isn't reliably set on every game).</p>
       <div class="form-row">
         <div class="form-group">
           <label for="seasonSelect">Season</label>
@@ -267,7 +267,7 @@
   let currentUser = null;
   let userProfile = null;
   let seasons = [];
-  let weeksForSeason = []; // [{ week, games: [...], minLock: Date }]
+  let weeksForSeason = []; // [{ weekId, games: [...], weekStart, weekEnd, scheduleWeeks }]
   let selectedWeekInfo = null;
   let generatedSalaryPool = null; // { playerId: { name, team, position, legacyId, salary, rating, currentSeasonGames } }
 
@@ -353,6 +353,44 @@
   seasonSelect.addEventListener('change', () => loadWeeksForSeason(seasonSelect.value));
   weekSelect.addEventListener('change', () => onWeekSelected());
 
+  // Robust date parsing for game docs. schedule-generator.html writes "date"
+  // as a JS Date (-> Firestore Timestamp), but some games are added/edited
+  // by hand and store "date" as a plain string instead. weekend-preview.html
+  // has to handle both shapes to find upcoming games; we mirror that here
+  // rather than assuming every game has a Timestamp (or a populated "week"
+  // field, which isn't reliably set on every game either).
+  function parseGameDateOnly(dateField) {
+    if (!dateField) return null;
+    let d;
+    if (typeof dateField === 'object' && typeof dateField.toDate === 'function') {
+      d = dateField.toDate();
+    } else if (typeof dateField === 'object' && typeof dateField.seconds === 'number') {
+      d = new Date(dateField.seconds * 1000);
+    } else {
+      d = new Date(dateField);
+    }
+    if (!d || isNaN(d.getTime())) return null;
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate()); // local midnight, time stripped
+  }
+
+  // League weeks run Sunday–Saturday — find the Sunday on/before this date.
+  function sundayOf(date) {
+    const d = new Date(date);
+    d.setDate(d.getDate() - d.getDay());
+    return d;
+  }
+
+  function isoDate(date) {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }
+
+  function shortDate(date) {
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  }
+
   async function loadWeeksForSeason(seasonId) {
     weekSelect.innerHTML = '<option value="">Loading games&hellip;</option>';
     weekSummary.style.display = 'none';
@@ -362,38 +400,65 @@
     if (!seasonId) return;
 
     const gamesSnap = await getDocs(collection(db, 'seasons', seasonId, 'games'));
-    const byWeek = {};
+    const dated = [];
+    let undatedCount = 0;
     gamesSnap.forEach(d => {
       const g = { id: d.id, ...d.data() };
-      const wk = g.week;
-      if (wk === undefined || wk === null) return;
-      if (!byWeek[wk]) byWeek[wk] = [];
-      byWeek[wk].push(g);
+      const parsedDate = parseGameDateOnly(g.date);
+      if (!parsedDate) { undatedCount++; return; }
+      g._parsedDate = parsedDate;
+      dated.push(g);
     });
 
-    weeksForSeason = Object.keys(byWeek)
-      .map(Number)
-      .sort((a, b) => a - b)
-      .map(wk => ({ week: wk, games: byWeek[wk] }));
-
-    if (weeksForSeason.length === 0) {
+    if (gamesSnap.empty) {
       weekSelect.innerHTML = '<option value="">No games found for this season</option>';
-      log(`No games with a "week" field found in seasons/${seasonId}/games.`, 'warn');
+      log(`seasons/${seasonId}/games is empty.`, 'warn');
       return;
     }
+    if (dated.length === 0) {
+      weekSelect.innerHTML = '<option value="">No games with a readable date found</option>';
+      log(`Found ${gamesSnap.size} game(s) in seasons/${seasonId}/games, but none had a "date" field I could parse.`, 'warn');
+      return;
+    }
+    if (undatedCount > 0) {
+      log(`Skipped ${undatedCount} game(s) with no readable date.`, 'warn');
+    }
 
-    weekSelect.innerHTML = weeksForSeason.map(w =>
-      `<option value="${w.week}">Week ${w.week} (${w.games.length} game${w.games.length === 1 ? '' : 's'})</option>`
-    ).join('');
+    // Bucket into Sunday-start weeks by each game's actual date — NOT by a
+    // "week" number field, which (like weekend-preview.html found) isn't
+    // reliably populated on every game.
+    const buckets = {};
+    dated.forEach(g => {
+      const weekId = isoDate(sundayOf(g._parsedDate));
+      if (!buckets[weekId]) buckets[weekId] = [];
+      buckets[weekId].push(g);
+    });
 
-    weekSelect.value = String(weeksForSeason[0].week);
+    weeksForSeason = Object.keys(buckets)
+      .sort((a, b) => b.localeCompare(a)) // most recent first
+      .map(weekId => {
+        const games = buckets[weekId].slice().sort((a, b) => a._parsedDate - b._parsedDate);
+        const weekStart = sundayOf(games[0]._parsedDate);
+        const weekEnd = new Date(weekStart);
+        weekEnd.setDate(weekEnd.getDate() + 6);
+        const scheduleWeeks = [...new Set(games.map(g => g.week).filter(w => w !== undefined && w !== null))];
+        return { weekId, games, weekStart, weekEnd, scheduleWeeks };
+      });
+
+    weekSelect.innerHTML = weeksForSeason.map(w => {
+      const rangeLabel = `${shortDate(w.weekStart)}\u2013${shortDate(w.weekEnd)}`;
+      const wkTag = w.scheduleWeeks.length === 1 ? ` \u2014 Week ${w.scheduleWeeks[0]}` : '';
+      return `<option value="${w.weekId}">${rangeLabel}${wkTag} (${w.games.length} game${w.games.length === 1 ? '' : 's'})</option>`;
+    }).join('');
+
+    weekSelect.value = weeksForSeason[0].weekId;
     await onWeekSelected();
   }
 
   async function onWeekSelected() {
-    const wk = Number(weekSelect.value);
+    const weekId = weekSelect.value;
     const seasonId = seasonSelect.value;
-    const info = weeksForSeason.find(w => w.week === wk);
+    const info = weeksForSeason.find(w => w.weekId === weekId);
     if (!info) {
       weekSummary.style.display = 'none';
       previewBtn.disabled = true;
@@ -402,10 +467,12 @@
     }
 
     const lockAt = earliestGameTime(info.games);
-    selectedWeekInfo = { seasonId, week: wk, games: info.games, lockAt };
+    selectedWeekInfo = {
+      seasonId, weekId, games: info.games, lockAt,
+      weekStart: info.weekStart, weekEnd: info.weekEnd, scheduleWeeks: info.scheduleWeeks
+    };
 
-    // Check existing dfsWeeks doc for status
-    const weekDocId = `${seasonId}_${wk}`;
+    const weekDocId = `${seasonId}_${weekId}`;
     const weekDocSnap = await getDoc(doc(db, 'dfsWeeks', weekDocId));
     const existing = weekDocSnap.exists() ? weekDocSnap.data() : null;
 
@@ -413,9 +480,7 @@
     const statusLabel = existing ? (existing.status || 'open') : 'not generated yet';
 
     const gamesHtml = info.games
-      .slice()
-      .sort((a, b) => (a.date?.toMillis?.() || 0) - (b.date?.toMillis?.() || 0))
-      .map(g => `<li>${formatGameDate(g.date)} ${g.time || ''} &mdash; ${g.awayTeam || '?'} @ ${g.homeTeam || '?'}</li>`)
+      .map(g => `<li>${formatGameDate(g._parsedDate)} ${g.time || ''} &mdash; ${g.awayTeam || '?'} @ ${g.homeTeam || '?'}</li>`)
       .join('');
 
     weekSummary.style.display = 'block';
@@ -435,16 +500,14 @@
   function earliestGameTime(games) {
     let earliest = null;
     games.forEach(g => {
-      const combined = combineDateAndTime(g.date, g.time);
+      const combined = combineDateAndTime(g._parsedDate, g.time);
       if (combined && (!earliest || combined < earliest)) earliest = combined;
     });
     return earliest;
   }
 
-  function combineDateAndTime(dateValue, timeStr) {
-    if (!dateValue) return null;
-    const d = dateValue.toDate ? dateValue.toDate() : new Date(dateValue);
-    if (isNaN(d.getTime())) return null;
+  function combineDateAndTime(dateOnly, timeStr) {
+    if (!dateOnly) return null;
     let hours = 0, minutes = 0;
     const match = /(\d{1,2}):(\d{2})\s*(AM|PM)/i.exec(timeStr || '');
     if (match) {
@@ -454,14 +517,12 @@
       if (ampm === 'PM' && hours !== 12) hours += 12;
       if (ampm === 'AM' && hours === 12) hours = 0;
     }
-    return new Date(d.getFullYear(), d.getMonth(), d.getDate(), hours, minutes, 0, 0);
+    return new Date(dateOnly.getFullYear(), dateOnly.getMonth(), dateOnly.getDate(), hours, minutes, 0, 0);
   }
 
-  function formatGameDate(dateValue) {
-    if (!dateValue) return '';
-    const d = dateValue.toDate ? dateValue.toDate() : new Date(dateValue);
-    if (isNaN(d.getTime())) return '';
-    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  function formatGameDate(dateOnly) {
+    if (!dateOnly) return '';
+    return shortDate(dateOnly);
   }
 
   // ============================================================
@@ -493,7 +554,7 @@
   async function generateSalaryPreview() {
     previewBtn.disabled = true;
     previewBtn.textContent = '⏳ Generating…';
-    log(`Generating salaries for ${selectedWeekInfo.seasonId} week ${selectedWeekInfo.week}...`);
+    log(`Generating salaries for ${selectedWeekInfo.seasonId} week of ${selectedWeekInfo.weekId}...`);
 
     try {
       const seasonId = selectedWeekInfo.seasonId;
@@ -607,8 +668,8 @@
   async function publishWeek() {
     if (!generatedSalaryPool || !selectedWeekInfo) return;
 
-    const { seasonId, week, games, lockAt } = selectedWeekInfo;
-    const weekDocId = `${seasonId}_${week}`;
+    const { seasonId, weekId, games, lockAt, weekStart, weekEnd } = selectedWeekInfo;
+    const weekDocId = `${seasonId}_${weekId}`;
 
     const existingSnap = await getDoc(doc(db, 'dfsWeeks', weekDocId));
     if (existingSnap.exists()) {
@@ -624,16 +685,19 @@
 
     try {
       await setDoc(doc(db, 'dfsSalaries', weekDocId), {
-        seasonId, week,
+        seasonId, weekId,
         players: generatedSalaryPool,
         generatedAt: serverTimestamp(),
         generatedBy: currentUser.uid,
         generatedByName: userProfile?.displayName || currentUser.email
       });
 
+      const label = `${weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}\u2013${weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+
       await setDoc(doc(db, 'dfsWeeks', weekDocId), {
-        seasonId, week,
-        label: `Week ${week}`,
+        seasonId, weekId,
+        label,
+        scheduleWeeks: selectedWeekInfo.scheduleWeeks || [],
         lockAt: lockAt ? Timestamp.fromDate(lockAt) : null,
         gameIds: games.map(g => g.id),
         status: 'open',
@@ -668,8 +732,8 @@
 
   async function scoreWeek() {
     if (!selectedWeekInfo) return;
-    const { seasonId, week, games } = selectedWeekInfo;
-    const weekDocId = `${seasonId}_${week}`;
+    const { seasonId, weekId, games } = selectedWeekInfo;
+    const weekDocId = `${seasonId}_${weekId}`;
 
     const salariesSnap = await getDoc(doc(db, 'dfsSalaries', weekDocId));
     if (!salariesSnap.exists()) {
@@ -680,7 +744,7 @@
     const gameIds = games.map(g => g.id);
     const gameIdChunks = chunk(gameIds, 10);
 
-    if (!confirm(`Score ${Object.keys(pool).length} players against ${gameIds.length} game(s) for week ${week}? This overwrites any existing scores for this week.`)) return;
+    if (!confirm(`Score ${Object.keys(pool).length} players against ${gameIds.length} game(s) for the week of ${weekId}? This overwrites any existing scores for this week.`)) return;
 
     scoreBtn.disabled = true;
     scoreBtn.textContent = '⏳ Scoring…';
@@ -736,7 +800,7 @@
       }));
 
       await setDoc(doc(db, 'dfsScores', weekDocId), {
-        seasonId, week,
+        seasonId, weekId,
         players: results,
         computedAt: serverTimestamp(),
         computedBy: currentUser.uid

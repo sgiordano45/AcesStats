@@ -331,7 +331,7 @@ body {
       return;
     }
 
-    const weeks = weeksSnap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => b.week - a.week);
+    const weeks = weeksSnap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (b.weekId || '').localeCompare(a.weekId || ''));
     weekDoc = weeks[0];
     weekDocId = weekDoc.id;
 
@@ -351,7 +351,7 @@ body {
 
     el('weekContent').style.display = 'block';
     el('capTotal').textContent = SALARY_CAP.toLocaleString();
-    el('weekLabel').textContent = weekDoc.label || `Week ${weekDoc.week}`;
+    el('weekLabel').textContent = weekDoc.label || weekDoc.weekId || '';
 
     lockAtMs = weekDoc.lockAt?.toMillis ? weekDoc.lockAt.toMillis() : null;
     renderLockBanner();
@@ -588,7 +588,7 @@ body {
         uid: currentUser.uid,
         displayName,
         seasonId: season.id,
-        week: weekDoc.week,
+        weekId: weekDoc.weekId,
         picks,
         totalSalary,
         submittedAt: serverTimestamp()
@@ -655,8 +655,8 @@ body {
   // ============================================================
   // LEADERBOARDS
   // ============================================================
-  async function computeWeekLeaderboard(seasonId, week) {
-    const wDocId = `${seasonId}_${week}`;
+  async function computeWeekLeaderboard(seasonId, weekId) {
+    const wDocId = `${seasonId}_${weekId}`;
     const scoresSnap = await getDoc(doc(db, 'dfsScores', wDocId));
     if (!scoresSnap.exists()) return [];
     const scoreMap = scoresSnap.data().players || {};
@@ -672,8 +672,8 @@ body {
   }
 
   async function renderWeeklyLeaderboard() {
-    el('weeklyLeaderboardLabel').textContent = weekDoc.label || `Week ${weekDoc.week}`;
-    const results = await computeWeekLeaderboard(season.id, weekDoc.week);
+    el('weeklyLeaderboardLabel').textContent = weekDoc.label || weekDoc.weekId || '';
+    const results = await computeWeekLeaderboard(season.id, weekDoc.weekId);
     el('weeklyLeaderboardCard').style.display = 'block';
     if (results.length === 0) {
       el('weeklyLeaderboardBody').innerHTML = `<div class="empty-state">No lineups were submitted this week.</div>`;
@@ -699,7 +699,7 @@ body {
     const totals = {}; // uid -> { displayName, total }
     for (const d of weeksSnap.docs) {
       const w = d.data();
-      const weekResults = await computeWeekLeaderboard(season.id, w.week);
+      const weekResults = await computeWeekLeaderboard(season.id, w.weekId);
       weekResults.forEach(r => {
         if (!totals[r.uid]) totals[r.uid] = { displayName: r.displayName, total: 0 };
         totals[r.uid].total += r.total;
@@ -729,12 +729,12 @@ body {
   // ============================================================
   async function renderHistory() {
     const weeksSnap = await getDocs(query(collection(db, 'dfsWeeks'), where('seasonId', '==', season.id)));
-    const weeks = weeksSnap.docs.map(d => d.data()).sort((a, b) => b.week - a.week);
+    const weeks = weeksSnap.docs.map(d => d.data()).sort((a, b) => (b.weekId || '').localeCompare(a.weekId || ''));
     if (weeks.length === 0) return;
 
     const rows = [];
     for (const w of weeks) {
-      const wDocId = `${season.id}_${w.week}`;
+      const wDocId = `${season.id}_${w.weekId}`;
       const entrySnap = await getDoc(doc(db, 'dfsLineups', wDocId, 'entries', currentUser.uid));
       if (!entrySnap.exists()) continue;
       const entry = entrySnap.data();
@@ -748,7 +748,7 @@ body {
       }
       rows.push(`
         <div class="week-history-row">
-          <span>${w.label || `Week ${w.week}`} <span style="color:var(--text-light);">($${(entry.totalSalary || 0).toLocaleString()})</span></span>
+          <span>${w.label || w.weekId} <span style="color:var(--text-light);">($${(entry.totalSalary || 0).toLocaleString()})</span></span>
           <span class="week-pts">${pts}</span>
         </div>
       `);
