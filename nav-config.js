@@ -132,6 +132,8 @@ export const NAV_STRUCTURE = {
     { id: 'media', href: 'media.html', label: 'Media Hub', icon: '📺', priority: 3 },
     { id: 'rule-proposal', href: 'rule-proposals.html', label: 'Rule Proposals', icon: '📋', priority: 3 },
     { id: 'rule-review', href: 'rule-review.html', label: 'Rule Review', icon: '📝', priority: 3 },
+    { id: 'aceys-2026', href: 'aceys-2026.html', label: 'The Aceys 2026', icon: '🏆', priority: 3 },
+    { id: 'aces-23-0', href: 'aces-23-0.html', label: '23-0', icon: '🎰', priority: 3 },
     { id: 'champ-preview', href: 'championship-preview.html', label: 'Championship Preview', icon: '🎊', priority: 3 },
     { id: 'playoff-history', href: 'playoff-history.html', label: 'Playoff History', icon: '🗂️', priority: 3 },
     { id: 'feature-submit', href: 'feature-submit.html', label: 'Submit Feedback', icon: '💡', priority: 3 },
@@ -148,18 +150,23 @@ export const NAV_STRUCTURE = {
     { id: 'contributor', href: 'contributor.html', label: 'Contributor Dashboard', icon: '✨', priority: 4, requiresAuth: true, requiresRole: 'contributor' },
     { id: 'favorites', href: 'favorites.html', label: 'Favorites', icon: '⭐', priority: 4, requiresAuth: true },
     { id: 'side-bets', href: 'side-bets.html', label: 'Side Bets', icon: '🎲', priority: 4, requiresAuth: true },
+    { id: 'aces-dfs', href: 'dfs.html', label: 'Aces DFS', icon: '💰', priority: 4, requiresAuth: true },
     { id: 'roster-management', href: 'roster-management.html', label: 'Roster Management', icon: '✉️', priority: 4, requiresAuth: true },
     { id: 'game-tracker', href: 'game-tracker.html', label: 'Game Tracker', icon: '📊', priority: 4, requiresAuth: true },
     { id: 'captain-guide', href: 'captain-guide.html', label: "Captain's Guide", icon: '👨‍✈️', priority: 4, requiresAuth: true, requiresRole: 'captain' },
     { id: 'captain-roster-edit', href: 'captain-roster-edit.html', label: 'Edit Roster', icon: '✏️', priority: 4, requiresAuth: true, requiresRole: 'captain' },
     { id: 'team-scouting-report', href: 'team-scouting-report.html', label: 'Team Scouting Report', icon: '📋', priority: 4, requiresAuth: true, requiresRole: 'captain' },
     { id: 'league-staff-admin', href: 'league-staff-admin.html', label: 'League Staff Admin', icon: '⚙️', priority: 4, requiresAuth: true, requiresRole: 'league_staff' },
+    { id: 'commissioner-hub', href: 'commissioner-hub.html', label: 'Commissioner Hub', icon: '📢', priority: 4, requiresAuth: true, requiresRole: 'league_staff' },
     { id: 'directory', href: 'aces-directory.html', label: 'Aces Directory', icon: '📇', priority: 4, requiresAuth: true },
     { id: 'submit-score', href: 'submit-score.html', label: 'Submit Scores', icon: '🔢️', priority: 4, requiresAuth: true },
     { id: 'submit-stats', href: 'submit-stats.html', label: 'Submit Stats', icon: '🧮', priority: 4, requiresAuth: true },
     { id: 'photo-upload', href: 'photo-upload.html', label: 'Upload Photos', icon: '📤️', priority: 4, requiresAuth: true },
     { id: 'offseason-hub', href: 'offseason.html', label: 'Offseason Hub', icon: '🎣️', priority: 4, requiresAuth: true },
     { id: 'aces-shop', href: 'https://acesmountainside.com/', label: 'Aces Shop', icon: '🛒', priority: 4, requiresAuth: true, external: true },
+    { id: 'spray-intake', href: 'admin-spray-intake.html', label: 'Spray Chart Intake', icon: '🎯', priority: 4, requiresAuth: true, requiresRole: 'admin' },
+    { id: 'aceys-voting', href: 'aceys-award-voting.html', label: 'Aceys Award Voting', icon: '🗳️', priority: 4, requiresAuth: true },
+    { id: 'aceys-admin', href: 'admin-aceys.html', label: 'Aceys Admin', icon: '🏆', priority: 4, requiresAuth: true, requiresRole: 'league_staff' },
     { id: 'admin-hub', href: 'admin-pages.html', label: 'Admin Hub', icon: '🛠️', priority: 4, requiresAuth: true, requiresRole: 'admin' },
     { id: 'admin-view-as', href: 'admin-view-as.html', label: 'View As User', icon: '🎭', priority: 4, requiresAuth: true, requiresRole: 'admin' },
   ],
@@ -375,6 +382,30 @@ export const PAGE_CONFIGS = {
   },
   
   'league-staff-admin.html': {
+    desktop: []
+  },
+
+  'commissioner-hub.html': {
+    desktop: []
+  },
+
+  'admin-spray-intake.html': {
+    desktop: []
+  },
+
+  'aceys-award-voting.html': {
+    desktop: []
+  },
+
+  'admin-aceys.html': {
+    desktop: []
+  },
+
+  'aceys-2026.html': {
+    desktop: []
+  },
+
+  'aces-23-0.html': {
     desktop: []
   },
   

@@ -764,6 +764,39 @@ match /bench/{teamId} {
     }
 
     // ========================================
+    // ACES DFS
+    // ========================================
+
+    match /dfsWeeks/{weekDocId} {
+      allow read: if true;
+      allow write: if canManageContent();
+    }
+
+    match /dfsSalaries/{weekDocId} {
+      allow read: if true;
+      allow write: if canManageContent();
+    }
+
+    match /dfsScores/{weekDocId} {
+      allow read: if true;
+      allow write: if canManageContent();
+    }
+
+    // Lineup entries are keyed by uid under each week. Owners can create/update
+    // their own entry only while that week's dfsWeeks doc is still 'open';
+    // admins/league staff can always write (corrections). Reads are open to
+    // any signed-in user so the weekly/season leaderboards can show everyone's
+    // picks and points.
+    match /dfsLineups/{weekDocId}/entries/{userId} {
+      allow read: if isSignedIn();
+      allow create, update: if canManageContent() || (
+        isOwner(userId) &&
+        get(/databases/$(database)/documents/dfsWeeks/$(weekDocId)).data.status == 'open'
+      );
+      allow delete: if canManageContent();
+    }
+
+    // ========================================
     // SNAKE DRAFT
     // ========================================
 

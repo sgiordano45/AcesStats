@@ -1,0 +1,790 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<link rel="manifest" href="/manifest.json">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin DFS Generator - Mountainside Aces</title>
+<meta name="theme-color" content="#2d5016">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="stylesheet" href="mobile-enhancements.css">
+<link rel="stylesheet" href="nav-styles.css">
+<style>
+  :root {
+    --primary-color: #2d5016;
+    --secondary-color: #1a6b4a;
+    --accent-color: #ffd700;
+    --admin-color: #6b21a8;
+    --admin-secondary: #7c3aed;
+    --card-bg: #ffffff;
+    --text-dark: #2d3748;
+    --text-light: #718096;
+    --border-color: #e2e8f0;
+    --shadow-sm: 0 2px 8px rgba(0,0,0,0.08);
+    --shadow-md: 0 4px 16px rgba(0,0,0,0.12);
+    --shadow-lg: 0 12px 32px rgba(0,0,0,0.16);
+    --success-color: #22c55e;
+    --warning-color: #f59e0b;
+    --danger-color: #ef4444;
+    --info-color: #3b82f6;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    margin: 0;
+    padding: 0;
+    background: linear-gradient(135deg, #f7fafc 0%, #edf2f7 100%);
+    min-height: 100vh;
+    color: var(--text-dark);
+  }
+
+  .loading-overlay {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(255,255,255,0.95);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    z-index: 9999; transition: opacity 0.5s ease;
+  }
+  .loading-overlay.hidden { opacity: 0; pointer-events: none; }
+  .spinner {
+    width: 48px; height: 48px; border: 4px solid var(--border-color);
+    border-top-color: var(--admin-color); border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .header {
+    background: linear-gradient(135deg, var(--admin-color) 0%, var(--admin-secondary) 100%);
+    color: white; text-align: center; padding: 2rem 1.5rem 1.5rem; box-shadow: var(--shadow-lg);
+  }
+  .header h1 { margin: 0 0 0.25rem; font-size: 1.6rem; }
+  .header p { margin: 0; opacity: 0.9; font-size: 0.95rem; }
+  .back-link { color: white; opacity: 0.85; text-decoration: none; font-size: 0.9rem; display: inline-block; margin-bottom: 0.75rem; }
+  .back-link:hover { opacity: 1; text-decoration: underline; }
+
+  .page-container { max-width: 1100px; margin: 0 auto; padding: 1.5rem; }
+
+  .auth-gate {
+    display: none; max-width: 500px; margin: 4rem auto; text-align: center;
+    background: var(--card-bg); padding: 2.5rem; border-radius: 16px; box-shadow: var(--shadow-md);
+  }
+  .auth-gate h2 { color: var(--danger-color); }
+
+  .card {
+    background: var(--card-bg); border-radius: 16px; box-shadow: var(--shadow-md);
+    padding: 1.5rem; margin-bottom: 1.5rem;
+  }
+  .card h2 { margin: 0 0 0.25rem; font-size: 1.2rem; display: flex; align-items: center; gap: 0.5rem; }
+  .card .subtitle { color: var(--text-light); font-size: 0.9rem; margin: 0 0 1rem; }
+
+  .form-row { display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; }
+  .form-group { flex: 1; min-width: 200px; }
+  .form-group label { display: block; font-size: 0.85rem; font-weight: 600; color: var(--text-light); margin-bottom: 0.35rem; }
+  select, input[type="text"], input[type="number"] {
+    width: 100%; padding: 0.6rem 0.75rem; border: 1px solid var(--border-color);
+    border-radius: 8px; font-size: 0.95rem; background: white; color: var(--text-dark);
+  }
+
+  .btn {
+    display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.7rem 1.4rem;
+    border: none; border-radius: 10px; font-size: 0.95rem; font-weight: 600;
+    cursor: pointer; transition: transform 0.15s ease, box-shadow 0.15s ease;
+  }
+  .btn:hover { transform: translateY(-1px); box-shadow: var(--shadow-sm); }
+  .btn:disabled { opacity: 0.55; cursor: not-allowed; transform: none !important; box-shadow: none !important; }
+  .btn-primary { background: var(--admin-color); color: white; }
+  .btn-success { background: var(--success-color); color: white; }
+  .btn-secondary { background: #e2e8f0; color: var(--text-dark); }
+  .btn-danger { background: var(--danger-color); color: white; }
+
+  .week-summary {
+    background: #faf5ff; border: 1px solid #e9d5ff; border-radius: 10px;
+    padding: 1rem; margin-bottom: 1rem; font-size: 0.9rem;
+  }
+  .week-summary .status-pill {
+    display: inline-block; padding: 0.15rem 0.6rem; border-radius: 20px;
+    font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em;
+  }
+  .status-none { background: #f1f5f9; color: #64748b; }
+  .status-open { background: #dbeafe; color: #1e40af; }
+  .status-locked { background: #fef3c7; color: #92400e; }
+  .status-scored { background: #dcfce7; color: #15803d; }
+
+  .game-list { list-style: none; margin: 0.5rem 0 0; padding: 0; font-size: 0.85rem; color: var(--text-light); }
+  .game-list li { padding: 0.15rem 0; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+  th, td { text-align: left; padding: 0.5rem 0.6rem; border-bottom: 1px solid var(--border-color); }
+  th { background: #f8fafc; font-weight: 700; color: var(--text-light); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.03em; position: sticky; top: 0; }
+  tbody tr:hover { background: #f8fafc; }
+  .table-wrap { max-height: 480px; overflow-y: auto; border: 1px solid var(--border-color); border-radius: 10px; }
+  .salary-cell { font-weight: 700; color: var(--admin-color); }
+  .pos-badge {
+    display: inline-block; padding: 0.1rem 0.5rem; border-radius: 6px; font-size: 0.72rem;
+    font-weight: 700; background: #eef2ff; color: #4338ca;
+  }
+  .pos-badge.pitcher { background: #fff7ed; color: #c2410c; }
+  .rookie-flag { color: var(--warning-color); font-size: 0.75rem; font-weight: 700; }
+
+  .alert { padding: 0.85rem 1rem; border-radius: 10px; font-size: 0.9rem; margin-bottom: 1rem; }
+  .alert-info { background: #dbeafe; color: #1e40af; }
+  .alert-success { background: #dcfce7; color: #15803d; }
+  .alert-warning { background: #fef3c7; color: #92400e; }
+  .alert-error { background: #fee2e2; color: #b91c1c; }
+
+  .log-output {
+    background: #0f172a; color: #e2e8f0; font-family: 'SF Mono', Consolas, monospace;
+    font-size: 0.82rem; padding: 1rem; border-radius: 10px; max-height: 260px; overflow-y: auto;
+    white-space: pre-wrap; line-height: 1.5;
+  }
+  .log-output .log-error { color: #fca5a5; }
+  .log-output .log-success { color: #86efac; }
+  .log-output .log-warn { color: #fcd34d; }
+
+  .stat-row { display: flex; gap: 1.5rem; flex-wrap: wrap; margin-bottom: 1rem; }
+  .stat-box { background: #f8fafc; border-radius: 10px; padding: 0.75rem 1.25rem; text-align: center; min-width: 110px; }
+  .stat-box .num { font-size: 1.4rem; font-weight: 800; color: var(--admin-color); }
+  .stat-box .lbl { font-size: 0.75rem; color: var(--text-light); text-transform: uppercase; letter-spacing: 0.03em; }
+</style>
+</head>
+<body>
+
+<div class="loading-overlay" id="loadingOverlay">
+  <div class="spinner"></div>
+  <p style="margin-top:1rem;color:var(--text-light);">Loading admin tools...</p>
+</div>
+
+<div class="header">
+  <a href="league-staff-admin.html" class="back-link">&larr; Back to Admin</a>
+  <h1>&#128176; Aces DFS &mdash; Admin</h1>
+  <p>Generate weekly salaries and score completed weeks</p>
+</div>
+
+<div class="page-container">
+
+  <div class="auth-gate" id="authGate">
+    <h2>Access Restricted</h2>
+    <p>Admin or League Staff role required to use this tool.</p>
+    <a href="index.html" class="btn btn-secondary">Back to Home</a>
+  </div>
+
+  <div id="mainContent" style="display:none;">
+    <div class="filters-nav"></div>
+
+    <div class="card">
+      <h2>1. Pick a Week</h2>
+      <p class="subtitle">Weeks come straight from that season's schedule (the same <code>week</code> field schedule-generator writes on each game).</p>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="seasonSelect">Season</label>
+          <select id="seasonSelect"></select>
+        </div>
+        <div class="form-group">
+          <label for="weekSelect">Week</label>
+          <select id="weekSelect"><option value="">Select a season first&hellip;</option></select>
+        </div>
+      </div>
+
+      <div id="weekSummary" class="week-summary" style="display:none;"></div>
+    </div>
+
+    <div class="card">
+      <h2>2. Generate Salaries</h2>
+      <p class="subtitle">
+        Salary = career acesBPI blended with a small (&le;25%, ramping up over the first
+        <span id="rampGamesLabel">10</span> games this season) weight for this-season acesBPI, then scaled by
+        percentile rank across <span id="capLabel">$3,000&ndash;$10,000</span>. Pitchers are flat-priced at
+        <span id="flatPitcherLabel">$5,000</span> since acesBPI doesn't reflect pitching. Salary cap for a lineup:
+        <strong id="salaryCapLabel">$50,000</strong>.
+      </p>
+      <button class="btn btn-primary" id="previewBtn" disabled>&#128202; Preview Salaries</button>
+
+      <div id="salaryPreviewSection" style="display:none;margin-top:1.25rem;">
+        <div class="stat-row" id="salaryStatRow"></div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Player</th><th>Team</th><th>Position</th><th>Rating</th><th>Salary</th></tr>
+            </thead>
+            <tbody id="salaryPreviewBody"></tbody>
+          </table>
+        </div>
+        <div style="margin-top:1rem;display:flex;gap:0.75rem;flex-wrap:wrap;align-items:center;">
+          <button class="btn btn-success" id="publishBtn">&#9989; Publish Salaries for This Week</button>
+          <span id="publishStatus" style="font-size:0.85rem;color:var(--text-light);"></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>3. Score a Completed Week</h2>
+      <p class="subtitle">
+        Pulls that week's <code>playerStats</code>/<code>pitchingStats</code> game lines for every player in the
+        published salary pool, totals fantasy points, and locks in <code>dfsScores</code>. Run this after all of
+        that week's games have been submitted via Submit Stats.
+      </p>
+      <button class="btn btn-primary" id="scoreBtn" disabled>&#127942; Score This Week</button>
+
+      <div id="scorePreviewSection" style="display:none;margin-top:1.25rem;">
+        <div class="stat-row" id="scoreStatRow"></div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Player</th><th>Slot Pool</th><th>Batting Line</th><th>Batting Pts</th><th>Pitching Line</th><th>Pitching Pts</th></tr>
+            </thead>
+            <tbody id="scorePreviewBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Activity Log</h2>
+      <div class="log-output" id="logOutput">Ready.</div>
+    </div>
+
+  </div>
+</div>
+
+<script type="module">
+  import { onAuthChange, getUserProfile, hasLeagueRole, isAdmin } from './firebase-auth.js';
+  import { getAllSeasons } from './firebase-data.js';
+  import { getTeamRosterDoc } from './firebase-roster.js';
+  import { db, collection, doc, getDoc, getDocs, query, where } from './firebase-config.js';
+  import { setDoc, serverTimestamp, Timestamp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+  import { NavigationComponent } from './nav-component.js';
+  import {
+    SALARY_CAP, SALARY_MIN, SALARY_MAX, FLAT_PITCHER_SALARY,
+    CURRENT_SEASON_RAMP_GAMES, effectiveRating, computeSalaries,
+    scoreBattingGame, scorePitchingGame, eligibleSlotsForPosition
+  } from './dfs-scoring.js';
+
+  // ============================================================
+  // STATE
+  // ============================================================
+  let currentUser = null;
+  let userProfile = null;
+  let seasons = [];
+  let weeksForSeason = []; // [{ week, games: [...], minLock: Date }]
+  let selectedWeekInfo = null;
+  let generatedSalaryPool = null; // { playerId: { name, team, position, legacyId, salary, rating, currentSeasonGames } }
+
+  const el = (id) => document.getElementById(id);
+  const loadingOverlay = el('loadingOverlay');
+  const authGate = el('authGate');
+  const mainContent = el('mainContent');
+  const seasonSelect = el('seasonSelect');
+  const weekSelect = el('weekSelect');
+  const weekSummary = el('weekSummary');
+  const previewBtn = el('previewBtn');
+  const publishBtn = el('publishBtn');
+  const scoreBtn = el('scoreBtn');
+  const logOutput = el('logOutput');
+
+  el('capLabel').textContent = `$${SALARY_MIN.toLocaleString()}–$${SALARY_MAX.toLocaleString()}`;
+  el('flatPitcherLabel').textContent = `$${FLAT_PITCHER_SALARY.toLocaleString()}`;
+  el('salaryCapLabel').textContent = `$${SALARY_CAP.toLocaleString()}`;
+  el('rampGamesLabel').textContent = CURRENT_SEASON_RAMP_GAMES;
+
+  function log(msg, type = '') {
+    const line = document.createElement('div');
+    if (type) line.className = `log-${type}`;
+    const ts = new Date().toLocaleTimeString();
+    line.textContent = `[${ts}] ${msg}`;
+    logOutput.appendChild(line);
+    logOutput.scrollTop = logOutput.scrollHeight;
+  }
+
+  // ============================================================
+  // AUTH
+  // ============================================================
+  onAuthChange(async (user) => {
+    if (!user) {
+      authGate.style.display = 'block';
+      loadingOverlay.classList.add('hidden');
+      return;
+    }
+    currentUser = user;
+    const profileResult = await getUserProfile(user.uid);
+    if (!profileResult || !profileResult.success) {
+      authGate.style.display = 'block';
+      loadingOverlay.classList.add('hidden');
+      return;
+    }
+    userProfile = profileResult.data;
+    const hasAccess =
+      userProfile.isAdmin === true ||
+      userProfile.role === 'admin' ||
+      userProfile.userRole === 'admin' ||
+      userProfile.userRole === 'league-staff' ||
+      userProfile.role === 'league-staff' ||
+      userProfile.userType === 'league-staff' ||
+      isAdmin(userProfile) ||
+      hasLeagueRole(userProfile);
+
+    if (hasAccess) {
+      mainContent.style.display = 'block';
+      await initSeasons();
+    } else {
+      authGate.style.display = 'block';
+      authGate.querySelector('p').textContent = 'You do not have permission to access this page. Admin or League Staff role required.';
+    }
+    loadingOverlay.classList.add('hidden');
+  });
+
+  // ============================================================
+  // SEASONS / WEEKS
+  // ============================================================
+  async function initSeasons() {
+    seasons = await getAllSeasons();
+    seasons.sort((a, b) => b.id.localeCompare(a.id));
+    seasonSelect.innerHTML = seasons.map(s =>
+      `<option value="${s.id}">${s.id}${s.isActive ? ' (Current)' : ''}</option>`
+    ).join('');
+    const current = seasons.find(s => s.isActive) || seasons[0];
+    if (current) {
+      seasonSelect.value = current.id;
+      await loadWeeksForSeason(current.id);
+    }
+  }
+
+  seasonSelect.addEventListener('change', () => loadWeeksForSeason(seasonSelect.value));
+  weekSelect.addEventListener('change', () => onWeekSelected());
+
+  async function loadWeeksForSeason(seasonId) {
+    weekSelect.innerHTML = '<option value="">Loading games&hellip;</option>';
+    weekSummary.style.display = 'none';
+    previewBtn.disabled = true;
+    scoreBtn.disabled = true;
+
+    if (!seasonId) return;
+
+    const gamesSnap = await getDocs(collection(db, 'seasons', seasonId, 'games'));
+    const byWeek = {};
+    gamesSnap.forEach(d => {
+      const g = { id: d.id, ...d.data() };
+      const wk = g.week;
+      if (wk === undefined || wk === null) return;
+      if (!byWeek[wk]) byWeek[wk] = [];
+      byWeek[wk].push(g);
+    });
+
+    weeksForSeason = Object.keys(byWeek)
+      .map(Number)
+      .sort((a, b) => a - b)
+      .map(wk => ({ week: wk, games: byWeek[wk] }));
+
+    if (weeksForSeason.length === 0) {
+      weekSelect.innerHTML = '<option value="">No games found for this season</option>';
+      log(`No games with a "week" field found in seasons/${seasonId}/games.`, 'warn');
+      return;
+    }
+
+    weekSelect.innerHTML = weeksForSeason.map(w =>
+      `<option value="${w.week}">Week ${w.week} (${w.games.length} game${w.games.length === 1 ? '' : 's'})</option>`
+    ).join('');
+
+    weekSelect.value = String(weeksForSeason[0].week);
+    await onWeekSelected();
+  }
+
+  async function onWeekSelected() {
+    const wk = Number(weekSelect.value);
+    const seasonId = seasonSelect.value;
+    const info = weeksForSeason.find(w => w.week === wk);
+    if (!info) {
+      weekSummary.style.display = 'none';
+      previewBtn.disabled = true;
+      scoreBtn.disabled = true;
+      return;
+    }
+
+    const lockAt = earliestGameTime(info.games);
+    selectedWeekInfo = { seasonId, week: wk, games: info.games, lockAt };
+
+    // Check existing dfsWeeks doc for status
+    const weekDocId = `${seasonId}_${wk}`;
+    const weekDocSnap = await getDoc(doc(db, 'dfsWeeks', weekDocId));
+    const existing = weekDocSnap.exists() ? weekDocSnap.data() : null;
+
+    const statusClass = existing ? `status-${existing.status || 'open'}` : 'status-none';
+    const statusLabel = existing ? (existing.status || 'open') : 'not generated yet';
+
+    const gamesHtml = info.games
+      .slice()
+      .sort((a, b) => (a.date?.toMillis?.() || 0) - (b.date?.toMillis?.() || 0))
+      .map(g => `<li>${formatGameDate(g.date)} ${g.time || ''} &mdash; ${g.awayTeam || '?'} @ ${g.homeTeam || '?'}</li>`)
+      .join('');
+
+    weekSummary.style.display = 'block';
+    weekSummary.innerHTML = `
+      <span class="status-pill ${statusClass}">${statusLabel}</span>
+      <strong style="margin-left:0.5rem;">Lineups lock:</strong> ${lockAt ? lockAt.toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'unknown (no game times found)'}
+      <ul class="game-list">${gamesHtml}</ul>
+    `;
+
+    previewBtn.disabled = false;
+    scoreBtn.disabled = !existing; // can only score a week that already has salaries published
+    generatedSalaryPool = null;
+    el('salaryPreviewSection').style.display = 'none';
+    el('scorePreviewSection').style.display = 'none';
+  }
+
+  function earliestGameTime(games) {
+    let earliest = null;
+    games.forEach(g => {
+      const combined = combineDateAndTime(g.date, g.time);
+      if (combined && (!earliest || combined < earliest)) earliest = combined;
+    });
+    return earliest;
+  }
+
+  function combineDateAndTime(dateValue, timeStr) {
+    if (!dateValue) return null;
+    const d = dateValue.toDate ? dateValue.toDate() : new Date(dateValue);
+    if (isNaN(d.getTime())) return null;
+    let hours = 0, minutes = 0;
+    const match = /(\d{1,2}):(\d{2})\s*(AM|PM)/i.exec(timeStr || '');
+    if (match) {
+      hours = parseInt(match[1], 10);
+      minutes = parseInt(match[2], 10);
+      const ampm = match[3].toUpperCase();
+      if (ampm === 'PM' && hours !== 12) hours += 12;
+      if (ampm === 'AM' && hours === 12) hours = 0;
+    }
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate(), hours, minutes, 0, 0);
+  }
+
+  function formatGameDate(dateValue) {
+    if (!dateValue) return '';
+    const d = dateValue.toDate ? dateValue.toDate() : new Date(dateValue);
+    if (isNaN(d.getTime())) return '';
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  }
+
+  // ============================================================
+  // SEASON TEAMS
+  // ============================================================
+  async function getSeasonTeams(seasonId) {
+    const seasonDoc = await getDoc(doc(db, 'seasons', seasonId));
+    let teams = [];
+    if (seasonDoc.exists()) {
+      const data = seasonDoc.data();
+      if (Array.isArray(data.teams)) {
+        teams = data.teams.map(t => typeof t === 'string' ? t : (t.name || t.id));
+      } else if (data.teams && typeof data.teams === 'object') {
+        teams = Object.keys(data.teams);
+      }
+    }
+    if (teams.length === 0) {
+      const teamsSnap = await getDocs(collection(db, 'seasons', seasonId, 'teams'));
+      teamsSnap.forEach(d => teams.push(d.data().name || d.id));
+    }
+    return teams;
+  }
+
+  // ============================================================
+  // 2. GENERATE SALARIES
+  // ============================================================
+  previewBtn.addEventListener('click', generateSalaryPreview);
+
+  async function generateSalaryPreview() {
+    previewBtn.disabled = true;
+    previewBtn.textContent = '⏳ Generating…';
+    log(`Generating salaries for ${selectedWeekInfo.seasonId} week ${selectedWeekInfo.week}...`);
+
+    try {
+      const seasonId = selectedWeekInfo.seasonId;
+      const teams = await getSeasonTeams(seasonId);
+      if (teams.length === 0) {
+        log(`No teams found on seasons/${seasonId} — can't build a roster pool.`, 'error');
+        return;
+      }
+
+      // Pull every team's roster, dedupe by playerId
+      const playerMap = {};
+      for (const team of teams) {
+        const roster = await getTeamRosterDoc(team, seasonId);
+        roster.forEach(p => {
+          if (!p.id) return;
+          playerMap[p.id] = {
+            playerId: p.id,
+            legacyId: p.legacyId || p.id,
+            name: p.name,
+            team,
+            position: p.position && p.position !== '-' ? p.position : null
+          };
+        });
+      }
+
+      const players = Object.values(playerMap);
+      log(`Found ${players.length} rostered players across ${teams.length} teams.`);
+
+      // Pull aggregatedPlayerStats for rating data
+      await Promise.all(players.map(async (p) => {
+        try {
+          const snap = await getDoc(doc(db, 'aggregatedPlayerStats', p.playerId));
+          if (!snap.exists()) {
+            p.careerBPI = null; p.seasonBPI = null; p.seasonGames = 0;
+            return;
+          }
+          const data = snap.data();
+          p.careerBPI = typeof data.career?.acesBPI === 'number' ? data.career.acesBPI : null;
+          const seasonData = data.seasons?.[seasonId];
+          p.seasonBPI = typeof seasonData?.acesBPI === 'number' ? seasonData.acesBPI : null;
+          p.seasonGames = seasonData?.games || 0;
+        } catch (e) {
+          p.careerBPI = null; p.seasonBPI = null; p.seasonGames = 0;
+        }
+      }));
+
+      // Pitchers priced flat; everyone else priced by blended rating percentile
+      const pitchers = players.filter(p => eligibleSlotsForPosition(p.position).includes('P'));
+      const others = players.filter(p => !eligibleSlotsForPosition(p.position).includes('P'));
+
+      others.forEach(p => { p.rating = effectiveRating(p.careerBPI, p.seasonBPI, p.seasonGames); });
+      const salaryMap = computeSalaries(others.map(p => ({ playerId: p.playerId, rating: p.rating })));
+      others.forEach(p => { p.salary = salaryMap[p.playerId]; });
+      pitchers.forEach(p => { p.rating = null; p.salary = FLAT_PITCHER_SALARY; });
+
+      const pool = {};
+      [...others, ...pitchers].forEach(p => {
+        pool[p.playerId] = {
+          name: p.name,
+          team: p.team,
+          position: p.position || '-',
+          legacyId: p.legacyId,
+          rating: typeof p.rating === 'number' ? Math.round(p.rating * 10) / 10 : null,
+          salary: p.salary
+        };
+      });
+
+      generatedSalaryPool = pool;
+      renderSalaryPreview(pool);
+      log(`Salary preview ready — ${Object.keys(pool).length} players priced.`, 'success');
+    } catch (e) {
+      console.error(e);
+      log(`Error generating salaries: ${e.message}`, 'error');
+    } finally {
+      previewBtn.disabled = false;
+      previewBtn.textContent = '📊 Preview Salaries';
+    }
+  }
+
+  function renderSalaryPreview(pool) {
+    const rows = Object.entries(pool).sort((a, b) => b[1].salary - a[1].salary);
+    const body = el('salaryPreviewBody');
+    body.innerHTML = rows.map(([playerId, p]) => `
+      <tr>
+        <td>${p.name}${p.rating === null ? ' <span class="rookie-flag">UNRATED</span>' : ''}</td>
+        <td>${p.team}</td>
+        <td><span class="pos-badge${p.position === 'P' ? ' pitcher' : ''}">${p.position}</span></td>
+        <td>${p.rating === null ? '&mdash;' : p.rating}</td>
+        <td class="salary-cell">$${p.salary.toLocaleString()}</td>
+      </tr>
+    `).join('');
+
+    const salaries = rows.map(r => r[1].salary);
+    const avg = Math.round(salaries.reduce((a, b) => a + b, 0) / salaries.length);
+    el('salaryStatRow').innerHTML = `
+      <div class="stat-box"><div class="num">${rows.length}</div><div class="lbl">Players Priced</div></div>
+      <div class="stat-box"><div class="num">$${Math.min(...salaries).toLocaleString()}</div><div class="lbl">Lowest</div></div>
+      <div class="stat-box"><div class="num">$${Math.max(...salaries).toLocaleString()}</div><div class="lbl">Highest</div></div>
+      <div class="stat-box"><div class="num">$${avg.toLocaleString()}</div><div class="lbl">Average</div></div>
+    `;
+
+    el('salaryPreviewSection').style.display = 'block';
+    el('publishStatus').textContent = '';
+  }
+
+  // ============================================================
+  // PUBLISH WEEK
+  // ============================================================
+  publishBtn.addEventListener('click', publishWeek);
+
+  async function publishWeek() {
+    if (!generatedSalaryPool || !selectedWeekInfo) return;
+
+    const { seasonId, week, games, lockAt } = selectedWeekInfo;
+    const weekDocId = `${seasonId}_${week}`;
+
+    const existingSnap = await getDoc(doc(db, 'dfsWeeks', weekDocId));
+    if (existingSnap.exists()) {
+      const existing = existingSnap.data();
+      const warn = existing.status === 'scored'
+        ? 'This week has already been SCORED. Republishing salaries will not affect scores already saved, but will not re-price anyone. Continue?'
+        : 'Salaries already exist for this week. Overwrite with the new preview?';
+      if (!confirm(warn)) return;
+    }
+
+    publishBtn.disabled = true;
+    publishBtn.textContent = '⏳ Publishing…';
+
+    try {
+      await setDoc(doc(db, 'dfsSalaries', weekDocId), {
+        seasonId, week,
+        players: generatedSalaryPool,
+        generatedAt: serverTimestamp(),
+        generatedBy: currentUser.uid,
+        generatedByName: userProfile?.displayName || currentUser.email
+      });
+
+      await setDoc(doc(db, 'dfsWeeks', weekDocId), {
+        seasonId, week,
+        label: `Week ${week}`,
+        lockAt: lockAt ? Timestamp.fromDate(lockAt) : null,
+        gameIds: games.map(g => g.id),
+        status: 'open',
+        generatedAt: serverTimestamp(),
+        generatedBy: currentUser.uid
+      }, { merge: true });
+
+      log(`Published salaries for ${weekDocId} — locks ${lockAt ? lockAt.toLocaleString() : 'unknown'}.`, 'success');
+      el('publishStatus').textContent = `✅ Published ${new Date().toLocaleTimeString()}`;
+      scoreBtn.disabled = false;
+      await onWeekSelected();
+    } catch (e) {
+      console.error(e);
+      log(`Error publishing week: ${e.message}`, 'error');
+      el('publishStatus').textContent = `❌ ${e.message}`;
+    } finally {
+      publishBtn.disabled = false;
+      publishBtn.textContent = '✅ Publish Salaries for This Week';
+    }
+  }
+
+  // ============================================================
+  // 3. SCORE WEEK
+  // ============================================================
+  scoreBtn.addEventListener('click', scoreWeek);
+
+  function chunk(arr, size) {
+    const out = [];
+    for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+    return out;
+  }
+
+  async function scoreWeek() {
+    if (!selectedWeekInfo) return;
+    const { seasonId, week, games } = selectedWeekInfo;
+    const weekDocId = `${seasonId}_${week}`;
+
+    const salariesSnap = await getDoc(doc(db, 'dfsSalaries', weekDocId));
+    if (!salariesSnap.exists()) {
+      log(`No published salaries for ${weekDocId} yet — generate & publish first.`, 'error');
+      return;
+    }
+    const pool = salariesSnap.data().players || {};
+    const gameIds = games.map(g => g.id);
+    const gameIdChunks = chunk(gameIds, 10);
+
+    if (!confirm(`Score ${Object.keys(pool).length} players against ${gameIds.length} game(s) for week ${week}? This overwrites any existing scores for this week.`)) return;
+
+    scoreBtn.disabled = true;
+    scoreBtn.textContent = '⏳ Scoring…';
+    log(`Scoring ${weekDocId} against games: ${gameIds.join(', ')}`);
+
+    try {
+      const results = {};
+
+      await Promise.all(Object.entries(pool).map(async ([playerId, p]) => {
+        const legacyId = p.legacyId || playerId;
+        let battingLines = [];
+        let pitchingLines = [];
+
+        for (const idsChunk of gameIdChunks) {
+          try {
+            const bq = query(collection(db, 'playerStats', legacyId, 'games'), where('gameId', 'in', idsChunk));
+            const bSnap = await getDocs(bq);
+            bSnap.forEach(d => battingLines.push(d.data()));
+          } catch (e) { /* player may have no playerStats subcollection at all */ }
+
+          try {
+            const pq = query(collection(db, 'pitchingStats', legacyId, 'games'), where('gameId', 'in', idsChunk));
+            const pSnap = await getDocs(pq);
+            pSnap.forEach(d => pitchingLines.push(d.data()));
+          } catch (e) { /* fine — most players never pitched */ }
+        }
+
+        const battingPoints = battingLines.reduce((sum, s) => sum + scoreBattingGame(s), 0);
+        const pitchingPoints = pitchingLines.reduce((sum, s) => sum + scorePitchingGame(s), 0);
+
+        const battingTotals = battingLines.reduce((acc, s) => {
+          acc.hits += Number(s.hits) || 0; acc.runs += Number(s.runs) || 0; acc.walks += Number(s.walks) || 0;
+          acc.doubles += Number(s.doubles) || 0; acc.triples += Number(s.triples) || 0;
+          acc.homeRuns += Number(s.homeRuns) || 0; acc.rbi += Number(s.rbi) || 0;
+          return acc;
+        }, { hits: 0, runs: 0, walks: 0, doubles: 0, triples: 0, homeRuns: 0, rbi: 0 });
+
+        const pitchingTotals = pitchingLines.reduce((acc, s) => {
+          acc.inningsPitched += Number(s.inningsPitched) || 0;
+          acc.runsAllowed += Number(s.runsAllowed) || 0;
+          return acc;
+        }, { inningsPitched: 0, runsAllowed: 0 });
+
+        results[playerId] = {
+          name: p.name, team: p.team, position: p.position,
+          battingPoints: Math.round(battingPoints * 10) / 10,
+          pitchingPoints: pitchingLines.length ? Math.round(pitchingPoints * 10) / 10 : null,
+          gamesBatted: battingLines.length,
+          gamesPitched: pitchingLines.length,
+          battingLine: battingTotals,
+          pitchingLine: pitchingLines.length ? pitchingTotals : null
+        };
+      }));
+
+      await setDoc(doc(db, 'dfsScores', weekDocId), {
+        seasonId, week,
+        players: results,
+        computedAt: serverTimestamp(),
+        computedBy: currentUser.uid
+      });
+
+      await setDoc(doc(db, 'dfsWeeks', weekDocId), {
+        status: 'scored',
+        scoredAt: serverTimestamp()
+      }, { merge: true });
+
+      renderScorePreview(results);
+      log(`Scored ${weekDocId} — ${Object.keys(results).length} players.`, 'success');
+      await onWeekSelected();
+    } catch (e) {
+      console.error(e);
+      log(`Error scoring week: ${e.message}`, 'error');
+    } finally {
+      scoreBtn.disabled = false;
+      scoreBtn.textContent = '🏆 Score This Week';
+    }
+  }
+
+  function renderScorePreview(results) {
+    const rows = Object.values(results).sort((a, b) => b.battingPoints - a.battingPoints);
+    el('scorePreviewBody').innerHTML = rows.map(r => `
+      <tr>
+        <td>${r.name} <span style="color:var(--text-light);font-size:0.78rem;">(${r.team})</span></td>
+        <td><span class="pos-badge${r.position === 'P' ? ' pitcher' : ''}">${r.position}</span></td>
+        <td>${r.battingLine.hits}H ${r.battingLine.runs}R ${r.battingLine.walks}BB${r.battingLine.rbi ? ` ${r.battingLine.rbi}RBI` : ''}</td>
+        <td><strong>${r.battingPoints}</strong></td>
+        <td>${r.pitchingLine ? `${r.pitchingLine.inningsPitched}IP ${r.pitchingLine.runsAllowed}RA` : '&mdash;'}</td>
+        <td>${r.pitchingPoints === null ? '&mdash;' : `<strong>${r.pitchingPoints}</strong>`}</td>
+      </tr>
+    `).join('');
+
+    const scored = Object.values(results);
+    el('scoreStatRow').innerHTML = `
+      <div class="stat-box"><div class="num">${scored.length}</div><div class="lbl">Players Scored</div></div>
+      <div class="stat-box"><div class="num">${scored.filter(r => r.gamesPitched > 0).length}</div><div class="lbl">Pitched</div></div>
+      <div class="stat-box"><div class="num">${Math.max(...scored.map(r => r.battingPoints)).toFixed(1)}</div><div class="lbl">Top Batting Pts</div></div>
+    `;
+
+    el('scorePreviewSection').style.display = 'block';
+  }
+
+  // NavigationComponent self-initializes on DOMContentLoaded (see nav-component.js);
+  // importing it above is enough to register nav in .filters-nav / .page-container.
+</script>
+<script src="mobile-enhancements.js"></script>
+</body>
+</html>
