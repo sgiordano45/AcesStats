@@ -312,7 +312,14 @@
     const snap = await getDocs(collection(db, 'seasons'));
     const seasons = [];
     snap.forEach(d => seasons.push({ id: d.id, ...d.data() }));
-    seasons.sort((a, b) => (b.startDate || b.id || '').localeCompare(a.startDate || a.id || ''));
+    const seasonSortKey = (s) => {
+      const sd = s.startDate;
+      if (sd && typeof sd.toDate === 'function') return sd.toDate().toISOString();
+      if (sd instanceof Date) return sd.toISOString();
+      if (typeof sd === 'string' && sd) return sd;
+      return s.id || '';
+    };
+    seasons.sort((a, b) => seasonSortKey(b).localeCompare(seasonSortKey(a)));
 
     const sel = document.getElementById('seasonSelect');
     seasons.forEach(s => {
