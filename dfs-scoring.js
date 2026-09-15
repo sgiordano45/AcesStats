@@ -124,14 +124,32 @@ export function effectiveRating(careerBPI, currentSeasonBPI, currentSeasonGames)
   return careerBPI * (1 - weight) + currentSeasonBPI * weight;
 }
 
+// acesBPI is built around 50 as "league average" (50 + 10 * weighted
+// z-score). Salaries anchor to that same reference point rather than to
+// whatever this week's pool happens to average, so the meaning of the
+// number stays fixed: a rating of exactly 50 always prices at the range
+// midpoint, a below-average rating always prices below it, and an
+// above-average rating always prices above it — regardless of who else
+// is in the pool that week.
+export const AVERAGE_RATING = 50;
+
 /**
- * Convert a pool of { playerId, rating } into salaries by percentile rank
- * within the pool, scaled linearly across [SALARY_MIN, SALARY_MAX]. This
- * guarantees the full range gets used regardless of how acesBPI happens to
- * be distributed that week (robust to outliers, unlike a raw z-score map).
+ * Convert a pool of { playerId, rating } into salaries, anchored so that
+ * AVERAGE_RATING (50) always maps to the midpoint of [SALARY_MIN,
+ * SALARY_MAX]. Below-average and at/above-average players are percentile-
+ * ranked SEPARATELY within their own half of the pool, then scaled into
+ * their own half of the salary range:
+ *   rating < 50  -> percentile-ranked within the below-average group,
+ *                   scaled linearly across [SALARY_MIN, midpoint)
+ *   rating >= 50 -> percentile-ranked within the at/above-average group,
+ *                   scaled linearly across [midpoint, SALARY_MAX]
+ * This still uses the full $ range every week (robust to outliers, like
+ * the old whole-pool ranking) but no longer lets a tightly-clustered or
+ * skewed weekly pool drag the $6,500 midpoint away from what "50" is
+ * supposed to mean.
  *
  * Players with rating === null (no data) are priced at ROOKIE_DEFAULT_SALARY
- * and excluded from the percentile ranking of everyone else.
+ * and excluded from ranking entirely.
  *
  * Do NOT pass pitchers into this — they're priced flat by the caller
  * (see FLAT_PITCHER_SALARY) since this function only knows batting-based
@@ -149,19 +167,35 @@ export function computeSalaries(players) {
 
   if (rated.length === 0) return salaries;
 
-  if (rated.length === 1) {
-    salaries[rated[0].playerId] = roundToStep((SALARY_MIN + SALARY_MAX) / 2);
-    return salaries;
-  }
+  const midpoint = (SALARY_MIN + SALARY_MAX) / 2;
+  const below = rated.filter(p => p.rating < AVERAGE_RATING).sort((a, b) => a.rating - b.rating);
+  const atOrAbove = rated.filter(p => p.rating >= AVERAGE_RATING).sort((a, b) => a.rating - b.rating);
 
-  const sorted = [...rated].sort((a, b) => a.rating - b.rating);
-  sorted.forEach((p, i) => {
-    const percentile = i / (sorted.length - 1); // 0 (worst) .. 1 (best)
-    const raw = SALARY_MIN + percentile * (SALARY_MAX - SALARY_MIN);
-    salaries[p.playerId] = roundToStep(raw);
-  });
+  rankHalf(below, SALARY_MIN, midpoint, salaries);
+  rankHalf(atOrAbove, midpoint, SALARY_MAX, salaries);
 
   return salaries;
+}
+
+/**
+ * Percentile-rank one half of the pool (already sorted ascending by
+ * rating) into its half of the salary range. Ranking each half
+ * separately — instead of the whole pool at once — is what keeps 50
+ * pinned to the midpoint: the worst player in the upper half (rating
+ * closest to 50 from above) always lands near rangeMin of that half,
+ * and so on, independent of the other half's distribution.
+ */
+function rankHalf(sortedAscending, rangeMin, rangeMax, salaries) {
+  if (sortedAscending.length === 0) return;
+  if (sortedAscending.length === 1) {
+    salaries[sortedAscending[0].playerId] = roundToStep((rangeMin + rangeMax) / 2);
+    return;
+  }
+  sortedAscending.forEach((p, i) => {
+    const percentile = i / (sortedAscending.length - 1); // 0 (worst) .. 1 (best)
+    const raw = rangeMin + percentile * (rangeMax - rangeMin);
+    salaries[p.playerId] = roundToStep(raw);
+  });
 }
 
 function roundToStep(value) {
