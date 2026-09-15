@@ -270,7 +270,7 @@ body {
   import { setDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
   import { NavigationComponent } from './nav-component.js';
   import {
-    DFS_SLOTS, SALARY_CAP, POSITION_GROUPS, eligibleSlotsForPosition, validateLineup
+    DFS_SLOTS, SALARY_CAP, POSITION_GROUPS, eligibleSlotsForPosition, positionGroupsFor, validateLineup
   } from './dfs-scoring.js';
 
   // ============================================================
@@ -441,8 +441,7 @@ body {
 
   function playerMatchesFilter(p) {
     if (activeFilter === 'All' || activeFilter === 'UTIL') return true; // everyone is UTIL-eligible
-    if (activeFilter === 'P') return p.position === 'P';
-    return (POSITION_GROUPS[activeFilter] || []).includes(p.position);
+    return positionGroupsFor(p.position).includes(activeFilter);
   }
 
   // ============================================================
@@ -464,7 +463,7 @@ body {
     el('playerList').innerHTML = rows.map(([playerId, p]) => {
       const already = usedIds.has(playerId);
       const hasRoom = canAddPlayer(p) !== null;
-      const noPosition = p.positionless === true || !p.position || p.position === '-';
+      const noPosition = p.positionless === true || positionGroupsFor(p.position).length === 0;
       return `
         <div class="player-row">
           <div class="player-info">
@@ -490,11 +489,13 @@ body {
   }
 
   // Returns the slotId to place this player in, or null if no room.
+  // Tries every specific group the player is eligible for (a dual-eligible
+  // 'IF/OF' player tries IF, then OF) before falling back to UTIL.
   function canAddPlayer(p) {
-    const eligible = eligibleSlotsForPosition(p.position); // e.g. ['IF','UTIL'] or ['UTIL']
-    const specific = eligible.find(g => g !== 'UTIL');
-    if (specific) {
-      const openSpecific = SLOT_IDS.find(id => slotGroup(id) === specific && !currentLineup[id]);
+    const eligible = eligibleSlotsForPosition(p.position); // e.g. ['IF','OF','UTIL'] or ['UTIL']
+    for (const group of eligible) {
+      if (group === 'UTIL') continue;
+      const openSpecific = SLOT_IDS.find(id => slotGroup(id) === group && !currentLineup[id]);
       if (openSpecific) return openSpecific;
     }
     const openUtil = SLOT_IDS.find(id => slotGroup(id) === 'UTIL' && !currentLineup[id]);

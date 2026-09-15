@@ -24,27 +24,47 @@ export const DFS_SLOTS = {
 
 export const ROSTER_SIZE = Object.values(DFS_SLOTS).reduce((a, b) => a + b, 0); // 10
 
-// Real fielding positions (as stored on /rosters/{seasonId}-{team} docs)
-// that satisfy each DFS position group.
+// Real roster position values, from the captain roster editor's own
+// dropdown (captain-roster-edit.html / admin-captain-roster-edit.html):
+// ['-','P','C','1B','2B','3B','SS','IF','IF/OF','LF','CF','RF','OF','DH','UT','Flex']
+// Captains often can't (or don't) pin a player to a specific LF/CF/RF/etc,
+// so the generic 'IF' / 'OF' values are common in practice — those have to
+// satisfy their DFS group too, not just the specific ones. 'IF/OF' means
+// dual-eligible for both. 'DH'/'UT'/'Flex'/'-' have no fixed defensive
+// group and stay UTIL-only, same as truly unset.
 export const POSITION_GROUPS = {
-  IF: ['1B', '2B', '3B', 'SS'],
-  OF: ['LF', 'CF', 'RF'],
+  IF: ['1B', '2B', '3B', 'SS', 'IF'],
+  OF: ['LF', 'CF', 'RF', 'OF'],
   C: ['C'],
   P: ['P']
 };
 
 /**
+ * Normalize a roster position value into the DFS group(s) it satisfies.
+ * Handles single values ('LF', 'IF', 'OF', ...) and slash-compound values
+ * like 'IF/OF'. Case/whitespace-insensitive since roster data isn't
+ * perfectly consistent. DH/UT/Flex/'-'/unset all return [] (no fixed
+ * defensive group -> UTIL only).
+ */
+export function positionGroupsFor(position) {
+  if (!position) return [];
+  const parts = String(position).toUpperCase().split('/').map(s => s.trim()).filter(Boolean);
+  const groups = [];
+  parts.forEach(part => {
+    if (POSITION_GROUPS.IF.includes(part) && !groups.includes('IF')) groups.push('IF');
+    if (POSITION_GROUPS.OF.includes(part) && !groups.includes('OF')) groups.push('OF');
+    if (POSITION_GROUPS.C.includes(part) && !groups.includes('C')) groups.push('C');
+    if (POSITION_GROUPS.P.includes(part) && !groups.includes('P')) groups.push('P');
+  });
+  return groups;
+}
+
+/**
  * Which DFS slot(s) a player's real roster position can fill.
- * UTIL always works. Players with an unrecognized/missing position
- * (roster shows '-') can only go in UTIL.
+ * UTIL always works, in addition to any specific group(s) matched.
  */
 export function eligibleSlotsForPosition(position) {
-  const slots = ['UTIL'];
-  if (POSITION_GROUPS.IF.includes(position)) slots.unshift('IF');
-  else if (POSITION_GROUPS.OF.includes(position)) slots.unshift('OF');
-  else if (POSITION_GROUPS.C.includes(position)) slots.unshift('C');
-  else if (POSITION_GROUPS.P.includes(position)) slots.unshift('P');
-  return slots;
+  return [...positionGroupsFor(position), 'UTIL'];
 }
 
 // ============================================================
