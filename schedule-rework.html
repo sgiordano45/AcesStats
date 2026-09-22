@@ -201,7 +201,6 @@
     gap: 3px;
   }
   .day-cell.outside-month { opacity: 0.45; }
-  .day-cell.drag-over { outline: 2px dashed var(--secondary-color); background: #e6f7f1; }
   .day-num {
     font-size: 0.75rem;
     font-weight: 700;
@@ -240,7 +239,7 @@
     border-radius: 8px;
     padding: 8px;
   }
-  #trayList .game-chip { width: 150px; }
+  #trayList .game-chip { width: 150px; cursor: grab; }
   .tray-empty { font-size: 0.85rem; color: var(--text-light); padding: 0.5rem; }
 
   .changes-panel h3 {
@@ -251,6 +250,7 @@
     justify-content: space-between;
     align-items: center;
   }
+  .changes-panel .hint { font-size: 0.78rem; color: var(--text-light); margin: -0.25rem 0 0.75rem; }
   .discard-link {
     font-size: 0.8rem;
     color: var(--danger-color);
@@ -260,7 +260,7 @@
     text-decoration: underline;
   }
   .discard-link:disabled { opacity: 0.4; cursor: not-allowed; text-decoration: none; }
-  #changesList { display: flex; flex-direction: column; gap: 8px; max-height: 360px; overflow-y: auto; margin-bottom: 0.75rem; }
+  #changesList { display: flex; flex-direction: column; gap: 8px; max-height: 420px; overflow-y: auto; margin-bottom: 0.75rem; }
   .changes-empty { font-size: 0.85rem; color: var(--text-light); padding: 0.5rem; }
   .change-row {
     background: #f7fafc;
@@ -268,10 +268,24 @@
     border-radius: 8px;
     padding: 0.6rem 0.7rem;
     font-size: 0.82rem;
+    transition: background 0.3s ease;
   }
   .change-row.has-warning { border-color: var(--warning-color); background: #fffaf0; }
+  .change-row.flash { animation: flashHighlight 1.2s ease; }
+  @keyframes flashHighlight {
+    0% { background: #fef3c7; }
+    100% { background: inherit; }
+  }
   .change-teams { font-weight: 700; margin-bottom: 2px; }
   .change-arrow { color: var(--text-light); margin-bottom: 4px; }
+  .change-time-row { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+  .change-time-row label { font-size: 0.75rem; color: var(--text-light); }
+  .change-time {
+    padding: 0.3rem 0.4rem;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    font-size: 0.78rem;
+  }
   .change-warning { color: #b45309; font-size: 0.75rem; margin-bottom: 4px; }
   .change-reason {
     width: 100%;
@@ -396,7 +410,7 @@
     <div class="header-content">
       <div>
         <h1>🌧️ Schedule Rework</h1>
-        <p>Drag games onto new dates to plan rainout makeups. Nothing goes live until you hit Publish.</p>
+        <p>Drag games onto new dates, click a game to fine-tune its time. Nothing goes live until you hit Publish.</p>
         <div class="league-badge" id="userBadge">League Staff</div>
       </div>
       <div class="header-buttons">
@@ -437,6 +451,7 @@
             <span>📝 Pending Changes (<span id="changesCount">0</span>)</span>
             <button class="discard-link" id="discardAllBtn" type="button">Discard all</button>
           </h3>
+          <p class="hint">Drag a chip onto a new day, or click any chip to fine-tune its time (8:00 AM–9:00 PM) without moving it.</p>
           <div id="changesList"></div>
           <button class="publish-btn" id="publishBtn" type="button" disabled>Publish changes to live schedule</button>
         </div>
@@ -469,8 +484,6 @@
     writeBatch, serverTimestamp, Timestamp
   } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
   import { onAuthChange, hasLeagueRole, getPrimaryDisplayRole } from './firebase-auth.js';
-
-  const STANDARD_SLOTS = ['7:00 PM', '8:00 PM', '9:00 PM'];
 
   let seasonId = null;
   let gamesById = {};
@@ -562,6 +575,27 @@
     return h * 60 + min;
   }
 
+  // "8:45 PM" <-> "20:45" (for <input type="time">)
+  function timeStrTo24(t) {
+    const m = (t || '').match(/(\d+):(\d+)\s*(AM|PM)/i);
+    if (!m) return '19:00';
+    let h = parseInt(m[1]);
+    const min = m[2];
+    const period = m[3].toUpperCase();
+    if (period === 'AM') { if (h === 12) h = 0; } else { if (h !== 12) h += 12; }
+    return `${String(h).padStart(2, '0')}:${min}`;
+  }
+
+  function timeStrFrom24(val) {
+    if (!val) return '';
+    const [hStr, min] = val.split(':');
+    let h = parseInt(hStr);
+    const period = h >= 12 ? 'PM' : 'AM';
+    let h12 = h % 12;
+    if (h12 === 0) h12 = 12;
+    return `${h12}:${min} ${period}`;
+  }
+
   // ---------- Data loading ----------
 
   async function loadSeasons() {
@@ -634,6 +668,10 @@
     };
   }
 
+  // Only two things get flagged: an outright double-booking (same team, same
+  // exact time), and a genuinely tight turnaround (under an hour) for the same
+  // team. A long gap between a morning game and an evening game on a packed
+  // makeup day is treated as normal, not a warning.
   function computeWarnings(game, allEffective) {
     const eff = getEffective(game);
     const seen = new Set();
@@ -643,11 +681,14 @@
       if (!team) return;
       others.forEach(o => {
         if (o.homeTeamName !== team && o.awayTeamName !== team) return;
-        const gap = Math.abs(timeToMinutes(eff.effTime) - timeToMinutes(o.effTime)) / 60;
+        const gapHours = Math.abs(timeToMinutes(eff.effTime) - timeToMinutes(o.effTime)) / 60;
         let msg = null;
-        if (gap === 0) msg = `${team} is double-booked at the same time as ${o.awayTeamName || o.awayTeamId} @ ${o.homeTeamName || o.homeTeamId}`;
-        else if (gap < 2) msg = `${team} has only a ${gap.toFixed(1)}h gap before/after ${o.awayTeamName || o.awayTeamId} @ ${o.homeTeamName || o.homeTeamId}`;
-        if (msg && !seen.has(msg)) { seen.add(msg); }
+        if (gapHours === 0) {
+          msg = `${team} is double-booked at the same time as ${o.awayTeamName || o.awayTeamId} @ ${o.homeTeamName || o.homeTeamId}`;
+        } else if (gapHours < 1) {
+          msg = `${team} only has ${Math.round(gapHours * 60)} min before/after ${o.awayTeamName || o.awayTeamId} @ ${o.homeTeamName || o.homeTeamId}`;
+        }
+        if (msg) seen.add(msg);
       });
     });
     return Array.from(seen);
@@ -690,7 +731,39 @@
       <div class="chip-time">${eff.effTime || ''}${warnBadge}</div>
       ${sub ? `<div class="chip-sub">${sub}</div>` : ''}
     `;
+    if (!opts.tray) {
+      chip.addEventListener('click', () => onChipClick(game.id));
+    }
     return chip;
+  }
+
+  // Clicking a calendar chip (without dragging it) opens it up for editing in
+  // the Pending Changes panel below — mainly so its time can be tweaked
+  // without having to drag it to a different day.
+  async function onChipClick(gameId) {
+    const game = gamesById[gameId];
+    if (!game) return;
+    if (!draftChanges[gameId]) {
+      const eff = getEffective(game);
+      const change = {
+        newDate: eff.effDateKey,
+        newTime: eff.effTime,
+        reason: '',
+        movedBy: currentUserProfile?.displayName || 'League Staff',
+        movedAt: new Date().toISOString()
+      };
+      draftChanges[gameId] = change;
+      renderAll();
+      await saveChangeToFirestore(gameId, change);
+    }
+    requestAnimationFrame(() => {
+      const row = document.querySelector(`.change-row[data-game-id="${gameId}"]`);
+      if (row) {
+        row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        row.classList.add('flash');
+        setTimeout(() => row.classList.remove('flash'), 1200);
+      }
+    });
   }
 
   function renderTray() {
@@ -768,7 +841,7 @@
     document.getElementById('discardAllBtn').disabled = entries.length === 0;
 
     if (!entries.length) {
-      list.innerHTML = '<div class="changes-empty">No pending moves yet — drag a game onto a new date to get started.</div>';
+      list.innerHTML = '<div class="changes-empty">No pending moves yet — drag a game onto a new date, or click one to edit its time.</div>';
       return;
     }
 
@@ -781,9 +854,14 @@
       const warnings = computeWarnings(game, allEffective);
       const row = document.createElement('div');
       row.className = 'change-row' + (warnings.length ? ' has-warning' : '');
+      row.dataset.gameId = gameId;
       row.innerHTML = `
         <div class="change-teams">${game.awayTeamName || game.awayTeamId} @ ${game.homeTeamName || game.homeTeamId}</div>
-        <div class="change-arrow">${formatDateNice(game._dateObj)} ${game._time || ''} &rarr; <strong>${formatDateNice(eff.effDateObj)} ${eff.effTime}</strong></div>
+        <div class="change-arrow">was ${formatDateNice(game._dateObj)} ${game._time || ''} &rarr; <strong>${formatDateNice(eff.effDateObj)}</strong></div>
+        <div class="change-time-row">
+          <label>New time:</label>
+          <input type="time" class="change-time" min="08:00" max="21:00" value="${timeStrTo24(eff.effTime)}" data-game-id="${gameId}">
+        </div>
         ${warnings.length ? `<div class="change-warning">⚠️ ${warnings.join(' • ')}</div>` : ''}
         <input type="text" class="change-reason" placeholder="Reason (optional)" value="${(change.reason || '').replace(/"/g, '&quot;')}" data-game-id="${gameId}">
         <button class="revert-btn" data-game-id="${gameId}" type="button">Revert this move</button>
@@ -800,6 +878,15 @@
         if (!change) return;
         change.reason = input.value;
         saveChangeToFirestore(input.dataset.gameId, change);
+      });
+    });
+    list.querySelectorAll('.change-time').forEach(input => {
+      input.addEventListener('change', () => {
+        const gid = input.dataset.gameId;
+        const change = draftChanges[gid];
+        if (!change || !input.value) return;
+        change.newTime = timeStrFrom24(input.value);
+        saveChangeToFirestore(gid, change);
       });
     });
   }
@@ -826,20 +913,12 @@
       return;
     }
 
-    const usedTimesThatDay = Object.values(gamesById)
-      .map(getEffective)
-      .filter(g => g.id !== gameId && g.effDateKey === toKey)
-      .map(g => g.effTime);
-
-    let chosenTime = draftChanges[gameId]?.newTime || game._time || STANDARD_SLOTS[0];
-    if (usedTimesThatDay.includes(chosenTime)) {
-      const openSlot = STANDARD_SLOTS.find(s => !usedTimesThatDay.includes(s));
-      if (openSlot) chosenTime = openSlot;
-    }
-
+    // Dropping onto a day only ever changes the DATE — the time carries over
+    // unchanged (or keeps whatever time was already set for this game in the
+    // draft). Fine-tune the time afterward in the Pending Changes panel.
     const change = {
       newDate: toKey,
-      newTime: chosenTime,
+      newTime: draftChanges[gameId]?.newTime || game._time || '7:00 PM',
       reason: draftChanges[gameId]?.reason || (game.status === 'postponed' ? 'Rain make-up' : ''),
       movedBy: currentUserProfile?.displayName || currentUserProfile?.firstName || 'League Staff',
       movedAt: new Date().toISOString()
