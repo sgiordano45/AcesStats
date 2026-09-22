@@ -268,6 +268,41 @@ export function sumGames(statLines, scoreFn) {
   return (statLines || []).reduce((total, stat) => total + scoreFn(stat), 0);
 }
 
+/**
+ * Sum one saved lineup's fantasy points against a per-player score map —
+ * { playerId: { battingPoints, pitchingPoints } }, the same shape admin-dfs.html
+ * writes to dfsScores once a week is officially scored, and the same shape a
+ * live/in-progress pass (e.g. dfs-week.html, before the week is scored) builds
+ * on the fly from stats submitted so far. Sharing this one function is what
+ * keeps "my results," the weekly/season leaderboards, and live week standings
+ * always agreeing on the math.
+ *
+ * The P slot uses pitchingPoints; every other slot uses battingPoints. A
+ * player entirely missing from scoreMap (no line at all yet) contributes 0
+ * silently. A P pick that IS in scoreMap but has no pitching line recorded
+ * (pitchingPoints === null/undefined) is flagged via missingPitchLine instead
+ * of being guessed at or silently scored as 0.
+ *
+ * @param {Array<{playerId: string, slot: string}>} picks
+ * @param {Object<string, {battingPoints?: number, pitchingPoints?: number|null}>} scoreMap
+ * @returns {{ total: number, missingPitchLine: boolean }}
+ */
+export function lineupTotalPoints(picks, scoreMap) {
+  let total = 0;
+  let missingPitchLine = false;
+  (picks || []).forEach(pick => {
+    const s = scoreMap?.[pick.playerId];
+    if (!s) return;
+    if (pick.slot === 'P') {
+      if (s.pitchingPoints === null || s.pitchingPoints === undefined) { missingPitchLine = true; return; }
+      total += s.pitchingPoints;
+    } else {
+      total += s.battingPoints || 0;
+    }
+  });
+  return { total: Math.round(total * 10) / 10, missingPitchLine };
+}
+
 // ============================================================
 // LINEUP VALIDATION
 // ============================================================
