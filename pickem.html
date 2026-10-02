@@ -199,6 +199,15 @@ body {
 }
 .chip.wrong { opacity: 0.35; }
 .chip.none { background: transparent; color: var(--text-light); }
+.count-row { padding: 0.75rem 0; border-top: 1px solid var(--border-color); }
+.count-row:first-child { border-top: none; padding-top: 0; }
+.count-meta { font-size: 0.72rem; color: var(--text-light); font-weight: 700; margin-bottom: 0.4rem; }
+.count-sides { display: grid; grid-template-columns: 1fr auto 1fr; gap: 0.5rem; align-items: center; margin-bottom: 0.45rem; }
+.count-side { display: flex; align-items: center; gap: 0.4rem; background: #f8fafc; border-radius: 10px; padding: 0.5rem 0.65rem; }
+.count-side.lost { opacity: 0.55; }
+.count-side .swatch { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.count-team { font-weight: 700; font-size: 0.88rem; flex: 1; }
+.count-num { font-weight: 800; font-size: 1.05rem; color: var(--primary-color); font-variant-numeric: tabular-nums; }
 
 .rules-list { margin: 0; padding-left: 1.1rem; font-size: 0.85rem; color: var(--text-dark); line-height: 1.6; }
 
@@ -283,8 +292,8 @@ body {
           <div id="weekLeaderboard"></div>
         </div>
         <div class="card">
-          <h2>Everyone's Picks</h2>
-          <p class="subtitle">Picks appear once each game locks at first pitch.</p>
+          <h2>Pick Counts</h2>
+          <p class="subtitle">How many people took each team. Counts appear once each game locks at first pitch.</p>
           <div id="weekGrid"></div>
         </div>
       </div>
@@ -800,33 +809,30 @@ body {
       el('weekGrid').innerHTML = '<div class="empty-state">No games have locked yet this week.</div>';
       return;
     }
-    const users = Object.keys(entries)
-      .filter(uid => lockedGames.some(g => validPick(uid, g)))
-      .map(uid => ({ uid, name: entries[uid].displayName, row: scoreGames(w.games).find(r => r.uid === uid) }))
-      .sort((a, b) => ((b.row?.pts || 0) - (a.row?.pts || 0)) || a.name.localeCompare(b.name));
-    if (!users.length) {
-      el('weekGrid').innerHTML = '<div class="empty-state">Nobody picked the locked games.</div>';
-      return;
-    }
-    const head = lockedGames.map(g => {
-      const upset = isUpset(g) ? ' &#9889;' : '';
-      return `<th>${DAYS[dow(g.dp)].slice(0, 3)}<br>${esc(g.awayName.slice(0, 4))} @ ${esc(g.homeName.slice(0, 4))}${upset}</th>`;
-    }).join('');
-    const rows = users.map(u => {
-      const cells = lockedGames.map(g => {
-        const t = validPick(u.uid, g);
-        if (!t) return '<td><span class="chip none">&ndash;</span></td>';
-        const name = t === g.homeKey ? g.homeName : g.awayName;
+    // Counts only -- individual picks stay private
+    el('weekGrid').innerHTML = lockedGames.map(g => {
+      const s = splitFor(g);
+      const upset = isUpset(g) ? '<span class="bonus-chip">&#9889; Upset</span>' : '';
+      const side = (key, name, n) => {
         const c = teamColor(name);
-        const wrong = isGraded(g) && t !== g.winnerKey;
-        return `<td><span class="chip ${wrong ? 'wrong' : ''}" style="background:${c.bg};color:${c.text}">${esc(name.slice(0, 4))}</span></td>`;
-      }).join('');
-      return `<tr class="${u.uid === currentUser.uid ? 'me' : ''}"><td class="name">${esc(u.name)}</td>${cells}<td class="num"><strong>${u.row?.pts || 0}</strong></td></tr>`;
+        const won = isGraded(g) && g.winnerKey === key;
+        const lost = isGraded(g) && g.winnerKey !== key;
+        return `<div class="count-side${lost ? ' lost' : ''}">
+          <span class="swatch" style="background:${c.bg}"></span>
+          <span class="count-team">${esc(name)}${won ? ' &#10003;' : ''}</span>
+          <span class="count-num">${n}</span>
+        </div>`;
+      };
+      const ap = s.total ? Math.round(100 * s.away / s.total) : 50;
+      const bar = s.total
+        ? `<div class="split-bar"><div style="width:${ap}%;background:${teamColor(g.awayName).bg}"></div><div style="width:${100 - ap}%;background:${teamColor(g.homeName).bg}"></div></div>`
+        : '';
+      return `<div class="count-row">
+        <div class="count-meta">${DAYS[dow(g.dp)].slice(0, 3)} ${shortDate(g.dp)} &middot; ${esc(g.time || '')} &middot; ${s.total} pick${s.total === 1 ? '' : 's'}${upset}</div>
+        <div class="count-sides">${side(g.awayKey, g.awayName, s.away)}<span class="at">@</span>${side(g.homeKey, g.homeName, s.home)}</div>
+        ${bar}
+      </div>`;
     }).join('');
-    el('weekGrid').innerHTML = `<div class="grid-wrap"><table class="picks-grid">
-      <thead><tr><th class="name">Name</th>${head}<th>Pts</th></tr></thead>
-      <tbody>${rows}</tbody>
-    </table></div>`;
   }
 
   function renderSeason() {
