@@ -72,7 +72,7 @@ async function loadTeamData() {
                 runs: seasonStats.runs || 0,
                 walks: seasonStats.walks || 0,
                 AcesWar: seasonStats.acesBPI || seasonStats.AcesBPI || seasonStats.AcesWar || seasonStats.acesWar || "N/A",
-                Sub: seasonStats.sub || seasonStats.Sub || ""
+                Sub: (function (v) { v = String(v || ""); return v ? v.charAt(0).toUpperCase() + v.slice(1).toLowerCase() : ""; })(seasonStats.sub || seasonStats.Sub)
               });
             }
           }
