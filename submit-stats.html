@@ -1089,6 +1089,50 @@ body {
         </div>
       </div>
 
+      <!-- Substitute Player (batting only; pitching for a sub is entered manually) -->
+      <div id="subCard" class="stats-grid-container" style="display: none;">
+        <div class="stats-grid-header">Substitute Player (optional)</div>
+        <div style="padding: 1rem 1.5rem;">
+          <label style="display: flex; align-items: center; gap: 0.5rem; font-weight: 600; cursor: pointer;">
+            <input type="checkbox" id="subToggle" style="width: 20px; height: 20px; accent-color: var(--primary-color);">
+            A substitute from another team played for us in this game
+          </label>
+          <div id="subBody" style="display: none; margin-top: 1rem;">
+            <div class="control-group">
+              <label for="subPlayerSelect">Substitute:</label>
+              <select id="subPlayerSelect">
+                <option value="">-- Select a player --</option>
+              </select>
+            </div>
+            <p style="font-size: 13px; color: var(--text-light); margin: 0 0 1rem 0;">
+              Batting stats only. These post to the player's page under the team they subbed for and do not count toward his regular season line or acesBPI. Enter any sub pitching manually.
+            </p>
+            <div class="table-scroll-container">
+              <table class="stats-table">
+                <thead>
+                  <tr>
+                    <th>At Bats</th><th>Hits</th><th>Runs</th><th>Walks</th>
+                    <th>2B</th><th>3B</th><th>HR</th><th>RBI</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><input type="number" class="stats-input" id="sub_ab" min="0" value="0"></td>
+                    <td><input type="number" class="stats-input" id="sub_hits" min="0" value="0"></td>
+                    <td><input type="number" class="stats-input" id="sub_runs" min="0" value="0"></td>
+                    <td><input type="number" class="stats-input" id="sub_walks" min="0" value="0"></td>
+                    <td><input type="number" class="stats-input" id="sub_2b" min="0" value="0"></td>
+                    <td><input type="number" class="stats-input" id="sub_3b" min="0" value="0"></td>
+                    <td><input type="number" class="stats-input" id="sub_hr" min="0" value="0"></td>
+                    <td><input type="number" class="stats-input" id="sub_rbi" min="0" value="0"></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- Action Buttons -->
       <div class="action-buttons" id="actionButtons" style="display: none;">
         <button class="btn btn-secondary" id="clearBtn">
@@ -1297,6 +1341,7 @@ import {
   increment,
   serverTimestamp,
   getDocs,
+  deleteDoc,
   Timestamp
 } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
 import './nav-component.js';
@@ -1313,6 +1358,9 @@ let isLeagueStaff = false;
 let csvData = [];
 let csvValidation = [];
 let playersWithExistingPitching = new Set(); // tracks who had pitching data loaded in edit mode
+let subCandidates = null;     // other-team players available to sub (loaded lazily)
+let subCandidatesFor = null;  // team the candidate list was built for
+let existingSub = null;       // { legacyId, name, homeTeam } of the sub already saved for the loaded game
 
 // ============================================
 // TAB SWITCHING
@@ -1566,6 +1614,7 @@ function populateGameDropdown() {
 }
 
 function renderStatsTable(players) {
+  resetSubCard(false); // new roster: clear sub state and hide card until the table is ready
   const tbody = document.getElementById('statsTableBody');
   tbody.innerHTML = '';
 
@@ -1659,10 +1708,12 @@ function renderStatsTable(players) {
 
   document.getElementById('statsGridContainer').style.display = 'block';
   document.getElementById('actionButtons').style.display = 'flex';
+  document.getElementById('subCard').style.display = 'block';
 }
 
 async function loadExistingStatsForGame(gameId) {
   playersWithExistingPitching.clear(); // reset for new game selection
+  resetSubCard(true);
   try {
     const seasonId = currentSeason.id;
     const gameDocId = `${seasonId}_${gameId}`;
@@ -1754,7 +1805,8 @@ async function loadExistingStatsForGame(gameId) {
       }
     });
     
-    const statsCount = Object.keys(existingStats).length;
+    const subLoaded = await loadExistingSubForGame(gameId);
+    const statsCount = Object.keys(existingStats).length + (subLoaded ? 1 : 0);
     if (statsCount > 0) {
       document.getElementById('editModeBanner').style.display = 'flex';
       document.getElementById('editModeBannerText').textContent = 
@@ -1771,11 +1823,249 @@ async function loadExistingStatsForGame(gameId) {
   }
 }
 
+// ============================================
+// SUBSTITUTE PLAYER (batting only)
+// Sub game docs live at playerStats/{subLegacyId}/games/{seasonId}_{gameId} with
+// isSub: true and teamId = the team subbed for. The aggregator splits them into a
+// separate "-sub" season entry. A { legacyId, name, homeTeam } marker is saved on the
+// game doc (subHome / subAway) so the sub can be reloaded and replaced when editing.
+// Sub pitching is not collected here (enter manually).
+// ============================================
+
+const SUB_FIELDS = [
+  ['ab', 'atBats'], ['hits', 'hits'], ['runs', 'runs'], ['walks', 'walks'],
+  ['2b', 'doubles'], ['3b', 'triples'], ['hr', 'homeRuns'], ['rbi', 'rbi']
+];
+
+async function ensureSubCandidates() {
+  if (subCandidates && subCandidatesFor === selectedTeam) return;
+
+  const teams = await getAllTeams();
+  const ownLegacyIds = new Set(rosterPlayers.map(p => p.legacyId));
+  const selectedLower = (selectedTeam || '').toLowerCase();
+
+  const lists = await Promise.all(
+    teams
+      .filter(t => (t.id || '').toLowerCase() !== selectedLower)
+      .map(async t => {
+        const players = await getTeamRosterDoc(t.id, currentSeason.id);
+        return players
+          .filter(p => p.legacyId && !ownLegacyIds.has(p.legacyId))
+          .map(p => ({ legacyId: p.legacyId, name: p.name, team: t.name || t.id }));
+      })
+  );
+
+  subCandidates = lists.flat().sort((a, b) =>
+    a.team.localeCompare(b.team) || a.name.localeCompare(b.name));
+  subCandidatesFor = selectedTeam;
+}
+
+function populateSubSelect(selectedLegacyId) {
+  const sel = document.getElementById('subPlayerSelect');
+  sel.innerHTML = '<option value="">-- Select a player --</option>';
+
+  const byTeam = {};
+  (subCandidates || []).forEach(p => {
+    (byTeam[p.team] = byTeam[p.team] || []).push(p);
+  });
+
+  Object.keys(byTeam).sort().forEach(team => {
+    const group = document.createElement('optgroup');
+    group.label = team;
+    byTeam[team].forEach(p => {
+      const opt = document.createElement('option');
+      opt.value = p.legacyId;
+      opt.textContent = p.name;
+      opt.dataset.name = p.name;
+      opt.dataset.team = p.team;
+      group.appendChild(opt);
+    });
+    sel.appendChild(group);
+  });
+
+  if (selectedLegacyId) {
+    // Keep a previously saved sub selectable even if he has since left his roster
+    if (![...sel.options].some(o => o.value === selectedLegacyId) && existingSub) {
+      const opt = document.createElement('option');
+      opt.value = existingSub.legacyId;
+      opt.textContent = `${existingSub.name} (${existingSub.homeTeam || 'other team'})`;
+      opt.dataset.name = existingSub.name;
+      opt.dataset.team = existingSub.homeTeam || '';
+      sel.appendChild(opt);
+    }
+    sel.value = selectedLegacyId;
+  }
+}
+
+function resetSubCard(keepCandidates) {
+  existingSub = null;
+  if (!keepCandidates) {
+    subCandidates = null;
+    subCandidatesFor = null;
+  }
+  const toggle = document.getElementById('subToggle');
+  if (!toggle) return;
+  toggle.checked = false;
+  document.getElementById('subBody').style.display = 'none';
+  SUB_FIELDS.forEach(([id]) => { document.getElementById(`sub_${id}`).value = '0'; });
+  document.getElementById('subPlayerSelect').value = '';
+  if (!keepCandidates) {
+    document.getElementById('subCard').style.display = 'none';
+  }
+}
+
+async function onSubToggle() {
+  const on = document.getElementById('subToggle').checked;
+  document.getElementById('subBody').style.display = on ? 'block' : 'none';
+  if (!on) return;
+
+  if (!subCandidates || subCandidatesFor !== selectedTeam) {
+    const sel = document.getElementById('subPlayerSelect');
+    sel.innerHTML = '<option value="">Loading players...</option>';
+    sel.disabled = true;
+    try {
+      await ensureSubCandidates();
+    } catch (error) {
+      console.error('❌ Error loading substitute candidates:', error);
+      showMessage('error', `Could not load players from other teams: ${error.message}`);
+    }
+    sel.disabled = false;
+    populateSubSelect(existingSub ? existingSub.legacyId : '');
+  }
+}
+
+// Returns null (no sub), { error }, or the sub's selection + stats
+function readSubForm() {
+  const toggle = document.getElementById('subToggle');
+  if (!toggle || !toggle.checked) return null;
+
+  const sel = document.getElementById('subPlayerSelect');
+  if (!sel.value) {
+    return { error: 'Select the substitute player, or uncheck the substitute option.' };
+  }
+  const opt = sel.options[sel.selectedIndex];
+
+  const stats = {};
+  SUB_FIELDS.forEach(([id, key]) => {
+    stats[key] = parseInt(document.getElementById(`sub_${id}`).value) || 0;
+  });
+  if (!Object.values(stats).some(v => v > 0)) {
+    return { error: 'Enter stats for the substitute, or uncheck the substitute option.' };
+  }
+
+  return { legacyId: sel.value, name: opt.dataset.name || opt.textContent, homeTeam: opt.dataset.team || '', ...stats };
+}
+
+async function loadExistingSubForGame(gameId) {
+  try {
+    const seasonId = currentSeason.id;
+    const game = teamGames.find(g => g.id === gameId);
+    if (!game) return false;
+
+    const gameSnap = await getDoc(doc(db, 'seasons', seasonId, 'games', gameId));
+    if (!gameSnap.exists()) return false;
+
+    const marker = gameSnap.data()[game.isHome ? 'subHome' : 'subAway'];
+    if (!marker || !marker.legacyId) return false;
+
+    const battingSnap = await getDoc(
+      doc(db, 'playerStats', marker.legacyId, 'games', `${seasonId}_${gameId}`));
+    if (!battingSnap.exists()) return false;
+
+    const d = battingSnap.data();
+    existingSub = marker;
+    await ensureSubCandidates();
+    populateSubSelect(marker.legacyId);
+
+    document.getElementById('subToggle').checked = true;
+    document.getElementById('subBody').style.display = 'block';
+    SUB_FIELDS.forEach(([id, key]) => {
+      document.getElementById(`sub_${id}`).value = d[key] || 0;
+    });
+    return true;
+  } catch (error) {
+    console.warn('⚠️ Could not load existing substitute:', error);
+    return false;
+  }
+}
+
+async function writeSubstituteStats({ subForm, seasonId, selectedGameId, gameData, gameDateFormatted }) {
+  const gameDocId = `${seasonId}_${selectedGameId}`;
+  const teamName = selectedTeamName || selectedTeam;
+
+  // The sub was changed or removed: delete the previous sub's game doc (only if it is a sub doc for this team)
+  if (existingSub && existingSub.legacyId && (!subForm || subForm.legacyId !== existingSub.legacyId)) {
+    const oldRef = doc(db, 'playerStats', existingSub.legacyId, 'games', gameDocId);
+    const oldSnap = await getDoc(oldRef);
+    if (oldSnap.exists() && oldSnap.data().isSub === true && oldSnap.data().teamId === teamName) {
+      await deleteDoc(oldRef);
+      console.log('🗑️ Removed previous substitute doc for', existingSub.name);
+    }
+  }
+
+  if (!subForm) {
+    existingSub = null;
+    return { written: 0, marker: null };
+  }
+
+  const ref = doc(db, 'playerStats', subForm.legacyId, 'games', gameDocId);
+  const existing = await getDoc(ref);
+  if (existing.exists() && existing.data().isSub !== true) {
+    throw new Error(`${subForm.name} already has regular stats recorded for this game, so he can't also be entered as a substitute.`);
+  }
+
+  await setDoc(ref, {
+    gameId: selectedGameId,
+    gameDocId: gameDocId,
+    playerId: subForm.legacyId,
+    playerName: subForm.name,
+    seasonId: seasonId,
+    teamId: teamName,                 // the team he played for
+    isSub: true,
+    homeTeam: subForm.homeTeam || null, // his regular team
+    gameDate: gameData.date || null,
+    gameDateFormatted: gameDateFormatted,
+    opponent: gameData.opponent || 'Unknown',
+    isHome: gameData.isHome || false,
+    gameType: gameData.gameType || 'Regular',
+    isPlayoff: gameData.isPlayoff || false,
+    atBats: subForm.atBats,
+    hits: subForm.hits,
+    runs: subForm.runs,
+    walks: subForm.walks,
+    doubles: subForm.doubles,
+    triples: subForm.triples,
+    homeRuns: subForm.homeRuns,
+    rbi: subForm.rbi,
+    strikeouts: 0, stolenBases: 0, caughtStealing: 0,
+    submittedBy: currentUser.uid,
+    submittedByName: currentUser.displayName || currentUser.email,
+    submittedAt: serverTimestamp(),
+    lastModified: serverTimestamp(),
+    dataVersion: 1,
+    sourceType: 'manual-extended'
+  }, { merge: true });
+
+  console.log(`✅ Saved substitute batting stats for ${subForm.name} (${subForm.homeTeam} → ${teamName})`);
+
+  const marker = { legacyId: subForm.legacyId, name: subForm.name, homeTeam: subForm.homeTeam || null };
+  existingSub = marker;
+  return { written: 1, marker };
+}
+
+document.getElementById('subToggle').addEventListener('change', onSubToggle);
+
 async function submitStats() {
   const selectedGameId = document.getElementById('gameSelect').value;
   
   if (!selectedGameId) {
     showMessage('error', 'Please select a game before submitting.');
+    return;
+  }
+
+  const subForm = readSubForm();
+  if (subForm && subForm.error) {
+    showMessage('error', subForm.error);
     return;
   }
 
@@ -1921,6 +2211,18 @@ async function submitStats() {
       }
     }
 
+    // Substitute (batting only)
+    let subMarker = null;
+    try {
+      const subResult = await writeSubstituteStats({ subForm, seasonId, selectedGameId, gameData, gameDateFormatted });
+      subMarker = subResult.marker;
+      successCount += subResult.written;
+    } catch (subError) {
+      console.error('❌ Error saving substitute stats:', subError);
+      showToast(subError.message, 'error');
+      errorCount++;
+    }
+
     if (errorCount === 0) {
       showMessage('success', `Successfully submitted stats for ${successCount} player(s)!`);
       showToast(`Stats saved for ${successCount} players`, 'success');
@@ -1931,6 +2233,7 @@ async function submitStats() {
         const submittedField = gameData.isHome ? 'statsSubmittedHome' : 'statsSubmittedAway';
         await updateDoc(gameRef, {
           [submittedField]: true,
+          [gameData.isHome ? 'subHome' : 'subAway']: subMarker,
           statsSubmittedBy: currentUser.uid,
           statsSubmittedByName: currentUser.displayName || currentUser.email,
           statsSubmittedAt: serverTimestamp(),
@@ -1970,6 +2273,7 @@ function clearAllStats() {
   document.getElementById('gameDetails').style.display = 'none';
   document.getElementById('editModeBanner').style.display = 'none';
   
+  resetSubCard(true);
   showMessage('info', 'All stats cleared.');
 }
 
@@ -2587,6 +2891,7 @@ async function initializePage(user) {
         } else {
           document.getElementById('statsGridContainer').style.display = 'none';
           document.getElementById('actionButtons').style.display = 'none';
+          resetSubCard(false);
         }
       });
 

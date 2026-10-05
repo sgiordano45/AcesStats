@@ -3,17 +3,18 @@
 
 // Import Firebase configuration and initialized instances from firebase-config.js
 // This ensures persistence is enabled BEFORE any Firestore operations
-import { 
-  app, 
-  db, 
-  collection, 
-  doc, 
-  getDocs, 
-  getDoc, 
-  query, 
-  where, 
-  orderBy, 
-  limit 
+import {
+  app,
+  db,
+  collection,
+  doc,
+  getDocs,
+  getDocsFromServer,
+  getDoc,
+  query,
+  where,
+  orderBy,
+  limit
 } from './firebase-config.js';
 
 // Re-export app and db for firebase-auth.js and other files
@@ -374,7 +375,7 @@ export async function getSeasonPlayerStatsOptimized(seasonId) {
       // Find season keys that start with the seasonId (e.g., "2025-fall")
       // This matches "2025-fall-orange", "2025-fall-blue", etc.
       const matchingKeys = Object.keys(data.seasons).filter(key =>
-        key.startsWith(seasonId)
+        key.startsWith(seasonId) && !key.endsWith('-sub')  // skip substitute-appearance entries
       );
       
       // If player has stats for this season (any team)
@@ -385,15 +386,15 @@ export async function getSeasonPlayerStatsOptimized(seasonId) {
         
         // Extract team from the season key (e.g., "2025-fall-orange" -> "orange")
         const teamFromKey = seasonKey.split('-').slice(2).join('-');
-        
+
         players.push({
           id: doc.id,
           playerId: doc.id,
           playerName: data.name || data.displayName || doc.id,
           name: data.name || data.displayName || doc.id,
           email: data.email || '',
-          currentTeam: data.currentTeam || teamFromKey || '',
-          team: seasonStats.team || data.currentTeam || teamFromKey || '',
+          currentTeam: teamFromKey || data.currentTeam || '',
+          team: teamFromKey || seasonStats.team || data.currentTeam || '',
           photoURL: data.photoURL || '',
           // Auth user info for legacyId resolution
           linkedPlayer: data.linkedPlayer || null,
@@ -454,15 +455,15 @@ export async function getSeasonPitchingStatsOptimized(seasonId) {
         
         // Extract team from the season key
         const teamFromKey = seasonKey.split('-').slice(2).join('-');
-        
+
         players.push({
           id: doc.id,
           playerId: doc.id,
           playerName: data.name || data.displayName || doc.id,
           name: data.name || data.displayName || doc.id,
           email: data.email || '',
-          currentTeam: data.currentTeam || teamFromKey || '',
-          team: seasonStats.team || data.currentTeam || teamFromKey || '',
+          currentTeam: teamFromKey || data.currentTeam || '',
+          team: teamFromKey || seasonStats.team || data.currentTeam || '',
           photoURL: data.photoURL || '',
           // Include the specific season pitching stats
           ...seasonStats,
@@ -905,7 +906,9 @@ export async function getSeasonPitchingStats(seasonId) {
  * @returns {Array} Array of game objects
  */
 export async function getSeasonGames(seasonId) {
-  const gamesSnapshot = await getDocs(
+  // Always fetch from server so standings and results reflect the latest submitted scores,
+  // bypassing any stale IndexedDB cache from earlier page loads.
+  const gamesSnapshot = await getDocsFromServer(
     collection(db, 'seasons', seasonId, 'games')
   );
   return gamesSnapshot.docs.map(doc => ({

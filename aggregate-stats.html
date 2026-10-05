@@ -940,6 +940,7 @@
     getDoc,
     setDoc,
     updateDoc,
+    deleteField,
     query,
     where
   } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
@@ -953,6 +954,7 @@
   window.getDoc = getDoc;
   window.setDoc = setDoc;
   window.updateDoc = updateDoc;
+  window.deleteField = deleteField;
   window.query = query;
   window.where = where;
 
@@ -1845,6 +1847,24 @@
         }
       }
 
+      // Split substitute games (isSub: true) out so they never touch a player's regular season line.
+      // They are written separately as "{seasonId}-{team}-sub" season entries (Step 4b).
+      const playerSubGames = new Map();
+      for (const [subLegacyId, allGames] of Array.from(playerBattingGames)) {
+        const subGames = allGames.filter(g => g.isSub === true);
+        if (subGames.length === 0) continue;
+        playerSubGames.set(subLegacyId, subGames);
+        const regularGames = allGames.filter(g => g.isSub !== true);
+        if (regularGames.length > 0) {
+          playerBattingGames.set(subLegacyId, regularGames);
+        } else {
+          playerBattingGames.delete(subLegacyId);
+        }
+      }
+      if (playerSubGames.size > 0) {
+        log(`Found ${playerSubGames.size} player(s) with substitute games (kept out of regular season totals)`, 'success');
+      }
+
       log(`Found ${playerBattingGames.size} players with batting games`, 'success');
       log(`Found ${playerPitchingGames.size} players with pitching games`, 'success');
 
@@ -2108,6 +2128,103 @@
           errorCount++;
         }
       }
+
+      // STEP 4b: Substitute seasons. Each team a player subbed for gets its own
+      // "{seasonId}-{team}-sub" entry flagged sub: "yes" (same shape as legacy sub seasons).
+      // recalculateCareer() already counts these toward career totals but not acesBPI.
+      // Old sub entries for this season are rebuilt from game docs on every run, so removing a sub removes his entry.
+      log('');
+      log('Step 4b: Processing substitute games...', 'game');
+
+      const subKeyFor = (team) => `${seasonId}-${String(team || 'unknown').toLowerCase().replace(/\s+/g, '_')}-sub`;
+      const isSubKeyForSeason = (k) => k.startsWith(`${seasonId}-`) && k.endsWith('-sub');
+
+      const newSubEntries = new Map(); // legacyId -> { seasonKey -> totals }
+      for (const [subLegacyId, games] of playerSubGames) {
+        const byKey = {};
+        games.forEach(game => {
+          const key = subKeyFor(game.teamId);
+          if (!byKey[key]) {
+            byKey[key] = {
+              games: 0, atBats: 0, hits: 0, runs: 0, walks: 0,
+              doubles: 0, triples: 0, homeRuns: 0, rbi: 0,
+              strikeouts: 0, stolenBases: 0,
+              team: game.teamId || '',
+              playerName: game.playerName || '',
+              homeTeam: game.homeTeam || null,
+              sub: 'yes'
+            };
+          }
+          const t = byKey[key];
+          t.games++;
+          t.atBats += game.atBats || 0;
+          t.hits += game.hits || 0;
+          t.runs += game.runs || 0;
+          t.walks += game.walks || 0;
+          t.doubles += game.doubles || 0;
+          t.triples += game.triples || 0;
+          t.homeRuns += game.homeRuns || 0;
+          t.rbi += game.rbi || 0;
+          t.strikeouts += game.strikeouts || 0;
+          t.stolenBases += game.stolenBases || 0;
+        });
+        Object.values(byKey).forEach(t => {
+          t.battingAverage = t.atBats > 0 ? t.hits / t.atBats : 0;
+          t.onBasePercentage = (t.atBats + t.walks) > 0 ? (t.hits + t.walks) / (t.atBats + t.walks) : 0;
+          t.runsPerPA = (t.atBats + t.walks) > 0 ? t.runs / (t.atBats + t.walks) : 0;
+          t.acesBPI = 0; // subs do not receive acesBPI (shown as N/A on the player page)
+        });
+        newSubEntries.set(subLegacyId, byKey);
+      }
+
+      // Who needs a write: players with sub games now, plus anyone holding stale sub entries from an earlier run
+      const subTargets = new Map(); // docId -> legacyId
+      for (const subLegacyId of newSubEntries.keys()) {
+        subTargets.set(legacyToDocId.get(subLegacyId) || subLegacyId, subLegacyId);
+      }
+      for (const [subLegacyId, subDocId] of legacyToDocId) {
+        const seasonsSnapshot = docIdToPlayerInfo.get(subDocId)?.existingData?.seasons || {};
+        if (Object.keys(seasonsSnapshot).some(isSubKeyForSeason)) {
+          subTargets.set(subDocId, subLegacyId);
+        }
+      }
+
+      let subUpdatedCount = 0;
+      for (const [subDocId, subLegacyId] of subTargets) {
+        try {
+          const subRef = window.doc(window.db, getAggregatedCollection(), subDocId);
+          const subSnap = await window.getDoc(subRef); // fresh read: includes the regular season just written above
+          if (!subSnap.exists()) continue;
+
+          const subData = subSnap.data();
+          const mergedSeasons = { ...(subData.seasons || {}) };
+          const entries = newSubEntries.get(subLegacyId) || {};
+
+          const staleKeys = Object.keys(mergedSeasons).filter(k => isSubKeyForSeason(k) && !entries[k]);
+          staleKeys.forEach(k => delete mergedSeasons[k]);
+          Object.assign(mergedSeasons, entries);
+
+          const seasonUpdates = { ...entries };
+          staleKeys.forEach(k => { seasonUpdates[k] = window.deleteField(); });
+
+          await window.setDoc(subRef, {
+            seasons: seasonUpdates,
+            career: recalculateCareer(mergedSeasons),
+            totalSeasons: Object.keys(mergedSeasons).length,
+            lastUpdated: new Date()
+          }, { merge: true });
+
+          subUpdatedCount++;
+          Object.entries(entries).forEach(([key, t]) => {
+            log(`  ✓ Substitute: ${t.playerName || subLegacyId} → ${key} (${t.games} G, ${t.hits}/${t.atBats})`, 'success');
+          });
+          staleKeys.forEach(k => log(`  ✓ Removed stale substitute entry ${k} for ${subLegacyId}`));
+        } catch (error) {
+          log(`  ✗ Substitute error with ${subLegacyId}: ${error.message}`, 'error');
+          errorCount++;
+        }
+      }
+      log(`Substitute seasons updated: ${subUpdatedCount}`, 'success');
 
       // Handle pitching stats (similar structure)
       log('');
@@ -2547,7 +2664,7 @@
       statsSnap.forEach(docSnap => {
         const data = docSnap.data();
         if (data.migrated) return;
-        const matchingKeys = Object.keys(data.seasons || {}).filter(k => k.startsWith(seasonId));
+        const matchingKeys = Object.keys(data.seasons || {}).filter(k => k.startsWith(seasonId) && !k.endsWith('-sub'));
         if (!matchingKeys.length) return;
         const seasonKey = matchingKeys[0];
         const s = data.seasons[seasonKey];
