@@ -216,6 +216,19 @@ body {
 .status-close {
   background: #fff7ed; color: #c2410c;
 }
+.status-sub-used {
+  background: #e0f2fe; color: #0369a1;
+}
+.status-sub-over {
+  background: #fee2e2; color: #b91c1c;
+}
+.sub-none { color: var(--text-light); }
+.elig-table tr.sub-flag-row td:first-child { box-shadow: inset 4px 0 0 #0ea5e9; }
+.elig-table tr.sub-over-row td:first-child { box-shadow: inset 4px 0 0 #dc2626; }
+.sub-note { font-size: 0.75rem; color: var(--text-light); margin-top: 0.25rem; }
+.sub-rule-note {
+  text-align: center; color: var(--text-light); font-size: 0.85rem; margin: -1rem 0 1.5rem;
+}
 
 /* ── Loading / error ── */
 .loading-state {
@@ -246,6 +259,8 @@ body {
 [data-theme="dark"] .elig-table tr.eligible-row { background: rgba(34,197,94,0.08); }
 [data-theme="dark"] .team-section { background: var(--bg-elevated, #2d3748); border-color: rgba(255,255,255,0.1); }
 [data-theme="dark"] .progress-pip { background: #4a5568; }
+[data-theme="dark"] .status-sub-used { background: rgba(14,165,233,0.2); color: #7dd3fc; }
+[data-theme="dark"] .status-sub-over { background: rgba(220,38,38,0.25); color: #fca5a5; }
 </style>
 </head>
 <body>
@@ -259,6 +274,7 @@ body {
 
 <div class="container">
   <div id="summaryBanner" class="summary-banner" style="display:none"></div>
+  <div id="subRuleNote" class="sub-rule-note"></div>
   <div id="teamFilterBar" class="team-filter-bar"></div>
   <div id="mainContent">
     <div class="loading-state">
@@ -276,7 +292,17 @@ import {
   doc as fsDoc
 } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
 
-const GAMES_REQUIRED = 8;
+// Season-dependent rules (set once the active season is known)
+//   Fall:   4 games to qualify, 1 sub allowed all season
+//   Summer: 8 games to qualify, no subs allowed
+let GAMES_REQUIRED = 8;
+let SUBS_ALLOWED = 0;
+let seasonType = 'summer';
+
+function getSeasonType(season, seasonId) {
+  const raw = (season.season || (seasonId || '').split('-')[1] || '').toString().toLowerCase();
+  return raw;
+}
 
 // Team CSS color vars from team-colors.js
 const TEAM_COLORS = {
@@ -330,9 +356,20 @@ async function loadEligibility() {
       return;
     }
     const seasonId = season.id;
+    seasonType = getSeasonType(season, seasonId);
+    if (seasonType === 'fall') {
+      GAMES_REQUIRED = 4;
+      SUBS_ALLOWED = 1;
+    } else {
+      GAMES_REQUIRED = 8;
+      SUBS_ALLOWED = 0;
+    }
     const seasonLabel = `${season.year || ''} ${capitalize(season.season || '')} Season`.trim();
     document.getElementById('seasonSubtitle').textContent =
-      `${seasonLabel} · ${GAMES_REQUIRED} games to qualify`;
+      `${seasonLabel} · ${GAMES_REQUIRED} games to qualify · ${SUBS_ALLOWED === 0 ? 'no subs allowed' : SUBS_ALLOWED + ' sub allowed per player'}`;
+    document.getElementById('subRuleNote').textContent = SUBS_ALLOWED === 0
+      ? 'Substitutes are not allowed this season. Any player who has subbed is flagged.'
+      : `Each player may sub ${SUBS_ALLOWED} time this season. Players who have subbed are flagged.`;
     document.title = `Playoff Eligibility · ${seasonLabel} - Mountainside Aces`;
 
     // 2. All season games → filter to completed (has winner)
@@ -366,6 +403,7 @@ async function loadEligibility() {
     // Collect players with team assignments for this season
     // Key: {id (aggregatedPlayerStats doc), name, team, statsId}
     const players = [];
+    const subOnlyPlayers = [];
     aggregatedSnap.docs.forEach(d => {
       const data = d.data();
       if (data.migrated === true) return;
@@ -373,7 +411,19 @@ async function loadEligibility() {
 
       // Find keys matching this season
       const matchingKeys = Object.keys(data.seasons).filter(k => k.startsWith(seasonId) && !k.endsWith('-sub'));
-      if (matchingKeys.length === 0) return;
+      const hasSubKey = Object.keys(data.seasons).some(k => k.startsWith(seasonId) && k.endsWith('-sub'));
+      if (matchingKeys.length === 0) {
+        // Player only has substitute appearances this season (not on a roster)
+        if (hasSubKey) {
+          subOnlyPlayers.push({
+            docId: d.id,
+            statsId: uidToLegacyId[d.id] || d.id,
+            name: data.name || data.displayName || d.id,
+            linkId: legacyToAuth[uidToLegacyId[d.id] || d.id] || (uidToLegacyId[d.id] || d.id),
+          });
+        }
+        return;
+      }
 
       const seasonKey = matchingKeys[0];
       const teamFromKey = seasonKey.split('-').slice(2).join('-'); // e.g. "2026-summer-teal" → "teal"
@@ -403,17 +453,51 @@ async function loadEligibility() {
           const gamesSnap = await getDocs(
             collection(db, 'playerStats', player.statsId, 'games')
           );
-          // Count docs whose ID matches a completed season game
+          // Regular games count toward eligibility; sub games (isSub) do not
           let count = 0;
+          const subTeams = [];
           gamesSnap.docs.forEach(d => {
-            if (completedGameDocIds.has(d.id)) count++;
+            if (!completedGameDocIds.has(d.id)) return;
+            if (d.data().isSub === true) {
+              subTeams.push(d.data().teamId || '');
+            } else {
+              count++;
+            }
           });
-          return { ...player, gamesPlayed: count };
+          return { ...player, gamesPlayed: count, subCount: subTeams.length, subTeams };
         } catch (e) {
-          return { ...player, gamesPlayed: 0 };
+          return { ...player, gamesPlayed: 0, subCount: 0, subTeams: [] };
         }
       })
     );
+
+    // 4b. Sub-only players (no roster spot this season)
+    const subOnlyResults = (await Promise.all(
+      subOnlyPlayers.map(async player => {
+        try {
+          const gamesSnap = await getDocs(collection(db, 'playerStats', player.statsId, 'games'));
+          const subTeams = [];
+          gamesSnap.docs.forEach(d => {
+            if (completedGameDocIds.has(d.id) && d.data().isSub === true) subTeams.push(d.data().teamId || '');
+          });
+          return { ...player, subCount: subTeams.length, subTeams };
+        } catch (e) {
+          return { ...player, subCount: 0, subTeams: [] };
+        }
+      })
+    )).filter(p => p.subCount > 0).sort((a, b) => a.name.localeCompare(b.name));
+
+    // Sub flag helpers
+    const subStatus = p => {
+      if (!p.subCount) return null;
+      const over = p.subCount > SUBS_ALLOWED;
+      const teams = p.subTeams.filter(Boolean).map(capitalize).join(', ');
+      let text;
+      if (SUBS_ALLOWED === 0) text = 'Subbed (not allowed)';
+      else if (over) text = `Over limit (${p.subCount}/${SUBS_ALLOWED})`;
+      else text = `Sub used (${p.subCount}/${SUBS_ALLOWED})`;
+      return { over, text, teams };
+    };
 
     // 5. Group by team, sort each team alphabetically by name
     const byTeam = {};
@@ -436,6 +520,9 @@ async function loadEligibility() {
     // 6. Summary banner
     const totalPlayers = playerGameCounts.length;
     const eligiblePlayers = playerGameCounts.filter(p => p.gamesPlayed >= GAMES_REQUIRED).length;
+    const subbedPlayers = playerGameCounts.filter(p => p.subCount > 0).length + subOnlyResults.length;
+    const overLimitPlayers = playerGameCounts.filter(p => p.subCount > SUBS_ALLOWED).length
+      + subOnlyResults.filter(p => p.subCount > SUBS_ALLOWED).length;
     const summaryEl = document.getElementById('summaryBanner');
     summaryEl.style.display = '';
     summaryEl.innerHTML = `
@@ -455,6 +542,15 @@ async function loadEligibility() {
         <div class="num">${GAMES_REQUIRED - totalCompleted > 0 ? GAMES_REQUIRED - totalCompleted : 0}</div>
         <div class="label">Games Left</div>
       </div>
+      <div class="summary-stat">
+        <div class="num">${subbedPlayers}</div>
+        <div class="label">Have Subbed</div>
+      </div>
+      ${overLimitPlayers > 0 ? `
+      <div class="summary-stat">
+        <div class="num" style="color:#b91c1c">${overLimitPlayers}</div>
+        <div class="label">Sub Violations</div>
+      </div>` : ''}
     `;
 
     // 7. Team filter pills
@@ -518,6 +614,7 @@ async function loadEligibility() {
               <th class="center">Games</th>
               <th class="hide-mobile">Progress</th>
               <th class="center">Status</th>
+              <th class="center">Subs</th>
             </tr>
           </thead>
           <tbody>
@@ -537,13 +634,20 @@ async function loadEligibility() {
                 badgeClass = 'status-close';
               }
 
+              const sub = subStatus(p);
+              const rowClass = [eligible ? 'eligible-row' : '', sub ? (sub.over ? 'sub-over-row' : 'sub-flag-row') : ''].filter(Boolean).join(' ');
+              const subCell = sub
+                ? `<span class="status-badge ${sub.over ? 'status-sub-over' : 'status-sub-used'}">${sub.text}</span>${sub.teams ? `<div class="sub-note">for ${sub.teams}</div>` : ''}`
+                : '<span class="sub-none">&mdash;</span>';
+
               return `
-                <tr class="${eligible ? 'eligible-row' : ''}">
+                <tr class="${rowClass}">
                   <td style="color:var(--text-light);font-size:0.85rem">${i + 1}</td>
                   <td><a class="player-link" href="player.html?id=${encodeURIComponent(p.linkId)}">${p.name}</a></td>
                   <td class="center games-count-cell">${p.gamesPlayed}${p.gamesPlayed > GAMES_REQUIRED ? `<span style="color:var(--text-light);font-size:0.8rem"> (+${p.gamesPlayed - GAMES_REQUIRED})</span>` : ''}</td>
                   <td class="hide-mobile"><div class="progress-wrap">${pips}</div></td>
                   <td class="center"><span class="status-badge ${badgeClass}">${badgeText}</span></td>
+                  <td class="center">${subCell}</td>
                 </tr>
               `;
             }).join('')}
@@ -554,6 +658,35 @@ async function loadEligibility() {
       mainEl.appendChild(section);
       allTeamSections.push({ team, el: section });
     });
+
+    // 9. Sub-only players (not on any roster this season)
+    if (subOnlyResults.length > 0) {
+      const subSection = document.createElement('div');
+      subSection.className = 'team-section';
+      subSection.innerHTML = `
+        <div class="team-header" style="background: linear-gradient(135deg, #0369a1 0%, #0369a1cc 100%);">
+          <span>Substitutes (not on a roster)</span>
+          <span class="team-badge-count">${subOnlyResults.length} player${subOnlyResults.length === 1 ? '' : 's'}</span>
+        </div>
+        <table class="elig-table">
+          <thead>
+            <tr><th>Player</th><th class="center">Subs</th></tr>
+          </thead>
+          <tbody>
+            ${subOnlyResults.map(p => {
+              const sub = subStatus(p);
+              return `
+                <tr class="${sub.over ? 'sub-over-row' : 'sub-flag-row'}">
+                  <td><a class="player-link" href="player.html?id=${encodeURIComponent(p.linkId)}">${p.name}</a></td>
+                  <td class="center"><span class="status-badge ${sub.over ? 'status-sub-over' : 'status-sub-used'}">${sub.text}</span>${sub.teams ? `<div class="sub-note">for ${sub.teams}</div>` : ''}</td>
+                </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      `;
+      mainEl.appendChild(subSection);
+      allTeamSections.push({ team: '__subs__', el: subSection });
+    }
 
   } catch (err) {
     console.error('Error loading eligibility:', err);
