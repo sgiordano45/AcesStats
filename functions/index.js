@@ -3931,7 +3931,7 @@ function pickemBuildEmail(name, games) {
           <a href="${PICKEM_URL}" style="display:inline-block;background:#2d5016;color:#fff;text-decoration:none;font-weight:700;padding:12px 28px;border-radius:8px;">Make my picks</a>
         </div>
         <div style="margin-top:20px;padding-top:16px;border-top:1px solid #e2e8f0;font-size:0.8rem;color:#a0aec0;">
-          You're getting this because you play Pick'em. To stop these, turn off "Pick'em Reminder" under
+          You're getting this because you play Pick'em. To stop these, turn off "Pick'em Emails" under
           Email Notifications on your <a href="${PICKEM_PROFILE_URL}" style="color:#a0aec0;">profile</a>.
         </div>
       </div>
@@ -3967,6 +3967,11 @@ async function runPickemReminders({ dryRun = false, force = false, hoursAhead = 
   const logRef = db.collection('pickem').doc(season.id).collection('reminderLog').doc(dateKey);
   const logSnap = await logRef.get();
   const alreadySent = new Set(force ? [] : (logSnap.exists ? (logSnap.data().sent || []) : []));
+  if (!force) {
+    // Anyone who got today's weekly digest (Mondays) already saw their open games
+    const digestSnap = await db.collection('pickem').doc(season.id).collection('reminderLog').doc(`digest-${dateKey}`).get();
+    if (digestSnap.exists) (digestSnap.data().sent || []).forEach(u => alreadySent.add(u));
+  }
 
   // Who is missing picks?
   const targets = [];
@@ -4072,4 +4077,351 @@ exports.triggerPickemReminders = functions
       force: data?.force === true,
       hoursAhead: Number(data?.hoursAhead) || PICKEM_WINDOW_HOURS
     });
+  });
+
+
+// ============================================================================
+// PICK'EM WEEKLY DIGEST (email)
+// Mondays 8 AM ET. One email to every pick'em entrant with:
+//   1) Season (YTD) top 5 + the reader's own rank
+//   2) Upsets from last week (Mon-Sun)
+//   3) This week's games (Mon-Sun) + how many the reader has already picked
+// Scoring/upset rules mirror pickem.html exactly.
+// Dedupe: pickem/{seasonId}/reminderLog/digest-{YYYY-MM-DD}. The 9 AM daily
+// reminder skips anyone who already got the digest that day.
+// Manual test (admin): triggerPickemDigest({ dryRun: true })
+// ============================================================================
+
+const PICKEM_UPSET_SHARE = 1 / 3;
+const PICKEM_UPSET_MIN_PICKS = 3;
+
+function pickemNormalizeGame(g) {
+  const dp = pickemDateParts(g);
+  if (!dp) return null;
+  const homeName = g.homeTeamName || pickemCap(g.homeTeamId) || g['home team'] || 'TBD';
+  const awayName = g.awayTeamName || pickemCap(g.awayTeamId) || g['away team'] || 'TBD';
+  const homeKey = String(g.homeTeamId || homeName).toLowerCase();
+  const awayKey = String(g.awayTeamId || awayName).toLowerCase();
+  const status = String(g.status || '').toLowerCase();
+  const mins = pickemTimeToMinutes(g.time, dp);
+  const lockMins = mins === null ? PICKEM_DEFAULT_LOCK_MINUTES : mins;
+  const lockAt = pickemEtToMs(dp.y, dp.m, dp.day, Math.floor(lockMins / 60), lockMins % 60);
+  const winnerRaw = g.winner ? String(g.winner).toLowerCase() : '';
+  const homeScore = g.homeScore ?? g['home score'] ?? null;
+  const awayScore = g.awayScore ?? g['away score'] ?? null;
+  const isFinal = status === 'completed' || (!!winnerRaw && homeScore !== null && awayScore !== null);
+  const isTBD = !!g.isPlaceholder || homeName === 'TBD' || awayName === 'TBD';
+  const cancelled = ['cancelled', 'canceled', 'postponed', 'rainout', 'rained out'].includes(status);
+  let winnerKey = null;
+  if (isFinal && winnerRaw) {
+    if (winnerRaw === homeKey || winnerRaw === homeName.toLowerCase()) winnerKey = homeKey;
+    else if (winnerRaw === awayKey || winnerRaw === awayName.toLowerCase()) winnerKey = awayKey;
+  }
+  const isVoid = cancelled || (isFinal && (!winnerKey || !!g.forfeit));
+  return {
+    id: g.id, dp, dayKey: pickemDpKey(dp), time: g.time || '', lockAt,
+    homeName, awayName, homeKey, awayKey, homeScore, awayScore,
+    isFinal, isTBD, cancelled, isVoid, winnerKey,
+    isGraded: isFinal && !isVoid
+  };
+}
+
+const pickemDpKey = (dp) => `${dp.y}-${String(dp.m + 1).padStart(2, '0')}-${String(dp.day).padStart(2, '0')}`;
+function pickemAddDays(dp, n) {
+  const d = new Date(Date.UTC(dp.y, dp.m, dp.day + n));
+  return { y: d.getUTCFullYear(), m: d.getUTCMonth(), day: d.getUTCDate() };
+}
+const PICKEM_DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const PICKEM_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+// entries: [{ uid, displayName, picks: { gameId: { team, atMs } } }]
+function pickemValidPick(entry, g) {
+  const p = entry.picks[g.id];
+  if (!p || !p.team) return null;
+  if (p.atMs && p.atMs > g.lockAt) return null;
+  if (p.team !== g.homeKey && p.team !== g.awayKey) return null;
+  return p.team;
+}
+
+function pickemSplit(entries, g) {
+  let home = 0, away = 0;
+  entries.forEach(e => {
+    const t = pickemValidPick(e, g);
+    if (t === g.homeKey) home++;
+    else if (t === g.awayKey) away++;
+  });
+  return { home, away, total: home + away };
+}
+
+function pickemUpsetInfo(entries, g) {
+  if (!g.isGraded) return null;
+  const s = pickemSplit(entries, g);
+  if (s.total < PICKEM_UPSET_MIN_PICKS) return null;
+  const winnerPicks = g.winnerKey === g.homeKey ? s.home : s.away;
+  if (winnerPicks / s.total >= PICKEM_UPSET_SHARE) return null;
+  const winnerName = g.winnerKey === g.homeKey ? g.homeName : g.awayName;
+  const loserName = g.winnerKey === g.homeKey ? g.awayName : g.homeName;
+  return { game: g, winnerName, loserName, winnerPicks, total: s.total };
+}
+
+// Standings table, sorted: points, correct, fewest misses, name
+function pickemScore(entries, gameList) {
+  const upsetById = {};
+  gameList.forEach(g => { upsetById[g.id] = !!pickemUpsetInfo(entries, g); });
+  const rows = [];
+  entries.forEach(e => {
+    const row = { uid: e.uid, name: e.displayName, pts: 0, correct: 0, wrong: 0, upsets: 0, picks: 0 };
+    gameList.forEach(g => {
+      const t = pickemValidPick(e, g);
+      if (!t) return;
+      row.picks++;
+      if (!g.isGraded) return;
+      if (t === g.winnerKey) {
+        row.correct++; row.pts += 1;
+        if (upsetById[g.id]) { row.pts += 1; row.upsets++; }
+      } else row.wrong++;
+    });
+    if (row.picks > 0) rows.push(row);
+  });
+  rows.sort((a, b) => (b.pts - a.pts) || (b.correct - a.correct) || (a.wrong - b.wrong) || a.name.localeCompare(b.name));
+  // Competition ranking: equal pts/correct/wrong share a rank
+  rows.forEach((r, i) => {
+    r.rank = (i > 0 && rows[i - 1].pts === r.pts && rows[i - 1].correct === r.correct && rows[i - 1].wrong === r.wrong)
+      ? rows[i - 1].rank : i + 1;
+  });
+  return rows;
+}
+
+function pickemBuildDigestEmail({ name, uid, top5, ytdRows, upsets, lastWeekLabel, weekGames, weekLabel, picked }) {
+  const me = ytdRows.find(r => r.uid === uid);
+  const rowsHtml = top5.map(r => `
+    <tr${r.uid === uid ? ' style="background:#fef9c3;"' : ''}>
+      <td style="padding:7px 8px;border-bottom:1px solid #e2e8f0;color:#718096;width:28px;">${r.rank}</td>
+      <td style="padding:7px 8px;border-bottom:1px solid #e2e8f0;color:#2d3748;font-weight:600;">${pickemEscape(r.name)}</td>
+      <td style="padding:7px 8px;border-bottom:1px solid #e2e8f0;text-align:right;color:#718096;">${r.correct}-${r.wrong}</td>
+      <td style="padding:7px 8px;border-bottom:1px solid #e2e8f0;text-align:right;color:#2d5016;font-weight:700;">${r.pts} pts</td>
+    </tr>`).join('');
+  const meLine = me && !top5.some(r => r.uid === uid)
+    ? `<p style="margin:10px 0 0;font-size:0.85rem;color:#4a5568;">You're <strong>#${me.rank}</strong> with ${me.pts} pts (${me.correct}-${me.wrong}).</p>`
+    : (!me ? `<p style="margin:10px 0 0;font-size:0.85rem;color:#4a5568;">You haven't scored yet &mdash; get some picks in!</p>` : '');
+
+  const standingsHtml = top5.length ? `
+    <h3 style="margin:0 0 8px;font-size:1rem;color:#2d3748;">Season Top 5</h3>
+    <table style="width:100%;border-collapse:collapse;font-size:0.875rem;">${rowsHtml}</table>${meLine}` : '';
+
+  const upsetsHtml = upsets.length ? `
+    <h3 style="margin:24px 0 8px;font-size:1rem;color:#2d3748;">Upsets Last Week</h3>
+    <p style="margin:0 0 8px;font-size:0.8rem;color:#718096;">${pickemEscape(lastWeekLabel)} &middot; right pick = 2 pts</p>
+    ${upsets.map(u => `
+      <div style="padding:8px 0;border-bottom:1px solid #e2e8f0;font-size:0.875rem;color:#2d3748;">
+        <strong>${pickemEscape(u.winnerName)}</strong> beat ${pickemEscape(u.loserName)}
+        <span style="color:#d97706;"> &mdash; only ${u.winnerPicks} of ${u.total} picked them</span>
+      </div>`).join('')}` : '';
+
+  // Group this week's games by day
+  const byDay = {};
+  weekGames.forEach(g => { (byDay[g.dayKey] = byDay[g.dayKey] || []).push(g); });
+  const weekHtml = Object.keys(byDay).sort().map(k => {
+    const g0 = byDay[k][0];
+    const label = `${PICKEM_DAYS[new Date(Date.UTC(g0.dp.y, g0.dp.m, g0.dp.day)).getUTCDay()]}, ${PICKEM_MONTHS[g0.dp.m]} ${g0.dp.day}`;
+    return `
+      <div style="margin-top:12px;font-size:0.75rem;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:#718096;">${label}</div>
+      ${byDay[k].map(g => {
+        const done = picked.has(g.id);
+        return `<div style="padding:7px 0;border-bottom:1px solid #e2e8f0;font-size:0.875rem;color:#2d3748;">
+          ${pickemEscape(g.awayName)} @ ${pickemEscape(g.homeName)}
+          <span style="color:#718096;"> &middot; ${pickemEscape(g.time || pickemFormatLock(g.lockAt))}</span>
+          <span style="float:right;color:${done ? '#16a34a' : '#d97706'};">${done ? 'Picked' : 'Needs pick'}</span>
+        </div>`;
+      }).join('')}`;
+  }).join('');
+  const nPicked = weekGames.filter(g => picked.has(g.id)).length;
+  const previewHtml = `
+    <h3 style="margin:24px 0 4px;font-size:1rem;color:#2d3748;">This Week's Games</h3>
+    <p style="margin:0;font-size:0.8rem;color:#718096;">${pickemEscape(weekLabel)} &middot; you've picked ${nPicked} of ${weekGames.length} &middot; each game locks at first pitch</p>
+    ${weekHtml}`;
+
+  const nMissing = weekGames.length - nPicked;
+  const subject = nMissing > 0
+    ? `Pick'em: this week's ${weekGames.length} games are open (${nMissing} to pick)`
+    : `Pick'em weekly recap: you're all set for this week`;
+  const html = `
+    <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:560px;margin:0 auto;padding:24px;">
+      <div style="background:#2d5016;border-radius:12px 12px 0 0;padding:20px 24px;">
+        <h2 style="color:#fff;margin:0;font-size:1.1rem;">Weekly Pick'em Recap &amp; Preview</h2>
+      </div>
+      <div style="background:#f8fafc;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 12px 12px;padding:24px;">
+        <p style="margin:0 0 18px;color:#2d3748;font-size:0.95rem;">Hey ${pickemEscape(name)}, here's where things stand heading into the week.</p>
+        ${standingsHtml}
+        ${upsetsHtml}
+        ${previewHtml}
+        <div style="margin:24px 0 8px;text-align:center;">
+          <a href="${PICKEM_URL}" style="display:inline-block;background:#2d5016;color:#fff;text-decoration:none;font-weight:700;padding:12px 28px;border-radius:8px;">Make my picks</a>
+        </div>
+        <div style="margin-top:20px;padding-top:16px;border-top:1px solid #e2e8f0;font-size:0.8rem;color:#a0aec0;">
+          You're getting this because you play Pick'em. To stop these, turn off "Pick'em Emails" under
+          Email Notifications on your <a href="${PICKEM_PROFILE_URL}" style="color:#a0aec0;">profile</a>.
+        </div>
+      </div>
+    </div>`;
+  return { subject, html };
+}
+
+async function runPickemDigest({ dryRun = false, force = false } = {}) {
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey && !dryRun) return { success: false, message: 'RESEND_API_KEY not set' };
+
+  const season = await getCurrentSeason();
+  if (!season) return { success: false, message: 'No active season' };
+
+  const nowMs = Date.now();
+  const [gamesSnap, entriesSnap] = await Promise.all([
+    db.collection('seasons').doc(season.id).collection('games').get(),
+    db.collection('pickem').doc(season.id).collection('entries').get()
+  ]);
+  const games = gamesSnap.docs.map(d => pickemNormalizeGame({ id: d.id, ...d.data() })).filter(Boolean);
+  const entries = entriesSnap.docs.map(d => {
+    const data = d.data();
+    const picks = {};
+    Object.entries(data.picks || {}).forEach(([gid, p]) => {
+      if (p) picks[gid] = { team: p.team, atMs: p.at && p.at.toMillis ? p.at.toMillis() : null };
+    });
+    return { uid: d.id, displayName: data.displayName || 'Unknown', picks };
+  });
+  if (!entries.length) return { success: true, message: 'No pick\'em entries yet', sent: 0 };
+
+  // Weeks run Monday-Sunday (ET). Anchor = the Monday on/before today.
+  const t = pickemEtParts(nowMs);
+  const today = { y: t.y, m: t.m, day: t.day };
+  const todayDow = new Date(Date.UTC(today.y, today.m, today.day)).getUTCDay();
+  const thisMon = pickemAddDays(today, -((todayDow + 6) % 7));
+  const thisSun = pickemAddDays(thisMon, 6);
+  const lastMon = pickemAddDays(thisMon, -7);
+  const lastSun = pickemAddDays(thisMon, -1);
+  const inRange = (g, a, b) => g.dayKey >= pickemDpKey(a) && g.dayKey <= pickemDpKey(b);
+  const fmt = (dp) => `${PICKEM_MONTHS[dp.m]} ${dp.day}`;
+
+  const weekGames = games
+    .filter(g => inRange(g, thisMon, thisSun) && !g.isFinal && !g.isTBD && !g.cancelled && g.lockAt > nowMs)
+    .sort((a, b) => (a.lockAt - b.lockAt) || a.homeName.localeCompare(b.homeName));
+  if (!weekGames.length) {
+    console.log("📅 Pick'em digest: no open games this week - skipping");
+    return { success: true, message: 'No open games this week', sent: 0 };
+  }
+
+  const ytdRows = pickemScore(entries, games);
+  const gradedYtd = games.filter(g => g.isGraded).length;
+  const top5 = gradedYtd ? ytdRows.filter(r => r.rank <= 5).slice(0, 8) : [];   // keeps ties at #5, capped at 8
+  const upsets = games
+    .filter(g => inRange(g, lastMon, lastSun))
+    .map(g => pickemUpsetInfo(entries, g))
+    .filter(Boolean)
+    .sort((a, b) => (a.winnerPicks / a.total) - (b.winnerPicks / b.total));
+
+  // Dedupe
+  const dateKey = pickemDpKey(today);
+  const logRef = db.collection('pickem').doc(season.id).collection('reminderLog').doc(`digest-${dateKey}`);
+  const logSnap = await logRef.get();
+  const alreadySent = new Set(force ? [] : (logSnap.exists ? (logSnap.data().sent || []) : []));
+
+  // Resolve emails + opt-outs
+  const targets = entries.filter(e => !alreadySent.has(e.uid));
+  const userDocs = [];
+  for (let i = 0; i < targets.length; i += 300) {
+    userDocs.push(...await db.getAll(...targets.slice(i, i + 300).map(e => db.collection('users').doc(e.uid))));
+  }
+  const recipients = [];
+  for (let i = 0; i < targets.length; i++) {
+    const e = targets[i];
+    const u = userDocs[i].exists ? userDocs[i].data() : {};
+    if (u.emailPreferences && u.emailPreferences.pickemReminders === false) continue;
+    let email = u.email;
+    if (!email) {
+      try { email = (await admin.auth().getUser(e.uid)).email; } catch (err) { /* no auth record */ }
+    }
+    if (!email) continue;
+    const name = u.preferredDisplayName || u.displayName || e.displayName || 'there';
+    const picked = new Set(weekGames.filter(g => pickemValidPick(e, g)).map(g => g.id));
+    recipients.push({ uid: e.uid, email, name, picked });
+  }
+
+  const common = {
+    top5, ytdRows, upsets,
+    lastWeekLabel: `${fmt(lastMon)} - ${fmt(lastSun)}`,
+    weekGames, weekLabel: `${fmt(thisMon)} - ${fmt(thisSun)}`
+  };
+  console.log(`📅 Pick'em digest: ${weekGames.length} open games, ${upsets.length} upsets last week, ${recipients.length} recipients${dryRun ? ' (DRY RUN)' : ''}`);
+
+  if (dryRun) {
+    const sample = recipients[0] ? pickemBuildDigestEmail({ ...common, ...recipients[0] }) : null;
+    return {
+      success: true, dryRun: true,
+      gamesThisWeek: weekGames.length,
+      top5: top5.map(r => ({ rank: r.rank, name: r.name, pts: r.pts, record: `${r.correct}-${r.wrong}` })),
+      upsets: upsets.map(u => `${u.winnerName} over ${u.loserName} (${u.winnerPicks}/${u.total})`),
+      wouldSend: recipients.length,
+      recipients: recipients.map(r => ({ name: r.name, email: r.email, picked: r.picked.size })),
+      sampleSubject: sample && sample.subject,
+      sampleHtml: sample && sample.html
+    };
+  }
+
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+  const CHUNK = 50;
+  let sent = 0, failed = 0;
+  for (let i = 0; i < recipients.length; i += CHUNK) {
+    if (i > 0) await sleep(1000);
+    const chunk = recipients.slice(i, i + CHUNK);
+    const payload = chunk.map(r => {
+      const { subject, html } = pickemBuildDigestEmail({ ...common, ...r });
+      return { from: 'Mountainside Aces <noreply@acessoftballreference.com>', to: [r.email], subject, html };
+    });
+    try {
+      const res = await fetch('https://api.resend.com/emails/batch', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (res.ok) {
+        sent += chunk.length;
+        await logRef.set({
+          sent: admin.firestore.FieldValue.arrayUnion(...chunk.map(r => r.uid)),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+      } else {
+        failed += chunk.length;
+        console.error(`❌ Pick'em digest batch failed (${res.status}):`, await res.text());
+      }
+    } catch (err) {
+      failed += chunk.length;
+      console.error("❌ Pick'em digest batch threw:", err.message);
+    }
+  }
+  console.log(`✅ Pick'em digest sent: ${sent}, failed: ${failed}`);
+  return { success: failed === 0, sent, failed };
+}
+
+exports.sendPickemDigest = functions
+  .runWith({ secrets: ['RESEND_API_KEY'] })
+  .pubsub
+  .schedule('0 8 * * 1')
+  .timeZone('America/New_York')
+  .onRun(async () => {
+    await runPickemDigest();
+    return null;
+  });
+
+// Admin-only manual run. data: { dryRun?: bool, force?: bool }
+exports.triggerPickemDigest = functions
+  .runWith({ secrets: ['RESEND_API_KEY'] })
+  .https.onCall(async (data, context) => {
+    if (!context.auth) {
+      throw new functions.https.HttpsError('unauthenticated', 'Must be signed in');
+    }
+    const userDoc = await db.collection('users').doc(context.auth.uid).get();
+    const u = userDoc.data();
+    if (!(u?.role === 'admin' || u?.isAdmin === true || u?.userRole === 'admin')) {
+      throw new functions.https.HttpsError('permission-denied', 'Admin only');
+    }
+    return runPickemDigest({ dryRun: data?.dryRun === true, force: data?.force === true });
   });
