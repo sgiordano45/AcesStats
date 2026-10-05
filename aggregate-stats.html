@@ -876,6 +876,43 @@
       </div>
     </div>
 
+    <!-- Section: Game Recap Box Scores -->
+    <div class="section">
+      <div class="section-header">
+        &#128203; Game Recap Box Scores
+      </div>
+      <div class="section-content">
+        <p>Builds one consolidated box score doc per game in <code>gameBoxScores</code> for the selected season, so <code>game-recap.html</code> loads with a single read instead of hundreds. Does <em>not</em> touch aggregatedPlayerStats or career totals. Run this after each aggregation pass (safe to re-run; docs are overwritten).</p>
+
+        <div class="flex-row" style="margin-bottom: 1rem;">
+          <button id="boxScorePreviewBtn" class="btn-secondary" onclick="runBoxScoreBuilder(true)">
+            &#128065;&#65039; Preview Box Scores
+          </button>
+          <button id="boxScoreWriteBtn" class="btn-warning" onclick="runBoxScoreBuilder(false)">
+            &#128190; Write to gameBoxScores
+          </button>
+          <button onclick="clearOutput()" class="btn-secondary">
+            Clear Output
+          </button>
+        </div>
+
+        <div class="stats" id="boxScoreStatsDisplay" style="display: none;">
+          <div class="stat-card">
+            <div class="stat-number" id="boxScoreGames">0</div>
+            <div class="stat-label">Games Found</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-number green" id="boxScoreRows">0</div>
+            <div class="stat-label">Player Rows</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-number blue" id="boxScoreWritten">0</div>
+            <div class="stat-label">Written</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Section 2: Full Career Recalculation -->
     <div class="section">
       <div class="section-header">
@@ -942,7 +979,8 @@
     updateDoc,
     deleteField,
     query,
-    where
+    where,
+    documentId
   } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
 
   // Make functions globally available
@@ -957,6 +995,7 @@
   window.deleteField = deleteField;
   window.query = query;
   window.where = where;
+  window.documentId = documentId;
 
   // Seasons that use game-level stats (full aggregation to production)
   const GAME_BASED_SEASONS = ['2026-summer', '2026-fall', '2027-summer', '2027-fall'];
@@ -2621,6 +2660,130 @@
       log(`❌ Error during merge: ${err.message}`, 'error');
       console.error(err);
     }
+  };
+
+  // ============================================
+  // GAME RECAP BOX SCORE BUILDER
+  // Consolidates each game's batting + pitching docs into gameBoxScores/{seasonId}_{gameId}
+  // ============================================
+
+  window.runBoxScoreBuilder = async function(previewOnly = true) {
+    const seasonId = document.getElementById('seasonSelect').value;
+    if (!seasonId) { alert('Please select a season first'); return; }
+
+    const previewBtn = document.getElementById('boxScorePreviewBtn');
+    const writeBtn   = document.getElementById('boxScoreWriteBtn');
+    previewBtn.disabled = true;
+    writeBtn.disabled   = true;
+
+    document.getElementById('boxScoreStatsDisplay').style.display = 'grid';
+    document.getElementById('boxScoreGames').textContent   = '0';
+    document.getElementById('boxScoreRows').textContent    = '0';
+    document.getElementById('boxScoreWritten').textContent = '0';
+
+    log('');
+    log('═══════════════════════════════════════', 'header');
+    log(`Game Recap Box Scores — ${seasonId} ${previewOnly ? '(PREVIEW — no writes)' : '(WRITE MODE)'}`, 'header');
+    log('═══════════════════════════════════════', 'header');
+
+    try {
+      // ── Step 1: Roster (same legacy-ID sources game-recap.html used) ──────────
+      log('Step 1: Loading player roster...', 'game');
+      const [aggSnap, usersSnap] = await Promise.all([
+        window.getDocs(window.collection(window.db, 'aggregatedPlayerStats')),
+        window.getDocs(window.collection(window.db, 'users'))
+      ]);
+
+      const legacyIds = new Set();
+      const legacyToAuth = {};
+      aggSnap.forEach(d => { if (!d.data().migrated) legacyIds.add(d.id); });
+      usersSnap.forEach(d => {
+        const mp = d.data().mergedFromProfile;
+        if (mp) { legacyIds.add(mp); legacyToAuth[mp] = d.id; }
+      });
+      const ids = [...legacyIds];
+      log(`  ${ids.length} player IDs to check`, 'success');
+
+      // ── Step 2: Pull this season's game docs for every player ─────────────────
+      log('Step 2: Reading per-player game docs...', 'game');
+      const prefix = `${seasonId}_`;
+      const rangeFilters = () => [
+        window.where(window.documentId(), '>=', prefix),
+        window.where(window.documentId(), '<=', prefix + '\uf8ff')
+      ];
+
+      const games = new Map(); // gameDocId -> { batting: [], pitching: [], legacyIds: Set }
+      const bucket = gid => {
+        if (!games.has(gid)) games.set(gid, { batting: [], pitching: [], legacyIds: new Set() });
+        return games.get(gid);
+      };
+
+      const CHUNK = 10;
+      for (let i = 0; i < ids.length; i += CHUNK) {
+        await Promise.all(ids.slice(i, i + CHUNK).map(async legacyId => {
+          const [bSnap, pSnap] = await Promise.all([
+            window.getDocs(window.query(window.collection(window.db, 'playerStats', legacyId, 'games'), ...rangeFilters())),
+            window.getDocs(window.query(window.collection(window.db, 'pitchingStats', legacyId, 'games'), ...rangeFilters()))
+          ]);
+          bSnap.forEach(s => {
+            const g = bucket(s.id);
+            g.batting.push({ id: s.id, _legacyId: legacyId, ...s.data() });
+            g.legacyIds.add(legacyId);
+          });
+          pSnap.forEach(s => {
+            const g = bucket(s.id);
+            g.pitching.push({ id: s.id, _legacyId: legacyId, ...s.data() });
+            g.legacyIds.add(legacyId);
+          });
+        }));
+        if ((i / CHUNK) % 5 === 4 || i + CHUNK >= ids.length) {
+          log(`  Checked ${Math.min(i + CHUNK, ids.length)} / ${ids.length} players`);
+        }
+      }
+
+      let totalRows = 0;
+      games.forEach(g => { totalRows += g.batting.length + g.pitching.length; });
+      document.getElementById('boxScoreGames').textContent = games.size;
+      document.getElementById('boxScoreRows').textContent  = totalRows;
+      log(`  Found ${games.size} games with stats (${totalRows} player rows)`, 'success');
+
+      if (previewOnly) {
+        log('');
+        log('── Preview ──', 'header');
+        [...games.entries()].sort((a, b) => a[0].localeCompare(b[0])).forEach(([gid, g]) => {
+          log(`  ${gid} — ${g.batting.length} batting, ${g.pitching.length} pitching`, 'success');
+        });
+        document.getElementById('boxScoreWritten').textContent = '—';
+        log('Preview complete. Nothing written.', 'success');
+      } else {
+        // ── Step 3: Write (only after every read succeeded) ─────────────────────
+        log('');
+        log('Step 3: Writing gameBoxScores...', 'game');
+        let written = 0;
+        for (const [gid, g] of games) {
+          const subsetMap = {};
+          g.legacyIds.forEach(lid => { if (legacyToAuth[lid]) subsetMap[lid] = legacyToAuth[lid]; });
+          await window.setDoc(window.doc(window.db, 'gameBoxScores', gid), {
+            seasonId,
+            gameDocId: gid,
+            batting: g.batting,
+            pitching: g.pitching,
+            legacyToAuth: subsetMap,
+            builtAt: new Date().toISOString()
+          });
+          written++;
+          document.getElementById('boxScoreWritten').textContent = written;
+        }
+        log(`  ✓ Wrote ${written} box score docs`, 'success');
+        log('Box score build complete.', 'success');
+      }
+    } catch (err) {
+      console.error(err);
+      log(`✗ Box score builder error: ${err.message}`, 'error');
+    }
+
+    previewBtn.disabled = false;
+    writeBtn.disabled   = false;
   };
 
   // ============================================

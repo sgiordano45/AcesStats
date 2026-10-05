@@ -567,6 +567,22 @@ body {
   // Gets all player IDs from aggregatedPlayerStats, then parallel-fetches each
   // player's batting and pitching doc for this game. Missing docs are ignored.
   async function fetchGameStats(gameDocId) {
+    // Fast path: one pre-built doc per game, written by the "Game Recap Box Scores"
+    // button on aggregate-stats.html. Falls back to the per-player reads below if missing.
+    try {
+      const boxSnap = await getDoc(doc(db, 'gameBoxScores', gameDocId));
+      if (boxSnap.exists()) {
+        const box = boxSnap.data();
+        return {
+          battingDocs: box.batting || [],
+          pitchingDocs: box.pitching || [],
+          legacyToAuth: box.legacyToAuth || {}
+        };
+      }
+    } catch (e) {
+      console.warn('gameBoxScores read failed, falling back to per-player reads:', e);
+    }
+
     try {
       // Build the complete set of legacyIds to query.
       //
