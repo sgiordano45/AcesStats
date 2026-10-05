@@ -2578,31 +2578,38 @@ function calculateStandingsFromGames(games) {
   
   // Calculate derived stats
   const standings = Object.values(teamStats).map(team => {
-    const totalDecided = team.wins + team.losses;
-    team.winPct = totalDecided > 0 ? (team.wins / totalDecided) : 0;
+    // Win% = (wins + ties×0.5) / (wins + losses + ties) — matches current-season.html
+    const totalGames = team.wins + team.losses + team.ties;
+    team.winPct = totalGames > 0 ? (team.wins + team.ties * 0.5) / totalGames : 0;
     team.runDifferential = team.runsFor - team.runsAgainst;
     team.streak = calculateStreakFromResults(team.recentResults);
     return team;
   });
-  
-  // Sort standings
+
+  // Sort standings — tiebreaker order matches current-season.html exactly
   return standings.sort((a, b) => {
-    // First: Win percentage
+    // 1. Win percentage
     if (a.winPct !== b.winPct) return b.winPct - a.winPct;
-    
-    // Check if exactly 2 teams tied
-    const teamsAtSameWinPct = standings.filter(t => t.winPct === a.winPct);
-    
-    // Second: H2H only if exactly 2 teams tied
-    if (teamsAtSameWinPct.length === 2) {
+
+    // 2. Total wins
+    if (a.wins !== b.wins) return b.wins - a.wins;
+
+    // 3. Fewest losses
+    if (a.losses !== b.losses) return a.losses - b.losses;
+
+    // 4. H2H — only when exactly 2 teams are tied on win%, wins, AND losses
+    const teamsAtSameMark = standings.filter(
+      t => t.winPct === a.winPct && t.wins === a.wins && t.losses === a.losses
+    );
+    if (teamsAtSameMark.length === 2) {
       const h2hComp = compareH2H(a, b);
       if (h2hComp !== 0) return h2hComp;
     }
-    
-    // Third: Runs Against (fewer is better)
+
+    // 5. Runs Against (fewer is better)
     if (a.runsAgainst !== b.runsAgainst) return a.runsAgainst - b.runsAgainst;
-    
-    // Fourth: Run Differential
+
+    // 6. Run Differential
     return b.runDifferential - a.runDifferential;
   });
 }
@@ -3788,4 +3795,281 @@ exports.checkYouTubeLiveStatus = functions.pubsub
     }
 
     return null;
+  });
+
+
+// ============================================================================
+// PICK'EM EMAIL REMINDERS
+// Runs daily at 9 AM ET. Emails everyone who has a pick'em entry this season
+// and has NOT yet picked one or more games that lock in the next 24 hours.
+// Games lock at scheduled first pitch (same rule as pickem.html).
+//
+// - Opt-out: users/{uid}.emailPreferences.pickemReminders === false
+// - Dedupe:  pickem/{seasonId}/reminderLog/{YYYY-MM-DD} (one email per user/day)
+// - Uses the same RESEND_API_KEY secret as the other email functions
+// - Manual test (admin): triggerPickemReminders({ dryRun: true })
+// ============================================================================
+
+const PICKEM_TZ = 'America/New_York';
+const PICKEM_DEFAULT_LOCK_MINUTES = 8 * 60; // unparseable time -> lock 8:00 AM ET
+const PICKEM_WINDOW_HOURS = 24;
+const PICKEM_URL = 'https://acessoftballreference.com/pickem.html';
+const PICKEM_PROFILE_URL = 'https://acessoftballreference.com/profile.html';
+
+function pickemEtParts(ms) {
+  const o = {};
+  new Intl.DateTimeFormat('en-US', {
+    timeZone: PICKEM_TZ, year: 'numeric', month: 'numeric', day: 'numeric',
+    hour: 'numeric', minute: 'numeric', hourCycle: 'h23'
+  }).formatToParts(new Date(ms)).forEach(p => { o[p.type] = parseInt(p.value, 10); });
+  return { y: o.year, m: o.month - 1, day: o.day, h: o.hour, min: o.minute };
+}
+
+// Wall-clock ET -> epoch ms (two passes to handle DST boundaries)
+function pickemEtToMs(y, m, day, h, min) {
+  const guess = Date.UTC(y, m, day, h, min);
+  const p = pickemEtParts(guess);
+  const offset = Date.UTC(p.y, p.m, p.day, p.h, p.min) - guess;
+  let ms = guess - offset;
+  const p2 = pickemEtParts(ms);
+  const offset2 = Date.UTC(p2.y, p2.m, p2.day, p2.h, p2.min) - ms;
+  if (offset2 !== offset) ms = guess - offset2;
+  return ms;
+}
+
+function pickemDateParts(g) {
+  if (g.date && g.date.seconds) {
+    const p = pickemEtParts(g.date.seconds * 1000);
+    return { y: p.y, m: p.m, day: p.day };
+  }
+  if (g.date && typeof g.date === 'string') {
+    const parts = g.date.split(/[-\/]/);
+    if (parts.length < 3) return null;
+    if (parts[0].length === 4) return { y: +parts[0], m: +parts[1] - 1, day: +parts[2] };
+    return { y: +parts[2], m: +parts[0] - 1, day: +parts[1] };
+  }
+  return null;
+}
+
+// "7:45 PM" -> minutes after midnight. No AM/PM: weekend 7-11 = AM, otherwise PM.
+function pickemTimeToMinutes(t, dp) {
+  if (!t) return null;
+  const m = String(t).match(/(\d{1,2})(?::(\d{2}))?\s*([AaPp])\.?\s*[Mm]?/) || String(t).match(/(\d{1,2}):(\d{2})/);
+  if (!m) return null;
+  let h = parseInt(m[1], 10);
+  const min = m[2] ? parseInt(m[2], 10) : 0;
+  const period = m[3] ? m[3].toUpperCase() : null;
+  if (h > 23 || min > 59) return null;
+  if (period === 'A') { if (h === 12) h = 0; }
+  else if (period === 'P') { if (h !== 12) h += 12; }
+  else if (h < 12) {
+    const dow = new Date(Date.UTC(dp.y, dp.m, dp.day)).getUTCDay();
+    const weekend = dow === 0 || dow === 6;
+    if (!(weekend && h >= 7)) h += 12;
+  }
+  return h * 60 + min;
+}
+
+function pickemEscape(s) {
+  return String(s || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function pickemCap(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : ''; }
+
+// Returns pickable games (open, real teams, not final/cancelled) locking within the window
+function pickemGamesInWindow(rawGames, nowMs, windowMs) {
+  const out = [];
+  for (const g of rawGames) {
+    const dp = pickemDateParts(g);
+    if (!dp) continue;
+    const homeName = g.homeTeamName || pickemCap(g.homeTeamId) || g['home team'] || 'TBD';
+    const awayName = g.awayTeamName || pickemCap(g.awayTeamId) || g['away team'] || 'TBD';
+    const status = String(g.status || '').toLowerCase();
+    const winnerRaw = g.winner ? String(g.winner).toLowerCase() : '';
+    const homeScore = g.homeScore ?? g['home score'] ?? null;
+    const awayScore = g.awayScore ?? g['away score'] ?? null;
+    const isFinal = status === 'completed' || (!!winnerRaw && homeScore !== null && awayScore !== null);
+    const isTBD = !!g.isPlaceholder || homeName === 'TBD' || awayName === 'TBD';
+    const cancelled = ['cancelled', 'canceled', 'postponed', 'rainout', 'rained out'].includes(status);
+    if (isFinal || isTBD || cancelled) continue;
+
+    const mins = pickemTimeToMinutes(g.time, dp);
+    const lockMins = mins === null ? PICKEM_DEFAULT_LOCK_MINUTES : mins;
+    const lockAt = pickemEtToMs(dp.y, dp.m, dp.day, Math.floor(lockMins / 60), lockMins % 60);
+    if (lockAt <= nowMs || lockAt > nowMs + windowMs) continue;
+
+    out.push({ id: g.id, homeName, awayName, lockAt });
+  }
+  return out.sort((a, b) => a.lockAt - b.lockAt);
+}
+
+function pickemFormatLock(ms) {
+  return new Date(ms).toLocaleString('en-US', { timeZone: PICKEM_TZ, weekday: 'short', hour: 'numeric', minute: '2-digit' });
+}
+
+function pickemBuildEmail(name, games) {
+  const n = games.length;
+  const rows = games.map(g => `
+    <tr>
+      <td style="padding:8px 0;border-bottom:1px solid #e2e8f0;color:#2d3748;font-weight:600;">${pickemEscape(g.awayName)} @ ${pickemEscape(g.homeName)}</td>
+      <td style="padding:8px 0;border-bottom:1px solid #e2e8f0;color:#d97706;text-align:right;white-space:nowrap;">Locks ${pickemEscape(pickemFormatLock(g.lockAt))} ET</td>
+    </tr>`).join('');
+  const subject = n === 1
+    ? "Pick'em reminder: 1 game still needs your pick"
+    : `Pick'em reminder: ${n} games still need your picks`;
+  const html = `
+    <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:520px;margin:0 auto;padding:24px;">
+      <div style="background:#2d5016;border-radius:12px 12px 0 0;padding:20px 24px;">
+        <h2 style="color:#fff;margin:0;font-size:1.1rem;">Weekly Pick'em Reminder</h2>
+      </div>
+      <div style="background:#f8fafc;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 12px 12px;padding:24px;">
+        <p style="margin:0 0 16px;color:#2d3748;font-size:0.95rem;">
+          Hey ${pickemEscape(name)}, you haven't picked ${n === 1 ? 'this game' : 'these games'} yet. Each game locks at first pitch.
+        </p>
+        <table style="width:100%;border-collapse:collapse;font-size:0.875rem;">${rows}</table>
+        <div style="margin:24px 0 8px;text-align:center;">
+          <a href="${PICKEM_URL}" style="display:inline-block;background:#2d5016;color:#fff;text-decoration:none;font-weight:700;padding:12px 28px;border-radius:8px;">Make my picks</a>
+        </div>
+        <div style="margin-top:20px;padding-top:16px;border-top:1px solid #e2e8f0;font-size:0.8rem;color:#a0aec0;">
+          You're getting this because you play Pick'em. To stop these, turn off "Pick'em Reminder" under
+          Email Notifications on your <a href="${PICKEM_PROFILE_URL}" style="color:#a0aec0;">profile</a>.
+        </div>
+      </div>
+    </div>`;
+  return { subject, html };
+}
+
+async function runPickemReminders({ dryRun = false, force = false, hoursAhead = PICKEM_WINDOW_HOURS } = {}) {
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey && !dryRun) {
+    console.warn('⚠️ RESEND_API_KEY not set - skipping pick\'em reminders');
+    return { success: false, message: 'RESEND_API_KEY not set' };
+  }
+
+  const season = await getCurrentSeason();
+  if (!season) return { success: false, message: 'No active season' };
+
+  const nowMs = Date.now();
+  const gamesSnap = await db.collection('seasons').doc(season.id).collection('games').get();
+  const rawGames = gamesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const windowGames = pickemGamesInWindow(rawGames, nowMs, hoursAhead * 3600 * 1000);
+  if (!windowGames.length) {
+    console.log("🎯 Pick'em: no open games locking in the next " + hoursAhead + 'h');
+    return { success: true, message: 'No games in window', sent: 0 };
+  }
+
+  const entriesSnap = await db.collection('pickem').doc(season.id).collection('entries').get();
+  if (entriesSnap.empty) return { success: true, message: 'No pick\'em entries yet', sent: 0 };
+
+  // Dedupe log (one reminder email per user per ET day)
+  const p = pickemEtParts(nowMs);
+  const dateKey = `${p.y}-${String(p.m + 1).padStart(2, '0')}-${String(p.day).padStart(2, '0')}`;
+  const logRef = db.collection('pickem').doc(season.id).collection('reminderLog').doc(dateKey);
+  const logSnap = await logRef.get();
+  const alreadySent = new Set(force ? [] : (logSnap.exists ? (logSnap.data().sent || []) : []));
+
+  // Who is missing picks?
+  const targets = [];
+  entriesSnap.forEach(d => {
+    if (alreadySent.has(d.id)) return;
+    const picks = d.data().picks || {};
+    const missing = windowGames.filter(g => !picks[g.id] || !picks[g.id].team);
+    if (missing.length) targets.push({ uid: d.id, fallbackName: d.data().displayName, missing });
+  });
+  if (!targets.length) {
+    console.log("🎯 Pick'em: everyone is caught up");
+    return { success: true, message: 'Everyone is caught up', sent: 0 };
+  }
+
+  // Resolve emails + opt-outs
+  const userRefs = targets.map(t => db.collection('users').doc(t.uid));
+  const userDocs = [];
+  for (let i = 0; i < userRefs.length; i += 300) {
+    userDocs.push(...await db.getAll(...userRefs.slice(i, i + 300)));
+  }
+  const emails = [];
+  for (let i = 0; i < targets.length; i++) {
+    const t = targets[i];
+    const u = userDocs[i].exists ? userDocs[i].data() : {};
+    if (u.emailPreferences && u.emailPreferences.pickemReminders === false) continue;
+    let email = u.email;
+    if (!email) {
+      try { email = (await admin.auth().getUser(t.uid)).email; } catch (e) { /* no auth record */ }
+    }
+    if (!email) continue;
+    const name = u.preferredDisplayName || u.displayName || t.fallbackName || 'there';
+    emails.push({ uid: t.uid, email, name, missing: t.missing });
+  }
+
+  console.log(`🎯 Pick'em: ${windowGames.length} games in window, ${targets.length} entrants missing picks, ${emails.length} to email${dryRun ? ' (DRY RUN)' : ''}`);
+  if (dryRun) {
+    return {
+      success: true, dryRun: true, gamesInWindow: windowGames.length, wouldSend: emails.length,
+      recipients: emails.map(e => ({ name: e.name, email: e.email, missing: e.missing.length }))
+    };
+  }
+
+  // Send via Resend batch endpoint (max 100/call; keep chunks small + pace for rate limits)
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+  const CHUNK = 50;
+  let sent = 0, failed = 0;
+  for (let i = 0; i < emails.length; i += CHUNK) {
+    if (i > 0) await sleep(1000);
+    const chunk = emails.slice(i, i + CHUNK);
+    const payload = chunk.map(e => {
+      const { subject, html } = pickemBuildEmail(e.name, e.missing);
+      return { from: 'Mountainside Aces <noreply@acessoftballreference.com>', to: [e.email], subject, html };
+    });
+    try {
+      const res = await fetch('https://api.resend.com/emails/batch', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (res.ok) {
+        sent += chunk.length;
+        await logRef.set({
+          sent: admin.firestore.FieldValue.arrayUnion(...chunk.map(e => e.uid)),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+      } else {
+        failed += chunk.length;
+        console.error(`❌ Pick'em batch failed (${res.status}):`, await res.text());
+      }
+    } catch (err) {
+      failed += chunk.length;
+      console.error("❌ Pick'em batch threw:", err.message);
+    }
+  }
+  console.log(`✅ Pick'em reminders sent: ${sent}, failed: ${failed}`);
+  return { success: failed === 0, sent, failed };
+}
+
+exports.sendPickemReminders = functions
+  .runWith({ secrets: ['RESEND_API_KEY'] })
+  .pubsub
+  .schedule('0 9 * * *')
+  .timeZone('America/New_York')
+  .onRun(async () => {
+    await runPickemReminders();
+    return null;
+  });
+
+// Admin-only manual run. data: { dryRun?: bool, force?: bool, hoursAhead?: number }
+exports.triggerPickemReminders = functions
+  .runWith({ secrets: ['RESEND_API_KEY'] })
+  .https.onCall(async (data, context) => {
+    if (!context.auth) {
+      throw new functions.https.HttpsError('unauthenticated', 'Must be signed in');
+    }
+    const userDoc = await db.collection('users').doc(context.auth.uid).get();
+    const u = userDoc.data();
+    if (!(u?.role === 'admin' || u?.isAdmin === true || u?.userRole === 'admin')) {
+      throw new functions.https.HttpsError('permission-denied', 'Admin only');
+    }
+    return runPickemReminders({
+      dryRun: data?.dryRun === true,
+      force: data?.force === true,
+      hoursAhead: Number(data?.hoursAhead) || PICKEM_WINDOW_HOURS
+    });
   });
