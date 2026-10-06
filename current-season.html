@@ -1893,6 +1893,38 @@
         document.getElementById('playoffGames').textContent = playoffGames.length;
       }
 
+      // Top 5 (+ ties), capped at 8 rows. A tied group that won't fit
+      // collapses into a single "+N tied at X" line instead of listing everyone.
+      const LEADER_TOP_N = 5;
+      const LEADER_MAX_ROWS = 8;
+      function pickLeaders(sorted, field) {
+        const leaders = [];
+        let i = 0;
+        while (i < sorted.length) {
+          const rank = i + 1;
+          if (rank > LEADER_TOP_N) break;
+          const value = sorted[i][field];
+          let j = i;
+          while (j < sorted.length && sorted[j][field] === value) j++;
+          const group = sorted.slice(i, j);
+          if (leaders.length + group.length > LEADER_MAX_ROWS) {
+            return { leaders, overflow: { rank, count: group.length, value } };
+          }
+          group.forEach(p => leaders.push({ ...p, rank }));
+          i = j;
+        }
+        return { leaders, overflow: null };
+      }
+      function overflowRow(overflow, formatter) {
+        if (!overflow) return '';
+        return `
+          <li style="justify-content:center;color:#888;font-style:italic;">
+            <span class="leader-rank">${overflow.rank}</span>
+            <span class="leader-name">+${overflow.count} tied at ${formatter(overflow.value)}</span>
+          </li>
+        `;
+      }
+
       async function updateSeasonLeaders(playerData, pitchingData, activeStreaksData = [], ootpByName = {}) {
         const leadersElement = document.getElementById('leadersContent');
         leadersElement.classList.remove('loading');
@@ -2004,25 +2036,7 @@
                 .sort((a, b) => b[category.field] - a[category.field]);
             }
 
-            let leaders = [];
-            let currentRank = 1;
-            const maxDisplay = 15;
-            
-            for (let i = 0; i < allLeaders.length && leaders.length < maxDisplay; i++) {
-              const player = allLeaders[i];
-              
-              if (i > 0 && allLeaders[i][category.field] !== allLeaders[i-1][category.field]) {
-                currentRank = i + 1;
-              }
-              
-              if (currentRank <= 10) {
-                leaders.push({ ...player, rank: currentRank });
-              } else if (i > 0 && allLeaders[i][category.field] === allLeaders[i-1][category.field]) {
-                leaders.push({ ...player, rank: currentRank });
-              } else {
-                break;
-              }
-            }
+            const { leaders, overflow } = pickLeaders(allLeaders, category.field);
 
             const tooltipIcon = category.tooltip
               ? ` <span title="${category.tooltip}" style="cursor:help;font-size:0.75rem;opacity:0.6;vertical-align:middle;" aria-label="${category.tooltip}">ℹ️</span>`
@@ -2032,7 +2046,7 @@
               : '';
             leadersHtml += `<div class="leader-category"><h4>${category.title}${tooltipIcon}</h4>${qualifierNote}<ul class="leader-list">`;
 
-            if (leaders.length === 0) {
+            if (leaders.length === 0 && !overflow) {
               leadersHtml += '<li style="text-align: center; padding: 1rem; color: #666;">No qualified players yet</li>';
             } else {
               leaders.forEach((player) => {
@@ -2054,6 +2068,7 @@
                 `;
               });
             }
+            leadersHtml += overflowRow(overflow, category.formatter);
 
             leadersHtml += '</ul></div>';
           });
@@ -2127,25 +2142,7 @@
               allLeaders = allLeaders.sort((a, b) => b[category.field] - a[category.field]);
             }
 
-            let leaders = [];
-            let currentRank = 1;
-            const maxDisplay = 15;
-            
-            for (let i = 0; i < allLeaders.length && leaders.length < maxDisplay; i++) {
-              const player = allLeaders[i];
-              
-              if (i > 0 && allLeaders[i][category.field] !== allLeaders[i-1][category.field]) {
-                currentRank = i + 1;
-              }
-              
-              if (currentRank <= 10) {
-                leaders.push({ ...player, rank: currentRank });
-              } else if (i > 0 && allLeaders[i][category.field] === allLeaders[i-1][category.field]) {
-                leaders.push({ ...player, rank: currentRank });
-              } else {
-                break;
-              }
-            }
+            const { leaders, overflow } = pickLeaders(allLeaders, category.field);
 
             leadersHtml += `<div class="leader-category pitching"><h4>${category.title}</h4><ul class="leader-list">`;
 
@@ -2161,6 +2158,7 @@
                 </li>
               `;
             });
+            leadersHtml += overflowRow(overflow, category.formatter);
 
             leadersHtml += '</ul></div>';
           });
