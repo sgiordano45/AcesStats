@@ -654,6 +654,34 @@
     .btn-to-profile:hover { background: #6b46c1; }
     .btn-to-profile:disabled { background: #cbd5e0; cursor: not-allowed; }
     #profileSyncAlert { margin-top: 1rem; }
+
+    /* ===== currentTeam vs Roster Audit tool ===== */
+    .alert-info { background: #ebf8ff; color: #2a4365; border-left: 4px solid #4299e1; }
+    #ctAlert { margin-top: 1rem; }
+    .ct-filters { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.75rem 0; align-items: center; }
+    .ct-chip {
+      border: 1px solid var(--border-color); background: #fff; color: #2d3748;
+      padding: 0.3rem 0.75rem; border-radius: 999px; font-size: 0.8rem; font-weight: 600; cursor: pointer;
+    }
+    .ct-chip.active { background: var(--primary-color); color: #fff; border-color: var(--primary-color); }
+    .ct-search { flex: 1; min-width: 160px; padding: 0.4rem 0.6rem; border: 1px solid var(--border-color); border-radius: 6px; font-size: 0.85rem; }
+    .ct-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; margin-top: 0.5rem; }
+    .ct-table th { background: var(--primary-color); color: #fff; padding: 0.6rem 0.7rem; text-align: left; font-weight: 600; white-space: nowrap; }
+    .ct-table td { padding: 0.5rem 0.7rem; border-bottom: 1px solid var(--border-color); vertical-align: middle; }
+    .ct-table td small { color: #718096; }
+    .ct-row-mismatch td   { background: #fff5f5; }
+    .ct-row-missing td    { background: #fffbeb; }
+    .ct-row-multi td      { background: #faf5ff; }
+    .ct-row-rosteronly td { background: #ebf8ff; }
+    .ct-row-norost td     { background: #f7fafc; color: #4a5568; }
+    .ct-row-match td      { background: #f0fff4; color: #4a5568; }
+    .ct-tag { color: #fff; padding: 0.15rem 0.5rem; border-radius: 10px; font-size: 0.72rem; font-weight: 700; white-space: nowrap; }
+    .ct-tag-mismatch   { background: #e53e3e; }
+    .ct-tag-missing    { background: #dd6b20; }
+    .ct-tag-multi      { background: #805ad5; }
+    .ct-tag-rosteronly { background: #3182ce; }
+    .ct-tag-norost     { background: #a0aec0; }
+    .ct-tag-match      { background: #38a169; }
   </style>
 </head>
 <body>
@@ -951,6 +979,63 @@
             </tr>
           </thead>
           <tbody id="fieldCopyTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ===== currentTeam vs Roster Audit ===== -->
+    <hr style="margin:2rem 0; border:none; border-top:2px solid var(--border-color);">
+    <div class="card">
+      <h2>&#x1F9EE; currentTeam vs Roster Audit</h2>
+      <div class="info-box">
+        <strong>What this does:</strong> Compares <code>currentTeam</code> on every <code>aggregatedPlayerStats</code> doc
+        (skipping <code>migrated: true</code>) against the <code>rosters/{seasonId}-{team}</code> docs for the selected season.
+        Players are matched by legacy <code>id</code>, then <code>authId</code>, then <code>mergedFromProfile</code>, then name.<br><br>
+        <strong>Flags:</strong> wrong team, blank currentTeam, player on 2+ rosters, rostered players with no stats doc,
+        and stats docs with a currentTeam but no roster spot this season.<br>
+        Fix buttons write <code>currentTeam</code> = roster team to <code>aggregatedPlayerStats/{docId}</code> only. Nothing is written on scan.
+      </div>
+      <div class="form-group">
+        <label for="ctSeasonSelect">Select Season:</label>
+        <select id="ctSeasonSelect">
+          <option value="">-- Select a season --</option>
+        </select>
+      </div>
+      <div id="ctAlert" class="alert"></div>
+      <div class="button-group">
+        <button class="btn-primary" id="ctScanBtn" disabled>&#x1F50D; Run Audit</button>
+        <button class="btn-secondary btn-patch-all" id="ctFixAllBtn" disabled>&#x26A1; Fix All (mismatch + blank)</button>
+      </div>
+    </div>
+
+    <div class="card" id="ctResultCard" style="display: none;">
+      <h3>Audit Results</h3>
+      <div class="ct-filters" id="ctFilters">
+        <button class="ct-chip active" data-filter="issues">Issues</button>
+        <button class="ct-chip" data-filter="mismatch">Wrong team</button>
+        <button class="ct-chip" data-filter="missing">Blank currentTeam</button>
+        <button class="ct-chip" data-filter="multi">Multiple rosters</button>
+        <button class="ct-chip" data-filter="rosteronly">Roster only</button>
+        <button class="ct-chip" data-filter="norost">Not rostered</button>
+        <button class="ct-chip" data-filter="match">Match</button>
+        <button class="ct-chip" data-filter="all">All</button>
+        <input type="text" class="ct-search" id="ctSearch" placeholder="Search player / team / id...">
+      </div>
+      <div class="authid-summary" id="ctSummary"></div>
+      <div style="overflow-x:auto;">
+        <table class="ct-table">
+          <thead>
+            <tr>
+              <th>Player</th>
+              <th>Stats doc</th>
+              <th>currentTeam</th>
+              <th>Roster team</th>
+              <th>Matched via</th>
+              <th>Status</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="ctTableBody"></tbody>
         </table>
       </div>
     </div>
@@ -3227,6 +3312,292 @@
     onAuthStateChanged(authFC, user => {
       if (!user) return;
       document.getElementById('fieldCopyScanBtn').disabled = false;
+    });
+  </script>
+
+  <!-- ===== currentTeam vs Roster Audit script ===== -->
+  <script type="module">
+    import { getApp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
+    import { getFirestore, collection, getDocs, doc, updateDoc, writeBatch } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
+    import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js';
+
+    const appCT  = getApp();
+    const dbCT   = getFirestore(appCT);
+    const authCT = getAuth(appCT);
+
+    const STATUS_LABEL = {
+      mismatch:   'Wrong team',
+      missing:    'Blank',
+      multi:      'Multiple rosters',
+      rosteronly: 'No stats doc',
+      norost:     'Not rostered',
+      match:      'Match'
+    };
+    const ISSUE_SET = new Set(['mismatch', 'missing', 'multi', 'rosteronly']);
+    const FIXABLE   = new Set(['mismatch', 'missing']);
+
+    let ctRows   = [];
+    let ctFilter = 'issues';
+
+    const escCT    = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    const normName = s => String(s || '').toLowerCase().replace(/[.']/g, '').replace(/\s+/g, ' ').trim();
+    const toLegacy = s => String(s || '').toLowerCase().replace(/[.']/g, '').trim().replace(/\s+/g, '_');
+    const titleCase = s => String(s || '').split(/[-\s]+/).map(w => w ? w[0].toUpperCase() + w.slice(1) : w).join(' ');
+    const sameTeam = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
+
+    function ctAlert(msg, type = 'error') {
+      const el = document.getElementById('ctAlert');
+      el.textContent = msg;
+      el.className = msg ? `alert show alert-${type}` : 'alert';
+    }
+
+    // ---- Season dropdown ----
+    async function populateCTSeasons() {
+      try {
+        const snap = await getDocs(collection(dbCT, 'seasons'));
+        const sel  = document.getElementById('ctSeasonSelect');
+        const seasons = [];
+        snap.forEach(d => {
+          const data = d.data();
+          const label = data.year && data.season
+            ? `${data.year} ${data.season.charAt(0).toUpperCase() + data.season.slice(1)}`
+            : d.id;
+          seasons.push({ id: d.id, label, year: data.year || 0, season: data.season || '' });
+        });
+        const order = { spring: 0, summer: 1, fall: 2, winter: 3 };
+        seasons.sort((a, b) => (b.year - a.year) || ((order[b.season] ?? 0) - (order[a.season] ?? 0)));
+        sel.innerHTML = '<option value="">-- Select a season --</option>' +
+          seasons.map(s => `<option value="${escCT(s.id)}">${escCT(s.label)}</option>`).join('');
+        sel.addEventListener('change', () => {
+          document.getElementById('ctScanBtn').disabled = !sel.value;
+          document.getElementById('ctFixAllBtn').disabled = true;
+          document.getElementById('ctResultCard').style.display = 'none';
+          ctAlert('');
+        });
+      } catch (err) {
+        console.error('CT: season load error', err);
+        ctAlert('Error loading seasons: ' + err.message);
+      }
+    }
+
+    // ---- Scan ----
+    async function runAudit() {
+      const seasonId = document.getElementById('ctSeasonSelect').value;
+      if (!seasonId) return;
+      const scanBtn = document.getElementById('ctScanBtn');
+      const fixBtn  = document.getElementById('ctFixAllBtn');
+      scanBtn.disabled = true;
+      fixBtn.disabled  = true;
+      ctAlert('Loading rosters and aggregatedPlayerStats...', 'info');
+
+      try {
+        const [rostersSnap, aggSnap] = await Promise.all([
+          getDocs(collection(dbCT, 'rosters')),
+          getDocs(collection(dbCT, 'aggregatedPlayerStats'))
+        ]);
+
+        // Build roster indexes
+        const rosterEntries = [];           // { key, team, rosterDocId, name, id, authId, matched }
+        const byLegacy = {}, byAuth = {}, byName = {};
+        const push = (map, k, e) => { if (!k) return; (map[k] = map[k] || []).push(e); };
+        const prefix = seasonId + '-';
+        let rosterDocCount = 0;
+
+        rostersSnap.forEach(d => {
+          if (!d.id.startsWith(prefix)) return;
+          rosterDocCount++;
+          const data = d.data();
+          const team = data.teamName || titleCase(d.id.slice(prefix.length));
+          (data.players || []).forEach((p, idx) => {
+            const e = {
+              key: `${d.id}#${idx}`, team, rosterDocId: d.id,
+              name: p.name || p.id || '?', id: p.id || '', authId: p.authId || '', matched: false
+            };
+            rosterEntries.push(e);
+            push(byLegacy, e.id, e);
+            push(byAuth, e.authId, e);
+            push(byName, normName(e.name), e);
+          });
+        });
+
+        if (!rosterDocCount) {
+          ctAlert(`No rosters/${seasonId}-* docs found.`, 'warning');
+          return;
+        }
+
+        const rows = [];
+        aggSnap.forEach(d => {
+          const data = d.data();
+          if (data.migrated === true) return;
+
+          const legacyId = (data.isAuthUser && data.linkedPlayer) ? toLegacy(data.linkedPlayer) : d.id;
+          const displayName = data.name || data.linkedPlayer || data.displayName || d.id;
+
+          let hits = null, via = '';
+          const tries = [
+            ['legacy id',          byLegacy[legacyId]],
+            ['doc id',             byLegacy[d.id]],
+            ['authId',             byAuth[d.id]],
+            ['mergedFromProfile',  data.mergedFromProfile ? byLegacy[data.mergedFromProfile] : null],
+            ['name',               byName[normName(data.name || data.linkedPlayer)]]
+          ];
+          for (const [label, list] of tries) {
+            if (list && list.length) { hits = list; via = label; break; }
+          }
+
+          const currentTeam = (data.currentTeam || '').trim();
+
+          if (!hits) {
+            if (!currentTeam) return; // inactive / historical, nothing to compare
+            rows.push({ status: 'norost', name: displayName, docId: d.id, legacyId, currentTeam, rosterTeam: '', via: '' });
+            return;
+          }
+
+          hits.forEach(h => { h.matched = true; });
+          const teams = [...new Set(hits.map(h => h.team))];
+          let status;
+          if (teams.length > 1)              status = 'multi';
+          else if (!currentTeam)             status = 'missing';
+          else if (sameTeam(currentTeam, teams[0])) status = 'match';
+          else                               status = 'mismatch';
+
+          rows.push({
+            status, name: displayName, docId: d.id, legacyId, currentTeam,
+            rosterTeam: teams.join(' / '), fixTeam: teams.length === 1 ? teams[0] : '', via
+          });
+        });
+
+        // Roster players never matched to a stats doc
+        rosterEntries.filter(e => !e.matched).forEach(e => {
+          rows.push({ status: 'rosteronly', name: e.name, docId: '', legacyId: e.id, currentTeam: '', rosterTeam: e.team, via: '' });
+        });
+
+        const statusOrder = { mismatch: 0, missing: 1, multi: 2, rosteronly: 3, norost: 4, match: 5 };
+        rows.sort((a, b) => (statusOrder[a.status] - statusOrder[b.status])
+          || a.rosterTeam.localeCompare(b.rosterTeam) || a.name.localeCompare(b.name));
+
+        ctRows = rows;
+        renderCT();
+        document.getElementById('ctResultCard').style.display = 'block';
+
+        const fixable = ctRows.filter(r => FIXABLE.has(r.status)).length;
+        const issues  = ctRows.filter(r => ISSUE_SET.has(r.status)).length;
+        fixBtn.disabled = fixable === 0;
+        ctAlert(issues
+          ? `${issues} issue${issues !== 1 ? 's' : ''} found across ${rosterDocCount} roster docs (${fixable} auto-fixable).`
+          : `All rostered players match their roster team across ${rosterDocCount} roster docs.`,
+          issues ? 'warning' : 'success');
+      } catch (err) {
+        console.error('CT audit error', err);
+        ctAlert('Error running audit: ' + err.message);
+      } finally {
+        scanBtn.disabled = false;
+      }
+    }
+
+    // ---- Render ----
+    function renderCT() {
+      const counts = {};
+      ctRows.forEach(r => { counts[r.status] = (counts[r.status] || 0) + 1; });
+      document.getElementById('ctSummary').innerHTML = Object.keys(STATUS_LABEL)
+        .map(s => `<span class="ct-tag ct-tag-${s}">${STATUS_LABEL[s]}: ${counts[s] || 0}</span>`).join(' ');
+
+      const q = document.getElementById('ctSearch').value.trim().toLowerCase();
+      const visible = ctRows.filter(r => {
+        if (ctFilter === 'issues' && !ISSUE_SET.has(r.status)) return false;
+        if (ctFilter !== 'issues' && ctFilter !== 'all' && r.status !== ctFilter) return false;
+        if (q && !`${r.name} ${r.docId} ${r.legacyId} ${r.currentTeam} ${r.rosterTeam}`.toLowerCase().includes(q)) return false;
+        return true;
+      });
+
+      const tbody = document.getElementById('ctTableBody');
+      if (!visible.length) {
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:#718096; padding:1rem;">Nothing to show for this filter.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = visible.map(r => {
+        const idx = ctRows.indexOf(r);
+        const action = FIXABLE.has(r.status) && r.fixTeam
+          ? `<button class="btn-patch" data-ct-idx="${idx}">Set to ${escCT(r.fixTeam)}</button>`
+          : '';
+        const docCell = r.docId
+          ? `${escCT(r.docId)}${r.legacyId && r.legacyId !== r.docId ? `<br><small>${escCT(r.legacyId)}</small>` : ''}`
+          : `<small>roster id: ${escCT(r.legacyId || '-')}</small>`;
+        return `<tr class="ct-row-${r.status}">
+          <td><strong>${escCT(r.name)}</strong></td>
+          <td>${docCell}</td>
+          <td>${escCT(r.currentTeam || '-')}</td>
+          <td>${escCT(r.rosterTeam || '-')}</td>
+          <td><small>${escCT(r.via || '-')}</small></td>
+          <td><span class="ct-tag ct-tag-${r.status}">${STATUS_LABEL[r.status]}</span></td>
+          <td>${action}</td>
+        </tr>`;
+      }).join('');
+    }
+
+    // ---- Fix one ----
+    document.getElementById('ctTableBody').addEventListener('click', async e => {
+      const btn = e.target.closest('button[data-ct-idx]');
+      if (!btn) return;
+      const r = ctRows[Number(btn.dataset.ctIdx)];
+      if (!r || !r.docId || !r.fixTeam) return;
+      btn.disabled = true;
+      btn.textContent = 'Saving...';
+      try {
+        await updateDoc(doc(dbCT, 'aggregatedPlayerStats', r.docId), { currentTeam: r.fixTeam });
+        r.currentTeam = r.fixTeam;
+        r.status = 'match';
+        renderCT();
+        document.getElementById('ctFixAllBtn').disabled = !ctRows.some(x => FIXABLE.has(x.status) && x.fixTeam);
+        ctAlert(`${r.name}: currentTeam set to ${r.fixTeam}.`, 'success');
+      } catch (err) {
+        console.error(err);
+        btn.disabled = false;
+        btn.textContent = `Set to ${r.fixTeam}`;
+        ctAlert(`Error updating ${r.name}: ${err.message}`);
+      }
+    });
+
+    // ---- Fix all ----
+    document.getElementById('ctFixAllBtn').addEventListener('click', async () => {
+      const toFix = ctRows.filter(r => FIXABLE.has(r.status) && r.docId && r.fixTeam);
+      if (!toFix.length) return;
+      const fixBtn = document.getElementById('ctFixAllBtn');
+      fixBtn.disabled = true;
+      ctAlert(`Updating ${toFix.length} stats doc${toFix.length !== 1 ? 's' : ''}...`, 'info');
+      try {
+        for (let i = 0; i < toFix.length; i += 400) {
+          const batch = writeBatch(dbCT);
+          toFix.slice(i, i + 400).forEach(r => {
+            batch.update(doc(dbCT, 'aggregatedPlayerStats', r.docId), { currentTeam: r.fixTeam });
+          });
+          await batch.commit();
+        }
+        toFix.forEach(r => { r.currentTeam = r.fixTeam; r.status = 'match'; });
+        renderCT();
+        ctAlert(`Done. ${toFix.length} currentTeam value${toFix.length !== 1 ? 's' : ''} updated to match rosters.`, 'success');
+      } catch (err) {
+        console.error(err);
+        fixBtn.disabled = false;
+        ctAlert('Error applying fixes: ' + err.message);
+      }
+    });
+
+    // ---- Filters / search ----
+    document.getElementById('ctFilters').addEventListener('click', e => {
+      const chip = e.target.closest('.ct-chip');
+      if (!chip) return;
+      document.querySelectorAll('#ctFilters .ct-chip').forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+      ctFilter = chip.dataset.filter;
+      renderCT();
+    });
+    document.getElementById('ctSearch').addEventListener('input', renderCT);
+    document.getElementById('ctScanBtn').addEventListener('click', runAudit);
+
+    onAuthStateChanged(authCT, user => {
+      if (!user) return;
+      populateCTSeasons();
     });
   </script>
 
