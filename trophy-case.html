@@ -1121,7 +1121,7 @@
       getDocs, 
       getDoc
     } from './firebase-config.js';
-    import { getCurrentSeason } from './firebase-data.js';
+    import { getAllSeasons } from './firebase-data.js';
     import { NavigationComponent } from './nav-component.js';
     import { 
       BADGE_DEFINITIONS, 
@@ -1139,41 +1139,59 @@
     // SEASON SETUP
     // ============================================
 
-    // ---- ADD NEW BADGE-SUPPORTED SEASONS HERE ----
-    const BADGE_SEASONS = [
-      { id: '2026-summer', label: '2026 Summer' },
-      { id: '2025-fall',   label: '2025 Fall (Partial)' }
-    ];
-    // ------------------------------------------------
+    // Badge tracking starts with this season; everything from here forward
+    // (up to the active season) appears in the dropdown automatically.
+    const FIRST_BADGE_SEASON = '2025-fall';
+    const PARTIAL_DATA_SEASONS = ['2025-fall'];
+    const TERM_ORDER = { winter: 0, spring: 1, summer: 2, fall: 3 };
+
+    // Chronological sort key from a season id like "2026-fall"
+    function seasonSortKey(id) {
+      const [year, term] = String(id).toLowerCase().split('-');
+      return (parseInt(year, 10) || 0) * 10 + (TERM_ORDER[term] ?? 0);
+    }
+
+    function seasonLabel(s) {
+      const [idYear, idTerm] = s.id.split('-');
+      const year = s.year || idYear;
+      const term = String(s.season || idTerm || '');
+      let label = `${year} ${term.charAt(0).toUpperCase()}${term.slice(1).toLowerCase()}`;
+      if (PARTIAL_DATA_SEASONS.includes(s.id)) label += ' (Partial)';
+      if (s.isActive) label += ' (Current)';
+      return label;
+    }
 
     async function initSeasons() {
+      const select = document.getElementById('seasonFilter');
       try {
-        const activeSeason = await getCurrentSeason();
-        if (activeSeason) {
-          currentSeasonId = activeSeason.id;
-        }
+        const allSeasons = await getAllSeasons();
+        const active = allSeasons.find(s => s.isActive);
+        const minKey = seasonSortKey(FIRST_BADGE_SEASON);
+        // Hide future/placeholder seasons beyond the active one
+        const maxKey = active ? seasonSortKey(active.id) : Infinity;
 
-        const select = document.getElementById('seasonFilter');
-        select.innerHTML = '';
+        const badgeSeasons = allSeasons
+          .filter(s => {
+            const k = seasonSortKey(s.id);
+            return k >= minKey && k <= maxKey;
+          })
+          .sort((a, b) => seasonSortKey(b.id) - seasonSortKey(a.id)); // newest first
 
-        BADGE_SEASONS.forEach(s => {
-          const opt = document.createElement('option');
-          opt.value = s.id;
-          opt.textContent = s.label + (s.id === currentSeasonId ? ' (Current)' : '');
-          if (s.id === currentSeasonId) opt.selected = true;
-          select.appendChild(opt);
-        });
+        if (badgeSeasons.length === 0) throw new Error('No badge seasons found');
 
-        // If active season isn't in the list, fall back to first entry
-        if (!currentSeasonId || !BADGE_SEASONS.find(s => s.id === currentSeasonId)) {
-          currentSeasonId = BADGE_SEASONS[0].id;
-          select.value = currentSeasonId;
-        }
+        select.innerHTML = badgeSeasons
+          .map(s => `<option value="${s.id}">${seasonLabel(s)}</option>`)
+          .join('');
+
+        currentSeasonId = (active && badgeSeasons.some(s => s.id === active.id))
+          ? active.id
+          : badgeSeasons[0].id;
+        select.value = currentSeasonId;
 
       } catch (error) {
         console.error('Error loading seasons:', error);
-        // Fallback: just use first season in list
-        currentSeasonId = BADGE_SEASONS[0].id;
+        currentSeasonId = FIRST_BADGE_SEASON;
+        select.innerHTML = `<option value="${FIRST_BADGE_SEASON}">${seasonLabel({ id: FIRST_BADGE_SEASON })}</option>`;
       }
     }
 
