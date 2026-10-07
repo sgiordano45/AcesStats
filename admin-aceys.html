@@ -869,6 +869,7 @@ function buildPublishRows() {
       team = (TEAMS.find(t => t.id === teamId) || {}).name || '';
     } else if (data.source === 'write-in') {
       category = (data.label || '').trim();
+      if (/^team of the year$/i.test(category)) category = 'Team of the Year';
     }
     if (!category) return;
 
@@ -892,6 +893,25 @@ function buildPublishRows() {
       const teamMatch = name.match(/^(.+?)\s*\(([^)]+)\)\s*$/);
       if (teamMatch) { name = teamMatch[1].trim(); parsedTeam = teamMatch[2].trim(); }
       if (!name) return;
+
+      // Team of the Year: winner is a team, not a player. Matches prior docs:
+      // ID "<season>_team_of_the_year_" (blank player slug), team = winner, no playerName.
+      if (category === 'Team of the Year') {
+        rows.push({
+          docId: `${PUBLISH_SEASON_ID}_${awardSlug(category)}_`,
+          aceyAwardId: awardId,
+          category,
+          playerName: '',
+          playerId: null,
+          legacyId: null,
+          team: parsedTeam || name,
+          position: '',
+          revealed: !!data.revealed,
+          matched: true,
+        });
+        return;
+      }
+
       const match = playerByName.get(name.toLowerCase());
       rows.push({
         docId: `${PUBLISH_SEASON_ID}_${awardSlug(category)}_${awardSlug(name)}`,
