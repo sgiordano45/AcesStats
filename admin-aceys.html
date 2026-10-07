@@ -883,7 +883,14 @@ function buildPublishRows() {
     }
 
     winners.forEach(w => {
-      const name = (w.name || '').trim();
+      // Multi-winner entries are typed as "POS - Name (Team)" — split those apart
+      let name = (w.name || '').replace(/\s+/g, ' ').trim();
+      let position = '';
+      let parsedTeam = '';
+      const posMatch = name.match(/^([A-Za-z0-9\/]{1,4})\s*[-–—:]\s*(.+)$/);
+      if (posMatch) { position = posMatch[1].toUpperCase(); name = posMatch[2].trim(); }
+      const teamMatch = name.match(/^(.+?)\s*\(([^)]+)\)\s*$/);
+      if (teamMatch) { name = teamMatch[1].trim(); parsedTeam = teamMatch[2].trim(); }
       if (!name) return;
       const match = playerByName.get(name.toLowerCase());
       rows.push({
@@ -893,7 +900,8 @@ function buildPublishRows() {
         playerName: match ? match.displayName : name,
         playerId: w.playerId || match?.id || null,
         legacyId: w.legacyId || match?.legacyId || null,
-        team: team || match?.currentTeam || '',
+        team: team || parsedTeam || match?.currentTeam || '',
+        position,
         revealed: !!data.revealed,
         matched: !!match,
       });
@@ -943,7 +951,7 @@ async function previewPublish() {
           ${_publishRows.map(r => `
             <tr style="${r.matched ? '' : 'background:rgba(224,122,95,0.12);'}">
               <td style="${cell}">${r.category}</td>
-              <td style="${cell}">${r.playerName}${r.matched ? '' : ' &#9888;&#65039;'}</td>
+              <td style="${cell}">${r.position ? `<span style="color:var(--text-dim);">${r.position}</span> ` : ''}${r.playerName}${r.matched ? '' : ' &#9888;&#65039;'}</td>
               <td style="${cell}">${r.team || '&mdash;'}</td>
               <td style="${cell}font-family:monospace;color:var(--text-dim);">${r.docId}</td>
             </tr>`).join('')}
@@ -969,6 +977,7 @@ async function publishToProfiles() {
         playerId: r.playerId,
         legacyId: r.legacyId,
         team: r.team,
+        position: r.position || '',
         seasonId: PUBLISH_SEASON_ID,
         value: '',
         source: 'aceys',
