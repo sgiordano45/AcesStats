@@ -160,7 +160,7 @@ function render() {
   page = Math.min(page, pages);
   $('pmCount').textContent = `${list.length} ${list.length === 1 ? 'member' : 'members'}`;
   if (!list.length) {
-    $('pmRows').innerHTML = '<tr><td colspan="7" class="aces-empty">Nobody matches those filters.</td></tr>';
+    $('pmRows').innerHTML = '<tr><td colspan="5" class="aces-empty">Nobody matches those filters.</td></tr>';
     $('pmPager').innerHTML = '';
     return;
   }
@@ -172,9 +172,9 @@ function render() {
     </div></td>
     <td>${rolesCell(u)}</td>
     <td>${u.linkedPlayer ? `${esc(u.linkedPlayer)}${u.linkedTeam ? `<small class="pp-sub">${esc(cap(u.linkedTeam))}</small>` : ''}` : '<span class="sse-dim">-</span>'}</td>
-    <td class="is-num">${u._account ? `<span class="pp-setup is-${u._setup === 3 ? 'done' : u._setup ? 'part' : 'none'}">${u._setup}/3</span>` : '<span class="sse-dim">-</span>'}</td>
-    <td>${u._account ? (u._push ? '<span class="aces-badge is-win">On</span>' : '<span class="sse-dim">Off</span>') : '<span class="sse-dim">-</span>'}</td>
-    <td class="pp-visit">${u._account ? esc(ago(u._visit)) : '<span class="sse-dim">-</span>'}</td>
+    <td class="pp-activity">${u._account ? `<span class="pp-setup is-${u._setup === 3 ? 'done' : u._setup ? 'part' : 'none'}" title="Profile setup steps done">Setup ${u._setup}/3</span>
+      <span class="${u._push ? 'pp-push' : 'sse-dim'}">Push ${u._push ? 'on' : 'off'}</span>
+      <small>${u._visit ? `Visited ${esc(ago(u._visit))}` : 'Never visited'}</small>` : '<span class="sse-dim">-</span>'}</td>
     <td class="pp-actions">${u.migrated ? '' : `<button class="aces-btn is-sm" type="button" data-roles="${esc(u.id)}">Roles</button>`}${ctx.realIsAdmin && u._account && !u.migrated && u.id !== me ? `<button class="aces-btn is-sm is-ghost" type="button" data-view-as="${esc(u.id)}">View as</button>` : ''}</td>
   </tr>`).join('');
   $('pmPager').innerHTML = pages > 1 ? `<button class="aces-btn is-sm" type="button" data-page="${page - 1}"${page === 1 ? ' disabled' : ''}>Previous</button>
