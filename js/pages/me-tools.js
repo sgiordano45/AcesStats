@@ -21,7 +21,7 @@ export const TOOL_GROUPS = [
   { role: 'league-staff', title: 'League staff', icon: 'settings', guide: 'help.html#league-staff', tools: [
     ['admin/index.html', 'Admin home', 'To-dos and every staff tool', 'grid'],
     ['admin/league-staff.html', 'League staff admin', 'Seasons, games and settings', 'sliders'],
-    ['offseason.html', 'Offseason hub', 'Rosters, schedule and the draft', 'leaf'],
+    ['admin/offseason.html', 'Offseason hub', 'Rosters, schedule and the draft', 'leaf'],
     ['offseason-roster.html', 'Offseason rosters', 'Team assignments for next season', 'users'],
     ['admin/schedule.html', 'Schedule', 'Build, tune, publish and fix it', 'calendar-days']
   ] },

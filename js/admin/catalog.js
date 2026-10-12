@@ -9,7 +9,7 @@ export const ADMIN_GROUPS = [
   { id: 'season', label: 'Season setup', icon: 'calendar-days', items: [
     ['admin/season-setup.html', 'Season setup wizard', 'Create a season: teams, schedule, publish', 'league-staff'],
     ['admin/league-staff.html', 'League staff admin', 'Edit games, banners and notifications', 'league-staff'],
-    ['offseason.html', 'Offseason hub', 'Rosters, schedule and the draft', 'league-staff'],
+    ['admin/offseason.html', 'Offseason hub', 'Rosters, schedule and the draft', 'league-staff'],
     ['offseason-roster.html', 'Offseason rosters', 'Team assignments for next season', 'league-staff'],
     ['draft.html', 'Snake draft', 'Run the live draft', 'league-staff'],
     ['admin/playoff-eligibility.html', 'Playoff eligibility', 'Who has played enough games', 'league-staff'],
@@ -33,7 +33,7 @@ export const ADMIN_GROUPS = [
     ['admin/reconcile.html', 'Reconcile', 'Compare game stats with totals', 'admin'],
     ['admin/recover-game.html', 'Recover a game', 'Restore a deleted or broken game', 'admin'],
     ['admin/spray-intake.html', 'Spray chart intake', 'Hit locations for spray charts', 'admin'],
-    ['bwar-explorer.html', 'bWAR explorer', 'Tune bWAR weights', 'league-staff'],
+    ['admin/bwar-explorer.html', 'bWAR explorer', 'Tune bWAR weights', 'league-staff'],
     ['admin/aggregate-stats-legacy.html', 'Legacy aggregator', 'Older seasons', 'admin'],
     ['admin/submit-stats-legacy.html', 'Standard stats form', 'Submit without hit types', 'admin'],
     ['admin/gc-data-cleaner.html', 'GameChanger cleaner', 'Tidy imported GameChanger data', 'admin']

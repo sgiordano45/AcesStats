@@ -133,7 +133,7 @@ export const NAV_HUBS = [
       // can prepare before the offseason starts. Listed whatever
       // siteConfig/navigation/pages says (the old nav still reads those docs).
       { key: 'offseason', label: 'Offseason', icon: 'snowflake', pages: [
-        { id: 'offseason-hub', href: 'offseason.html', label: 'Offseason hub', icon: 'snowflake', role: 'league-staff', ignoreSiteConfig: true },
+        { id: 'offseason-hub', href: 'admin/offseason.html', label: 'Offseason hub', icon: 'snowflake', role: 'league-staff', ignoreSiteConfig: true },
         { id: 'offseason-schedule', href: 'admin/schedule.html', also: ['offseason-schedule.html'], label: 'Schedule', icon: 'calendar-days', role: 'league-staff', ignoreSiteConfig: true },
         { id: 'offseason-roster', href: 'offseason-roster.html', label: 'Rosters', icon: 'users', role: 'league-staff', ignoreSiteConfig: true },
         { id: 'draft', href: 'draft.html', label: 'Draft', icon: 'shuffle', role: 'league-staff', ignoreSiteConfig: true },
@@ -283,7 +283,7 @@ export const NAV_UNLISTED = {
     'admin/games.html', 'admin/schedule-editor.html', 'admin/player-import.html', 'admin/playoff-eligibility.html',
     'schedule-balancer.html', 'admin/schedule-generator.html', 'admin/schedule-rework.html',
     'admin/schedule-workshop.html', 'admin/season-setup.html', 'admin/signup-card-export.html', 'admin/wordle.html',
-    'admin/aggregate-stats-legacy.html', 'admin/gc-data-cleaner.html', 'admin/submit-stats-legacy.html', 'bwar-explorer.html'],
+    'admin/aggregate-stats-legacy.html', 'admin/gc-data-cleaner.html', 'admin/submit-stats-legacy.html', 'admin/bwar-explorer.html', 'admin/offseason.html'],
   toDelete: [],
 };
 
@@ -439,7 +439,7 @@ export const NAV_STRUCTURE = {
     { id: 'submit-score', href: 'submit-score.html', label: 'Submit Scores', icon: '🔢️', priority: 4, requiresAuth: true },
     { id: 'submit-stats', href: 'submit-stats.html', label: 'Submit Stats', icon: '🧮', priority: 4, requiresAuth: true },
     { id: 'photo-upload', href: 'photo-upload.html', label: 'Upload Photos', icon: '📤️', priority: 4, requiresAuth: true },
-    { id: 'offseason-hub', href: 'offseason.html', label: 'Offseason Hub', icon: '🎣️', priority: 4, requiresAuth: true },
+    { id: 'offseason-hub', href: 'admin/offseason.html', label: 'Offseason Hub', icon: '🎣️', priority: 4, requiresAuth: true },
     { id: 'aces-shop', href: 'https://acesmountainside.com/', label: 'Aces Shop', icon: '🛒', priority: 4, requiresAuth: true, external: true },
     { id: 'spray-intake', href: 'admin/spray-intake.html', label: 'Spray Chart Intake', icon: '🎯', priority: 4, requiresAuth: true, requiresRole: 'admin' },
     { id: 'aceys-admin', href: 'admin/aceys.html', label: 'Aceys Admin', icon: '🏆', priority: 4, requiresAuth: true, requiresRole: 'league_staff' },
