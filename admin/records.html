@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<script type="module" src="../js/core/preview-guard.js"></script>
+<link rel="manifest" href="../manifest.json">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#2d5016">
+<meta name="robots" content="noindex">
+<title>Records - Admin - Mountainside Aces</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="../css/tokens.css">
+<link rel="stylesheet" href="../css/base.css">
+<link rel="stylesheet" href="../css/components.css">
+<link rel="stylesheet" href="../mobile-enhancements.css">
+<link rel="stylesheet" href="../css/admin.css">
+<link rel="stylesheet" href="../css/admin-stats.css">
+<link rel="stylesheet" href="../css/admin-records.css">
+</head>
+<body class="aces-v2 adm">
+
+<!-- admin/records.html: fixing player stat records (js/admin/records.js).
+     Overview: which tool fixes which problem. Game stats: one team's game stat
+     docs to edit or delete (records-stats.js; replaced Player stats editor).
+     Merge records: move one record's stat docs into another (records-merge.js;
+     replaced the merge in User management and Move player docs).
+     ?tab=overview|stats|merge -->
+
+<div class="adm-shell aces-container" data-page-content>
+  <aside class="adm-side" id="adminSide" aria-label="Admin tools">
+    <div class="adm-filter">
+      <input class="aces-input" id="adminFilter" type="search" placeholder="Find a tool..." aria-label="Find a tool" autocomplete="off">
+    </div>
+    <nav id="adminNav"></nav>
+  </aside>
+
+  <main class="adm-main" id="main">
+    <header class="aces-page-head">
+      <div>
+        <span class="aces-page-kicker" id="adminWho">Admin</span>
+        <h1 class="aces-page-title">Records</h1>
+      </div>
+      <div class="stp-controls">
+        <button class="aces-btn adm-menu-btn" id="adminMenuBtn" type="button" aria-controls="adminSide">All tools</button>
+      </div>
+    </header>
+
+    <div class="aces-tabs rc-tabs" role="tablist" aria-label="Records">
+      <button class="aces-tab" type="button" role="tab" data-tab="overview" aria-selected="true">What's wrong?</button>
+      <button class="aces-tab" type="button" role="tab" data-tab="stats" aria-selected="false">Game stats</button>
+      <button class="aces-tab" type="button" role="tab" data-tab="merge" aria-selected="false">Merge records</button>
+    </div>
+
+    <!-- ============================================================ Overview -->
+    <div data-panel="overview" class="rc-panel">
+      <p class="stp-intro">Pick the problem. Every fix changes stat docs, so finish with the stats pipeline: aggregate (test, then production), then badges.</p>
+      <ul class="rc-problems" id="rcProblems"></ul>
+    </div>
+
+    <!-- =========================================================== Game stats -->
+    <div data-panel="stats" class="rc-panel" hidden>
+      <p class="stp-intro">One team's game stat docs for a season, one row per player per game. Edit a row or delete wrong ones, then re-aggregate.</p>
+      <section class="aces-card">
+        <div class="rc-row rc-load">
+          <div class="aces-field"><label class="aces-label" for="rsTeam">Team</label><span class="aces-select-wrap"><select class="aces-select" id="rsTeam"></select></span></div>
+          <div class="aces-field"><label class="aces-label" for="rsSeason">Season</label><span class="aces-select-wrap"><select class="aces-select" id="rsSeason"></select></span></div>
+          <div class="aces-field"><label class="aces-label" for="rsKind">Stats</label><span class="aces-select-wrap"><select class="aces-select" id="rsKind">
+            <option value="batting">Batting</option><option value="pitching">Pitching</option>
+          </select></span></div>
+          <button class="aces-btn is-primary" type="button" id="rsLoad">Load</button>
+        </div>
+      </section>
+
+      <div id="rsResults" hidden>
+        <div class="aces-stats rc-tiles" id="rsTiles"></div>
+        <div class="rc-filters">
+          <input class="aces-input" id="rsFind" type="search" placeholder="Player, opponent, date or game ID" aria-label="Filter rows">
+          <label class="agg-check"><input type="checkbox" id="rsOnlyBad"> <span>Only rows that don't add up</span></label>
+        </div>
+        <div class="rc-bulk" id="rsBulk" hidden>
+          <span id="rsPicked"></span>
+          <button class="aces-btn is-sm is-danger" type="button" id="rsDeletePicked">Delete selected</button>
+          <button class="aces-btn is-sm is-ghost" type="button" id="rsClearPicked">Clear selection</button>
+        </div>
+        <div class="aces-table-wrap"><table class="aces-table is-compact rc-table" id="rsTable"></table></div>
+      </div>
+    </div>
+
+    <!-- ========================================================= Merge records -->
+    <div data-panel="merge" class="rc-panel" hidden>
+      <p class="stp-intro">Move a player's stat docs from one record (ID) into another: a duplicate, a misspelled ID, or a legacy record that belongs to a linked account. Preview first; nothing is written until you confirm.</p>
+
+      <section class="aces-card">
+        <h2 class="aces-card-title">Find the records</h2>
+        <div class="rc-filters">
+          <input class="aces-input" id="rmFind" type="search" placeholder="Name or ID" aria-label="Find a record">
+          <button class="aces-btn is-sm" type="button" id="rmDupes">Show possible duplicates</button>
+        </div>
+        <div class="rc-idcheck">
+          <label class="aces-label" for="rmCheckId">Or check an ID directly</label>
+          <div class="rc-inline">
+            <input class="aces-input" id="rmCheckId" type="text" placeholder="e.g. paul_treyman_jr." autocomplete="off" spellcheck="false">
+            <button class="aces-btn is-sm" type="button" id="rmCheckBtn">Check</button>
+          </div>
+          <p class="sse-dim rc-hint">For stats saved under an ID with no player record (typos, stray punctuation).</p>
+        </div>
+        <div id="rmList"><p class="sse-dim">Loading player records...</p></div>
+      </section>
+
+      <section class="aces-card" id="rmPlan">
+        <h2 class="aces-card-title">Move</h2>
+        <div class="rc-plan">
+          <div><span class="aces-label">From</span><div id="rmFrom" class="rc-chips"><span class="sse-dim">Pick one or more records above (From)</span></div></div>
+          <div class="rc-arrow" aria-hidden="true">&rarr;</div>
+          <div><span class="aces-label">Into</span><div id="rmTo" class="rc-chips"><span class="sse-dim">Pick the record that keeps the stats (Into)</span></div></div>
+        </div>
+        <fieldset class="rc-opts">
+          <legend class="aces-label">What moves</legend>
+          <label class="agg-check"><input type="checkbox" id="rmBatGames" checked> <span>Batting game stats <code>playerStats/{id}/games</code></span></label>
+          <label class="agg-check"><input type="checkbox" id="rmBatSeasons" checked> <span>Batting season totals <code>playerStats/{id}/seasons</code></span></label>
+          <label class="agg-check"><input type="checkbox" id="rmPitGames" checked> <span>Pitching game stats <code>pitchingStats/{id}/games</code></span></label>
+          <label class="agg-check"><input type="checkbox" id="rmPitSeasons" checked> <span>Pitching season totals <code>pitchingStats/{id}/seasons</code></span></label>
+        </fieldset>
+        <fieldset class="rc-opts">
+          <legend class="aces-label">Then</legend>
+          <label class="agg-check"><input type="radio" name="rmMode" value="move" checked> <span><strong>Move</strong>: copy into the new record, then delete the originals</span></label>
+          <label class="agg-check"><input type="radio" name="rmMode" value="copy"> <span><strong>Copy</strong>: leave the originals where they are</span></label>
+          <label class="agg-check"><input type="checkbox" id="rmMarkMerged" checked> <span>Mark the old player record merged (<code>aggregatedPlayerStats</code>: migrated, migratedTo) so it drops out of lists</span></label>
+        </fieldset>
+        <div class="sse-actions">
+          <button class="aces-btn is-primary" type="button" id="rmPreview" disabled>Preview</button>
+        </div>
+        <div id="rmPreviewOut"></div>
+      </section>
+
+      <details class="rc-log">
+        <summary>Activity log</summary>
+        <div id="rmLog" class="agg-output" role="log"></div>
+      </details>
+    </div>
+  </main>
+</div>
+
+<script type="module" src="../js/admin/records.js"></script>
+</body>
+</html>
