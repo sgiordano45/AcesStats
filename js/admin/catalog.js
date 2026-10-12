@@ -48,11 +48,9 @@ export const ADMIN_GROUPS = [
     ['admin/card-export.html', 'Card export', 'Export player trading cards', 'league-staff']
   ] },
   { id: 'users', label: 'Users and roles', icon: 'shield', items: [
-    ['admin/user-management.html', 'User management', 'Accounts, profiles and activity', 'admin'],
-    ['admin/roles.html', 'Roles', 'Admin, league staff, captain and player roles', 'admin'],
-    ['approve-links.html', 'Approve player links', 'Pending account-to-player requests', 'league-staff'],
-    ['admin/link-players.html', 'Link players', 'Connect accounts to player records by hand', 'admin'],
-    ['admin/view-as.html', 'View As', 'See the site as another user', 'admin']
+    ['admin/people.html', 'People', 'Members, roles, View As, setup and push status', 'league-staff'],
+    ['admin/people.html?tab=links', 'Player links', 'Approve link requests, link accounts by hand', 'league-staff'],
+    ['admin/user-management.html', 'Player records', 'Merge duplicates, repair orphaned stats, import emails', 'admin']
   ] },
   { id: 'content', label: 'Content', icon: 'megaphone', items: [
     ['admin/content.html', 'Content admin', 'Previews, recaps, eulogies and game details', 'admin'],

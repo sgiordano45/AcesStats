@@ -256,7 +256,7 @@ export const ME_MENU = [
   {
     key: 'admin', label: 'Admin', pages: [
       { id: 'admin-hub', href: 'admin/index.html', label: 'Admin', icon: 'settings', role: 'league-staff', also: ['admin-pages.html'] },
-      { id: 'admin-view-as', href: 'admin/view-as.html', label: 'View As', icon: 'eye', role: 'admin' },
+      { id: 'admin-people', href: 'admin/people.html', label: 'People', icon: 'users', role: 'league-staff' },
     ],
   },
   {
@@ -442,7 +442,7 @@ export const NAV_STRUCTURE = {
     { id: 'spray-intake', href: 'admin/spray-intake.html', label: 'Spray Chart Intake', icon: '🎯', priority: 4, requiresAuth: true, requiresRole: 'admin' },
     { id: 'aceys-admin', href: 'admin/aceys.html', label: 'Aceys Admin', icon: '🏆', priority: 4, requiresAuth: true, requiresRole: 'league_staff' },
     { id: 'admin-hub', href: 'admin/index.html', label: 'Admin Hub', icon: '🛠️', priority: 4, requiresAuth: true, requiresRole: 'admin' },
-    { id: 'admin-view-as', href: 'admin/view-as.html', label: 'View As User', icon: '🎭', priority: 4, requiresAuth: true, requiresRole: 'admin' },
+    { id: 'admin-people', href: 'admin/people.html', label: 'People', icon: '👥', priority: 4, requiresAuth: true, requiresRole: 'league_staff' },
   ],
 
   // Public auth pages (signin handles both signin and signup - don't show in nav)

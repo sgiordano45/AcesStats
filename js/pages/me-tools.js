@@ -14,6 +14,7 @@ export const TOOL_GROUPS = [
     ['submit-stats.html', 'Submit stats', 'Player stats for your games', 'calculator'],
     ['game-tracker.html', 'Game tracker', 'Score a game live, play by play', 'clipboard-check'],
     ['manage-team.html', 'Team staff', 'Add or remove co-captains and staff', 'shield'],
+    ['approve-links.html', 'Player link requests', 'Members asking to be one of your players', 'user-check'],
     ['captain-roster-edit.html', 'Edit roster info', 'Names, numbers and positions', 'edit'],
     ['scouting-report.html?tab=team', 'Scouting report', 'Your next opponent at a glance', 'binoculars'],
     ['media.html#upload', 'Team photos', 'Upload photos from games', 'camera']
@@ -26,10 +27,8 @@ export const TOOL_GROUPS = [
     ['admin/schedule.html', 'Schedule', 'Build, tune, publish and fix it', 'calendar-days']
   ] },
   { role: 'admin', title: 'Admin', icon: 'shield-check', tools: [
-    ['approve-links.html', 'Approve player links', 'Pending account-to-player requests', 'user-check'],
-    ['admin/link-players.html', 'Link players', 'Connect accounts to player records', 'link'],
-    ['admin/user-management.html', 'User management', 'Accounts, roles and View As', 'users'],
-    ['admin/roles.html', 'Role updater', 'Change roles in bulk', 'shield'],
+    ['admin/people.html', 'People', 'Members, roles, View As and player links', 'users'],
+    ['admin/user-management.html', 'Player records', 'Merge duplicates and repair stats', 'link'],
     ['admin/stats.html', 'Stats pipeline', 'Stats in, review, aggregate, badges', 'refresh'],
     ['admin/badges.html', 'Badge calculator', 'Award player badges', 'medal'],
     ['admin/games.html', 'Games admin', 'Daily games content', 'gamepad'],
