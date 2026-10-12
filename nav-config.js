@@ -280,8 +280,8 @@ export const NAV_UNLISTED = {
   hidden: ['boxes-pool.html', 'link-player.html', 'player-questionnaire.html'],
   adminTools: ['admin/aggregate-stats.html', 'approve-links.html', 'captain-questionnaire-review.html',
     'admin/games.html', 'admin/schedule-editor.html', 'admin/player-import.html', 'admin/playoff-eligibility.html',
-    'schedule-balancer.html', 'admin/schedule-generator.html', 'admin/schedule-rework.html',
-    'admin/schedule-workshop.html', 'admin/season-setup.html', 'admin/signup-card-export.html', 'admin/wordle.html',
+    'schedule-balancer.html', 'admin/schedule-rework.html',
+    'admin/season-setup.html', 'admin/signup-card-export.html', 'admin/wordle.html',
     'admin/aggregate-stats-legacy.html', 'admin/gc-data-cleaner.html', 'admin/submit-stats-legacy.html', 'admin/bwar-explorer.html', 'admin/offseason.html'],
   toDelete: [],
 };

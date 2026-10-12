@@ -4,12 +4,13 @@
 //               plus postponed games and pending rework moves
 //   Edit a game one game's date, time, field, teams or status (schedule-editor.js)
 //   Rework      drag games to new days after rainouts, publish together (schedule-rework.js)
-//   Build       the generator, season setup and workshop (their own pages)
-// One season picker drives every tab. ?season=&tab=overview|edit|rework|build
+//   Generate    build a new season's schedule (schedule-gen.js)
+//   Workshop    tune it, then send it to Season setup (schedule-workshop.js)
+// One season picker drives every tab. ?season=&tab=overview|edit|rework|generate|workshop
 // (&game= with tab=edit opens that game). The old editor and rework addresses
 // redirect here.
 
-import { initPage, pageReady, siteUrl } from '../core/app.js';
+import { initPage, pageReady } from '../core/app.js';
 import { db, doc, getDoc } from '../core/firebase.js';
 import { getSeasonGames } from '../data/games.js';
 import { getAllSeasons } from '../data/seasons.js';
@@ -19,25 +20,21 @@ import { seasonLabel, sortSeasonIds } from '../domain/season-ids.js';
 import { mountAdminShell } from './shell.js';
 import { escapeHtml as esc } from '../ui/format.js';
 import { icon } from '../ui/icons.js';
+import { showToast } from '../ui/toast.js';
 import { mountEditor, editorSeason } from './schedule-editor.js';
 import { mountRework, reworkSeason } from './schedule-rework.js';
 
 const $ = (id) => document.getElementById(id);
-const TABS = ['overview', 'edit', 'rework', 'build'];
+const TABS = ['overview', 'edit', 'rework', 'generate', 'workshop'];
+// Generate and Workshop work on a new schedule, not the picked season, and load when first opened.
+const MODULES = { generate: () => import('./schedule-gen.js'), workshop: () => import('./schedule-workshop.js') };
+const mods = new Map();
+let ctx = null;
 const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
 let seasonId = '';
 let tab = 'overview';
 const stale = { overview: true, edit: true, rework: true };
-
-const BUILD = [
-  { n: 1, title: 'Build', text: 'Pick the season type and teams, set the parameters, and generate a balanced schedule. Download it as a CSV to fine-tune, or send it straight to the site.',
-    tools: [['admin/schedule-generator.html', 'Schedule generator', true], ['admin/season-setup.html', 'Season setup wizard']] },
-  { n: 2, title: 'Tune', text: 'Import the CSV, swap games, balance days and time slots, group doubleheaders, and watch the fairness scores and opponent grid update as you go.',
-    tools: [['admin/schedule-workshop.html', 'Schedule workshop', true]] },
-  { n: 3, title: 'Publish', text: 'Use Export to Firebase in the workshop (or the generator) to write the games to the season. The Overview tab then shows what is published.',
-    tools: [['admin/schedule-workshop.html', 'Export from the workshop']] }
-];
 
 // ---------------------------------------------------------------------------
 // Overview
@@ -77,7 +74,7 @@ function renderOverview(s, pending) {
   $('schTodo').hidden = !todo.length;
 
   if (!s.regular) {
-    $('schStatus').innerHTML = `<p class="stp-empty">Nothing published for ${esc(seasonLabel(seasonId))} yet. ${go('build', 'Build the schedule')}</p>`;
+    $('schStatus').innerHTML = `<p class="stp-empty">Nothing published for ${esc(seasonLabel(seasonId))} yet. ${go('generate', 'Generate one')}</p>`;
     $('schTeams').innerHTML = '';
     return;
   }
@@ -122,17 +119,6 @@ async function loadOverview() {
   }
 }
 
-function renderBuild() {
-  $('schSteps').innerHTML = BUILD.map(s => `<li class="aces-card stp-step">
-    <div class="stp-step-head">
-      <span class="stp-num" aria-hidden="true">${s.n}</span>
-      <div class="stp-step-text"><h3>${esc(s.title)}</h3><p>${esc(s.text)}</p></div>
-    </div>
-    <div class="stp-actions">${s.tools.map(([href, name, primary]) =>
-      `<a class="aces-btn is-sm${primary ? ' is-primary' : ''}" href="${esc(siteUrl(href))}">${esc(name)}</a>`).join('')}</div>
-  </li>`).join('');
-}
-
 // ---------------------------------------------------------------------------
 // Tabs
 // ---------------------------------------------------------------------------
@@ -145,6 +131,19 @@ async function setTab(name, { game = '' } = {}) {
   p.set('tab', tab);
   if (tab !== 'edit') p.delete('game');
   history.replaceState(null, '', `?${p}`);
+  if (MODULES[tab]) {
+    if (!mods.has(tab)) {
+      mods.set(tab, MODULES[tab]().then(async (m) => { await m.mount({ ...ctx, goTab: setTab }); return m; }).catch((err) => {
+        console.error(`[schedule] ${tab} failed`, err);
+        mods.delete(tab);
+        showToast(`Could not load this tab: ${err.message || err}`, 'error');
+        return null;
+      }));
+    }
+    const m = await mods.get(tab);
+    m?.show?.();
+    return;
+  }
   if (!seasonId) return;
   if (tab === 'overview' && stale.overview) { stale.overview = false; await loadOverview(); }
   if (tab === 'edit' && (stale.edit || game)) { const force = stale.edit; stale.edit = false; await editorSeason(seasonId, game, force); }
@@ -152,12 +151,11 @@ async function setTab(name, { game = '' } = {}) {
 }
 
 async function main() {
-  const ctx = await initPage({ title: 'Schedule', role: 'league-staff', deniedMessage: 'Schedule tools are for league staff and admins.' });
+  ctx = await initPage({ title: 'Schedule', role: 'league-staff', deniedMessage: 'Schedule tools are for league staff and admins.' });
   if (!ctx?.user) return;
   mountAdminShell(ctx.profile, 'admin/schedule.html');
   mountEditor(ctx);
   mountRework(ctx);
-  renderBuild();
 
   const seasons = await getAllSeasons();
   const ids = sortSeasonIds(seasons.map(s => s.id));

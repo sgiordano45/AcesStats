@@ -16,9 +16,9 @@ export const ADMIN_GROUPS = [
     ['playoffs.html', 'Playoff bracket', 'Set, lock and publish the bracket', 'league-staff']
   ] },
   { id: 'schedule', label: 'Schedule', icon: 'calendar', items: [
-    ['admin/schedule.html', 'Schedule', 'Overview, edit a game, rework after rainouts', 'league-staff'],
-    ['admin/schedule-generator.html', 'Schedule generator', 'Build a balanced season schedule', 'league-staff'],
-    ['admin/schedule-workshop.html', 'Schedule workshop', 'Balance, analyze and publish a schedule', 'league-staff'],
+    ['admin/schedule.html', 'Schedule', 'Overview, edit a game, rework, generate a new season', 'league-staff'],
+    ['admin/schedule.html?tab=generate', 'Schedule generator', 'Build a balanced schedule for a new season', 'league-staff'],
+    ['admin/schedule.html?tab=workshop', 'Schedule workshop', 'Tune and check it, then send it to Season setup', 'league-staff'],
     ['admin/schedule.html?tab=edit', 'Edit a game', 'Change one game and share the update', 'league-staff'],
     ['admin/schedule.html?tab=rework', 'Rework after rainouts', 'Move games to new days, publish together', 'league-staff']
   ] },

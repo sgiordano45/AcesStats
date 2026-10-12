@@ -601,6 +601,7 @@
 
     <!-- Main Wizard Content -->
     <div id="wizardContent" class="hidden">
+      <div id="workshopNote" class="alert info hidden" style="margin-bottom: 1rem;"></div>
       <!-- Progress Steps -->
       <div class="progress-container">
         <div class="progress-steps">
@@ -721,7 +722,7 @@
       <!-- Step 3: Schedule -->
       <div id="step3" class="card step-content hidden">
         <h2>📅 Step 3: Import Schedule</h2>
-        <p>Upload a CSV file with your schedule or generate one automatically.</p>
+        <p>Upload a CSV file, or build one on the Schedule page (Generate, then Workshop) and send it here.</p>
 
         <div class="form-group">
           <label>Schedule Source</label>
@@ -732,7 +733,7 @@
             </label>
             <label class="checkbox-item">
               <input type="radio" name="scheduleSource" value="generate" onchange="toggleScheduleSource()">
-              Use Schedule Generator
+              Build it on the Schedule page
             </label>
           </div>
         </div>
@@ -758,14 +759,11 @@
         <!-- Generator Link -->
         <div id="generatorSection" class="hidden">
           <div class="alert info">
-            <p>The Schedule Generator will help you create a balanced schedule automatically.</p>
-            <a href="admin/schedule-generator.html" class="btn btn-primary" style="margin-top: 1rem;" target="_blank">
-              Open Schedule Generator →
+            <p>Generate a balanced schedule, tune it in the Workshop, then use <strong>Send to Season setup</strong>. It opens this wizard with the schedule already loaded.</p>
+            <a href="admin/schedule.html?tab=generate" class="btn btn-primary" style="margin-top: 1rem;">
+              Open the schedule generator
             </a>
           </div>
-          <p style="margin-top: 1rem; color: var(--text-light);">
-            After generating your schedule, export it to Firebase from the generator, then return here to continue setup.
-          </p>
         </div>
 
         <!-- Schedule Preview -->
@@ -1139,6 +1137,7 @@ import { getUserProfile } from './js/data/users.js';
       applySandboxUI();
       await loadTeams();
       setupEventListeners();
+      loadWorkshopSchedule();
     });
 
     // Load teams from Firebase
@@ -1381,6 +1380,36 @@ import { getUserProfile } from './js/data/users.js';
         console.error('Error parsing CSV:', error);
         alert('Error parsing CSV file. Please check the format.');
       }
+    }
+
+    // A schedule sent from the Workshop tab of admin/schedule.html arrives in
+    // localStorage (aces.scheduleHandoff: { seasonType, year, games: [{ date
+    // 'YYYY-MM-DDT12:00:00', time, home, away }], sentAt }) with ?schedule=workshop.
+    function loadWorkshopSchedule() {
+      if (new URLSearchParams(location.search).get('schedule') !== 'workshop') return;
+      let handoff = null;
+      try { handoff = JSON.parse(localStorage.getItem('aces.scheduleHandoff') || 'null'); } catch (e) { handoff = null; }
+      const note = document.getElementById('workshopNote');
+      if (!handoff || !Array.isArray(handoff.games) || !handoff.games.length) {
+        note.className = 'alert error';
+        note.textContent = 'No schedule came through from the Workshop. Send it again from Schedule > Workshop.';
+        note.classList.remove('hidden');
+        return;
+      }
+      scheduleData = handoff.games.filter(g => g.date && g.home && g.away)
+        .map(g => ({ date: g.date, time: g.time || 'TBD', home: g.home, away: g.away }))
+        .sort((a, b) => new Date(a.date) - new Date(b.date));
+      if (handoff.year && [...document.getElementById('seasonYear').options].some(o => o.value === String(handoff.year))) {
+        document.getElementById('seasonYear').value = String(handoff.year);
+      }
+      if (handoff.seasonType) document.getElementById('seasonType').value = handoff.seasonType;
+      updateSeasonPreview();
+      displaySchedulePreview();
+      document.getElementById('step3Next').disabled = false;
+      const sent = handoff.sentAt ? new Date(handoff.sentAt).toLocaleString() : '';
+      note.className = 'alert info';
+      note.textContent = `${scheduleData.length} games loaded from the Schedule workshop${sent ? ` (sent ${sent})` : ''}. Pick the same teams in step 2; step 3 already has the schedule.`;
+      note.classList.remove('hidden');
     }
 
     function displaySchedulePreview() {

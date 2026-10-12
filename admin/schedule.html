@@ -21,7 +21,10 @@
 </head>
 <body class="aces-v2 adm">
 
-<!-- admin/schedule.html: the season schedule as tabs - overview, edit a game, rework, build (js/admin/schedule.js). -->
+<!-- admin/schedule.html: the season schedule as tabs (js/admin/schedule.js): overview, edit a game,
+     rework, and for a new season generate (schedule-gen.js) and workshop (schedule-workshop.js).
+     Generate and Workshop replaced the old Schedule generator and Schedule workshop pages; a
+     finished schedule goes to Season setup, which writes the season and its games. -->
 
 <div class="adm-shell aces-container" data-page-content>
   <aside class="adm-side" id="adminSide" aria-label="Admin tools">
@@ -47,7 +50,8 @@
       <button class="aces-tab" type="button" role="tab" data-tab="overview" aria-selected="true">Overview</button>
       <button class="aces-tab" type="button" role="tab" data-tab="edit" aria-selected="false">Edit a game</button>
       <button class="aces-tab" type="button" role="tab" data-tab="rework" aria-selected="false">Rework</button>
-      <button class="aces-tab" type="button" role="tab" data-tab="build" aria-selected="false">Build</button>
+      <button class="aces-tab" type="button" role="tab" data-tab="generate" aria-selected="false">Generate</button>
+      <button class="aces-tab" type="button" role="tab" data-tab="workshop" aria-selected="false">Workshop</button>
     </div>
 
     <!-- Overview -->
@@ -150,10 +154,171 @@
       </div>
     </div>
 
-    <!-- Build -->
-    <div data-panel="build" class="sch-panel" hidden>
-      <p class="stp-intro">From an empty season to a published schedule. These tools open on their own pages.</p>
-      <ol class="stp-steps" id="schSteps"></ol>
+    <!-- Generate (schedule-gen.js) -->
+    <div data-panel="generate" class="sch-panel" hidden>
+      <p class="stp-intro">Build a balanced schedule for a new season. Nothing here touches the site: open the result in the <a href="?tab=workshop" data-goto="workshop">Workshop</a> to tune it, then send it to Season setup, which creates the season and its games.</p>
+
+      <section class="aces-card">
+        <h2 class="aces-card-title">Season</h2>
+        <div class="sg-grid">
+          <div class="aces-field"><label class="aces-label" for="sgType">Season</label><span class="aces-select-wrap"><select class="aces-select" id="sgType">
+            <option value="summer">Summer</option><option value="fall">Fall</option>
+          </select></span></div>
+          <div class="aces-field"><label class="aces-label" for="sgYear">Year</label><input class="aces-input" id="sgYear" type="number" min="2025" max="2035"></div>
+          <div class="aces-field" data-for="summer"><label class="aces-label" for="sgStart">Opening Day on or after</label><input class="aces-input" id="sgStart" type="date"></div>
+        </div>
+        <label class="agg-check sg-gap" data-for="fall"><input type="checkbox" id="sgSkipTC"> <span>Skip teacher convention week (Nov 4-6); the season runs to Nov 19 instead</span></label>
+        <div class="sg-info" id="sgInfo"></div>
+      </section>
+
+      <section class="aces-card">
+        <div class="sg-card-head">
+          <h2 class="aces-card-title">Teams <span class="stp-count" id="sgTeamCount"></span></h2>
+          <div class="sse-actions">
+            <button class="aces-btn is-sm is-ghost" type="button" id="sgAll">All</button>
+            <button class="aces-btn is-sm is-ghost" type="button" id="sgNone">None</button>
+          </div>
+        </div>
+        <p class="sse-dim">This season's teams start picked.</p>
+        <div class="aces-chip-row sg-teams" id="sgTeams"><span class="sse-dim">Loading...</span></div>
+        <div class="sg-add">
+          <label class="u-sr-only" for="sgNewTeam">New team</label>
+          <input class="aces-input" id="sgNewTeam" type="text" maxlength="30" placeholder="A team that isn't listed yet">
+          <button class="aces-btn is-sm" type="button" id="sgAddTeam">Add team</button>
+        </div>
+      </section>
+
+      <section class="aces-card" id="sgOdCard" hidden>
+        <h2 class="aces-card-title">Opening Day match-ups</h2>
+        <p class="sse-dim">Six games. Every team plays once; the team you put in two games is the Opening Day DH team and sits Monday to Thursday of opening week.</p>
+        <div class="sg-od" id="sgOd"></div>
+        <p class="sg-od-msg" id="sgOdMsg"></p>
+      </section>
+
+      <section class="aces-card" id="sgExtraCard" hidden>
+        <h2 class="aces-card-title">Extra game</h2>
+        <p class="sse-dim">With 11 teams, one team plays 14 games instead of 13.</p>
+        <div class="aces-field sg-narrow"><label class="aces-label" for="sgExtra">Team</label><span class="aces-select-wrap"><select class="aces-select" id="sgExtra"></select></span></div>
+      </section>
+
+      <div class="sse-actions sg-go">
+        <button class="aces-btn is-primary" type="button" id="sgGo">Generate</button>
+        <span class="sse-dim" id="sgWhy"></span>
+      </div>
+
+      <section class="aces-card" id="sgResult" hidden>
+        <div class="sg-card-head">
+          <h2 class="aces-card-title" id="sgResultTitle">Schedule</h2>
+          <div class="sse-actions">
+            <button class="aces-btn is-sm" type="button" id="sgAgain">Generate again</button>
+            <button class="aces-btn is-sm" type="button" id="sgCsv">Download CSV</button>
+            <button class="aces-btn is-sm is-primary" type="button" id="sgToWorkshop">Open in Workshop</button>
+          </div>
+        </div>
+        <div class="aces-stats sg-tiles" id="sgTiles"></div>
+        <div class="sg-split">
+          <div>
+            <h3 class="tr-sub">By team</h3>
+            <div class="aces-table-wrap"><table class="aces-table is-compact" id="sgTeamTable"></table></div>
+          </div>
+          <div>
+            <h3 class="tr-sub">Games</h3>
+            <div class="aces-table-wrap sg-games"><table class="aces-table is-compact" id="sgGames"></table></div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- Workshop (schedule-workshop.js) -->
+    <div data-panel="workshop" class="sch-panel" hidden>
+      <div id="swEmpty" class="aces-card sw-empty">
+        <h2 class="aces-card-title">Nothing in the Workshop yet</h2>
+        <p class="sse-dim">Generate a schedule, then use Open in Workshop. The Workshop keeps your edits on this device until you send the schedule to Season setup or clear it.</p>
+        <div class="sse-actions"><button class="aces-btn is-primary" type="button" data-goto="generate">Generate a schedule</button></div>
+      </div>
+
+      <div id="swBody" hidden>
+        <section class="aces-card sw-bar">
+          <div>
+            <h2 class="aces-card-title" id="swTitle">Schedule</h2>
+            <p class="sse-dim" id="swMeta"></p>
+          </div>
+          <div class="sse-actions">
+            <button class="aces-btn is-sm" type="button" id="swUndo" disabled>Undo</button>
+            <button class="aces-btn is-sm" type="button" id="swCsv">Download CSV</button>
+            <button class="aces-btn is-sm is-primary" type="button" id="swSend">Send to Season setup</button>
+            <button class="aces-btn is-sm is-ghost" type="button" id="swClear">Clear</button>
+          </div>
+        </section>
+
+        <ul class="tr-checks sw-warn" id="swWarn" hidden></ul>
+
+        <div class="sw-layout">
+          <section class="aces-card sw-editor">
+            <div class="sg-card-head">
+              <h2 class="aces-card-title">Games <span class="stp-count" id="swCount"></span></h2>
+              <div class="sse-actions">
+                <button class="aces-btn is-sm" type="button" data-fix="days" title="Swap whole doubleheader nights within a week (weeks 2-11) so each team's days even out">Balance days</button>
+                <button class="aces-btn is-sm" type="button" data-fix="times" title="Swap times between games on the same date so each team's time slots even out">Balance times</button>
+                <button class="aces-btn is-sm" type="button" data-fix="dh" title="Put a team's two games on the same night next to each other">Group doubleheaders</button>
+              </div>
+            </div>
+            <p class="sse-dim sw-status" id="swStatus"></p>
+            <div class="sw-filter">
+              <input class="aces-input" id="swFind" type="search" placeholder="Team or date" aria-label="Filter games">
+            </div>
+            <div class="aces-table-wrap sw-games"><table class="aces-table is-compact sw-table" id="swTable"></table></div>
+          </section>
+
+          <section class="aces-card sw-analysis">
+            <h2 class="aces-card-title">Team check</h2>
+            <div class="aces-chip-row sw-teams" id="swTeams"></div>
+            <div class="aces-stats sw-tiles" id="swTiles"></div>
+            <div class="sw-split">
+              <div><h3 class="tr-sub">Days</h3><div id="swDays"></div></div>
+              <div><h3 class="tr-sub">Times</h3><div id="swTimes"></div></div>
+            </div>
+            <h3 class="tr-sub">Bye weeks</h3><div id="swByes"></div>
+            <h3 class="tr-sub">Opponents</h3><div class="sw-opps" id="swOpps"></div>
+            <h3 class="tr-sub">League fairness (MOLSKI)</h3>
+            <p class="sse-dim sw-note">Time-slot spread (up to 40) + slot quality against the league (15) + day mix against the league (45). Lower is fairer.</p>
+            <div class="aces-table-wrap"><table class="aces-table is-compact" id="swMolski"></table></div>
+            <p class="sse-dim sw-note" id="swMolskiNote"></p>
+          </section>
+        </div>
+
+        <section class="aces-card">
+          <div class="sg-card-head">
+            <h2 class="aces-card-title">Opponent grid</h2>
+            <div class="sse-actions">
+              <span class="aces-select-wrap"><select class="aces-select" id="swOppSort" aria-label="Sort teams">
+                <option value="alpha">A to Z</option><option value="most">Most games</option><option value="fewest">Fewest games</option>
+              </select></span>
+              <button class="aces-btn is-sm" type="button" data-image="opp">Save image</button>
+            </div>
+          </div>
+          <div class="aces-table-wrap"><table class="aces-table is-compact sw-grid" id="swOppGrid"></table></div>
+        </section>
+
+        <section class="aces-card">
+          <div class="sg-card-head">
+            <h2 class="aces-card-title">Time slots by team</h2>
+            <button class="aces-btn is-sm" type="button" data-image="time">Save image</button>
+          </div>
+          <p class="sse-dim">How often each team plays each slot. &#9650; heavy, &#9660; light against an even spread.</p>
+          <div class="aces-table-wrap"><table class="aces-table is-compact sw-grid" id="swTimeGrid"></table></div>
+          <div id="swTimeNotes"></div>
+        </section>
+
+        <section class="aces-card">
+          <div class="sg-card-head">
+            <h2 class="aces-card-title">Time slots by week</h2>
+            <span class="aces-select-wrap"><select class="aces-select" id="swChartTeam" aria-label="Team"></select></span>
+          </div>
+          <p class="sse-dim">Each dot is a game; a gold dot is a doubleheader night; a dashed line crosses a bye week.</p>
+          <div class="sw-chart" id="swChart"></div>
+        </section>
+      </div>
     </div>
   </main>
 </div>
