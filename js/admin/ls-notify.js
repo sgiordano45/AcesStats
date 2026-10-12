@@ -13,6 +13,8 @@ import { escapeHtml as esc } from '../ui/format.js';
 import { showToast } from '../ui/toast.js';
 import { confirmModal, openModal } from '../ui/modal.js';
 import { cap } from '../ui/game-shared.js';
+import { getSeasonGames } from '../data/games.js';
+import { normalizeGames } from '../domain/standings.js';
 
 const $ = (id) => document.getElementById(id);
 const call = (name, data = {}) => httpsCallable(functions, name)(data).then(r => r.data);
@@ -117,7 +119,7 @@ async function loadRecent() {
       const scope = a.wasFiltered === false || a.isLeagueWide ? 'Everyone'
         : a.targetCaptainsOnly ? 'Captains'
         : a.targetTeams?.length ? a.targetTeams.map(cap).join(', ')
-        : `${a.targetedUserCount || a.recipientCount || 0} people`;
+        : (() => { const n = a.targetedUserCount || a.recipientCount || 0; return `${n} ${n === 1 ? 'person' : 'people'}`; })();
       const [pl, pc] = PRIORITY[a.priority] || PRIORITY.normal;
       return `<li class="aces-card ln-sent${a.unsent ? ' is-unsent' : ''}">
         <div class="ln-sent-head">
@@ -209,11 +211,16 @@ export async function mount(c) {
   ['lnTitle', 'lnBody', 'lnLink', 'lnCustom'].forEach(id => $(id).addEventListener('input', updateForm));
   updateForm();
   loadRecent();
-  const [tSnap, uSnap] = await Promise.all([
+  const [tSnap, uSnap, games] = await Promise.all([
     getDocs(collection(db, 'teams')).catch(() => null),
-    getDocs(collection(db, 'users')).catch(() => null)
+    getDocs(collection(db, 'users')).catch(() => null),
+    ctx.currentSeasonId ? getSeasonGames(ctx.currentSeasonId).catch(() => []) : []
   ]);
-  teams = (tSnap?.docs || []).map(d => ({ id: d.id, ...d.data() })).sort((a, b) => String(a.name || a.id).localeCompare(String(b.name || b.id)));
+  // Only this season's teams (the teams collection keeps retired ones, like Kings and White).
+  const playing = new Set(normalizeGames(games).flatMap(g => [g.home, g.away]).map(t => String(t).toLowerCase()));
+  teams = (tSnap?.docs || []).map(d => ({ id: d.id, ...d.data() }))
+    .filter(t => !playing.size || playing.has(String(t.id).toLowerCase()) || playing.has(String(t.name || '').toLowerCase()))
+    .sort((a, b) => String(a.name || a.id).localeCompare(String(b.name || b.id)));
   pushUsers = (uSnap?.docs || []).map(d => d.data()).filter(u => u.fcmTokens && Object.keys(u.fcmTokens).length);
   renderTeams();
   updateReach();
