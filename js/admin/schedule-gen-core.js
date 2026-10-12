@@ -17,6 +17,9 @@
 // finished: it needs an Opening Day DH team, so generate() refuses it).
 
 let scheduleConfig = null;
+// The old page logged every step; set DEBUG to see it (Generate runs it up to 40 times).
+const DEBUG = false;
+const log = (...a) => { if (DEBUG) console.log(...a); };
 
 /** Every team's home/away gap as a 0-100 score (100 = all even). */
 export function balanceScore(schedule, teams) {
@@ -439,8 +442,8 @@ function assignFallSchedule(schedule) {
     if (teamCounts[g.home.id] !== undefined) teamCounts[g.home.id]++;
     if (teamCounts[g.away.id] !== undefined) teamCounts[g.away.id]++;
   });
-  console.log(`Fall schedule (${is11Team?'11':'10'}-team, ${skipConvention?'No TC':'TC'}): ${out.length} games`);
-  console.log('Per-team:', Object.fromEntries(teams.map(t => [t.name, teamCounts[t.id]])));
+  log(`Fall schedule (${is11Team?'11':'10'}-team, ${skipConvention?'No TC':'TC'}): ${out.length} games`);
+  log('Per-team:', Object.fromEntries(teams.map(t => [t.name, teamCounts[t.id]])));
 
   // -- Write output --
   schedule.length = 0;
@@ -461,7 +464,7 @@ function assignSummerSchedule(schedule) {
   const odDHTeamId = numTeams === 11 ? (scheduleConfig.openingDayDHTeam || null) : null;
   const teams = scheduleConfig.selectedTeams;
 
-  console.log(`📊 Summer 11-team: pool=${schedule.length} games, OD: ${openingDay.toDateString()}`);
+  log(`📊 Summer 11-team: pool=${schedule.length} games, OD: ${openingDay.toDateString()}`);
 
   // ── Helpers ────────────────────────────────────────────────────────────
   function getWeekDate(weekBase, dayOfWeek) {
@@ -492,7 +495,7 @@ function assignSummerSchedule(schedule) {
       dhPool.push(g);
     }
   }
-  console.log(`📋 Pre-tagged singles: ${singles.length} (expect 11), DH pool: ${dhPool.length} (expect 110)`);
+  log(`📋 Pre-tagged singles: ${singles.length} (expect 11), DH pool: ${dhPool.length} (expect 110)`);
 
   const matchupMap = new Map();
   for (const g of dhPool) {
@@ -524,7 +527,7 @@ function assignSummerSchedule(schedule) {
     if (pairs.length > 0) dhByKey.set(key, pairs);
   });
 
-  console.log(`📋 DH pairs: ${[...dhByKey.values()].reduce((s, a) => s + a.length, 0)}, singles: ${singles.length}`);
+  log(`📋 DH pairs: ${[...dhByKey.values()].reduce((s, a) => s + a.length, 0)}, singles: ${singles.length}`);
 
   const out = [];
   const gamesPlayed = Object.fromEntries(teams.map(t => [t.id, 0]));
@@ -532,10 +535,10 @@ function assignSummerSchedule(schedule) {
 
   // ── STEP 1: Opening Day — 6 games ────────────────────────────────────────
   if (!odDHTeamId) {
-    console.error('❌ No Opening Day DH team selected — cannot generate 11-team schedule.');
+    log('❌ No Opening Day DH team selected — cannot generate 11-team schedule.');
     return;
   }
-  console.log(`🎉 Scheduling Opening Day...`);
+  log(`🎉 Scheduling Opening Day...`);
   const purpleTeam = teams.find(t => t.id === odDHTeamId);
   const nonPurple = teams.filter(t => t.id !== odDHTeamId);
   const odGames = [];
@@ -543,7 +546,7 @@ function assignSummerSchedule(schedule) {
   if (scheduleConfig.openingDayMatchups && scheduleConfig.openingDayMatchups.length === 6) {
     // Use user-defined matchups
     scheduleConfig.openingDayMatchups.forEach(m => odGames.push({ home: m.home, away: m.away }));
-    console.log(`🎉 Opening Day: using user-defined matchups`);
+    log(`🎉 Opening Day: using user-defined matchups`);
   } else {
     // Fallback: random shuffle
     const shuffledNP = shuffle([...nonPurple]);
@@ -555,7 +558,7 @@ function assignSummerSchedule(schedule) {
     }
     odGames.push({ home: purpleTeam, away: purpleOpp1 });
     odGames.push({ home: purpleOpp2, away: purpleTeam });
-    console.log(`🎉 Opening Day: using randomized matchups (no user selection)`);
+    log(`🎉 Opening Day: using randomized matchups (no user selection)`);
   }
 
   for (let i = 0; i < odGames.length; i++) {
@@ -569,7 +572,7 @@ function assignSummerSchedule(schedule) {
     gamesPlayed[g.home.id]++;
     gamesPlayed[g.away.id]++;
   }
-  console.log(`🎉 Opening Day: ${odGames.length} games`);
+  log(`🎉 Opening Day: ${odGames.length} games`);
 
   // ── STEP 2: Plan bye rotation (deterministic) ─────────────────────────
   // Wk1: 4 DHs, 8 teams play, 3 sit (Purple + 2 = "sit3")
@@ -589,9 +592,9 @@ function assignSummerSchedule(schedule) {
   const doubleBye = [wk1Active[0], wk1Active[1]];
   const singleBye = wk1Active.slice(2); // 6 teams
 
-  console.log(`📅 Wk1 sit: ${sit3.map(t => t.name).join(', ')}`);
-  console.log(`📅 Double-bye (wk12 DH): ${doubleBye.map(t => t.name).join(' vs ')}`);
-  console.log(`📅 Single-bye: ${singleBye.map(t => t.name).join(', ')}`);
+  log(`📅 Wk1 sit: ${sit3.map(t => t.name).join(', ')}`);
+  log(`📅 Double-bye (wk12 DH): ${doubleBye.map(t => t.name).join(' vs ')}`);
+  log(`📅 Single-bye: ${singleBye.map(t => t.name).join(', ')}`);
 
   // ── RESERVE the doubleBye mutual DH for Week 12 Sunday ────────────────
   // Pull it out of dhByKey NOW so weeks 1-11 greedy scheduler can't consume it.
@@ -600,9 +603,9 @@ function assignSummerSchedule(schedule) {
   let reservedDoubleBye = null;
   if (dbPairs && dbPairs.length > 0) {
     reservedDoubleBye = dbPairs.shift(); // remove from pool
-    console.log(`🔒 Reserved Wk12 DH: ${doubleBye[0].name} vs ${doubleBye[1].name}`);
+    log(`🔒 Reserved Wk12 DH: ${doubleBye[0].name} vs ${doubleBye[1].name}`);
   } else {
-    console.warn(`⚠️ No ${doubleBye[0].name} vs ${doubleBye[1].name} DH pair found to reserve!`);
+    log(`⚠️ No ${doubleBye[0].name} vs ${doubleBye[1].name} DH pair found to reserve!`);
   }
   // Helper to schedule a DH pair
   function scheduleDH(dh, date, weekNum) {
@@ -641,7 +644,7 @@ function assignSummerSchedule(schedule) {
       if (found) break;
     }
   }
-  console.log(`📅 Wk1: ${wk1Count} DHs`);
+  log(`📅 Wk1: ${wk1Count} DHs`);
 
   // ── STEP 4: Wks 2–11 — 5 DHs Sun–Thu, 1 bye ─────────────────────────
   const regularNights = [0, 1, 2, 3, 4];
@@ -708,9 +711,9 @@ function assignSummerSchedule(schedule) {
     }
 
     if (bestDHs.length < 5) {
-      console.warn(`⚠️ Week ${weekNum}: only ${bestDHs.length} DHs`);
+      log(`⚠️ Week ${weekNum}: only ${bestDHs.length} DHs`);
     }
-    console.log(`📅 Week ${weekNum}: ${bestDHs.length} DHs, bye=${bestBye.name}`);
+    log(`📅 Week ${weekNum}: ${bestDHs.length} DHs, bye=${bestBye.name}`);
   }
 
   // ── STEP 5: Wk12 — Sun 1 DH + Mon–Thu 8 singles (2/night) ────────────
@@ -720,9 +723,9 @@ function assignSummerSchedule(schedule) {
   // Sunday DH: use the reserved double-bye pair
   if (reservedDoubleBye) {
     scheduleDH(reservedDoubleBye, getWeekDate(wk12Base, 0), 12);
-    console.log(`📅 Wk12 Sun: DH ${doubleBye[0].name} vs ${doubleBye[1].name}`);
+    log(`📅 Wk12 Sun: DH ${doubleBye[0].name} vs ${doubleBye[1].name}`);
   } else {
-    console.error(`❌ No reserved DH for Wk12 Sunday — double-bye teams will be short a DH`);
+    log(`❌ No reserved DH for Wk12 Sunday — double-bye teams will be short a DH`);
   }
 
   // ── STEP 5: Wk12 + Wk13 — schedule all 11 singles ───────────────────────
@@ -749,7 +752,7 @@ function assignSummerSchedule(schedule) {
     }
   }
   if (!wk13Indices) {
-    console.error('❌ Could not find 3 non-conflicting singles for wk13');
+    log('❌ Could not find 3 non-conflicting singles for wk13');
     wk13Indices = [0, 1, 2]; // fallback
   }
 
@@ -792,9 +795,9 @@ function assignSummerSchedule(schedule) {
     }
   }
   if (wk12Remaining.length > 0) {
-    console.warn(`⚠️ Wk12: ${wk12Remaining.length} singles could not be placed`);
+    log(`⚠️ Wk12: ${wk12Remaining.length} singles could not be placed`);
   }
-  console.log(`📅 Wk12: 1 DH + ${singlesScheduled} singles`);
+  log(`📅 Wk12: 1 DH + ${singlesScheduled} singles`);
 
   // ── STEP 6: Wk13 — 3 pre-selected singles on Sunday ──────────────────
   const wk13Base = new Date(openingDay);
@@ -811,17 +814,17 @@ function assignSummerSchedule(schedule) {
     gamesPlayed[g.home.id]++; gamesPlayed[g.away.id]++;
     singlesPerTeam[g.home.id]++; singlesPerTeam[g.away.id]++;
   });
-  console.log(`📅 Wk13: ${wk13Singles.length} singles`);
+  log(`📅 Wk13: ${wk13Singles.length} singles`);
 
   // Warn if any team doesn't have exactly 2 singles
   const singlesCheck = teams.every(t => singlesPerTeam[t.id] === 2);
   if (!singlesCheck) {
-    console.warn('⚠️ Singles distribution off:', Object.fromEntries(teams.map(t => [t.name, singlesPerTeam[t.id]])));
+    log('⚠️ Singles distribution off:', Object.fromEntries(teams.map(t => [t.name, singlesPerTeam[t.id]])));
   }
 
   // ── STEP 7: Validation ─────────────────────────────────────────────────
-  console.log(`\n📊 === SCHEDULE VALIDATION ===`);
-  console.log(`Total games: ${out.length} (expected 127)`);
+  log(`\n📊 === SCHEDULE VALIDATION ===`);
+  log(`Total games: ${out.length} (expected 127)`);
   let allGood = true;
   for (const t of teams) {
     const total = gamesPlayed[t.id];
@@ -835,14 +838,14 @@ function assignSummerSchedule(schedule) {
     const totalOk = total === expectedTotal;
     const status = (dhOk && singlesOk && totalOk) ? '✅' : '❌';
     if (!dhOk || !singlesOk || !totalOk) allGood = false;
-    console.log(`  ${status} ${t.name}: ${total}/${expectedTotal} total, ${dhs}/10 DHs, ${singles2}/2 singles, ${odCount} OD`);
+    log(`  ${status} ${t.name}: ${total}/${expectedTotal} total, ${dhs}/10 DHs, ${singles2}/2 singles, ${odCount} OD`);
   }
-  if (!allGood) console.error('❌ Validation failed!');
-  if (singles.length > 0) console.warn(`⚠️ ${singles.length} singles unused`);
+  if (!allGood) log('❌ Validation failed!');
+  if (singles.length > 0) log(`⚠️ ${singles.length} singles unused`);
 
   let leftoverDH = 0;
   dhByKey.forEach(p => { leftoverDH += p.length; });
-  if (leftoverDH > 0) console.warn(`⚠️ ${leftoverDH} DH pairs unused`);
+  if (leftoverDH > 0) log(`⚠️ ${leftoverDH} DH pairs unused`);
 
   // ── STEP 8: Write back, sort, number ───────────────────────────────────
   schedule.length = 0;
@@ -857,5 +860,5 @@ function assignSummerSchedule(schedule) {
   schedule.forEach((g, i) => { g.gameNumber = i + 1; });
 
   const maxWeek = Math.max(...out.map(g => g.week));
-  console.log(`\n✅ Final: ${schedule.length} games over ${maxWeek} weeks`);
+  log(`\n✅ Final: ${schedule.length} games over ${maxWeek} weeks`);
 }

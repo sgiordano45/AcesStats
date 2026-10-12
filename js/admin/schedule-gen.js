@@ -128,9 +128,21 @@ function run() {
     config.openingDayDHTeam = od.dhTeam;
   }
   try {
-    const { games } = generate(config);
-    if (!games.length || games.some(g => !(g.date instanceof Date))) throw new Error('The generator returned games without dates.');
-    result = { games, config };
+    // The scheduling logic is random and some runs leave games unplaced (a team
+    // a game or two short), so try up to 40 times and keep the fullest run.
+    let best = null;
+    for (let i = 0; i < 40; i++) {
+      const { games } = generate(config);
+      if (!games.length || games.some(g => !(g.date instanceof Date))) throw new Error('The generator returned games without dates.');
+      const per = {};
+      games.forEach(g => { per[g.home.id] = (per[g.home.id] || 0) + 1; per[g.away.id] = (per[g.away.id] || 0) + 1; });
+      const counts = Object.values(per);
+      const rank = games.length * 100 - (Math.max(...counts) - Math.min(...counts));
+      if (!best || rank > best.rank) best = { games, rank, tries: i + 1 };
+      if (games.length >= (config.seasonType === 'summer' ? 127 : config.selectedTeams.length === 11 ? 72 : 65)) break;
+    }
+    const { games } = best;
+    result = { games, config, tries: best.tries };
     renderResult();
     $('sgResult').scrollIntoView({ behavior: 'smooth', block: 'start' });
   } catch (err) {

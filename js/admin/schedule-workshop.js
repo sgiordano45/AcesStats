@@ -252,7 +252,7 @@ function renderTable() {
       const g = games()[i];
       return `<tr data-i="${i}"${bad.has(i) ? ' class="is-bad"' : ''}>
         <td class="is-num">${g.week}</td>
-        <td class="u-nowrap"><span class="sw-day">${g.iso ? dayOf(g.iso).slice(0, 3) : ''}</span><input class="aces-input sw-in" type="date" data-f="iso" value="${esc(g.iso)}" aria-label="Date"></td>
+        <td><span class="sw-date"><span class="sw-day">${g.iso ? dayOf(g.iso).slice(0, 3) : ''}</span><input class="aces-input sw-in" type="date" data-f="iso" value="${esc(g.iso)}" aria-label="Date"></span></td>
         <td><select class="aces-select sw-in" data-f="time" aria-label="Time">${opt(slots, g.time)}</select></td>
         <td><select class="aces-select sw-in" data-f="home" aria-label="Home">${opt(ts, g.home)}</select></td>
         <td><button class="aces-btn is-sm is-ghost sw-swap" type="button" data-swap title="Swap home and away" aria-label="Swap home and away">&#8644;</button></td>
@@ -310,16 +310,20 @@ function renderGrids() {
   const ct = Object.fromEntries(ts.map(t => [t, Object.fromEntries(slots.map(s => [s, 0]))]));
   games().forEach(g => [g.home, g.away].forEach(t => { if (ct[t]) ct[t][g.time] = (ct[t][g.time] || 0) + 1; }));
   const maxT = Math.max(1, ...ts.flatMap(t => slots.map(s => ct[t][s])));
-  const expected = games().length ? (games().length * 2) / (ts.length * slots.length) : 0;
-  const mark = (n) => (n - expected >= 1.5 ? ' &#9650;' : n - expected <= -1.5 ? ' &#9660;' : '');
   const colTot = Object.fromEntries(slots.map(s => [s, ts.reduce((n, t) => n + ct[t][s], 0)]));
+  // Regular slots only: one-off slots (Opening Day's afternoon games) would
+  // otherwise flag every team as lopsided.
+  const regular = slots.filter(s => colTot[s] >= ts.length);
+  const regGames = regular.reduce((n, s) => n + colTot[s], 0);
+  const expected = regular.length ? regGames / (ts.length * regular.length) : 0;
+  const mark = (s, n) => (!regular.includes(s) ? '' : n - expected >= 1.5 ? ' &#9650;' : n - expected <= -1.5 ? ' &#9660;' : '');
   $('swTimeGrid').innerHTML = `<thead><tr><th scope="col">Team</th>${slots.map(s => `<th scope="col" class="is-num">${esc(s)}</th>`).join('')}<th scope="col" class="is-num">Total</th></tr></thead>
-    <tbody>${ts.map(t => `<tr><th scope="row">${esc(t)}</th>${slots.map(s => `<td class="is-num"${heat(ct[t][s], maxT)}>${ct[t][s] ? `${ct[t][s]}${mark(ct[t][s])}` : '-'}</td>`).join('')}<td class="is-num"><strong>${slots.reduce((n, s) => n + ct[t][s], 0)}</strong></td></tr>`).join('')}
+    <tbody>${ts.map(t => `<tr><th scope="row">${esc(t)}</th>${slots.map(s => `<td class="is-num"${heat(ct[t][s], maxT)}>${ct[t][s] ? `${ct[t][s]}${mark(s, ct[t][s])}` : '-'}</td>`).join('')}<td class="is-num"><strong>${slots.reduce((n, s) => n + ct[t][s], 0)}</strong></td></tr>`).join('')}
       <tr class="sw-foot"><th scope="row">Slot total</th>${slots.map(s => `<td class="is-num">${colTot[s]}</td>`).join('')}<td class="is-num">${games().length * 2}</td></tr></tbody>`;
-  const heavy = ts.map(t => { const c = slots.map(s => ct[t][s]); const hi = Math.max(...c), lo = Math.min(...c); return hi - lo >= 3 ? `${t}: ${hi} at ${slots[c.indexOf(hi)]}, ${lo} at ${slots[c.indexOf(lo)]}` : ''; }).filter(Boolean);
+  const heavy = regular.length < 2 ? [] : ts.map(t => { const c = regular.map(s => ct[t][s]); const hi = Math.max(...c), lo = Math.min(...c); return hi - lo >= 3 ? `${t}: ${hi} at ${regular[c.indexOf(hi)]}, ${lo} at ${regular[c.indexOf(lo)]}` : ''; }).filter(Boolean);
   $('swTimeNotes').innerHTML = heavy.length
     ? `<p class="sw-note"><strong>Spread of 3 or more:</strong></p><div class="aces-chip-row">${heavy.map(h => `<span class="aces-badge is-alert">${esc(h)}</span>`).join(' ')}</div>`
-    : '<p class="sw-note sw-ok">No team has a spread of 3 or more between its busiest and quietest slot.</p>';
+    : '<p class="sw-note sw-ok">No team has a spread of 3 or more between its busiest and quietest regular slot.</p>';
 }
 
 function renderChart() {
