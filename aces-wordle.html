@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<script type="module" src="js/core/preview-guard.js"></script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Aces Wordle - Mountainside Aces</title>
@@ -792,10 +793,13 @@ body {
   }
 }
 </style>
+<link rel="stylesheet" href="css/tokens.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap">
+<link rel="stylesheet" href="css/page-head.css">
 </head>
 <body>
 
-<div class="loading-overlay" id="loadingOverlay">
+<div class="loading-overlay" id="loadingOverlay" data-page-loading>
   <div class="softball-spinner"></div>
 </div>
 
@@ -803,12 +807,14 @@ body {
 <nav id="main-nav"></nav>
 
 <div class="page-container">
-  <div class="page-header">
-    <a href="games.html" class="back-link">← Games</a>
-    <h1>🔤 Aces Wordle</h1>
-    <p class="subtitle">Guess the player's last name</p>
-    <div class="puzzle-date" id="puzzleDate">Puzzle #1</div>
-  </div>
+  <header class="v2-head">
+    <div class="v2-head-main">
+      <span class="v2-head-kicker">Play</span>
+      <h1 class="v2-head-title">Aces Wordle</h1>
+      <p class="v2-head-desc">Guess the player's last name.</p>
+      <p class="v2-head-meta" id="puzzleDate">Puzzle #1</p>
+    </div>
+  </header>
 
   <!-- User Stats Section -->
   <div class="user-stats-container" id="userStatsContainer">
@@ -985,25 +991,23 @@ body {
 </div>
 
 <script type="module">
+import { initPage, pageReady, showPageError } from './js/core/app.js';
 import { 
   db, 
   doc,
   getDoc,
   collection,
   getDocs
-} from './firebase-config.js';
+} from './js/core/firebase.js';
 
 import {
   setDoc,
   serverTimestamp
-} from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+} from './js/core/firebase.js';
 
-import { getAllPlayerStatsOptimized } from './firebase-data.js';
+import { getAllPlayerStatsOptimized } from './js/data/index.js';
 
-import {
-  getCurrentUser,
-  onAuthChange
-} from './firebase-auth.js';
+import { getCurrentUser, onAuthChange } from './js/core/auth.js';
 
 // ============================================
 // VERSION CHECK - Increment to clear old localStorage data
@@ -2076,12 +2080,13 @@ window.shareResults = shareResults;
 // ============================================
 async function init() {
   try {
+    await initPage({ title: 'Aces Wordle' });
     // Check if before launch
     const launchDate = new Date(LAUNCH_YEAR, LAUNCH_MONTH, LAUNCH_DAY).setHours(0, 0, 0, 0);
     const now = new Date().setHours(0, 0, 0, 0);
     
     if (now < launchDate) {
-      document.getElementById('loadingOverlay').classList.add('hidden');
+      pageReady();
       const launchDateObj = new Date(LAUNCH_YEAR, LAUNCH_MONTH, LAUNCH_DAY);
       document.getElementById('puzzleDate').textContent = `Launching ${launchDateObj.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}`;
       document.getElementById('gameBoard').innerHTML = `
@@ -2145,17 +2150,12 @@ async function init() {
     }
     
     // Hide loading
-    document.getElementById('loadingOverlay').classList.add('hidden');
+    pageReady();
     
   } catch (error) {
     console.error('Error initializing game:', error);
-    document.getElementById('loadingOverlay').innerHTML = `
-      <div style="text-align: center; padding: 2rem;">
-        <p>Error loading game</p>
-        <p style="color: var(--text-light); font-size: 0.9rem;">${error.message}</p>
-        <button onclick="location.reload()" style="margin-top: 1rem; padding: 0.75rem 1.5rem; cursor: pointer;">Retry</button>
-      </div>
-    `;
+    pageReady();
+    showPageError(error);
   }
 }
 
@@ -2163,10 +2163,6 @@ async function init() {
 init();
 </script>
 
-<script type="module">
-  import { NavigationComponent } from './nav-component.js';
-</script>
 <script src="mobile-enhancements.js"></script>
-<script src="theme-toggle.js"></script>
 </body>
 </html>

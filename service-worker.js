@@ -2,13 +2,14 @@
 // Handles both offline functionality AND Firebase Cloud Messaging
 // Version 2.1.02 - Force cache refresh to fix PWA stale load
 
-const CACHE_VERSION = 'aces-v2.1.02';
+const CACHE_VERSION = 'aces-v2.2.00';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const DYNAMIC_CACHE = `${CACHE_VERSION}-dynamic`;
 const IMAGE_CACHE = `${CACHE_VERSION}-images`;
 
-// Base path for GitHub Pages subdirectory deployment
-const BASE_PATH = '';
+// Base path derived from the worker's own location:
+// '' on acessoftballreference.com, '/AcesStatsv2.0' on the GitHub Pages preview
+const BASE_PATH = new URL('./', self.location).pathname.replace(/\/$/, '');
 
 // Only CSS files use cache-first (small, stable, helps visual consistency)
 // JS files now use network-first so updates roll out immediately!
@@ -44,34 +45,26 @@ const HTML_PAGES = [
   `${BASE_PATH}/offline.html`,
   `${BASE_PATH}/offseason.html`,
   `${BASE_PATH}/offseason-roster.html`,
-  `${BASE_PATH}/schedule-generator.html`,
+  `${BASE_PATH}/admin/schedule-generator.html`,
   `${BASE_PATH}/game-tracker.html`,
   `${BASE_PATH}/roster-management.html`,
-  `${BASE_PATH}/favorites.html`,
+  `${BASE_PATH}/me.html`,
   `${BASE_PATH}/game-preview.html`,
   `${BASE_PATH}/player.html`,
   `${BASE_PATH}/season.html`,
   `${BASE_PATH}/seasons.html`,
   `${BASE_PATH}/playoffs.html`,
   `${BASE_PATH}/leaders.html`,
-  `${BASE_PATH}/milestones.html`,
-  `${BASE_PATH}/pictures.html`,
-  `${BASE_PATH}/photo-upload.html`,
+  `${BASE_PATH}/media.html`,
   `${BASE_PATH}/compare.html`,
-  `${BASE_PATH}/team_compare.html`,
-  `${BASE_PATH}/h2h_grid.html`,
-  `${BASE_PATH}/charts.html`,
+  `${BASE_PATH}/explore.html`,
   `${BASE_PATH}/recap.html`,
   `${BASE_PATH}/champions.html`,
-  `${BASE_PATH}/query-stats.html`,
-  `${BASE_PATH}/aggregate-stats.html`,
+  `${BASE_PATH}/admin/aggregate-stats.html`,
   `${BASE_PATH}/manage-team.html`,
   `${BASE_PATH}/approve-links.html`,
   `${BASE_PATH}/current-season-team.html`,
-  `${BASE_PATH}/offseason-schedule.html`,
-  `${BASE_PATH}/offseason.html`,
-  `${BASE_PATH}/bracket.html`,
-  `${BASE_PATH}/pitcher.html`
+  `${BASE_PATH}/offseason.html`
 ];
 
 // Firebase and external resources
@@ -125,8 +118,8 @@ messaging.onBackgroundMessage((payload) => {
     
     const notificationOptions = {
       body: notificationBody,
-      icon: '/icon-192.png',
-      badge: '/badge-72.png',
+      icon: `${BASE_PATH}/icons/icon-192.png`,
+      badge: `${BASE_PATH}/badge-72.png`,
       // Make tag unique to prevent silent replacement (iOS PWA fix)
       tag: `${payload.data?.type || 'default'}_${payload.data?.gameId || ''}_${Date.now()}`,
       data: payload.data || {},
@@ -395,7 +388,8 @@ async function networkFirstWithOfflinePage(request) {
 // ==============================================
 
 function isStaticAsset(url) {
-  return STATIC_ASSETS.some(asset => url.pathname === asset);
+  // CSS only: precached HTML pages must stay network-first or edits never reach users
+  return url.pathname.endsWith('.css') && STATIC_ASSETS.some(asset => url.pathname === asset);
 }
 
 function isJavaScriptFile(url) {
@@ -433,7 +427,11 @@ self.addEventListener('notificationclick', (event) => {
     });
   }
 
-  const clickAction = event.notification.data?.clickAction || '/';
+  const rawClickAction = event.notification.data?.clickAction || '/';
+  // Root-relative links from notifications get the base path (no-op on the live domain)
+  const clickAction = rawClickAction.startsWith('/') && !rawClickAction.startsWith(BASE_PATH + '/')
+    ? BASE_PATH + rawClickAction
+    : rawClickAction;
   
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true })

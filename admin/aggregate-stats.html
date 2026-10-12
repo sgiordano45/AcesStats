@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<script type="module" src="../js/core/preview-guard.js"></script>
+<link rel="manifest" href="../manifest.json">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#2d5016">
+<meta name="robots" content="noindex">
+<title>Aggregate stats - Admin - Mountainside Aces</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="../css/tokens.css">
+<link rel="stylesheet" href="../css/base.css">
+<link rel="stylesheet" href="../css/components.css">
+<link rel="stylesheet" href="../mobile-enhancements.css">
+<link rel="stylesheet" href="../css/admin.css">
+<link rel="stylesheet" href="../css/admin-stats.css">
+</head>
+<body class="aces-v2 adm">
+
+<!-- admin/aggregate-stats.html: rebuild season and career totals from game stats (js/admin/aggregate-stats.js). -->
+
+<div class="adm-shell aces-container" data-page-content>
+  <aside class="adm-side" id="adminSide" aria-label="Admin tools">
+    <div class="adm-filter">
+      <input class="aces-input" id="adminFilter" type="search" placeholder="Find a tool..." aria-label="Find a tool" autocomplete="off">
+    </div>
+    <nav id="adminNav"></nav>
+  </aside>
+
+  <main class="adm-main" id="main">
+    <header class="aces-page-head">
+      <div>
+        <span class="aces-page-kicker" id="adminWho">Admin</span>
+        <h1 class="aces-page-title">Aggregate stats</h1>
+      </div>
+      <div class="stp-controls">
+        <span class="aces-select-wrap"><select class="aces-select" id="seasonSelect" aria-label="Season"></select></span>
+        <button class="aces-btn adm-menu-btn" id="adminMenuBtn" type="button" aria-controls="adminSide">All tools</button>
+      </div>
+    </header>
+
+    <p class="stp-intro">Turns every game's stats into season and career totals, then builds what other pages read from them. After each week: preview, run in test mode, check it, then run for real. The <a href="stats.html">stats pipeline</a> shows which steps are due.</p>
+
+    <label class="agg-test-toggle">
+      <input type="checkbox" id="testModeCheckbox">
+      <span><strong>Test mode</strong><span class="sse-dim">Season aggregation writes to <code>aggregatedPlayerStats_test</code> instead of production.</span></span>
+    </label>
+    <div class="aces-notice is-warning agg-test-banner" id="testModeBanner" role="status" hidden>
+      <div><strong>Test mode is on.</strong> The season aggregation below won't touch production. The other tools on this page still write to their usual places.</div>
+    </div>
+
+    <!-- 1. Season aggregation -->
+    <section class="aces-card agg-card">
+      <div class="agg-head">
+        <span class="stp-num" aria-hidden="true">1</span>
+        <div>
+          <h2 class="aces-card-title">Aggregate <span data-season-name></span></h2>
+          <p class="sse-sub">Adds up every player's game stats for the season (batting, pitching, splits, acesBPI) and updates career totals. Preview first; it changes nothing.</p>
+        </div>
+      </div>
+      <div class="sse-actions">
+        <button class="aces-btn" id="previewSeasonBtn" type="button" data-run="previewGameBasedSeason">Preview</button>
+        <button class="aces-btn is-primary" id="aggregateSeasonBtn" type="button" data-run="aggregateGameBasedSeason">Aggregate Season</button>
+      </div>
+      <div class="aces-stats agg-tiles" id="seasonStatsDisplay" style="display: none;">
+        <div class="aces-stat"><span class="aces-stat-value" id="playersWithGames">0</span><span class="aces-stat-label">Players found</span></div>
+        <div class="aces-stat"><span class="aces-stat-value" id="totalGamesProcessed">0</span><span class="aces-stat-label">Games</span></div>
+        <div class="aces-stat"><span class="aces-stat-value" id="battingUpdated">0</span><span class="aces-stat-label">Batting updated</span></div>
+        <div class="aces-stat"><span class="aces-stat-value" id="pitchingUpdated">0</span><span class="aces-stat-label">Pitching updated</span></div>
+      </div>
+      <div id="teamSummaryDisplay" style="display: none;">
+        <h3 class="tr-sub">Stats in by team</h3>
+        <div class="aces-table-wrap"><table class="aces-table agg-teams">
+          <thead><tr><th scope="col">Team</th><th scope="col" class="is-num">Players</th><th scope="col" class="is-num">Games played</th><th scope="col" class="is-num">Stats in</th><th scope="col" class="is-num">Missing</th></tr></thead>
+          <tbody id="teamSummaryBody"></tbody>
+        </table></div>
+      </div>
+    </section>
+
+    <!-- 2. After aggregating -->
+    <section class="aces-card agg-card">
+      <div class="agg-head">
+        <span class="stp-num" aria-hidden="true">2</span>
+        <div>
+          <h2 class="aces-card-title">Then build these</h2>
+          <p class="sse-sub">Each reads the game stats or the production totals, so run them after a production aggregation. All are safe to run again.</p>
+        </div>
+      </div>
+
+      <div class="agg-tool">
+        <div class="agg-tool-head">
+          <div>
+            <h3 class="tr-h">bWAR for <span data-season-name></span></h3>
+            <p class="sse-sub">Writes <code>bwar</code> (with <code>bwarMethod</code>) and <code>bwarSimp</code> on each player's season in <code>aggregatedPlayerStats</code>. Weights: BB 0.30, 1B 0.46, 2B 0.75, 3B 1.02, HR 1.40. From 2026 Fall on, real 2B and 3B (any team missing them has its non-HR hits split at the other teams' rates). Earlier seasons stay simplified: 0.70 for every non-HR hit. Replacement 50% of league average; at least 20 PA; RPW 0.5 x R/G.</p>
+          </div>
+          <div class="sse-actions">
+            <button class="aces-btn" id="bwarPreviewBtn" type="button" data-run="runBWARCalculator" data-arg="true">Preview</button>
+            <button class="aces-btn is-primary" id="bwarWriteBtn" type="button" data-run="runBWARCalculator" data-arg="false">Write bWAR</button>
+          </div>
+        </div>
+        <label class="agg-check"><input type="checkbox" id="bwarHistoricalRPW"> <span>Use historical R/G for RPW (all fall or all summer seasons) instead of this season's games only</span></label>
+        <div class="aces-stats agg-tiles" id="bwarStatsDisplay" style="display: none;">
+          <div class="aces-stat"><span class="aces-stat-value" id="bwarPlayersCalc">0</span><span class="aces-stat-label">Players</span></div>
+          <div class="aces-stat"><span class="aces-stat-value" id="bwarQualified">0</span><span class="aces-stat-label">Qualified (20+ PA)</span></div>
+          <div class="aces-stat"><span class="aces-stat-value" id="bwarWritten">0</span><span class="aces-stat-label">Written</span></div>
+          <div class="aces-stat"><span class="aces-stat-value" id="bwarLeagueAvgDisplay">-</span><span class="aces-stat-label">League wOBA</span></div>
+          <div class="aces-stat"><span class="aces-stat-value" id="bwarRPWDisplay">-</span><span class="aces-stat-label">RPW</span></div>
+          <div class="aces-stat agg-wide"><span class="agg-src" id="bwarRPWSource">-</span><span class="aces-stat-label">R/G source</span></div>
+        </div>
+      </div>
+
+      <div class="agg-tool">
+        <div class="agg-tool-head">
+          <div>
+            <h3 class="tr-h">Box scores for <span data-season-name></span></h3>
+            <p class="sse-sub">One <code>gameBoxScores</code> doc per game, so game recaps load in a single read.</p>
+          </div>
+          <div class="sse-actions">
+            <button class="aces-btn" id="boxScorePreviewBtn" type="button" data-run="runBoxScoreBuilder" data-arg="true">Preview</button>
+            <button class="aces-btn is-primary" id="boxScoreWriteBtn" type="button" data-run="runBoxScoreBuilder" data-arg="false">Write box scores</button>
+          </div>
+        </div>
+        <div class="aces-stats agg-tiles" id="boxScoreStatsDisplay" style="display: none;">
+          <div class="aces-stat"><span class="aces-stat-value" id="boxScoreGames">0</span><span class="aces-stat-label">Games</span></div>
+          <div class="aces-stat"><span class="aces-stat-value" id="boxScoreRows">0</span><span class="aces-stat-label">Player rows</span></div>
+          <div class="aces-stat"><span class="aces-stat-value" id="boxScoreWritten">0</span><span class="aces-stat-label">Written</span></div>
+        </div>
+      </div>
+
+      <div class="agg-tool">
+        <div class="agg-tool-head">
+          <div>
+            <h3 class="tr-h">Hit streaks, all seasons</h3>
+            <p class="sse-sub">Finds hitting streaks of 5+ games across season boundaries and writes new ones to <code>hitStreaks</code>. Doesn't use the season above.</p>
+          </div>
+          <div class="sse-actions">
+            <button class="aces-btn" id="streakPreviewBtn" type="button" data-run="runStreakCalculator" data-arg="true">Preview</button>
+            <button class="aces-btn is-primary" id="streakWriteBtn" type="button" data-run="runStreakCalculator" data-arg="false">Write streaks</button>
+          </div>
+        </div>
+        <div class="aces-stats agg-tiles" id="streakStatsDisplay" style="display: none;">
+          <div class="aces-stat"><span class="aces-stat-value" id="streakPlayersChecked">0</span><span class="aces-stat-label">Players</span></div>
+          <div class="aces-stat"><span class="aces-stat-value" id="streakNotable">0</span><span class="aces-stat-label">5+ games</span></div>
+          <div class="aces-stat"><span class="aces-stat-value" id="streakWritten">0</span><span class="aces-stat-label">Written</span></div>
+          <div class="aces-stat"><span class="aces-stat-value" id="streakSkipped">0</span><span class="aces-stat-label">Updated</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Maintenance -->
+    <h2 class="adm-heading">Fixes and older seasons</h2>
+
+    <details class="aces-card agg-more">
+      <summary><span class="tr-h">Recalculate every career</span> <span class="sse-dim">only if totals get out of sync</span></summary>
+      <div class="tr-sec-body">
+        <p class="sse-sub">Rebuilds career totals for all players from their season records. Verify checks the collection without changing it.</p>
+        <div class="sse-actions">
+          <button class="aces-btn" id="verifyBtn" type="button" data-run="verifyAggregation">Verify collection</button>
+          <button class="aces-btn is-danger" id="aggregateBtn" type="button" data-run="runFullAggregation">Recalculate All Careers</button>
+        </div>
+        <div class="aces-stats agg-tiles" id="fullStatsDisplay" style="display: none;">
+          <div class="aces-stat"><span class="aces-stat-value" id="playersProcessed">0</span><span class="aces-stat-label">Processed</span></div>
+          <div class="aces-stat"><span class="aces-stat-value" id="legacyCount">0</span><span class="aces-stat-label">Legacy</span></div>
+          <div class="aces-stat"><span class="aces-stat-value" id="authCount">0</span><span class="aces-stat-label">Signed-up players</span></div>
+          <div class="aces-stat"><span class="aces-stat-value" id="skippedCount">0</span><span class="aces-stat-label">Skipped</span></div>
+          <div class="aces-stat"><span class="aces-stat-value" id="errorCount">0</span><span class="aces-stat-label">Errors</span></div>
+        </div>
+      </div>
+    </details>
+
+    <details class="aces-card agg-more">
+      <summary><span class="tr-h">Merge two player records</span> <span class="sse-dim">duplicate IDs</span></summary>
+      <div class="tr-sec-body">
+        <p class="sse-sub">Copies every <code>playerStats/{source}/games</code> and <code>/seasons</code> doc into the target, then marks the source's aggregated doc <code>migrated: true</code> so it's skipped everywhere. Nothing is deleted; remove the source in the Firestore console once it looks right.</p>
+        <div class="agg-merge">
+          <div class="aces-field"><label class="aces-label" for="mergeSourceId">Source ID (retire)</label><input class="aces-input agg-mono" id="mergeSourceId" type="text" placeholder="tim_o'grady" autocomplete="off"></div>
+          <div class="aces-field"><label class="aces-label" for="mergeTargetId">Target ID (keep)</label><input class="aces-input agg-mono" id="mergeTargetId" type="text" placeholder="tim_ogrady" autocomplete="off"></div>
+        </div>
+        <div class="sse-actions">
+          <button class="aces-btn" type="button" data-run="runMergePlayer" data-arg="true">Preview merge</button>
+          <button class="aces-btn is-danger" type="button" data-run="runMergePlayer" data-arg="false">Merge</button>
+        </div>
+        <div class="aces-stats agg-tiles" id="mergeStatsDisplay" style="display: none;">
+          <div class="aces-stat"><span class="aces-stat-value" id="mergeGamesCopied">0</span><span class="aces-stat-label">Games copied</span></div>
+          <div class="aces-stat"><span class="aces-stat-value" id="mergeSeasonsCopied">0</span><span class="aces-stat-label">Seasons copied</span></div>
+          <div class="aces-stat"><span class="aces-stat-value" id="mergeAggMarked">-</span><span class="aces-stat-label">Source marked</span></div>
+        </div>
+      </div>
+    </details>
+
+    <details class="aces-card agg-more">
+      <summary><span class="tr-h">2025 splits</span> <span class="sse-dim">partial game data</span></summary>
+      <div class="tr-sec-body">
+        <p class="sse-sub">2025 has game stats for only some teams, so it builds splits (home/away, playoff, vs opponent) into <code>aggregatedPlayerStats2025Splits</code>. Production totals, acesBPI and careers are not touched.</p>
+        <div class="sse-actions">
+          <span class="aces-select-wrap"><select class="aces-select" id="season2025Select" aria-label="2025 season">
+            <option value="">Pick a 2025 season</option>
+            <option value="2025-summer">2025 Summer</option>
+            <option value="2025-fall">2025 Fall</option>
+          </select></span>
+          <button class="aces-btn" id="preview2025Btn" type="button" data-run="preview2025Splits">Preview</button>
+          <button class="aces-btn is-primary" id="aggregate2025Btn" type="button" data-run="aggregate2025Splits">Aggregate 2025 Splits</button>
+        </div>
+        <div class="aces-stats agg-tiles" id="splits2025StatsDisplay" style="display: none;">
+          <div class="aces-stat"><span class="aces-stat-value" id="splits2025Players">0</span><span class="aces-stat-label">Players</span></div>
+          <div class="aces-stat"><span class="aces-stat-value" id="splits2025Games">0</span><span class="aces-stat-label">Games</span></div>
+          <div class="aces-stat"><span class="aces-stat-value" id="splits2025Updated">0</span><span class="aces-stat-label">Updated</span></div>
+        </div>
+      </div>
+    </details>
+
+    <!-- Log -->
+    <section class="agg-log">
+      <div class="agg-log-head">
+        <h2 class="adm-heading">Log</h2>
+        <button class="aces-btn is-sm is-ghost" type="button" data-run="clearOutput">Clear</button>
+      </div>
+      <div id="output" class="agg-output" role="log" aria-live="polite"></div>
+    </section>
+  </main>
+</div>
+
+<script type="module" src="../js/admin/aggregate-stats.js"></script>
+</body>
+</html>

@@ -86,6 +86,290 @@ export function getFilteredNavStructure() {
   return filtered;
 }
 
+// ===========================================================================
+// v2.0 NAV TREE
+// One tree of hubs -> tabs -> pages, read by the v2.0 header, hub tabs and
+// mobile bottom bar. Icons are names from icons.svg (see js/ui/icons.js).
+//
+// A page:  { id, href, label, icon, role?, signedIn?, phase?, also?, external? }
+//   id      matches the doc ID in Firestore siteConfig/navigation/pages, so
+//           { visible: false } there still hides it. Keep IDs stable.
+//   role    a hasRole() name or list ('team-staff', 'captain', 'league-staff',
+//           'admin', or a specialRoles key). Implies signedIn.
+//   phase   'regular' | 'playoffs' | 'offseason' (or a list): shown only then.
+//   ignoreSiteConfig  list it whatever siteConfig/navigation/pages says.
+//   also    other pages that belong here: no tab of their own, but opening
+//           one highlights this tab (detail pages, pages merged in Phase 3).
+// A tab is a page, or a group { key, label, icon, pages: [...] } that shows a
+// second row of tabs. A group's row is the tab set its merged page gets in
+// Phase 3; it links to its first visible page.
+// ===========================================================================
+
+const CONTRIBUTOR_ROLES = ['contributor', 'photographer', 'oddsmaker', 'eulogist', 'mediaManager', 'league-staff'];
+
+export const NAV_HUBS = [
+  {
+    id: 'season', label: 'Season', icon: 'calendar',
+    tabs: [
+      { id: 'current-season', href: 'current-season.html', label: 'Standings', icon: 'list',
+        also: ['current-season-team.html', 'season.html'] },
+      { id: 'schedule', href: 'schedule.html', label: 'Schedule', icon: 'calendar-days' },
+      // Playoffs: the phase limits when each page can show; Bracket, Clinching and
+      // Championship preview are also switched on by hand in siteConfig/navigation/pages
+      // (late regular season / once the final is set). Projections runs all regular season.
+      { key: 'playoffs', label: 'Playoffs', icon: 'trophy', pages: [
+        { id: 'playoffs', href: 'playoffs.html', label: 'Bracket', icon: 'trophy', phase: ['regular', 'playoffs'] },
+        { id: 'projections', href: 'projections.html', label: 'Projections', icon: 'trending-up', phase: 'regular',
+          also: ['playoff-clinching.html'] },
+        { id: 'champ-preview', href: 'championship-preview.html', label: 'Championship preview', icon: 'crown', phase: 'playoffs' },
+      ] },
+      { id: 'weekend-preview', href: 'weekend-preview.html', label: 'Preview', icon: 'binoculars',
+        also: ['game-preview.html', 'game-recap.html'] },
+      { id: 'stream', href: 'media.html#live', label: 'Live', icon: 'radio' },
+      { id: 'league-rules', href: 'league-rules.html', label: 'Rules', icon: 'scale',
+        also: ['rule-proposals.html', 'rule-review.html'] },
+      { id: 'activity', href: 'activity.html', label: 'Activity', icon: 'activity' },
+      // Offseason planning: admin and league staff only, in any phase, so they
+      // can prepare before the offseason starts. Listed whatever
+      // siteConfig/navigation/pages says (the old nav still reads those docs).
+      { key: 'offseason', label: 'Offseason', icon: 'snowflake', pages: [
+        { id: 'offseason-hub', href: 'offseason.html', label: 'Offseason hub', icon: 'snowflake', role: 'league-staff', ignoreSiteConfig: true },
+        { id: 'offseason-schedule', href: 'admin/schedule.html', also: ['offseason-schedule.html'], label: 'Schedule', icon: 'calendar-days', role: 'league-staff', ignoreSiteConfig: true },
+        { id: 'offseason-roster', href: 'offseason-roster.html', label: 'Rosters', icon: 'users', role: 'league-staff', ignoreSiteConfig: true },
+        { id: 'draft', href: 'draft.html', label: 'Draft', icon: 'shuffle', role: 'league-staff', ignoreSiteConfig: true },
+        { id: 'countdown', href: 'admin/countdown.html', label: 'Countdown', icon: 'timer', role: 'league-staff', ignoreSiteConfig: true },
+      ] },
+    ],
+  },
+  {
+    id: 'stats', label: 'Stats', icon: 'chart-bar',
+    tabs: [
+      { id: 'batting', href: 'batting.html', label: 'Batting', icon: 'bat' },
+      { id: 'pitching', href: 'pitching.html', label: 'Pitching', icon: 'softball' },
+      { id: 'leaders', href: 'leaders.html', label: 'Leaders', icon: 'crown',
+        also: ['milestones.html', 'pitching_leaders.html'] },
+      { id: 'compare', href: 'compare.html', label: 'Compare', icon: 'arrow-left-right',
+        also: ['team_compare.html', 'h2h_grid.html'] },
+      { id: 'explore', href: 'explore.html', label: 'Explore', icon: 'search',
+        also: ['query-stats.html', 'charts.html'] },
+      { id: 'team-stats', href: 'teams.html?tab=stats', label: 'Team stats', icon: 'table' },
+      { id: 'scouting-report', href: 'scouting-report.html', label: 'Scouting', icon: 'binoculars', signedIn: true,
+        also: ['team-scouting-report.html'] },
+    ],
+  },
+  {
+    id: 'teams', label: 'Teams & Players', shortLabel: 'Teams', icon: 'users',
+    tabs: [
+      { id: 'teams', href: 'teams.html', label: 'Teams', icon: 'shield',
+        also: ['team.html', 'team-stats.html'] },
+      { id: 'players', href: 'players.html', label: 'Players', icon: 'user',
+        also: ['player.html', 'pitcher.html', 'player-splits.html', 'admin/card-export.html'] },
+      { id: 'roster-tracker', href: 'roster-tracker.html', label: 'Roster tracker', icon: 'clipboard' },
+      { id: 'directory', href: 'aces-directory.html', label: 'Directory', icon: 'id-card', signedIn: true },
+    ],
+  },
+  {
+    id: 'history', label: 'History', icon: 'scroll',
+    tabs: [
+      { id: 'seasons', href: 'seasons.html', label: 'Seasons', icon: 'calendar' },
+      { id: 'champions', href: 'champions.html', label: 'Champions', icon: 'trophy',
+        also: ['playoff-history.html'] },
+      { key: 'awards', label: 'Awards', icon: 'award', pages: [
+        { id: 'awards', href: 'league-history.html?tab=awards', label: 'Awards', icon: 'award' },
+        { id: 'aceys-2026', href: 'aceys-2026.html', label: 'Aceys 2026', icon: 'star' },
+      ] },
+      { id: 'recap', href: 'recap.html', label: 'Year in review', icon: 'book', phase: 'offseason' },
+      { id: 'wrapped', href: 'aces-wrapped.html', label: 'Wrapped', icon: 'sparkles', phase: 'offseason', signedIn: true },
+      { id: 'trophy-case', href: 'trophy-case.html', label: 'Trophy case', icon: 'medal',
+        also: ['badge-weekly.html'] },
+      { id: 'violations', href: 'violations.html', label: 'Wall of Shame', icon: 'flame' },
+      { id: 'history', href: 'league-history.html', label: 'League history', icon: 'scroll',
+        also: ['awards.html'] },
+      { id: 'media', href: 'media.html', label: 'Media', icon: 'images',
+        also: ['pictures.html', 'stream.html', 'photo-upload.html'] },
+    ],
+  },
+  {
+    id: 'play', label: 'Play', icon: 'gamepad',
+    tabs: [
+      { id: 'games', href: 'games.html', label: 'Games', icon: 'puzzle',
+        also: ['aces-wordle.html', 'immaculate-grid.html', 'higher-lower.html', 'who-am-i.html',
+               'aces-connections.html', 'roster-recall.html', 'aces-23-0.html'] },
+      { id: 'pickem', href: 'pickem.html', label: "Pick'em", icon: 'check-circle', signedIn: true },
+      { id: 'aces-dfs', href: 'dfs.html', label: 'DFS', icon: 'dice', signedIn: true,
+        also: ['dfs-week.html'] },
+      { id: 'side-bets', href: 'side-bets.html', label: 'Side bets', icon: 'handshake', signedIn: true },
+    ],
+  },
+  {
+    // Help: not one of the five hubs in the bar. It opens from the ? button in
+    // the header (and the More sheet on phones) and gets its own tab row.
+    id: 'help', label: 'Help', icon: 'help', utility: true,
+    tabs: [
+      { id: 'help', href: 'help.html', label: 'Help center', icon: 'help',
+        also: ['aces-features-guide.html', 'profile-setup-guide.html', 'mountainside-aces-signup-guide.html',
+          'scoring-guide.html', 'calendar-export-guide.html', 'game-tracker-guide.html', 'captain-guide.html',
+          'contributor-guide.html', 'league-staff-guide.html', 'offseason-guide.html'] },
+    ],
+  },
+];
+
+// The avatar menu ("Me"). Sections show only when one of their pages does.
+
+export const ME_MENU = [
+  {
+    key: 'me', label: null, pages: [
+      { id: 'profile', href: 'me.html#profile', label: 'Profile', icon: 'user', signedIn: true,
+        also: ['profile.html', 'profile-fan.html'] },
+      { id: 'dashboard', href: 'me.html', label: 'Dashboard', icon: 'grid', signedIn: true,
+        also: ['my-dashboard.html'] },
+      { id: 'favorites', href: 'me.html#favorites', label: 'Favorites', icon: 'star', signedIn: true,
+        also: ['favorites.html'] },
+      { id: 'notifications', href: 'me.html#notifications', label: 'Notifications', icon: 'bell', signedIn: true },
+      { id: 'photo-upload', href: 'media.html#upload', label: 'Upload photos', icon: 'upload', signedIn: true,
+        role: ['team-staff', 'league-staff', 'photographer'] },
+    ],
+  },
+  {
+    key: 'team', label: 'My team', pages: [
+      { id: 'submit-score', href: 'submit-score.html', label: 'Submit scores', icon: 'hash', role: 'team-staff' },
+      { id: 'submit-stats', href: 'submit-stats.html', label: 'Submit stats', icon: 'calculator', role: 'team-staff' },
+      { id: 'game-tracker', href: 'game-tracker.html', label: 'Game tracker', icon: 'clipboard', role: 'team-staff' },
+      { id: 'roster-management', href: 'roster-management.html', label: 'Roster management', icon: 'users', role: 'team-staff' },
+      { id: 'captain-roster-edit', href: 'captain-roster-edit.html', label: 'Edit roster', icon: 'edit', role: 'team-staff' },
+      { id: 'manage-team', href: 'manage-team.html', label: 'Manage team', icon: 'settings', role: 'team-staff' },
+      { id: 'team-scouting-report', href: 'scouting-report.html?tab=team', label: 'Team scouting report', icon: 'binoculars', role: 'captain' },
+      { id: 'send-notifications', href: 'notifications.html', label: 'Send notifications', icon: 'megaphone', role: 'captain' },
+    ],
+  },
+  {
+    key: 'contributor', label: 'Contributor', pages: [
+      { id: 'contributor', href: 'contributor.html', label: 'Contributor dashboard', icon: 'sparkles', role: CONTRIBUTOR_ROLES },
+    ],
+  },
+  {
+    key: 'staff', label: 'League staff', pages: [
+      { id: 'commissioner-hub', href: 'admin/commissioner-hub.html', label: 'Commissioner hub', icon: 'megaphone', role: 'league-staff' },
+      { id: 'league-staff-admin', href: 'admin/league-staff.html', label: 'League staff admin', icon: 'shield', role: 'league-staff' },
+      { id: 'aceys-admin', href: 'admin/aceys.html', label: 'Aceys admin', icon: 'award', role: 'league-staff' },
+    ],
+  },
+  {
+    key: 'admin', label: 'Admin', pages: [
+      { id: 'admin-hub', href: 'admin/index.html', label: 'Admin', icon: 'settings', role: 'league-staff', also: ['admin-pages.html'] },
+      { id: 'admin-view-as', href: 'admin/view-as.html', label: 'View As', icon: 'eye', role: 'admin' },
+    ],
+  },
+  {
+    key: 'more', label: null, pages: [
+      { id: 'feature-submit', href: 'feature-submit.html', label: 'Feedback', icon: 'message' },
+      { id: 'aces-shop', href: 'https://acesmountainside.com/', label: 'Aces Shop', icon: 'external-link', external: true },
+    ],
+  },
+];
+
+export const NAV_HOME = { id: 'home', href: 'index.html', label: 'Home', icon: 'home' };
+
+// Mobile bottom bar, left to right. 'more' opens a sheet with MORE_SHEET.
+export const MOBILE_BAR = ['home', 'season', 'stats', 'teams', 'me'];
+export const MORE_SHEET = ['history', 'play', 'help'];
+
+// Pages that are deliberately in no hub: sign-in flow, admin tools (reached
+// from the Admin Hub), hidden pages, and pages due to be deleted.
+export const NAV_UNLISTED = {
+  noNav: ['signin.html', 'signup.html', 'reset-password.html', 'verify-email.html', 'offline.html'],
+  hidden: ['boxes-pool.html', 'link-player.html', 'player-questionnaire.html'],
+  adminTools: ['admin/aggregate-stats.html', 'approve-links.html', 'captain-questionnaire-review.html',
+    'admin/games.html', 'admin/schedule-editor.html', 'admin/player-import.html', 'admin/playoff-eligibility.html',
+    'schedule-balancer.html', 'admin/schedule-generator.html', 'admin/schedule-rework.html',
+    'admin/schedule-workshop.html', 'admin/season-setup.html', 'admin/signup-card-export.html', 'admin/wordle.html',
+    'admin/aggregate-stats-legacy.html', 'admin/gc-data-cleaner.html', 'admin/submit-stats-legacy.html', 'bwar-explorer.html'],
+  toDelete: [],
+};
+
+// --- Tree helpers (pure: no Firebase, no DOM) -------------------------------
+
+const isGroup = (tab) => Array.isArray(tab.pages);
+const asList = (v) => (v == null ? [] : Array.isArray(v) ? v : [v]);
+
+/** Every page in the tree (home, hubs, Me menu), each with hubId and tabKey. */
+export function navPages() {
+  const out = [{ ...NAV_HOME, hubId: 'home', tabKey: 'home' }];
+  NAV_HUBS.forEach((hub) => hub.tabs.forEach((tab) => {
+    if (isGroup(tab)) tab.pages.forEach((p) => out.push({ ...p, hubId: hub.id, tabKey: tab.key }));
+    else out.push({ ...tab, hubId: hub.id, tabKey: tab.id });
+  }));
+  ME_MENU.forEach((sec) => sec.pages.forEach((p) => out.push({ ...p, hubId: 'me', tabKey: sec.key })));
+  return out;
+}
+
+/** File name of a URL or path: '/AcesStatsv2.0/' -> 'index.html', '/AcesStatsv2.0/admin/' -> 'admin/index.html'. */
+export function pageFile(pathOrUrl = (typeof location !== 'undefined' ? location.pathname : '')) {
+  const path = String(pathOrUrl).split(/[?#]/)[0];
+  const file = path.slice(path.lastIndexOf('/') + 1) || 'index.html';
+  // Pages in the /admin/ folder are listed as 'admin/<file>'.
+  return /\/admin\/[^/]*$/.test(path) ? `admin/${file}` : file;
+}
+
+/**
+ * Where a page sits: { hubId, tabKey, pageId } or null for unlisted pages.
+ * hubId is 'home', a hub id or 'me'. For a page listed under `also`, pageId
+ * is the page it belongs to.
+ */
+export function locatePage(pathOrUrl) {
+  const file = pageFile(pathOrUrl);
+  for (const p of navPages()) {
+    if (p.external) continue;
+    if (p.href === file || asList(p.also).includes(file)) {
+      return { hubId: p.hubId, tabKey: p.tabKey, pageId: p.id };
+    }
+  }
+  return null;
+}
+
+/**
+ * Whether a page shows for this viewer.
+ * ctx: { signedIn, profile, phase, hasRole(profile, role), isVisible(id), currentId }
+ * The page being viewed (currentId) skips the siteConfig and phase checks, so
+ * its tab is there even while it is hidden or out of phase for everyone else.
+ * Sign-in and role checks still apply to it.
+ */
+export function pageAllowed(page, ctx = {}) {
+  const { signedIn = false, profile = null, phase = null, hasRole = null, isVisible = null, currentId = null } = ctx;
+  const isCurrent = !!currentId && page.id === currentId;
+  if ((page.signedIn || page.role) && !signedIn) return false;
+  if (page.role && !(hasRole && hasRole(profile, page.role))) return false;
+  if (isCurrent) return true;
+  if (isVisible && !page.ignoreSiteConfig && !isVisible(page.id)) return false;
+  if (page.phase && !asList(page.phase).includes(phase)) return false;
+  return true;
+}
+
+/**
+ * The tree pruned for one viewer: { home, hubs, me }. Groups keep only their
+ * allowed pages and link to the first; empty groups, tabs and Me sections are
+ * dropped. Hubs stay even when empty, so the bar never shifts.
+ */
+export function buildNav(ctx = {}) {
+  const hubs = NAV_HUBS.map((hub) => {
+    const tabs = hub.tabs.map((tab) => {
+      if (!isGroup(tab)) return pageAllowed(tab, ctx) ? tab : null;
+      const pages = tab.pages.filter((p) => pageAllowed(p, ctx));
+      return pages.length ? { ...tab, pages, href: pages[0].href } : null;
+    }).filter(Boolean);
+    return { ...hub, tabs, href: tabs[0]?.href || null };
+  });
+  const me = ME_MENU
+    .map((sec) => ({ ...sec, pages: sec.pages.filter((p) => pageAllowed(p, ctx)) }))
+    .filter((sec) => sec.pages.length);
+  return { home: NAV_HOME, hubs, me };
+}
+
+// ===========================================================================
+// LEGACY: the four-tier structure below is read by nav-component.js until
+// push 5b replaces it with the header built on the tree above.
+// ===========================================================================
+
 export const NAV_STRUCTURE = {
   // Tier 1: PRIMARY - Core pages (always visible on desktop)
   primary: [
@@ -106,36 +390,28 @@ export const NAV_STRUCTURE = {
     { id: 'stream', href: 'stream.html', label: 'Live Stream', icon: '📹', priority: 2 },
     { id: 'playoffs', href: 'playoffs.html', label: 'Playoff Bracket', icon: '🥇', priority: 2 },
     { id: 'projections', href: 'projections.html', label: 'Playoff Projections', icon: '🎱', priority: 2 },
-    { id: 'clinching', href: 'playoff-clinching.html', label: 'Playoff Clinching', icon: '🔒', priority: 2 },
-    { id: 'bracket', href: 'bracket.html', label: 'Create your own Playoff bracket', icon: '🔭', priority: 2 },
+    { id: 'clinching', href: 'projections.html?tab=clinching', label: 'Playoff Clinching', icon: '🔒', priority: 2 },
     { id: 'seasons', href: 'seasons.html', label: 'All Seasons', icon: '📅', priority: 2 },
     { id: 'champions', href: 'champions.html', label: 'Champions', icon: '🏆', priority: 2 },
     { id: 'recap', href: 'recap.html', label: 'Year in Review', icon: '📖', priority: 2 },
     { id: 'leaders', href: 'leaders.html', label: 'Career Leaders', icon: '👑', priority: 2 },
-    { id: 'awards', href: 'awards.html', label: 'Awards', icon: '🏅', priority: 2 },
+    { id: 'awards', href: 'league-history.html?tab=awards', label: 'Awards', icon: '🏅', priority: 2 },
     { id: 'games', href: 'games.html', label: 'Daily Games', icon: '🎮', priority: 2 },
     { id: 'trophy-case', href: 'trophy-case.html', label: 'Trophy Case', icon: '🏅', priority: 2 },
   ],
 
   // Tier 3: TERTIARY - Specialty pages (mobile-only unless contextually relevant)
   tertiary: [
-    { id: 'milestones', href: 'milestones.html', label: 'Milestones', icon: '🎯', priority: 3 },
-    { id: 'compare', href: 'compare.html', label: 'Player Comparison', icon: '🔀', priority: 3 },
-    { id: 'team-compare', href: 'team_compare.html', label: 'Team Comparison', icon: '🆚', priority: 3 },
-    { id: 'h2h', href: 'h2h_grid.html', label: 'Head-to-Head Grid', icon: '⚔️', priority: 3 },
+    { id: 'compare', href: 'compare.html', label: 'Compare', icon: '🔀', priority: 3 },
     { id: 'history', href: 'league-history.html', label: 'League History', icon: '📜', priority: 3 },
-    { id: 'charts', href: 'charts.html', label: 'Performance Charts', icon: '📊', priority: 3 },
+    { id: 'explore', href: 'explore.html', label: 'Explore', icon: '📊', priority: 3 },
     { id: 'team-stats', href: 'team-stats.html', label: 'Team Stats', icon: '🏟️', priority: 3 },
     { id: 'scouting-report', href: 'scouting-report.html', label: 'Scouting Report', icon: '🔭', priority: 3 },
-    { id: 'query-stats', href: 'query-stats.html', label: 'Stats Query Tool', icon: '🔍', priority: 3 },
     { id: 'pictures', href: 'pictures.html', label: 'Gallery', icon: '📷', priority: 3 },
     { id: 'media', href: 'media.html', label: 'Media Hub', icon: '📺', priority: 3 },
-    { id: 'rule-proposal', href: 'rule-proposals.html', label: 'Rule Proposals', icon: '📋', priority: 3 },
-    { id: 'rule-review', href: 'rule-review.html', label: 'Rule Review', icon: '📝', priority: 3 },
     { id: 'aceys-2026', href: 'aceys-2026.html', label: 'The Aceys 2026', icon: '🏆', priority: 3 },
     { id: 'aces-23-0', href: 'aces-23-0.html', label: '23-0', icon: '🎰', priority: 3 },
     { id: 'champ-preview', href: 'championship-preview.html', label: 'Championship Preview', icon: '🎊', priority: 3 },
-    { id: 'playoff-history', href: 'playoff-history.html', label: 'Playoff History', icon: '🗂️', priority: 3 },
     { id: 'feature-submit', href: 'feature-submit.html', label: 'Submit Feedback', icon: '💡', priority: 3 },
     { id: 'help', href: 'help.html', label: 'Help Center', icon: '📚', priority: 3 },
     { id: 'roster-tracker', href: 'roster-tracker.html', label: 'Roster Tracker', icon: '📋', priority: 3 },
@@ -145,10 +421,10 @@ export const NAV_STRUCTURE = {
   
   // Tier 4: AUTH - User-specific pages (only visible when authenticated)
   auth: [
-    { id: 'dashboard', href: 'my-dashboard.html', label: 'My Dashboard', icon: '📋', priority: 4, requiresAuth: true },
+    { id: 'dashboard', href: 'me.html', label: 'My Dashboard', icon: '📋', priority: 4, requiresAuth: true },
     { id: 'profile', href: 'profile.html', label: 'My Profile', icon: '👤', priority: 4, requiresAuth: true },
     { id: 'contributor', href: 'contributor.html', label: 'Contributor Dashboard', icon: '✨', priority: 4, requiresAuth: true, requiresRole: 'contributor' },
-    { id: 'favorites', href: 'favorites.html', label: 'Favorites', icon: '⭐', priority: 4, requiresAuth: true },
+    { id: 'favorites', href: 'me.html#favorites', label: 'Favorites', icon: '⭐', priority: 4, requiresAuth: true },
     { id: 'side-bets', href: 'side-bets.html', label: 'Side Bets', icon: '🎲', priority: 4, requiresAuth: true },
     { id: 'aces-dfs', href: 'dfs.html', label: 'Aces DFS', icon: '💰', priority: 4, requiresAuth: true },
     { id: 'pickem', href: 'pickem.html', label: "Weekly Pick'em", icon: '✅', priority: 4, requiresAuth: true },
@@ -157,19 +433,18 @@ export const NAV_STRUCTURE = {
     { id: 'captain-guide', href: 'captain-guide.html', label: "Captain's Guide", icon: '👨‍✈️', priority: 4, requiresAuth: true, requiresRole: 'captain' },
     { id: 'captain-roster-edit', href: 'captain-roster-edit.html', label: 'Edit Roster', icon: '✏️', priority: 4, requiresAuth: true, requiresRole: 'captain' },
     { id: 'team-scouting-report', href: 'team-scouting-report.html', label: 'Team Scouting Report', icon: '📋', priority: 4, requiresAuth: true, requiresRole: 'captain' },
-    { id: 'league-staff-admin', href: 'league-staff-admin.html', label: 'League Staff Admin', icon: '⚙️', priority: 4, requiresAuth: true, requiresRole: 'league_staff' },
-    { id: 'commissioner-hub', href: 'commissioner-hub.html', label: 'Commissioner Hub', icon: '📢', priority: 4, requiresAuth: true, requiresRole: 'league_staff' },
+    { id: 'league-staff-admin', href: 'admin/league-staff.html', label: 'League Staff Admin', icon: '⚙️', priority: 4, requiresAuth: true, requiresRole: 'league_staff' },
+    { id: 'commissioner-hub', href: 'admin/commissioner-hub.html', label: 'Commissioner Hub', icon: '📢', priority: 4, requiresAuth: true, requiresRole: 'league_staff' },
     { id: 'directory', href: 'aces-directory.html', label: 'Aces Directory', icon: '📇', priority: 4, requiresAuth: true },
     { id: 'submit-score', href: 'submit-score.html', label: 'Submit Scores', icon: '🔢️', priority: 4, requiresAuth: true },
     { id: 'submit-stats', href: 'submit-stats.html', label: 'Submit Stats', icon: '🧮', priority: 4, requiresAuth: true },
     { id: 'photo-upload', href: 'photo-upload.html', label: 'Upload Photos', icon: '📤️', priority: 4, requiresAuth: true },
     { id: 'offseason-hub', href: 'offseason.html', label: 'Offseason Hub', icon: '🎣️', priority: 4, requiresAuth: true },
     { id: 'aces-shop', href: 'https://acesmountainside.com/', label: 'Aces Shop', icon: '🛒', priority: 4, requiresAuth: true, external: true },
-    { id: 'spray-intake', href: 'admin-spray-intake.html', label: 'Spray Chart Intake', icon: '🎯', priority: 4, requiresAuth: true, requiresRole: 'admin' },
-    { id: 'aceys-voting', href: 'aceys-award-voting.html', label: 'Aceys Award Voting', icon: '🗳️', priority: 4, requiresAuth: true },
-    { id: 'aceys-admin', href: 'admin-aceys.html', label: 'Aceys Admin', icon: '🏆', priority: 4, requiresAuth: true, requiresRole: 'league_staff' },
-    { id: 'admin-hub', href: 'admin-pages.html', label: 'Admin Hub', icon: '🛠️', priority: 4, requiresAuth: true, requiresRole: 'admin' },
-    { id: 'admin-view-as', href: 'admin-view-as.html', label: 'View As User', icon: '🎭', priority: 4, requiresAuth: true, requiresRole: 'admin' },
+    { id: 'spray-intake', href: 'admin/spray-intake.html', label: 'Spray Chart Intake', icon: '🎯', priority: 4, requiresAuth: true, requiresRole: 'admin' },
+    { id: 'aceys-admin', href: 'admin/aceys.html', label: 'Aceys Admin', icon: '🏆', priority: 4, requiresAuth: true, requiresRole: 'league_staff' },
+    { id: 'admin-hub', href: 'admin/index.html', label: 'Admin Hub', icon: '🛠️', priority: 4, requiresAuth: true, requiresRole: 'admin' },
+    { id: 'admin-view-as', href: 'admin/view-as.html', label: 'View As User', icon: '🎭', priority: 4, requiresAuth: true, requiresRole: 'admin' },
   ],
 
   // Public auth pages (signin handles both signin and signup - don't show in nav)
@@ -212,10 +487,6 @@ export const PAGE_CONFIGS = {
     desktop: ['home', 'current-season', 'weekend-preview', 'playoffs', 'projections', 'batting', 'pitching', 'teams']
   },
     
-  'playoff-clinching.html': {
-    desktop: ['home', 'current-season', 'weekend-preview', 'playoffs', 'projections','bracket']
-  },
-  
   'batting.html': {
     desktop: ['home', 'current-season', 'batting', 'pitching', 'players', 'leaders', 'compare', 'charts']
   },
@@ -237,7 +508,7 @@ export const PAGE_CONFIGS = {
   },
   
   'player.html': {
-    desktop: ['home', 'batting', 'pitching', 'players', 'leaders', 'milestones', 'compare']
+    desktop: ['home', 'batting', 'pitching', 'players', 'leaders', 'compare']
   },
   
   'seasons.html': {
@@ -249,7 +520,7 @@ export const PAGE_CONFIGS = {
   },
   
   'leaders.html': {
-    desktop: ['home', 'current-season', 'batting', 'pitching', 'players', 'leaders', 'milestones', 'awards']
+    desktop: ['home', 'current-season', 'batting', 'pitching', 'players', 'leaders', 'awards']
   },
   
   'awards.html': {
@@ -268,33 +539,18 @@ export const PAGE_CONFIGS = {
     desktop: ['home', 'current-season', 'champions', 'awards', 'leaders', 'players']
   },
 
-  'milestones.html': {
-    desktop: ['home', 'batting', 'pitching', 'players', 'leaders', ]
-  },
   
   'compare.html': {
     desktop: ['home', 'batting', 'pitching', 'players', 'leaders', ]
   },
   
-  'team_compare.html': {
-    desktop: ['home', 'teams', 'h2h', 'seasons']
-  },
   
-  'h2h_grid.html': {
-    desktop: ['home', 'current-season', 'teams', 'team-compare', 'history']
-  },
   
   'league-history.html': {
     desktop: ['home', 'current-season', 'teams', 'team-compare', 'h2h']
   },
   
-  'charts.html': {
-    desktop: ['home', 'current-season', 'batting', 'pitching', 'teams', 'players', 'seasons', 'leaders', 'compare', 'team-compare', 'charts']
-  },
   
-  'query-stats.html': {
-    desktop: ['home', 'batting', 'pitching', 'players', 'leaders', 'query-stats']
-  },
   
   'pictures.html': {
     desktop: ['home', 'current-season', 'teams', 'players', 'pictures']
@@ -323,18 +579,6 @@ export const PAGE_CONFIGS = {
 
   'championship-preview.html': {
     desktop: ['home', 'current-season', 'playoffs', 'weekend-preview']
-  },
-
-  'playoff-history.html': {
-    desktop: ['home', 'playoffs', 'seasons', 'champions']
-  },
-
-  'rule-proposals.html': {
-    desktop: ['home', 'league-rules', 'rule-review']
-  },
-
-  'rule-review.html': {
-    desktop: ['home', 'league-rules', 'rule-proposal']
   },
 
   'feature-submit.html': {
@@ -382,23 +626,20 @@ export const PAGE_CONFIGS = {
     desktop: ['home', 'roster-management', 'submit-stats', 'game-tracker']
   },
   
-  'league-staff-admin.html': {
+  'admin/league-staff.html': {
     desktop: []
   },
 
-  'commissioner-hub.html': {
+  'admin/commissioner-hub.html': {
     desktop: []
   },
 
-  'admin-spray-intake.html': {
+  'admin/spray-intake.html': {
     desktop: []
   },
 
-  'aceys-award-voting.html': {
-    desktop: []
-  },
 
-  'admin-aceys.html': {
+  'admin/aceys.html': {
     desktop: []
   },
 

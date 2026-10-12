@@ -1,9 +1,10 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<script type="module" src="js/core/preview-guard.js"></script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Aces Higher or Lower - Mountainside Aces</title>
+<title>Higher or Lower - Mountainside Aces</title>
 <meta name="theme-color" content="#2d5016">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -649,10 +650,13 @@ body {
   }
 }
 </style>
+<link rel="stylesheet" href="css/tokens.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap">
+<link rel="stylesheet" href="css/page-head.css">
 </head>
 <body>
 
-<div class="loading-overlay" id="loadingOverlay">
+<div class="loading-overlay" id="loadingOverlay" data-page-loading>
   <div class="softball-spinner"></div>
 </div>
 
@@ -660,13 +664,17 @@ body {
 <nav id="main-nav"></nav>
 
 <div class="page-container">
-  <div class="page-header">
-    <a href="games.html" class="back-link">← Games</a>
-    <h1>📊 Higher or Lower</h1>
-    <p>Which player has the higher stat?</p>
-    <div class="puzzle-date" id="puzzleDate">Puzzle #1</div>
-    <div class="category-badge" id="categoryBadge">Career Hits</div>
-  </div>
+  <header class="v2-head">
+    <div class="v2-head-main">
+      <span class="v2-head-kicker">Play</span>
+      <h1 class="v2-head-title">Higher or Lower</h1>
+      <p class="v2-head-desc">Which player has the higher stat?</p>
+      <p class="v2-head-meta" id="puzzleDate">Puzzle #1</p>
+    </div>
+    <div class="v2-head-aside">
+      <div class="v2-head-chips"><span id="categoryBadge">Career Hits</span></div>
+    </div>
+  </header>
 
   <div class="game-stats-bar">
     <div class="stat-item">
@@ -780,30 +788,28 @@ body {
 </div>
 
 <script type="module">
+import { initPage, pageReady, showPageError } from './js/core/app.js';
 import { 
   db, 
   collection, 
   getDocs,
   doc,
   getDoc
-} from './firebase-config.js';
+} from './js/core/firebase.js';
 
 import {
   setDoc,
   updateDoc,
   serverTimestamp
-} from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+} from './js/core/firebase.js';
 
 import { 
   getAllPlayerStatsOptimized,
   seasonsObjectToArray
-} from './firebase-data.js';
+} from './js/data/index.js';
 
-import {
-  getCurrentUser,
-  onAuthChange,
-  getUserProfile
-} from './firebase-auth.js';
+import { getCurrentUser, onAuthChange } from './js/core/auth.js';
+import { getUserProfile } from './js/data/users.js';
 
 // ============================================
 // VERSION CHECK - Increment to clear old localStorage data
@@ -1711,12 +1717,13 @@ function setupAuthListener() {
 // ============================================
 async function init() {
   try {
+    await initPage({ title: 'Higher or Lower' });
     const [launchYear, launchMonth, launchDay] = LAUNCH_DATE.split('-').map(Number);
     const launchDate = new Date(launchYear, launchMonth - 1, launchDay).setHours(0, 0, 0, 0);
     const now = new Date().setHours(0, 0, 0, 0);
     
     if (now < launchDate) {
-      document.getElementById('loadingOverlay').classList.add('hidden');
+      pageReady();
       const displayDate = new Date(launchYear, launchMonth - 1, launchDay);
       document.getElementById('puzzleDate').textContent = `Launching ${displayDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}`;
       document.getElementById('gameContainer')?.remove();
@@ -1764,28 +1771,19 @@ async function init() {
       if (e.target.id === 'gameOverModal') closeGameOverModal();
     });
     
-    document.getElementById('loadingOverlay').classList.add('hidden');
+    pageReady();
     
   } catch (error) {
     console.error('Error initializing game:', error);
-    document.getElementById('loadingOverlay').innerHTML = `
-      <div style="text-align: center; padding: 2rem;">
-        <p>Error loading game data</p>
-        <p style="color: var(--text-light); font-size: 0.9rem;">${error.message}</p>
-        <button onclick="location.reload()" style="margin-top: 1rem; padding: 0.75rem 1.5rem; cursor: pointer;">Retry</button>
-      </div>
-    `;
+    pageReady();
+    showPageError(error);
   }
 }
 
 init();
 </script>
 
-<script type="module">
-  import { NavigationComponent } from './nav-component.js';
-</script>
 <script src="team-colors.js"></script>
 <script src="mobile-enhancements.js"></script>
-<script src="theme-toggle.js"></script>
 </body>
 </html>

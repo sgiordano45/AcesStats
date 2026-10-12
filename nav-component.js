@@ -11,7 +11,7 @@ import { NAV_STRUCTURE, ALL_PAGES, PAGE_CONFIGS, DEFAULT_CONFIG, loadPageVisibil
     if (isPWA) {
       const currentPath = window.location.pathname + window.location.search;
       // Don't save index.html as "last page" — that's the default start_url
-      if (currentPath !== '/' && currentPath !== '/index.html') {
+      if (!/\/(index\.html)?$/.test(currentPath)) {
         localStorage.setItem('pwa_last_page', currentPath);
         localStorage.setItem('pwa_last_page_ts', Date.now().toString());
       }
@@ -364,27 +364,16 @@ export class NavigationComponent {
     
     const { mobile, desktop } = nav.render();
     
-    // Insert mobile nav BEFORE page-container (not inside it)
-    const pageContainer = document.querySelector('.page-container');
-    if (pageContainer) {
-      // Insert before the page-container, not inside it
-      pageContainer.insertAdjacentHTML('beforebegin', mobile);
-    } else {
-      // Fallback: insert at start of body if page-container not found
-      document.body.insertAdjacentHTML('afterbegin', mobile);
-    }
+    // v2.0: the old hamburger menu is no longer drawn. Phones get the bottom
+    // bar and Me sheet from js/ui/nav.js (mounted below) instead.
     
-    // Insert desktop nav into filters-nav
-    const filtersNav = document.querySelector('.filters-nav');
-    if (filtersNav) {
-      // Replace existing nav-container or prepend if not found
-      const existingNav = filtersNav.querySelector('.nav-container');
-      if (existingNav) {
-        existingNav.outerHTML = desktop;
-      } else {
-        filtersNav.insertAdjacentHTML('afterbegin', desktop);
-      }
-    }
+    // v2.0: the site header from js/ui/nav.js (hubs, tab rows, avatar menu,
+    // and on phones the bottom bar and Me sheet) replaces the old link row in
+    // .filters-nav. mountHeader() runs once per page.
+    document.querySelector('.filters-nav .nav-container')?.remove();
+    import('./js/ui/nav.js')
+      .then((m) => m.mountHeader())
+      .catch((err) => console.error('[nav] header failed to load', err));
     
     // Add body class if PWA is installed (for CSS hiding)
     if (nav.isPWAInstalled()) {
@@ -532,9 +521,7 @@ export class NavigationComponent {
         console.log('👁️ App became visible - checking nav state');
         // Small delay to let iOS settle
         setTimeout(() => {
-          const btn = document.getElementById('mobileMenuBtn');
-          const menu = document.getElementById('mobileNavMenu');
-          if (btn && menu) {
+          if (document.getElementById('aces-header')) {
             console.log('✅ Nav elements present after visibility change');
           } else {
             console.warn('⚠️ Nav elements missing after visibility change, reinitializing...');

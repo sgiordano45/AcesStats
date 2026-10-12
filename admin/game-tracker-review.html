@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<script type="module" src="../js/core/preview-guard.js"></script>
+<link rel="manifest" href="../manifest.json">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#2d5016">
+<meta name="robots" content="noindex">
+<title>Review tracked games - Admin - Mountainside Aces</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="../css/tokens.css">
+<link rel="stylesheet" href="../css/base.css">
+<link rel="stylesheet" href="../css/components.css">
+<link rel="stylesheet" href="../mobile-enhancements.css">
+<link rel="stylesheet" href="../css/admin.css">
+<link rel="stylesheet" href="../css/admin-stats.css">
+</head>
+<body class="aces-v2 adm">
+
+<!-- admin/game-tracker-review.html: check live-tracked games and convert them to official stats (js/admin/tracker-review.js). -->
+
+<div class="adm-shell aces-container" data-page-content>
+  <aside class="adm-side" id="adminSide" aria-label="Admin tools">
+    <div class="adm-filter">
+      <input class="aces-input" id="adminFilter" type="search" placeholder="Find a tool..." aria-label="Find a tool" autocomplete="off">
+    </div>
+    <nav id="adminNav"></nav>
+  </aside>
+
+  <main class="adm-main" id="main">
+    <header class="aces-page-head">
+      <div>
+        <span class="aces-page-kicker" id="adminWho">Admin</span>
+        <h1 class="aces-page-title">Review tracked games</h1>
+      </div>
+      <div class="stp-controls">
+        <span class="aces-select-wrap"><select class="aces-select" id="trSeason" aria-label="Season"></select></span>
+        <button class="aces-btn" id="trRefresh" type="button">Refresh</button>
+        <button class="aces-btn adm-menu-btn" id="adminMenuBtn" type="button" aria-controls="adminSide">All tools</button>
+      </div>
+    </header>
+
+    <p class="stp-intro">Games scored live in the Game Tracker are saved for review first. Check each one, then convert it so its stats count.</p>
+
+    <div class="stp-games-head">
+      <h2 class="adm-heading">Tracked games <span class="stp-count" id="trCount"></span></h2>
+      <div class="tr-filters">
+        <span class="aces-select-wrap"><select class="aces-select" id="trTeam" aria-label="Team"></select></span>
+        <div class="aces-segmented" role="group" aria-label="Which games">
+          <button class="aces-segment" type="button" data-status="pending" aria-pressed="true">Pending</button>
+          <button class="aces-segment" type="button" data-status="converted" aria-pressed="false">Converted</button>
+          <button class="aces-segment" type="button" data-status="all" aria-pressed="false">All</button>
+        </div>
+      </div>
+    </div>
+    <div id="trList" class="sse-games-wrap"></div>
+
+    <section class="aces-card sse-entry" id="trReview" hidden>
+      <div class="sse-entry-head">
+        <div>
+          <h2 class="aces-card-title" id="trTitle"></h2>
+          <p class="sse-sub" id="trMeta"></p>
+        </div>
+        <button class="aces-btn is-sm is-ghost" id="trClose" type="button">Close</button>
+      </div>
+
+      <div id="trLine"></div>
+      <ul class="tr-checks" id="trChecks"></ul>
+
+      <div>
+        <h3 class="tr-h">Batting</h3>
+        <p class="sse-sub">Matched by the ID the tracker saved, then by name. Pick a roster player for anyone unmatched, or leave them on Skip.</p>
+      </div>
+      <div id="trBat"></div>
+      <div class="sse-actions tr-convert">
+        <button class="aces-btn is-primary" id="trConvert" type="button">Convert to official stats</button>
+        <span id="trState"></span>
+      </div>
+
+      <details class="tr-sec">
+        <summary><span class="tr-h">Plays</span> <span class="sse-dim" id="trPlayCount"></span></summary>
+        <div class="tr-sec-body">
+          <p class="sse-sub">Fix a batter or result, or delete a play. Saving rebuilds the batting lines above; convert again afterwards if the game was already converted.</p>
+          <details class="tr-reassign" id="trReassign">
+            <summary>Change the opposing pitcher from a play onward</summary>
+            <div class="tr-reassign-row">
+              <div class="aces-field"><label class="aces-label" for="trFrom">From play #</label><input class="sse-in" id="trFrom" type="number" min="1"></div>
+              <div class="aces-field"><label class="aces-label" for="trNewPitcher">Pitcher</label><span class="aces-select-wrap"><select class="aces-select" id="trNewPitcher"></select></span></div>
+              <button class="aces-btn" id="trReassignGo" type="button">Apply</button>
+            </div>
+          </details>
+          <div id="trPlays"></div>
+          <div class="sse-actions">
+            <button class="aces-btn is-primary" id="trPlaysSave" type="button" hidden>Save plays and rebuild batting</button>
+            <button class="aces-btn is-ghost" id="trPlaysUndo" type="button" hidden>Undo play edits</button>
+          </div>
+        </div>
+      </details>
+
+      <details class="tr-sec">
+        <summary><span class="tr-h">Pitching</span> <span class="sse-dim">saved separately</span></summary>
+        <div class="tr-sec-body">
+          <h4 class="tr-sub" id="trOppName"></h4>
+          <p class="sse-sub">Worked out from the plays.</p>
+          <div id="trOpp"></div>
+          <h4 class="tr-sub" id="trOurName"></h4>
+          <p class="sse-sub">The tracker doesn't record your own pitching, so enter it here.</p>
+          <div id="trOurs"></div>
+          <div class="sse-actions">
+            <button class="aces-btn" id="trAddPitcher" type="button">Add another pitcher</button>
+            <button class="aces-btn is-primary" id="trPitSave" type="button">Save pitching</button>
+            <span class="sse-dim" id="trPitStatus" aria-live="polite"></span>
+          </div>
+        </div>
+      </details>
+
+      <details class="tr-sec">
+        <summary><span class="tr-h">Hit locations</span> <span class="sse-dim" id="trHitCount"></span></summary>
+        <div class="tr-sec-body">
+          <p class="sse-sub">Zones tagged on batted balls. Writing saves them on each player's game stats and in the spray chart data. Safe to run again.</p>
+          <div id="trHits"></div>
+          <div class="sse-actions"><button class="aces-btn" id="trHitsWrite" type="button">Write hit locations</button></div>
+        </div>
+      </details>
+    </section>
+  </main>
+</div>
+
+<script type="module" src="../js/admin/tracker-review.js"></script>
+</body>
+</html>

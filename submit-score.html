@@ -1,10 +1,11 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<link rel="manifest" href="/manifest.json">
+<script type="module" src="js/core/preview-guard.js"></script>
+<link rel="manifest" href="manifest.json">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Submit Game Score | Mountainside Aces</title>
+  <title>Submit Score - Mountainside Aces</title>
 <meta name="theme-color" content="#2d5016">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -802,21 +803,22 @@
       color: #a7f3d0;
     }
   </style>
+<link rel="stylesheet" href="css/tokens.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap">
+<link rel="stylesheet" href="css/page-head.css">
 </head>
 <body>
   <div id="nav-placeholder"></div>
 
 <div class="page-container">
   <!-- Header -->
-  <div class="header">
-    <a href="profile.html" class="back-home-btn">
-      <span>←</span> Back to Profile
-    </a>
-    <div class="header-content">
-      <h1>🔢️ Submit Game Score</h1>
-      <p class="subtitle">Update game results for completed games</p>
+  <header class="v2-head">
+    <div class="v2-head-main">
+      <span class="v2-head-kicker">My team</span>
+      <h1 class="v2-head-title">Submit scores</h1>
+      <p class="v2-head-desc">Update results for completed games.</p>
     </div>
-  </div>
+  </header>
 
   <div class="submit-score-container">
     <!-- Auth Gate (shown when not authorized) -->
@@ -977,20 +979,20 @@
   </div>
 
   <script type="module">
-    import { auth, hasLeagueRole, getUserTeamIds, canSubmitForGame } from './firebase-auth.js';
-    import { db } from './firebase-config.js';
-    import { onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
-    import { 
-      collection, 
-      getDocs, 
-      doc, 
+    import { hasLeagueRole, getUserTeamIds, canSubmitForGame } from './js/core/auth.js';
+    import { initPage } from './js/core/app.js';
+    import {
+      db,
+      collection,
+      getDocs,
+      doc,
       updateDoc,
       getDoc,
       Timestamp,
       query,
       where,
       orderBy
-    } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+    } from './js/core/firebase.js';
 
     let currentUser = null;
     let userProfile = null;
@@ -1009,27 +1011,23 @@
     const MIN_INNINGS = 1;
     const MAX_INNINGS = 15;
 
-    // Check authorization on page load
-    onAuthStateChanged(auth, async (user) => {
-      if (user) {
-        currentUser = user;
-        await checkAuthorization();
-      } else {
-        showAuthGate();
-      }
+    // Signed-out visitors go to sign in (initPage). The profile is the
+    // effective one, so View As shows what that user would see. Access is
+    // still checked here: it accepts legacy captain / team-staff fields the
+    // shared role check doesn't.
+    initPage({ title: 'Submit Score', requiresAuth: true }).then(async ({ user, profile }) => {
+      currentUser = user;
+      userProfile = profile;
+      await checkAuthorization();
     });
 
     async function checkAuthorization() {
       try {
-        const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
-        
-        if (!userDoc.exists()) {
+        if (!userProfile) {
           showError('User profile not found. Please complete your profile setup.');
           showAuthGate();
           return;
         }
-
-        userProfile = userDoc.data();
 
         // Use helper functions from firebase-auth.js
         hasFullAccess = hasLeagueRole(userProfile);
@@ -1748,12 +1746,7 @@
     });
   </script>
 
-<script type="module">
-  import { NavigationComponent } from './nav-component.js';
-  // Navigation auto-initializes on load!
-</script>
 <script src="mobile-enhancements.js"></script>
 </div><!-- Close page-container -->
-<script src="theme-toggle.js"></script>
 </body>
 </html>
