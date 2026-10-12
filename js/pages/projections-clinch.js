@@ -52,7 +52,8 @@ function model(rows, left) {
   return { pctWith, sureAhead, couldBeAhead };
 }
 
-function analyse(rows, left, playoffTeams) {
+/** Per team: { t, seed, R, best, worst, clinched, top, bye, berth } (see the notes above). */
+export function analyse(rows, left, playoffTeams) {
   const m = model(rows, left);
   const n = rows.length;
   const byes = byesFor(Math.min(playoffTeams, n));
@@ -111,7 +112,7 @@ function needText(a, byes, playoffTeams) {
   return lines;
 }
 
-function statusBadge(a, byes) {
+export function statusBadge(a, byes) {
   if (a.clinched) return `<span class="aces-badge is-win">${icon('lock')}Clinched ${ordinal(a.best)}</span>`;
   if (a.berth && a.berth.shot === null) return '<span class="aces-badge is-loss">Eliminated</span>';
   if (!byes) return '<span class="aces-badge is-outline">Open</span>';

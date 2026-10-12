@@ -138,6 +138,9 @@ async function draw({ heading, sub, items, detail }) {
 }
 
 /** Draws the image and opens the share sheet on phones, or downloads it. */
+/** The image as a PNG blob, for copying to the clipboard. */
+export const gamesImageBlob = (opts) => draw(opts);
+
 export async function shareGames(opts) {
   const blob = await draw(opts);
   const name = `aces-${opts.heading.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}-${new Date().toISOString().slice(0, 10)}.png`;

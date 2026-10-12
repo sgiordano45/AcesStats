@@ -249,8 +249,7 @@ export const ME_MENU = [
   },
   {
     key: 'staff', label: 'League staff', pages: [
-      { id: 'commissioner-hub', href: 'admin/commissioner-hub.html', label: 'Commissioner hub', icon: 'megaphone', role: 'league-staff' },
-      { id: 'league-staff-admin', href: 'admin/league-staff.html', label: 'League staff admin', icon: 'shield', role: 'league-staff' },
+      { id: 'league-staff-admin', href: 'admin/league-staff.html', label: 'League staff', icon: 'shield', role: 'league-staff' },
       { id: 'aceys-admin', href: 'admin/aceys.html', label: 'Aceys admin', icon: 'award', role: 'league-staff' },
     ],
   },
@@ -434,7 +433,6 @@ export const NAV_STRUCTURE = {
     { id: 'captain-roster-edit', href: 'captain-roster-edit.html', label: 'Edit Roster', icon: '✏️', priority: 4, requiresAuth: true, requiresRole: 'captain' },
     { id: 'team-scouting-report', href: 'team-scouting-report.html', label: 'Team Scouting Report', icon: '📋', priority: 4, requiresAuth: true, requiresRole: 'captain' },
     { id: 'league-staff-admin', href: 'admin/league-staff.html', label: 'League Staff Admin', icon: '⚙️', priority: 4, requiresAuth: true, requiresRole: 'league_staff' },
-    { id: 'commissioner-hub', href: 'admin/commissioner-hub.html', label: 'Commissioner Hub', icon: '📢', priority: 4, requiresAuth: true, requiresRole: 'league_staff' },
     { id: 'directory', href: 'aces-directory.html', label: 'Aces Directory', icon: '📇', priority: 4, requiresAuth: true },
     { id: 'submit-score', href: 'submit-score.html', label: 'Submit Scores', icon: '🔢️', priority: 4, requiresAuth: true },
     { id: 'submit-stats', href: 'submit-stats.html', label: 'Submit Stats', icon: '🧮', priority: 4, requiresAuth: true },
@@ -627,10 +625,6 @@ export const PAGE_CONFIGS = {
   },
   
   'admin/league-staff.html': {
-    desktop: []
-  },
-
-  'admin/commissioner-hub.html': {
     desktop: []
   },
 

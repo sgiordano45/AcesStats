@@ -8,7 +8,7 @@
 export const ADMIN_GROUPS = [
   { id: 'season', label: 'Season setup', icon: 'calendar-days', items: [
     ['admin/season-setup.html', 'Season setup wizard', 'Create a season: teams, schedule, publish', 'league-staff'],
-    ['admin/league-staff.html', 'League staff admin', 'Edit games, banners and notifications', 'league-staff'],
+    ['admin/league-staff.html', 'League staff', 'Today to share, game edits, banners, push, email, signup import', 'league-staff'],
     ['admin/offseason.html', 'Offseason hub', 'Rosters, schedule and the draft', 'league-staff'],
     ['offseason-roster.html', 'Offseason rosters', 'Team assignments for next season', 'league-staff'],
     ['draft.html', 'Snake draft', 'Run the live draft', 'league-staff'],
@@ -56,7 +56,6 @@ export const ADMIN_GROUPS = [
   ] },
   { id: 'content', label: 'Content', icon: 'megaphone', items: [
     ['admin/content.html', 'Content admin', 'Previews, recaps, eulogies and game details', 'admin'],
-    ['admin/commissioner-hub.html', 'Commissioner hub', 'League announcements', 'league-staff'],
     ['admin/countdown.html', 'Opening Day countdown', 'Countdown graphic for the group chat', 'league-staff'],
     ['admin/aceys.html', 'Aceys', 'Record award winners', 'league-staff'],
     ['captain-questionnaire-review.html', 'Captain questionnaires', 'Read captain responses', 'league-staff'],

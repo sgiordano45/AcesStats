@@ -66,6 +66,110 @@ function cellClass(cell, i) {
   return c.join(' ');
 }
 
+// Draws a live table's first rows (IMAGE_MAX_ROWS unless maxRows is given) straight onto a canvas:
+// cell text, shading, bold, the "is-me" row and team-dot colours, all read
+// from the page as shown (so it follows light or dark mode). No library.
+export function drawTableImage(table, { title, foot, maxRows = IMAGE_MAX_ROWS }) {
+  const css = (el) => getComputedStyle(el);
+  const isClear = (c) => !c || c === 'transparent' || /rgba\(.*,\s*0\)$/.test(c);
+  const pageBg = (() => { const c = css(document.body).backgroundColor; return isClear(c) ? '#ffffff' : c; })();
+  const surface = (() => { const c = css(table.querySelector('td, th')).backgroundColor; return isClear(c) ? pageBg : c; })();
+
+  const readCell = (el, rowBg) => {
+    const s = css(el);
+    const dot = el.querySelector('.aces-team-dot');
+    return {
+      text: el.innerText.replace(/\s+/g, ' ').trim(),
+      bg: isClear(s.backgroundColor) ? rowBg : s.backgroundColor,
+      color: s.color,
+      weight: s.fontWeight,
+      right: s.textAlign === 'right' || el.classList.contains('is-num'),
+      dot: dot ? css(dot).backgroundColor : null
+    };
+  };
+  // Header text from the sort button: stat-tooltips.js adds an "i" icon to some headers.
+  const head = [...table.tHead.rows[0].cells].map(th => {
+    const cell = readCell(th, null);
+    const btn = th.querySelector('.aces-sort');
+    if (btn) cell.text = btn.textContent.replace(/\s+/g, ' ').trim();
+    return cell;
+  });
+  const headBg = head[0].bg || surface;
+  const body = [...table.tBodies[0].rows].slice(0, maxRows).map(tr => {
+    const rowBg = isClear(css(tr).backgroundColor) ? surface : css(tr).backgroundColor;
+    return { cells: [...tr.cells].map(td => readCell(td, rowBg)), me: tr.classList.contains('is-me') };
+  });
+
+  const scale = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
+  const font = css(table).fontFamily;
+  const PAD = 10, ROW = 30, HEAD = 30, TITLE = 44, FOOT = 28, MARGIN = 16, DOT = 10;
+  const c = document.createElement('canvas');
+  const g = c.getContext('2d');
+  const setFont = (w, px) => { g.font = `${w} ${px}px ${font}`; };
+
+  // Column widths from the widest text in each column.
+  const widths = head.map((h, i) => {
+    setFont(600, 12);
+    let w = g.measureText(h.text).width;
+    for (const r of body) {
+      const cell = r.cells[i];
+      setFont(cell.weight, 14);
+      w = Math.max(w, g.measureText(cell.text).width + (cell.dot ? DOT + 6 : 0));
+    }
+    return Math.ceil(w) + PAD * 2;
+  });
+  const tableW = widths.reduce((a, b) => a + b, 0);
+  setFont(700, 22);
+  const W = Math.max(tableW, g.measureText(title).width) + MARGIN * 2;
+  const H = MARGIN + TITLE + HEAD + body.length * ROW + FOOT + MARGIN;
+  c.width = Math.ceil(W * scale);
+  c.height = Math.ceil(H * scale);
+  g.scale(scale, scale);
+  g.textBaseline = 'middle';
+
+  g.fillStyle = pageBg; g.fillRect(0, 0, W, H);
+  const brand = css(document.documentElement).getPropertyValue('--color-brand').trim() || '#2d5016';
+  const muted = css(document.documentElement).getPropertyValue('--color-text-muted').trim() || '#5a6056';
+  const border = css(document.documentElement).getPropertyValue('--color-border').trim() || '#e9ebe6';
+  const accent = css(document.documentElement).getPropertyValue('--color-accent').trim() || '#ffd700';
+  setFont(700, 22); g.fillStyle = brand; g.fillText(title, MARGIN, MARGIN + TITLE / 2 - 4);
+
+  const drawRow = (cells, y, h, isHead) => {
+    let x = MARGIN;
+    cells.forEach((cell, i) => {
+      const w = widths[i];
+      g.fillStyle = isHead ? headBg : (cell.bg || surface);
+      g.fillRect(x, y, w, h);
+      setFont(isHead ? 600 : cell.weight, isHead ? 12 : 14);
+      g.fillStyle = cell.color;
+      let tx = cell.right ? x + w - PAD : x + PAD;
+      g.textAlign = cell.right ? 'right' : 'left';
+      if (cell.dot && !cell.right) {
+        g.beginPath(); g.arc(tx + DOT / 2, y + h / 2, DOT / 2, 0, Math.PI * 2);
+        g.fillStyle = cell.dot; g.fill();
+        g.lineWidth = 1; g.strokeStyle = 'rgba(0,0,0,0.18)'; g.stroke();
+        g.fillStyle = cell.color;
+        tx += DOT + 6;
+      }
+      g.fillText(cell.text, tx, y + h / 2 + 1);
+      x += w;
+    });
+    g.fillStyle = border; g.fillRect(MARGIN, y + h - 1, tableW, 1);
+  };
+
+  let y = MARGIN + TITLE;
+  drawRow(head, y, HEAD, true);
+  y += HEAD;
+  for (const r of body) {
+    drawRow(r.cells, y, ROW, false);
+    if (r.me) { g.fillStyle = accent; g.fillRect(MARGIN, y, 3, ROW); }
+    y += ROW;
+  }
+  setFont(400, 12); g.fillStyle = muted; g.textAlign = 'right';
+  g.fillText(foot, MARGIN + tableW, y + FOOT / 2 + 2);
+  return c;
+}
+
 export function mountStatTable(el, config, options = {}) {
   if (!el) throw new Error('mountStatTable: no element');
   ensureStyles();
@@ -271,109 +375,6 @@ export function mountStatTable(el, config, options = {}) {
     }
   }
 
-  // Draws the live table's first IMAGE_MAX_ROWS rows straight onto a canvas:
-  // cell text, shading, bold, the "is-me" row and team-dot colours, all read
-  // from the page as shown (so it follows light or dark mode). No library.
-  function drawTableImage(table, { title, foot }) {
-    const css = (el) => getComputedStyle(el);
-    const isClear = (c) => !c || c === 'transparent' || /rgba\(.*,\s*0\)$/.test(c);
-    const pageBg = (() => { const c = css(document.body).backgroundColor; return isClear(c) ? '#ffffff' : c; })();
-    const surface = (() => { const c = css(table.querySelector('td, th')).backgroundColor; return isClear(c) ? pageBg : c; })();
-
-    const readCell = (el, rowBg) => {
-      const s = css(el);
-      const dot = el.querySelector('.aces-team-dot');
-      return {
-        text: el.innerText.replace(/\s+/g, ' ').trim(),
-        bg: isClear(s.backgroundColor) ? rowBg : s.backgroundColor,
-        color: s.color,
-        weight: s.fontWeight,
-        right: s.textAlign === 'right' || el.classList.contains('is-num'),
-        dot: dot ? css(dot).backgroundColor : null
-      };
-    };
-    // Header text from the sort button: stat-tooltips.js adds an "i" icon to some headers.
-    const head = [...table.tHead.rows[0].cells].map(th => {
-      const cell = readCell(th, null);
-      const btn = th.querySelector('.aces-sort');
-      if (btn) cell.text = btn.textContent.replace(/\s+/g, ' ').trim();
-      return cell;
-    });
-    const headBg = head[0].bg || surface;
-    const body = [...table.tBodies[0].rows].slice(0, IMAGE_MAX_ROWS).map(tr => {
-      const rowBg = isClear(css(tr).backgroundColor) ? surface : css(tr).backgroundColor;
-      return { cells: [...tr.cells].map(td => readCell(td, rowBg)), me: tr.classList.contains('is-me') };
-    });
-
-    const scale = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
-    const font = css(table).fontFamily;
-    const PAD = 10, ROW = 30, HEAD = 30, TITLE = 44, FOOT = 28, MARGIN = 16, DOT = 10;
-    const c = document.createElement('canvas');
-    const g = c.getContext('2d');
-    const setFont = (w, px) => { g.font = `${w} ${px}px ${font}`; };
-
-    // Column widths from the widest text in each column.
-    const widths = head.map((h, i) => {
-      setFont(600, 12);
-      let w = g.measureText(h.text).width;
-      for (const r of body) {
-        const cell = r.cells[i];
-        setFont(cell.weight, 14);
-        w = Math.max(w, g.measureText(cell.text).width + (cell.dot ? DOT + 6 : 0));
-      }
-      return Math.ceil(w) + PAD * 2;
-    });
-    const tableW = widths.reduce((a, b) => a + b, 0);
-    setFont(700, 22);
-    const W = Math.max(tableW, g.measureText(title).width) + MARGIN * 2;
-    const H = MARGIN + TITLE + HEAD + body.length * ROW + FOOT + MARGIN;
-    c.width = Math.ceil(W * scale);
-    c.height = Math.ceil(H * scale);
-    g.scale(scale, scale);
-    g.textBaseline = 'middle';
-
-    g.fillStyle = pageBg; g.fillRect(0, 0, W, H);
-    const brand = css(document.documentElement).getPropertyValue('--color-brand').trim() || '#2d5016';
-    const muted = css(document.documentElement).getPropertyValue('--color-text-muted').trim() || '#5a6056';
-    const border = css(document.documentElement).getPropertyValue('--color-border').trim() || '#e9ebe6';
-    const accent = css(document.documentElement).getPropertyValue('--color-accent').trim() || '#ffd700';
-    setFont(700, 22); g.fillStyle = brand; g.fillText(title, MARGIN, MARGIN + TITLE / 2 - 4);
-
-    const drawRow = (cells, y, h, isHead) => {
-      let x = MARGIN;
-      cells.forEach((cell, i) => {
-        const w = widths[i];
-        g.fillStyle = isHead ? headBg : (cell.bg || surface);
-        g.fillRect(x, y, w, h);
-        setFont(isHead ? 600 : cell.weight, isHead ? 12 : 14);
-        g.fillStyle = cell.color;
-        let tx = cell.right ? x + w - PAD : x + PAD;
-        g.textAlign = cell.right ? 'right' : 'left';
-        if (cell.dot && !cell.right) {
-          g.beginPath(); g.arc(tx + DOT / 2, y + h / 2, DOT / 2, 0, Math.PI * 2);
-          g.fillStyle = cell.dot; g.fill();
-          g.lineWidth = 1; g.strokeStyle = 'rgba(0,0,0,0.18)'; g.stroke();
-          g.fillStyle = cell.color;
-          tx += DOT + 6;
-        }
-        g.fillText(cell.text, tx, y + h / 2 + 1);
-        x += w;
-      });
-      g.fillStyle = border; g.fillRect(MARGIN, y + h - 1, tableW, 1);
-    };
-
-    let y = MARGIN + TITLE;
-    drawRow(head, y, HEAD, true);
-    y += HEAD;
-    for (const r of body) {
-      drawRow(r.cells, y, ROW, false);
-      if (r.me) { g.fillStyle = accent; g.fillRect(MARGIN, y, 3, ROW); }
-      y += ROW;
-    }
-    setFont(400, 12); g.fillStyle = muted; g.textAlign = 'right';
-    g.fillText(foot, MARGIN + tableW, y + FOOT / 2 + 2);
-    return c;
-  }
 
   async function shareImage(btn) {
     if (!view || !view.rows.length) return showToast('Nothing to share yet', 'info');
