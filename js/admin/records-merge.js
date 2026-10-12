@@ -56,6 +56,13 @@ function log(msg, type = 'info') {
 }
 
 const nameOf = (r) => r.name || r.displayName || r.id;
+
+/** Same numbers in both docs (every numeric field in either), so the old copy adds nothing. */
+function sameStats(a, b) {
+  if (!a || !b) return false;
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)].filter(k => typeof a[k] === 'number' || typeof b[k] === 'number'));
+  return keys.size > 0 && [...keys].every(k => (Number(a[k]) || 0) === (Number(b[k]) || 0));
+}
 const isUid = (id) => id.length > 20 && !id.includes('_');
 const legacyFromName = (n) => lower(n).replace(/\./g, '').replace(/'/g, '').trim().replace(/\s+/g, '_');
 
@@ -193,8 +200,11 @@ async function preview() {
   btn.textContent = 'Checking...';
   try {
     const targetIds = {};
+    const targetData = {};
     await Promise.all(parts.map(async ([, c, sub]) => {
-      targetIds[`${c}/${sub}`] = new Set((await getDocs(collection(db, c, target, sub)).catch(() => ({ docs: [] }))).docs.map(d => d.id));
+      const snap = await getDocs(collection(db, c, target, sub)).catch(() => ({ docs: [] }));
+      targetIds[`${c}/${sub}`] = new Set(snap.docs.map(d => d.id));
+      snap.docs.forEach(d => { targetData[`${c}/${sub}/${d.id}`] = d.data(); });
     }));
     const lines = [];
     for (const id of from) {
@@ -203,7 +213,8 @@ async function preview() {
       for (const [, c, sub, label] of parts) {
         const snap = await getDocs(collection(db, c, src, sub)).catch(() => ({ docs: [] }));
         const docs = snap.docs.map(d => ({ id: d.id, data: d.data() }));
-        const clash = docs.filter(d => targetIds[`${c}/${sub}`].has(d.id));
+        const clash = docs.filter(d => targetIds[`${c}/${sub}`].has(d.id))
+          .map(d => ({ ...d, same: sameStats(d.data, targetData[`${c}/${sub}/${d.id}`]) }));
         lines.push({ id, src, c, sub, label, docs: docs.filter(d => !targetIds[`${c}/${sub}`].has(d.id)), clash });
       }
     }
@@ -211,15 +222,19 @@ async function preview() {
     plan = { target, lines, mode, mark: $('rmMarkMerged').checked };
     const moving = lines.reduce((n, l) => n + (l.docs?.length || 0), 0);
     const clashes = lines.reduce((n, l) => n + (l.clash?.length || 0), 0);
+    const leftovers = lines.reduce((n, l) => n + (l.clash || []).filter(d => d.same).length, 0);
+    const markable = plan.mark && from.some(id => { const r = records.find(x => x.id === id); return r && !r._checked && r.id !== target; });
+    plan.canRun = moving > 0 || leftovers > 0 || markable;
     $('rmPreviewOut').innerHTML = `<div class="aces-table-wrap"><table class="aces-table is-compact rc-preview">
         <thead><tr><th scope="col">From ID</th><th scope="col">Stats</th><th scope="col" class="is-num">${mode === 'move' ? 'Move' : 'Copy'}</th><th scope="col" class="is-num">Already in target</th></tr></thead>
         <tbody>${lines.map(l => l.same
           ? `<tr><td><code>${esc(l.src)}</code></td><td colspan="3" class="sse-dim">Same ID as the target; skipped.</td></tr>`
           : `<tr><td><code>${esc(l.src)}</code></td><td>${esc(l.label)}</td><td class="is-num">${l.docs.length}</td><td class="is-num">${l.clash.length ? `<strong class="rc-warn">${l.clash.length}</strong>` : 0}</td></tr>`).join('')}</tbody>
       </table></div>
-      ${clashes ? `<div class="aces-notice is-warning"><div><strong>${clashes} docs already exist under ${esc(target)}</strong> (same game or season): ${esc(lines.flatMap(l => (l.clash || []).map(d => d.id)).slice(0, 12).join(', '))}${clashes > 12 ? '...' : ''}. They are skipped and the originals stay where they are, so nothing in the target is overwritten. Check them in Game stats if they look like real duplicates.</div></div>` : ''}
-      <p class="rc-summary">${moving ? `${mode === 'move' ? 'Move' : 'Copy'} <strong>${moving}</strong> docs into <code>${esc(target)}</code>${mode === 'move' ? ', then delete the originals' : ''}${plan.mark ? ', and mark the old player record merged' : ''}.` : 'Nothing to move.'}</p>
-      <div class="sse-actions"><button class="aces-btn is-primary" type="button" id="rmRun"${moving || plan.mark ? '' : ' disabled'}>${mode === 'move' ? 'Move' : 'Copy'} ${moving} docs</button></div>`;
+      ${clashes ? `<div class="aces-notice is-warning"><div><strong>${clashes} docs already exist under ${esc(target)}</strong> (same game or season): ${esc(lines.flatMap(l => (l.clash || []).map(d => d.id)).slice(0, 12).join(', '))}${clashes > 12 ? '...' : ''}. They are skipped, so nothing in the target is overwritten.${leftovers ? ` <strong>${leftovers} of them have the same numbers as the target's copy</strong>: leftovers from an earlier copy.` : ' Their numbers differ from the target\'s copy; check them in Game stats.'}</div></div>` : ''}
+      ${leftovers ? `<label class="agg-check rc-cleanup"><input type="checkbox" id="rmCleanup" checked> <span>Delete the ${leftovers} leftover${leftovers === 1 ? '' : 's'} from the old ID (same numbers as the target's copy, so nothing is lost)</span></label>` : ''}
+      <p class="rc-summary">${moving ? `${mode === 'move' ? 'Move' : 'Copy'} <strong>${moving}</strong> docs into <code>${esc(target)}</code>${mode === 'move' ? ', then delete the originals' : ''}${markable ? ', and mark the old player record merged' : ''}.` : 'Nothing new to move.'}</p>
+      ${plan.canRun ? `<div class="sse-actions"><button class="aces-btn is-primary" type="button" id="rmRun">${moving ? `${mode === 'move' ? 'Move' : 'Copy'} ${moving} docs` : 'Run'}</button></div>` : ''}`;
     log(`Preview into ${target}: ${moving} to ${mode}, ${clashes} already in target`);
   } catch (err) {
     console.error('[records] preview', err);
@@ -234,7 +249,11 @@ async function run() {
   if (!plan) return;
   const { target, lines, mode, mark } = plan;
   const moving = lines.reduce((n, l) => n + (l.docs?.length || 0), 0);
-  if (!(await confirmModal(`${mode === 'move' ? 'Move' : 'Copy'} ${moving} stat docs into ${target}?${mode === 'move' ? ' The originals are deleted after each copy.' : ''} Re-aggregate afterwards.`, { title: 'Merge records', danger: mode === 'move', confirmLabel: mode === 'move' ? 'Move' : 'Copy' }))) return;
+  const cleanup = $('rmCleanup')?.checked ? lines.flatMap(l => (l.clash || []).filter(d => d.same).map(d => ({ l, d }))) : [];
+  const parts = [moving && `${mode === 'move' ? 'move' : 'copy'} ${moving} stat docs into ${target}${mode === 'move' ? ' (originals deleted after each copy)' : ''}`,
+    cleanup.length && `delete ${cleanup.length} leftover${cleanup.length === 1 ? '' : 's'} from the old ID`].filter(Boolean);
+  if (!parts.length && !mark) return;
+  if (!(await confirmModal(`${parts.length ? `${parts.join(' and ').replace(/^./, c => c.toUpperCase())}?` : 'Mark the old record merged?'} Re-aggregate afterwards.`, { title: 'Merge records', danger: mode === 'move' || cleanup.length > 0, confirmLabel: 'Go ahead' }))) return;
   const btn = $('rmRun');
   btn.disabled = true;
   btn.textContent = 'Working...';
@@ -255,6 +274,10 @@ async function run() {
     }
     log(`${l.label} from ${l.src}: ${l.docs.length} ${mode === 'move' ? 'moved' : 'copied'}${l.clash.length ? `, ${l.clash.length} left (already in target)` : ''}`, 'success');
   }
+  for (const { l, d } of cleanup) {
+    try { await deleteDoc(doc(db, l.c, l.src, l.sub, d.id)); done++; log(`Deleted leftover ${l.c}/${l.src}/${l.sub}/${d.id}`, 'success'); }
+    catch (err) { failed++; log(`Could not delete leftover ${l.c}/${l.src}/${l.sub}/${d.id}: ${err.message || err}`, 'error'); }
+  }
   if (mark) {
     for (const id of from) {
       const r = records.find(x => x.id === id);
@@ -268,7 +291,7 @@ async function run() {
       } catch (err) { log(`Could not mark ${r.id}: ${err.message || err}`, 'error'); }
     }
   }
-  showToast(`${done} docs ${mode === 'move' ? 'moved' : 'copied'}${failed ? `, ${failed} failed (see the log)` : ''}. Run the aggregation next.`, failed ? 'warning' : 'success',
+  showToast(`${done} docs ${mode === 'move' ? 'moved or cleaned up' : 'copied'}${failed ? `, ${failed} failed (see the log)` : ''}. Run the aggregation next.`, failed ? 'warning' : 'success',
     { duration: 0, action: { label: 'Stats pipeline', onClick: () => { location.href = siteUrl('admin/stats.html'); } } });
   from = []; into = ''; plan = null;
   await loadRecords();
