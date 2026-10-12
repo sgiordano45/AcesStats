@@ -49,14 +49,15 @@ export const ADMIN_GROUPS = [
   { id: 'users', label: 'Users and roles', icon: 'shield', items: [
     ['admin/people.html', 'People', 'Members, roles, View As, setup and push status', 'league-staff'],
     ['admin/people.html?tab=links', 'Player links', 'Approve link requests, link accounts by hand', 'league-staff'],
+    ['admin/people.html?tab=add', 'Add players', 'Player records for people with no account yet', 'league-staff'],
     ['admin/user-management.html', 'Player records', 'Merge duplicates, repair orphaned stats, import emails', 'admin']
   ] },
   { id: 'content', label: 'Content', icon: 'megaphone', items: [
-    ['admin/content.html', 'Content admin', 'Previews, recaps, eulogies and game details', 'admin'],
+    ['admin/content.html', 'Content', 'League documents, feedback and the Aceys', 'league-staff'],
     ['admin/countdown.html', 'Opening Day countdown', 'Countdown graphic for the group chat', 'league-staff'],
-    ['admin/aceys.html', 'Aceys', 'Record award winners', 'league-staff'],
+    ['admin/content.html?tab=aceys', 'Aceys', 'Award winners, reveals, publish to profiles', 'league-staff'],
     ['captain-questionnaire-review.html', 'Captain questionnaires', 'Read captain responses', 'league-staff'],
-    ['admin/features.html', 'Feature requests', 'What members have asked for', 'admin']
+    ['admin/content.html?tab=feedback', 'Feedback', 'Feature requests and bug reports', 'admin']
   ] },
   { id: 'tools', label: 'Games and tools', icon: 'gamepad', items: [
     ['admin/games.html', 'Daily games admin', 'Grid, Connections and the rest', 'admin'],

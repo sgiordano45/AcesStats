@@ -560,8 +560,8 @@ export const HELP_SECTIONS = [
    {
     "id": "wipe-offseason-test-data",
     "title": "Reset rosters, draft or sandbox data",
-    "keywords": "wipe cleanup reset test data offseason data tab admin content",
-    "body": "<p>All cleanup is on the Offseason Data tab of <a href=\"admin/content.html\">Admin Content</a>. Each section shows current status (whether data exists, team or pick counts, last modified) so you know what is there, and every wipe asks for confirmation.</p><ul><li><strong>Wipe Offseason Roster Data</strong>: deletes offseasonRosters/current with its changelog and presence. Use to restart roster planning.</li><li><strong>Wipe Draft Data</strong>: deletes drafts/current. Use after a test or to redo a draft.</li><li><strong>Wipe Sandbox Seasons</strong>: deletes every season whose ID starts with sandbox-, including its games.</li></ul><p>None of these touch published seasons, player stats or game scores. The schedule generator, balancer and analyzer write nothing until you export. Only the Season Setup Wizard outside sandbox mode writes live data (seasons/{id}).</p>"
+    "keywords": "wipe cleanup reset test data offseason hub maintenance clear",
+    "body": "<p>All cleanup is in the Maintenance section at the bottom of the <a href=\"admin/offseason.html\">Offseason hub</a> (admins only). Each item shows whether there is data (team or pick counts, last changed) so you know what is there, and every Clear asks for confirmation.</p><ul><li><strong>Offseason roster board</strong>: deletes offseasonRosters/current with its changelog and presence. Use to restart roster planning.</li><li><strong>Draft</strong>: deletes drafts/current. Use after a test or to redo a draft.</li><li><strong>Sandbox seasons</strong>: deletes every season whose ID starts with sandbox-, including its games.</li></ul><p>None of these touch published seasons, player stats or game scores. The schedule generator, balancer and analyzer write nothing until you export. Only the Season Setup Wizard outside sandbox mode writes live data (seasons/{id}).</p>"
    }
   ]
  }

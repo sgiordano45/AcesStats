@@ -1,14 +1,15 @@
 // js/admin/people.js
 // admin/people.html: everyone with an account, for league staff and admins.
-// It replaced Roles, Link players and View As.
+// It replaced Roles, Link players, View As and Content admin's Users tab.
 //
 //   Members  roles (edit), View As (admins), profile setup, push, last visit
 //            (people-members.js)
 //   Links    pending link requests and linking accounts by hand
 //            (people-links.js)
+//   Add      player records for people with no account yet (people-add.js)
 //
 // The users collection is read once and shared by both tabs; Refresh and any
-// save read it again. ?tab=members|links opens a tab.
+// save read it again. ?tab=members|links|add opens a tab.
 
 import { initPage, pageReady } from '../core/app.js';
 import { hasRole } from '../core/auth.js';
@@ -17,8 +18,12 @@ import { showToast } from '../ui/toast.js';
 import { mountAdminShell } from './shell.js';
 
 const $ = (id) => document.getElementById(id);
-const TABS = ['members', 'links'];
-const MODULES = { members: () => import('./people-members.js'), links: () => import('./people-links.js') };
+const TABS = ['members', 'links', 'add'];
+const MODULES = {
+  members: () => import('./people-members.js'),
+  links: () => import('./people-links.js'),
+  add: () => import('./people-add.js')
+};
 
 let ctx = null;
 let tab = 'members';

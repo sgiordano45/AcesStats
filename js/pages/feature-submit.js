@@ -10,7 +10,7 @@
 // status ('new' | 'reviewing' | 'planned' | 'in-progress' | 'completed' |
 // 'declined'), submittedAt, submittedBy { uid, displayName, email } | null,
 // isAnonymous, adminNotes, resolvedAt, resolvedBy }. Content managers work the
-// list on admin/features.html; a member can read their own.
+// list on the Feedback tab of admin/content.html; a member can read their own.
 
 import { initPage, pageReady, showPageError } from '../core/app.js';
 import { hasRole } from '../core/auth.js';

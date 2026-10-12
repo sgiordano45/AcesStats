@@ -118,7 +118,7 @@ async function renderTodos(ctx) {
   }
   cards.push(todoCard({ icon: 'user-check', title: 'Player link requests', count: reqs ? reqs.links : null, text: `${reqs?.links} waiting for approval`, href: 'admin/people.html?tab=links', action: 'Review requests' }));
   cards.push(todoCard({ icon: 'shield', title: 'Team staff requests', count: reqs ? reqs.staff : null, text: `${reqs?.staff} waiting for a captain`, href: 'manage-team.html', action: 'Open team staff' }));
-  if (features !== undefined) cards.push(todoCard({ icon: 'message', title: 'New feature requests', count: features, text: `${features} not looked at yet`, href: 'admin/features.html', action: 'Open requests' }));
+  if (features !== undefined) cards.push(todoCard({ icon: 'message', title: 'New feature requests', count: features, text: `${features} not looked at yet`, href: 'admin/content.html?tab=feedback', action: 'Open feedback' }));
   $('adminTodos').innerHTML = cards.join('');
 
   $('adminStatus').innerHTML = `

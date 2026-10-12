@@ -32,8 +32,8 @@ export const TOOL_GROUPS = [
     ['admin/stats.html', 'Stats pipeline', 'Stats in, review, aggregate, badges', 'refresh'],
     ['admin/badges.html', 'Badge calculator', 'Award player badges', 'medal'],
     ['admin/games.html', 'Games admin', 'Daily games content', 'gamepad'],
-    ['admin/content.html', 'Content tools', 'Announcements and site content', 'megaphone'],
-    ['admin/features.html', 'Feature requests', 'What members have asked for', 'message']
+    ['admin/content.html', 'Content', 'League documents, feedback and the Aceys', 'megaphone'],
+    ['admin/content.html?tab=feedback', 'Feedback', 'Feature requests and bug reports', 'message']
   ] },
   { role: 'contributor', title: 'Contributor', icon: 'sparkles', tools: [
     ['contributor.html', 'Contributor dashboard', 'Recaps, previews and photos', 'edit']
