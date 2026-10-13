@@ -100,7 +100,10 @@ async function loadSeason(sid) {
   ]);
   // Keep each game's start time: the normalised game keeps only the day, and a
   // doubleheader or a three-game final needs the time to list in order.
-  const startOf = new Map((raw || []).map((r) => [r.id, parseGameDateTime(r.date, r.time)?.getTime() || 0]));
+  // Older games have no time field; their time is in the date timestamp itself
+  // (parseGameDateTime keeps only the day when there is no time).
+  const stamp = (v) => (v?.toDate ? v.toDate().getTime() : v?.seconds ? v.seconds * 1000 : 0);
+  const startOf = new Map((raw || []).map((r) => [r.id, (r.time ? parseGameDateTime(r.date, r.time)?.getTime() : stamp(r.date)) || 0]));
   const games = normalizeGames(raw).map((g) => ({ ...g, start: startOf.get(g.id) || 0 }));
   const data = { games, players: players || [], photo, badges, bracket };
   S.cache.set(sid, data);
