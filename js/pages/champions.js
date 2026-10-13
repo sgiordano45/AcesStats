@@ -24,7 +24,7 @@ import { icon } from '../ui/icons.js';
 import { normalizeGames, computeStandings } from '../domain/standings.js';
 import { battingLine, era, minPAForTeamGames } from '../domain/stats.js';
 import { seasonLabel, seasonSortKey, parseStatSeasonId } from '../domain/season-ids.js';
-import { formatGameDate } from '../domain/dates.js';
+import { formatGameDate, parseGameDateTime } from '../domain/dates.js';
 
 const $ = (id) => document.getElementById(id);
 // Keep a stored name's own capitals ("Sofa Kings"); title-case all-lowercase ones.
@@ -98,7 +98,11 @@ async function loadSeason(sid) {
   const [raw, players, photo, badges, bracket] = await Promise.all([
     getSeasonGames(sid).catch(() => []), S.players, teamPhoto(sid), seasonBadges(sid), hasBracket(sid)
   ]);
-  const data = { games: normalizeGames(raw), players: players || [], photo, badges, bracket };
+  // Keep each game's start time: the normalised game keeps only the day, and a
+  // doubleheader or a three-game final needs the time to list in order.
+  const startOf = new Map((raw || []).map((r) => [r.id, parseGameDateTime(r.date, r.time)?.getTime() || 0]));
+  const games = normalizeGames(raw).map((g) => ({ ...g, start: startOf.get(g.id) || 0 }));
+  const data = { games, players: players || [], photo, badges, bracket };
   S.cache.set(sid, data);
   return data;
 }
@@ -106,6 +110,10 @@ async function loadSeason(sid) {
 // ---------------------------------------------------------------------------
 // Season pieces
 // ---------------------------------------------------------------------------
+
+// Day, then start time, then the game ID (numeric-aware, so _game2 follows _game1).
+const byStart = (a, b) => (a.dateKey || '').localeCompare(b.dateKey || '') || ((a.start || 0) - (b.start || 0))
+  || String(a.id).localeCompare(String(b.id), undefined, { numeric: true });
 
 const isFinalRound = (round) => /champ|final/i.test(round) && !/semi|winners|losers|wb|lb/i.test(round);
 const sideOf = (g, team) => (norm(g.home) === norm(team) ? 'home' : norm(g.away) === norm(team) ? 'away' : '');
@@ -123,7 +131,7 @@ function playoffRounds(games) {
     round,
     final: isFinalRound(round),
     start: first(list),
-    games: list.sort((a, b) => (a.dateKey || '').localeCompare(b.dateKey || '') || String(a.id).localeCompare(String(b.id)))
+    games: list.sort(byStart)
   })).sort((a, b) => (a.final - b.final) || (a.start || '9').localeCompare(b.start || '9') || a.round.localeCompare(b.round));
 }
 
@@ -315,7 +323,7 @@ function badgesHtml(sid, title, data) {
 function journeyHtml(sid, title, data) {
   const champ = title.champion;
   const games = data.games.filter((g) => g.type === 'regular' && g.hasScores && sideOf(g, champ))
-    .sort((a, b) => (a.dateKey || '').localeCompare(b.dateKey || ''));
+    .sort(byStart);
   if (!games.length) return '';
   const cells = games.map((g) => {
     const side = sideOf(g, champ);
