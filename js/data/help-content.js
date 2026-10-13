@@ -151,14 +151,14 @@ export const HELP_SECTIONS = [
    {
     "id": "submit-final-score",
     "title": "Submit a final score",
-    "keywords": "final score result standings home away submit score",
-    "body": "<p>Open <a href=\"submit-score.html\">Submit scores</a>.</p> <ol> <li>Pick the season (usually the current one). Only seasons you have access to appear.</li> <li>Pick the game; the list shows date, home team and away team. If a score is already saved, it pre-fills.</li> <li>Enter home and away runs as whole numbers, no negatives. The preview at the bottom shows the winner as you type.</li> <li>Click <strong>Submit Score</strong>. A confirmation shows the full result before anything is saved; confirm to finalize.</li> </ol> <p>Standings update immediately, so submit while you are still at the field. The form is a single page and works well on a phone.</p>"
+    "keywords": "final score result standings home away submit score fix correct wrong score",
+    "body": "<p>Open <a href=\"submit-score.html\">Submit scores</a>. Captains and team staff see their own team's games; league staff see every game.</p> <ol> <li>The season is the current one; change it at the top if you need to.</li> <li><strong>Needs a score</strong> lists your games that have started with no score yet. Tap the game.</li> <li>Enter each team's runs. The line under the form shows the winner as you type.</li> <li>Click <strong>Save score</strong> and confirm. Then use the button underneath to go straight to your team's stats for that game.</li> </ol> <p>To fix a score that's wrong, switch to <strong>All games</strong>, pick the game and save the right score; it replaces the old one. Standings update right away, so submit while you're still at the field.</p>"
    },
    {
     "id": "line-score-forfeit",
     "title": "Add a line score, forfeit or notes",
     "keywords": "inning by inning line score box score extra innings forfeit notes rain delay",
-    "body": "<p>These options are on the <a href=\"submit-score.html\">Submit scores</a> form and are all optional.</p> <ul> <li><strong>Line score:</strong> check Enter inning-by-inning scores to open the grid. Enter runs per inning; the totals calculate automatically and become read-only. Use the + and - controls to add or remove innings, from 1 up to 15, for extra innings.</li> <li><strong>Forfeit:</strong> check the forfeit box to mark the game as a forfeit. Forfeits count in the standings: a win for one team and a loss for the other.</li> <li><strong>Notes:</strong> free text stored on the game record, for anything unusual such as a rain delay or field change.</li> </ul>"
+    "body": "<p>These options are on the <a href=\"submit-score.html\">Submit scores</a> form and are all optional.</p> <ul> <li><strong>Line score:</strong> tick Add the line score to open the inning grid. Enter runs per inning and the totals fill in from them. Use + and - to add or remove innings (1 to 15). Untick it to remove a line score.</li> <li><strong>Forfeit:</strong> tick the forfeit box. Forfeits count in the standings: a win for one team and a loss for the other.</li> <li><strong>Notes:</strong> free text saved with the game, for anything unusual like a rain delay or a field change.</li> </ul>"
    },
    {
     "id": "correct-a-result",
@@ -169,8 +169,8 @@ export const HELP_SECTIONS = [
    {
     "id": "submit-game-stats",
     "title": "Enter stats for one game",
-    "keywords": "player stats game by game batting pitching played checkbox",
-    "body": "<p>Open <a href=\"submit-stats.html\">Submit stats</a> and stay on the <strong>Game-by-Game</strong> tab.</p> <ol> <li>Pick the game. The list shows your team's completed and upcoming games for the active season.</li> <li>Your roster loads as rows. Check <strong>Played</strong> for everyone who appeared; unchecked players are skipped and none of their fields save.</li> <li>Enter AB, H, R, BB and HR, plus IP and RA for anyone who pitched.</li> <li>Click <strong>Submit Stats</strong>. A success message confirms the save.</li> </ol> <p>If you ended a tracked game in Game Tracker, batting stats are already saved. Use this page when you kept score on paper or need to correct something. Stats power leaderboards, player pages and career records.</p>"
+    "keywords": "player stats game by game batting pitching played sub substitute pdf scoresheet gamechanger",
+    "body": "<p>Open <a href=\"submit-stats.html\">Submit stats</a> and stay on <strong>One game</strong>.</p> <ol> <li>Pick your team's side of the game. <strong>Needs stats</strong> lists played games still missing yours; <strong>All games</strong> lets you fix an earlier one.</li> <li>Your roster loads as rows with any stats already saved. Untick <strong>Played</strong> for anyone who didn't play.</li> <li>Enter AB, H, 2B, 3B, HR, R, RBI and BB, plus IP and RA for anyone who pitched. The team row totals them and checks runs against the final score.</li> <li><strong>Subs:</strong> pick a player from another team under Sub from another team (batting only; it doesn't count toward his own team's season). Someone on no roster can be added by name.</li> <li>Or use <strong>Read a scoresheet PDF</strong> (GameChanger box scores work) to fill the grid, then check it.</li> <li>Click <strong>Save stats</strong>.</li> </ol> <p>If you ended a tracked game in Game Tracker, batting stats are already saved. Use this page when you kept score on paper or need to correct something.</p>"
    },
    {
     "id": "stats-fields",
@@ -182,7 +182,7 @@ export const HELP_SECTIONS = [
     "id": "bulk-csv-upload",
     "title": "Upload stats from a CSV file",
     "keywords": "csv bulk upload multiple games spreadsheet import columns format",
-    "body": "<p>For several games at once, use the <strong>CSV Bulk Upload</strong> tab on <a href=\"submit-stats.html\">Submit stats</a>.</p> <ul> <li><strong>Required columns:</strong> player, date, opponent, ab, h, r, bb.</li> <li><strong>Optional columns:</strong> hr, ip, ra (put hr between bb and ip).</li> <li>Player names must match your roster exactly. Dates use MM/DD/YYYY.</li> </ul> <ol> <li>Drag and drop the file or browse for it.</li> <li>Review the preview. Red rows have errors; yellow rows are warnings.</li> <li>Fix the file and re-upload, or submit with only the valid rows.</li> </ol>"
+    "body": "<p>For several games at once, use the <strong>CSV, many games</strong> tab on <a href=\"submit-stats.html\">Submit stats</a>.</p> <ul> <li>Pick your team and use <strong>Download a template</strong> for the columns: Player, GameDate, Opponent, IsHome, GameType, AB, H, R, BB, HR, IP, RA.</li> <li>Player names should match your roster. Dates use MM/DD/YYYY.</li> </ul> <ol> <li>Drop the file on the page or choose it.</li> <li>Check the preview; rows with problems are flagged.</li> <li>Click <strong>Save all rows</strong>. Games that match the schedule are marked as having your stats in.</li> </ol>"
    },
    {
     "id": "post-game-flow",

@@ -277,7 +277,7 @@ export const MORE_SHEET = ['history', 'play', 'help'];
 // from the Admin Hub), hidden pages, and pages due to be deleted.
 export const NAV_UNLISTED = {
   noNav: ['signin.html', 'signup.html', 'reset-password.html', 'verify-email.html', 'offline.html'],
-  hidden: ['boxes-pool.html', 'link-player.html', 'player-questionnaire.html'],
+  hidden: ['boxes-pool.html', 'link-player.html', 'player-questionnaire.html', 'submit-score-backup.html', 'submit-stats-backup.html'],
   adminTools: ['admin/aggregate-stats.html', 'approve-links.html', 'captain-questionnaire-review.html',
     'admin/games.html', 'admin/schedule-editor.html', 'admin/player-import.html', 'admin/playoff-eligibility.html',
     'schedule-balancer.html', 'admin/schedule-rework.html',

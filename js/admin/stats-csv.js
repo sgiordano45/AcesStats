@@ -1,10 +1,11 @@
 // js/admin/stats-csv.js
-// The "CSV, many games" tab of admin/submit-stats.html: one team, many games
+// The "CSV, many games" tab of the stats entry pages (submit-stats.html and
+// admin/submit-stats.html, js/pages/stats-entry.js): one team, many games
 // in one file. The parsing, game ID building and the Firestore writes are the
 // old page's, unchanged (playerStats/{legacyId}/games/{season}_{gameId} and
 // pitchingStats/..., merge writes, bulkImport: true).
 
-import { db, doc, setDoc, serverTimestamp } from '../core/firebase.js';
+import { db, doc, getDoc, setDoc, updateDoc, serverTimestamp } from '../core/firebase.js';
 import { getSeasonPlayerStatsOptimized } from '../data/player-stats.js';
 import { escapeHtml as esc } from '../ui/format.js';
 import { toDateKey } from '../domain/dates.js';
@@ -139,7 +140,7 @@ async function save() {
   btn.disabled = true;
   btn.textContent = 'Saving...';
   const user = ctx.user;
-  let ok = 0, failed = 0;
+  let ok = 0, failed = 0, marked = 0;
 
   // Group by date + opponent + home so a doubleheader splits into two games
   const groups = {};
@@ -205,6 +206,24 @@ async function save() {
         failed++;
       }
     }
+    // Mark this team's stats as in when the game is on the schedule (as the old
+    // captain page did), so it stops showing as missing.
+    try {
+      const gameRef = doc(db, 'seasons', seasonId, 'games', gameId);
+      if ((await getDoc(gameRef)).exists()) {
+        await updateDoc(gameRef, {
+          [game.isHome ? 'statsSubmittedHome' : 'statsSubmittedAway']: true,
+          statsSubmittedBy: user.uid,
+          statsSubmittedByName: user.displayName || user.email,
+          statsSubmittedAt: serverTimestamp(),
+          statsSubmittedForTeam: teamName,
+          statsSubmittedViaBulkUpload: true
+        });
+        marked++;
+      }
+    } catch (err) {
+      console.warn(`[csv] could not mark ${gameId}`, err);
+    }
   }
 
   btn.textContent = 'Save all rows';
@@ -213,7 +232,8 @@ async function save() {
   if (!failed) {
     showToast(`Saved ${ok} player rows across ${nGames} games`, 'success');
     clear();
-    setStatus('success', `Saved ${ok} player rows across ${nGames} game${nGames === 1 ? '' : 's'}. Mark the games' stats as in from the pipeline when you're done.`);
+    const unmatched = nGames - marked;
+    setStatus(unmatched ? 'warning' : 'success', `Saved ${ok} player rows across ${nGames} game${nGames === 1 ? '' : 's'}.${marked ? ` ${marked} marked as in.` : ''}${unmatched ? ` ${unmatched} didn't match a scheduled game (check the dates and opponents), so ${unmatched === 1 ? "it isn't" : "they aren't"} marked as in.` : ''}`);
   } else {
     setStatus('warning', `Saved ${ok} rows, but ${failed} failed. Check the browser console for details.`);
   }
