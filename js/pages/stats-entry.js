@@ -469,34 +469,43 @@ async function save() {
     }
   }));
 
-  // Mark this side's stats as in and record its subs, so the pipeline and
-  // admin home stop flagging it and the subs reload next time.
-  let marked = false;
+  // Mark this side's stats as in (that flip is what sends the "stats submitted"
+  // alert), then record its subs. Two writes: team staff without the captain
+  // flag may only change the statsSubmitted* fields, so a subs field in the
+  // same write would sink the whole update.
+  let marked = false, subsSaved = true;
   if ((ok || removed) && !failed) {
+    const ref = doc(db, 'seasons', seasonId, 'games', sel.r.id);
+    const x = items.find(i => i.r.id === sel.r.id);
+    try {
+      await updateDoc(ref, {
+        [sel.isHome ? 'statsSubmittedHome' : 'statsSubmittedAway']: true,
+        statsSubmittedBy: user.uid,
+        statsSubmittedByName: user.displayName || user.email,
+        statsSubmittedAt: serverTimestamp(),
+        statsSubmittedForTeam: sel.teamName
+      });
+      marked = true;
+      if (x) x[sel.isHome ? 'homeIn' : 'awayIn'] = true;
+    } catch (err) {
+      console.error('[stats] could not mark the game', err);
+    }
     const subs = rows.filter(p => p.isSub && p.played && BAT.some(([k]) => p.v[k] > 0))
       .map(p => ({ legacyId: p.legacyId, name: p.name, homeTeam: p.homeTeam || null }));
     const subsKey = sel.isHome ? 'subsHome' : 'subsAway';
     const oldKey = sel.isHome ? 'subHome' : 'subAway';
-    const update = {
-      [sel.isHome ? 'statsSubmittedHome' : 'statsSubmittedAway']: true,
-      statsSubmittedBy: user.uid,
-      statsSubmittedByName: user.displayName || user.email,
-      statsSubmittedAt: serverTimestamp(),
-      statsSubmittedForTeam: sel.teamName,
-      [subsKey]: subs
-    };
-    if (sel.r[oldKey] !== undefined) update[oldKey] = deleteField();
-    try {
-      await updateDoc(doc(db, 'seasons', seasonId, 'games', sel.r.id), update);
-      marked = true;
-      const x = items.find(i => i.r.id === sel.r.id);
-      if (x) {
-        x[sel.isHome ? 'homeIn' : 'awayIn'] = true;
-        x.r[subsKey] = subs;
-        delete x.r[oldKey];
+    const had = savedSubs(sel.r, sel.isHome);
+    const same = had.length === subs.length && subs.every(s => had.some(h => h.legacyId === s.legacyId)) && sel.r[oldKey] === undefined;
+    if (!same) {
+      const upd = { [subsKey]: subs };
+      if (sel.r[oldKey] !== undefined) upd[oldKey] = deleteField();
+      try {
+        await updateDoc(ref, upd);
+        if (x) { x.r[subsKey] = subs; delete x.r[oldKey]; }
+      } catch (err) {
+        subsSaved = false;
+        console.error('[stats] could not record the subs on the game', err);
       }
-    } catch (err) {
-      console.warn('[stats] could not mark the game', err);
     }
   }
 
@@ -510,12 +519,15 @@ async function save() {
   }
   showToast(`Saved stats for ${plural(ok, 'player')}`, 'success');
   const keep = { game: sel.r.id, side: sel.side };
+  const flagNote = !marked
+    ? ' The stats are saved, but the game could not be marked as in, so league staff were not alerted. Tell league staff, or try saving again.'
+    : !subsSaved ? ' The subs were saved, but the game could not record them, so they may not reload here next time; let league staff know.' : '';
   await selectSide(keep.game, keep.side, { scroll: false });
   const after = opts.pipelineHref
     ? ` Run the aggregation from the <a href="${esc(opts.pipelineHref)}?season=${encodeURIComponent(seasonId)}">stats pipeline</a> when the week's games are in.`
     : ' League staff fold them into the season totals when they next update stats.';
   const block = blocked.length ? ` Removing ${esc(blocked.join(', '))} needs league staff; ask them to untick and save.` : '';
-  notice(blocked.length ? 'warning' : 'success', `Saved ${plural(ok, 'player')}${removed ? `, removed ${plural(removed, 'player')}` : ''}.${marked ? ` ${esc(sel.teamName)}'s stats are marked as in.` : ''}${block}${after}`);
+  notice(blocked.length || flagNote ? 'warning' : 'success', `Saved ${plural(ok, 'player')}${removed ? `, removed ${plural(removed, 'player')}` : ''}.${marked ? ` ${esc(sel.teamName)}'s stats are marked as in.` : ''}${flagNote}${block}${after}`);
 }
 
 // ---------------------------------------------------------------------------

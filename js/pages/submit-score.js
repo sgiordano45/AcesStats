@@ -60,7 +60,9 @@ async function loadSeason(id) {
 
 function renderGames() {
   const need = items.filter(needsScore).sort((a, b) => a.start - b.start);
-  const list = filter === 'need' ? need : [...items].sort((a, b) => b.start - a.start);
+  // All games: played ones first (latest at the top, the ones you'd fix), then upcoming (soonest first).
+  const all = () => [...items.filter(started).sort((a, b) => b.start - a.start), ...items.filter(x => !started(x)).sort((a, b) => a.start - b.start)];
+  const list = filter === 'need' ? need : all();
   $('ssCount').textContent = filter === 'need' ? `${need.length} need a score` : `${items.length} games`;
   if (!list.length) {
     $('ssGames').innerHTML = `<p class="sse-empty">${filter === 'need' ? 'Every game that has started has a score. Switch to All games to fix one.' : 'No games in this season yet.'}</p>`;
