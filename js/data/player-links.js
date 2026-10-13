@@ -8,6 +8,7 @@
 import { updateProfile } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
 import { auth, db, doc, getDoc, getDocs, setDoc, updateDoc, collection, serverTimestamp } from '../core/firebase.js';
 import { USER_ROLES, hasPermission } from '../core/auth.js';
+import { toStatId } from '../domain/player-id.js';
 
 export async function linkPlayerToUser(userId, playerName, teamId, isCaptain = false) {
   try {
@@ -26,7 +27,7 @@ export async function linkPlayerToUser(userId, playerName, teamId, isCaptain = f
     let playerUserId = null;
     
     if (playerName) {
-      playerUserId = playerName.toLowerCase().replace(/\s+/g, '_');
+      playerUserId = toStatId(playerName);
       
       try {
         const oldPlayerRef = doc(db, 'users', playerUserId);
@@ -156,7 +157,7 @@ export async function aggregatePlayerStats(userId, playerName, teamId) {
   try {
     // Convert player name to stats lookup ID (legacy format)
     // Remove periods (Jr. → Jr) before converting spaces to underscores
-    const statsLookupId = playerName.toLowerCase().replace(/\./g, '').replace(/\s+/g, '_');
+    const statsLookupId = toStatId(playerName);
     
     
     // ========================================

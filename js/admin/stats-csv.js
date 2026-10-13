@@ -11,6 +11,8 @@ import { escapeHtml as esc } from '../ui/format.js';
 import { toDateKey } from '../domain/dates.js';
 import { icon } from '../ui/icons.js';
 import { showToast } from '../ui/toast.js';
+import { getTeamRosterDoc } from '../../firebase-roster.js';
+import { toStatId, statIdOf } from '../domain/player-id.js';
 
 const $ = (id) => document.getElementById(id);
 const HEADER = 'Player,GameDate,Opponent,IsHome,GameType,GameNum,AB,H,R,BB,HR,IP,RA';
@@ -142,6 +144,13 @@ async function save() {
   const user = ctx.user;
   let ok = 0, failed = 0, marked = 0;
 
+  // Names in the file -> stats IDs through the team's roster, so a player whose
+  // name differs from his ID (Zack Gubitosi is zach_gubitosi) lands in the right place.
+  const roster = await getTeamRosterDoc(teamId, seasonId).catch(() => []);
+  const byName = new Map();
+  roster.forEach(p => { const sid = toStatId(p.legacyId) || statIdOf(p); if (!sid) return; byName.set(toStatId(p.name), sid); byName.set(sid, sid); });
+  const idFor = (name) => byName.get(toStatId(name)) || toStatId(name);
+
   // Group by date + opponent + home so a doubleheader splits into two games
   const groups = {};
   rows.forEach(row => {
@@ -172,7 +181,7 @@ async function save() {
 
     for (const row of game.rows) {
       try {
-        const legacyId = row.player.toLowerCase().replace(/\./g, '').replace(/\s+/g, '_');
+        const legacyId = idFor(row.player);
         const ab = parseInt(row.ab) || parseInt(row.atbat) || 0;
         const h = parseInt(row.h) || parseInt(row.hits) || 0;
         const r = parseInt(row.r) || parseInt(row.runs) || 0;

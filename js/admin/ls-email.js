@@ -20,6 +20,7 @@ import { seasonLabel } from '../domain/season-ids.js';
 import { escapeHtml as esc } from '../ui/format.js';
 import { showToast } from '../ui/toast.js';
 import { confirmModal } from '../ui/modal.js';
+import { statIdOf } from '../domain/player-id.js';
 
 const $ = (id) => document.getElementById(id);
 const TEAMS = ['Army', 'Black', 'Blue', 'Carolina', 'Gold', 'Green', 'Orange', 'Purple', 'Red', 'Silver', 'Teal'];
@@ -65,7 +66,7 @@ async function recipients() {
     if (d.userRole === 'fan' || d.userRole === 'family') continue;
     if (aud === 'linked' && !d.linkedPlayer) continue;
     if (aud === 'active') {
-      const linked = String(d.linkedPlayer || '').toLowerCase().trim().replace(/\s+/g, '_');
+      const linked = d.linkedPlayer || d.mergedFromProfile ? statIdOf(d) : '';
       if (!(active.auth.has(d.id) || active.legacy.has(d.id) || (linked && active.legacy.has(linked)))) continue;
     }
     if (aud === 'captains' && !(d.isCaptain === true || Object.values(d.teamRoles || {}).some(r => r === 'captain' || r?.role === 'captain'))) continue;

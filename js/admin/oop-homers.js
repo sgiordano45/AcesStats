@@ -17,9 +17,10 @@ import { showToast } from '../ui/toast.js';
 import { openModal, confirmModal } from '../ui/modal.js';
 import { teamDot } from '../ui/game-shared.js';
 import { mountAdminShell } from './shell.js';
+import { toStatId } from '../domain/player-id.js';
 
 const $ = (id) => document.getElementById(id);
-const legacyId = (name) => String(name || '').toLowerCase().replace(/\./g, '').trim().replace(/\s+/g, '_');
+const legacyId = toStatId;
 let flagged = [];      // this season's outOfParkHRs docs
 let hitters = [];      // [{ name, team, hrs }]
 

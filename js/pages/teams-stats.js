@@ -24,11 +24,10 @@ import { icon } from '../ui/icons.js';
 import { lineChart, wireLineChart } from '../ui/line-chart.js';
 import { battingLine, era } from '../domain/stats.js';
 import { seasonLabel, seasonSortKey } from '../domain/season-ids.js';
+import { statIdOf } from '../domain/player-id.js';
 
 const EXCLUDED = new Set(['kings']);   // the old guest team
 const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-const nameId = (name) => String(name || '').toLowerCase().replace(/\./g, '').replace(/'/g, '').replace(/\s+/g, '_');
-const isUid = (id) => /^[A-Za-z0-9]{28}$/.test(String(id || ''));
 const avg3 = (v) => (v === null || v === undefined ? '-' : fmtAvg(v));
 
 // ---------------------------------------------------------------------------
@@ -159,7 +158,7 @@ const runCache = new Map();
 async function loadRunning(players, sid) {
   if (runCache.has(sid)) return runCache.get(sid);
   const inSeason = players.filter((p) => Object.keys(p.seasons || {}).some((k) => k === sid || k.startsWith(`${sid}-`)));
-  const docId = (p) => (isUid(p.id) ? nameId(p.linkedPlayer || p.name || p.displayName) : p.id);
+  const docId = (p) => statIdOf(p);
   const byTeam = new Map();
   const game = (team, gid, when) => {
     const t = norm(team) || 'unknown';

@@ -18,6 +18,7 @@ import { escapeHtml as esc } from '../ui/format.js';
 import { showToast } from '../ui/toast.js';
 import { confirmModal } from '../ui/modal.js';
 import { teamDot } from '../ui/game-shared.js';
+import { toStatId, statIdOf } from '../domain/player-id.js';
 
 const $ = (id) => document.getElementById(id);
 const XLSX_URL = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
@@ -399,7 +400,7 @@ async function push() {
       if (!teams[a.teamName]) teams[a.teamName] = { players: [], maxRoster: 16 };
       const pr = a.playerRecord;
       const s = careerOf(pr);
-      const id = (pr?.name || uploadedName).toLowerCase().replace(/\s+/g, '_');
+      const id = (pr && statIdOf(pr)) || toStatId(uploadedName);
       const player = { id, name: pr?.name || uploadedName, ba: s.ba || '.000', acesBPI: s.bpi || '0.0', source: 'roster-import', importedAt: now };
       const at = teams[a.teamName].players.findIndex(p => p.id === id || p.name === player.name);
       if (at >= 0) teams[a.teamName].players[at] = player; else teams[a.teamName].players.push(player);
@@ -409,7 +410,7 @@ async function push() {
       const pr = a.playerRecord;
       const s = careerOf(pr);
       return {
-        id: (pr?.name || uploadedName).toLowerCase().replace(/\s+/g, '_'),
+        id: (pr && statIdOf(pr)) || toStatId(uploadedName),
         name: pr?.name || uploadedName,
         uploadedAs: uploadedName,
         ...(s.ba ? { ba: s.ba } : {}),

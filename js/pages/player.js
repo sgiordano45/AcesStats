@@ -30,6 +30,7 @@ import { formatPlayerName, fmtAvg, fmtRate } from '../ui/format.js';
 import { showToast } from '../ui/toast.js';
 import { seasonSortKey, seasonLabel } from '../domain/season-ids.js';
 import { esc, cap, icon, teamAttr, gameTime } from './player-shared.js';
+import { toStatId, statIdOf, isAuthUid } from '../domain/player-id.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -64,8 +65,8 @@ const loaded = new Set();
 // Finding the player
 // ---------------------------------------------------------------------------
 
-/** Name -> legacy snake_case ID, as the badge calculator and stat pipeline write it. */
-export const nameToLegacyId = (name) => String(name || '').toLowerCase().replace(/\./g, '').replace(/'/g, '').replace(/\s+/g, '_');
+/** Name -> legacy snake_case ID, as the badge calculator and stat pipeline write it (js/domain/player-id.js). */
+export const nameToLegacyId = toStatId;
 
 // The whole aggregatedPlayerStats collection, read once and shared: name
 // lookups, the radial chart's league maximums and the all-time ranks use it.
@@ -472,9 +473,10 @@ async function main() {
   }
   document.title = `${name} - Mountainside Aces`;
 
-  // Firebase UIDs are 28 mixed-case characters; game-level docs use the name-derived ID instead.
-  const isUid = id.length > 20 && /[A-Z]/.test(id);
-  const legacyId = isUid ? nameToLegacyId(name) : id;
+  // Game-level docs are under the stats ID: for a linked account that is his
+  // linkedPlayer / merged ID, which can differ from the display name.
+  const isUid = isAuthUid(id);
+  const legacyId = statIdOf(player || found.user) || toStatId(name);
   const rows = player ? buildBattingRows([player]) : [];
 
   const user = found.user ? { ...found.user, linked: true } : await findLinkedUser(name, id);
@@ -489,8 +491,8 @@ async function main() {
     hasPitching: false, hasSpray: false,
     allPlayers,
     // Batting game docs and the 2025 splits doc have always been read by the name-derived ID.
-    nameId: nameToLegacyId(name),
-    battingGames: gameDocs('playerStats', nameToLegacyId(name)),
+    nameId: legacyId,
+    battingGames: gameDocs('playerStats', legacyId),
     pitchingGames: gameDocs('pitchingStats', legacyId),
     // Tracker plays for a linked player are under his Auth UID; older plays under the legacy ID.
     spray: once(() => import('./player-spray.js').then((m) => m.loadSpray([isUid ? id : null, user?.linked ? user.id : null, legacyId]))),

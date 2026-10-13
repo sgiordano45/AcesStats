@@ -24,6 +24,7 @@ import { escapeHtml as esc, fmtAvg } from '../ui/format.js';
 import { showToast } from '../ui/toast.js';
 import { confirmModal } from '../ui/modal.js';
 import { teamDot } from '../ui/game-shared.js';
+import { toStatId } from '../domain/player-id.js';
 
 const $ = (id) => document.getElementById(id);
 const lower = (s) => String(s || '').toLowerCase();
@@ -64,7 +65,7 @@ function sameStats(a, b) {
   return keys.size > 0 && [...keys].every(k => (Number(a[k]) || 0) === (Number(b[k]) || 0));
 }
 const isUid = (id) => id.length > 20 && !id.includes('_');
-const legacyFromName = (n) => lower(n).replace(/\./g, '').replace(/'/g, '').trim().replace(/\s+/g, '_');
+const legacyFromName = toStatId;
 
 /** The ID a record's stat docs live under. */
 function statIdOf(r) {

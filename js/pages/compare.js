@@ -20,6 +20,7 @@ import { buildPitchingRows } from '../ui/pitching-stats.js';
 import { TEAM_COLORS } from '../ui/stat-columns.js';
 import { escapeHtml as esc, fmtAvg, fmtRate, formatIP, formatPlayerName } from '../ui/format.js';
 import { icon } from '../ui/icons.js';
+import { statIdOf } from '../domain/player-id.js';
 
 const $ = (id) => document.getElementById(id);
 const TEAMS_FROM = 2022;   // team records and the grid count games from 2022 on, as the old pages did
@@ -499,7 +500,7 @@ async function main() {
   const ctx = await initPage({ title: 'Compare' });
   const prof = ctx?.profile;
   data.me = new Set([prof?.id, prof?.playerId, prof?.mergedFromProfile,
-    String(prof?.linkedPlayer || '').trim().toLowerCase().replace(/\s+/g, '_')].filter(Boolean));
+    (prof?.linkedPlayer || prof?.mergedFromProfile) ? statIdOf(prof) : ''].filter(Boolean));
 
   const [players, seasons, awards] = await Promise.all([
     getAllPlayerStatsOptimized(),

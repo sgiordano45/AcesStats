@@ -43,6 +43,7 @@ import { showToast } from '../ui/toast.js';
 import { confirmModal } from '../ui/modal.js';
 import { mountCsv } from '../admin/stats-csv.js';
 import { parsePdf } from '../admin/stats-pdf.js';
+import { toStatId, statIdOf } from '../domain/player-id.js';
 
 const $ = (id) => document.getElementById(id);
 const GAME_LENGTH_MS = 2 * 60 * 60 * 1000;
@@ -68,7 +69,6 @@ let saving = false;
 let subPool = null;        // other teams' rostered players for the season: [{ legacyId, name, team }]
 let subPoolKey = '';
 
-const toLegacyId = (name) => String(name || '').toLowerCase().replace(/\./g, '').replace(/\s+/g, '_');
 const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 const lower = (s) => String(s || '').toLowerCase();
 const inScope = (...keys) => !opts.scope || keys.some(k => k && opts.scope.includes(lower(k)));
@@ -154,7 +154,7 @@ function renderGames() {
 async function loadRoster(teamId) {
   const doc_ = await getTeamRosterDoc(teamId, seasonId);
   if (doc_.length) {
-    return doc_.map(p => ({ id: p.playerId, legacyId: p.legacyId, name: p.name }));
+    return doc_.map(p => ({ id: p.playerId, legacyId: toStatId(p.legacyId) || statIdOf(p), name: p.name }));
   }
   // Seasons before 2026 have no roster docs: use the season's aggregated players.
   const players = await getSeasonPlayerStatsOptimized(seasonId);
@@ -162,7 +162,7 @@ async function loadRoster(teamId) {
     .filter(p => lower(p.team) === lower(teamId) && !p.migrated)
     .map(p => ({
       id: p.id,
-      legacyId: p.isAuthUser ? toLegacyId(p.name) : p.id,
+      legacyId: statIdOf(p),
       name: p.name || p.playerName || p.id
     }));
 }
@@ -175,7 +175,7 @@ async function loadSubPool() {
   const others = teams.filter(t => lower(t.id) !== lower(sel.teamId) && lower(t.name) !== lower(sel.teamId));
   const lists = await Promise.all(others.map(async t => {
     const players = await getTeamRosterDoc(t.id, seasonId).catch(() => []);
-    return players.filter(p => p.legacyId && !own.has(p.legacyId)).map(p => ({ legacyId: p.legacyId, name: p.name, team: t.name || t.id }));
+    return players.filter(p => p.legacyId && !own.has(toStatId(p.legacyId))).map(p => ({ legacyId: toStatId(p.legacyId), name: p.name, team: t.name || t.id }));
   }));
   subPool = lists.flat().sort((a, b) => a.team.localeCompare(b.team) || a.name.localeCompare(b.name));
   subPoolKey = key;
@@ -365,7 +365,7 @@ async function addPlayer() {
   const input = $('sseAddName');
   const name = input.value.trim().replace(/\s+/g, ' ');
   if (!name || !sel) return;
-  const legacyId = toLegacyId(name);
+  const legacyId = toStatId(name);
   if (rows.some(r => r.legacyId === legacyId)) { showToast(`${name} is already in the grid`, 'info'); return; }
   if ((subPool || []).some(p => p.legacyId === legacyId)) {
     showToast(`${name} is on another team's roster. Add him as a sub instead.`, 'warning');

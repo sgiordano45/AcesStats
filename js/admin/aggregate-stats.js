@@ -23,6 +23,7 @@ import { escapeHtml as esc } from '../ui/format.js';
 import { showToast } from '../ui/toast.js';
 import { confirmModal } from '../ui/modal.js';
 import { mountAdminShell } from './shell.js';
+import { toStatId } from '../domain/player-id.js';
 
 // Seasons with game-level stats (full aggregation to production): 2026 Summer on.
 let GAME_BASED_SEASONS = ['2026-summer', '2026-fall', '2027-summer', '2027-fall'];
@@ -241,7 +242,7 @@ async function gatherSplitsData(seasonId) {
     let playerName;
     
     if (data.isAuthUser && data.linkedPlayer) {
-      legacyId = data.linkedPlayer.toLowerCase().replace(/\./g, '').replace(/'/g, '').replace(/\s+/g, '_');
+      legacyId = toStatId(data.linkedPlayer);
       playerName = data.linkedPlayer;
     } else {
       legacyId = docSnap.id;
@@ -527,7 +528,7 @@ window.previewGameBasedSeason = async function() {
       let legacyId;
       if (data.isAuthUser && data.linkedPlayer) {
         // Auth user - derive legacyId from linkedPlayer name
-        legacyId = data.linkedPlayer.toLowerCase().replace(/\./g, '').replace(/'/g, '').replace(/\s+/g, '_');
+        legacyId = toStatId(data.linkedPlayer);
       } else {
         // Legacy user - doc ID is the legacyId
         legacyId = docSnap.id;
@@ -753,7 +754,7 @@ window.aggregateGameBasedSeason = async function() {
       
       if (data.isAuthUser && data.linkedPlayer) {
         // Auth user - derive legacyId from linkedPlayer name
-        legacyId = data.linkedPlayer.toLowerCase().replace(/\./g, '').replace(/'/g, '').replace(/\s+/g, '_');
+        legacyId = toStatId(data.linkedPlayer);
         log(`  Auth user: ${data.linkedPlayer} (${legacyId}) \u2192 docId: ${docId}`);
       } else {
         // Legacy user - doc ID is the legacyId
@@ -1978,7 +1979,7 @@ window.runStreakCalculator = async function(previewOnly = true) {
       const docId = docSnap.id;
       let legacyId;
       if (data.isAuthUser && data.linkedPlayer) {
-        legacyId = data.linkedPlayer.toLowerCase().replace(/\./g, '').replace(/'/g, '').replace(/\s+/g, '_');
+        legacyId = toStatId(data.linkedPlayer);
       } else {
         legacyId = docId;
       }

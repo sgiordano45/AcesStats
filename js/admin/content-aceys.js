@@ -22,6 +22,7 @@ import { escapeHtml as esc } from '../ui/format.js';
 import { showToast } from '../ui/toast.js';
 import { openModal, confirmModal } from '../ui/modal.js';
 import { icon } from '../ui/icons.js';
+import { statIdOf } from '../domain/player-id.js';
 
 const $ = (id) => document.getElementById(id);
 const YEAR = '2026';
@@ -122,7 +123,7 @@ async function loadPlayers() {
     const u = d.data();
     if (u.migrated || d.id.startsWith('anon')) return;
     const name = u.displayName || u.name || d.id.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-    const p = { id: d.id, name, team: u.currentTeam || u.linkedTeam || '', legacyId: u.legacyId || u.linkedPlayer?.replace(/\s+/g, '_').toLowerCase() || null };
+    const p = { id: d.id, name, team: u.currentTeam || u.linkedTeam || '', legacyId: (u.legacyId || u.linkedPlayer || u.mergedFromProfile) ? statIdOf({ id: d.id, ...u }) : null };
     const have = byName.get(name.toLowerCase());
     // Keep the account (28-character uid) over a legacy snake_case record.
     if (!have || p.id.length > have.id.length) byName.set(name.toLowerCase(), p);

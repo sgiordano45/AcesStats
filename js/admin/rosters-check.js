@@ -17,6 +17,7 @@ import { icon } from '../ui/icons.js';
 import { showToast } from '../ui/toast.js';
 import { confirmModal } from '../ui/modal.js';
 import { S, teamList, isDirty, isAuthUid, toLegacyId, clean, loadUsers } from './rosters-data.js';
+import { toStatId, statIdOf } from '../domain/player-id.js';
 
 const $ = (id) => document.getElementById(id);
 const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
@@ -62,9 +63,15 @@ async function scan() {
           if (u) out.push({ ...ref, kind: 'link', text: 'Has an account that isn\'t linked', fix: { authId: u.uid }, fixText: `Link ${u.displayName || u.email || u.uid}` });
         } else {
           const u = users.find(x => x.uid === p.authId);
-          if (u?.mergedFromProfile && u.mergedFromProfile !== p.id) {
-            out.push({ ...ref, kind: 'id', text: `Roster ID ${p.id || '(none)'}, account says ${u.mergedFromProfile}`, fix: { id: u.mergedFromProfile }, fixText: `Use ${u.mergedFromProfile}`, ids: [p.id, u.mergedFromProfile] });
+          // The account's stats ID: merged profile, else its linked player name (js/domain/player-id.js).
+          const want = u && (u.mergedFromProfile || u.linkedPlayer) ? statIdOf(u) : '';
+          if (want && want !== p.id) {
+            out.push({ ...ref, kind: 'id', text: `Roster ID ${p.id || '(none)'}, account says ${want}`, fix: { id: want }, fixText: `Use ${want}`, ids: [p.id, want] });
           }
+        }
+        // IDs follow one form site wide (lowercase, no periods or apostrophes).
+        if (p.id && !isAuthUid(p.id) && toStatId(p.id) !== p.id && !out.some(i => i.kind === 'id' && i.pid === p.id && i.team === t.key)) {
+          out.push({ ...ref, kind: 'id', text: `Roster ID ${p.id} isn't in the standard form`, fix: { id: toStatId(p.id) }, fixText: `Use ${toStatId(p.id)}`, ids: [p.id, toStatId(p.id)] });
         }
         const prof = profileFor(p, users);
         if (prof) {

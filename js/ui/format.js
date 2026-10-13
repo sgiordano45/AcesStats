@@ -13,6 +13,7 @@
 // Text safety
 // ---------------------------------------------------------------------------
 
+import { toStatId } from '../domain/player-id.js';
 const HTML_ESCAPES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
 
 /**
@@ -112,8 +113,7 @@ export function formatPlayerName(name) {
  * use is data/players.js's job (Phase 1), since merged profiles differ.
  */
 export function toPlayerId(name) {
-  if (!name) return '';
-  return String(name).trim().toLowerCase().replace(/\s+/g, '_');
+  return toStatId(name);   // one rule site wide: js/domain/player-id.js
 }
 
 /**

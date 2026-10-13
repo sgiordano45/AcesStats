@@ -28,6 +28,7 @@ import { showToast } from '../ui/toast.js';
 import { confirmModal } from '../ui/modal.js';
 import { mountAdminShell } from './shell.js';
 import { PLAY_TYPES, PLAY_LABELS, playName, recalculateBattingStats, opposingPitcherStats, lineScore, hitLocations, BATTED } from './tracker-plays.js';
+import { toStatId, statIdOf } from '../domain/player-id.js';
 
 const $ = (id) => document.getElementById(id);
 const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
@@ -156,7 +157,7 @@ async function openGame(id, { scroll = true } = {}) {
     getTeamRosterDoc(String(r.teamId || ''), r.seasonId).catch(() => []),
     getTeamRosterDoc(String(r.opponentName || ''), r.seasonId).catch(() => [])
   ]);
-  const shape = (p) => ({ legacyId: p.legacyId, authId: p.authId || '', name: p.name, number: p.number });
+  const shape = (p) => ({ legacyId: toStatId(p.legacyId), authId: p.authId || '', name: p.name, number: p.number });
   roster = mine.filter(p => p.legacyId).map(shape).sort((a, b) => a.name.localeCompare(b.name));
   oppRoster = theirs.filter(p => p.legacyId).map(shape).sort((a, b) => a.name.localeCompare(b.name));
   picks = {};
@@ -486,16 +487,10 @@ async function pitcherLegacyId(id, name) {
   if (/^[a-z][a-z_]+$/.test(id)) return id;
   try {
     const u = await getDoc(doc(db, 'users', id));
-    if (u.exists()) {
-      const d = u.data();
-      if (d.mergedFromProfile) return d.mergedFromProfile;
-      if (d.migrated && d.migratedTo) {
-        const real = await getDoc(doc(db, 'users', d.migratedTo));
-        if (real.exists() && real.data().mergedFromProfile) return real.data().mergedFromProfile;
-      }
-    }
+    // An account's stats ID: its merged profile, else its linked player name (js/domain/player-id.js).
+    if (u.exists()) return statIdOf({ id: u.id, ...u.data() });
   } catch (err) { console.warn('[tracker-review] pitcher lookup failed', err); }
-  return String(name || '').toLowerCase().replace(/\./g, '').replace(/'/g, '').replace(/\s+/g, '_');
+  return toStatId(name);
 }
 
 async function savePitching() {

@@ -6,6 +6,7 @@
 
 import { db, collection, doc, getDocs, getDoc } from '../core/firebase.js';
 import { getAllPlayers, searchPlayers } from './players.js';
+import { toStatId } from '../domain/player-id.js';
 
 /**
  * Resolve player name to the correct player ID and data
@@ -699,7 +700,7 @@ export async function findPlayerStatsForUser(profile, uid) {
     uid || profile?.uid || profile?.id,
     profile?.mergedFromProfile,
     linked && !/\s/.test(linked) ? linked : '',
-    linked ? linked.toLowerCase().replace(/\s+/g, '_') : ''
+    linked ? toStatId(linked) : ''
   ].filter(Boolean);
   for (const id of [...new Set(ids)]) {
     try {

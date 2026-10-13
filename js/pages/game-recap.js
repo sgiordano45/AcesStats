@@ -24,6 +24,7 @@ import { normalizeGames, isDecided, buildRecords } from '../domain/standings.js'
 import { formatGameDate, formatTime, timeSortValue } from '../domain/dates.js';
 import { era } from '../domain/stats.js';
 import { parseStatSeasonId, seasonLabel, inningsValue } from '../domain/season-ids.js';
+import { statIdOf } from '../domain/player-id.js';
 
 const $ = (id) => document.getElementById(id);
 const lower = (s) => String(s || '').toLowerCase().trim();
@@ -63,8 +64,14 @@ async function loadBox(gameDocId) {
     const [agg, users] = await Promise.all([getDocs(collection(db, 'aggregatedPlayerStats')), getDocs(collection(db, 'users'))]);
     const ids = new Set();
     const legacyToAuth = {};
-    agg.docs.filter(d => !d.data().migrated).forEach(d => ids.add(d.id));
-    users.docs.forEach(d => { const mp = d.data().mergedFromProfile; if (mp) { ids.add(mp); legacyToAuth[mp] = d.id; } });
+    // Each player's stats ID (js/domain/player-id.js): a linked account's comes from linkedPlayer / mergedFromProfile.
+    agg.docs.filter(d => !d.data().migrated).forEach(d => ids.add(statIdOf({ id: d.id, ...d.data() })));
+    users.docs.forEach(d => {
+      const u = d.data();
+      if (u.migrated || !(u.mergedFromProfile || u.linkedPlayer)) return;
+      const sid = statIdOf({ id: d.id, ...u });
+      if (sid) { ids.add(sid); legacyToAuth[sid] = d.id; }
+    });
     const list = [...ids];
     const read = (coll) => Promise.all(list.map(id => getDoc(doc(db, coll, id, 'games', gameDocId)).catch(() => null)));
     const [b, p] = await Promise.all([read('playerStats'), read('pitchingStats')]);

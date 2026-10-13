@@ -20,6 +20,7 @@ import { TEAM_COLORS } from '../ui/stat-columns.js';
 import { buildBattingRows, battingTableConfig } from '../ui/batting-stats.js';
 import { buildPitchingRows, pitchingTableConfig } from '../ui/pitching-stats.js';
 import { MILESTONES } from '../domain/summary.js';
+import { statIdOf } from '../domain/player-id.js';
 
 const $ = (id) => document.getElementById(id);
 const TOP = 10;
@@ -316,7 +317,7 @@ function wire() {
 async function main() {
   const ctx = await initPage({ title: 'Leaders' });
   me = new Set([ctx?.profile?.linkedPlayer, ctx?.profile?.playerId, ctx?.profile?.id, ctx?.profile?.mergedFromProfile,
-    String(ctx?.profile?.linkedPlayer || '').trim().toLowerCase().replace(/\s+/g, '_'), ctx?.user?.uid].filter(Boolean));
+    (ctx?.profile?.linkedPlayer || ctx?.profile?.mergedFromProfile) ? statIdOf(ctx.profile) : '', ctx?.user?.uid].filter(Boolean));
 
   const players = await getAllPlayerStatsOptimized();
   bat = buildBattingRows(players);

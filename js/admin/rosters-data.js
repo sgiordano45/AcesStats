@@ -10,6 +10,7 @@
 import { db, collection, getDocs, doc, setDoc, updateDoc } from '../core/firebase.js';
 import { getSeasonGames } from '../data/games.js';
 import { normalizeGame } from '../domain/standings.js';
+import { toStatId } from '../domain/player-id.js';
 
 export const S = {
   seasonId: '',
@@ -20,7 +21,8 @@ export const S = {
 };
 
 export const teamKey = (name) => String(name || '').trim().toLowerCase();
-export const toLegacyId = (name) => String(name || '').trim().toLowerCase().replace(/\./g, '').replace(/\s+/g, '_');
+// Same rule as the rest of the site (js/domain/player-id.js): apostrophes dropped too.
+export const toLegacyId = toStatId;
 export const isAuthUid = (s) => !!s && s.length > 20 && !s.includes('_');
 const blank = (v) => v === null || v === undefined || String(v).trim() === '' || String(v).trim() === '-';
 export const clean = (v) => (blank(v) ? null : String(v).trim());

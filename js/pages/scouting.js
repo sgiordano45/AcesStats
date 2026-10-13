@@ -14,8 +14,8 @@
 //
 // Data: aggregatedPlayerStats (season rows, vsOpponent, pitchers), rosters/
 // {season}-{team} (numbers, captains), sprayChartData/{authUid and legacyId},
-// aggregatedPlayerStats2025Splits/{nameId} (2025 vs-opponent totals),
-// playerStats/{nameId}/games and pitchingStats/{legacyId}/games (game logs,
+// aggregatedPlayerStats2025Splits/{statId} (2025 vs-opponent totals),
+// playerStats/{statId}/games and pitchingStats/{statId}/games (game logs,
 // matched on the game doc ID and teamId), the season's games (next opponent).
 
 import { initPage, pageReady, showPageError } from '../core/app.js';
@@ -35,13 +35,14 @@ import { seasonLabel, seasonSortKey, parseStatSeasonId } from '../domain/season-
 import { todayKey, formatGameDate } from '../domain/dates.js';
 import { ZERO_BAT, addBat, batSplitTable, gameLogRows, battingLogConfig, isPlayoffGame } from './player-shared.js';
 import { sprayPlot, loadSpray } from './player-spray.js';
+import { toStatId, statIdOf } from '../domain/player-id.js';
 
 const $ = (id) => document.getElementById(id);
 const cap = (s) => { const t = String(s || '').replace(/_/g, ' ').trim(); return /[A-Z]/.test(t) ? t : t.replace(/(^|\s)[a-z]/g, (c) => c.toUpperCase()); };
 const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-const nameId = (name) => String(name || '').toLowerCase().replace(/\./g, '').replace(/'/g, '').replace(/\s+/g, '_');
-const isUid = (id) => /^[A-Za-z0-9]{28}$/.test(String(id || ''));
-const legacyOf = (p) => (isUid(p.id) ? nameId(p.name || p.displayName) : p.id);
+const nameId = toStatId;
+// The stats ID: a linked player's legacy ID comes from linkedPlayer, not his display name.
+const legacyOf = (p) => statIdOf(p);
 const blank = () => ({ ...ZERO_BAT });
 const avgText = (v) => fmtAvg(v, { empty: '-' });
 
@@ -156,7 +157,7 @@ async function renderTeamReport() {
     const r = find(rp);
     const ids = [rp.id, rp.authId, ...(r?.ids || [])].filter(Boolean);
     const p = S.players.find((x) => ids.includes(x.id) || ids.includes(x.userId)) || null;
-    return { name: rp.name || r?.name || '', num: rp.number ?? null, captain: !!rp.captain, row: r || null, ids, legacy: rp.id || (p ? legacyOf(p) : nameId(rp.name)) };
+    return { name: rp.name || r?.name || '', num: rp.number ?? null, captain: !!rp.captain, row: r || null, ids, legacy: rp.id ? toStatId(rp.id) : (p ? legacyOf(p) : nameId(rp.name)) };
   });
   // Players with stats for this team but not on the roster doc (or no roster doc).
   seasonRows.filter((r) => !used.has(r)).forEach((r) => {
@@ -254,7 +255,7 @@ function matchControls() {
 
 async function hitterGames(p) {
   try {
-    const snap = await getDocs(collection(db, 'playerStats', nameId(nameOf(p)), 'games'));
+    const snap = await getDocs(collection(db, 'playerStats', legacyOf(p), 'games'));
     return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
   } catch { return []; }
 }
@@ -270,7 +271,7 @@ async function pitcherGames(id) {
 async function vsTeamTotals(p, team) {
   const tot = blank();
   let s25 = null;
-  try { const snap = await getDoc(doc(db, 'aggregatedPlayerStats2025Splits', nameId(nameOf(p)))); s25 = snap.exists() ? snap.data() : null; } catch { /* none */ }
+  try { const snap = await getDoc(doc(db, 'aggregatedPlayerStats2025Splits', legacyOf(p))); s25 = snap.exists() ? snap.data() : null; } catch { /* none */ }
   const from25 = new Set();
   Object.entries(s25?.seasons || {}).forEach(([key, s]) => {
     from25.add(parseStatSeasonId(key).id);

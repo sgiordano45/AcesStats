@@ -20,6 +20,7 @@ import { escapeHtml as esc, fmtAvg } from '../ui/format.js';
 import { showToast } from '../ui/toast.js';
 import { openModal, confirmModal, promptModal } from '../ui/modal.js';
 import { teamDot } from '../ui/game-shared.js';
+import { statIdOf } from '../domain/player-id.js';
 
 const $ = (id) => document.getElementById(id);
 const lower = (s) => String(s || '').toLowerCase();
@@ -215,7 +216,7 @@ async function manualLink(fanId, player) {
   const ref = doc(db, 'users', fanId);
   const snap = await getDoc(ref);
   if (!snap.exists()) throw new Error('Account not found');
-  const legacyId = lower(player.name).replace(/\s+/g, '_');
+  const legacyId = statIdOf(player);   // the picked record's own ID (js/domain/player-id.js)
   let legacy = null;
   try { const l = await getDoc(doc(db, 'users', legacyId)); if (l.exists()) legacy = l.data(); } catch { /* no legacy doc */ }
 

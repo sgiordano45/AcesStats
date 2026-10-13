@@ -10,6 +10,8 @@
  *   await calculator.calculateAllBadges('2025-fall');
  */
 
+import { statIdOf } from './js/domain/player-id.js';
+
 // ============================================
 // BADGE DEFINITIONS
 // ============================================
@@ -597,12 +599,11 @@ export class BadgeCalculator {
         // Skip migrated legacy profiles
         if (playerInfo.migrated === true) continue;
         
-        // Get the player name to convert to legacy ID
+        // The player's stats ID (js/domain/player-id.js): his linked player name or
+        // his own legacy ID, never an account display name that differs from it.
         const playerName = playerInfo.linkedPlayer || playerInfo.name || playerInfo.displayName;
         if (!playerName) continue;
-        
-        // Convert player name to legacy ID format: "Steve Giordano" → "steve_giordano"
-        const legacyId = playerName.toLowerCase().replace(/\./g, '').replace(/\s+/g, '_');
+        const legacyId = statIdOf({ id: playerDoc.id, ...playerInfo });
         
         // Skip if we've already processed this legacy ID
         if (processedLegacyIds.has(legacyId)) continue;
@@ -690,12 +691,11 @@ export class BadgeCalculator {
         // Skip migrated legacy profiles
         if (playerInfo.migrated === true) continue;
         
-        // Get the player name to convert to legacy ID
+        // The player's stats ID (js/domain/player-id.js): his linked player name or
+        // his own legacy ID, never an account display name that differs from it.
         const playerName = playerInfo.linkedPlayer || playerInfo.name || playerInfo.displayName;
         if (!playerName) continue;
-        
-        // Convert player name to legacy ID format: "Steve Giordano" → "steve_giordano"
-        const legacyId = playerName.toLowerCase().replace(/\./g, '').replace(/\s+/g, '_');
+        const legacyId = statIdOf({ id: playerDoc.id, ...playerInfo });
         
         // Skip if we've already processed this legacy ID
         if (processedLegacyIds.has(legacyId)) continue;
