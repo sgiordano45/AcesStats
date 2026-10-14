@@ -28,6 +28,7 @@ export const ADMIN_GROUPS = [
     ['admin/game-tracker-review.html', 'Review tracked games', 'Check live-tracked games before they count', 'team-staff'],
     ['admin/aggregate-stats.html', 'Aggregate stats', 'Rebuild player totals (test, then production)', 'admin'],
     ['admin/badges.html', 'Badge calculator', 'Award player badges after aggregation', 'admin'],
+    ['admin/special-badges.html', 'Special badges', 'One-off badges for a moment in a game', 'admin'],
     ['admin/records.html', 'Records', 'Fix game stats, merge duplicate records, find the right fix', 'league-staff'],
     ['admin/reconcile.html', 'Reconcile', 'Compare game stats with totals', 'admin'],
     ['admin/recover-game.html', 'Recover a game', 'Restore a deleted or broken game', 'admin'],

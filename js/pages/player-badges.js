@@ -13,6 +13,7 @@ import { openModal } from '../ui/modal.js';
 import { esc, icon, card, empty, emptyCard, cap, shortDate } from './player-shared.js';
 
 const GROUPS = [
+  ['special', 'Legendary moments', 'star'],
   ['hitting', 'Hitting', 'bat'],
   ['pitching', 'Pitching', 'softball'],
   ['two-way', 'Two-way', 'arrow-left-right'],
@@ -131,6 +132,7 @@ export async function render(el, ctx) {
       b.value !== undefined && b.value !== null && typeof b.value !== 'object' ? [valueLabel(b.badgeId || b.id), String(b.value)] : null,
       ['Season', season?.label || ''],
       when ? ['Earned', when] : null,
+      b.gameLabel ? ['Game', b.gameLabel] : null,
       def.name && def.name !== b.name ? ['Badge', def.name] : null
     ].filter(Boolean);
     openModal({

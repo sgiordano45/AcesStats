@@ -210,7 +210,22 @@ async function loadBadges(rows, legacyId, authUid) {
     }
     return null;
   }));
-  return found.filter(b => b && Object.keys(b.earned || {}).length + Object.keys(b.progress || {}).length > 0)
+  const seasons = found.filter(Boolean);
+  // One-off badges from admin/special-badges.html (specialBadges), any season.
+  try {
+    const snap = await getDocs(query(collection(db, 'specialBadges'), where('playerId', '==', toStatId(legacyId))));
+    snap.docs.forEach(d => {
+      const s = d.data();
+      if (!s.seasonId) return;
+      let season = seasons.find(x => x.seasonId === s.seasonId);
+      if (!season) { season = { seasonId: s.seasonId, label: seasonLabel(s.seasonId), earned: {}, progress: {} }; seasons.push(season); }
+      season.earned = { ...(season.earned || {}), [`special_${d.id}`]: {
+        name: s.name, description: s.description || '', iconPath: s.iconPath || '', category: 'special',
+        earnedAt: s.gameDate || null, gameLabel: s.gameLabel || ''
+      } };
+    });
+  } catch (err) { console.warn('[player] special badges unavailable', err); }
+  return seasons.filter(b => Object.keys(b.earned || {}).length + Object.keys(b.progress || {}).length > 0)
     .sort((a, b) => seasonSortKey(b.seasonId) - seasonSortKey(a.seasonId));
 }
 
