@@ -235,6 +235,7 @@ export const ME_MENU = [
       { id: 'submit-score', href: 'submit-score.html', label: 'Submit scores', icon: 'hash', role: 'team-staff' },
       { id: 'submit-stats', href: 'submit-stats.html', label: 'Submit stats', icon: 'calculator', role: 'team-staff' },
       { id: 'game-tracker', href: 'game-tracker.html', label: 'Game tracker', icon: 'clipboard', role: 'team-staff' },
+      { id: 'game-tracker-review', href: 'admin/game-tracker-review.html', label: 'Review tracked games', icon: 'list', role: 'team-staff' },
       { id: 'roster-management', href: 'roster-management.html', label: 'Roster management', icon: 'users', role: 'team-staff' },
       { id: 'captain-roster-edit', href: 'captain-roster-edit.html', label: 'Edit roster', icon: 'edit', role: 'team-staff' },
       { id: 'manage-team', href: 'manage-team.html', label: 'Manage team', icon: 'settings', role: 'team-staff' },
