@@ -371,6 +371,12 @@ function renderPlays() {
     </li>`).join('')}</ol></section>`).join('');
 }
 
+// Hit zones, the same buttons the tracker shows.
+const ZONES = ['LF', 'LCF', 'CF', 'RCF', 'RF', '3B', 'SS', '2B', '1B', 'P', 'C'];
+const zoneSelect = (cur) => `<span class="aces-select-wrap"><select class="aces-select" data-f="loc" aria-label="Hit location">
+  <option value="">No location</option>${ZONES.map(z => `<option${z === cur ? ' selected' : ''}>${z}</option>`).join('')}
+  ${cur && !ZONES.includes(cur) ? `<option selected>${esc(cur)}</option>` : ''}</select></span>`;
+
 // Outs a play makes by default (the add form starts from this).
 const OUTS_FOR = { strikeout: 1, flyout: 1, groundout: 1, out: 1, lineout: 1, popout: 1, sacfly: 1, sacrifice: 1, fielders_choice: 1, doubleplay: 2 };
 
@@ -386,6 +392,7 @@ function addPlayRow(li, i) {
     <span class="tr-play"><span class="tr-edit">
       <span class="aces-select-wrap"><select class="aces-select" data-f="batter" aria-label="Batter">${names.map(n => `<option>${esc(n)}</option>`).join('')}</select></span>
       <span class="aces-select-wrap"><select class="aces-select" data-f="type" aria-label="Result">${PLAY_TYPES.map(([v, l]) => `<option value="${v}"${v === first ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select></span>
+      ${zoneSelect('')}
       <label class="tr-num">Outs <input class="aces-input" data-f="outs" type="number" min="0" max="3" value="${OUTS_FOR[first] || 0}"></label>
       <label class="tr-num">Runs in <input class="aces-input" data-f="runs" type="number" min="0" max="4" value="0"></label>
     </span>
@@ -405,6 +412,7 @@ function editPlayRow(li, i) {
   li.querySelector('.tr-play').innerHTML = `<span class="tr-edit">
     <span class="aces-select-wrap"><select class="aces-select" data-f="batter" aria-label="Batter">${names.map(n => `<option${n === p.batter ? ' selected' : ''}>${esc(n)}</option>`).join('')}</select></span>
     <span class="aces-select-wrap"><select class="aces-select" data-f="type" aria-label="Result">${PLAY_TYPES.map(([v, l]) => `<option value="${v}"${v === p.playType ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select></span>
+    ${zoneSelect(p.location || '')}
   </span>`;
   li.querySelector('.tr-play-btns').innerHTML = '<button class="aces-btn is-sm is-primary" type="button" data-act="ok">Done</button><button class="aces-btn is-sm is-ghost" type="button" data-act="cancel">Cancel</button>';
 }
@@ -429,7 +437,7 @@ async function onPlayClick(e) {
     list.splice(i + 1, 0, {
       inning: base.inning || 1,
       isYourTeam: base.isYourTeam !== false,
-      batter, playType: type, playLabel: PLAY_LABELS[type] || type, location: null,
+      batter, playType: type, playLabel: PLAY_LABELS[type] || type, location: li.querySelector('[data-f="loc"]').value || null,
       outsBefore: 0, outsAfter: outs,
       basesBefore: {}, basesAfter: {}, runsScored: runs, runnersScored: [],
       opposingPitcher: base.opposingPitcher || null,
@@ -442,7 +450,8 @@ async function onPlayClick(e) {
     const prev = list[i];
     // A new result brings its usual outs (pitcher innings come from these).
     const outFix = type !== prev.playType ? { outsAfter: (Number(prev.outsBefore) || 0) + (OUTS_FOR[type] || 0) } : {};
-    list[i] = { ...prev, ...outFix, playType: type, playLabel: PLAY_LABELS[type] || type, ...(batter ? { batter } : {}) };
+    const location = li.querySelector('[data-f="loc"]').value || null;
+    list[i] = { ...prev, ...outFix, location, playType: type, playLabel: PLAY_LABELS[type] || type, ...(batter ? { batter } : {}) };
   } else if (act === 'del') {
     const p = list[i];
     const what = p.type === 'manual-out-adjustment' ? `outs fixed by hand (${p.outsBefore ?? '?'} to ${p.outsAfter ?? '?'})`
