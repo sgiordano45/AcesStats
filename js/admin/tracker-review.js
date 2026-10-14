@@ -29,6 +29,7 @@ import { confirmModal } from '../ui/modal.js';
 import { mountAdminShell } from './shell.js';
 import { PLAY_TYPES, PLAY_LABELS, playName, recalculateBattingStats, opposingPitcherStats, lineScore, hitLocations, BATTED } from './tracker-plays.js';
 import { toStatId, statIdOf } from '../domain/player-id.js';
+import { submitScope } from '../pages/submit-access.js';
 
 const $ = (id) => document.getElementById(id);
 const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
@@ -41,6 +42,7 @@ let results = [];          // gameResults for the season
 let schedule = new Map();  // gameId -> raw schedule game
 let status = 'pending';
 let teamFilter = '';
+let scope = null;          // null = every team (league staff); else lowercase team ids
 
 let game = null;           // the open gameResults doc
 let sched = null;          // its schedule game (raw) or null
@@ -63,7 +65,8 @@ async function loadSeason(id) {
     getDocs(query(collection(db, 'gameResults'), where('seasonId', '==', id))),
     getDocs(collection(db, 'seasons', id, 'games'))
   ]);
-  results = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  results = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+    .filter(r => !scope || scope.includes(String(r.teamId || '').toLowerCase()));
   schedule = new Map(games.docs.map(d => [d.id, { id: d.id, ...d.data() }]));
   results.sort((a, b) => (!!a.convertedToOfficial - !!b.convertedToOfficial) || (toMillis(b.completedAt) - toMillis(a.completedAt)));
   const teams = [...new Set(results.map(r => r.teamId).filter(Boolean))].sort();
@@ -353,7 +356,11 @@ function renderPlays() {
   });
   $('trPlays').innerHTML = [...byInning.values()].map(grp => `<section class="tr-inning">
     <h4>Inning ${grp.inning}, ${esc(grp.ours ? game.teamId : (game.opponentName || 'Opponent'))}</h4>
-    <ol class="tr-plays">${grp.rows.map(([p, i]) => p.type === 'manual-run-adjustment' ? `<li data-play="${i}">
+    <ol class="tr-plays">${grp.rows.map(([p, i]) => p.type === 'manual-out-adjustment' ? `<li data-play="${i}">
+      <span class="tr-n">${i + 1}</span>
+      <span class="tr-play">Outs fixed by hand: <strong>${esc(String(p.outsBefore ?? '?'))} to ${esc(String(p.outsAfter ?? '?'))}</strong></span>
+      <span class="tr-play-btns"><button class="aces-btn is-sm is-ghost" type="button" data-act="del" aria-label="Delete play ${i + 1}">${icon('trash')}</button></span>
+    </li>` : p.type === 'manual-run-adjustment' ? `<li data-play="${i}">
       <span class="tr-n">${i + 1}</span>
       <span class="tr-play">Runs entered by hand: <strong>${esc((p.adjustment > 0 ? '+' : '') + (p.adjustment ?? 0))}</strong></span>
       <span class="tr-play-btns"><button class="aces-btn is-sm is-ghost" type="button" data-act="del" aria-label="Delete play ${i + 1}">${icon('trash')}</button></span>
@@ -391,7 +398,8 @@ async function onPlayClick(e) {
     list[i] = { ...list[i], playType: type, playLabel: PLAY_LABELS[type] || type, ...(batter ? { batter } : {}) };
   } else if (act === 'del') {
     const p = list[i];
-    const what = p.type === 'manual-run-adjustment' ? `runs entered by hand (${p.adjustment ?? 0})` : `${p.batter || 'Unknown'}, ${playName(p.playType)}${p.runsScored ? ` (removes ${plural(p.runsScored, 'run')})` : ''}`;
+    const what = p.type === 'manual-out-adjustment' ? `outs fixed by hand (${p.outsBefore ?? '?'} to ${p.outsAfter ?? '?'})`
+      : p.type === 'manual-run-adjustment' ? `runs entered by hand (${p.adjustment ?? 0})` : `${p.batter || 'Unknown'}, ${playName(p.playType)}${p.runsScored ? ` (removes ${plural(p.runsScored, 'run')})` : ''}`;
     if (!(await confirmModal(`Delete play ${i + 1}: ${what}?`, { danger: true, confirmLabel: 'Delete play' }))) return;
     list.splice(i, 1);
   } else return;
@@ -628,10 +636,18 @@ function bind() {
 }
 
 async function main() {
-  const ctx = await initPage({ title: 'Review tracked games', role: 'admin', deniedMessage: 'Reviewing tracked games is for admins.' });
+  const ctx = await initPage({ title: 'Review tracked games', role: 'team-staff', deniedMessage: 'Reviewing tracked games is for captains, team staff and league staff.' });
   if (!ctx?.user) return;
   user = ctx.user;
   mountAdminShell(ctx.profile, 'admin/game-tracker-review.html');
+  // Captains and team staff see their own team's tracked games only.
+  scope = submitScope(ctx.profile);
+  if (scope && !scope.length) {
+    pageReady();
+    $('trList').innerHTML = '<p class="sse-empty">Your account is not linked to a team yet. Ask league staff to link it.</p>';
+    return;
+  }
+  if (scope?.length === 1) $('trTeam').closest('.aces-select-wrap')?.setAttribute('hidden', '');
 
   const seasons = (await getAllSeasons()).sort((a, b) => seasonSortKey(b.id) - seasonSortKey(a.id));
   const params = new URLSearchParams(location.search);

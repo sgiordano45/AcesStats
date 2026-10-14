@@ -25,7 +25,7 @@ export const ADMIN_GROUPS = [
   { id: 'stats', label: 'Stats pipeline', icon: 'calculator', items: [
     ['admin/stats.html', 'Stats pipeline', 'Step by step: stats in, review, aggregate, badges', 'admin'],
     ['admin/submit-stats.html', 'Enter stats', 'Stats for any team and game', 'admin'],
-    ['admin/game-tracker-review.html', 'Review tracked games', 'Check live-tracked games before they count', 'admin'],
+    ['admin/game-tracker-review.html', 'Review tracked games', 'Check live-tracked games before they count', 'team-staff'],
     ['admin/aggregate-stats.html', 'Aggregate stats', 'Rebuild player totals (test, then production)', 'admin'],
     ['admin/badges.html', 'Badge calculator', 'Award player badges after aggregation', 'admin'],
     ['admin/records.html', 'Records', 'Fix game stats, merge duplicate records, find the right fix', 'league-staff'],

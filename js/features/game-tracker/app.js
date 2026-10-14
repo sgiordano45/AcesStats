@@ -1,6 +1,6 @@
 // js/features/game-tracker/app.js
-// The Game Tracker React app for game-tracker-v2.html. Same code as the inline
-// Babel script in game-tracker.html, with JSX rewritten as htm tagged
+// The Game Tracker React app for game-tracker.html. Started as the inline
+// Babel script now in game-tracker-legacy.html, with JSX rewritten as htm tagged
 // templates (html`...`) so the browser runs it directly: no Babel, no compile
 // step. Components are written <${Name} ...>...<//>; attributes and children
 // take ${expression}. Loaded as a classic deferred script after bridge.js.
@@ -92,6 +92,7 @@ function GameTracker() {
     const [tempBases, setTempBases] = useState(null);
     const [tempScore, setTempScore] = useState(0);
     const [tempOuts, setTempOuts] = useState(0);
+    const [fcPick, setFcPick] = useState(false);  // Fielder's choice: choosing which runner was out
     const [draggedRunner, setDraggedRunner] = useState(null);
     const [runnersScored, setRunnersScored] = useState([]);  // Track WHO scored on this play
     const [playLocation, setPlayLocation] = useState(null);  // Where the ball was hit/fielded
@@ -1036,6 +1037,17 @@ document.removeEventListener('visibilitychange', handleVisibilityChange);
     const initiatePlay = (playType) => {
         const play = PLAY_TYPES.find(p => p.value === playType);
         if (!play) return;
+
+        // Fielder's choice: ask who was out first (resolveFC does the rest)
+        if (play.value === 'fielders_choice') {
+            const b = gameState.bases;
+            if (!b.first && !b.second && !b.third) {
+                alert("Fielder's choice needs a runner on base. With the bases empty, record it as a ground out.");
+                return;
+            }
+            setFcPick(true);
+            return;
+        }
         
         // Use metadata inning as authoritative source for play tagging
         const currentInning = gameMetadata?.inning || gameState.inning;
@@ -1052,6 +1064,7 @@ document.removeEventListener('visibilitychange', handleVisibilityChange);
                 playLabel: play.label,
                 outsBefore: gameState.outs,
                 outsAfter: newState.outs,
+                batterIndexBefore: gameState.currentBatter,
                 basesBefore: { ...gameState.bases },
                 basesAfter: { ...gameState.bases },
                 runsScored: 0,
@@ -1150,30 +1163,6 @@ document.removeEventListener('visibilitychange', handleVisibilityChange);
             autoOuts = 1;
         } else if (play.outs) {
             autoOuts = play.outs;
-        } else if (play.value === 'fielders_choice') {
-            // FC: batter reaches first, runners advance like a single
-            // No auto-outs \u2014 tracker \u274c's each runner thrown out (each adds 1 out)
-            // Covers standard FC (1 out) and FC double play (2 outs)
-            autoOuts = 0;
-            const runnersToMove = [];
-            if (newBases.third) runnersToMove.push({ runner: newBases.third, from: 'third' });
-            if (newBases.second) runnersToMove.push({ runner: newBases.second, from: 'second' });
-            if (newBases.first) runnersToMove.push({ runner: newBases.first, from: 'first' });
-
-            newBases.first = currentBatter.name;
-            newBases.second = null;
-            newBases.third = null;
-
-            runnersToMove.forEach(({runner, from}) => {
-                if (from === 'third') {
-                    autoScore++;
-                    scoredRunners.push(runner);
-                } else if (from === 'second') {
-                    newBases.third = runner;
-                } else if (from === 'first') {
-                    newBases.second = runner;
-                }
-            });
         }
 
         setTempBases(newBases);
@@ -1249,6 +1238,34 @@ document.removeEventListener('visibilitychange', handleVisibilityChange);
         }
     };
 
+    // Fielder's choice: the batter takes 1st, only forced runners move up one
+    // base, then the runner who was out comes off. One out. The tracker can
+    // still move runners (extra bases, a second out) before confirming.
+    const resolveFC = (outBase) => {
+        const play = PLAY_TYPES.find(p => p.value === 'fielders_choice');
+        const orig = gameState.bases;
+        const outRunner = orig[outBase];
+        if (!play || !outRunner) return;
+        const b = { ...orig };
+        const scored = [];
+        if (orig.first) {
+            if (orig.second) {
+                if (orig.third) scored.push(orig.third);
+                b.third = orig.second;
+            }
+            b.second = orig.first;
+        }
+        b.first = currentBatter.name;
+        ['first', 'second', 'third'].forEach(k => { if (b[k] === outRunner) b[k] = null; });
+        const runs = scored.filter(r => r !== outRunner);
+        setTempBases(b);
+        setTempScore(runs.length);
+        setTempOuts(1);
+        setRunnersScored(runs);
+        setPendingPlay({ play, type: play.value });
+        setFcPick(false);
+    };
+
     // Un-score a runner (put them back on base \u2014 used for non-FC corrections)
     const unscoreRunner = (runnerName) => {
         // Remove from scored runners
@@ -1302,6 +1319,7 @@ document.removeEventListener('visibilitychange', handleVisibilityChange);
             location: playLocation || null,
             outsBefore: gameState.outs,
             outsAfter: newState.outs,
+            batterIndexBefore: gameState.currentBatter,
             basesBefore: { ...gameState.bases },
             basesAfter: { ...tempBases },
             runsScored: tempScore,
@@ -1449,6 +1467,24 @@ document.removeEventListener('visibilitychange', handleVisibilityChange);
         }
         
         setShowPitcherModal(false);
+    };
+
+    // Fix the out count by hand (a missed or extra out). Kept as a record so
+    // Undo can reverse it and the play-by-play shows it.
+    const adjustOuts = (delta) => {
+        if (pendingPlay || fcPick) return;
+        const outsAfter = Math.min(3, Math.max(0, gameState.outs + delta));
+        if (outsAfter === gameState.outs) return;
+        const record = {
+            type: 'manual-out-adjustment',
+            inning: gameMetadata?.inning || gameState.inning,
+            isYourTeam: gameState.isYourTeamBatting,
+            adjustment: outsAfter - gameState.outs,
+            outsBefore: gameState.outs,
+            outsAfter,
+            timestamp: Date.now()
+        };
+        setGameState(prev => ({ ...prev, outs: outsAfter, playHistory: [...prev.playHistory, record] }));
     };
 
     // Update opponent score manually (for when opponent team isn't tracking)
@@ -1753,6 +1789,16 @@ document.removeEventListener('visibilitychange', handleVisibilityChange);
             return;
         }
 
+        // --- Handle manual-out-adjustment records ---
+        if (lastPlay.type === 'manual-out-adjustment') {
+            setGameState(prev => ({
+                ...prev,
+                outs: typeof lastPlay.outsBefore === 'number' ? lastPlay.outsBefore : Math.max(0, prev.outs - (lastPlay.adjustment || 0)),
+                playHistory: newHistory
+            }));
+            return;
+        }
+
         // --- Handle manual-run-adjustment records ---
         if (lastPlay.type === 'manual-run-adjustment') {
             const reversedScore = gameState.score.yourTeam - (lastPlay.adjustment || 0);
@@ -1789,7 +1835,12 @@ document.removeEventListener('visibilitychange', handleVisibilityChange);
             playHistory: newHistory
         };
 
-        newState.currentBatter = (newState.currentBatter - 1 + battingOrder.length) % battingOrder.length;
+        // Back to the batter of the undone play: by name (safe after lineup edits
+        // or a skipped batter), then the stored index, then one step back.
+        const byName = battingOrder.findIndex(b => b.name === lastPlay.batter);
+        newState.currentBatter = byName >= 0 ? byName
+            : (typeof lastPlay.batterIndexBefore === 'number' && lastPlay.batterIndexBefore < battingOrder.length) ? lastPlay.batterIndexBefore
+            : (newState.currentBatter - 1 + battingOrder.length) % battingOrder.length;
 
         // Restore inning / half-inning state from stored values (reliable even if
         // multiple plays were made after an inning change before undo was pressed).
@@ -3046,6 +3097,22 @@ html`<div className="bg-white border border-gray-200 rounded-xl p-5">
                     );
                 }
                 
+                // Outs fixed by hand
+                if (play.type === 'manual-out-adjustment') {
+                    return (
+                        html`<div key=${`outs-${play.timestamp}-${idx}`} className="p-3 border-b border-l-4 bg-slate-50 border-l-slate-400">
+                          <span className="font-bold" style=${{ color: '#2d5016' }}>
+                            ${formatInning(play)}
+                          </span>
+                          ${' \u2022 '}
+                          <span className=${`inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold ${teamColor.bg} ${teamColor.text}`}>${teamColor.emoji} ${play.team}</span>
+                          ${' \u2022 '}
+                          <span className="px-2 py-1 rounded text-sm font-bold bg-slate-200 text-slate-800">${play.adjustment > 0 ? 'Out added by hand' : 'Out removed by hand'}</span>
+                          <span className="ml-2 text-gray-500 text-sm">(${play.outsBefore} \u2192 ${play.outsAfter} outs)</span>
+                        </div>`
+                    );
+                }
+
                 // Regular batting plays
                 const advancementNote = getAdvancementNote(play);
                 return (
@@ -3215,9 +3282,11 @@ html`<div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6">
               </div>
               <div>
                 <div className="text-sm opacity-90">Outs</div>
-                <div className="text-2xl font-bold">
-                  ${gameState.outs}
-                </div>
+                <div className="text-2xl font-bold flex items-center justify-center gap-1">${userCanTrack && gameState.isYourTeamBatting && (
+                            html`<button onClick=${() => adjustOuts(-1)} disabled=${gameState.outs <= 0 || !!pendingPlay || fcPick} className="w-7 h-7 rounded-full bg-white/20 hover:bg-white/30 disabled:opacity-30 disabled:cursor-not-allowed text-base font-bold" title="Remove an out">\u2212</button>`
+                        )}<span>${gameState.outs}</span>${userCanTrack && gameState.isYourTeamBatting && (
+                            html`<button onClick=${() => adjustOuts(1)} disabled=${gameState.outs >= 3 || !!pendingPlay || fcPick} className="w-7 h-7 rounded-full bg-white/20 hover:bg-white/30 disabled:opacity-30 disabled:cursor-not-allowed text-base font-bold" title="Add an out">+</button>`
+                        )}</div>
               </div>
               <div>
                 <div className="text-sm opacity-90">
@@ -3328,9 +3397,19 @@ html`<div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6">
                   <div className="text-sm text-amber-800">Use arrows \u2022 Drag runners to bases or home \u2022 Click X to mark runner out</div>
                   ${pendingPlay.play.value === 'fielders_choice' && (
                         html`<div className="mt-3 p-3 bg-red-100 border border-red-300 rounded-lg">
-                          <div className="font-bold text-red-800">\u26a0\ufe0f Fielder's Choice \u2014 tap \u2715 on the runner who was out</div>
+                          <div className="font-bold text-red-800">Fielder's Choice \u2014 1 out recorded. Move any runner who took an extra base.</div>
                         </div>`
                     )}
+                </div>`
+            )}
+            ${fcPick && (
+                html`<div className="bg-red-50 border-2 border-red-400 rounded-lg p-4 mb-5 text-center">
+                  <div className="font-bold mb-1 text-red-900">Fielder's choice: who was out?</div>
+                  <div className="text-sm text-red-800 mb-3">${currentBatter?.name} takes 1st and forced runners move up one base.</div>
+                  <div className="flex flex-wrap gap-2 justify-center">
+                    ${[['third', '3rd'], ['second', '2nd'], ['first', '1st']].filter(([b]) => gameState.bases[b]).map(([b, label]) => html`<button key=${b} onClick=${() => resolveFC(b)} className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white font-bold">\u2715 ${gameState.bases[b]} <span className="font-normal opacity-80">(was on ${label})</span></button>`)}
+                    <button onClick=${() => setFcPick(false)} className="px-4 py-2 rounded-lg bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold">Cancel</button>
+                  </div>
                 </div>`
             )}
             ${gameState.isYourTeamBatting && (
@@ -3342,7 +3421,7 @@ html`<div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6">
                       ${currentBatter?.position}
                     </div>
                   </div>
-                  ${userCanTrack && gameState.gameActive && !pendingPlay && (
+                  ${userCanTrack && gameState.gameActive && !pendingPlay && !fcPick && (
                         html`<div className=${`grid grid-cols-3 sm:grid-cols-4 gap-2 sm:gap-3 mb-5 ${inningOver ? 'opacity-30 pointer-events-none' : ''}`}>
                           ${PLAY_TYPES.map(play => {
                                 const isDisabledAt2Outs = gameState.outs >= 2 &&
@@ -3458,7 +3537,7 @@ html`<div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6">
                               ${runnersScored.length > 0 && (
                                     html`<div className="flex flex-wrap gap-1 justify-center">
                                       ${runnersScored.map((runner, idx) => {
-                                            const isFC = pendingPlay?.play?.value === 'fielders_choice';
+                                            const isFC = false;  // FC out is picked before the play now (resolveFC)
                                             return (
                                                 html`<button key=${idx} onClick=${() => isFC ? markScoredRunnerOut(runner) : unscoreRunner(runner)} className=${`text-white text-xs px-2 py-1 rounded flex items-center gap-1 transition-colors ${
                                                         isFC
@@ -3637,7 +3716,7 @@ html`<div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6">
                   </div>
                 <//>`
             )}
-            ${userCanTrack && !pendingPlay && (
+            ${userCanTrack && !pendingPlay && !fcPick && (
                 html`<div className="flex gap-3 mb-8 justify-center flex-wrap">
                   <button onClick=${undoLastPlay} disabled=${gameState.playHistory.length === 0} className=${`px-5 py-4 sm:px-6 sm:py-3 border-none rounded-xl inline-flex items-center gap-2 text-base sm:text-sm ${
                             gameState.playHistory.length === 0 

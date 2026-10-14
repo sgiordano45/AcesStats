@@ -1,7 +1,7 @@
 // js/features/game-tracker/bridge.js
-// Firebase side of game-tracker-v2.html: saves and loads game state, results
+// Firebase side of game-tracker.html: saves and loads game state, results
 // and presence, and exposes them as window.FirebaseGameTracker for the React
-// app (app.js). Moved unchanged from the inline module in game-tracker.html;
+// app (app.js). Moved unchanged from the inline module in game-tracker-legacy.html;
 // only the import paths changed.
 
 import { getCurrentUser, onAuthChange, getUserProfile } from '../../../firebase-auth.js';

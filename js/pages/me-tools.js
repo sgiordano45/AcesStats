@@ -13,6 +13,7 @@ export const TOOL_GROUPS = [
     ['submit-score.html', 'Submit scores', 'Final scores for your games', 'hash'],
     ['submit-stats.html', 'Submit stats', 'Player stats for your games', 'calculator'],
     ['game-tracker.html', 'Game tracker', 'Score a game live, play by play', 'clipboard-check'],
+    ['admin/game-tracker-review.html', 'Review tracked games', 'Fix plays and turn tracked games into stats', 'list'],
     ['manage-team.html', 'Team staff', 'Add or remove co-captains and staff', 'shield'],
     ['approve-links.html', 'Player link requests', 'Members asking to be one of your players', 'user-check'],
     ['captain-roster-edit.html', 'Edit roster info', 'Names, numbers and positions', 'edit'],
