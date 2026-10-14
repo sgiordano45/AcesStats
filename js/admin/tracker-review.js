@@ -359,16 +359,42 @@ function renderPlays() {
     <ol class="tr-plays">${grp.rows.map(([p, i]) => p.type === 'manual-out-adjustment' ? `<li data-play="${i}">
       <span class="tr-n">${i + 1}</span>
       <span class="tr-play">Outs fixed by hand: <strong>${esc(String(p.outsBefore ?? '?'))} to ${esc(String(p.outsAfter ?? '?'))}</strong></span>
-      <span class="tr-play-btns"><button class="aces-btn is-sm is-ghost" type="button" data-act="del" aria-label="Delete play ${i + 1}">${icon('trash')}</button></span>
+      <span class="tr-play-btns"><button class="aces-btn is-sm is-ghost" type="button" data-act="add" aria-label="Add a play after play ${i + 1}" title="Add a play after this one">${icon('plus')}</button><button class="aces-btn is-sm is-ghost" type="button" data-act="del" aria-label="Delete play ${i + 1}">${icon('trash')}</button></span>
     </li>` : p.type === 'manual-run-adjustment' ? `<li data-play="${i}">
       <span class="tr-n">${i + 1}</span>
       <span class="tr-play">Runs entered by hand: <strong>${esc((p.adjustment > 0 ? '+' : '') + (p.adjustment ?? 0))}</strong></span>
-      <span class="tr-play-btns"><button class="aces-btn is-sm is-ghost" type="button" data-act="del" aria-label="Delete play ${i + 1}">${icon('trash')}</button></span>
+      <span class="tr-play-btns"><button class="aces-btn is-sm is-ghost" type="button" data-act="add" aria-label="Add a play after play ${i + 1}" title="Add a play after this one">${icon('plus')}</button><button class="aces-btn is-sm is-ghost" type="button" data-act="del" aria-label="Delete play ${i + 1}">${icon('trash')}</button></span>
     </li>` : `<li data-play="${i}">
       <span class="tr-n">${i + 1}</span>
       <span class="tr-play"><strong>${esc(p.batter || 'Unknown')}</strong> ${esc(playName(p.playType))}${p.runsScored ? ` <span class="tr-runs">${plural(p.runsScored, 'run')}</span>` : ''}${p.opposingPitcher?.name ? ` <span class="sse-dim">vs ${esc(p.opposingPitcher.name)}</span>` : ''}${p.location ? ` <span class="aces-badge is-outline">${esc(p.location)}</span>` : ''}</span>
-      <span class="tr-play-btns"><button class="aces-btn is-sm is-ghost" type="button" data-act="edit">Edit</button><button class="aces-btn is-sm is-ghost" type="button" data-act="del" aria-label="Delete play ${i + 1}">${icon('trash')}</button></span>
+      <span class="tr-play-btns"><button class="aces-btn is-sm is-ghost" type="button" data-act="edit">Edit</button><button class="aces-btn is-sm is-ghost" type="button" data-act="add" aria-label="Add a play after play ${i + 1}" title="Add a play after this one">${icon('plus')}</button><button class="aces-btn is-sm is-ghost" type="button" data-act="del" aria-label="Delete play ${i + 1}">${icon('trash')}</button></span>
     </li>`).join('')}</ol></section>`).join('');
+}
+
+// Outs a play makes by default (the add form starts from this).
+const OUTS_FOR = { strikeout: 1, flyout: 1, groundout: 1, out: 1, lineout: 1, popout: 1, sacfly: 1, sacrifice: 1, fielders_choice: 1, doubleplay: 2 };
+
+/** A blank play form under row i, for a play the tracker missed. */
+function addPlayRow(li, i) {
+  document.querySelectorAll('[data-new]').forEach(x => x.remove());
+  const base = workingPlays()[i];
+  const ours = base.isYourTeam !== false;
+  const names = ours ? roster.map(x => x.name) : oppRoster.map(x => x.name);
+  const first = 'single';
+  li.insertAdjacentHTML('afterend', `<li data-play="${i}" data-new="1" class="tr-new">
+    <span class="tr-n">+</span>
+    <span class="tr-play"><span class="tr-edit">
+      <span class="aces-select-wrap"><select class="aces-select" data-f="batter" aria-label="Batter">${names.map(n => `<option>${esc(n)}</option>`).join('')}</select></span>
+      <span class="aces-select-wrap"><select class="aces-select" data-f="type" aria-label="Result">${PLAY_TYPES.map(([v, l]) => `<option value="${v}"${v === first ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select></span>
+      <label class="tr-num">Outs <input class="aces-input" data-f="outs" type="number" min="0" max="3" value="${OUTS_FOR[first] || 0}"></label>
+      <label class="tr-num">Runs in <input class="aces-input" data-f="runs" type="number" min="0" max="4" value="0"></label>
+    </span>
+    <span class="sse-dim">Inning ${esc(String(base.inning || 1))}, ${esc(ours ? game.teamId : (game.opponentName || 'Opponent'))}. Runs in count as the batter's RBI and on the line score.</span></span>
+    <span class="tr-play-btns"><button class="aces-btn is-sm is-primary" type="button" data-act="addok">Add play</button><button class="aces-btn is-sm is-ghost" type="button" data-act="addcancel">Cancel</button></span>
+  </li>`);
+  const row = li.nextElementSibling;
+  row.querySelector('[data-f="type"]').addEventListener('change', (e) => { row.querySelector('[data-f="outs"]').value = OUTS_FOR[e.target.value] || 0; });
+  row.querySelector('[data-f="batter"]').focus();
 }
 
 function editPlayRow(li, i) {
@@ -390,12 +416,33 @@ async function onPlayClick(e) {
   const i = Number(li.dataset.play);
   const act = b.dataset.act;
   if (act === 'edit') return editPlayRow(li, i);
-  if (act === 'cancel') return renderPlays();
+  if (act === 'add') return addPlayRow(li, i);
+  if (act === 'cancel' || act === 'addcancel') return renderPlays();
   const list = [...workingPlays()];
-  if (act === 'ok') {
+  if (act === 'addok') {
+    const base = list[i];
     const type = li.querySelector('[data-f="type"]').value;
     const batter = li.querySelector('[data-f="batter"]').value;
-    list[i] = { ...list[i], playType: type, playLabel: PLAY_LABELS[type] || type, ...(batter ? { batter } : {}) };
+    if (!batter) { showToast('Pick a batter', 'error'); return; }
+    const outs = Math.max(0, Math.min(3, parseInt(li.querySelector('[data-f="outs"]').value, 10) || 0));
+    const runs = Math.max(0, Math.min(4, parseInt(li.querySelector('[data-f="runs"]').value, 10) || 0));
+    list.splice(i + 1, 0, {
+      inning: base.inning || 1,
+      isYourTeam: base.isYourTeam !== false,
+      batter, playType: type, playLabel: PLAY_LABELS[type] || type, location: null,
+      outsBefore: 0, outsAfter: outs,
+      basesBefore: {}, basesAfter: {}, runsScored: runs, runnersScored: [],
+      opposingPitcher: base.opposingPitcher || null,
+      timestamp: (Number(base.timestamp) || 0) + 1,
+      addedInReview: true
+    });
+  } else if (act === 'ok') {
+    const type = li.querySelector('[data-f="type"]').value;
+    const batter = li.querySelector('[data-f="batter"]').value;
+    const prev = list[i];
+    // A new result brings its usual outs (pitcher innings come from these).
+    const outFix = type !== prev.playType ? { outsAfter: (Number(prev.outsBefore) || 0) + (OUTS_FOR[type] || 0) } : {};
+    list[i] = { ...prev, ...outFix, playType: type, playLabel: PLAY_LABELS[type] || type, ...(batter ? { batter } : {}) };
   } else if (act === 'del') {
     const p = list[i];
     const what = p.type === 'manual-out-adjustment' ? `outs fixed by hand (${p.outsBefore ?? '?'} to ${p.outsAfter ?? '?'})`
