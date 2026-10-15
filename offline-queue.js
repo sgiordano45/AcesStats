@@ -1,6 +1,9 @@
 // offline-queue.js - Offline Action Queue Manager
 // Handles queuing and syncing of user actions when offline
 
+// Remember where this script was loaded from so the connectivity probe works on any page/subfolder
+const OFFLINE_QUEUE_SCRIPT_URL = (document.currentScript && document.currentScript.src) || location.href;
+
 class OfflineQueue {
   constructor() {
     this.dbName = 'AcesOfflineQueue';
@@ -19,7 +22,14 @@ class OfflineQueue {
     
     // Listen for online/offline events
     window.addEventListener('online', () => this.handleOnline());
-    window.addEventListener('offline', () => this.handleOffline());
+    window.addEventListener('offline', async () => {
+      // navigator.onLine can be wrong (Chrome with VPN/virtual adapters), so verify with a real request
+      if (!(await this.checkReallyOnline())) {
+        this.handleOffline();
+      } else {
+        console.log('navigator reported offline but server is reachable - ignoring');
+      }
+    });
     
     // Listen for service worker messages
     if ('serviceWorker' in navigator) {
@@ -31,6 +41,11 @@ class OfflineQueue {
       });
     }
     
+    // navigator.onLine can falsely report offline - verify before trusting it
+    if (!this.isOnline) {
+      this.isOnline = await this.checkReallyOnline();
+    }
+
     // Try to sync on page load if online
     if (this.isOnline) {
       await this.syncQueue();
@@ -326,6 +341,22 @@ async syncScore(data) {
       await removeFavorite(type, id);
     } else {
       throw new Error('removeFavorite function not available');
+    }
+  }
+
+  // Real connectivity check: a tiny uncached HEAD request to our own origin.
+  // HEAD requests bypass the service worker, so this always reflects the true network.
+  async checkReallyOnline() {
+    try {
+      const url = new URL('favicon.ico', OFFLINE_QUEUE_SCRIPT_URL);
+      url.searchParams.set('_', Date.now());
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 5000);
+      const response = await fetch(url.href, { method: 'HEAD', cache: 'no-store', signal: controller.signal });
+      clearTimeout(timer);
+      return response.status > 0;
+    } catch (error) {
+      return false;
     }
   }
 
