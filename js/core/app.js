@@ -352,9 +352,28 @@ function installOfflineBanner() {
     banner = null;
     if (announce) showToast('Back online', 'success', { duration: 2500 });
   };
-  window.addEventListener('offline', show);
+  // navigator.onLine can be wrong (e.g. Chrome with a VPN or virtual adapter),
+  // so confirm with a tiny uncached HEAD request before showing the banner.
+  // HEAD requests bypass the service worker, so this reflects the real network.
+  const reallyOffline = async () => {
+    try {
+      const url = new URL('../../favicon.ico', import.meta.url);
+      url.searchParams.set('_', Date.now());
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 5000);
+      await fetch(url.href, { method: 'HEAD', cache: 'no-store', signal: controller.signal });
+      clearTimeout(timer);
+      return false;
+    } catch (e) {
+      return true;
+    }
+  };
+  const checkAndShow = async () => {
+    if (await reallyOffline()) show();
+  };
+  window.addEventListener('offline', checkAndShow);
   window.addEventListener('online', () => hide(true));
-  if (navigator.onLine === false) show();
+  if (navigator.onLine === false) checkAndShow();
 }
 
 // ---------------------------------------------------------------------------
