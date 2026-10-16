@@ -7,7 +7,7 @@
 //   1 point for a correct pick.
 //   +1 upset bonus when you're right and fewer than a third of the pickers took
 //   that team (at least 3 picks on the game).
-//   Tie picks from TIE_FROM on: a correct tie is TIE_POINTS (1 + a tie bonus),
+//   Tie picks from TIE_FROM on: a correct tie is TIE_POINTS (1 + a 2-point tie bonus),
 //   and team picks on a tied game miss. Before TIE_FROM a tie voids the game.
 //   Forfeits, cancelled and postponed games count for no one.
 //   A pick saved (server time) after first pitch doesn't count.
@@ -21,7 +21,7 @@ export const UPSET_MIN_PICKS = 3;
 export const DEFAULT_LOCK_MINUTES = 8 * 60;
 export const TIE_FROM = '2026-10-18';
 export const TIE = 'tie';
-export const TIE_POINTS = 2;
+export const TIE_POINTS = 3;
 const TZ = 'America/New_York';
 
 const cap = (s) => (s ? String(s).charAt(0).toUpperCase() + String(s).slice(1) : '');

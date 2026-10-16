@@ -4129,10 +4129,10 @@ exports.triggerPickemReminders = functions
 
 const PICKEM_UPSET_SHARE = 1 / 3;
 const PICKEM_UPSET_MIN_PICKS = 3;
-// Tie picks (js/domain/pickem.js): games on or after this day; a correct tie is 2 points.
+// Tie picks (js/domain/pickem.js): games on or after this day; a correct tie is 3 points (1 + a 2-point bonus).
 const PICKEM_TIE_FROM = '2026-10-18';
 const PICKEM_TIE = 'tie';
-const PICKEM_TIE_POINTS = 2;
+const PICKEM_TIE_POINTS = 3;
 
 function pickemNormalizeGame(g) {
   const dp = pickemDateParts(g);

@@ -362,7 +362,7 @@ function renderRules() {
       <li>Nobody sees anyone else's pick for a game until it locks, and then only the counts.</li>
       <li><strong>1 point</strong> for every correct pick.</li>
       <li><strong>+1 upset bonus</strong> when you're right and fewer than a third of pickers took that team (at least 3 picks on the game).</li>
-      <li><strong>Pick a tie</strong> (games from ${tieDate} on): the middle button. Call a tie right for <strong>${TIE_POINTS} points</strong> (1 + a tie bonus). When one of those games ends tied, team picks miss.</li>
+      <li><strong>Pick a tie</strong> (games from ${tieDate} on): the middle button. Call a tie right for <strong>${TIE_POINTS} points</strong> (1 + a 2-point tie bonus). When one of those games ends tied, team picks miss.</li>
       <li>Forfeits and cancelled games don't count for anyone, and neither do ties in games before ${tieDate}.</li>
       <li>Standings: points, then correct picks, then fewest misses.</li>
     </ul>
