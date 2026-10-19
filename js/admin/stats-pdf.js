@@ -115,10 +115,10 @@ function parseGameChangerFormat(lines, roster) {
   const seenNames = new Set();
   const fullText = lines.join(' ');
   // Jersey number is optional: some rosters only have #N on a few players.
-  //   1) "Name #N  AB R H RBI BB SO"            (any name, jersey present)
+  //   1) "Name #N (POS)  AB R H RBI BB SO"      (any name, jersey present, position optional)
   //   2) "F Lastname  AB R H RBI BB SO"          (no jersey; a first initial plus 1-3
   //      words that each contain a lowercase letter, so header text can't be swallowed)
-  const playerRx = /(?:([A-Za-z][A-Za-z\s.']{1,30}?)\s+#\d+|\b([A-Z]\.?\s+(?=[A-Za-z'.\-]*[a-z])[A-Za-z][A-Za-z'.\-]*(?:\s+(?=[A-Za-z'.\-]*[a-z])[A-Za-z][A-Za-z'.\-]*){0,2}))\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)/g;
+  const playerRx = /(?:([A-Za-z][A-Za-z\s.']{1,30}?)\s+#\d+(?:\s+\([^)]*\))?|\b([A-Z]\.?\s+(?=[A-Za-z'.\-]*[a-z])[A-Za-z][A-Za-z'.\-]*(?:\s+(?=[A-Za-z'.\-]*[a-z])[A-Za-z][A-Za-z'.\-]*){0,2}))\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)/g;
 
   let m;
   while ((m = playerRx.exec(fullText)) !== null) {
