@@ -136,12 +136,14 @@ function readStatTail(text, pos) {
 }
 
 // Name = the words just before the "#N", back to the first initial. Stray lowercase
-// letters are dropped; column headings and the other team's numbers end the name.
+// letters and ellipses are dropped; column headings and the other team's numbers end the name.
 function nameBefore(text) {
   const toks = text.trim().split(/\s+/);
   const out = [];
   for (let i = toks.length - 1; i >= 0 && out.length < 4; i--) {
-    const t = toks[i];
+    // GameChanger cuts long names short with an ellipsis ("Paszk..."): drop it, keep the letters
+    const t = toks[i].replace(/(?:\u2026|\.{3})+$/, '');
+    if (!t) continue;
     if (/^[a-z]$/.test(t)) continue;
     if (/^[A-Z]\.?$/.test(t)) { out.unshift(t); break; }
     if (!/^[A-Za-z][A-Za-z.'\-]*$/.test(t) || HEADER_WORDS.has(t.toLowerCase())) break;
