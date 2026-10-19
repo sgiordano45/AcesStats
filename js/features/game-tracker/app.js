@@ -117,6 +117,7 @@ function GameTracker() {
 			const [opponentPitcher, setOpponentPitcher] = useState(null);  // { id, name }
 			const [showPitcherModal, setShowPitcherModal] = useState(false);  // Show pitcher selection on game start
 			const [pendingPitcherChange, setPendingPitcherChange] = useState(null);  // For confirmation dialog
+    const [showUndoConfirm, setShowUndoConfirm] = useState(false);  // Undo confirmation: freezes the tracker until acknowledged
 			const [showRunRemovalModal, setShowRunRemovalModal] = useState(false);  // For selecting which player's run to remove
 			
 			// Track how many state updates came from Firebase to prevent save loops
@@ -1757,6 +1758,27 @@ document.removeEventListener('visibilitychange', handleVisibilityChange);
         }
     };
 
+    // Describe the play that Undo would remove (shown in the confirmation dialog)
+    const describeLastPlay = () => {
+        const lp = gameState.playHistory[gameState.playHistory.length - 1];
+        if (!lp) return '';
+        if (lp.type === 'pitching-change') return 'Pitching change';
+        if (lp.type === 'manual-out-adjustment') return 'Manual out adjustment';
+        if (lp.type === 'manual-run-adjustment') return `Manual run adjustment (${lp.adjustment > 0 ? '+' : ''}${lp.adjustment})`;
+        const label = lp.playLabel || lp.playType || 'Play';
+        return lp.batter ? `${label} \u2014 ${lp.batter}` : label;
+    };
+
+    const requestUndo = () => {
+        if (gameState.playHistory.length === 0) return;
+        setShowUndoConfirm(true);
+    };
+
+    const confirmUndo = async () => {
+        setShowUndoConfirm(false);
+        await undoLastPlay();
+    };
+
     const undoLastPlay = async () => {
         if (gameState.playHistory.length === 0) return;
 
@@ -3223,6 +3245,19 @@ html`<div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6">
         html`<${React.Fragment}>
           <${PitcherSelectionModal} isOpen=${showPitcherModal} onClose=${() => setShowPitcherModal(false)} onSave=${savePitcherSelections} yourTeamName=${selectedTeam} opponentTeamName=${opponentTeamName} yourTeamPlayers=${players} opponentTeamPlayers=${opponentPlayers} />
           <${PitcherChangeConfirmation} pending=${pendingPitcherChange} onConfirm=${confirmPitcherChange} onCancel=${cancelPitcherChange} />
+          ${showUndoConfirm && (
+              html`<div className="fixed inset-0 z-[9999] flex items-center justify-center p-5" style=${{ background: 'rgba(0,0,0,0.65)' }} role="alertdialog" aria-modal="true" aria-labelledby="undo-confirm-title">
+                <div className="bg-white rounded-2xl p-6 w-full max-w-sm text-center shadow-2xl">
+                  <div id="undo-confirm-title" className="text-xl font-bold text-gray-900 mb-2">Undo last play?</div>
+                  <div className="text-sm text-gray-500 mb-1">This will remove:</div>
+                  <div className="text-base font-semibold text-gray-900 mb-5">${describeLastPlay()}</div>
+                  <div className="flex gap-3">
+                    <button onClick=${() => setShowUndoConfirm(false)} className="flex-1 py-4 rounded-xl border-none bg-gray-200 hover:bg-gray-300 active:bg-gray-400 text-gray-800 font-bold text-base cursor-pointer transition-colors">Cancel</button>
+                    <button onClick=${confirmUndo} className="flex-1 py-4 rounded-xl border-none bg-red-600 hover:bg-red-700 active:bg-red-800 text-white font-bold text-base cursor-pointer transition-colors">Yes, Undo</button>
+                  </div>
+                </div>
+              </div>`
+          )}
           <${RunRemovalModal} isOpen=${showRunRemovalModal} onClose=${() => setShowRunRemovalModal(false)} onConfirm=${confirmRunRemoval} playersWhoScored=${getPlayersWhoScored()} teamName=${selectedTeam} />
           <div className="max-w-7xl mx-auto p-5 font-sans">
             <div className="mb-6">
@@ -3718,7 +3753,7 @@ html`<div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6">
             )}
             ${userCanTrack && !pendingPlay && !fcPick && (
                 html`<div className="flex gap-3 mb-8 justify-center flex-wrap">
-                  <button onClick=${undoLastPlay} disabled=${gameState.playHistory.length === 0} className=${`px-5 py-4 sm:px-6 sm:py-3 border-none rounded-xl inline-flex items-center gap-2 text-base sm:text-sm ${
+                  <button onClick=${requestUndo} disabled=${gameState.playHistory.length === 0} className=${`px-5 py-4 sm:px-6 sm:py-3 border-none rounded-xl inline-flex items-center gap-2 text-base sm:text-sm ${
                             gameState.playHistory.length === 0 
                                 ? 'bg-gray-300 cursor-not-allowed opacity-50' 
                                 : 'bg-gray-600 cursor-pointer hover:bg-gray-700 active:bg-gray-800'
