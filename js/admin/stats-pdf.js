@@ -42,7 +42,10 @@ export function bestRosterMatch(pdfName, roster) {
     const last = parts[parts.length - 1] || '';
     const first = parts[0] || '';
     const lastFirst = `${last} ${first}`.trim();
+    // Cut-off names ("k delledo" for "Kevin Delledonne"): first initial plus the start of the rest
+    const initialPrefix = pdfLower.length >= 5 && first && `${first[0]} ${parts.slice(1).join(' ')}`.startsWith(pdfLower) ? 0.8 : 0;
     const score = Math.max(
+      initialPrefix,
       fuzzyScore(pdfLower, full),
       fuzzyScore(pdfLower, last) * 0.85,
       fuzzyScore(pdfLower, first) * 0.80,
@@ -110,31 +113,85 @@ function parseHitTypeFromNotes(notesText, hitType) {
   return map;
 }
 
+// Row reading helpers for jersey-anchored rows
+
+const HEADER_WORDS = new Set(['ab', 'r', 'h', 'rbi', 'bb', 'so', 'totals', 'total', 'red', 'blue',
+  'aces', 'batting', 'pitching', 'ip', 'er', 'hr', 'away', 'home', 'fall', 'summer', 'spring']);
+
+// After "#N": skip a position like "(3B)" or a stray wrapped letter, then read the
+// six numbers AB R H RBI BB SO. Returns null if the text is not a stat row.
+function readStatTail(text, pos) {
+  const tokRx = /\s*(\S+)/y;
+  tokRx.lastIndex = pos;
+  const junkRx = /^\([^)]*\)?,?$|^[^()\s]{1,4}\)$|^[A-Za-z]{1,2}$/;
+  const nums = [];
+  let junk = 0, t;
+  while (nums.length < 6 && (t = tokRx.exec(text))) {
+    const tok = t[1];
+    if (/^\d+$/.test(tok)) nums.push(parseInt(tok));
+    else if (nums.length === 0 && junk < 4 && junkRx.test(tok)) junk++;
+    else return null;
+  }
+  return nums.length === 6 ? { nums, end: tokRx.lastIndex } : null;
+}
+
+// Name = the words just before the "#N", back to the first initial. Stray lowercase
+// letters are dropped; column headings and the other team's numbers end the name.
+function nameBefore(text) {
+  const toks = text.trim().split(/\s+/);
+  const out = [];
+  for (let i = toks.length - 1; i >= 0 && out.length < 4; i--) {
+    const t = toks[i];
+    if (/^[a-z]$/.test(t)) continue;
+    if (/^[A-Z]\.?$/.test(t)) { out.unshift(t); break; }
+    if (!/^[A-Za-z][A-Za-z.'\-]*$/.test(t) || HEADER_WORDS.has(t.toLowerCase())) break;
+    out.unshift(t);
+  }
+  return out.join(' ');
+}
+
 function parseGameChangerFormat(lines, roster) {
   const results = [];
   const seenNames = new Set();
   const fullText = lines.join(' ');
-  // Jersey number is optional: some rosters only have #N on a few players.
-  //   1) "Name #N (POS)  AB R H RBI BB SO"      (any name, jersey present, position optional)
-  //   2) "F Lastname  AB R H RBI BB SO"          (no jersey; a first initial plus 1-3
+  // Two kinds of rows:
+  //   1) "Name #N (POS)  AB R H RBI BB SO"   jersey-anchored. The name and the stats
+  //      are found separately, so cut-off names and stray wrapped letters ("d", "n")
+  //      between the name, position and numbers cannot make a row disappear.
+  //   2) "F Lastname  AB R H RBI BB SO"       (no jersey; a first initial plus 1-3
   //      words that each contain a lowercase letter, so header text can't be swallowed)
-  const playerRx = /(?:([A-Za-z][A-Za-z\s.']{1,30}?)\s+#\d+(?:\s+\([^)]*\))?|\b([A-Z]\.?\s+(?=[A-Za-z'.\-]*[a-z])[A-Za-z][A-Za-z'.\-]*(?:\s+(?=[A-Za-z'.\-]*[a-z])[A-Za-z][A-Za-z'.\-]*){0,2}))\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)/g;
+  // A row is always returned, even when the name matches nobody on the roster.
+  const consumed = [];
+  const overlaps = (a, b) => consumed.some(([s, e]) => a < e && b > s);
 
-  let m;
-  while ((m = playerRx.exec(fullText)) !== null) {
-    const name = (m[1] || m[2]).trim();
-    if (/^totals$/i.test(name)) continue;
-    const nameLower = name.toLowerCase();
-    if (seenNames.has(nameLower)) continue;
-    seenNames.add(nameLower);
-    const ab = parseInt(m[3]) || 0;
-    const r = parseInt(m[4]) || 0;
-    const h = parseInt(m[5]) || 0;
-    const rbi = parseInt(m[6]) || 0;
-    const bb = parseInt(m[7]) || 0;
+  function pushRow(name, nums) {
+    const key = name.toLowerCase();
+    if (!name || /^totals?$/i.test(name) || seenNames.has(key)) return;
+    seenNames.add(key);
+    const [ab, r, h, rbi, bb] = nums;
     const { player, score } = bestRosterMatch(name, roster);
     results.push({ pdfName: name, matchedPlayer: player, matchScore: score,
-      ab, h, r, bb, '2b': 0, '3b': 0, hr: 0, rbi, ip: 0, ra: 0 });
+      ab: ab || 0, h: h || 0, r: r || 0, bb: bb || 0, '2b': 0, '3b': 0, hr: 0, rbi: rbi || 0, ip: 0, ra: 0 });
+  }
+
+  // 1) Jersey rows
+  const jerseyRx = /#\d+/g;
+  let jm;
+  while ((jm = jerseyRx.exec(fullText)) !== null) {
+    const tail = readStatTail(fullText, jm.index + jm[0].length);
+    if (!tail) continue;
+    const name = nameBefore(fullText.slice(Math.max(0, jm.index - 80), jm.index));
+    consumed.push([jm.index, tail.end]);
+    pushRow(name, tail.nums);
+    jerseyRx.lastIndex = tail.end;
+  }
+
+  // 2) Rows with no jersey number
+  const plainRx = /\b([A-Z]\.?\s+(?=[A-Za-z'.\-]*[a-z])[A-Za-z][A-Za-z'.\-]*(?:\s+(?=[A-Za-z'.\-]*[a-z])[A-Za-z][A-Za-z'.\-]*){0,2})\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)/g;
+  let m;
+  while ((m = plainRx.exec(fullText)) !== null) {
+    if (overlaps(m.index, m.index + m[0].length)) continue;
+    pushRow(m[1].trim(), m.slice(2, 8).map(n => parseInt(n)));
   }
 
   // The notes block often wraps onto lines with no "2B:/3B:/HR:" marker, so take
