@@ -69,6 +69,11 @@ export function recalculateBattingStats(plays, rosterId = () => '') {
     });
   });
 
+  // Runs credited by hand in the review page (the tracker missed who scored)
+  plays.forEach(play => {
+    (play.runsCredited || []).forEach(name => { if (statsMap[name]) statsMap[name].runs++; });
+  });
+
   return Object.values(statsMap).map(s => {
     const pa = s.atBats + s.walks;
     s.battingAverage = s.atBats > 0 ? s.hits / s.atBats : 0;

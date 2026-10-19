@@ -10,8 +10,10 @@
 //     marks the gameResults doc converted and marks the team's stats as in
 //     on the schedule game. Date and game type come from the schedule game,
 //     so playoff games convert as playoff games.
-//   - Plays can be edited (batter, result, delete, reassign the opposing
-//     pitcher); saving rebuilds the batting lines on the gameResults doc.
+//   - Plays can be edited (batter, result, runs scored, inning, delete,
+//     reassign the opposing pitcher); saving rebuilds the batting lines on the
+//     gameResults doc. Cells of the line score are editable too: a changed
+//     inning becomes a hand-entered run adjustment on that inning.
 //   - Pitching and hit locations save separately, as before.
 // ?season=&id=<gameResults id> opens a game directly.
 
@@ -53,6 +55,32 @@ let plays = null;          // edited plays, or null when unchanged
 let busy = false;
 
 const workingPlays = () => plays || game?.playByPlay || [];
+
+const sumRuns = (m) => Object.values(m).reduce((a, b) => a + b, 0);
+const lineTotals = (list) => { const ls = lineScore(list, 1); return { ours: sumRuns(ls.ours), theirs: sumRuns(ls.theirs) }; };
+
+/** Final score with any unsaved run edits applied (the saved score plus the change in the line score). */
+function currentFinal() {
+  const cur = lineTotals(workingPlays());
+  const base = lineTotals(game.playByPlay || []);
+  return {
+    ours: Number(game.finalScore?.yourTeam ?? base.ours) + cur.ours - base.ours,
+    theirs: Number(game.finalScore?.opponent ?? base.theirs) + cur.theirs - base.theirs
+  };
+}
+
+// Half-inning order: top before bottom. Our team bats in the top when we are away.
+const halfOf = (p) => (Number(p.inning) || 1) * 2 + ((p.isYourTeam !== false) === !game.isHome ? 0 : 1);
+
+/** Where a play of this inning/side belongs in the list: after the last play of that half-inning, else in order. */
+function insertIndex(list, inning, ours) {
+  const h = halfOf({ inning, isYourTeam: ours });
+  let last = -1;
+  list.forEach((p, i) => { if (halfOf(p) === h) last = i; });
+  if (last >= 0) return last + 1;
+  const next = list.findIndex(p => halfOf(p) > h);
+  return next >= 0 ? next : list.length;
+}
 
 // ---------------------------------------------------------------------------
 // List
@@ -190,21 +218,22 @@ function renderReview() {
 function renderLine() {
   const r = game;
   const ls = lineScore(workingPlays(), r.innings);
-  const ourTotal = r.finalScore?.yourTeam ?? Object.values(ls.ours).reduce((a, b) => a + b, 0);
-  const oppTotal = r.finalScore?.opponent ?? Object.values(ls.theirs).reduce((a, b) => a + b, 0);
-  const row = (name, runs, total, mine) => `<tr${mine ? ' class="is-mine"' : ''}><th scope="row">${esc(name)}</th>${Array.from({ length: ls.innings }, (_, i) => `<td class="is-num">${runs[i + 1] ?? '-'}</td>`).join('')}<td class="is-num tr-r">${esc(total)}</td></tr>`;
-  const away = r.isHome ? row(r.opponentName || 'Opponent', ls.theirs, oppTotal, false) : row(r.teamId, ls.ours, ourTotal, true);
-  const home = r.isHome ? row(r.teamId, ls.ours, ourTotal, true) : row(r.opponentName || 'Opponent', ls.theirs, oppTotal, false);
+  const fin = currentFinal();
+  const row = (name, runs, total, mine, side) => `<tr${mine ? ' class="is-mine"' : ''}><th scope="row">${esc(name)}</th>${Array.from({ length: ls.innings }, (_, i) => `<td class="is-num"><input class="aces-input tr-cell" type="number" min="0" max="99" inputmode="numeric" placeholder="-" value="${runs[i + 1] ?? ''}" data-side="${side}" data-inn="${i + 1}" aria-label="${esc(name)} runs, inning ${i + 1}"></td>`).join('')}<td class="is-num tr-r">${esc(total)}</td></tr>`;
+  const away = r.isHome ? row(r.opponentName || 'Opponent', ls.theirs, fin.theirs, false, 'theirs') : row(r.teamId, ls.ours, fin.ours, true, 'ours');
+  const home = r.isHome ? row(r.teamId, ls.ours, fin.ours, true, 'ours') : row(r.opponentName || 'Opponent', ls.theirs, fin.theirs, false, 'theirs');
   $('trLine').innerHTML = workingPlays().length ? `<div class="aces-table-wrap"><table class="aces-table tr-line">
     <thead><tr><th scope="col"></th>${Array.from({ length: ls.innings }, (_, i) => `<th class="is-num" scope="col">${i + 1}</th>`).join('')}<th class="is-num" scope="col">R</th></tr></thead>
-    <tbody>${away}${home}</tbody></table></div>` : '<p class="sse-dim">No plays recorded, so there is no line score.</p>';
+    <tbody>${away}${home}</tbody></table></div>
+    <p class="sse-dim tr-line-hint">Type in an inning to correct its runs. It is saved as a hand-entered run adjustment in that inning (see Plays). Save plays to keep it.</p>` : '<p class="sse-dim">No plays recorded, so there is no line score.</p>';
 }
 
 function renderChecks() {
   const r = game;
   const out = [];
   const bat = r.battingStats || [];
-  const ours = Number(r.finalScore?.yourTeam ?? 0), theirs = Number(r.finalScore?.opponent ?? 0);
+  const fin = currentFinal();
+  const ours = fin.ours, theirs = fin.theirs;
   if (!sched) {
     out.push(['warn', `No schedule game ${esc(r.gameId || '(none)')} in ${esc(seasonLabel(r.seasonId))}. Stats will still be written, dated from when tracking finished.`]);
   } else {
@@ -359,15 +388,15 @@ function renderPlays() {
     <ol class="tr-plays">${grp.rows.map(([p, i]) => p.type === 'manual-out-adjustment' ? `<li data-play="${i}">
       <span class="tr-n">${i + 1}</span>
       <span class="tr-play">Outs fixed by hand: <strong>${esc(String(p.outsBefore ?? '?'))} to ${esc(String(p.outsAfter ?? '?'))}</strong></span>
-      <span class="tr-play-btns"><button class="aces-btn is-sm is-ghost" type="button" data-act="add" aria-label="Add a play after play ${i + 1}" title="Add a play after this one">${icon('plus')}</button><button class="aces-btn is-sm is-ghost" type="button" data-act="del" aria-label="Delete play ${i + 1}">${icon('trash')}</button></span>
+      <span class="tr-play-btns"><button class="aces-btn is-sm is-ghost" type="button" data-act="edit" title="Move to another inning">Move</button><button class="aces-btn is-sm is-ghost" type="button" data-act="add" aria-label="Add a play after play ${i + 1}" title="Add a play after this one">${icon('plus')}</button><button class="aces-btn is-sm is-ghost" type="button" data-act="del" aria-label="Delete play ${i + 1}">${icon('trash')}</button></span>
     </li>` : p.type === 'manual-run-adjustment' ? `<li data-play="${i}">
       <span class="tr-n">${i + 1}</span>
       <span class="tr-play">Runs entered by hand: <strong>${esc((p.adjustment > 0 ? '+' : '') + (p.adjustment ?? 0))}</strong></span>
-      <span class="tr-play-btns"><button class="aces-btn is-sm is-ghost" type="button" data-act="add" aria-label="Add a play after play ${i + 1}" title="Add a play after this one">${icon('plus')}</button><button class="aces-btn is-sm is-ghost" type="button" data-act="del" aria-label="Delete play ${i + 1}">${icon('trash')}</button></span>
+      <span class="tr-play-btns"><button class="aces-btn is-sm is-ghost" type="button" data-act="edit" title="Move to another inning">Move</button><button class="aces-btn is-sm is-ghost" type="button" data-act="add" aria-label="Add a play after play ${i + 1}" title="Add a play after this one">${icon('plus')}</button><button class="aces-btn is-sm is-ghost" type="button" data-act="del" aria-label="Delete play ${i + 1}">${icon('trash')}</button></span>
     </li>` : `<li data-play="${i}">
       <span class="tr-n">${i + 1}</span>
       <span class="tr-play"><strong>${esc(p.batter || 'Unknown')}</strong> ${esc(playName(p.playType))}${p.runsScored ? ` <span class="tr-runs">${plural(p.runsScored, 'run')}</span>` : ''}${p.opposingPitcher?.name ? ` <span class="sse-dim">vs ${esc(p.opposingPitcher.name)}</span>` : ''}${p.location ? ` <span class="aces-badge is-outline">${esc(p.location)}</span>` : ''}</span>
-      <span class="tr-play-btns"><button class="aces-btn is-sm is-ghost" type="button" data-act="edit">Edit</button><button class="aces-btn is-sm is-ghost" type="button" data-act="add" aria-label="Add a play after play ${i + 1}" title="Add a play after this one">${icon('plus')}</button><button class="aces-btn is-sm is-ghost" type="button" data-act="del" aria-label="Delete play ${i + 1}">${icon('trash')}</button></span>
+      <span class="tr-play-btns"><button class="aces-btn is-sm is-ghost" type="button" data-act="edit">Edit</button><button class="aces-btn is-sm is-ghost" type="button" data-act="runup" aria-label="Add a run to play ${i + 1}" title="Add a run to this play">+R</button><button class="aces-btn is-sm is-ghost" type="button" data-act="rundown" aria-label="Remove a run from play ${i + 1}" title="Remove a run from this play"${p.runsScored ? '' : ' disabled'}>-R</button><button class="aces-btn is-sm is-ghost" type="button" data-act="add" aria-label="Add a play after play ${i + 1}" title="Add a play after this one">${icon('plus')}</button><button class="aces-btn is-sm is-ghost" type="button" data-act="del" aria-label="Delete play ${i + 1}">${icon('trash')}</button></span>
     </li>`).join('')}</ol></section>`).join('');
 }
 
@@ -407,14 +436,47 @@ function addPlayRow(li, i) {
 function editPlayRow(li, i) {
   const p = workingPlays()[i];
   const ours = p.isYourTeam !== false;
-  const names = ours ? roster.map(x => x.name) : oppRoster.map(x => x.name);
-  if (p.batter && !names.includes(p.batter)) names.unshift(p.batter);
-  li.querySelector('.tr-play').innerHTML = `<span class="tr-edit">
-    <span class="aces-select-wrap"><select class="aces-select" data-f="batter" aria-label="Batter">${names.map(n => `<option${n === p.batter ? ' selected' : ''}>${esc(n)}</option>`).join('')}</select></span>
-    <span class="aces-select-wrap"><select class="aces-select" data-f="type" aria-label="Result">${PLAY_TYPES.map(([v, l]) => `<option value="${v}"${v === p.playType ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select></span>
-    ${zoneSelect(p.location || '')}
-  </span>`;
+  const inningField = `<label class="tr-num">Inning <input class="aces-input" data-f="inning" type="number" min="1" max="30" value="${esc(String(p.inning || 1))}"></label>`;
+  const isManual = p.type === 'manual-out-adjustment' || p.type === 'manual-run-adjustment';
+  if (isManual) {
+    li.querySelector('.tr-play').innerHTML = `<span class="tr-edit">${inningField}</span>`;
+  } else {
+    const names = ours ? roster.map(x => x.name) : oppRoster.map(x => x.name);
+    if (p.batter && !names.includes(p.batter)) names.unshift(p.batter);
+    const credited = new Set(p.runsCredited || []);
+    const scorers = ours ? [...new Set(workingPlays().filter(x => x.isYourTeam !== false && x.batter).map(x => x.batter))] : [];
+    li.querySelector('.tr-play').innerHTML = `<span class="tr-edit">
+      <span class="aces-select-wrap"><select class="aces-select" data-f="batter" aria-label="Batter">${names.map(n => `<option${n === p.batter ? ' selected' : ''}>${esc(n)}</option>`).join('')}</select></span>
+      <span class="aces-select-wrap"><select class="aces-select" data-f="type" aria-label="Result">${PLAY_TYPES.map(([v, l]) => `<option value="${v}"${v === p.playType ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select></span>
+      ${zoneSelect(p.location || '')}
+      <label class="tr-num">Runs in <input class="aces-input" data-f="runs" type="number" min="0" max="4" value="${p.runsScored || 0}"></label>
+      ${inningField}
+    </span>
+    <span class="sse-dim tr-edit-note">Runs in count as the batter's RBI and on the line score. Changing the inning moves the play to the end of that half-inning.</span>
+    ${scorers.length ? `<span class="tr-credit"><span class="sse-dim">Also credit a run to:</span>${scorers.map(n => `<label><input type="checkbox" data-f="credit" value="${esc(n)}"${credited.has(n) ? ' checked' : ''}> ${esc(n)}</label>`).join('')}</span>` : ''}`;
+  }
   li.querySelector('.tr-play-btns').innerHTML = '<button class="aces-btn is-sm is-primary" type="button" data-act="ok">Done</button><button class="aces-btn is-sm is-ghost" type="button" data-act="cancel">Cancel</button>';
+}
+
+/** Change one inning's runs on the line score: a hand-entered run adjustment in that inning. */
+function setInningRuns(side, inning, value) {
+  const ours = side === 'ours';
+  const list = [...workingPlays()];
+  const ls = lineScore(list, game.innings);
+  const diff = value - ((ours ? ls.ours : ls.theirs)[inning] || 0);
+  if (!diff) { renderLine(); return; }
+  const idx = list.findIndex(p => p.addedInReview && p.type === 'manual-run-adjustment' && Number(p.inning) === inning && (p.isYourTeam !== false) === ours);
+  if (idx >= 0) {
+    const adj = (list[idx].adjustment || 0) + diff;
+    if (adj === 0) list.splice(idx, 1); else list[idx] = { ...list[idx], adjustment: adj };
+  } else {
+    list.splice(insertIndex(list, inning, ours), 0, {
+      type: 'manual-run-adjustment', inning, isYourTeam: ours, adjustment: diff,
+      reason: 'Inning runs corrected in review', timestamp: Date.now(), addedInReview: true
+    });
+  }
+  plays = list;
+  afterPlayChange();
 }
 
 async function onPlayClick(e) {
@@ -427,7 +489,11 @@ async function onPlayClick(e) {
   if (act === 'add') return addPlayRow(li, i);
   if (act === 'cancel' || act === 'addcancel') return renderPlays();
   const list = [...workingPlays()];
-  if (act === 'addok') {
+  if (act === 'runup' || act === 'rundown') {
+    const prev = list[i];
+    const runs = Math.max(0, Math.min(4, (prev.runsScored || 0) + (act === 'runup' ? 1 : -1)));
+    list[i] = { ...prev, runsScored: runs, ...(Array.isArray(prev.runnersScored) && prev.runnersScored.length > runs ? { runnersScored: prev.runnersScored.slice(0, runs) } : {}) };
+  } else if (act === 'addok') {
     const base = list[i];
     const type = li.querySelector('[data-f="type"]').value;
     const batter = li.querySelector('[data-f="batter"]').value;
@@ -445,13 +511,32 @@ async function onPlayClick(e) {
       addedInReview: true
     });
   } else if (act === 'ok') {
-    const type = li.querySelector('[data-f="type"]').value;
-    const batter = li.querySelector('[data-f="batter"]').value;
     const prev = list[i];
-    // A new result brings its usual outs (pitcher innings come from these).
-    const outFix = type !== prev.playType ? { outsAfter: (Number(prev.outsBefore) || 0) + (OUTS_FOR[type] || 0) } : {};
-    const location = li.querySelector('[data-f="loc"]').value || null;
-    list[i] = { ...prev, ...outFix, location, playType: type, playLabel: PLAY_LABELS[type] || type, ...(batter ? { batter } : {}) };
+    const ours = prev.isYourTeam !== false;
+    const inn = Math.max(1, Math.min(30, parseInt(li.querySelector('[data-f="inning"]').value, 10) || prev.inning || 1));
+    let next;
+    if (prev.type === 'manual-out-adjustment' || prev.type === 'manual-run-adjustment') {
+      next = { ...prev, inning: inn };
+    } else {
+      const type = li.querySelector('[data-f="type"]').value;
+      const batter = li.querySelector('[data-f="batter"]').value;
+      // A new result brings its usual outs (pitcher innings come from these).
+      const outFix = type !== prev.playType ? { outsAfter: (Number(prev.outsBefore) || 0) + (OUTS_FOR[type] || 0) } : {};
+      const location = li.querySelector('[data-f="loc"]').value || null;
+      const runs = Math.max(0, Math.min(4, parseInt(li.querySelector('[data-f="runs"]').value, 10) || 0));
+      next = { ...prev, ...outFix, location, playType: type, playLabel: PLAY_LABELS[type] || type, runsScored: runs, inning: inn, ...(batter ? { batter } : {}) };
+      if (Array.isArray(prev.runnersScored) && prev.runnersScored.length > runs) next.runnersScored = prev.runnersScored.slice(0, runs);
+      if (li.querySelector('[data-f="credit"]') || prev.runsCredited) {
+        const credited = [...li.querySelectorAll('[data-f="credit"]:checked')].map(x => x.value);
+        if (credited.length) next.runsCredited = credited; else delete next.runsCredited;
+      }
+    }
+    if (inn !== (Number(prev.inning) || 1)) {
+      list.splice(i, 1);
+      list.splice(insertIndex(list, inn, ours), 0, next);
+    } else {
+      list[i] = next;
+    }
   } else if (act === 'del') {
     const p = list[i];
     const what = p.type === 'manual-out-adjustment' ? `outs fixed by hand (${p.outsBefore ?? '?'} to ${p.outsAfter ?? '?'})`
@@ -494,12 +579,32 @@ async function savePlays() {
   $('trPlaysSave').disabled = true;
   try {
     const bat = recalculateBattingStats(plays.filter(p => p.isYourTeam !== false), rosterIdForName);
-    await updateDoc(doc(db, 'gameResults', game.id), {
+    // Run edits move the final score by the same amount; the schedule's line score follows if it changed.
+    const fin = currentFinal();
+    const scoreChanged = game.finalScore && (fin.ours !== Number(game.finalScore.yourTeam ?? fin.ours) || fin.theirs !== Number(game.finalScore.opponent ?? fin.theirs));
+    const before = lineScore(game.playByPlay || [], game.innings);
+    const after = lineScore(plays, game.innings);
+    const lineChanged = JSON.stringify([before.ours, before.theirs]) !== JSON.stringify([after.ours, after.theirs]);
+    const payload = {
       playByPlay: plays, battingStats: bat,
       lastEditedAt: serverTimestamp(), lastEditedBy: user.uid, lastEditedByName: user.displayName || user.email
-    });
+    };
+    if (scoreChanged) payload.finalScore = { ...game.finalScore, yourTeam: fin.ours, opponent: fin.theirs };
+    await updateDoc(doc(db, 'gameResults', game.id), payload);
     game.playByPlay = plays;
     game.battingStats = bat;
+    if (scoreChanged) game.finalScore = payload.finalScore;
+    if (lineChanged && sched && game.gameId) {
+      const arr = (m) => Array.from({ length: after.innings }, (_, i) => m[i + 1] || 0);
+      const ls = { home: game.isHome ? arr(after.ours) : arr(after.theirs), away: game.isHome ? arr(after.theirs) : arr(after.ours), innings: after.innings };
+      try {
+        await updateDoc(doc(db, 'seasons', game.seasonId, 'games', game.gameId), { lineScore: ls });
+        sched.lineScore = ls;
+      } catch (err) {
+        console.warn('[tracker-review] could not update the schedule line score', err);
+        showToast('Plays saved, but the schedule line score could not be updated', 'info');
+      }
+    }
     plays = null;
     picks = {};
     bat.forEach(b => { picks[b.playerName] = matchRoster(b)?.legacyId || ''; });
@@ -677,6 +782,10 @@ function bind() {
     renderChecks();
   });
   $('trConvert').addEventListener('click', convert);
+  $('trLine').addEventListener('change', (e) => {
+    const c = e.target.closest('[data-side]');
+    if (c) setInningRuns(c.dataset.side, Number(c.dataset.inn), Math.max(0, Math.min(99, parseInt(c.value, 10) || 0)));
+  });
   $('trPlays').addEventListener('click', onPlayClick);
   $('trPlaysSave').addEventListener('click', savePlays);
   $('trPlaysUndo').addEventListener('click', () => { plays = null; afterPlayChange(); });
