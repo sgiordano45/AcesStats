@@ -34,6 +34,7 @@ export const ADMIN_GROUPS = [
     ['admin/recover-game.html', 'Recover a game', 'Restore a deleted or broken game', 'admin'],
     ['admin/spray-intake.html', 'Spray chart intake', 'Hit locations for spray charts', 'admin'],
     ['admin/oop-homers.html', 'Out-of-park home runs', 'Flag homers that left the park', 'league-staff'],
+    ['admin/migrate-game-dates.html', 'Fix game dates', 'One-time: convert map-style game dates to timestamps', 'admin'],
     ['admin/bwar-explorer.html', 'bWAR explorer', 'Tune bWAR weights', 'league-staff'],
     ['admin/aggregate-stats-legacy.html', 'Legacy aggregator', 'Older seasons', 'admin'],
     ['admin/submit-stats-legacy.html', 'Standard stats form', 'Submit without hit types', 'admin'],
