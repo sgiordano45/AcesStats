@@ -1987,11 +1987,11 @@ exports.testNotification = functions.https.onCall(async (data, context) => {
     data: {
       type: 'test',
       timestamp: new Date().toISOString(),
-      clickAction: '/profile.html'
+      clickAction: '/me.html#notifications'
     },
     webpush: {
       fcmOptions: {
-        link: '/profile.html'
+        link: '/me.html#notifications'
       }
     }
   };
@@ -3115,7 +3115,7 @@ exports.onPhotoUploaded = functions.firestore
       teamName: teamName,
       title: `New photos added`,
       description: `New photos added to ${teamName} gallery`,
-      linkUrl: folder !== 'league' ? `/pictures.html?team=${folder}` : '/pictures.html',
+      linkUrl: '/media.html#photos',
       linkText: 'View Gallery',
       data: { photoId, folder, uploadedBy: photo.uploadedByName || 'Unknown' },
       share: {

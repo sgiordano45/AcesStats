@@ -39,17 +39,17 @@ export async function updateUserProfile(userId, updates) {
  * @returns {string} - URL to correct profile page
  */
 export function getProfilePageForUser(userProfile) {
-  if (!userProfile) return 'profile-fan.html'; // Default to fan
+  if (!userProfile) return 'me.html'; // Profile pages merged into me.html in v2.0
   
   const role = userProfile.userRole;
   
   // Fans and family use fan profile
   if (role === USER_ROLES.FAN || role === USER_ROLES.FAMILY) {
-    return 'profile-fan.html';
+    return 'me.html';
   }
   
   // Players, captains, team-staff, league-staff, admin use full profile
-  return 'profile.html';
+  return 'me.html';
 }
 
 /**

@@ -2253,7 +2253,7 @@ console.warn('\u26a0\ufe0f Linescore save failed (non-critical):', err);
                   <${ChevronLeft} size=${20} />
                   <span className="text-sm font-medium">Home</span>
                 </a>
-                <a href="game-tracker-guide.html" className="absolute top-4 right-4 flex items-center gap-2 px-3 py-2 rounded-lg text-white/90 hover:text-white hover:bg-white/10 transition-all z-20">
+                <a href="help.html#game-tracker" className="absolute top-4 right-4 flex items-center gap-2 px-3 py-2 rounded-lg text-white/90 hover:text-white hover:bg-white/10 transition-all z-20">
                   <span className="text-sm font-medium">\ud83d\udcd6 Guide</span>
                 </a>
                 <div className="max-w-4xl mx-auto text-center relative z-10">

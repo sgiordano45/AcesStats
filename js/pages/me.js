@@ -245,7 +245,7 @@ function todos({ upcoming, needScore, needStats }, playerLinked) {
     out.push({ icon: 'mail', title: 'Verify your email', text: 'Confirm your address to secure your account', href: 'verify-email.html', urgent: true });
   }
   if (!playerLinked) out.push({ icon: 'link', title: 'Link your player record', text: 'See your stats here and on the home page', href: 'link-player.html' });
-  if (!state.profile?.displayName) out.push({ icon: 'user', title: 'Add your display name', text: 'How your name shows around the site', href: 'profile.html' });
+  if (!state.profile?.displayName) out.push({ icon: 'user', title: 'Add your display name', text: 'How your name shows around the site', href: '#profile' });
   const n = notificationTodo();
   if (n) out.push(n);
   return out;

@@ -134,7 +134,7 @@ export const NAV_HUBS = [
       // siteConfig/navigation/pages says (the old nav still reads those docs).
       { key: 'offseason', label: 'Offseason', icon: 'snowflake', pages: [
         { id: 'offseason-hub', href: 'admin/offseason.html', label: 'Offseason hub', icon: 'snowflake', role: 'league-staff', ignoreSiteConfig: true },
-        { id: 'offseason-schedule', href: 'admin/schedule.html', also: ['offseason-schedule.html'], label: 'Schedule', icon: 'calendar-days', role: 'league-staff', ignoreSiteConfig: true },
+        { id: 'offseason-schedule', href: 'admin/schedule.html', label: 'Schedule', icon: 'calendar-days', role: 'league-staff', ignoreSiteConfig: true },
         { id: 'offseason-roster', href: 'offseason-roster.html', label: 'Rosters', icon: 'users', role: 'league-staff', ignoreSiteConfig: true },
         { id: 'draft', href: 'draft.html', label: 'Draft', icon: 'shuffle', role: 'league-staff', ignoreSiteConfig: true },
         { id: 'countdown', href: 'admin/countdown.html', label: 'Countdown', icon: 'timer', role: 'league-staff', ignoreSiteConfig: true },
@@ -256,7 +256,7 @@ export const ME_MENU = [
   },
   {
     key: 'admin', label: 'Admin', pages: [
-      { id: 'admin-hub', href: 'admin/index.html', label: 'Admin', icon: 'settings', role: 'league-staff', also: ['admin-pages.html'] },
+      { id: 'admin-hub', href: 'admin/index.html', label: 'Admin', icon: 'settings', role: 'league-staff' },
       { id: 'admin-people', href: 'admin/people.html', label: 'People', icon: 'users', role: 'league-staff' },
     ],
   },
@@ -280,8 +280,7 @@ export const NAV_UNLISTED = {
   noNav: ['signin.html', 'signup.html', 'reset-password.html', 'verify-email.html', 'offline.html'],
   hidden: ['boxes-pool.html', 'link-player.html', 'player-questionnaire.html', 'submit-score-backup.html', 'submit-stats-backup.html'],
   adminTools: ['admin/aggregate-stats.html', 'approve-links.html', 'captain-questionnaire-review.html',
-    'admin/games.html', 'admin/schedule-editor.html', 'admin/player-import.html', 'admin/playoff-eligibility.html',
-    'schedule-balancer.html', 'admin/schedule-rework.html',
+    'admin/games.html', 'admin/player-import.html', 'admin/playoff-eligibility.html',
     'admin/season-setup.html', 'admin/signup-card-export.html', 'admin/wordle.html',
     'admin/aggregate-stats-legacy.html', 'admin/gc-data-cleaner.html', 'admin/submit-stats-legacy.html', 'admin/bwar-explorer.html', 'admin/offseason.html'],
   toDelete: [],
@@ -633,10 +632,6 @@ export const PAGE_CONFIGS = {
     desktop: []
   },
 
-
-  'admin/aceys.html': {
-    desktop: []
-  },
 
   'aceys-2026.html': {
     desktop: []

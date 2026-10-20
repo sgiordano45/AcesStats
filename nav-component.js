@@ -130,7 +130,7 @@ export class NavigationComponent {
   }
   
   // Fallback to default
-  return 'profile.html';
+  return 'me.html';
 }
   
   // Check if user is authenticated (integrate with your auth system)
