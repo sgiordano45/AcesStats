@@ -254,8 +254,10 @@ function topWithTies(rows, value, { n = 5, lower = false } = {}) {
   const list = rows.map(r => ({ r, v: value(r) })).filter(x => x.v !== null && x.v !== undefined && Number.isFinite(x.v) && (lower || x.v > 0))
     .sort((a, b) => (lower ? a.v - b.v : b.v - a.v) || a.r.name.localeCompare(b.r.name));
   const out = [];
+  let rank = 0;
   list.forEach((x, i) => {
-    const rank = i && x.v === list[i - 1].v ? out[out.length - 1]?.rank : i + 1;
+    // Rank follows the full sorted list (ties share a rank), whether or not the row is shown.
+    if (i === 0 || x.v !== list[i - 1].v) rank = i + 1;
     if (rank <= n && out.length < n + 3) out.push({ ...x, rank });
   });
   return out;
