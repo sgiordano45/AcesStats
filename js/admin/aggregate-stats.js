@@ -52,6 +52,17 @@ window.toggleTestMode = () => setTestMode(document.getElementById('testModeCheck
 // UTILITY FUNCTIONS
 // ============================================
 
+// A stored gameDate -> epoch ms. playerStats game docs hold either a Firestore
+// Timestamp or a plain {seconds, nanoseconds} map (newer entries); new Date(map)
+// is Invalid Date, which scrambles any date sort. Unreadable values sort first (0).
+function gameDateMs(v) {
+  if (!v) return 0;
+  if (typeof v.toDate === 'function') return v.toDate().getTime();
+  if (typeof v.seconds === 'number') return v.seconds * 1000 + Math.floor((v.nanoseconds || 0) / 1e6);
+  const t = new Date(v).getTime();
+  return Number.isNaN(t) ? 0 : t;
+}
+
 function log(message, type = 'info') {
   const output = document.getElementById('output');
   const line = document.createElement('div');
@@ -1289,8 +1300,8 @@ window.aggregateGameBasedSeason = async function() {
         
         // Sort games by date for streak detection
         const sortedGames = [...games].sort((a, b) => {
-          const dateA = a.gameDate?.toDate?.() || new Date(a.gameDate) || new Date(0);
-          const dateB = b.gameDate?.toDate?.() || new Date(b.gameDate) || new Date(0);
+          const dateA = gameDateMs(a.gameDate);
+          const dateB = gameDateMs(b.gameDate);
           return dateA - dateB;
         });
         
@@ -2017,8 +2028,8 @@ window.runStreakCalculator = async function(previewOnly = true) {
 
         // Sort globally by date across all seasons
         allGames.sort((a, b) => {
-          const dateA = a.gameDate?.toDate?.() || new Date(a.gameDate) || new Date(0);
-          const dateB = b.gameDate?.toDate?.() || new Date(b.gameDate) || new Date(0);
+          const dateA = gameDateMs(a.gameDate);
+          const dateB = gameDateMs(b.gameDate);
           return dateA - dateB;
         });
 
