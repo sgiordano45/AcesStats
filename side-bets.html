@@ -1152,9 +1152,13 @@ async function getPlayerStat(legacyId, userId, seasonId, statField) {
       }
 
       const seasons = data.seasons || {};
-      const key = Object.keys(seasons).find(k => k.startsWith(seasonId));
+      // Substitute entries (e.g. "2026-summer-teal-sub", sub: "yes") never count toward side bets
+      const isSubEntry = (k) => k.toLowerCase().split('-').slice(2).includes('sub')
+        || String(seasons[k]?.sub || '').toLowerCase() === 'yes'
+        || seasons[k]?.isSub === true;
+      const key = Object.keys(seasons).find(k => k.startsWith(seasonId) && !isSubEntry(k));
       if (!key) {
-        console.warn(`[SideBets] No season key starting with "${seasonId}" for "${id}". Available:`, Object.keys(seasons));
+        console.warn(`[SideBets] No non-sub season key starting with "${seasonId}" for "${id}". Available:`, Object.keys(seasons));
         continue;
       }
 
