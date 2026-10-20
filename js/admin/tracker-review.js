@@ -22,7 +22,7 @@ import { db, collection, getDocs, doc, getDoc, setDoc, updateDoc, query, where, 
 import { getAllSeasons } from '../data/seasons.js';
 import { getTeamRosterDoc } from '../../firebase-roster.js';
 import { normalizeGame } from '../domain/standings.js';
-import { formatGameDate, toDateKey } from '../domain/dates.js';
+import { formatGameDate, toDateKey, toTimestampDate } from '../domain/dates.js';
 import { seasonLabel, seasonSortKey } from '../domain/season-ids.js';
 import { escapeHtml as esc } from '../ui/format.js';
 import { icon } from '../ui/icons.js';
@@ -285,7 +285,7 @@ function gameContext() {
   const isPlayoff = s ? (s.game_type === 'Playoff' || s.gameType === 'playoff' || s.gameType === 'Playoff') : false;
   return {
     gameId: r.gameId, gameDocId: `${r.seasonId}_${r.gameId}`, seasonId: r.seasonId,
-    gameDate: s?.date || r.completedAt || null,
+    gameDate: toTimestampDate(s?.date) || s?.date || toTimestampDate(r.completedAt) || r.completedAt || null,
     gameDateFormatted: toDateKey(s?.date) || toDateKey(r.completedAt) || '',
     gameType: s ? (s.game_type || s.gameType || 'Regular') : 'Regular',
     isPlayoff

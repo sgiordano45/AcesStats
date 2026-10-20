@@ -35,7 +35,7 @@ import { getAllSeasons } from '../data/seasons.js';
 import { getSeasonPlayerStatsOptimized } from '../data/player-stats.js';
 import { getTeamRosterDoc } from '../../firebase-roster.js';
 import { normalizeGame } from '../domain/standings.js';
-import { parseGameDateTime, formatGameDate, toDateKey } from '../domain/dates.js';
+import { parseGameDateTime, formatGameDate, toDateKey, toTimestampDate } from '../domain/dates.js';
 import { seasonLabel, seasonSortKey } from '../domain/season-ids.js';
 import { escapeHtml as esc } from '../ui/format.js';
 import { icon } from '../ui/icons.js';
@@ -402,7 +402,7 @@ function common(p) {
   return {
     gameId: r.id, gameDocId: sel.gameDocId, playerId: p.legacyId, playerName: p.name,
     seasonId, teamId: sel.teamName,
-    gameDate: r.date || null, gameDateFormatted: toDateKey(r.date) || 'Unknown',
+    gameDate: toTimestampDate(r.date) || r.date || null, gameDateFormatted: toDateKey(r.date) || 'Unknown',
     opponent: sel.opponent, isHome: sel.isHome,
     gameType: r.game_type || r.gameType || 'Regular', isPlayoff,
     submittedBy: user.uid, submittedByName: user.displayName || user.email,

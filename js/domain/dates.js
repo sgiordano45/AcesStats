@@ -55,6 +55,19 @@ function timestampToDate(value) {
 }
 
 /**
+ * A Timestamp, a plain {seconds, nanoseconds} map, or a Date -> a real Date at
+ * the same instant, or null. Use before writing a game date to Firestore so it
+ * is stored as a Timestamp, never as a plain map (a map sorts after every
+ * Timestamp and breaks orderBy and date sorts).
+ */
+export function toTimestampDate(value) {
+  if (!value) return null;
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+  if (isTimestampLike(value)) return timestampToDate(value);
+  return null;
+}
+
+/**
  * Any stored game date -> 'YYYY-MM-DD' (its calendar day in ET), or '' when
  * missing or unreadable.
  *   '2026-06-14'          -> '2026-06-14'
