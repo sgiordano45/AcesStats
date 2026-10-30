@@ -61,13 +61,18 @@ async function loadExtras(seasonId) {
     getDoc(doc(db, 'playerBadges', `season_${seasonId}`)).catch(() => null),
     getDocs(query(collection(db, 'champions'), where('seasonId', '==', seasonId))).catch(() => null)
   ]);
-  // Streaks: one per player, the longest (the calculator can leave an older doc behind)
+  // Streaks: one per player. A player can have two docs (one under the legacy stat ID,
+  // one under the linked-account ID), so group by legacy ID / name, not playerId, and
+  // keep the most recently written doc since an older one can hold a stale streak.
   const best = new Map();
+  const written = (s) => s.achievedAt?.toMillis?.() || (s.achievedAt instanceof Date ? s.achievedAt.getTime() : 0);
   streakSnap?.forEach(d => {
     const s = d.data();
-    const id = s.playerId || s.playerLegacyId || s.playerName;
     if (!s.playerName || !(s.currentStreak >= 1)) return;
-    if (!best.has(id) || s.currentStreak > best.get(id).streak) best.set(id, { id, name: s.playerName, streak: s.currentStreak });
+    const key = String(s.playerLegacyId || s.playerName).trim().toLowerCase();
+    const row = { id: s.playerId || s.playerLegacyId, name: s.playerName, streak: s.currentStreak, at: written(s) };
+    const prev = best.get(key);
+    if (!prev || row.at > prev.at || (row.at === prev.at && row.streak > prev.streak)) best.set(key, row);
   });
   S.streaks = [...best.values()].sort((a, b) => b.streak - a.streak || a.name.localeCompare(b.name)).slice(0, 8);
   S.oop = {};

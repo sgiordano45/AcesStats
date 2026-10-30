@@ -1994,11 +1994,31 @@ window.runStreakCalculator = async function(previewOnly = true) {
       } else {
         legacyId = docId;
       }
+      // If a player has both a legacy doc and a linked-account doc, the account doc wins
+      // so every run writes the streak under the same doc ID.
+      if (legacyToDocId.has(legacyId) && !data.isAuthUser) return;
       legacyToDocId.set(legacyId, docId);
       docIdToInfo.set(docId, { name: data.name || data.linkedPlayer || legacyId });
     });
 
     log(`Found ${legacyToDocId.size} players`, 'success');
+
+    // Every doc currently showing an active streak. Anything not rewritten this run is
+    // zeroed at the end, so stale docs (old versioned IDs, or a player's second doc under
+    // a different ID) can't stay on the leaderboard.
+    const activeDocs = new Map();
+    const hadActiveDoc = new Set();
+    if (!previewOnly) {
+      const activeSnap = await getDocs(query(collection(db, 'hitStreaks'), where('currentStreak', '>=', 1)));
+      activeSnap.forEach(d => {
+        activeDocs.set(d.id, d);
+        const lid = d.data().playerLegacyId;
+        if (lid) hadActiveDoc.add(lid);
+      });
+      log(`Found ${activeDocs.size} existing active-streak docs`, 'success');
+    }
+    const keptDocIds = new Set();
+    const failedLegacyIds = new Set();
     log('');
 
     let playersChecked = 0;
@@ -2094,6 +2114,13 @@ window.runStreakCalculator = async function(previewOnly = true) {
               : ' | active: 0';
 
           log(`  ${playerName}: max ${maxStreak} games (${seasonLabel})${activeLabel}`);
+        }
+
+        // Write notable players, plus anyone who already had an active-streak doc so it
+        // gets refreshed (e.g. back down to 0 or 1) instead of keeping an old value.
+        if (isNotable || hadActiveDoc.has(legacyId)) {
+          const isCrossSeason = maxStreakSeasons.size > 1;
+          const seasonsArray = [...maxStreakSeasons].sort();
 
           if (!previewOnly) {
             // Stable doc ID \u2014 one doc per player for cross-season streaks.
@@ -2123,26 +2150,8 @@ window.runStreakCalculator = async function(previewOnly = true) {
               docData
             );
             writtenCount++;
+            keptDocIds.add(hitStreakDocId);
             log(`    Written/updated: ${hitStreakDocId}`, 'success');
-
-            // Zero out any old versioned docs (e.g. ${docId}_allSeasons_8) so they no
-            // longer appear as active streaks on the leaderboard.
-            try {
-              const oldVersionedQuery = query(
-                collection(db, 'hitStreaks'),
-                where('playerId', '==', docId),
-                where('crossSeason', '==', true)
-              );
-              const oldVersionedSnap = await getDocs(oldVersionedQuery);
-              for (const oldDoc of oldVersionedSnap.docs) {
-                if (oldDoc.id !== hitStreakDocId && (oldDoc.data().currentStreak || 0) > 0) {
-                  await updateDoc(oldDoc.ref, { currentStreak: 0 });
-                  log(`    Zeroed stale doc: ${oldDoc.id}`, 'skip');
-                }
-              }
-            } catch (cleanupErr) {
-              log(`    Cleanup error for ${docId}: ${cleanupErr.message}`, 'error');
-            }
           }
         }
 
@@ -2153,8 +2162,26 @@ window.runStreakCalculator = async function(previewOnly = true) {
 
       } catch (err) {
         log(`  Error for ${legacyId}: ${err.message}`, 'error');
+        failedLegacyIds.add(legacyId);
         playersChecked++;
       }
+    }
+
+    // Zero every active-streak doc that wasn't rewritten above (skip players whose games
+    // failed to load, so an error can't wipe a real streak).
+    if (!previewOnly) {
+      let zeroed = 0;
+      for (const [id, d] of activeDocs) {
+        if (keptDocIds.has(id) || failedLegacyIds.has(d.data().playerLegacyId)) continue;
+        try {
+          await updateDoc(d.ref, { currentStreak: 0 });
+          zeroed++;
+          log(`  Zeroed stale doc: ${id} (${d.data().playerName || '?'}, was ${d.data().currentStreak})`, 'skip');
+        } catch (cleanupErr) {
+          log(`  Cleanup error for ${id}: ${cleanupErr.message}`, 'error');
+        }
+      }
+      log(`Stale active-streak docs zeroed: ${zeroed}`, zeroed > 0 ? 'success' : 'skip');
     }
 
     // Update stat cards
