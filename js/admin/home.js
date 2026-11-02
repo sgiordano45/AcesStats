@@ -45,7 +45,7 @@ async function gameTodos(seasonId) {
     if (!start || start.getTime() + GAME_LENGTH_MS > now) continue;
     const decided = !!g.winner || !!g.unmatchedWinner;
     if (!decided && !g.hasScores) { noScore.push({ g, r }); continue; }
-    if (r.statsSubmitted === true) continue;
+    if (r.statsSubmitted === true || g.forfeit) continue;   // forfeits have no stats to enter
     const sides = [];
     if (r.statsSubmittedHome !== true) sides.push(g.home);
     if (r.statsSubmittedAway !== true) sides.push(g.away);

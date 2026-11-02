@@ -100,7 +100,7 @@ function splitGames(games, now = new Date()) {
     if (!over) continue;
     const r = g.raw;
     const sideDone = g.isHome ? r.statsSubmittedHome === true : r.statsSubmittedAway === true;
-    if (r.statsSubmitted !== true && !sideDone) needStats.push(g);
+    if (r.statsSubmitted !== true && !sideDone && !g.forfeit) needStats.push(g);   // forfeits have no stats to enter
   }
   return { upcoming, needScore, needStats };
 }
