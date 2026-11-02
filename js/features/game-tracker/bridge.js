@@ -301,8 +301,26 @@ async function saveGameResults(gameId, teamId, seasonId, gameState, battingOrder
     }
 }
 
+// Home and away team names for one game (used by deep links: ?game=<id>)
+async function getGameTeams(seasonId, gameId) {
+    if (!seasonId || !gameId) return null;
+    try {
+        const snap = await getDoc(doc(db, 'seasons', seasonId, 'games', gameId));
+        if (!snap.exists()) return null;
+        const g = snap.data();
+        return {
+            home: g.homeTeamName || g.homeTeam || g['home team'] || g.homeTeamId || '',
+            away: g.awayTeamName || g.awayTeam || g['away team'] || g.awayTeamId || ''
+        };
+    } catch (error) {
+        console.error('Error loading game teams:', error);
+        return null;
+    }
+}
+
 // Make functions available globally for React component
 window.FirebaseGameTracker = {
+    getGameTeams,
     getCurrentUser,
     onAuthChange,
     getUserProfile,

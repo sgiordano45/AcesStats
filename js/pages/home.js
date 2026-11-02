@@ -63,6 +63,9 @@ const gameHref = (g) => {
   return `game-preview.html?${q}`;
 };
 
+// Live games open in the game tracker as a viewer
+const trackerHref = (g) => `game-tracker.html?game=${encodeURIComponent(g.id)}`;
+
 function ago(iso) {
   const t = Date.parse(iso || '');
   if (!Number.isFinite(t)) return '';
@@ -112,7 +115,7 @@ function scoreCard(g, { live = null } = {}) {
   const row = (team, runs, win) => `<div class="aces-score-row${win ? ' is-winner' : ''}">
       <span class="home-score-team">${dot(team)}${esc(team)}</span>
       ${showRuns ? `<span class="aces-score-runs">${esc(runs ?? '')}</span>` : ''}</div>`;
-  return `<a class="aces-score${live ? ' is-live' : ''}" href="${esc(gameHref(g))}">
+  return `<a class="aces-score${live ? ' is-live' : ''}" href="${esc(live ? trackerHref(g) : gameHref(g))}">
     <div class="aces-score-status">${status}</div>
     ${row(g.away, awayRuns, final && g.result === 'away')}
     ${row(g.home, homeRuns, final && g.result === 'home')}

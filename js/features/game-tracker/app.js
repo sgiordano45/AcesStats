@@ -128,6 +128,18 @@ function GameTracker() {
     // Track whether we just resumed from saved state - forces full metadata sync on first callback
     const justResumed = useRef(false);
 
+    // Deep link: game-tracker.html?game=<id>[&team=<name>] opens that game in
+    // viewer mode. Used by the home page live cards and push notifications.
+    const deepLink = useRef((() => {
+        try {
+            const q = new URLSearchParams(window.location.search);
+            const gameId = q.get('game');
+            return gameId ? { gameId, team: q.get('team') || '', done: false } : null;
+        } catch (e) {
+            return null;
+        }
+    })());
+
     // Handler to boot/remove a user from presence
     const handleBootUser = async (userId) => {
         if (!selectedGame?.seasonId || !selectedGame?.id) {
@@ -208,8 +220,8 @@ unsubscribers.forEach(unsub => unsub && unsub());
 // Warn before leaving page with active game in progress
 useEffect(() => {
     const handleBeforeUnload = (e) => {
-// Only warn if game is active and has plays recorded
-if (gameState.gameActive && gameState.playHistory.length > 0 && !setupMode) {
+// Only warn if game is active and has plays recorded (trackers only, not viewers)
+if (userCanTrack && gameState.gameActive && gameState.playHistory.length > 0 && !setupMode) {
     e.preventDefault();
     // Modern browsers require returnValue to be set
     e.returnValue = '';
@@ -219,7 +231,7 @@ if (gameState.gameActive && gameState.playHistory.length > 0 && !setupMode) {
 
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-}, [gameState.gameActive, gameState.playHistory.length, setupMode]);
+}, [gameState.gameActive, gameState.playHistory.length, setupMode, userCanTrack]);
 
 // Auto-save game state whenever it changes
 useEffect(() => {
@@ -229,7 +241,8 @@ firebaseUpdateSkipCount.current--;
 return;
     }
 
-    if (!setupMode && selectedGame && selectedTeam && gameState.gameActive && currentUser) {
+    // Spectators only watch: never write their copy of the state back
+    if (!setupMode && !spectatorMode && selectedGame && selectedTeam && gameState.gameActive && currentUser) {
 const saveTimer = setTimeout(() => {
     window.FirebaseGameTracker.saveGameState(
         selectedGame.id,
@@ -248,7 +261,7 @@ const saveTimer = setTimeout(() => {
 
 return () => clearTimeout(saveTimer);
     }
-}, [gameState, setupMode, selectedGame, selectedTeam, battingOrder, currentUser]);
+}, [gameState, setupMode, spectatorMode, selectedGame, selectedTeam, battingOrder, currentUser]);
 
 // Load opponent team's roster for pitcher selection
 const loadOpponentRoster = async (opponentTeam) => {
@@ -280,7 +293,8 @@ useEffect(() => {
 
     async function initializeGameSync() {
 // Only set up sync when game is selected and not in setup mode
-if (!selectedGame || setupMode || !selectedTeam || !currentUser) {
+// (signed-out fans can still watch; they just don't get presence)
+if (!selectedGame || setupMode || !selectedTeam) {
     return;
 }
 
@@ -288,8 +302,10 @@ console.log('\ud83d\udd04 Initializing real-time game sync');
 
 try {
     // Get user profile to check permissions
-    const profileResult = await window.FirebaseGameTracker.getUserProfile(currentUser.uid);
-    const userProfile = profileResult.success ? profileResult.data : null;
+    const profileResult = currentUser
+        ? await window.FirebaseGameTracker.getUserProfile(currentUser.uid)
+        : null;
+    const userProfile = profileResult?.success ? profileResult.data : null;
     
     // Check if user can track this team (base permission)
     const canTrack = window.FirebaseGameTracker.canUserTrackTeam(userProfile, selectedTeam);
@@ -331,14 +347,16 @@ try {
     
     // Update presence with role
     const role = spectatorMode ? 'viewer' : 'tracker';
-    await window.FirebaseGameTracker.updatePresence(
-        seasonId,
-        selectedGame.id,
-        currentUser.uid,
-        myTeamId,
-        currentUser.displayName || 'Unknown',
-        role
-    );
+    if (currentUser) {
+        await window.FirebaseGameTracker.updatePresence(
+            seasonId,
+            selectedGame.id,
+            currentUser.uid,
+            myTeamId,
+            currentUser.displayName || 'Unknown',
+            role
+        );
+    }
     
     // Subscribe to YOUR team's game state
     unsubscribeYourTeam = window.FirebaseGameTracker.subscribeToGameState(
@@ -356,7 +374,7 @@ try {
             // IMPORTANT: Only apply updates if there's REAL data from another user
             // Don't overwrite our state with empty defaults when our team hasn't recorded plays yet
             const hasRealData = data.plays && data.plays.length > 0;
-            const isFromAnotherUser = data.metadata?.lastUpdatedBy && data.metadata.lastUpdatedBy !== currentUser.uid;
+            const isFromAnotherUser = data.metadata?.lastUpdatedBy && (!currentUser || data.metadata.lastUpdatedBy !== currentUser.uid);
             
             if (hasRealData && isFromAnotherUser) {
                 console.log('\ud83d\udce5 Your team updated by', data.metadata?.lastUpdatedByName);
@@ -640,6 +658,7 @@ document.removeEventListener('visibilitychange', handleVisibilityChange);
             
             const user = window.getCurrentFirebaseUser ? window.getCurrentFirebaseUser() : null;
             setCurrentUser(user);
+            let linkedTeam = '';
             
             if (user) {
                 console.log('\u2705 Signed in as:', user.displayName || user.email);
@@ -647,8 +666,12 @@ document.removeEventListener('visibilitychange', handleVisibilityChange);
                 try {
                     const profileResult = await window.FirebaseGameTracker.getUserProfile(user.uid);
                     if (profileResult.success && profileResult.data?.linkedTeam) {
-                        console.log('\u2705 Auto-selecting team:', profileResult.data.linkedTeam);
-                        setSelectedTeam(profileResult.data.linkedTeam);
+                        linkedTeam = profileResult.data.linkedTeam;
+                        // A deep link picks its own team below
+                        if (!deepLink.current) {
+                            console.log('\u2705 Auto-selecting team:', linkedTeam);
+                            setSelectedTeam(linkedTeam);
+                        }
                     }
                 } catch (profileError) {
                     console.warn('Could not load user profile:', profileError);
@@ -668,6 +691,18 @@ document.removeEventListener('visibilitychange', handleVisibilityChange);
                 .sort();
             setAllTeams(teamNames);
             console.log('\u2705 Teams loaded:', teamNames.length);
+            
+            if (deepLink.current) {
+                const team = seasonData ? await pickDeepLinkTeam(seasonData.id, teamNames, linkedTeam) : '';
+                if (team) {
+                    console.log('\ud83d\udd17 Deep link: opening game', deepLink.current.gameId, 'for', team);
+                    setSelectedTeam(team);
+                } else {
+                    console.warn('\ud83d\udd17 Deep link: game not found -', deepLink.current.gameId);
+                    deepLink.current = null;
+                    if (linkedTeam) setSelectedTeam(linkedTeam);
+                }
+            }
             
             setLoading(false);
         } catch (err) {
@@ -733,6 +768,81 @@ document.removeEventListener('visibilitychange', handleVisibilityChange);
             console.error('\u274c Error loading team data:', error);
         }
     };
+
+    // Deep link: which team's view to open. The team in the link, else the
+    // viewer's own team if it's playing, else whichever team is being tracked
+    // (so the viewer sees plays), else the home team.
+    const pickDeepLinkTeam = async (seasonId, teamNames, linkedTeam) => {
+        const link = deepLink.current;
+        const match = (name) => teamNames.find(t => t.toLowerCase() === String(name || '').toLowerCase()) || '';
+        const teams = await window.FirebaseGameTracker.getGameTeams(seasonId, link.gameId);
+        if (!teams) return '';
+        const home = match(teams.home);
+        const away = match(teams.away);
+        const inGame = (t) => !!t && (t === home || t === away);
+        if (inGame(match(link.team))) return match(link.team);
+        if (inGame(match(linkedTeam))) return match(linkedTeam);
+        for (const t of [home, away]) {
+            if (!t) continue;
+            const s = await window.FirebaseGameTracker.loadGameState(link.gameId, t, seasonId);
+            if (s && !s.cleared && s.plays?.length > 0) return t;
+        }
+        return home || away;
+    };
+
+    // Deep link: open the game straight into the live view, in spectator mode.
+    // Skips the start-game flow (resume prompt, pitcher modal) since viewers
+    // only watch; trackers can still flip to Editor Mode from there.
+    const openGameAsViewer = async (game) => {
+        const teamIsHome = game.homeTeam?.toLowerCase() === selectedTeam.toLowerCase();
+        setSpectatorMode(true);
+        setSelectedGame(game);
+        setIsHome(teamIsHome);
+        
+        try {
+            const saved = await window.FirebaseGameTracker.loadGameState(game.id, selectedTeam, game.seasonId);
+            if (saved && !saved.cleared) {
+                const ordered = (saved.battingOrder || [])
+                    .map(id => players.find(p => p.id === id || p.authId === id))
+                    .filter(Boolean);
+                setBattingOrder(ordered.length > 0 ? ordered : players);
+                setGameState({
+                    inning: saved.inning || 1,
+                    outs: saved.outs || 0,
+                    bases: saved.bases || { first: null, second: null, third: null },
+                    score: { yourTeam: saved.score || 0, opponent: 0 },  // opponent comes from metadata
+                    currentBatter: saved.currentBatter || 0,
+                    playHistory: saved.plays || [],
+                    gameActive: saved.gameActive !== false,
+                    isYourTeamBatting: saved.isYourTeamBatting !== false
+                });
+            } else {
+                setBattingOrder(players);
+            }
+        } catch (error) {
+            console.warn('Deep link: could not load saved game state', error);
+            setBattingOrder(players);
+        }
+        
+        justResumed.current = true;  // full metadata sync on first callback
+        setSetupMode(false);
+    };
+
+    useEffect(() => {
+        const link = deepLink.current;
+        if (!link || link.done || !selectedTeam || !games.length) return;
+        const team = selectedTeam.toLowerCase();
+        // Ignore a list that belongs to a previously selected team
+        const listIsForTeam = games.some(g => g.homeTeam?.toLowerCase() === team || g.awayTeam?.toLowerCase() === team);
+        if (!listIsForTeam) return;
+        link.done = true;
+        const game = games.find(g => g.id === link.gameId);
+        if (game) {
+            openGameAsViewer(game);
+        } else {
+            console.warn('\ud83d\udd17 Deep link: game is not in', selectedTeam, 'upcoming games');
+        }
+    }, [games, selectedTeam]);
 
     const handleTeamSelect = (team) => {
         setSelectedTeam(team);
@@ -2104,7 +2214,7 @@ console.warn('\u26a0\ufe0f Linescore save failed (non-critical):', err);
 
     // Go back to setup screen (with confirmation if game in progress)
     const backToSetup = () => {
-        if (gameState.playHistory.length > 0) {
+        if (userCanTrack && gameState.playHistory.length > 0) {
             const confirmed = window.confirm(
                 '\u26a0\ufe0f Leave Game Tracker?\n\n' +
                 'Your progress is auto-saved and you can resume later.\n\n' +
@@ -2116,6 +2226,13 @@ console.warn('\u26a0\ufe0f Linescore save failed (non-critical):', err);
             );
             
             if (!confirmed) return;
+        }
+        
+        // Leaving a deep-linked game: drop the link and its spectator default
+        if (deepLink.current) {
+            deepLink.current = null;
+            setSpectatorMode(false);
+            try { window.history.replaceState(null, '', window.location.pathname); } catch (e) {}
         }
         
         setSetupMode(true);
