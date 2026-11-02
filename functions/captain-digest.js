@@ -169,7 +169,7 @@ async function buildDigest({ onlyTeam = '' } = {}) {
       const side = home ? 'home' : 'away';
       const done = home ? raw.statsSubmittedHome === true : raw.statsSubmittedAway === true;
       const line = { id: raw.id, dateKey: n.dateKey, opp, home, side };
-      if (!done) missing.push(line);
+      if (!done) { if (!n.forfeit) missing.push(line); }   // forfeits have no stats to enter
       else if (toMillis(raw.statsSubmittedAt) > lastAgg) pending.push(line);
     }
 

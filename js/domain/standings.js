@@ -41,10 +41,25 @@ function hasScore(v) {
 }
 
 /**
+ * Is this game a forfeit? Takes a raw game doc or a normalized game. Raw docs
+ * flag it as forfeit: true (Submit scores), forfeit: 'Yes' (older docs) or a
+ * legacy winner like 'Forfeit - Teal' / 'Forfeit - Tie'. A forfeit has no
+ * stats to enter, so the stats pipeline treats both sides as done.
+ */
+export function isForfeit(raw) {
+  if (!raw) return false;
+  if (raw.__normalized) return raw.forfeit === true;
+  const f = raw.forfeit;
+  if (f === true) return true;
+  if (/^(yes|true)$/i.test(String(f ?? '').trim())) return true;
+  return /^forfeit\b/i.test(String(raw.winner ?? '').trim());
+}
+
+/**
  * Game doc -> the one shape the domain code reads:
  *   { id, home, away, homeScore, awayScore, result: 'home'|'away'|'tie'|null,
  *     winner, type: 'regular'|'playoff'|<other gameType>, dateKey, time,
- *     status, round, unmatchedWinner }
+ *     status, round, unmatchedWinner, forfeit }
  * unmatchedWinner is the raw winner when it names neither team (data to fix).
  * Already-normalized games pass through.
  */
@@ -90,7 +105,8 @@ export function normalizeGame(raw) {
     dateKey: toDateKey(raw.date),
     time: raw.time || '',
     status: raw.status || '',
-    round: raw.round || ''
+    round: raw.round || '',
+    forfeit: isForfeit(raw)
   };
 }
 

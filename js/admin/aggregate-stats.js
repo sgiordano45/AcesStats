@@ -24,6 +24,7 @@ import { showToast } from '../ui/toast.js';
 import { confirmModal } from '../ui/modal.js';
 import { mountAdminShell } from './shell.js';
 import { toStatId } from '../domain/player-id.js';
+import { isForfeit } from '../domain/standings.js';
 
 // Seasons with game-level stats (full aggregation to production): 2026 Summer on.
 let GAME_BASED_SEASONS = ['2026-summer', '2026-fall', '2027-summer', '2027-fall'];
@@ -619,7 +620,8 @@ window.previewGameBasedSeason = async function() {
     // Fetch season games to compute games played and submission status per team.
     // A game counts as submitted if EITHER the statsSubmittedHome/Away flag is set
     // OR the gameId appears in playerStats (covers early games before the flag existed
-    // and acts as a fallback for any failed flag writes).
+    // and acts as a fallback for any failed flag writes). Forfeits have no stats to
+    // enter, so they count as submitted for both teams.
     const teamGamesPlayed = {}; // team (lowercase) -> { played: 0, submittedIds: Set }
     try {
       const seasonGamesRef = collection(db, 'seasons', seasonId, 'games');
@@ -642,6 +644,7 @@ window.previewGameBasedSeason = async function() {
 
         const homeTeam = (g.homeTeamName || g['home team'] || g.homeTeam || '').toLowerCase();
         const awayTeam = (g.awayTeamName || g['away team'] || g.awayTeam || '').toLowerCase();
+        const forfeit = isForfeit(g);
 
         if (homeTeam) {
           if (!teamGamesPlayed[homeTeam]) teamGamesPlayed[homeTeam] = { played: 0, submittedIds: new Set() };
@@ -649,14 +652,14 @@ window.previewGameBasedSeason = async function() {
           // Flag-based OR playerStats-based (uniqueGames)
           const flagSet = !!g.statsSubmittedHome;
           const inPlayerStats = teamStats[homeTeam]?.uniqueGames?.has(gameId) || false;
-          if (flagSet || inPlayerStats) teamGamesPlayed[homeTeam].submittedIds.add(gameId);
+          if (flagSet || inPlayerStats || forfeit) teamGamesPlayed[homeTeam].submittedIds.add(gameId);
         }
         if (awayTeam) {
           if (!teamGamesPlayed[awayTeam]) teamGamesPlayed[awayTeam] = { played: 0, submittedIds: new Set() };
           teamGamesPlayed[awayTeam].played++;
           const flagSet = !!g.statsSubmittedAway;
           const inPlayerStats = teamStats[awayTeam]?.uniqueGames?.has(gameId) || false;
-          if (flagSet || inPlayerStats) teamGamesPlayed[awayTeam].submittedIds.add(gameId);
+          if (flagSet || inPlayerStats || forfeit) teamGamesPlayed[awayTeam].submittedIds.add(gameId);
         }
       });
     } catch (err) {

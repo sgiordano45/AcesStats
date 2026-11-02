@@ -8,6 +8,7 @@
 // Each step says whether it is done and links to the tool that does it (the
 // aggregator and badge calculator open with the season and test mode chosen).
 // Below the steps, every finished game with what it is missing.
+// Forfeits have no stats to enter: a side with none shows Forfeit, not Missing.
 //
 // "Last change" is the newest statsSubmittedAt on the season's games or
 // convertedAt on its tracked games. Games entered before statsSubmittedAt
@@ -97,6 +98,7 @@ async function load(seasonId) {
       scored: decided || g.hasScores,
       awayIn: all || r.statsSubmittedAway === true,
       homeIn: all || r.statsSubmittedHome === true,
+      forfeit: g.forfeit,
       noStatsNote: r.statsSubmittedNote || '',
       tracked: t,
       trackedPending: t.filter(x => !x.convertedToOfficial).length,
@@ -109,7 +111,7 @@ async function load(seasonId) {
   return {
     seasonId, games, tracked, prod, test, badges, badgesTest, lastChange,
     missingScore: games.filter(x => !x.scored).length,
-    missingSides: games.reduce((n, x) => n + (x.scored ? (!x.awayIn) + (!x.homeIn) : 0), 0),
+    missingSides: games.reduce((n, x) => n + (x.scored && !x.forfeit ? (!x.awayIn) + (!x.homeIn) : 0), 0),
     trackedPending: tracked.filter(x => !x.convertedToOfficial).length
   };
 }
@@ -209,8 +211,17 @@ const none = '<span class="stp-dim">-</span>';
 // A missing side links straight to Enter stats for that game and team.
 const enter = (x, side) => `<a class="aces-badge is-alert stp-enter" href="${esc(siteUrl(`admin/submit-stats.html?season=${encodeURIComponent(state.seasonId)}&game=${encodeURIComponent(x.id)}&side=${side}`))}" title="Enter these stats">Missing</a>`;
 
+// One side's stats cell: in, marked as having none, a forfeit, or missing.
+function sideCell(x, side) {
+  if (!x.scored) return none;
+  if (x.r.statsSubmitted === true && x.noStatsNote) return `<span class="aces-badge is-outline" title="${esc(x.noStatsNote)}">Marked</span>`;
+  if (side === 'away' ? x.awayIn : x.homeIn) return yes();
+  if (x.forfeit) return '<span class="aces-badge is-outline" title="Forfeit: no stats to enter">Forfeit</span>';
+  return enter(x, side);
+}
+
 function needsWork(x, s) {
-  return !x.scored || !x.awayIn || !x.homeIn || x.trackedPending > 0 || (x.changedAt && x.changedAt > s.prod.at);
+  return !x.scored || (!x.forfeit && (!x.awayIn || !x.homeIn)) || x.trackedPending > 0 || (x.changedAt && x.changedAt > s.prod.at);
 }
 
 function renderGames(s) {
@@ -224,15 +235,14 @@ function renderGames(s) {
     <thead><tr><th>Date</th><th>Game</th><th>Score</th><th>Away stats</th><th>Home stats</th><th>Tracker</th><th>Aggregated</th></tr></thead>
     <tbody>${rows.map(x => {
       const { g, r } = x;
-      const marked = r.statsSubmitted === true && x.noStatsNote;
       const tracker = !x.tracked.length ? none : x.trackedPending ? no('Review') : yes('Converted');
-      const agg = !x.scored ? none : x.changedAt && x.changedAt > s.prod.at ? no('Not yet') : x.changedAt ? yes('Yes') : '<span class="stp-dim" title="Entered before submission times were recorded">Likely</span>';
+      const agg = !x.scored || (x.forfeit && !x.changedAt) ? none : x.changedAt && x.changedAt > s.prod.at ? no('Not yet') : x.changedAt ? yes('Yes') : '<span class="stp-dim" title="Entered before submission times were recorded">Likely</span>';
       return `<tr>
         <td class="stp-date">${esc(formatGameDate(r.date))}</td>
         <td>${esc(g.away)} at ${esc(g.home)}</td>
         <td class="stp-num-cell">${x.scored ? (g.hasScores ? `${g.awayScore}-${g.homeScore}` : 'Final') : no('No score')}</td>
-        <td>${!x.scored ? none : marked ? `<span class="aces-badge is-outline" title="${esc(x.noStatsNote)}">Marked</span>` : x.awayIn ? yes() : enter(x, 'away')}</td>
-        <td>${!x.scored ? none : marked ? `<span class="aces-badge is-outline" title="${esc(x.noStatsNote)}">Marked</span>` : x.homeIn ? yes() : enter(x, 'home')}</td>
+        <td>${sideCell(x, 'away')}</td>
+        <td>${sideCell(x, 'home')}</td>
         <td>${tracker}</td>
         <td>${agg}</td>
       </tr>`;

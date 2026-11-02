@@ -104,21 +104,25 @@ async function loadSeason(id) {
       r, g, start,
       played: decided || g.hasScores || (start && start + GAME_LENGTH_MS < now),
       awayIn: all || r.statsSubmittedAway === true,
-      homeIn: all || r.statsSubmittedHome === true
+      homeIn: all || r.statsSubmittedHome === true,
+      forfeit: g.forfeit
     };
   }).filter(x => !opts.scope || mine(x, 'home') || mine(x, 'away'))
     .sort((a, b) => b.start - a.start);
   renderGames();
 }
 
-const needsStats = (x) => x.played && ((mine(x, 'away') && !x.awayIn) || (mine(x, 'home') && !x.homeIn));
+// Forfeits never need stats; stats entered for one anyway still save and count.
+const needsStats = (x) => x.played && !x.forfeit && ((mine(x, 'away') && !x.awayIn) || (mine(x, 'home') && !x.homeIn));
 
 function sideButton(x, side) {
   const team = side === 'home' ? x.g.home : x.g.away;
   if (!mine(x, side)) return `<span class="sse-side is-other"><span>${esc(team || 'TBD')}</span></span>`;
   const isIn = side === 'home' ? x.homeIn : x.awayIn;
   const on = sel && sel.r.id === x.r.id && sel.side === side;
-  const badge = !x.played ? '' : isIn ? '<span class="aces-badge is-win">In</span>' : '<span class="aces-badge is-alert">Missing</span>';
+  const badge = !x.played ? '' : isIn ? '<span class="aces-badge is-win">In</span>'
+    : x.forfeit ? '<span class="aces-badge is-outline" title="Forfeit: no stats to enter">Forfeit</span>'
+    : '<span class="aces-badge is-alert">Missing</span>';
   return `<button class="sse-side${on ? ' is-on' : ''}" type="button" data-game="${esc(x.r.id)}" data-side="${side}" aria-pressed="${on}">
     <span>${esc(team || 'TBD')}</span>${badge}</button>`;
 }
@@ -273,6 +277,8 @@ async function selectSide(gameId, side, { scroll = true } = {}) {
       notice('warning', `${plural(n, 'player')} already ${n === 1 ? 'has' : 'have'} stats for this game. Saving updates them. Untick Played to remove a player's stats.`);
     } else if (sideIn) {
       notice('info', 'This side is marked as in, but no roster player has stats saved for it. Subs may have been entered under other names.');
+    } else if (x?.forfeit) {
+      notice('info', 'This game was a forfeit, so no stats are needed. Only enter stats if it was played anyway.');
     }
   } catch (err) {
     console.error('[stats] load failed', err);
