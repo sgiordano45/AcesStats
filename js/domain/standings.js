@@ -381,7 +381,8 @@ export function computeStandings(games, { asOf = todayKey(), extras = true, incl
 
   if (includeScheduled) {
     const seen = new Set(records.map((r) => r.team));
-    for (const g of all) {
+    // Regular-season games only: playoff placeholders ('Seed 3', 'G5 Winner') aren't teams.
+    for (const g of all.filter((x) => x.type === 'regular')) {
       for (const name of [g.home, g.away]) {
         if (name && name !== 'TBD' && !seen.has(name)) {
           seen.add(name);

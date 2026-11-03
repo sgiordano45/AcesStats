@@ -5,7 +5,7 @@
 
 import { openModal } from '../ui/modal.js';
 import { showToast } from '../ui/toast.js';
-import { ROUND_KEYS, ROUND_TITLES } from './playoffs-format.js';
+import { ROUND_KEYS, ROUND_TITLES, DE_KEYS, DE_TITLES, isDouble, deColumns } from './playoffs-format.js';
 
 const W_COL = 210;
 const GAP = 26;
@@ -39,6 +39,7 @@ function fit(g, text, max) {
  * @param {string} o.subtitle e.g. 'Official bracket'
  */
 export function drawBracket(data, { team, title, subtitle }) {
+  if (isDouble(data)) return drawDouble(data, { team, title, subtitle });
   const rounds = ROUND_KEYS.filter((k) => (data[k] || []).length);
   const tallest = Math.max(...rounds.map((k) => data[k].length), 1);
   const bodyH = tallest * (BOX_H + 18);
@@ -108,6 +109,109 @@ export function drawBracket(data, { team, title, subtitle }) {
   g.font = '500 11px Inter, system-ui, sans-serif';
   g.fillText('Mountainside Aces', width / 2, height - FOOT / 2);
   return c;
+}
+
+/** Double elimination: winners' and losers' brackets stacked, championship on the right. */
+function drawDouble(data, { team, title, subtitle }) {
+  const BOX = 54;
+  const ROW = BOX + 24;
+  const COL = 190;
+  const CGAP = 22;
+  const LABEL = 34;
+  const w = deColumns(data, 'winners');
+  const l = deColumns(data, 'losers');
+  const c = deColumns(data, 'championship').flat();
+  const tall = (cols) => Math.max(1, ...cols.map((x) => x.length)) * ROW;
+  const wH = tall(w);
+  const lH = tall(l);
+  const bracketCols = Math.max(w.length, l.length);
+  const width = PAD * 2 + (bracketCols + 1) * COL + bracketCols * CGAP + CGAP;
+  const height = HEAD + LABEL + wH + 20 + LABEL + lH + FOOT;
+  const scale = 2;
+  const canvas = document.createElement('canvas');
+  canvas.width = width * scale;
+  canvas.height = height * scale;
+  const g = canvas.getContext('2d');
+  g.scale(scale, scale);
+
+  const bg = g.createLinearGradient(0, 0, width, height);
+  bg.addColorStop(0, '#173a10');
+  bg.addColorStop(1, '#2d5016');
+  g.fillStyle = bg;
+  g.fillRect(0, 0, width, height);
+  g.textBaseline = 'middle';
+  g.textAlign = 'center';
+  g.fillStyle = '#ffd700';
+  g.font = '700 26px Inter, system-ui, sans-serif';
+  g.fillText(title, width / 2, 38);
+  g.fillStyle = 'rgba(255,255,255,0.75)';
+  g.font = '500 13px Inter, system-ui, sans-serif';
+  g.fillText(subtitle, width / 2, 64);
+
+  const box = (s, x, y, gold) => {
+    const skip = s.ifNecessary && data.championship?.find((x2) => x2.id === 'g20')?.winner === 1;
+    g.globalAlpha = skip ? 0.45 : 1;
+    roundRect(g, x, y, COL, BOX, 7);
+    g.fillStyle = gold ? 'rgba(255,215,0,0.16)' : 'rgba(255,255,255,0.1)';
+    g.fill();
+    g.strokeStyle = gold ? 'rgba(255,215,0,0.7)' : 'rgba(255,255,255,0.25)';
+    g.lineWidth = 1;
+    g.stroke();
+    g.textAlign = 'right';
+    g.font = '700 9px Inter, system-ui, sans-serif';
+    g.fillStyle = 'rgba(255,255,255,0.5)';
+    g.fillText(skip ? `${s.id.toUpperCase()} \u00b7 NOT NEEDED` : s.id.toUpperCase(), x + COL - 8, y - 6);
+    const gm = s.games?.[0] || {};
+    const played = gm.team1Score !== null && gm.team1Score !== undefined && gm.team2Score !== null && gm.team2Score !== undefined;
+    [[s.team1, gm.team1Score, 1], [s.team2, gm.team2Score, 2]].forEach(([slotRef, score, side], r) => {
+      const t = team(slotRef, s);
+      const ry = y + 14 + r * 26;
+      const won = s.winner === side;
+      const lost = s.winner && !won;
+      g.textAlign = 'left';
+      g.font = '700 10px Inter, system-ui, sans-serif';
+      g.fillStyle = 'rgba(255,255,255,0.55)';
+      g.fillText(t.seed ? String(t.seed) : '', x + 9, ry);
+      g.font = `${won ? 700 : 500} 12px Inter, system-ui, sans-serif`;
+      g.fillStyle = won ? '#ffd700' : lost ? 'rgba(255,255,255,0.45)' : '#ffffff';
+      g.fillText(fit(g, t.name, COL - 56), x + 26, ry);
+      g.textAlign = 'right';
+      g.font = '700 12px Inter, system-ui, sans-serif';
+      g.fillText(played ? String(score) : '', x + COL - 9, ry);
+    });
+    g.globalAlpha = 1;
+  };
+
+  const label = (text, x, y, gold) => {
+    g.textAlign = 'left';
+    g.fillStyle = gold ? '#ffd700' : 'rgba(255,255,255,0.85)';
+    g.font = '700 13px Inter, system-ui, sans-serif';
+    g.fillText(text.toUpperCase(), x, y);
+  };
+
+  const drawCols = (cols, top, h) => cols.forEach((col, ci) => {
+    const x = PAD + ci * (COL + CGAP);
+    const slot = h / col.length;
+    col.forEach((s, i) => box(s, x, top + i * slot + (slot - BOX) / 2 + 6, false));
+  });
+
+  const wTop = HEAD + LABEL;
+  label(DE_TITLES.winners, PAD, HEAD + 12);
+  drawCols(w, wTop, wH);
+  const lTop = wTop + wH + 20 + LABEL;
+  label(DE_TITLES.losers, PAD, lTop - LABEL + 12);
+  drawCols(l, lTop, lH);
+
+  const cx = PAD + bracketCols * (COL + CGAP) + CGAP;
+  const mid = (wTop + lTop + lH) / 2;
+  label(DE_TITLES.championship, cx, mid - BOX - 34, true);
+  c.forEach((s, i) => box(s, cx, mid - BOX - 8 + i * (BOX + 26), true));
+
+  g.textAlign = 'center';
+  g.fillStyle = 'rgba(255,255,255,0.45)';
+  g.font = '500 11px Inter, system-ui, sans-serif';
+  g.fillText('Mountainside Aces', width / 2, height - FOOT / 2);
+  return canvas;
 }
 
 export async function openShare(canvas, fileName) {
