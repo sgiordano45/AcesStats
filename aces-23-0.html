@@ -669,6 +669,19 @@ main { max-width: 900px; margin: 0 auto; padding: 2rem 1rem 4rem; }
 .btn-simulate:hover { transform: translateY(-2px); }
 .btn-simulate:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
 
+/* Re-simulate prompt */
+.resim-wrap {
+  display: none;
+  text-align: center;
+  margin: 1.25rem 0 0.5rem;
+}
+.resim-wrap.show { display: block; }
+.resim-wrap p {
+  color: #a0aec0;
+  font-size: 0.9rem;
+  margin-bottom: 0.75rem;
+}
+
 /* No pool warning */
 .no-pool-msg {
   background: rgba(214,158,46,0.1);
@@ -843,6 +856,11 @@ main { max-width: 900px; margin: 0 auto; padding: 2rem 1rem 4rem; }
       <div class="sim-log" id="simLog"></div>
     </div>
 
+    <div class="resim-wrap" id="resimWrap">
+      <p id="resimMsg"></p>
+      <button class="btn-simulate" id="btnResim" onclick="simulateSeason()">🎲 Re-Simulate Same Roster</button>
+    </div>
+
     <div class="btn-row">
       <button class="btn-primary" onclick="resetGame()">🔄 Play Again</button>
       <button class="btn-secondary" onclick="showScreen('screenSimulate')">← Back to Roster</button>
@@ -892,6 +910,8 @@ let teamSkipsLeft = 1;
 let currentCombo = null;     // { season, team, key }
 let selectedPlayer = null;   // player obj user clicked
 let isSpinning = false;
+let simAttempts = 0;         // sims run with the current roster
+let simRunning = false;      // blocks double-starting a sim
 
 
 // ——— Helpers ———
@@ -1082,6 +1102,7 @@ window.startGame = function() {
   selectedPlayer = null;
   currentCombo = null;
   isSpinning = false;
+  simAttempts = 0;
 
   renderRosterPanel();
   showScreen('screenPick');
@@ -1497,22 +1518,26 @@ function computeRating(totalStrength) {
 
 // ——— Season Simulation ———
 window.simulateSeason = function() {
+  if (simRunning) return;
+  simRunning = true;
+  simAttempts++;
   document.getElementById('btnSimulate').disabled = true;
+  document.getElementById('resimWrap').classList.remove('show');
 
   const totalStrength = roster.reduce((s,p) => s + p.strength, 0);
   const rating = computeRating(totalStrength);
 
   // Win probability per game (23-0 odds = winProb^23):
-  // rating 65  → ~73% (~0.1% shot)
-  // rating 70  → ~82% (~0.9% shot)
-  // rating 75  → ~88% (~5% shot)
-  // rating 80  → ~92% (~14% shot)
-  // rating 85  → ~94% (~25% shot)
-  // rating 95  → ~96% (best possible, ~41% shot)
+  // rating 70  → ~83% (~1.4% shot)
+  // rating 75  → ~90% (~8% shot)
+  // rating 80  → ~94% (~22% shot)
+  // rating 85  → ~96% (~40% shot)
+  // rating 90  → ~97% (~55% shot)
+  // rating 95  → ~98% (best possible, ~66% shot)
   function gameWinProb(rating) {
     const k = 0.13;
     const mid = 62;
-    return 0.38 + 0.59 * (1 / (1 + Math.exp(-k * (rating - mid))));
+    return 0.38 + 0.61 * (1 / (1 + Math.exp(-k * (rating - mid))));
   }
 
   const winProb = gameWinProb(rating);
@@ -1581,7 +1606,7 @@ window.simulateSeason = function() {
     setTimeout(nextGame, 120);
   }
 
-  appendLog(`Rating: ${rating.toFixed(1)} | Win% per game: ${(winProb*100).toFixed(1)}%`);
+  appendLog(`Attempt #${simAttempts} | Rating: ${rating.toFixed(1)} | Win% per game: ${(winProb*100).toFixed(1)}%`);
   appendLog('--- Season begins ---');
   setTimeout(nextGame, 400);
 };
@@ -1592,6 +1617,8 @@ function finishSim(wins, losses, lost) {
   const title = document.getElementById('resultTitle');
   const record = document.getElementById('resultRecord');
   const msg = document.getElementById('resultMsg');
+
+  banner.style.borderColor = ''; // clear "So Close" gold border from a prior sim
 
   if (won23) {
     banner.className = 'result-banner';
@@ -1613,6 +1640,15 @@ function finishSim(wins, losses, lost) {
       ? 'Rough one. Might need a better roster next time.'
       : 'A solid run, but not 23-0 territory. Try again!';
   }
+
+  // Offer a re-sim with the same roster
+  const attemptsStr = simAttempts > 1 ? ` (${simAttempts} sims with this roster so far)` : '';
+  document.getElementById('resimMsg').textContent = won23
+    ? `Skill or luck? Run it back with the same roster and find out.${attemptsStr}`
+    : `Think bad luck got you? Re-simulate with the same roster and see if your luck turns.${attemptsStr}`;
+  document.getElementById('resimWrap').classList.add('show');
+  document.getElementById('btnSimulate').disabled = false; // so "Back to Roster" can sim again too
+  simRunning = false;
 }
 
 // ——— Reset ———
@@ -1625,6 +1661,7 @@ window.resetGame = function() {
   selectedPlayer = null;
   currentCombo = null;
   isSpinning = false;
+  simAttempts = 0;
   showScreen('screenStart');
 };
 
