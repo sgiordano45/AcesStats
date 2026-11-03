@@ -31,6 +31,7 @@ import { escapeHtml as esc } from '../ui/format.js';
 import { icon } from '../ui/icons.js';
 import { openModal, confirmModal } from '../ui/modal.js';
 import { showToast } from '../ui/toast.js';
+import { toJpegIfHeic } from '../core/heic.js';
 
 const $ = (id) => document.getElementById(id);
 const FIRST_SEASON = '2025-summer';
@@ -356,9 +357,10 @@ async function uploadPhoto() {
   if (go !== 'up' || !file) return;
   showToast('Uploading...', 'info');
   try {
+    file = await toJpegIfHeic(file);
     const path = `violation-gallery/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
     const r = ref(storage, path);
-    await uploadBytes(r, file);
+    await uploadBytes(r, file, { contentType: file.type || 'image/jpeg' });
     const url = await getDownloadURL(r);
     await addDoc(collection(db, 'violationPhotos'), {
       url, storagePath: path, caption: caption || null,

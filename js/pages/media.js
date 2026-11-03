@@ -230,8 +230,8 @@ function loadUpload() {
           <label class="aces-field"><span class="aces-label">Caption (optional)</span><input class="aces-input" name="caption" placeholder="Team photo" maxlength="80"></label>
         </div>
         <label class="media-drop" data-drop>
-          ${icon('camera')}<strong>Choose photos or videos</strong><span>or drop them here. JPG, PNG, GIF, WEBP, MP4 or MOV, up to 50 MB each.</span>
-          <input type="file" name="files" accept="image/*,video/mp4,video/quicktime" multiple hidden>
+          ${icon('camera')}<strong>Choose photos or videos</strong><span>or drop them here. JPG, PNG, HEIC, GIF, WEBP, MP4 or MOV, up to 50 MB each. iPhone photos are converted to JPG.</span>
+          <input type="file" name="files" accept="image/*,.heic,.heif,video/mp4,video/quicktime" multiple hidden>
         </label>
         <ul class="media-files" data-files></ul>
         <div class="aces-cluster"><button type="submit" class="aces-btn is-primary" data-upload-btn disabled>Upload</button>
@@ -254,7 +254,7 @@ function renderFiles() {
 
 function addFiles(list) {
   for (const file of list) {
-    if (!/^(image|video)\//.test(file.type)) continue;
+    if (!/^(image|video)\//.test(file.type) && !/\.(heic|heif)$/i.test(file.name)) continue;
     files.push(file.size > 50 * 1048576 ? { file, state: 'failed', error: 'Over 50 MB' } : { file });
   }
   renderFiles();

@@ -28,6 +28,7 @@ import { getPlayerAwards } from '../data/awards.js';
 import { buildBattingRows } from '../ui/batting-stats.js';
 import { formatPlayerName, fmtAvg, fmtRate } from '../ui/format.js';
 import { showToast } from '../ui/toast.js';
+import { toJpegIfHeic } from '../core/heic.js';
 import { seasonSortKey, seasonLabel } from '../domain/season-ids.js';
 import { esc, cap, icon, teamAttr, gameTime } from './player-shared.js';
 import { toStatId, statIdOf, isAuthUid } from '../domain/player-id.js';
@@ -410,6 +411,7 @@ async function uploadPhoto(file) {
   try {
     const { uploadPlayerPhoto, deleteOldPlayerPhoto } = await import('../../firebase-storage.js');
     const uid = ctx.user.id;
+    file = await toJpegIfHeic(file);
     const result = await uploadPlayerPhoto(file, uid, () => {});
     const ref = doc(db, 'users', uid);
     const old = (await getDoc(ref)).data()?.playerPhotoStoragePath;

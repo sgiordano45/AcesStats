@@ -3,6 +3,7 @@ import { getStorage, ref, uploadBytes, uploadBytesResumable, getDownloadURL, del
 import { collection, addDoc, getDocs, deleteDoc, doc, query, where, orderBy, serverTimestamp, updateDoc } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
 import { app, db } from './firebase-data.js';
 import { getCurrentUser } from './firebase-auth.js';
+import { toJpegIfHeic } from './js/core/heic.js';
 
 const storage = getStorage(app);
 
@@ -33,6 +34,9 @@ export async function uploadPhoto(file, folder, caption, teamId = null) {
     if (!user) {
       throw new Error('User must be authenticated to upload photos');
     }
+
+    // iPhone HEIC photos (even ones named .jpg) become JPEG so every browser can show them
+    file = await toJpegIfHeic(file);
 
     // Validate file type
     const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp', 'video/mp4', 'video/quicktime', 'video/mov'];
