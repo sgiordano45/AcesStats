@@ -6,9 +6,10 @@
 //   Aceys      award winners, reveals and publishing (content-aceys.js, staff)
 //   GameChanger  teams' GC scoreboard widget codes for the home page
 //              (content-gamechanger.js, staff)
+//   Board      Board of Directors decisions for board.html (content-board.js, staff)
 //
-// Each tab's module loads when it first opens. ?tab=docs|feedback|aceys|gamechanger.
-// League staff who are not admins see Aceys and GameChanger.
+// Each tab's module loads when it first opens. ?tab=docs|feedback|aceys|gamechanger|board.
+// League staff who are not admins see Aceys, GameChanger and Board.
 
 import { initPage, pageReady } from '../core/app.js';
 import { hasRole } from '../core/auth.js';
@@ -21,7 +22,8 @@ const MODULES = {
   docs: () => import('./content-docs.js'),
   feedback: () => import('./content-feedback.js'),
   aceys: () => import('./content-aceys.js'),
-  gamechanger: () => import('./content-gamechanger.js')
+  gamechanger: () => import('./content-gamechanger.js'),
+  board: () => import('./content-board.js')
 };
 
 let ctx = null;
@@ -58,7 +60,7 @@ async function main() {
   mountAdminShell(ctx.profile, 'admin/content.html');
   const admin = hasRole(ctx.profile, 'admin');
   if (!admin) document.querySelectorAll('[data-admin-only]').forEach(b => { b.hidden = true; });
-  tabs = admin ? ['docs', 'feedback', 'aceys', 'gamechanger'] : ['aceys', 'gamechanger'];
+  tabs = admin ? ['docs', 'feedback', 'aceys', 'gamechanger', 'board'] : ['aceys', 'gamechanger', 'board'];
   document.querySelectorAll('[data-tab]').forEach(b => b.addEventListener('click', () => setTab(b.dataset.tab)));
   window.addEventListener('content:feedback', feedbackBadge);
   pageReady();
