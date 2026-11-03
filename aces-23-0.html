@@ -856,6 +856,7 @@ import { db, collection, getDocs } from './js/core/firebase.js';
 
 // ——— Constants ———
 const PITCHER_MIN_SEASON = '2024-summer'; // Pitching data starts 2024-summer
+const PITCHER_MIN_IP = 5; // Keeps tiny-sample pitchers (e.g. 1 IP, 0 R) out of the pool
 // Accept any season that matches year-word format (e.g. 2022-fall, 2025-spring)
 const SEASON_PATTERN = /^\d{4}-[a-z]+$/;
 
@@ -1031,7 +1032,7 @@ function buildPools() {
         if (sub === 'yes') return;
         const ipRaw = sData.inningsPitched;
         const ip = parseFloat(typeof ipRaw === 'string' ? ipRaw : (ipRaw || 0)) || 0;
-        if (ip < 1) return;
+        if (ip < PITCHER_MIN_IP) return;
         const key = comboKey(seasonId, team);
         if (!pitcherPool[key]) pitcherPool[key] = [];
         pitcherPool[key].push({
@@ -1501,16 +1502,16 @@ window.simulateSeason = function() {
   const totalStrength = roster.reduce((s,p) => s + p.strength, 0);
   const rating = computeRating(totalStrength);
 
-  // Win probability per game — calibrated so 23-0 is genuinely rare:
-  // rating 40  → ~40% (weak, essentially impossible to go 23-0)
-  // rating 63  → ~58% (above avg BPIs ~63-66, ~0% shot)
-  // rating 70  → ~71% (good, ~0.04% shot)
-  // rating 80  → ~87% (very good, ~4% shot)
-  // rating 88  → ~93% (elite, ~18% shot)
-  // rating 95  → ~95% (best possible, ~33% shot)
+  // Win probability per game (23-0 odds = winProb^23):
+  // rating 65  → ~73% (~0.1% shot)
+  // rating 70  → ~82% (~0.9% shot)
+  // rating 75  → ~88% (~5% shot)
+  // rating 80  → ~92% (~14% shot)
+  // rating 85  → ~94% (~25% shot)
+  // rating 95  → ~96% (best possible, ~41% shot)
   function gameWinProb(rating) {
     const k = 0.13;
-    const mid = 68;
+    const mid = 62;
     return 0.38 + 0.59 * (1 / (1 + Math.exp(-k * (rating - mid))));
   }
 
