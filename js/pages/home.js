@@ -195,7 +195,9 @@ function renderGameChanger() {
           ${widget.link ? `<a class="aces-btn is-sm" href="${esc(widget.link)}" target="_blank" rel="noopener">Follow live on GameChanger &rarr;</a>` : ''}
         </div>`;
       grid.appendChild(card);
-      mountGcWidget(card.querySelector('.home-gc-widget'), widget.widgetId).catch((err) => {
+      // Two games: the one on now, plus the other half of a doubleheader
+      // (admin Preview keeps the default list).
+      mountGcWidget(card.querySelector('.home-gc-widget'), widget.widgetId, { maxGames: 2 }).catch((err) => {
         console.warn('[home] GameChanger widget', err);
         card.querySelector('.home-gc-widget').innerHTML = '<p class="aces-empty">The GameChanger scoreboard could not load.</p>';
       });
