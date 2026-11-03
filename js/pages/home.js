@@ -3,6 +3,8 @@
 //
 //   Head ........ season, phase, games played / left
 //   Live & next . live games (real time), the next games, recent finals
+//   GameChanger . during a game, the GC scoreboard widget of a team that scores
+//                 in GameChanger (siteConfig/gamechanger, js/data/gamechanger.js)
 //   Standings ... top of the table with W-L, GB, last 5 and streak
 //   Leaders ..... BA, AcesBPI and ERA, top 5, season or career
 //   My Aces ..... signed in: my team's spot and next game, my season line, RSVP,
@@ -41,6 +43,7 @@ import { formatTime, formatRelativeDay, todayKey, daysBetween, formatGameDate } 
 import { battingLine, era } from '../domain/stats.js';
 import { parseStatSeasonId, hasCompleteHitTypes, inningsValue } from '../domain/season-ids.js';
 import { buildNav, loadPageVisibility, isPageVisible } from '../../nav-config.js';
+import { getGcWidgets, gcGamesNow, mountGcWidget } from '../data/gamechanger.js';
 
 const $ = (id) => document.getElementById(id);
 const state = { ctx: null, seasonId: null, phase: 'regular', summary: null, source: '', live: [], leaderScope: 'season' };
@@ -146,6 +149,76 @@ function renderStrip() {
     </div>
     ${cards.length ? `<div class="aces-score-strip home-strip">${cards.join('')}</div>`
       : '<div class="aces-empty">No games on the schedule yet.</div>'}`;
+}
+
+// ---- GameChanger -----------------------------------------------------------------------
+// One card per GC team with a game on now. Cards are kept across refreshes so a
+// widget is set up once; only cards that start or end are added or removed.
+
+const gc = { widgets: null, timer: null };
+
+function gcCardHead(g) {
+  const meta = [formatTime(g.time), g.field].filter(Boolean).join(' \u00b7 ');
+  return `<span class="home-gc-teams">${dot(g.away)}${esc(g.away)} <span class="home-gc-at">@</span> ${dot(g.home)}${esc(g.home)}</span>
+    ${meta ? `<span class="home-gc-meta">${esc(meta)}</span>` : ''}`;
+}
+
+function renderGameChanger() {
+  const el = $('homeGameChanger');
+  const s = state.summary;
+  if (!el || !gc.widgets) return;
+  const on = state.phase === 'offseason' || !s ? []
+    : gcGamesNow([...(s.upcoming || []), ...(s.recent || [])], gc.widgets);
+  if (!on.length) { el.hidden = true; el.innerHTML = ''; return; }
+
+  if (!el.querySelector('.home-gc-grid')) {
+    el.innerHTML = `
+      <div class="aces-section-head">
+        <h2 class="aces-section-title"><span class="aces-live">Live</span> on GameChanger</h2>
+      </div>
+      <div class="home-gc-grid"></div>`;
+  }
+  const grid = el.querySelector('.home-gc-grid');
+  const keys = new Set(on.map(x => x.key));
+  grid.querySelectorAll('[data-gc-key]').forEach(card => { if (!keys.has(card.dataset.gcKey)) card.remove(); });
+
+  for (const { key, widget, game } of on) {
+    let card = grid.querySelector(`[data-gc-key="${CSS.escape(key)}"]`);
+    if (!card) {
+      card = document.createElement('article');
+      card.className = 'aces-card home-gc';
+      card.dataset.gcKey = key;
+      card.innerHTML = `<div class="home-gc-head"></div>
+        <div class="home-gc-widget" id="gc-widget-${esc(key)}"></div>
+        <div class="home-gc-foot">
+          <span class="home-gc-note">Scored by ${esc(widget.team)} in GameChanger</span>
+          ${widget.link ? `<a class="aces-btn is-sm" href="${esc(widget.link)}" target="_blank" rel="noopener">Follow live on GameChanger &rarr;</a>` : ''}
+        </div>`;
+      grid.appendChild(card);
+      mountGcWidget(card.querySelector('.home-gc-widget'), widget.widgetId).catch((err) => {
+        console.warn('[home] GameChanger widget', err);
+        card.querySelector('.home-gc-widget').innerHTML = '<p class="aces-empty">The GameChanger scoreboard could not load.</p>';
+      });
+    }
+    card.querySelector('.home-gc-head').innerHTML = gcCardHead(game);
+  }
+  el.hidden = false;
+}
+
+async function startGameChanger() {
+  if (state.phase === 'offseason') return;
+  try {
+    gc.widgets = await getGcWidgets();
+  } catch (err) {
+    console.warn('[home] GameChanger widgets unavailable', err);
+    return;
+  }
+  if (!Object.keys(gc.widgets).length) return;
+  renderGameChanger();
+  // Check each minute so a game's widget appears GC_LEAD_MIN before first pitch
+  // and goes away after, without a reload.
+  clearInterval(gc.timer);
+  gc.timer = setInterval(renderGameChanger, 60 * 1000);
 }
 
 // ---- standings -----------------------------------------------------------------------
@@ -641,6 +714,7 @@ async function main() {
   renderPhotos();
   renderExplore().then(renderPlayoffs).catch(err => console.warn('[home] playoffs', err));
   startLive();
+  startGameChanger();
 }
 
 main().catch((err) => {
