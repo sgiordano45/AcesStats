@@ -22,6 +22,7 @@ import { showToast } from '../ui/toast.js';
 
 const $ = (id) => document.getElementById(id);
 const cap = (s) => (s ? String(s).charAt(0).toUpperCase() + String(s).slice(1) : '');
+const folderLabel = (f) => (f === 'league' ? 'League' : f === 'pickup' ? 'Pick-up' : cap(f));
 const CHANNEL_URL = 'https://www.youtube.com/@MountainsideAcesStreams/live';
 const UPLOAD_ROLES = ['team-staff', 'league-staff', 'photographer'];   // admins pass too
 
@@ -67,7 +68,7 @@ function renderPhotos() {
   $('mediaPhotos').innerHTML = `
     <div class="media-filters">
       <div class="aces-chip-row" role="group" aria-label="Team">
-        ${chip('all', 'All')}${folders.map(f => chip(f, f === 'league' ? 'League' : `<span class="aces-team-dot"${teamAttr(f)}></span>${esc(cap(f))}`)).join('')}
+        ${chip('all', 'All')}${folders.map(f => chip(f, f === 'league' || f === 'pickup' ? folderLabel(f) : `<span class="aces-team-dot"${teamAttr(f)}></span>${esc(cap(f))}`)).join('')}
       </div>
       <div class="aces-segmented" role="group" aria-label="Type">
         ${['all', 'image', 'video'].map(t => `<button type="button" class="aces-segment" data-type="${t}" aria-pressed="${photos.type === t}">${t === 'all' ? 'All' : t === 'image' ? 'Photos' : 'Videos'}</button>`).join('')}
@@ -79,7 +80,7 @@ function renderPhotos() {
         ${p.type === 'video'
           ? `<video src="${esc(p.url)}#t=0.5" muted playsinline preload="metadata"></video><span class="media-play">${icon('play')}</span>`
           : `<img src="${esc(p.url)}" alt="" loading="lazy" decoding="async">`}
-        <span class="media-cap"><strong>${esc(p.name || '')}</strong><span>${esc(p.folder === 'league' ? 'League' : cap(p.folder))}</span></span>
+        <span class="media-cap"><strong>${esc(p.name || '')}</strong><span>${esc(folderLabel(p.folder))}</span></span>
       </button></li>`).join('')}</ul>`
       : '<div class="aces-card"><p class="media-empty">No photos here yet.</p></div>'}`;
 }
@@ -93,7 +94,7 @@ function openViewer(i) {
     : `<img src="${esc(p.url)}" alt="${esc(p.name || '')}">`;
   const when = p.createdAt?.toDate ? p.createdAt.toDate().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
   v.querySelector('[data-info]').innerHTML = `<strong>${esc(p.name || '')}</strong>
-    <span>${esc(p.folder === 'league' ? 'League' : cap(p.folder))}${p.uploadedByName ? ` &middot; ${esc(p.uploadedByName)}` : ''}${when ? ` &middot; ${esc(when)}` : ''} &middot; ${photos.at + 1} of ${photos.shown.length}</span>`;
+    <span>${esc(folderLabel(p.folder))}${p.uploadedByName ? ` &middot; ${esc(p.uploadedByName)}` : ''}${when ? ` &middot; ${esc(when)}` : ''} &middot; ${photos.at + 1} of ${photos.shown.length}</span>`;
   if (!v.open) v.showModal();
 }
 

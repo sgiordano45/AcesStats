@@ -195,6 +195,7 @@ export const NAV_HUBS = [
       { id: 'games', href: 'games.html', label: 'Games', icon: 'puzzle',
         also: ['aces-wordle.html', 'immaculate-grid.html', 'higher-lower.html', 'who-am-i.html',
                'aces-connections.html', 'roster-recall.html', 'aces-23-0.html'] },
+      { id: 'pickup', href: 'pickup.html', label: 'Pick-up', icon: 'users' },
       { id: 'pickem', href: 'pickem.html', label: "Pick'em", icon: 'check-circle', signedIn: true },
       { id: 'aces-dfs', href: 'dfs.html', label: 'DFS', icon: 'dice', signedIn: true,
         also: ['dfs-week.html'] },
