@@ -15,10 +15,15 @@
 //   pickupGames/{id}  { date 'YYYY-MM-DD', time '7:00 PM', location, notes,
 //                       minPlayers, status 'open' | 'cancelled' | 'final',
 //                       createdBy { uid, name }, createdAt, updatedAt,
-//                       teams { a: { name, players: [{ key, name }] }, b: {...},
-//                               locks { key: 'a'|'b' }, savedBy, savedAt } | null,
-//                       teamRules [{ x, y, type: 'together'|'apart' }],
-//                       result { a, b, notes, enteredBy, enteredAt } | null }
+//                       gameCount (games played that night, default 1),
+//                       games { '1': { teams, result }, '2': {...} },
+//                         teams  { a: { name, players: [{ key, name }] }, b: {...},
+//                                  locks { key: 'a'|'b' }, savedBy, savedAt } | null
+//                         result { a, b, notes, enteredBy, enteredAt } | null
+//                       teamRules [{ x, y, type: 'together'|'apart' }]  (all games) }
+//                     The first version kept one game's teams and result at the top
+//                     level; those still read as game 1 and move into games.1 on
+//                     the next save.
 //   pickupGames/{id}/rsvps/{key}
 //                     key: the player's stats ID (snake_case legacy ID), or
 //                     u_<uid> for an account with no player, or g_<random> for a guest.
@@ -33,7 +38,7 @@ import { initPage, pageReady, showPageError, siteUrl } from '../core/app.js';
 import { hasRole } from '../core/auth.js';
 import {
   db, collection, doc, getDoc, getDocs, addDoc, setDoc, updateDoc, deleteDoc,
-  query, orderBy, limit, where, onSnapshot, serverTimestamp
+  query, orderBy, limit, where, onSnapshot, serverTimestamp, deleteField
 } from '../core/firebase.js';
 import { getAllPlayerStatsOptimized } from '../data/player-stats.js';
 import { escapeHtml as esc, formatPlayerName, playerUrl } from '../ui/format.js';
@@ -52,6 +57,7 @@ const COL = 'pickupGames';
 const UPLOAD_ROLES = ['team-staff', 'league-staff', 'photographer'];   // same as media.html; admins pass too
 const MANAGER_ROLE = 'team-staff';   // hasRole: team staff, captains, league staff, admins
 const DEFAULT_MIN = 14;
+const MAX_GAMES = 6;
 const DEFAULT_NAMES = { a: 'Light', b: 'Dark' };
 const STATUS = [['yes', 'In', 'check-circle'], ['maybe', 'Maybe', 'help'], ['no', 'Out', 'x-circle']];
 const TABS = [['rsvp', 'RSVP', 'users'], ['teams', 'Teams', 'shuffle'], ['photos', 'Photos', 'camera'], ['result', 'Result', 'trophy']];
@@ -60,7 +66,7 @@ const S = {
   ctx: null, user: null, uid: '', me: null,
   id: '', game: null, rsvps: new Map(), tab: 'rsvp',
   stats: null, ratings: null, roster: [], myPos: null,
-  draft: null, photos: [], photosLoaded: false, viewerAt: 0, files: []
+  gameNo: 1, draft: null, drafts: {}, photos: [], photosLoaded: false, viewerAt: 0, files: []
 };
 
 // ---------------------------------------------------------------------------
@@ -87,10 +93,67 @@ function counts(rsvps = S.rsvps) {
   return c;
 }
 
+// ---- Games in one night ----------------------------------------------------
+
+const hasScore = (r) => !!r && r.a != null && r.b != null;
+const isLegacy = (g) => !g.games && (g.teams || g.result);
+
+/** How many games that night: gameCount, or more if a later game already has teams or a score. */
+function gameCountOf(g) {
+  const used = Object.entries(g.games || {})
+    .filter(([, v]) => v && (v.teams || hasScore(v.result)))
+    .map(([k]) => Number(k)).filter((n) => n > 0);
+  return Math.min(MAX_GAMES, Math.max(1, Number(g.gameCount) || 1, ...used));
+}
+
+/** { teams, result } for game n (1-based). */
+function slotOf(g, n) {
+  if (isLegacy(g)) return n === 1 ? { teams: g.teams || null, result: g.result || null } : { teams: null, result: null };
+  const v = g.games?.[n] || g.games?.[String(n)];
+  return { teams: v?.teams || null, result: v?.result || null };
+}
+
+function slotsOf(g) {
+  return Array.from({ length: gameCountOf(g) }, (_, i) => ({ n: i + 1, ...slotOf(g, i + 1) }));
+}
+
+const allScored = (g) => slotsOf(g).every((x) => hasScore(x.result));
+
+/**
+ * The teams in effect for game n: its own saved teams, or else the nearest
+ * earlier game's (same sides all night unless someone re-splits a game).
+ * from: the game they belong to (n when its own, 0 when none are saved yet).
+ */
+function teamsFor(g, n) {
+  for (let k = n; k >= 1; k -= 1) {
+    const t = slotOf(g, k).teams;
+    if (t) return { teams: t, from: k };
+  }
+  return { teams: null, from: 0 };
+}
+
+/** Update fields that set one game's teams or result (moving a first-version doc into games.1). */
+function slotUpdate(n, field, value) {
+  const g = S.game;
+  const out = {};
+  if (isLegacy(g)) {
+    const one = { teams: g.teams || null, result: g.result || null };
+    if (n === 1) one[field] = value; else out[`games.${n}.${field}`] = value;
+    out['games.1'] = one;
+    out.teams = null;
+    out.result = null;
+  } else {
+    out[`games.${n}.${field}`] = value;
+  }
+  return out;
+}
+
+const teamNames = (t) => ({ a: t?.a?.name || DEFAULT_NAMES.a, b: t?.b?.name || DEFAULT_NAMES.b });
+
 /** [label, badge class] for a game. yes: In count when known. */
 function gameState(g, yes = null) {
   if (g.status === 'cancelled') return ['Cancelled', 'is-loss'];
-  if (g.result && g.result.a != null) return ['Final', 'is-outline'];
+  if (allScored(g)) return ['Final', 'is-outline'];
   if (toDateKey(g.date) < todayKey()) return ['Played', 'is-outline'];
   const min = Number(g.minPlayers) || 0;
   if (yes !== null && min && yes >= min) return ['Game on', 'is-win'];
@@ -162,6 +225,7 @@ function formHtml(g = null) {
       <label class="aces-field"><span class="aces-label">Time</span><input class="aces-input" type="time" name="time" value="${esc(g ? to24h(g.time) : '10:00')}"></label>
       <label class="aces-field"><span class="aces-label">Field</span><input class="aces-input" name="location" maxlength="80" placeholder="Where" value="${esc(g?.location || '')}"></label>
       <label class="aces-field"><span class="aces-label">Players needed</span><input class="aces-input" type="number" name="minPlayers" min="2" max="40" value="${esc(g?.minPlayers ?? DEFAULT_MIN)}"><span class="aces-hint">Shows "Game on" once this many are in.</span></label>
+      <label class="aces-field"><span class="aces-label">Games that night</span><input class="aces-input" type="number" name="games" min="1" max="${MAX_GAMES}" value="${esc(g ? gameCountOf(g) : 1)}"><span class="aces-hint">Each game gets its own teams and score.</span></label>
     </div>
     <label class="aces-field"><span class="aces-label">Notes (optional)</span><textarea class="aces-input" name="notes" rows="2" maxlength="400" placeholder="Bring both shirts, rain plan, etc.">${esc(g?.notes || '')}</textarea></label>
     ${edit ? '' : '<label class="pu-check"><input type="checkbox" name="imIn" checked> Count me in</label>'}
@@ -177,7 +241,10 @@ function readForm(form) {
   const date = String(f.get('date') || '').trim();
   const time = String(f.get('time') || '').trim();
   const min = Math.round(Number(f.get('minPlayers')));
-  const err = !/^\d{4}-\d{2}-\d{2}$/.test(date) ? 'Pick a date.' : (!Number.isFinite(min) || min < 2 ? 'Players needed should be at least 2.' : '');
+  const games = Math.round(Number(f.get('games') || 1));
+  const err = !/^\d{4}-\d{2}-\d{2}$/.test(date) ? 'Pick a date.'
+    : !Number.isFinite(min) || min < 2 ? 'Players needed should be at least 2.'
+      : !Number.isFinite(games) || games < 1 || games > MAX_GAMES ? `Games should be 1 to ${MAX_GAMES}.` : '';
   const p = form.querySelector('.pu-error');
   p.textContent = err;
   p.hidden = !err;
@@ -187,6 +254,7 @@ function readForm(form) {
     time: time ? formatTime(time) : '',
     location: String(f.get('location') || '').trim(),
     minPlayers: min,
+    games,
     notes: String(f.get('notes') || '').trim(),
     imIn: f.get('imIn') === 'on'
   };
@@ -203,7 +271,7 @@ async function createGame(form) {
       status: 'open',
       createdBy: { uid: S.uid, name: S.me.name },
       createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
-      teams: null, teamRules: [], result: null
+      gameCount: v.games, games: {}, teamRules: []
     });
     if (v.imIn) {
       await setDoc(doc(db, COL, ref.id, 'rsvps', S.me.key), selfRsvp('yes', S.myPos || [], ''), { merge: true });
@@ -220,11 +288,15 @@ async function saveEdit(form) {
   const v = readForm(form);
   if (!v) return;
   try {
+    // Games that already have teams or a score stay.
+    const used = slotsOf(S.game).filter((x) => x.teams || hasScore(x.result)).map((x) => x.n);
+    const count = Math.max(v.games, ...used, 1);
     await updateDoc(doc(db, COL, S.id), {
-      date: v.date, time: v.time, location: v.location, minPlayers: v.minPlayers, notes: v.notes, updatedAt: serverTimestamp()
+      date: v.date, time: v.time, location: v.location, minPlayers: v.minPlayers, notes: v.notes,
+      gameCount: count, updatedAt: serverTimestamp()
     });
     form.hidden = true;
-    showToast('Game updated.');
+    showToast(count > v.games ? `Game updated. Kept ${count} games: the later ones already have teams or a score.` : 'Game updated.');
   } catch (e) {
     console.error('[pickup] edit', e);
     showToast("Changes didn't save. Try again.", 'error');
@@ -251,7 +323,7 @@ async function showList() {
     return;
   }
   const today = todayKey();
-  const done = (g) => g.result && g.result.a != null;
+  const done = (g) => g.status !== 'cancelled' && allScored(g);
   const upcoming = games.filter((g) => toDateKey(g.date) >= today && !done(g)).reverse();
   const past = games.filter((g) => toDateKey(g.date) < today || done(g));
 
@@ -274,12 +346,16 @@ async function showList() {
 
 function gameCard(g, c = null) {
   const [label, cls] = gameState(g, c ? c.yes : null);
-  const res = g.result && g.result.a != null
-    ? `<span class="pu-card-score">${esc(g.teams?.a?.name || DEFAULT_NAMES.a)} ${esc(g.result.a)} - ${esc(g.result.b)} ${esc(g.teams?.b?.name || DEFAULT_NAMES.b)}</span>` : '';
+  const slots = slotsOf(g);
+  const res = slots.filter((x) => hasScore(x.result)).map((x) => {
+    const nm = teamNames(teamsFor(g, x.n).teams);
+    return `<span class="pu-card-score">${slots.length > 1 ? `<small>G${x.n}</small> ` : ''}${esc(nm.a)} ${esc(x.result.a)} - ${esc(x.result.b)} ${esc(nm.b)}</span>`;
+  }).join('');
   const line = c && g.status !== 'cancelled'
     ? `<span>${plural(c.yes, 'in', 'in')}${c.maybe ? ` &middot; ${c.maybe} maybe` : ''}${g.minPlayers ? ` &middot; need ${esc(g.minPlayers)}` : ''}</span>` : '';
   return `<a class="aces-card is-link pu-card" href="pickup.html?id=${encodeURIComponent(g.id)}">
     <div class="pu-card-top"><strong>${esc(whenLine(g, 'short'))}</strong><span class="aces-badge ${cls}">${esc(label)}</span></div>
+    ${slots.length > 1 ? `<span class="pu-card-meta">${icon('hash')}${slots.length} games</span>` : ''}
     ${g.location ? `<span class="pu-card-meta">${icon('map-pin')}${esc(g.location)}</span>` : ''}
     ${line ? `<span class="pu-card-meta">${icon('users')}${line}</span>` : ''}
     ${res}
@@ -294,6 +370,7 @@ function showGame() {
   $('puGame').hidden = false;
   const t = new URLSearchParams(location.search).get('tab');
   if (TABS.some(([id]) => id === t)) S.tab = t;
+  S.gameNo = Math.max(1, Math.round(Number(new URLSearchParams(location.search).get('game'))) || 1);
   let first = true;
   return new Promise((resolve) => {
     onSnapshot(doc(db, COL, S.id), (snap) => {
@@ -303,9 +380,14 @@ function showGame() {
         return;
       }
       S.game = { id: snap.id, ...snap.data() };
-      if (S.draft && !S.draft.dirty) {   // pick up teams saved elsewhere, keep the view settings
+      const cnt = gameCountOf(S.game);
+      for (const k of Object.keys(S.drafts)) if (Number(k) > cnt) delete S.drafts[k];
+      if (S.gameNo > cnt) { S.gameNo = cnt; S.draft = S.drafts[cnt] || null; }
+      // Pick up teams saved elsewhere; keep unsaved edits and the view settings.
+      for (const k of Object.keys(S.drafts)) if (!S.drafts[k].dirty) delete S.drafts[k];
+      if (S.draft && !S.draft.dirty) {
         const { includeMaybe, options, at, rulesOpen } = S.draft;
-        S.draft = { ...newDraft(), includeMaybe, options, at, rulesOpen };
+        S.draft = { ...newDraft(S.gameNo), includeMaybe, options, at, rulesOpen };
       }
       renderGame();
       if (first) { first = false; resolve(); }
@@ -321,9 +403,8 @@ function showGame() {
 // they've typed in the RSVP and score forms, and where the cursor was.
 function captureForms() {
   const out = { forms: {}, focus: null };
-  for (const id of ['puMine', 'puResult']) {
-    const f = $(id);
-    if (f?.dataset.touched) out.forms[id] = [...f.elements].filter((el) => el.name).map((el) => [el.name, el.value, el.checked, el.type]);
+  for (const f of document.querySelectorAll('#puMine, form[data-result]')) {
+    if (f.dataset.touched) out.forms[f.id] = [...f.elements].filter((el) => el.name).map((el) => [el.name, el.value, el.checked, el.type]);
   }
   const a = document.activeElement;
   if (a?.name && a.form?.id) out.focus = { sel: `#${a.form.id} [name="${a.name}"]`, start: a.selectionStart };
@@ -371,6 +452,7 @@ function renderGameNow() {
       <div class="pu-head-facts">
         ${g.time ? `<span>${icon('clock')}${esc(formatTime(g.time))}</span>` : ''}
         ${g.location ? `<span>${icon('map-pin')}${esc(g.location)}</span>` : ''}
+        ${gameCountOf(g) > 1 ? `<span>${icon('hash')}${gameCountOf(g)} games</span>` : ''}
         <span>${icon('users')}${plural(c.yes, 'player')} in${g.minPlayers ? ` of ${esc(g.minPlayers)} needed` : ''}</span>
       </div>
       ${g.notes ? `<p class="pu-notes">${esc(g.notes)}</p>` : ''}
@@ -380,7 +462,7 @@ function renderGameNow() {
       <button type="button" class="aces-btn is-sm" data-act="edit-game">${icon('edit')}Edit</button>
       ${g.status === 'cancelled'
         ? `<button type="button" class="aces-btn is-sm" data-act="reopen">${icon('refresh')}Reopen</button>`
-        : g.result ? '' : `<button type="button" class="aces-btn is-sm" data-act="cancel-game">${icon('x-circle')}Cancel game</button>`}
+        : slotsOf(g).some((x) => hasScore(x.result)) ? '' : `<button type="button" class="aces-btn is-sm" data-act="cancel-game">${icon('x-circle')}Cancel game</button>`}
       ${canDeleteGame() ? `<button type="button" class="aces-btn is-sm is-ghost" data-act="delete-game">${icon('trash')}Delete</button>` : ''}
     </div>` : ''}
   </div>`;
@@ -391,6 +473,60 @@ function renderGameNow() {
   if (S.tab === 'teams') renderTeams();
   if (S.tab === 'photos') renderPhotos();
   if (S.tab === 'result') renderResult();
+}
+
+/** Game 1 / Game 2 ... picker for the Teams tab, with Add and Remove for managers. */
+function gamesNav() {
+  const count = gameCountOf(S.game);
+  const mgr = isManager() && S.game.status !== 'cancelled';
+  if (count < 2 && !mgr) return '';
+  const last = slotOf(S.game, count);
+  return `<div class="pu-games-nav">
+    ${count > 1 ? `<div class="aces-segmented" role="group" aria-label="Game">${Array.from({ length: count }, (_, i) => i + 1).map((n) => {
+      const dirty = (n === S.gameNo ? S.draft : S.drafts[n])?.dirty;
+      return `<button type="button" class="aces-segment" data-act="pick-game" data-n="${n}" aria-pressed="${n === S.gameNo}">Game ${n}${dirty ? ' *' : ''}</button>`;
+    }).join('')}</div>` : ''}
+    ${mgr ? `<div class="aces-cluster">
+      ${count < MAX_GAMES ? `<button type="button" class="aces-btn is-sm" data-act="add-game">${icon('plus')}Add game</button>` : ''}
+      ${count > 1 && S.gameNo === count ? `<button type="button" class="aces-btn is-sm is-ghost" data-act="remove-game"${last.teams || hasScore(last.result) ? ' data-has-data="1"' : ''}>${icon('trash')}Remove game ${count}</button>` : ''}
+    </div>` : ''}
+  </div>`;
+}
+
+function goGame(n) {
+  if (S.draft) S.drafts[S.gameNo] = S.draft;
+  S.gameNo = n;
+  S.draft = S.drafts[n] || null;
+  const u = new URL(location.href);
+  if (n === 1) u.searchParams.delete('game'); else u.searchParams.set('game', String(n));
+  history.replaceState(null, '', u);
+  renderGame();
+}
+
+async function addGame() {
+  const count = gameCountOf(S.game);
+  try {
+    await updateDoc(doc(db, COL, S.id), { gameCount: count + 1, updatedAt: serverTimestamp() });
+    goGame(count + 1);
+  } catch (e) {
+    console.error('[pickup] add game', e);
+    showToast("That didn't save. Try again.", 'error');
+  }
+}
+
+async function removeGame(el) {
+  const count = gameCountOf(S.game);
+  const msg = el.dataset.hasData ? `Remove game ${count} and its teams and score?` : `Remove game ${count}?`;
+  if (!(await confirmModal(msg, { confirmLabel: 'Remove', danger: true }))) return;
+  try {
+    await updateDoc(doc(db, COL, S.id), { gameCount: count - 1, [`games.${count}`]: deleteField(), updatedAt: serverTimestamp() });
+    if (S.gameNo >= count) S.draft = null;
+    delete S.drafts[count];
+    goGame(Math.min(S.gameNo, count - 1));
+  } catch (e) {
+    console.error('[pickup] remove game', e);
+    showToast("That didn't save. Try again.", 'error');
+  }
 }
 
 function goTab(id) {
@@ -649,7 +785,7 @@ async function addGuest() {
 
 function playerOf(key) {
   const r = S.rsvps.get(key);
-  const saved = [...(S.game.teams?.a?.players || []), ...(S.game.teams?.b?.players || [])].find((p) => p.key === key);
+  const saved = slotsOf(S.game).flatMap((x) => [...(x.teams?.a?.players || []), ...(x.teams?.b?.players || [])]).find((p) => p.key === key);
   if (!r && !saved) return null;
   const stat = r?.playerId ? S.ratings?.byId.get(r.playerId) : null;
   const rating = stat?.power ?? (r?.tier != null ? Number(r.tier) : DEFAULT_TIER);
@@ -663,16 +799,19 @@ function playerOf(key) {
   };
 }
 
-function newDraft() {
-  const t = S.game.teams;
+/** Editor state for game n: its own teams, or the earlier game's it carries over. */
+function newDraft(n = S.gameNo) {
+  const { teams: t, from } = teamsFor(S.game, n);
+  const copiedFrom = from && from !== n ? from : 0;
   return {
     a: (t?.a?.players || []).map((p) => p.key),
     b: (t?.b?.players || []).map((p) => p.key),
-    names: { a: t?.a?.name || DEFAULT_NAMES.a, b: t?.b?.name || DEFAULT_NAMES.b },
+    names: teamNames(t),
     locks: { ...(t?.locks || {}) },
     rules: [...(S.game.teamRules || [])],
     includeMaybe: false,
     options: [], at: 0,
+    copiedFrom,
     dirty: false
   };
 }
@@ -695,20 +834,21 @@ async function renderTeams() {
     return;
   }
   if (isManager() && S.game.status !== 'cancelled') return renderEditor();
-  const t = S.game.teams;
+  const { teams: t, from } = teamsFor(S.game, S.gameNo);
   if (!t) {
-    box.innerHTML = `<div class="aces-card"><p class="pu-empty">Teams aren't set yet. The organizer or a captain splits them once people are in.</p></div>`;
+    box.innerHTML = `${gamesNav()}<div class="aces-card"><p class="pu-empty">Teams${gameCountOf(S.game) > 1 ? ` for game ${S.gameNo}` : ''} aren't set yet. The organizer or a captain splits them once people are in.</p></div>`;
     return;
   }
   const col = (side) => `<div class="aces-card pu-team">
     <h3 class="pu-team-name">${esc(t[side].name)} <span>${t[side].players.length}</span></h3>
     <ul class="pu-people">${t[side].players.map((p) => { const r = S.rsvps.get(p.key); return `<li class="pu-person"><span class="pu-person-main"><span class="pu-name">${esc(r?.name || p.name)}</span>${posTags(r?.pos)}</span></li>`; }).join('')}</ul>
   </div>`;
-  box.innerHTML = `<p class="pu-sub">Split by power rating (career Aces BPI and this season's bWAR) and positions.</p><div class="pu-teams">${col('a')}${col('b')}</div>`;
+  box.innerHTML = `${gamesNav()}<p class="pu-sub">${from !== S.gameNo ? `Same teams as game ${from}. ` : ''}Split by power rating (career Aces BPI and this season's bWAR) and positions.</p><div class="pu-teams">${col('a')}${col('b')}</div>`;
 }
 
 function renderEditor() {
-  if (!S.draft) S.draft = newDraft();
+  if (!S.draft) S.draft = newDraft(S.gameNo);
+  const savedTeams = slotOf(S.game, S.gameNo).teams;
   const d = S.draft;
   const pool = poolKeys(d);
   const inA = new Set(d.a);
@@ -749,6 +889,10 @@ function renderEditor() {
   const ruleOpts = pool.map((k) => `<option value="${esc(k)}">${esc(playerOf(k)?.name || k)}</option>`).join('');
 
   $('pu-teams').innerHTML = `
+    ${gamesNav()}
+    ${d.copiedFrom && !savedTeams ? `<p class="aces-notice">${icon('info')}<span>${d.dirty
+      ? `Game ${S.gameNo} is set to use game ${d.copiedFrom}'s teams. Save to give it these sides instead.`
+      : `Same teams as game ${d.copiedFrom}, so there's nothing to save. To play game ${S.gameNo} with different sides, change them here and save.`}</span></p>` : ''}
     <div class="aces-card pu-tools">
       <div class="aces-cluster">
         <button type="button" class="aces-btn is-primary" data-act="balance"${pool.length < 2 ? ' disabled' : ''}>${icon('sparkles')}Auto-balance</button>
@@ -776,10 +920,10 @@ function renderEditor() {
       <p class="pu-meta">Auto-balance follows these. Locked players stay on their side.</p>
     </details>
     <div class="pu-savebar${d.dirty ? ' is-dirty' : ''}">
-      <span class="pu-meta">${d.dirty ? 'Unsaved changes' : S.game.teams ? `Saved${S.game.teams.savedBy?.name ? ` by ${esc(S.game.teams.savedBy.name)}` : ''}` : 'Not saved yet'}. Ratings with * have no stats. Only organizers and captains see ratings.</span>
+      <span class="pu-meta">${d.dirty ? 'Unsaved changes' : savedTeams ? `Saved${savedTeams.savedBy?.name ? ` by ${esc(savedTeams.savedBy.name)}` : ''}` : d.copiedFrom ? `Carrying over game ${d.copiedFrom}'s teams` : 'Not saved yet'}. Ratings with * have no stats. Only organizers and captains see ratings.</span>
       <div class="aces-cluster">
-        ${S.game.teams ? `<button type="button" class="aces-btn is-ghost is-sm" data-act="unsave-teams">Remove saved teams</button>` : ''}
-        <button type="button" class="aces-btn is-primary" data-act="save-teams"${d.dirty && (d.a.length || d.b.length) ? '' : ' disabled'}>${icon('save')}Save teams</button>
+        ${savedTeams ? `<button type="button" class="aces-btn is-ghost is-sm" data-act="unsave-teams">${S.gameNo > 1 && teamsFor(S.game, S.gameNo - 1).teams ? `Go back to game ${teamsFor(S.game, S.gameNo - 1).from}'s teams` : 'Remove saved teams'}</button>` : ''}
+        <button type="button" class="aces-btn is-primary" data-act="save-teams"${d.dirty && (d.a.length || d.b.length) ? '' : ' disabled'}>${icon('save')}Save ${gameCountOf(S.game) > 1 ? `game ${S.gameNo} ` : ''}teams</button>
       </div>
     </div>`;
 }
@@ -830,13 +974,13 @@ async function saveTeams() {
   const used = new Set([...d.a, ...d.b]);
   try {
     await updateDoc(doc(db, COL, S.id), {
-      teams: {
+      ...slotUpdate(S.gameNo, 'teams', {
         a: { name: d.names.a.trim() || DEFAULT_NAMES.a, players: snap(d.a) },
         b: { name: d.names.b.trim() || DEFAULT_NAMES.b, players: snap(d.b) },
         locks: Object.fromEntries(Object.entries(d.locks).filter(([k]) => used.has(k))),
         savedBy: { uid: S.uid, name: S.me.name },
         savedAt: serverTimestamp()
-      },
+      }),
       teamRules: d.rules,
       updatedAt: serverTimestamp()
     });
@@ -850,10 +994,15 @@ async function saveTeams() {
 }
 
 async function unsaveTeams() {
-  if (!(await confirmModal('Remove the saved teams? Everyone will see "Teams aren\'t set yet" again.', { confirmLabel: 'Remove', danger: true }))) return;
+  const prev = S.gameNo > 1 ? teamsFor(S.game, S.gameNo - 1) : { teams: null };
+  const msg = prev.teams
+    ? `Drop game ${S.gameNo}'s own teams? It goes back to the same teams as game ${prev.from}.`
+    : 'Remove the saved teams? Everyone will see "Teams aren\'t set yet" again.';
+  if (!(await confirmModal(msg, { confirmLabel: prev.teams ? 'Go back' : 'Remove', danger: !prev.teams }))) return;
   try {
-    await updateDoc(doc(db, COL, S.id), { teams: null, updatedAt: serverTimestamp() });
+    await updateDoc(doc(db, COL, S.id), { ...slotUpdate(S.gameNo, 'teams', null), updatedAt: serverTimestamp() });
     S.draft = null;
+    renderGame();
   } catch (e) {
     console.error('[pickup] unsave', e);
     showToast("That didn't save. Try again.", 'error');
@@ -965,33 +1114,51 @@ function openViewer(i) {
 
 function renderResult() {
   const g = S.game;
-  const names = { a: g.teams?.a?.name || DEFAULT_NAMES.a, b: g.teams?.b?.name || DEFAULT_NAMES.b };
-  const r = g.result;
-  const has = r && r.a != null;
-  const board = has ? `<div class="aces-card pu-score">
-      <div class="pu-score-side${r.a > r.b ? ' is-win' : ''}"><span>${esc(names.a)}</span><strong>${esc(r.a)}</strong></div>
-      <span class="pu-score-dash">-</span>
-      <div class="pu-score-side${r.b > r.a ? ' is-win' : ''}"><span>${esc(names.b)}</span><strong>${esc(r.b)}</strong></div>
-      ${r.notes ? `<p class="pu-notes">${esc(r.notes)}</p>` : ''}
-    </div>` : `<div class="aces-card"><p class="pu-empty">No score entered${toDateKey(g.date) >= todayKey() ? ' yet' : ''}. Keeping score is optional.</p></div>`;
-  const form = isManager() ? `<form class="aces-card pu-result-form" id="puResult">
-      <div class="aces-card-head"><h2 class="aces-card-title">${has ? 'Update the score' : 'Enter the score'}</h2></div>
-      <div class="pu-form-grid">
-        <label class="aces-field"><span class="aces-label">${esc(names.a)}</span><input class="aces-input" type="number" name="a" min="0" max="99" inputmode="numeric" value="${has ? esc(r.a) : ''}"></label>
-        <label class="aces-field"><span class="aces-label">${esc(names.b)}</span><input class="aces-input" type="number" name="b" min="0" max="99" inputmode="numeric" value="${has ? esc(r.b) : ''}"></label>
-      </div>
-      <label class="aces-field"><span class="aces-label">Notes (optional)</span><input class="aces-input" name="notes" maxlength="200" value="${esc(r?.notes || '')}" placeholder="Walk-off, mercy rule, played 5 innings..."></label>
-      <p class="pu-error" hidden></p>
-      <div class="aces-cluster">
-        <button type="submit" class="aces-btn is-primary">${icon('save')}Save score</button>
-        ${has ? '<button type="button" class="aces-btn is-ghost" data-act="clear-result">Clear score</button>' : ''}
-      </div>
-      <p class="pu-meta">Pick-up scores never count toward league stats.</p>
-    </form>` : '';
-  $('pu-result').innerHTML = `${board}${form}`;
+  const slots = slotsOf(g);
+  const multi = slots.length > 1;
+  const mgr = isManager();
+  const cards = slots.map(({ n, result: r }) => {
+    const names = teamNames(teamsFor(g, n).teams);
+    const has = hasScore(r);
+    const head = multi ? `<h3 class="pu-game-title">Game ${n}</h3>` : '';
+    const board = has ? `<div class="pu-score">
+        <div class="pu-score-side${r.a > r.b ? ' is-win' : ''}"><span>${esc(names.a)}</span><strong>${esc(r.a)}</strong></div>
+        <span class="pu-score-dash">-</span>
+        <div class="pu-score-side${r.b > r.a ? ' is-win' : ''}"><span>${esc(names.b)}</span><strong>${esc(r.b)}</strong></div>
+        ${r.notes ? `<p class="pu-notes">${esc(r.notes)}</p>` : ''}
+      </div>` : `<p class="pu-empty">No score entered${toDateKey(g.date) >= todayKey() ? ' yet' : ''}.${multi ? '' : ' Keeping score is optional.'}</p>`;
+    const form = mgr ? `<form class="pu-result-form" id="puResult${n}" data-result="${n}">
+        <div class="pu-form-grid">
+          <label class="aces-field"><span class="aces-label">${esc(names.a)}</span><input class="aces-input" type="number" name="a" min="0" max="99" inputmode="numeric" value="${has ? esc(r.a) : ''}"></label>
+          <label class="aces-field"><span class="aces-label">${esc(names.b)}</span><input class="aces-input" type="number" name="b" min="0" max="99" inputmode="numeric" value="${has ? esc(r.b) : ''}"></label>
+        </div>
+        <label class="aces-field"><span class="aces-label">Notes (optional)</span><input class="aces-input" name="notes" maxlength="200" value="${esc(r?.notes || '')}" placeholder="Walk-off, mercy rule, played 5 innings..."></label>
+        <p class="pu-error" hidden></p>
+        <div class="aces-cluster">
+          <button type="submit" class="aces-btn is-primary">${icon('save')}${has ? 'Update' : 'Save'} score</button>
+          ${has ? `<button type="button" class="aces-btn is-ghost" data-act="clear-result" data-n="${n}">Clear score</button>` : ''}
+        </div>
+      </form>` : '';
+    return `<div class="aces-card pu-result-card">${head}${board}${form}</div>`;
+  }).join('');
+  const series = multi ? seriesLine(slots.map((x) => ({ ...x, teams: teamsFor(g, x.n).teams }))) : '';
+  $('pu-result').innerHTML = `${series}${cards}${mgr ? '<p class="pu-meta">Keeping score is optional, and pick-up scores never count toward league stats.</p>' : ''}`;
 }
 
-async function saveResult(form) {
+/** "Light won 2 of 3" when the same two team names played every scored game. */
+function seriesLine(slots) {
+  const scored = slots.filter((x) => hasScore(x.result));
+  if (scored.length < 2) return '';
+  const names = scored.map((x) => teamNames(x.teams));
+  if (!names.every((nm) => nm.a === names[0].a && nm.b === names[0].b)) return '';
+  let a = 0, b = 0;
+  scored.forEach((x) => { if (x.result.a > x.result.b) a += 1; else if (x.result.b > x.result.a) b += 1; });
+  const line = a === b ? `Split ${a}-${b}${scored.length - a - b ? ` with ${plural(scored.length - a - b, 'tie')}` : ''}`
+    : `${esc(a > b ? names[0].a : names[0].b)} won ${Math.max(a, b)} of ${scored.length}`;
+  return `<p class="aces-notice">${icon('trophy')}<span>${line}</span></p>`;
+}
+
+async function saveResult(form, n) {
   const a = form.elements.a.value;
   const b = form.elements.b.value;
   const bad = a === '' || b === '' || !Number.isInteger(Number(a)) || !Number.isInteger(Number(b)) || Number(a) < 0 || Number(b) < 0;
@@ -999,22 +1166,21 @@ async function saveResult(form) {
   p.textContent = bad ? 'Enter both scores.' : '';
   p.hidden = !bad;
   if (bad) return;
+  const result = { a: Number(a), b: Number(b), notes: form.elements.notes.value.trim(), enteredBy: { uid: S.uid, name: S.me.name }, enteredAt: serverTimestamp() };
+  const done = slotsOf(S.game).every((x) => x.n === n || hasScore(x.result));
   try {
-    await updateDoc(doc(db, COL, S.id), {
-      result: { a: Number(a), b: Number(b), notes: form.elements.notes.value.trim(), enteredBy: { uid: S.uid, name: S.me.name }, enteredAt: serverTimestamp() },
-      status: 'final', updatedAt: serverTimestamp()
-    });
-    if ($('puResult')) delete $('puResult').dataset.touched;
-    showToast('Score saved.');
+    await updateDoc(doc(db, COL, S.id), { ...slotUpdate(n, 'result', result), status: done ? 'final' : 'open', updatedAt: serverTimestamp() });
+    if ($(`puResult${n}`)) delete $(`puResult${n}`).dataset.touched;
+    showToast(gameCountOf(S.game) > 1 ? `Game ${n} score saved.` : 'Score saved.');
   } catch (e) {
     console.error('[pickup] result', e);
     showToast("The score didn't save. Try again.", 'error');
   }
 }
 
-async function clearResult() {
+async function clearResult(n) {
   try {
-    await updateDoc(doc(db, COL, S.id), { result: null, status: 'open', updatedAt: serverTimestamp() });
+    await updateDoc(doc(db, COL, S.id), { ...slotUpdate(n, 'result', null), status: 'open', updatedAt: serverTimestamp() });
   } catch (e) {
     console.error('[pickup] clear result', e);
     showToast("That didn't save. Try again.", 'error');
@@ -1061,7 +1227,10 @@ const ACTIONS = {
   'rule-remove': (el) => { S.draft.rules.splice(Number(el.dataset.i), 1); S.draft.options = []; touch(); },
   'save-teams': saveTeams,
   'unsave-teams': unsaveTeams,
-  'clear-result': clearResult,
+  'clear-result': (el) => clearResult(Number(el.dataset.n)),
+  'pick-game': (el) => goGame(Number(el.dataset.n)),
+  'add-game': addGame,
+  'remove-game': removeGame,
   view: (el) => openViewer(Number(el.dataset.i))
 };
 
@@ -1080,12 +1249,12 @@ function wire() {
     if (f.id === 'puForm') { e.preventDefault(); createGame(f); }
     if (f.id === 'puEditForm') { e.preventDefault(); saveEdit(f); }
     if (f.id === 'puMine') { e.preventDefault(); saveMine(null); }
-    if (f.id === 'puResult') { e.preventDefault(); saveResult(f); }
+    if (f.dataset.result) { e.preventDefault(); saveResult(f, Number(f.dataset.result)); }
     if (f.id === 'puUpload') { e.preventDefault(); upload(f); }
   });
   document.addEventListener('change', (e) => {
     const t = e.target;
-    const tf = t.closest?.('#puMine, #puResult');
+    const tf = t.closest?.('#puMine, form[data-result]');
     if (tf) tf.dataset.touched = '1';
     if (t.matches('[data-act="include-maybe"]')) { S.draft.includeMaybe = t.checked; S.draft.options = []; renderEditor(); }
     if (t.name === 'files' && t.closest('#puUpload')) { addFiles(t.files); t.value = ''; }
@@ -1093,7 +1262,7 @@ function wire() {
   document.addEventListener('toggle', (e) => { if (e.target.matches?.('.pu-rules') && S.draft) S.draft.rulesOpen = e.target.open; }, true);
   document.addEventListener('input', (e) => {
     const t = e.target;
-    const tf = t.closest?.('#puMine, #puResult');
+    const tf = t.closest?.('#puMine, form[data-result]');
     if (tf) tf.dataset.touched = '1';
     if (t.dataset.nameSide && S.draft) {
       S.draft.names[t.dataset.nameSide] = t.value;
@@ -1115,7 +1284,9 @@ function wire() {
     if (e.key === 'ArrowRight') openViewer(S.viewerAt + 1);
   });
   $('puViewer').addEventListener('close', () => { $('puViewer').querySelector('[data-stage]').innerHTML = ''; });
-  window.addEventListener('beforeunload', (e) => { if (S.draft?.dirty) { e.preventDefault(); e.returnValue = ''; } });
+  window.addEventListener('beforeunload', (e) => {
+    if (S.draft?.dirty || Object.values(S.drafts).some((d) => d.dirty)) { e.preventDefault(); e.returnValue = ''; }
+  });
 }
 
 // Positions from the player's own questionnaire, to prefill their RSVP.
