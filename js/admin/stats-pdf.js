@@ -160,7 +160,7 @@ function parseGameChangerFormat(lines, roster) {
   //   1) "Name #N (POS)  AB R H RBI BB SO"   jersey-anchored. The name and the stats
   //      are found separately, so cut-off names and stray wrapped letters ("d", "n")
   //      between the name, position and numbers cannot make a row disappear.
-  //   2) "F Lastname  AB R H RBI BB SO"       (no jersey; a first initial plus 1-3
+  //   2) "F Lastname (POS)  AB R H RBI BB SO" (no jersey, position optional; a first initial plus 1-3
   //      words that each contain a lowercase letter, so header text can't be swallowed)
   // A row is always returned, even when the name matches nobody on the roster.
   const consumed = [];
@@ -189,7 +189,7 @@ function parseGameChangerFormat(lines, roster) {
   }
 
   // 2) Rows with no jersey number
-  const plainRx = /\b([A-Z]\.?\s+(?=[A-Za-z'.\-]*[a-z])[A-Za-z][A-Za-z'.\-]*(?:\s+(?=[A-Za-z'.\-]*[a-z])[A-Za-z][A-Za-z'.\-]*){0,2})\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)/g;
+  const plainRx = /\b([A-Z]\.?\s+(?=[A-Za-z'.\-]*[a-z])[A-Za-z][A-Za-z'.\-]*(?:\s+(?=[A-Za-z'.\-]*[a-z])[A-Za-z][A-Za-z'.\-]*){0,2})(?:\s+\([^)\s]{1,4}\))?\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)/g;
   let m;
   while ((m = plainRx.exec(fullText)) !== null) {
     if (overlaps(m.index, m.index + m[0].length)) continue;
