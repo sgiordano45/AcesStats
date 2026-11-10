@@ -556,6 +556,8 @@ export function hasRole(profile, role) {
       return isUserCaptain(profile) || hasRole(profile, 'league-staff');
     case 'team-staff':
     case 'team_staff':
+      // Flat team-staff fields too, matching canSubmitScores() in firestore.rules.
+      if (profile.isTeamStaff === true || profile.userRole === USER_ROLES.TEAM_STAFF || profile.userType === USER_ROLES.TEAM_STAFF) return true;
       return Object.values(profile.teamRoles || {}).some(
         (tr) => (tr.role === USER_ROLES.TEAM_STAFF || tr.role === USER_ROLES.CAPTAIN) && tr.status === 'active'
       ) || hasRole(profile, 'captain');
