@@ -1,12 +1,14 @@
 // js/admin/content-board.js
 // Board tab of admin/content.html: post, edit and delete Board of Directors
-// decisions. Published ones show on board.html; drafts stay here.
+// decisions. Published ones show on board.html; drafts stay here. Also mounts
+// the Appointed officers card (content-board-officers.js).
 // Data: boardDecisions (see js/data/board.js). League staff and admins.
 
 import { db, collection, doc, addDoc, updateDoc, deleteDoc, serverTimestamp } from '../core/firebase.js';
 import { escapeHtml as esc } from '../ui/format.js';
 import { showToast } from '../ui/toast.js';
 import { openModal, confirmModal } from '../ui/modal.js';
+import { mount as mountOfficers } from './content-board-officers.js';
 import {
   BOARD_COLLECTION, DECISION_CATEGORIES, DECISION_OUTCOMES, categoryOf, outcomeOf,
   formatDecisionDate, voteLine, getAllDecisions
@@ -170,5 +172,8 @@ export async function mount(c) {
     const del = e.target.closest('[data-del]');
     if (del) return remove(Number(del.dataset.del));
   });
-  await load().catch(err => { $('cbList').innerHTML = `<p class="aces-empty">Could not load: ${esc(err.message || err)}</p>`; });
+  await Promise.all([
+    load().catch(err => { $('cbList').innerHTML = `<p class="aces-empty">Could not load: ${esc(err.message || err)}</p>`; }),
+    mountOfficers(c)
+  ]);
 }

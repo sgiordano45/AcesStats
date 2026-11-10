@@ -6,7 +6,8 @@
 //   Aceys      award winners, reveals and publishing (content-aceys.js, staff)
 //   GameChanger  teams' GC scoreboard widget codes for the home page
 //              (content-gamechanger.js, staff)
-//   Board      Board of Directors decisions for board.html (content-board.js, staff)
+//   Board      Board of Directors decisions and appointed officers for board.html
+//              (content-board.js, content-board-officers.js, staff)
 //
 // Each tab's module loads when it first opens. ?tab=docs|feedback|aceys|gamechanger|board.
 // League staff who are not admins see Aceys, GameChanger and Board.

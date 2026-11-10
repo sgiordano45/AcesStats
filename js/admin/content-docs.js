@@ -1,6 +1,8 @@
 // js/admin/content-docs.js
 // Documents tab of admin/content.html: league PDFs (moved from the old
-// Content admin, same docs and files). league-rules.js lists the active ones.
+// Content admin, same docs and files). league-rules.js lists the active ones;
+// category 'board' (charter and other governing documents) shows on
+// board.html instead.
 //
 //   Storage    league-documents/{Date.now()}_{sanitized file name}
 //              (storage.rules: admins only)
@@ -16,7 +18,7 @@ import { openModal, confirmModal } from '../ui/modal.js';
 
 const $ = (id) => document.getElementById(id);
 const MAX_BYTES = 10 * 1024 * 1024;
-const CATEGORIES = [['league', 'League'], ['town', 'Town / Recreation'], ['insurance', 'Insurance'], ['field', 'Field / Facilities']];
+const CATEGORIES = [['league', 'League'], ['town', 'Town / Recreation'], ['insurance', 'Insurance'], ['field', 'Field / Facilities'], ['board', 'Board / Governance']];
 const catLabel = (c) => (CATEGORIES.find(([v]) => v === c) || [c, c || '-'])[1];
 const mb = (n) => `${((n || 0) / (1024 * 1024)).toFixed(2)} MB`;
 const catOptions = (sel) => CATEGORIES.map(([v, l]) => `<option value="${v}"${v === sel ? ' selected' : ''}>${esc(l)}</option>`).join('');

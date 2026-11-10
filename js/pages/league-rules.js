@@ -5,7 +5,8 @@
 //
 // URL: league-rules.html?season=fall&q=mercy#in-game
 // Data: leagueDocuments (active == true, by order): title, description,
-// category (town | league | insurance | field), url, uploadedAt.
+// category (town | league | insurance | field), url, uploadedAt. Category
+// 'board' docs show on board.html, not here.
 
 import { initPage, pageReady } from '../core/app.js';
 import { db, collection, query, where, orderBy, getDocs } from '../core/firebase.js';
@@ -24,8 +25,9 @@ async function loadDocuments() {
   const box = $('lrDocs');
   try {
     const snap = await getDocs(query(collection(db, 'leagueDocuments'), where('active', '==', true), orderBy('order', 'asc')));
-    if (snap.empty) { box.innerHTML = '<li class="lr-docs-empty">No documents right now.</li>'; return; }
-    box.innerHTML = snap.docs.map((d) => {
+    const rows = snap.docs.filter((d) => d.data().category !== 'board');
+    if (!rows.length) { box.innerHTML = '<li class="lr-docs-empty">No documents right now.</li>'; return; }
+    box.innerHTML = rows.map((d) => {
       const v = d.data();
       const when = v.uploadedAt?.toDate ? v.uploadedAt.toDate().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
       const url = /^https?:\/\//i.test(v.url || '') ? v.url : '';

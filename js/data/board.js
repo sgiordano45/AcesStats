@@ -1,5 +1,5 @@
 // js/data/board.js
-// Board of Directors decisions.
+// Board of Directors: decisions, appointed officers and documents.
 //
 //   Firestore  boardDecisions/{auto}
 //     { title, summary, category, outcome, decidedOn ('YYYY-MM-DD'),
@@ -9,10 +9,22 @@
 // board.html lists the published ones; league staff post and edit them in
 // admin/content.html?tab=board (content-board.js). Rules: anyone can read a
 // published decision, canManageContent() reads drafts and writes.
+//
+//   Firestore  boardOfficers/{auto}
+//     { name, title, description, duties: [string], order, active,
+//       updatedAt, updatedByName }
+//   Appointed, non-voting officers. Active ones show on board.html by order;
+//   league staff manage them in admin/content.html?tab=board
+//   (content-board-officers.js). Rules: anyone reads, canManageContent() writes.
+//
+//   Board documents are leagueDocuments with category 'board' (uploaded in
+//   admin/content.html?tab=docs). The Rules page leaves them off.
 
-import { db, collection, getDocs, query, where } from '../core/firebase.js';
+import { db, collection, getDocs, query, where, orderBy } from '../core/firebase.js';
 
 export const BOARD_COLLECTION = 'boardDecisions';
+export const OFFICERS_COLLECTION = 'boardOfficers';
+export const BOARD_DOC_CATEGORY = 'board';
 
 /** [value, label, icon] */
 export const DECISION_CATEGORIES = [
@@ -67,4 +79,25 @@ export async function getPublishedDecisions() {
 export async function getAllDecisions() {
   const snap = await getDocs(collection(db, BOARD_COLLECTION));
   return snap.docs.map((d) => ({ id: d.id, ...d.data() })).sort(newestFirst);
+}
+
+const byOrder = (a, b) => (Number(a.order) || 99) - (Number(b.order) || 99) || String(a.name || '').localeCompare(String(b.name || ''));
+
+/** Active appointed officers, by display order. */
+export async function getActiveOfficers() {
+  const snap = await getDocs(query(collection(db, OFFICERS_COLLECTION), where('active', '==', true)));
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() })).sort(byOrder);
+}
+
+/** Every appointed officer including hidden ones (admin). */
+export async function getAllOfficers() {
+  const snap = await getDocs(collection(db, OFFICERS_COLLECTION));
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() })).sort(byOrder);
+}
+
+/** Active board documents (the charter etc.), by display order. Same query as
+ *  the Rules page, filtered here so no new index is needed. */
+export async function getBoardDocuments() {
+  const snap = await getDocs(query(collection(db, 'leagueDocuments'), where('active', '==', true), orderBy('order', 'asc')));
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((d) => d.category === BOARD_DOC_CATEGORY);
 }

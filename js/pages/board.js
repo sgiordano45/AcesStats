@@ -1,20 +1,74 @@
 // js/pages/board.js
-// board.html: the board seats are in the page. This loads the published
-// board decisions and the category filter.
+// board.html: the voting seats are in the page. This loads the appointed
+// officers, the board documents, the published decisions and the category
+// filter. Officers and documents stay hidden when there are none.
 //
 // URL: board.html?cat=rules#decisions
-// Data: boardDecisions (published == true), see js/data/board.js.
+// Data: boardOfficers, leagueDocuments (category 'board'), boardDecisions;
+// see js/data/board.js.
 
 import { initPage, pageReady } from '../core/app.js';
 import { escapeHtml as esc, pluralize } from '../ui/format.js';
 import { icon } from '../ui/icons.js';
 import {
-  getPublishedDecisions, DECISION_CATEGORIES, categoryOf, outcomeOf,
-  formatDecisionDate, voteLine
+  getPublishedDecisions, getActiveOfficers, getBoardDocuments,
+  DECISION_CATEGORIES, categoryOf, outcomeOf, formatDecisionDate, voteLine
 } from '../data/board.js';
 
 const $ = (id) => document.getElementById(id);
 const S = { all: [], cat: new URLSearchParams(location.search).get('cat') || '' };
+
+// ---------------------------------------------------------------------------
+// Officers and documents
+// ---------------------------------------------------------------------------
+
+async function loadOfficers() {
+  try {
+    const list = await getActiveOfficers();
+    if (!list.length) return;
+    $('bdOfficers').innerHTML = list.map((o) => {
+      const duties = (Array.isArray(o.duties) ? o.duties : []).filter(Boolean);
+      const initial = String(o.name || '?').trim().charAt(0).toUpperCase();
+      return `<li class="aces-card bd-seat is-officer">
+        <span class="bd-mono" aria-hidden="true">${esc(initial)}</span>
+        <div class="bd-seat-body">
+          <h3 class="bd-name">${esc(o.name || '')}</h3>
+          ${o.title ? `<p class="bd-title">${esc(o.title)}</p>` : ''}
+          ${o.description ? `<p class="bd-role">${esc(o.description)}</p>` : ''}
+          ${duties.length ? `<ul class="bd-duties">${duties.map((d) => `<li>${esc(d)}</li>`).join('')}</ul>` : ''}
+        </div>
+      </li>`;
+    }).join('');
+    $('bdOfficersBlock').hidden = false;
+  } catch (err) {
+    console.error('[board] officers', err);
+  }
+}
+
+async function loadDocuments() {
+  try {
+    const list = await getBoardDocuments();
+    if (!list.length) return;
+    $('bdDocs').innerHTML = list.map((v) => {
+      const when = v.uploadedAt?.toDate ? v.uploadedAt.toDate().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+      const url = /^https?:\/\//i.test(v.url || '') ? v.url : '';
+      return `<li><a class="bd-doc" ${url ? `href="${esc(url)}" target="_blank" rel="noopener"` : 'aria-disabled="true"'}>
+        <span class="bd-doc-icon">${icon('book')}</span>
+        <span class="bd-doc-body"><b>${esc(v.title || 'Document')}</b>
+          ${v.description ? `<span>${esc(v.description)}</span>` : ''}
+          ${when ? `<small>Updated ${esc(when)}</small>` : ''}</span>
+        ${icon('external-link')}
+      </a></li>`;
+    }).join('');
+    $('documents').hidden = false;
+  } catch (err) {
+    console.error('[board] documents', err);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Decisions
+// ---------------------------------------------------------------------------
 
 function renderFilters() {
   const counts = {};
@@ -77,6 +131,8 @@ async function main() {
     const b = e.target.closest('[data-cat]');
     if (b) setCat(b.dataset.cat);
   });
+  loadOfficers();
+  loadDocuments();
   try {
     S.all = await getPublishedDecisions();
     if (S.cat && !S.all.some((d) => categoryOf(d.category)[0] === S.cat)) S.cat = '';
