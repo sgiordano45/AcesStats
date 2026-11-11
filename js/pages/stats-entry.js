@@ -293,7 +293,7 @@ async function selectSide(gameId, side, { scroll = true } = {}) {
 function rowProblems(v) {
   const out = [];
   if (v.h > v.ab) out.push('more hits than at bats');
-  if (v.d2 + v.d3 + v.hr > v.h) out.push('more extra-base hits than hits');
+  if (v.d2 + v.d3 + v.hr > v.h) out.push('2B + 3B + HR is more than H (H should include them)');
   return out;
 }
 
@@ -302,7 +302,7 @@ function renderGrid() {
     $('sseGrid').innerHTML = '<p class="sse-empty">No players yet. Add them below.</p>';
     return;
   }
-  const head = ALL.map(([, l], i) => `<th class="is-num${i === BAT.length ? ' sse-split' : ''}" scope="col">${l}</th>`).join('');
+  const head = ALL.map(([k, l], i) => `<th class="is-num${i === BAT.length ? ' sse-split' : ''}" scope="col"${k === 'h' ? ' title="Total hits, including 2B, 3B and HR"' : ''}>${l}</th>`).join('');
   $('sseGrid').innerHTML = `<div class="aces-table-wrap"><table class="aces-table sse-grid">
     <thead><tr><th scope="col">Player</th><th scope="col" class="sse-played">Played</th>${head}</tr></thead>
     <tbody>${rows.map((p, i) => `<tr data-i="${i}" class="${p.played ? '' : 'is-out'}">
