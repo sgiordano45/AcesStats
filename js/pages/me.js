@@ -314,7 +314,7 @@ function renderDashboard() {
 
   $('meStats').innerHTML = `<div class="aces-card-head"><h2 class="aces-card-title">${icon('bat')} My season</h2>
       ${player ? `<a class="aces-section-link" href="player.html?id=${encodeURIComponent(player.id)}">My page</a>` : ''}</div>
-    ${player ? myStatsHtml(player, { seasonId: state.seasonId, finished: state.ctx.config?.phase === 'offseason' })
+    ${player ? myStatsHtml(player, { seasonId: state.seasonId, finished: state.ctx.config?.phase === 'offseason', splitSubs: true })
       : '<p class="me-empty">Link your account to your player record to see your stats. <a href="link-player.html">Link now</a></p>'}`;
 
   const upcoming = later.slice(0, UPCOMING - 1);
