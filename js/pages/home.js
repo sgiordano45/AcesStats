@@ -322,7 +322,7 @@ async function renderMyAces() {
     staff && `<a class="aces-btn is-sm" href="roster-management.html">${icon('users')} Roster</a>`
   ].filter(Boolean).join('');
 
-  const statBlock = playerId ? myStatsHtml(player, { seasonId: state.seasonId, finished: state.phase === 'offseason' }) : '';
+  const statBlock = playerId ? myStatsHtml(player, { seasonId: state.seasonId, finished: state.phase === 'offseason', splitSubs: true }) : '';
 
   el.innerHTML = `
     <div class="aces-card-head">
