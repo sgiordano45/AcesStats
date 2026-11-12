@@ -135,11 +135,11 @@ function renderLine() {
   if (!on) return;
   const n = line.home.length;
   const { g } = sel;
-  const cells = (side) => line[side].map((v, i) => `<td><input class="ss-inn" type="number" min="0" inputmode="numeric" data-side="${side}" data-i="${i}" value="${v}" aria-label="${esc(side === 'home' ? g.home : g.away)} inning ${i + 1}"></td>`).join('');
+  const cells = (side) => line[side].map((v, i) => `<td class="is-center"><input class="ss-inn" type="number" min="0" inputmode="numeric" data-side="${side}" data-i="${i}" value="${v}" aria-label="${esc(side === 'home' ? g.home : g.away)} inning ${i + 1}"></td>`).join('');
   const sum = (side) => line[side].reduce((a, b) => a + b, 0);
-  $('ssLineTable').innerHTML = `<thead><tr><th scope="col">Team</th>${line.home.map((_, i) => `<th scope="col" class="is-num">${i + 1}</th>`).join('')}<th scope="col" class="is-num">R</th></tr></thead>
-    <tbody><tr><th scope="row">${esc(g.away || 'Away')}</th>${cells('away')}<td class="is-num"><strong>${sum('away')}</strong></td></tr>
-    <tr><th scope="row">${esc(g.home || 'Home')}</th>${cells('home')}<td class="is-num"><strong>${sum('home')}</strong></td></tr></tbody>`;
+  $('ssLineTable').innerHTML = `<thead><tr><th scope="col">Team</th>${line.home.map((_, i) => `<th scope="col" class="is-center">${i + 1}</th>`).join('')}<th scope="col" class="is-center">R</th></tr></thead>
+    <tbody><tr><th scope="row">${esc(g.away || 'Away')}</th>${cells('away')}<td class="is-center"><strong>${sum('away')}</strong></td></tr>
+    <tr><th scope="row">${esc(g.home || 'Home')}</th>${cells('home')}<td class="is-center"><strong>${sum('home')}</strong></td></tr></tbody>`;
   $('ssInnCount').textContent = `${n} inning${n === 1 ? '' : 's'}`;
   $('ssInnLess').disabled = n <= MIN_INN;
   $('ssInnMore').disabled = n >= MAX_INN;
