@@ -128,6 +128,7 @@ export const NAV_HUBS = [
       { id: 'stream', href: 'media.html#live', label: 'Live', icon: 'radio' },
       { id: 'league-rules', href: 'league-rules.html', label: 'Rules', icon: 'scale',
         also: ['rule-proposals.html', 'rule-review.html'] },
+      { id: 'board', href: 'board.html', label: 'Board', icon: 'shield-check' },
       { id: 'activity', href: 'activity.html', label: 'Activity', icon: 'activity' },
       // Offseason planning: admin and league staff only, in any phase, so they
       // can prepare before the offseason starts. Listed whatever

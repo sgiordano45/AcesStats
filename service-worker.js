@@ -2,7 +2,7 @@
 // Handles both offline functionality AND Firebase Cloud Messaging
 // Version 2.1.02 - Force cache refresh to fix PWA stale load
 
-const CACHE_VERSION = 'aces-v2.2.27';
+const CACHE_VERSION = 'aces-v2.2.28';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const DYNAMIC_CACHE = `${CACHE_VERSION}-dynamic`;
 const IMAGE_CACHE = `${CACHE_VERSION}-images`;
@@ -34,6 +34,7 @@ const HTML_PAGES = [
   `${BASE_PATH}/submit-stats.html`,
   `${BASE_PATH}/league-history.html`,
   `${BASE_PATH}/league-rules.html`,
+  `${BASE_PATH}/board.html`,
   `${BASE_PATH}/verify-email.html`,
   `${BASE_PATH}/reset-password.html`,
   `${BASE_PATH}/link-player.html`,
