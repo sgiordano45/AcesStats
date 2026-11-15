@@ -553,7 +553,8 @@ async function react(id, key, btn) {
 // ---------------------------------------------------------------------------
 
 function wire() {
-  const root = $('vsRoot');
+  // #main, not #vsRoot: the Report button lives in the page header, outside #vsRoot.
+  const root = $('main');
   root.addEventListener('click', (e) => {
     const t = e.target.closest('[data-goto],[data-season],[data-act],[data-react],[data-photo]');
     if (!t) return;
