@@ -4151,12 +4151,16 @@ function pickemNormalizeGame(g) {
   const isFinal = status === 'completed' || (!!winnerRaw && homeScore !== null && awayScore !== null);
   const isTBD = !!g.isPlaceholder || homeName === 'TBD' || awayName === 'TBD';
   const cancelled = ['cancelled', 'canceled', 'postponed', 'rainout', 'rained out'].includes(status);
+  // submit-score writes the winner with spaces as underscores
+  const same = (a, b) => a.replace(/[\s_]+/g, ' ') === b.replace(/[\s_]+/g, ' ');
   let winnerKey = null;
   if (isFinal && winnerRaw) {
-    if (winnerRaw === homeKey || winnerRaw === homeName.toLowerCase()) winnerKey = homeKey;
-    else if (winnerRaw === awayKey || winnerRaw === awayName.toLowerCase()) winnerKey = awayKey;
+    if (same(winnerRaw, homeKey) || same(winnerRaw, homeName.toLowerCase())) winnerKey = homeKey;
+    else if (same(winnerRaw, awayKey) || same(winnerRaw, awayName.toLowerCase())) winnerKey = awayKey;
   }
-  const tiesAllowed = pickemDpKey(dp) >= PICKEM_TIE_FROM;
+  // No tie picks in the playoffs (no time limit)
+  const isPlayoff = String(g.gameType || g.game_type || '').toLowerCase() === 'playoff';
+  const tiesAllowed = pickemDpKey(dp) >= PICKEM_TIE_FROM && !isPlayoff;
   const isTie = isFinal && !winnerKey && (winnerRaw === 'tie'
     || (homeScore !== null && awayScore !== null && homeScore !== '' && Number(homeScore) === Number(awayScore)));
   if (isTie && tiesAllowed && !g.forfeit) winnerKey = PICKEM_TIE;
@@ -4164,9 +4168,45 @@ function pickemNormalizeGame(g) {
   return {
     id: g.id, dp, dayKey: pickemDpKey(dp), time: g.time || '', lockAt, tiesAllowed,
     homeName, awayName, homeKey, awayKey, homeScore, awayScore,
-    isFinal, isTBD, cancelled, isVoid, winnerKey,
+    isFinal, isTBD, cancelled, isVoid, winnerKey, slots: null,
     isGraded: isFinal && !isVoid
   };
+}
+
+// Playoff slots ("G1 Winner" on playoff_g{n} docs), same as linkSlots() in
+// js/domain/pickem.js: a decided slot takes the team's key and name, an open
+// one shows the feeder's teams, and a "g1 winner" pick counts as G1's winner.
+const PICKEM_SLOT_RE = /^g(\d+)[\s_]+(winner|loser)$/;
+function pickemLinkSlots(games) {
+  const byNum = new Map();
+  games.forEach(g => { const m = String(g.id).match(/^playoff_g(\d+)$/); if (m) byNum.set(Number(m[1]), g); });
+  const slots = new Map();
+  const real = g => !g.isTBD && !PICKEM_SLOT_RE.test(g.homeKey) && !PICKEM_SLOT_RE.test(g.awayKey);
+  const fix = (g, side) => {
+    const m = g[`${side}Key`].match(PICKEM_SLOT_RE);
+    if (!m) return;
+    const hit = slots.get(`g${m[1]} ${m[2]}`);
+    if (hit) {
+      if (g.winnerKey === g[`${side}Key`]) g.winnerKey = hit.key;
+      g[`${side}Key`] = hit.key;
+      g[`${side}Name`] = hit.name;
+      return;
+    }
+    const src = byNum.get(Number(m[1]));
+    if (src && real(src)) g[`${side}Name`] = `${src.awayName}/${src.homeName} ${m[2] === 'winner' ? 'Winner' : 'Loser'}`;
+  };
+  [...byNum.keys()].sort((a, b) => a - b).forEach(n => {
+    const g = byNum.get(n);
+    fix(g, 'home');
+    fix(g, 'away');
+    if (g.isGraded && g.winnerKey !== PICKEM_TIE) {
+      const homeWon = g.winnerKey === g.homeKey;
+      slots.set(`g${n} winner`, { key: g.winnerKey, name: homeWon ? g.homeName : g.awayName });
+      slots.set(`g${n} loser`, { key: homeWon ? g.awayKey : g.homeKey, name: homeWon ? g.awayName : g.homeName });
+    }
+  });
+  games.forEach(g => { g.slots = slots; });
+  return games;
 }
 
 const pickemDpKey = (dp) => `${dp.y}-${String(dp.m + 1).padStart(2, '0')}-${String(dp.day).padStart(2, '0')}`;
@@ -4182,8 +4222,9 @@ function pickemValidPick(entry, g) {
   const p = entry.picks[g.id];
   if (!p || !p.team) return null;
   if (p.atMs && p.atMs > g.lockAt) return null;
-  if (p.team !== g.homeKey && p.team !== g.awayKey && !(p.team === PICKEM_TIE && g.tiesAllowed)) return null;
-  return p.team;
+  const t = (g.slots && g.slots.get(p.team) && g.slots.get(p.team).key) || p.team;
+  if (t !== g.homeKey && t !== g.awayKey && !(t === PICKEM_TIE && g.tiesAllowed)) return null;
+  return t;
 }
 
 function pickemSplit(entries, g) {
@@ -4326,7 +4367,7 @@ async function runPickemDigest({ dryRun = false, force = false } = {}) {
     db.collection('seasons').doc(season.id).collection('games').get(),
     db.collection('pickem').doc(season.id).collection('entries').get()
   ]);
-  const games = gamesSnap.docs.map(d => pickemNormalizeGame({ id: d.id, ...d.data() })).filter(Boolean);
+  const games = pickemLinkSlots(gamesSnap.docs.map(d => pickemNormalizeGame({ id: d.id, ...d.data() })).filter(Boolean));
   const entries = entriesSnap.docs.map(d => {
     const data = d.data();
     const picks = {};

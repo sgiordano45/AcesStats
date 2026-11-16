@@ -26,7 +26,7 @@ import { icon } from '../ui/icons.js';
 import { showToast } from '../ui/toast.js';
 import { seasonLabel } from '../domain/season-ids.js';
 import {
-  TIE, TIE_FROM, TIE_POINTS, normalizeGame, isLocked, isGraded, splitFor, isUpset,
+  TIE, TIE_FROM, TIE_POINTS, normalizeGame, linkSlots, pickKey, isLocked, isGraded, splitFor, isUpset,
   pickPoints, scoreGames, buildWeeks, dow, dpKey, addDays
 } from '../domain/pickem.js';
 
@@ -76,7 +76,7 @@ async function load() {
     getSeasonGames(season.id),
     getDocs(collection(db, 'pickem', season.id, 'entries'))
   ]);
-  const games = (raw || []).map(normalizeGame).filter(Boolean)
+  const games = linkSlots((raw || []).map(normalizeGame).filter(Boolean))
     .sort((a, b) => (a.lockAt - b.lockAt) || a.homeName.localeCompare(b.homeName));
   const entries = {};
   snap.forEach((d) => {
@@ -193,7 +193,7 @@ function splitBar(g, s, { labels = true } = {}) {
 function gameCard(g, myPick) {
   const locked = isLocked(g);
   const done = locked || g.isFinal;
-  const mine = myPick?.team || null;
+  const mine = myPick?.team ? pickKey(g, myPick.team) : null;
   const late = !!(myPick && myPick.atMs && myPick.atMs > g.lockAt);
   const disabled = locked || g.isTBD || g.cancelled;
   const graded = isGraded(g);
@@ -362,7 +362,8 @@ function renderRules() {
       <li>Nobody sees anyone else's pick for a game until it locks, and then only the counts.</li>
       <li><strong>1 point</strong> for every correct pick.</li>
       <li><strong>+1 upset bonus</strong> when you're right and fewer than a third of pickers took that team (at least 3 picks on the game).</li>
-      <li><strong>Pick a tie</strong> (games from ${tieDate} on): the middle button. Call a tie right for <strong>${TIE_POINTS} points</strong> (1 + a 2-point tie bonus). When one of those games ends tied, team picks miss.</li>
+      <li><strong>Pick a tie</strong> (regular-season games from ${tieDate} on): the middle button. Call a tie right for <strong>${TIE_POINTS} points</strong> (1 + a 2-point tie bonus). When one of those games ends tied, team picks miss. Playoff games have no ties.</li>
+      <li><strong>Playoffs:</strong> you can pick a game before both teams are set. Pick "Army/Teal Winner" and your pick goes with whichever team wins that game.</li>
       <li>Forfeits and cancelled games don't count for anyone, and neither do ties in games before ${tieDate}.</li>
       <li>Standings: points, then correct picks, then fewest misses.</li>
     </ul>
@@ -380,7 +381,7 @@ async function pick(gameId, team) {
   const uid = S.uid;
   if (!S.entries[uid]) S.entries[uid] = { displayName: S.name, picks: {} };
   const prev = S.entries[uid].picks[gameId] ? { ...S.entries[uid].picks[gameId] } : null;
-  const clearing = prev?.team === team;
+  const clearing = !!prev && pickKey(g, prev.team) === team;
   const ref = doc(db, 'pickem', S.season.id, 'entries', uid);
 
   if (clearing) delete S.entries[uid].picks[gameId];

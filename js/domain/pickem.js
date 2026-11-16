@@ -7,11 +7,18 @@
 //   1 point for a correct pick.
 //   +1 upset bonus when you're right and fewer than a third of the pickers took
 //   that team (at least 3 picks on the game).
-//   Tie picks from TIE_FROM on: a correct tie is TIE_POINTS (1 + a 2-point tie bonus),
-//   and team picks on a tied game miss. Before TIE_FROM a tie voids the game.
+//   Tie picks from TIE_FROM on (regular season only; playoffs have no time
+//   limit): a correct tie is TIE_POINTS (1 + a 2-point tie bonus), and team
+//   picks on a tied game miss. Before TIE_FROM a tie voids the game.
 //   Forfeits, cancelled and postponed games count for no one.
 //   A pick saved (server time) after first pitch doesn't count.
 //   Standings: points, then correct picks, then fewest misses.
+//
+// Playoffs (double elimination, game docs playoff_g{n}): until a feeder game is
+// decided, a later game names that side "G1 Winner" or "G2 Loser". Those games
+// can still be picked. linkSlots() shows the slot as "Army/Teal Winner" and,
+// once the feeder game is final, counts a "g1 winner" pick as the team that won
+// it, even before the bracket page renames the game.
 //
 // Times: league times are Eastern. A game locks at its scheduled first pitch
 // (8:00 AM that day when the time can't be read).
@@ -106,20 +113,22 @@ export function normalizeGame(g) {
   const isFinal = status === 'completed' || (!!winnerRaw && homeScore !== null && awayScore !== null);
   const isTBD = !!g.isPlaceholder || homeName === 'TBD' || awayName === 'TBD';
   const cancelled = ['cancelled', 'canceled', 'postponed', 'rainout', 'rained out'].includes(status);
+  // submit-score writes the winner with spaces as underscores
+  const same = (a, b) => a.replace(/[\s_]+/g, ' ') === b.replace(/[\s_]+/g, ' ');
   let winnerKey = null;
   if (isFinal && winnerRaw) {
-    if (winnerRaw === homeKey || winnerRaw === homeName.toLowerCase()) winnerKey = homeKey;
-    else if (winnerRaw === awayKey || winnerRaw === awayName.toLowerCase()) winnerKey = awayKey;
+    if (same(winnerRaw, homeKey) || same(winnerRaw, homeName.toLowerCase())) winnerKey = homeKey;
+    else if (same(winnerRaw, awayKey) || same(winnerRaw, awayName.toLowerCase())) winnerKey = awayKey;
   }
   const isPlayoff = String(g.gameType || g.game_type || '').toLowerCase() === 'playoff';
-  const tiesAllowed = dpKey(dp) >= TIE_FROM;
+  const tiesAllowed = dpKey(dp) >= TIE_FROM && !isPlayoff;
   const isTie = isFinal && !winnerKey && (winnerRaw === 'tie'
     || (homeScore !== null && awayScore !== null && homeScore !== '' && Number(homeScore) === Number(awayScore)));
   if (isTie && tiesAllowed && !g.forfeit) winnerKey = TIE;
   return {
     id: g.id, dp, time: g.time || '', lockAt, homeName, awayName, homeKey, awayKey,
     homeScore, awayScore, isFinal, isTBD, cancelled, isPlayoff, tiesAllowed, isTie,
-    isForfeit: !!g.forfeit, winnerKey,
+    isForfeit: !!g.forfeit, winnerKey, slots: null,
     // void: final with no pick'em result (forfeit, unknown winner, a tie before TIE_FROM)
     isVoid: cancelled || (isFinal && (!winnerKey || !!g.forfeit))
   };
@@ -127,6 +136,50 @@ export function normalizeGame(g) {
 
 export const isLocked = (g, now = Date.now()) => now >= g.lockAt;
 export const isGraded = (g) => g.isFinal && !g.isVoid;
+
+const SLOT_RE = /^g(\d+)[\s_]+(winner|loser)$/;
+
+/**
+ * Playoff slots ("G1 Winner"): call once on the normalized season games.
+ * A decided slot takes the team's key and name (so does a winner recorded as
+ * the slot); an open one shows the feeder game's teams. Every game gets
+ * g.slots ('g1 winner' -> { key, name }) for pickKey().
+ */
+export function linkSlots(games) {
+  const byNum = new Map();
+  games.forEach((g) => { const m = String(g.id).match(/^playoff_g(\d+)$/); if (m) byNum.set(Number(m[1]), g); });
+  const slots = new Map();
+  const real = (g) => !g.isTBD && !SLOT_RE.test(g.homeKey) && !SLOT_RE.test(g.awayKey);
+  const fix = (g, side) => {
+    const m = g[`${side}Key`].match(SLOT_RE);
+    if (!m) return;
+    const hit = slots.get(`g${m[1]} ${m[2]}`);
+    if (hit) {
+      if (g.winnerKey === g[`${side}Key`]) g.winnerKey = hit.key;
+      g[`${side}Key`] = hit.key;
+      g[`${side}Name`] = hit.name;
+      return;
+    }
+    const src = byNum.get(Number(m[1]));
+    if (src && real(src)) g[`${side}Name`] = `${src.awayName}/${src.homeName} ${m[2] === 'winner' ? 'Winner' : 'Loser'}`;
+  };
+  // Feeder games always have lower numbers, so one pass in order settles chains.
+  [...byNum.keys()].sort((a, b) => a - b).forEach((n) => {
+    const g = byNum.get(n);
+    fix(g, 'home');
+    fix(g, 'away');
+    if (isGraded(g) && g.winnerKey !== TIE) {
+      const homeWon = g.winnerKey === g.homeKey;
+      slots.set(`g${n} winner`, { key: g.winnerKey, name: homeWon ? g.homeName : g.awayName });
+      slots.set(`g${n} loser`, { key: homeWon ? g.awayKey : g.homeKey, name: homeWon ? g.awayName : g.homeName });
+    }
+  });
+  games.forEach((g) => { g.slots = slots; });
+  return games;
+}
+
+/** A saved pick as this game's key now: a "g1 winner" pick becomes G1's winner once it's final. */
+export const pickKey = (g, team) => g.slots?.get(team)?.key || team;
 
 // ---------------------------------------------------------------------------
 // Picks and scoring. entries: { uid: { displayName, picks: { gameId: { team, atMs } } } }
@@ -136,8 +189,9 @@ export function validPick(entries, uid, g) {
   const p = entries[uid]?.picks?.[g.id];
   if (!p || !p.team) return null;
   if (p.atMs && p.atMs > g.lockAt) return null;
-  if (p.team !== g.homeKey && p.team !== g.awayKey && !(p.team === TIE && g.tiesAllowed)) return null;
-  return p.team;
+  const t = pickKey(g, p.team);
+  if (t !== g.homeKey && t !== g.awayKey && !(t === TIE && g.tiesAllowed)) return null;
+  return t;
 }
 
 export function splitFor(entries, g) {
