@@ -161,11 +161,15 @@ function renderTable(res) {
       return `<td class="is-num pj-cell${k + 1 === b ? ' is-bye-edge' : ''}${a > 0.45 ? ' is-hot' : ''}" style="${a ? `background:color-mix(in srgb, var(--color-brand) ${Math.round(a * 100)}%, var(--color-surface))` : ''}"${v ? ` title="${esc(`${cap(r.team)}: ${pct(v)}% to finish ${ordinal(k + 1)}`)}"` : ''}>${v >= 0.5 ? Math.round(v) : v > 0 ? '&middot;' : ''}</td>`;
     }).join('');
     const cur = `${r.cur.w}-${r.cur.l}${r.cur.t ? `-${r.cur.t}` : ''}`;
+    // Simulated games never tie, so projected ties are the current ties.
+    // Losses are taken from the rounded total so W-L-T always adds up to the full schedule.
+    const pW = Math.round(r.projW), pL = Math.round(r.projW + r.projL) - pW;
+    const proj = `${pW}-${pL}${r.cur.t ? `-${r.cur.t}` : ''}`;
     return `<tr>
       <td class="is-num pj-rank">${i + 1}</td>
       <th scope="row"><a class="pj-team" href="current-season-team.html?team=${esc(encodeURIComponent(cap(r.team)))}">${dot(r.team)}${esc(cap(r.team))}</a></th>
       <td class="is-num">${esc(cur)}</td>
-      <td class="is-num"><strong>${Math.round(r.projW)}-${Math.round(r.projL)}</strong></td>
+      <td class="is-num"><strong>${esc(proj)}</strong></td>
       <td class="is-num">${r.avgSeed.toFixed(1)}</td>
       ${b && b < res.n ? `<td class="is-num pj-bye"><strong>${pct(bye)}%</strong></td>` : ''}
       ${cells}
@@ -173,7 +177,7 @@ function renderTable(res) {
   }).join('');
   $('pjTable').innerHTML = `<div class="aces-table-wrap"><table class="aces-table is-compact pj-table">
     <thead>
-      <tr><th scope="col" class="is-num">#</th><th scope="col">Team</th><th scope="col" class="is-num">Now</th><th scope="col" class="is-num" title="Average wins and losses at the end of the regular season">Proj.</th><th scope="col" class="is-num" title="Average seed">Avg seed</th>${b && b < res.n ? '<th scope="col" class="is-num" title="Chance of a top seed with a first-round bye">Bye</th>' : ''}${head}</tr>
+      <tr><th scope="col" class="is-num">#</th><th scope="col">Team</th><th scope="col" class="is-num">Now</th><th scope="col" class="is-num" title="Average wins, losses and ties at the end of the regular season">Proj.</th><th scope="col" class="is-num" title="Average seed">Avg seed</th>${b && b < res.n ? '<th scope="col" class="is-num" title="Chance of a top seed with a first-round bye">Bye</th>' : ''}${head}</tr>
     </thead>
     <tbody>${body}</tbody></table></div>
     <p class="pj-note">Seed columns are the percent of ${P.sims.toLocaleString()} simulations each team finished there (a dot is under 0.5%). ${b && b < res.n ? `The line after seed ${b} marks the byes.` : ''}</p>`;
