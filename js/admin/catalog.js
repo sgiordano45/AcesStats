@@ -65,6 +65,7 @@ export const ADMIN_GROUPS = [
     ['admin/games.html', 'Daily games admin', 'Grid, Connections and the rest', 'admin'],
     ['admin/wordle.html', 'Wordle admin', 'Puzzles and the word list', 'admin'],
     ['admin/dfs.html', 'DFS generator', 'Weekly salaries and scoring', 'admin'],
+    ['admin/sim-ratings.html', 'Sim ratings', 'Player ratings for the Aces Sim draft game', 'admin'],
     ['contributor.html', 'Contributor dashboard', 'Recaps, previews and photos', 'league-staff']
   ] }
 ];
