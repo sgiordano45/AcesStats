@@ -9,6 +9,7 @@
 
 import { initPage, pageReady } from '../core/app.js';
 import { loadSimPool } from '../data/sim.js';
+import { loadRecord, recordGame } from '../data/sim-records.js';
 import {
   SLOTS, TEAM_SIZE, RATING_KEYS, RATING_ABBR, RATING_LABELS, positionTag, leagueSummary, reviveLeague
 } from '../domain/sim-ratings.js';
@@ -113,6 +114,113 @@ const swatch = (color) => `<span class="sim-swatch" style="background:${esc(colo
 function show(phase) {
   for (const id of ['simSetup', 'simDraft', 'simLineup', 'simGame', 'simFinal']) $(id).hidden = true;
   $({ setup: 'simSetup', draft: 'simDraft', lineup: 'simLineup', game: 'simGame', final: 'simFinal' }[phase]).hidden = false;
+  // The record sidebar shows between games; the draft and the game need the width.
+  const aside = ['setup', 'lineup', 'final'].includes(phase);
+  $('simAside').hidden = !aside;
+  $('simLayout').classList.toggle('has-aside', aside);
+}
+
+// ---------------------------------------------------------------------------
+// Record and pennants
+// ---------------------------------------------------------------------------
+
+// A pennant for each computer manager beaten.
+const PENNANTS = {
+  fundamentals: { short: 'Fundamentals', color: '#2d7d32' },
+  sluggers: { short: 'Long Ball', color: '#d32f2f' },
+  moneyball: { short: 'Moneyball', color: '#1976d2' },
+  smallball: { short: 'Small Ball', color: '#f57c00' },
+  leather: { short: 'Leather', color: '#654321' },
+  homer: { short: 'Homer', color: '#7b1fa2' },
+  chaos: { short: 'Chaos', color: '#1a1a1a' }
+};
+
+const pennantSvg = (color) => `<svg class="sim-pennant-flag" viewBox="0 0 44 26" aria-hidden="true">
+  <rect x="1" y="1" width="2" height="24" fill="#6b5a45"/>
+  <path d="M3 2 L43 13 L3 24 Z" fill="${color}"/>
+  <path d="M3 2 L43 13 L3 24 Z" fill="none" stroke="rgba(0,0,0,.25)"/>
+  <path d="M7 9 L18 13 L7 17 Z" fill="rgba(255,255,255,.85)"/></svg>`;
+
+const fmtPct = (r) => (r.games ? (r.wins + r.ties / 2) / r.games : 0).toFixed(3).replace(/^0/, '');
+const recLine = (r) => `${r.wins}-${r.losses}${r.ties ? `-${r.ties}` : ''}`;
+
+function renderRecordChip() {
+  const r = S.record;
+  const chip = $('simRecordChip');
+  if (!r || !r.games) { chip.hidden = true; return; }
+  const won = Object.values(r.byStyle).filter((s) => s.w).length;
+  chip.hidden = false;
+  chip.innerHTML = `<span class="sim-kicker">Your record</span> <strong>${recLine(r)}</strong> <span class="sim-dim">${won}/${Object.keys(PENNANTS).length} pennants</span>`;
+}
+
+function renderRecord({ fresh = '' } = {}) {
+  renderRecordChip();
+  const r = S.record;
+  const box = $('simAside');
+  if (!r) {
+    box.innerHTML = '<section class="aces-card sim-record"><h2 class="aces-card-title">Your record</h2><p class="sim-dim">Couldn\u2019t load your record right now.</p></section>';
+    return;
+  }
+  const per = (v) => (r.games ? (v / r.games).toFixed(1) : '-');
+  const diff = r.runsFor - r.runsAgainst;
+  const streak = r.streak?.n ? `${r.streak.type}${r.streak.n}` : '-';
+  const won = Object.keys(PENNANTS).filter((k) => r.byStyle[k]?.w).length;
+  box.innerHTML = `
+    <section class="aces-card sim-record">
+      <h2 class="aces-card-title">Your record</h2>
+      ${S.uid ? '' : '<p class="sim-dim">Saved in this browser only. <a href="signin.html">Sign in</a> to keep your record on your account.</p>'}
+      <div class="sim-rec-big"><strong>${recLine(r)}</strong><span class="sim-dim">${r.games ? `${fmtPct(r)} in ${r.games} game${r.games === 1 ? '' : 's'}` : 'No games yet'}</span></div>
+      <dl class="sim-rec-stats">
+        <div><dt>Runs per game</dt><dd>${per(r.runsFor)}</dd></div>
+        <div><dt>Allowed per game</dt><dd>${per(r.runsAgainst)}</dd></div>
+        <div><dt>Run diff</dt><dd>${r.games ? (diff > 0 ? `+${diff}` : diff) : '-'}</dd></div>
+        <div><dt>Streak</dt><dd>${esc(streak)}</dd></div>
+      </dl>
+    </section>
+    <section class="aces-card sim-record">
+      <h2 class="aces-card-title">Pennants <span class="sim-dim">${won} of ${Object.keys(PENNANTS).length}</span></h2>
+      <p class="sim-dim">Beat each computer manager to raise his pennant.</p>
+      <ul class="sim-pennants">${Object.entries(PENNANTS).map(([k, pn]) => {
+        const st = r.byStyle[k];
+        const has = !!st?.w;
+        const vs = st ? recLine({ wins: st.w, losses: st.l, ties: st.t }) : '0-0';
+        const tip = has ? `Beat ${CPU_STYLES[k].name}${st.firstWinAt ? ` (first on ${new Date(st.firstWinAt).toLocaleDateString()})` : ''}. ${vs} against them.` : `Beat ${CPU_STYLES[k].name} to earn this.${st ? ` ${vs} so far.` : ''}`;
+        return `<li class="sim-pennant${has ? ' is-won' : ''}${fresh === k ? ' is-new' : ''}" title="${esc(tip)}">
+          ${pennantSvg(has ? pn.color : '#b9bdb6')}
+          <span class="sim-pennant-name">${esc(pn.short)}</span>
+          <span class="sim-pennant-rec">${esc(vs)}</span></li>`;
+      }).join('')}</ul>
+      ${won === Object.keys(PENNANTS).length ? '<p class="sim-pennant-all">All seven pennants. Nobody in the league can manage like you.</p>' : ''}
+    </section>
+    ${r.recent.length ? `<section class="aces-card sim-record">
+      <h2 class="aces-card-title">Recent games</h2>
+      <ol class="sim-recent">${r.recent.slice(0, 6).map((x) => {
+        const res = x.you > x.cpu ? 'W' : x.you < x.cpu ? 'L' : 'T';
+        return `<li><span class="sim-res is-${res}">${res}</span> ${x.you}-${x.cpu} <span class="sim-dim">vs ${esc(CPU_STYLES[x.style]?.name || 'the computer')}${CONDITIONS[x.conditions] && x.conditions !== 'perfect' ? `, ${esc(CONDITIONS[x.conditions].label.toLowerCase())}` : ''}</span></li>`;
+      }).join('')}</ol>
+    </section>` : ''}`;
+}
+
+/** Add the finished game to the person's record (account or browser). */
+async function saveToRecord(g) {
+  const yi = youIdx();
+  const game = {
+    you: g.score[yi],
+    cpu: g.score[1 - yi],
+    style: S.save.style || 'fundamentals',
+    conditions: g.conditions || 'perfect',
+    how: g.result?.how || ''
+  };
+  try {
+    const name = S.profile?.displayName || S.profile?.linkedPlayer || '';
+    const { record, newPennant } = await recordGame(S.uid, game, { name });
+    S.record = record;
+    renderRecord({ fresh: newPennant ? game.style : '' });
+    if (newPennant) showToast(`Pennant earned: you beat ${CPU_STYLES[game.style].name}!`);
+  } catch (err) {
+    console.error('[sim] record not saved', err);
+    showToast('Couldn\u2019t save this game to your record', 'error');
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -685,13 +793,15 @@ function simFast(fn) {
 function finishGame() {
   const g = G();
   const yi = youIdx();
-  if (!S.save.recorded) {
+  const first = !S.save.recorded;
+  if (first) {
     S.save.results.push({ you: g.score[yi], cpu: g.score[1 - yi] });
     S.save.recorded = true;
   }
   S.save.phase = 'final';
   persist();
   renderFinal();
+  if (first) saveToRecord(g);
 }
 
 // ---------------------------------------------------------------------------
@@ -725,7 +835,7 @@ function renderFinal() {
   const you = g.score[yi];
   const cpu = g.score[1 - yi];
   const how = g.result?.how;
-  const headline = you > cpu ? 'You win!' : you < cpu ? `${cpuName()} win.` : 'It ends in a tie.';
+  const headline = you > cpu ? 'You win!' : you < cpu ? `${cpuName()} won.` : 'It ends in a tie.';
   const note = (how === 'mercy' ? `Mercy rule after ${g.result.innings} innings.` : how === 'walk-off' ? 'Walk-off!' : how === 'tie' ? 'Still tied after 10 innings.' : g.result?.innings > INNINGS ? `${g.result.innings} innings.` : '')
     + ` ${(CONDITIONS[g.conditions] || CONDITIONS.perfect).label}.`;
   const star = starOfGame(g);
@@ -762,8 +872,17 @@ function renderFinal() {
 // Start
 // ---------------------------------------------------------------------------
 
-const { profile } = await initPage({ title: 'Backyard Aces Softball' });
+const { user, profile, impersonating } = await initPage({ title: 'Backyard Aces Softball' });
 S.profile = profile;
+// During View As, keep the admin's games off the viewed person's record (browser only).
+S.uid = user && !impersonating ? user.uid : '';
+try {
+  S.record = await loadRecord(S.uid);
+} catch (err) {
+  console.error('[sim] record not loaded', err);
+  S.record = null;
+}
+renderRecord();
 
 try {
   S.pool = await loadSimPool();
