@@ -71,6 +71,9 @@ const LEAGUE = [
   { page: 'boxes-pool', href: 'boxes-pool.html', title: 'NFL Boxes Pool', icon: 'grid', badge: 'Pool',
     text: 'Football squares for Thanksgiving and the Super Bowl. Prizes for each quarter.',
     facts: ['Numbers drawn before kickoff'] },
+  { page: 'sim', href: 'sim.html', title: 'Backyard Aces Softball', icon: 'play', badge: 'New',
+    text: 'Draft nine real Aces against a computer manager and play seven innings at Senior Field, weather and ground rules included.',
+    facts: ['Seven managers to beat', 'Your record and pennants'] },
   { page: 'aces-23-0', href: 'aces-23-0.html', title: 'Aces 23-0', icon: 'shuffle', badge: 'Challenge',
     text: 'Spin a season and team, draft four hitters and a pitcher, and try to go 23-0.',
     facts: ['Play any time'] }
