@@ -14,6 +14,7 @@ import { db, collection, getDocs, doc, getDoc, setDoc, serverTimestamp } from '.
 import { getDisplaySeasonId, isSeasonId, seasonSortKey } from '../core/config.js';
 import { buildPool, buildSofaKings, seasonLine, BOSS } from '../domain/sim-ratings.js';
 import { statIdOf } from '../domain/player-id.js';
+import { teamCatalog, buildSeasonTeam } from '../domain/sim-teams.js';
 
 const seasonOfRosterDoc = (id) => {
   const parts = String(id).split('-');
@@ -84,8 +85,22 @@ export async function loadSimPool(seasonId) {
   }
   const boss = buildSofaKings(players, league, model);
 
+  // Full teams: every season's teams, built on demand.
+  const rosterEntries = {};
+  for (const [season, docs] of rosters) {
+    rosterEntries[season] = [];
+    for (const r of docs) {
+      const teamName = r.data.teamName || r.id.slice(season.length + 1);
+      for (const p of r.data.players || []) {
+        if (p?.name) rosterEntries[season].push({ id: p.id || p.playerId || '', name: p.name, team: teamName, position: p.position || '-', bats: normBats(p.bats) });
+      }
+    }
+  }
+  const teams = teamCatalog(statDocs, rosterEntries);
+  const buildTeam = (entry) => buildSeasonTeam({ entry, statDocs, rosterEntries, current: players, currentSeason: sid });
+
   const savedAt = saved.updatedAt?.toDate ? saved.updatedAt.toDate() : null;
-  return { seasonId: sid, seasons: ids, players, league, boss, savedAt, savedBy: saved.updatedBy || '' };
+  return { seasonId: sid, seasons: ids, players, league, boss, teams, buildTeam, savedAt, savedBy: saved.updatedBy || '' };
 }
 
 const normBats = (v) => {

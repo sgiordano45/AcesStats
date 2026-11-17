@@ -7,7 +7,8 @@
 //     { name, games, wins, losses, ties, runsFor, runsAgainst,
 //       streak: { type: 'W'|'L'|'T', n },
 //       byStyle: { [CPU_STYLES key]: { w, l, t, firstWinAt } },   // a win = that pennant
-//       recent: [{ at, you, cpu, style, conditions, how }],        // newest first, up to RECENT_KEEP
+//       recent: [{ at, you, cpu, style, conditions, how, team?, opp? }], // newest first, up to RECENT_KEEP
+//     Real-team games (style 'teams') also carry the two team names.
 //       lastGameAt, updatedAt }
 
 import { db, doc, getDoc, setDoc, serverTimestamp } from '../core/firebase.js';
@@ -33,10 +34,10 @@ function normalize(r) {
 /**
  * The record with one more game added. Pure.
  * @param {object} rec    current record
- * @param {object} game   { you, cpu, style, conditions, how }  (runs for the user and the computer)
+ * @param {object} game   { you, cpu, style, conditions, how, team?, opp? }  (runs for the user and the computer)
  * @returns {{ record: object, newPennant: boolean }}
  */
-export function addGame(rec, { you, cpu, style, conditions = '', how = '' }) {
+export function addGame(rec, { you, cpu, style, conditions = '', how = '', team = '', opp = '' }) {
   const r = normalize(JSON.parse(JSON.stringify(rec || {})));
   const result = you > cpu ? 'W' : you < cpu ? 'L' : 'T';
   r.games += 1;
@@ -53,7 +54,8 @@ export function addGame(rec, { you, cpu, style, conditions = '', how = '' }) {
   if (result === 'T') s.t += 1;
   if (newPennant) s.firstWinAt = new Date().toISOString();
   r.byStyle[style] = s;
-  r.recent = [{ at: new Date().toISOString(), you, cpu, style, conditions, how }, ...r.recent].slice(0, RECENT_KEEP);
+  const names = opp ? { team, opp } : {};
+  r.recent = [{ at: new Date().toISOString(), you, cpu, style, conditions, how, ...names }, ...r.recent].slice(0, RECENT_KEEP);
   return { record: r, newPennant };
 }
 

@@ -19,6 +19,7 @@ import {
   planPA, commitPA, simHalf, simToEnd, currentBatter, currentPitcher, battingTeam,
   ipText, starOfGame, INNINGS
 } from '../domain/sim-engine.js';
+import { bestNine } from '../domain/sim-teams.js';
 import { SimField } from '../features/sim/field.js';
 import { seasonLabel } from '../domain/season-ids.js';
 import { escapeHtml as esc, fmtAvg } from '../ui/format.js';
@@ -90,10 +91,67 @@ function newSave({ name, color, cpuColor, first, homeIsYou, ask, style, favorite
   };
 }
 
+// ---------------------------------------------------------------------------
+// Real teams (no draft): a season's team as it was. Player ids are prefixed
+// with the side ('0:', '1:') so a player on both teams (2023 Gold vs 2026
+// Gold) stays two different people on the field.
+// ---------------------------------------------------------------------------
+
+const TEAM_HEX = { ...Object.fromEntries(TEAM_COLORS.map(([n, c]) => [n.toLowerCase(), c])), white: '#e9e6dc', kings: '#6d2e46' };
+const capWords = (s) => String(s).replace(/\b\w/g, (c) => c.toUpperCase());
+const realName = (entry) => `${seasonLabel(entry.seasonId)} ${capWords(entry.team)}`;
+const realColor = (team) => TEAM_HEX[String(team).toLowerCase()] || '#5b6770';
+
+function newTeamsSave({ you, opp, homeIsYou, ask, conditionsMode }) {
+  const side = (ti, entry) => S.pool.buildTeam(entry).map((p) => ({ ...p, id: `${ti}:${p.id}` }));
+  const rosters = [side(0, you), side(1, opp)];
+  const lineups = rosters.map((ps) => {
+    const { nine, field } = bestNine(ps);
+    return { lineup: battingOrder(nine.map((id) => ps.find((p) => p.id === id))), field };
+  });
+  const color = realColor(you.team);
+  let cpuColor = realColor(opp.team);
+  if (cpuColor === color) {
+    const others = TEAM_COLORS.map(([, c]) => c).filter((c) => c !== color);
+    cpuColor = others[Math.floor(Math.random() * others.length)];
+  }
+  return {
+    v: 1,
+    mode: 'teams',
+    phase: 'lineup',
+    seasonId: S.pool.seasonId,
+    teamKeys: [you.key, opp.key],
+    rosters,
+    teams: [
+      { name: realName(you), color, cpu: false },
+      { name: realName(opp), color: cpuColor, cpu: true }
+    ],
+    style: 'teams',
+    favorite: '',
+    poolIds: null,
+    boss: null,
+    conditionsMode,
+    conditions: null,
+    first: 0,
+    homeIsYou,
+    picks: [[], []],
+    log: [],
+    lineups,
+    game: null,
+    ask,
+    speed: 1,
+    results: []
+  };
+}
+
+const isTeams = () => S.save?.mode === 'teams' && Array.isArray(S.save?.rosters);
 const isBoss = () => S.save?.style === BOSS.key && Array.isArray(S.save?.boss);
-const P = (id) => S.byId.get(id) || (isBoss() ? S.save.boss.find((p) => p.id === id) : undefined);
-// The Sofa Kings don't draft: their nine are fixed.
-const picksOf = (ti) => (ti === 1 && isBoss() ? S.save.boss : S.save.picks[ti].map(P).filter(Boolean));
+const P = (id) => S.byId.get(id)
+  || (isBoss() ? S.save.boss.find((p) => p.id === id) : undefined)
+  || (isTeams() ? S.save.rosters[String(id).startsWith('1:') ? 1 : 0].find((p) => p.id === id) : undefined);
+// The Sofa Kings don't draft: their nine are fixed. Real teams play the nine in the lineup.
+const picksOf = (ti) => (isTeams() ? S.save.lineups[ti].lineup.map(P).filter(Boolean)
+  : ti === 1 && isBoss() ? S.save.boss : S.save.picks[ti].map(P).filter(Boolean));
 const poolLeft = () => {
   const taken = new Set([...S.save.picks[0], ...S.save.picks[1]]);
   const dealt = S.save.poolIds ? new Set(S.save.poolIds) : null;
@@ -104,6 +162,7 @@ const oppName = (key) => (key === BOSS.key ? BOSS.name : CPU_STYLES[key]?.name |
 const styleOf = () => (isBoss() ? BOSS : CPU_STYLES[S.save.style] || CPU_STYLES.fundamentals);
 const cpuName = () => S.save.teams[1].name || 'the computer';
 const opponentLine = () => {
+  if (isTeams()) return `The real ${cpuName()} roster (${S.save.rosters[1].length} players). The computer plays its best nine.`;
   const st = styleOf();
   return `${st.blurb}${S.save.style === 'homer' && S.save.favorite ? ` Favorite team: ${S.save.favorite}.` : ''}`;
 };
@@ -226,7 +285,7 @@ function renderRecord({ fresh = '' } = {}) {
       <h2 class="aces-card-title">Recent games</h2>
       <ol class="sim-recent">${r.recent.slice(0, 6).map((x) => {
         const res = x.you > x.cpu ? 'W' : x.you < x.cpu ? 'L' : 'T';
-        return `<li><span class="sim-res is-${res}">${res}</span> ${x.you}-${x.cpu} <span class="sim-dim">vs ${esc(oppName(x.style))}${CONDITIONS[x.conditions] && x.conditions !== 'perfect' ? `, ${esc(CONDITIONS[x.conditions].label.toLowerCase())}` : ''}</span></li>`;
+        return `<li><span class="sim-res is-${res}">${res}</span> ${x.you}-${x.cpu} <span class="sim-dim">vs ${esc(x.opp || oppName(x.style))}${CONDITIONS[x.conditions] && x.conditions !== 'perfect' ? `, ${esc(CONDITIONS[x.conditions].label.toLowerCase())}` : ''}</span></li>`;
       }).join('')}</ol>
     </section>` : ''}`;
 }
@@ -239,7 +298,9 @@ async function saveToRecord(g) {
     cpu: g.score[1 - yi],
     style: S.save.style || 'fundamentals',
     conditions: g.conditions || 'perfect',
-    how: g.result?.how || ''
+    how: g.result?.how || '',
+    // Real teams: who played whom (no pennant).
+    ...(isTeams() ? { team: S.save.teams[0].name, opp: S.save.teams[1].name } : {})
   };
   try {
     const name = S.profile?.displayName || S.profile?.linkedPlayer || '';
@@ -248,7 +309,7 @@ async function saveToRecord(g) {
     S.record = record;
     renderRecord({ fresh: newPennant ? game.style : '' });
     if (newPennant && game.style === BOSS.key) showToast(`You beat the ${BOSS.name}! The couch is yours.`, 'success', { duration: 8000 });
-    else if (newPennant) showToast(`Pennant earned: you beat ${oppName(game.style)}!`);
+    else if (newPennant && PENNANTS[game.style]) showToast(`Pennant earned: you beat ${oppName(game.style)}!`);
     if (!wasUnlocked && bossUnlocked()) {
       setTimeout(() => showToast(`All seven pennants! A new challenger appears: the ${BOSS.name}. Pick them as your opponent.`, 'success', { duration: 10000 }), 1200);
     }
@@ -269,6 +330,20 @@ function renderSetup(profile) {
   const first = (profile?.displayName || profile?.linkedPlayer || '').split(' ')[0];
   const defaultName = first ? `${first}'s Aces` : 'Your team';
   const defaultColor = TEAM_COLORS[3][1];
+  // Real teams: the catalog grouped by season, newest first.
+  const catalog = S.pool.teams || [];
+  const teamsOk = catalog.length >= 2;
+  const oldest = catalog.length ? seasonLabel(catalog[catalog.length - 1].seasonId) : '';
+  const linked = S.pool.players.find((p) => profile?.linkedPlayer && p.name === profile.linkedPlayer);
+  const myTeamKey = (linked && catalog.find((t) => t.seasonId === S.pool.seasonId && t.team === String(linked.team).toLowerCase())?.key) || catalog[0]?.key || '';
+  const teamOptions = (selected) => {
+    const groups = new Map();
+    for (const t of catalog) {
+      if (!groups.has(t.seasonId)) groups.set(t.seasonId, []);
+      groups.get(t.seasonId).push(t);
+    }
+    return [...groups].map(([sid, ts]) => `<optgroup label="${esc(seasonLabel(sid))}">${ts.map((t) => `<option value="${esc(t.key)}"${t.key === selected ? ' selected' : ''}>${esc(seasonLabel(sid))} ${esc(capWords(t.team))}</option>`).join('')}</optgroup>`).join('');
+  };
   $('simSetup').innerHTML = `
     ${canResume ? `<div class="aces-card sim-resume">
       <div><h2 class="aces-card-title">Pick up where you left off?</h2>
@@ -278,35 +353,55 @@ function renderSetup(profile) {
     </div>` : ''}
     <form class="aces-card sim-setup" id="simSetupForm" novalidate>
       <h2 class="aces-card-title">New game</h2>
-      <p class="sim-dim">Pool: ${S.pool.players.length} players on the ${esc(seasonLabel(S.pool.seasonId))} rosters. Ratings run 20-80 with 50 as league average: contact from AVG, power from extra-base hits, speed from runs per game, plus defense and pitching set by the league.</p>
-      <div class="aces-field"><label class="aces-label" for="suName">Team name</label>
-        <input class="aces-input" id="suName" maxlength="28" value="${esc(defaultName)}"></div>
-      <fieldset class="sim-colors"><legend class="aces-label">Your colors</legend>
-        ${TEAM_COLORS.map(([n, c]) => `<label class="sim-color"><input type="radio" name="suColor" value="${c}"${c === defaultColor ? ' checked' : ''}><span style="background:${c}" title="${n}"></span><span class="u-sr-only">${n}</span></label>`).join('')}
+      <fieldset class="sim-modes"><legend class="u-sr-only">How to play</legend>
+        <label class="sim-mode"><input type="radio" name="suMode" value="draft" checked><span><strong>Draft</strong><span class="sim-dim">Pick nine from this season's players against a computer manager.</span></span></label>
+        <label class="sim-mode"><input type="radio" name="suMode" value="teams"${teamsOk ? '' : ' disabled'}><span><strong>Real teams</strong><span class="sim-dim">No draft: play a team as it was, this season or any season back to ${esc(oldest)}.</span></span></label>
       </fieldset>
+      <div class="sim-setup-part" data-mode="draft">
+        <p class="sim-dim">Pool: ${S.pool.players.length} players on the ${esc(seasonLabel(S.pool.seasonId))} rosters. Ratings run 20-80 with 50 as league average: contact from AVG, power from extra-base hits, speed from runs per game, plus defense and pitching set by the league.</p>
+        <div class="aces-field"><label class="aces-label" for="suName">Team name</label>
+          <input class="aces-input" id="suName" maxlength="28" value="${esc(defaultName)}"></div>
+        <fieldset class="sim-colors"><legend class="aces-label">Your colors</legend>
+          ${TEAM_COLORS.map(([n, c]) => `<label class="sim-color"><input type="radio" name="suColor" value="${c}"${c === defaultColor ? ' checked' : ''}><span style="background:${c}" title="${n}"></span><span class="u-sr-only">${n}</span></label>`).join('')}
+        </fieldset>
+        <div class="sim-row">
+          <div class="aces-field"><label class="aces-label" for="suStyle">Opponent</label>
+            <span class="aces-select-wrap"><select class="aces-select" id="suStyle">
+              <option value="random">Surprise me</option>
+              ${Object.entries(CPU_STYLES).map(([k, st]) => `<option value="${k}">${esc(st.name)}</option>`).join('')}
+              ${bossUnlocked() ? `<option value="${BOSS.key}">${esc(BOSS.name)} (final boss)</option>` : ''}
+            </select></span>
+            <span class="sim-dim" id="suStyleNote">A random computer manager with its own taste in players.</span></div>
+          <div class="aces-field"><label class="aces-label" for="suPool">Draft pool</label>
+            <span class="aces-select-wrap"><select class="aces-select" id="suPool">
+              ${POOL_SIZES.map(([n, label]) => `<option value="${n}">${esc(n ? label : `${label} (${S.pool.players.length})`)}</option>`).join('')}
+            </select></span>
+            <span class="sim-dim">A fresh random deal each draft, so the same stars aren't always there.</span></div>
+          <div class="aces-field"><label class="aces-label" for="suFirst">First pick</label>
+            <span class="aces-select-wrap"><select class="aces-select" id="suFirst">
+              <option value="flip">Coin flip</option><option value="0">You pick first</option><option value="1">The computer picks first</option>
+            </select></span></div>
+        </div>
+      </div>
+      <div class="sim-setup-part" data-mode="teams" hidden>
+        <div class="sim-row">
+          <div class="aces-field"><label class="aces-label" for="suYours">Your team</label>
+            <span class="aces-select-wrap"><select class="aces-select" id="suYours">${teamOptions(myTeamKey)}</select></span>
+            <span class="sim-dim" id="suYoursNote"></span></div>
+          <div class="aces-field"><label class="aces-label" for="suTheirs">Opponent</label>
+            <span class="aces-select-wrap"><select class="aces-select" id="suTheirs">
+              <option value="random">Random team, any season</option>
+              <option value="random-now">Random ${esc(seasonLabel(S.pool.seasonId))} team</option>
+              ${teamOptions('')}
+            </select></span>
+            <span class="sim-dim" id="suTheirsNote"></span></div>
+        </div>
+      </div>
       <div class="sim-row">
-        <div class="aces-field"><label class="aces-label" for="suFirst">First pick</label>
-          <span class="aces-select-wrap"><select class="aces-select" id="suFirst">
-            <option value="flip">Coin flip</option><option value="0">You pick first</option><option value="1">The computer picks first</option>
-          </select></span></div>
         <div class="aces-field"><label class="aces-label" for="suHome">Home team</label>
           <span class="aces-select-wrap"><select class="aces-select" id="suHome">
             <option value="flip">Coin flip</option><option value="you">You (bat last)</option><option value="cpu">The computer</option>
           </select></span></div>
-      </div>
-      <div class="sim-row">
-        <div class="aces-field"><label class="aces-label" for="suStyle">Opponent</label>
-          <span class="aces-select-wrap"><select class="aces-select" id="suStyle">
-            <option value="random">Surprise me</option>
-            ${Object.entries(CPU_STYLES).map(([k, st]) => `<option value="${k}">${esc(st.name)}</option>`).join('')}
-            ${bossUnlocked() ? `<option value="${BOSS.key}">${esc(BOSS.name)} (final boss)</option>` : ''}
-          </select></span>
-          <span class="sim-dim" id="suStyleNote">A random computer manager with its own taste in players.</span></div>
-        <div class="aces-field"><label class="aces-label" for="suPool">Draft pool</label>
-          <span class="aces-select-wrap"><select class="aces-select" id="suPool">
-            ${POOL_SIZES.map(([n, label]) => `<option value="${n}">${esc(n ? label : `${label} (${S.pool.players.length})`)}</option>`).join('')}
-          </select></span>
-          <span class="sim-dim">A fresh random deal each draft, so the same stars aren't always there.</span></div>
         <div class="aces-field"><label class="aces-label" for="suWeather">Conditions</label>
           <span class="aces-select-wrap"><select class="aces-select" id="suWeather">
             <option value="random">Random each game</option>
@@ -314,8 +409,9 @@ function renderSetup(profile) {
           </select></span></div>
       </div>
       <label class="sim-check"><input type="checkbox" id="suAsk" checked> Ask me to send or hold runners on close plays</label>
-      <div class="sim-actions"><button class="aces-btn is-primary" type="submit">Start the draft</button></div>
-      <p class="sim-dim sim-rules">Draft 9 players each, snake order. You need someone who can play every spot (P, C, 1B, 2B, 3B, SS, LF, CF, RF) from their roster position: IF covers any infield spot, OF any outfield spot, IF/OF either. Players with no position are Utility; you can take one Utility and one Flex player, and they can play anywhere. Games are 7 innings at Senior Field with the league mercy rule: past the next diamond's first-base dugout is a ground-rule double, through the gap in the fence is an automatic triple.</p>
+      <div class="sim-actions"><button class="aces-btn is-primary" type="submit" id="suGo">Start the draft</button></div>
+      <p class="sim-dim sim-rules" data-mode="draft">Draft 9 players each, snake order. You need someone who can play every spot (P, C, 1B, 2B, 3B, SS, LF, CF, RF) from their roster position: IF covers any infield spot, OF any outfield spot, IF/OF either. Players with no position are Utility; you can take one Utility and one Flex player, and they can play anywhere. Games are 7 innings at Senior Field with the league mercy rule: past the next diamond's first-base dugout is a ground-rule double, through the gap in the fence is an automatic triple.</p>
+      <p class="sim-dim sim-rules" data-mode="teams" hidden>Each team plays its real roster: pick your nine, your batting order and who plays where, and bring guys off the bench. Every season is rated against its own league, so 50 is that year's average. Contact and speed come from that season's stats, and pitching too if he pitched. Power comes from that season's extra-base hits where the league tracked them (2026 on); before that, and for defense, a player still in the league gets this season's rating and anyone else is rated average. Games are 7 innings at Senior Field with the league mercy rule. Real-team games count toward your record but not toward pennants.</p>
     </form>`;
 
   $('simSetup').onclick = (e) => {
@@ -323,12 +419,36 @@ function renderSetup(profile) {
     if (act === 'resume') { S.save = saved; resume(); }
     if (act === 'discard') { clearSaved(); renderSetup(profile); }
   };
+  const mode = () => document.querySelector('input[name="suMode"]:checked')?.value || 'draft';
+  const byKey = new Map(catalog.map((t) => [t.key, t]));
+  const teamNote = (key) => {
+    const t = byKey.get(key);
+    if (!t) return '';
+    const still = t.seasonId === S.pool.seasonId ? 0 : t.ids.filter((id) => S.byId.has(id)).length;
+    return `${t.ids.length} players${t.seasonId === S.pool.seasonId ? ' on the current roster' : `, ${still} still in the league`}.`;
+  };
+  const setMode = () => {
+    const m = mode();
+    $('simSetupForm').querySelectorAll('[data-mode]').forEach((el) => { el.hidden = el.dataset.mode !== m; });
+    $('suGo').textContent = m === 'teams' ? 'Set the lineup' : 'Start the draft';
+    // The how-to steps walk through the draft.
+    $('simSteps').hidden = m === 'teams';
+  };
+  const setNotes = () => {
+    $('suYoursNote').textContent = teamNote($('suYours').value);
+    $('suTheirsNote').textContent = teamNote($('suTheirs').value) || 'Picked when you start.';
+  };
+  $('simSetupForm').querySelectorAll('input[name="suMode"]').forEach((r) => { r.onchange = setMode; });
+  $('suYours').onchange = setNotes;
+  $('suTheirs').onchange = setNotes;
+  setNotes();
   $('suStyle').onchange = (e) => {
     const st = e.target.value === BOSS.key ? BOSS : CPU_STYLES[e.target.value];
     $('suStyleNote').textContent = st ? st.blurb : 'A random computer manager with its own taste in players.';
   };
   $('simSetupForm').onsubmit = (e) => {
     e.preventDefault();
+    if (mode() === 'teams') { startTeams(); return; }
     const sv = $('suStyle').value;
     const style = sv === BOSS.key && bossUnlocked() ? BOSS.key
       : CPU_STYLES[sv] ? sv : Object.keys(CPU_STYLES)[Math.floor(Math.random() * Object.keys(CPU_STYLES).length)];
@@ -358,6 +478,30 @@ function renderSetup(profile) {
     if (fv === 'flip' && style !== BOSS.key) showToast(S.save.first === 0 ? 'You won the coin flip: you pick first' : `${oppName(style)} pick first`);
     renderDraft();
   };
+
+  function startTeams() {
+    const you = byKey.get($('suYours').value);
+    if (!you) { showToast('Pick your team', 'error'); return; }
+    const tv = $('suTheirs').value;
+    let opp = byKey.get(tv);
+    if (!opp) {
+      const from = catalog.filter((t) => t.key !== you.key && (tv !== 'random-now' || t.seasonId === S.pool.seasonId));
+      opp = from[Math.floor(Math.random() * from.length)];
+    }
+    if (!opp) { showToast('No other team to play', 'error'); return; }
+    if (opp.key === you.key) { showToast('Pick a different team to play against', 'error'); return; }
+    const hv = $('suHome').value;
+    S.save = newTeamsSave({
+      you,
+      opp,
+      homeIsYou: hv === 'flip' ? Math.random() < 0.5 : hv === 'you',
+      ask: $('suAsk').checked,
+      conditionsMode: $('suWeather').value
+    });
+    persist();
+    if (tv.startsWith('random')) showToast(`Your opponent: ${S.save.teams[1].name}`);
+    renderLineup();
+  }
 }
 
 function phaseWord(save) {
@@ -530,7 +674,7 @@ function bindDraft() {
 }
 
 async function restart() {
-  if (!(await confirmModal('Throw out this game and start a new draft?', { danger: true, confirmLabel: 'Start over' }))) return;
+  if (!(await confirmModal(`Throw out this game and start a new ${isTeams() ? 'game' : 'draft'}?`, { danger: true, confirmLabel: 'Start over' }))) return;
   clearTimeout(cpuTimer);
   stopAuto();
   S.field?.stop();
@@ -566,12 +710,22 @@ function renderLineup() {
     persist();
   }
   const cond = CONDITIONS[S.save.conditions];
+  // Real teams can play anyone anywhere, and have a bench.
+  const teams = isTeams();
+  const bench = teams ? S.save.rosters[0].filter((p) => !mine.lineup.includes(p.id)) : [];
+  const slotOpt = (p, s) => {
+    const fits = p.pos.slots.includes(s);
+    if (teams) return `<option value="${s}"${slotOf[p.id] === s ? ' selected' : ''}>${s}${fits ? '' : '*'}</option>`;
+    return `<option value="${s}"${slotOf[p.id] === s ? ' selected' : ''}${fits ? '' : ' disabled'}>${s}</option>`;
+  };
 
   $('simLineup').innerHTML = `
     <div class="aces-card sim-clock is-you">
       <div><span class="sim-kicker">Lineup</span>
       <h2 class="sim-clock-title">Set your batting order and positions</h2>
-      <p class="sim-dim">${esc(homeName)} ${S.save.homeIsYou ? 'are' : 'is'} the home team. Change a spot to swap two players; a player can only move to a spot his roster position allows.</p>
+      <p class="sim-dim">${esc(homeName)} ${S.save.homeIsYou ? 'are' : 'is'} the home team. ${teams
+        ? 'Change a spot to swap two players (a * means out of his roster position), or bring someone in off the bench.'
+        : 'Change a spot to swap two players; a player can only move to a spot his roster position allows.'}</p>
       <p class="sim-weather" data-cond="${esc(S.save.conditions)}"><strong>Today at Senior Field:</strong> ${esc(cond.label)}. ${esc(cond.blurb)}</p></div>
       <div class="sim-actions"><button class="aces-btn is-primary" type="button" data-act="play">Play ball</button>
       <button class="aces-btn is-ghost" type="button" data-act="restart">Start over</button></div>
@@ -585,7 +739,7 @@ function renderLineup() {
             <span class="sim-bat">${i + 1}</span>
             <span class="sim-oname">${esc(p.name)} ${posChip(p)}</span>
             <span class="aces-select-wrap sim-slotsel"><select class="aces-select" data-slot-for="${esc(id)}" aria-label="${esc(p.name)} position">
-              ${SLOTS.map((s) => `<option value="${s}"${slotOf[id] === s ? ' selected' : ''}${p.pos.slots.includes(s) ? '' : ' disabled'}>${s}</option>`).join('')}
+              ${SLOTS.map((s) => slotOpt(p, s)).join('')}
             </select></span>
             <span class="sim-ochips">${chip(p.ratings.contact, 'Contact')}${chip(p.ratings.power, 'Power')}${chip(p.ratings.speed, 'Speed')}</span>
             <span class="sim-move">
@@ -595,6 +749,16 @@ function renderLineup() {
           </li>`;
         }).join('')}</ol>
         <p class="sim-dim">Ratings shown: contact, power, speed.</p>
+        ${bench.length ? `<h3 class="sim-bench-title">Bench</h3>
+        <ul class="sim-order sim-bench">${bench.map((p) => `<li>
+            <span class="sim-oname">${esc(p.name)} ${posChip(p)}</span>
+            <span class="sim-ochips">${chip(p.ratings.contact, 'Contact')}${chip(p.ratings.power, 'Power')}${chip(p.ratings.speed, 'Speed')}${chip(p.ratings.pitch, 'Pitching')}</span>
+            <span class="aces-select-wrap sim-slotsel"><select class="aces-select" data-sub-in="${esc(p.id)}" aria-label="Bring in ${esc(p.name)}">
+              <option value="">Sub in for...</option>
+              ${mine.lineup.map((id) => `<option value="${esc(id)}">${esc(slotOf[id] || '')} ${esc(P(id).name)}</option>`).join('')}
+            </select></span>
+          </li>`).join('')}</ul>
+        <p class="sim-dim">Bench ratings: contact, power, speed, pitching. A sub takes over the spot in the order and in the field.</p>` : ''}
       </section>
       <section class="aces-card">
         <h2 class="aces-card-title">${swatch(S.save.teams[1].color)} ${esc(cpuName())}</h2>
@@ -625,13 +789,26 @@ function renderLineup() {
     if (act === 'restart') restart();
   };
   root.onchange = (e) => {
+    const sub = e.target.closest('[data-sub-in]');
+    if (sub) {
+      const inId = sub.dataset.subIn;
+      const outId = sub.value;
+      if (!outId) return;
+      mine.lineup[mine.lineup.indexOf(outId)] = inId;
+      const spot = slotOf[outId];
+      if (spot) mine.field[spot] = inId;
+      persist();
+      renderLineup();
+      showToast(`${P(inId).name} in for ${P(outId).name}${spot ? ` at ${spot}` : ''}`);
+      return;
+    }
     const sel = e.target.closest('[data-slot-for]');
     if (!sel) return;
     const id = sel.dataset.slotFor;
     const to = sel.value;
     const from = slotOf[id];
     const other = mine.field[to];
-    if (other && !P(other).pos.slots.includes(from)) {
+    if (other && !teams && !P(other).pos.slots.includes(from)) {
       showToast(`${P(other).name} can't play ${from}, so they can't swap`, 'error');
       sel.value = from;
       return;
@@ -891,7 +1068,7 @@ function renderFinal() {
       <div class="sim-actions">
         <button class="aces-btn is-primary" type="button" data-act="rematch">Rematch</button>
         <button class="aces-btn" type="button" data-act="lineup">Change lineup and rematch</button>
-        <button class="aces-btn is-ghost" type="button" data-act="new">New draft</button>
+        <button class="aces-btn is-ghost" type="button" data-act="new">${isTeams() ? 'New game' : 'New draft'}</button>
       </div>
     </div>
     <section class="aces-card">${lineScore(g)}</section>
