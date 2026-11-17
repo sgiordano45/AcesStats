@@ -42,6 +42,7 @@ const COLORS = {
   asphalt: '#606366', asphaltDark: '#54575a', asphaltLight: '#6c6f72',
   roof: '#c8cbcc', roofEdge: '#8b8f91', roofShadow: 'rgba(30,32,28,0.45)', roofUnit: '#d9dbdc',
   bleacher: '#b7bcbf', bleacherDark: '#7d8386', bench: '#8b6a45',
+  umpShirt: '#22304d', umpPants: '#80858c',
   skin: '#e2b48c', skin2: '#9b6b4a', pants: '#ececec', dark: '#1e1e1e', bat: '#d4a65f', glove: '#7a4a24',
   ball: '#ffffff', shadow: 'rgba(0,0,0,0.35)'
 };
@@ -74,15 +75,15 @@ function shade(hex, f) {
 }
 
 const spriteCache = new Map();
-function sprite(name, color, skin) {
-  const key = `${name}|${color}|${skin}`;
+function sprite(name, color, skin, pants = COLORS.pants) {
+  const key = `${name}|${color}|${skin}|${pants}`;
   if (spriteCache.has(key)) return spriteCache.get(key);
   const rows = SPRITES[name];
   // 10 x 14 with a dark outline, so players stand out on dry grass and dirt.
   const c = document.createElement('canvas');
   c.width = 10; c.height = 14;
   const x = c.getContext('2d');
-  const pal = { c: shade(color, 0.3), j: color, s: skin, p: COLORS.pants, k: COLORS.dark };
+  const pal = { c: shade(color, 0.3), j: color, s: skin, p: pants, k: COLORS.dark };
   const on = (i, y) => !!pal[rows[y]?.[i]];
   x.fillStyle = 'rgba(25,22,18,0.6)';
   for (let y = -1; y <= 12; y += 1) {
@@ -138,6 +139,8 @@ export class SimField {
     this.ball = null;       // { x, y, h }
     this.banner = null;     // { text, color }
     this.marks = [];        // { x, y, text } out marks
+    this.ump = { x: 6.5, y: -8.6, frame: 'ready' };   // behind the catcher, peeking over his shoulder
+    this.umpSay = null;     // speech bubble text
     this.raf = 0;
     this.resetFielders();
     this.draw();
@@ -493,17 +496,18 @@ export class SimField {
     this.ball = null;
     this.banner = null;
     this.marks = [];
+    this.umpSay = null;
     this.draw();
   }
 
   // ---- Drawing ----------------------------------------------------------
 
-  drawPerson(p, color, id) {
+  drawPerson(p, color, id, pants) {
     const ctx = this.ctx;
     const pt = toPx(p);
     ctx.fillStyle = COLORS.shadow;
     ctx.fillRect(pt.x - 3, pt.y, 7, 2);
-    const img = sprite(p.frame || 'stand', color, skinOf(id));
+    const img = sprite(p.frame || 'stand', color, skinOf(id), pants);
     ctx.drawImage(img, pt.x - 5, pt.y - 13);
     if (p.ball) {
       ctx.fillStyle = COLORS.glove;
@@ -536,9 +540,10 @@ export class SimField {
     // Back to front so nearer players overlap farther ones.
     const people = [
       ...Object.values(this.fielders).map((f) => ({ p: f, color: this.fieldColor, id: this.fielderIds?.[f.slot] || f.slot })),
+      { p: this.ump, color: COLORS.umpShirt, id: 'ump', pants: COLORS.umpPants },
       ...this.runners.filter((r) => !r.gone).map((r) => ({ p: r, color: this.batColor, id: r.id }))
     ].sort((a, b) => b.p.y - a.p.y);
-    people.forEach(({ p, color, id }) => this.drawPerson(p, color, id));
+    people.forEach(({ p, color, id, pants }) => this.drawPerson(p, color, id, pants));
     this.drawBatter();
 
     for (const m of this.marks) {
@@ -560,6 +565,7 @@ export class SimField {
       ctx.fillRect(g.x - 1, yy - 1, 2, 2);
     }
 
+    this.drawUmpBubble();
     this.drawWind();
 
     if (this.banner) {
@@ -571,6 +577,43 @@ export class SimField {
       ctx.fillStyle = this.banner.color || '#ffd700';
       ctx.fillText(this.banner.text, W / 2, 34);
     }
+  }
+
+  /** The ump's call, in a little speech bubble beside him. */
+  drawUmpBubble() {
+    if (!this.umpSay) return;
+    const ctx = this.ctx;
+    const pt = toPx(this.ump);
+    ctx.font = '700 10px Inter, sans-serif';
+    ctx.textAlign = 'left';
+    const w = Math.ceil(ctx.measureText(this.umpSay).width) + 12;
+    const h = 17;
+    const bx = Math.min(W - w - 2, pt.x + 10);
+    const by = pt.y - 42;
+    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    ctx.fillRect(bx + 1, by + 2, w, h);
+    ctx.fillStyle = '#ffffff';
+    ctx.strokeStyle = '#1a1a1a';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.roundRect ? ctx.roundRect(bx + 0.5, by + 0.5, w, h, 4) : ctx.rect(bx + 0.5, by + 0.5, w, h);
+    ctx.fill();
+    ctx.stroke();
+    // Tail down to the ump's head.
+    ctx.beginPath();
+    ctx.moveTo(bx + 6, by + h);
+    ctx.lineTo(pt.x + 2, pt.y - 13);
+    ctx.lineTo(bx + 13, by + h);
+    ctx.closePath();
+    ctx.fillStyle = '#ffffff';
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(bx + 6, by + h + 0.5);
+    ctx.lineTo(pt.x + 2, pt.y - 13);
+    ctx.lineTo(bx + 13, by + h + 0.5);
+    ctx.stroke();
+    ctx.fillStyle = '#b42318';
+    ctx.fillText(this.umpSay, bx + 6, by + 12);
   }
 
   stop() {
@@ -586,10 +629,16 @@ export class SimField {
    * @param {object} outcome  the outcome committed (play.outcome or play.options[choice])
    * @param {object} opts     { speed: 1|2|4|0, speedOf: (id) => speed rating }
    */
-  animate(play, outcome, { speed = 1, speedOf = () => 50 } = {}) {
+  async animate(play, outcome, { speed = 1, speedOf = () => 50 } = {}) {
     this.stop();
-    if (!speed) return Promise.resolve();
-    const tl = buildTimeline(this, play, outcome, speedOf);
+    if (!speed) return;
+    // Any flat or illegal pitches the ump calls first, then the pitch that counts.
+    if (play.calls?.length) await this.run(buildCallsTimeline(this, play.calls), speed);
+    await this.run(buildTimeline(this, play, outcome, speedOf), speed);
+  }
+
+  run(tl, speed) {
+    this.stop();
     const start = performance.now();
     return new Promise((resolve) => {
       const tick = (now) => {
@@ -610,6 +659,50 @@ const BANNERS = {
   LO: ['OUT', '#ffffff'], PO: ['OUT', '#ffffff'], DP: ['DOUBLE PLAY', '#ff8a80'], FC: ["FIELDER'S CHOICE", '#ffffff'],
   E: ['ERROR', '#ffb74d']
 };
+
+/** Turn a list of tweens into { update(t), end }. */
+function timeline(tw, minEnd = 0) {
+  tw.sort((a, b) => a.from - b.from);
+  return {
+    end: Math.max(minEnd, ...tw.map((x) => x.to)),
+    update(time) {
+      for (const x of tw) {
+        if (time < x.from) continue;
+        const u = Math.min(1, (time - x.from) / (x.to - x.from));
+        if (x.done && u === 1) continue;
+        x.fn(u);
+        if (u === 1) x.done = true;
+      }
+    }
+  };
+}
+
+/**
+ * Called balls before the real pitch: a flat one barely arcs, an illegal one
+ * goes way up. The catcher takes it, the ump yells, the ball goes back.
+ */
+function buildCallsTimeline(field, calls) {
+  const tw = [];
+  const add = (from, dur, fn) => { tw.push({ from, to: from + Math.max(1, dur), fn }); return from + dur; };
+  const pitcherAt = { x: 0, y: FIELD.mound + 2 };
+  const mitt = { x: 0, y: -5 };
+  let t = 0;
+  for (const c of calls) {
+    const peak = c === 'flat' ? 3 : 48;
+    t = add(t, c === 'flat' ? 750 : 1100, (u) => {
+      field.ball = { x: lerp(pitcherAt.x, mitt.x, u), y: lerp(pitcherAt.y, mitt.y, u), h: 5 + Math.sin(u * Math.PI) * peak };
+    });
+    add(t, 1, () => { field.ball = null; field.umpSay = c === 'flat' ? 'FLAT!' : 'ILLEGAL!'; });
+    t = add(t, 1100, () => {});
+    add(t, 1, () => { field.umpSay = null; });
+    t = add(t, 550, (u) => {
+      field.ball = { x: lerp(mitt.x, pitcherAt.x, u), y: lerp(mitt.y, pitcherAt.y, u), h: 4 + Math.sin(u * Math.PI) * 8 };
+    });
+    add(t, 1, () => { field.ball = null; });
+    t += 250;
+  }
+  return timeline(tw, t);
+}
 
 /**
  * Turn a play into tweens: pitch, swing, ball flight, the fielder, the

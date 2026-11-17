@@ -472,7 +472,7 @@ export function makeTeam({ name, color, cpu = false, players, lineup, field }) {
     lineup: lineup || battingOrder(players),
     field: field || assignPositions(players),
     box,
-    pit: { outs: 0, r: 0, h: 0, bb: 0, so: 0, bf: 0 },
+    pit: { outs: 0, r: 0, h: 0, bb: 0, so: 0, bf: 0, calls: 0 },
     runs: [],
     hits: 0,
     errors: 0,
@@ -507,6 +507,20 @@ const fielderAt = (g, slot) => { const t = fieldingTeam(g); return t.roster[t.fi
 
 const pitchEffect = (league) => clamp(0.5 * (league.scale.pitch.sd / league.scale.pitch.mean), 0.02, 0.07);
 
+// The umpire: now and then a pitch is called a ball for being flat (no arc)
+// or illegal (too high, bad delivery). About 6 a game from average pitchers,
+// more from poor ones. For show only: walks already come from the league's rates.
+export const CALLED_BALL_RATE = 0.062;
+function umpireCalls(pitcher, random) {
+  const p = clamp(CALLED_BALL_RATE * Math.exp(-0.3 * z(pitcher.ratings.pitch)), 0.015, 0.16);
+  const calls = [];
+  if (random() < p) {
+    calls.push(random() < 0.6 ? 'flat' : 'illegal');
+    if (random() < 0.15) calls.push(random() < 0.6 ? 'flat' : 'illegal');
+  }
+  return calls;
+}
+
 /** Probability the batter does each thing, before a ball is put in play. */
 export function paOdds(g, batter = currentBatter(g), pitcher = currentPitcher(g)) {
   const L = g.league;
@@ -536,6 +550,7 @@ export function planPA(g, { random = Math.random } = {}) {
   const odds = paOdds(g, batter, pitcher);
   const r = random();
   const play = { batter: batter.id, pitcher: pitcher.id, kind: '', contact: null, fielder: null, land: null, throwTo: null, decision: null };
+  play.calls = umpireCalls(pitcher, random);
   const bases = g.bases;
   const outs = g.outs;
 
@@ -1011,6 +1026,7 @@ export function commitPA(g, play, choice) {
 
   // Batting line
   pit.bf += 1;
+  pit.calls = (pit.calls || 0) + (play.calls?.length || 0);
   const isAB = !(play.kind === 'BB' || outcome.sac);
   if (isAB) box.ab += 1;
   if (play.kind === 'BB') { box.bb += 1; pit.bb += 1; }
@@ -1035,7 +1051,8 @@ export function commitPA(g, play, choice) {
   g.bases = bases;
   g.plays += 1;
 
-  const text = outcome.text + (endsInning && outPlay && outcome.moves.some((m) => !m.out && m.to === 4) ? ' The inning ends before the run scores.' : '');
+  const called = (play.calls || []).map((c) => (c === 'flat' ? 'Flat pitch, ball.' : 'Illegal pitch, ball.')).join(' ');
+  const text = (called ? `${called} ` : '') + outcome.text + (endsInning && outPlay && outcome.moves.some((m) => !m.out && m.to === 4) ? ' The inning ends before the run scores.' : '');
   const entry = { inning: g.inning, half: g.half, text, kind: play.kind, runs, score: [...g.score], outs: g.outs };
   g.log.push(entry);
 

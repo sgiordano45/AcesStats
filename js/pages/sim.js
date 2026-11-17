@@ -825,7 +825,7 @@ function boxTable(t) {
       <tbody>${rows}</tbody>
       <tfoot><tr><th scope="row">Totals</th>${['ab', 'r', 'h', 'd', 't', 'hr', 'rbi', 'bb'].map((k) => `<td class="is-num">${sum(k)}</td>`).join('')}</tr></tfoot>
     </table></div>
-    <p class="sim-dim">Pitching: ${esc(t.roster[pid].name)}, ${ipText(t.pit.outs)} IP, ${t.pit.h} H, ${t.pit.r} R, ${t.pit.bb} BB, ${t.pit.so} K. Errors: ${t.errors}.</p>
+    <p class="sim-dim">Pitching: ${esc(t.roster[pid].name)}, ${ipText(t.pit.outs)} IP, ${t.pit.h} H, ${t.pit.r} R, ${t.pit.bb} BB, ${t.pit.so} K${t.pit.calls ? `, ${t.pit.calls} flat or illegal` : ''}. Errors: ${t.errors}.</p>
   </section>`;
 }
 
