@@ -1,5 +1,5 @@
 // js/pages/sim.js
-// sim.html: Aces Sim. Setup -> snake draft vs the computer -> lineup -> a
+// sim.html: Backyard Aces Softball (the Aces Sim). Setup -> snake draft vs the computer -> lineup -> a
 // 7-inning game on the pixel field -> box score. Everything about the game
 // lives in this browser (localStorage acesSim.v1), so a refresh resumes.
 //
@@ -698,7 +698,7 @@ function renderFinal() {
 // Start
 // ---------------------------------------------------------------------------
 
-const { profile } = await initPage({ title: 'Aces Sim' });
+const { profile } = await initPage({ title: 'Backyard Aces Softball' });
 S.profile = profile;
 
 try {

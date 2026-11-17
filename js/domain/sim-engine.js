@@ -245,21 +245,42 @@ export function cpuPick(teamIdx, teams, pool, { random = Math.random } = {}) {
 // The game
 // ===========================================================================
 
-// Senior Field, measured off the aerial photo (cars and the base paths give
-// about 5 px a foot): 65-foot bases, a straight fence from just foul down the
-// right-field line (~160 ft) across center (~213 ft) to left-center, where it
-// ends; left field is open and runs into the next diamond.
-// spots: where fielders stand, as an angle from straightaway center (degrees,
-// left negative) and a distance in feet.
+// Senior Field, laid out from aerial photos (turned so straightaway center
+// is +y) and scaled to two known distances: 223 ft from home to the next
+// diamond's first-base dugout, and 216 ft to the fence in straightaway right.
+//   - 65-foot bases.
+//   - The fence: one section from just foul down the right-field line
+//     (~195 ft) through right (216 ft) to right-center, a gap (~240 ft),
+//     then a section through center (~295 ft) that ends in left-center.
+//     Left field has no fence and runs into the next diamond.
+//   - Ground rules: through the gap is an automatic triple; past the next
+//     diamond's first-base dugout (which runs along the left-field line,
+//     about 33 ft fair, from 223 ft out) is a ground-rule double.
+// spots: where fielders stand, as an angle from straightaway center
+// (degrees, left negative) and a distance in feet.
 export const FIELD = Object.freeze({
   name: 'Senior Field',
   base: 65,
   mound: 50,
-  fence: Object.freeze([Object.freeze({ x: 117.6, y: 109.8 }), Object.freeze({ x: -34, y: 243 })]),
+  fence: Object.freeze([
+    Object.freeze([{ x: 62.7, y: 231.6 }, { x: 146.4, y: 126.4 }]),   // right field, to the gap
+    Object.freeze([{ x: 43.2, y: 240.1 }, { x: -33.6, y: 337.8 }])    // the gap, through center to left-center
+  ]),
+  gap: Object.freeze([{ x: 62.7, y: 231.6 }, { x: 43.2, y: 240.1 }]),
+  // Out of play: the strip left of the next diamond's first-base dugout, and the dugout itself.
+  dead: Object.freeze([
+    Object.freeze([{ x: -156.2, y: 156.2 }, { x: -133.3, y: 179.2 }]),
+    Object.freeze([{ x: -133.3, y: 179.2 }, { x: -161.4, y: 209.3 }])
+  ]),
+  // The next diamond, for drawing: the corners of its dirt square (about
+  // 70 ft a side) at home, 1B, 2B and 3B. Its bases sit inside them.
+  other: Object.freeze([{ x: -158.5, y: 222.1 }, { x: -95.9, y: 192.4 }, { x: -66.9, y: 258.6 }, { x: -133.6, y: 283.2 }]),
+  // Scenery beyond the infield is placed in the photos' units times this.
+  photoScale: 1.12,
   spots: {
     P: { a: 0, r: 50 }, C: { a: 0, r: -7 },
     '1B': { a: 38, r: 80 }, '2B': { a: 14, r: 108 }, SS: { a: -14, r: 108 }, '3B': { a: -38, r: 80 },
-    LF: { a: -27, r: 160 }, CF: { a: -2, r: 168 }, RF: { a: 26, r: 125 }
+    LF: { a: -26, r: 196 }, CF: { a: 2, r: 218 }, RF: { a: 25, r: 172 }
   }
 });
 
@@ -267,22 +288,36 @@ export const FIELD = Object.freeze({
 // 2026 Fall: 6 of 70 home runs were flagged out of the park.
 export const OVER_FENCE_SHARE = 0.09;
 
-/** Feet to the fence along angle a (degrees, 0 = center, + toward right), or null where there is none. */
-export function fenceAt(a) {
+/** Feet from home to segment [p, q] along angle a (degrees, 0 = center, + toward right), or null. */
+function rayTo(a, [p, q]) {
   const rad = (a * Math.PI) / 180;
   const dx = Math.sin(rad);
   const dy = Math.cos(rad);
-  const [p, q] = FIELD.fence;
   const ex = q.x - p.x;
   const ey = q.y - p.y;
   const den = dx * ey - dy * ex;
   if (Math.abs(den) < 1e-9) return null;
   const t = (p.x * ey - p.y * ex) / den;   // along the ray
-  const s = (p.x * dy - p.y * dx) / den;   // along the fence, 0..1
+  const s = (p.x * dy - p.y * dx) / den;   // along the segment, 0..1
   return t > 0 && s >= 0 && s <= 1 ? t : null;
 }
-const FENCE_LEFT = Math.atan2(FIELD.fence[1].x, FIELD.fence[1].y) * 180 / Math.PI;   // where the fence ends, about -8
-const deepAt = (a) => fenceAt(a) ?? Infinity;
+const nearest = (a, segs) => segs.reduce((m, sg) => { const t = rayTo(a, sg); return t !== null && (m === null || t < m) ? t : m; }, null);
+
+/** Feet to the fence along angle a, or null where there is none (left field, the gap). */
+export const fenceAt = (a) => nearest(a, FIELD.fence);
+/** Feet to the gap in the fence along angle a, or null. */
+export const gapAt = (a) => rayTo(a, FIELD.gap);
+/** Feet to the ground-rule-double line along angle a, or null. */
+export const deadAt = (a) => nearest(a, FIELD.dead);
+const GAP_ANGLES = [FIELD.gap[1], FIELD.gap[0]].map((p) => (Math.atan2(p.x, p.y) * 180) / Math.PI);   // about [10.2, 15.1]
+/** How far a ball can go at angle a before the fence, the gap or the dead-ball line. */
+const deepAt = (a) => Math.min(fenceAt(a) ?? Infinity, gapAt(a) ?? Infinity, deadAt(a) ?? Infinity, 310);
+/** Share of angles in [lo, hi] with fence (not gap, not open) behind them. */
+function fencedShare(lo, hi) {
+  let n = 0;
+  for (let i = 0; i < 60; i += 1) if (fenceAt(lo + ((hi - lo) * (i + 0.5)) / 60) !== null) n += 1;
+  return n / 60;
+}
 
 export function polar(a, r) {
   const rad = (a * Math.PI) / 180;
@@ -440,11 +475,14 @@ export function planPA(g, { random = Math.random } = {}) {
     play.kind = kind;
     if (kind === 'HR') {
       // Pull side: righties to left (open), lefties to right (the short fence).
-      const [lo, hi] = batter.bats === 'L' ? [-25, 40] : batter.bats === 'R' ? [-40, 25] : [-38, 38];
-      const a = rnd(random, lo, hi);
+      // Real home runs didn't go through the gap or past the dugout (those
+      // are a triple and a double), so pick an angle clear of both.
+      const [lo, hi] = batter.bats === 'L' ? [-25, 40] : batter.bats === 'R' ? [-35, 25] : [-35, 38];
+      let a = rnd(random, lo, hi);
+      for (let i = 0; i < 20 && (gapAt(a) !== null || deadAt(a) !== null); i += 1) a = rnd(random, lo, hi);
+      if (gapAt(a) !== null || deadAt(a) !== null) a = -20;
       const fence = fenceAt(a);
-      const fenced = Math.max(0, hi - Math.max(lo, FENCE_LEFT)) / (hi - lo);
-      const over = fence !== null && random() < Math.min(1, OVER_FENCE_SHARE / Math.max(fenced, 0.05));
+      const over = fence !== null && random() < Math.min(1, OVER_FENCE_SHARE / Math.max(fencedShare(lo, hi), 0.05));
       play.fielder = ofAt(a);
       if (over) {
         play.contact = 'fly';
@@ -454,16 +492,40 @@ export function planPA(g, { random = Math.random } = {}) {
         play.contact = 'line';
         play.insidePark = true;
         play.throwTo = 4;
-        play.land = polar(a, Math.min(ofR(a) * rnd(random, 1.35, 1.55), deepAt(a) - 5, 235));
+        play.land = polar(a, Math.min(ofR(a) * rnd(random, 1.35, 1.55), deepAt(a) - 5, 285));
       }
       play.outcome = homeRun(g, batter, { insidePark: !over, where: fieldWord(play.fielder) });
       return play;
     }
     if (kind === '3B' || kind === '2B') {
+      play.contact = random() < 0.3 ? 'line' : 'fly';
+      // Some triples are the automatic triple through the gap in the fence.
+      if (kind === '3B' && random() < 0.35) {
+        const a = rnd(random, GAP_ANGLES[0] + 0.8, GAP_ANGLES[1] - 0.8);
+        play.contact = 'ground';
+        play.fielder = ofAt(a);
+        play.land = polar(a, gapAt(a) + rnd(random, 12, 24));
+        play.dead = true;
+        play.gap = true;
+        const moves = [];
+        for (let b = 2; b >= 0; b -= 1) if (g.bases[b]) moves.push({ id: g.bases[b], from: b + 1, to: 4, out: false });
+        moves.push({ id: batter.id, from: 0, to: 3, out: false });
+        play.outcome = { moves, text: `${batter.name} rolls one through the gap in the center-field fence: an automatic triple.${scoredText(g, moves)}`, rbi: moves.length - 1, hit: true };
+        return play;
+      }
       const lines = random() < 0.35;
       const side = random() < 0.5 ? -1 : 1;
-      const a = lines ? side * rnd(random, 36, 43) : side * rnd(random, 12, 22);
-      play.contact = random() < 0.3 ? 'line' : 'fly';
+      let a = lines ? side * rnd(random, 36, 43) : side * rnd(random, 12, 22);
+      // A triple can't go past the dugout (that's a ground-rule double).
+      if (kind === '3B' && deadAt(a) !== null) a = -rnd(random, 28, 35);
+      // Down the left-field line past the dugout: a ground-rule double.
+      if (kind === '2B' && deadAt(a) !== null) {
+        play.fielder = 'LF';
+        play.land = polar(a, deadAt(a) + rnd(random, 10, 22));
+        play.dead = true;
+        play.grd = true;
+        return groundRuleDouble(g, play, batter);
+      }
       const d = ofR(a) * (kind === '3B' ? rnd(random, 1.22, 1.38) : rnd(random, 1.06, 1.22));
       play.land = polar(a, Math.min(d, deepAt(a) - (kind === '3B' ? 4 : 10)));
       play.fielder = ofAt(a);
@@ -584,6 +646,22 @@ function forceOuts(g, batter, verb, { rbiOnForce = false, hit = false } = {}) {
   }
   const rbi = rbiOnForce ? moves.filter((m) => m.to === 4).length : 0;
   return { moves, text: `${batter.name} ${verb}.${scoredText(g, moves)}`, rbi, hit };
+}
+
+function groundRuleDouble(g, play, batter) {
+  const b = g.bases;
+  const moves = [];
+  if (b[2]) moves.push({ id: b[2], from: 3, to: 4, out: false });
+  if (b[1]) moves.push({ id: b[1], from: 2, to: 4, out: false });
+  if (b[0]) moves.push({ id: b[0], from: 1, to: 3, out: false });
+  moves.push({ id: batter.id, from: 0, to: 2, out: false });
+  play.outcome = {
+    moves,
+    text: `${batter.name} hits a ground-rule double, rolling past the dugout down the left-field line.${scoredText(g, moves)}`,
+    rbi: moves.filter((m) => m.to === 4).length,
+    hit: true
+  };
+  return play;
 }
 
 function homeRun(g, batter, { insidePark = false, where = '' } = {}) {

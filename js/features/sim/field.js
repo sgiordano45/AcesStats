@@ -9,17 +9,19 @@
 //   await field.animate(play, outcome, { speed: 1, speedOf: (id) => rating });
 //
 // Coordinates are feet (home plate 0,0, y toward center), drawn at SCALE px
-// per foot on a 480 x 420 canvas that CSS scales up with crisp pixels. The
+// per foot on a 446 x 478 canvas that CSS scales up with crisp pixels. The
 // park is Senior Field (FIELD in sim-engine.js has its fence and spots).
 
-import { FIELD, polar, spotXY, fenceAt } from '../../domain/sim-engine.js';
+import { FIELD, polar, spotXY, fenceAt, deadAt } from '../../domain/sim-engine.js';
 import { SLOTS } from '../../domain/sim-ratings.js';
 
-export const W = 480;
-export const H = 420;
-export const SCALE = 1.5;
-const HOME_X = 240;
-const HOME_Y = 390;   // feet shown: -160..160 across, -20..260 deep
+export const W = 446;
+export const H = 478;
+export const SCALE = 1.3;
+const HOME_X = 241;
+const HOME_Y = 449;   // feet shown: about -185..157 across, -22..345 deep
+const FAR = FIELD.photoScale;
+const far = (p) => ({ x: p.x * FAR, y: p.y * FAR });
 const toPxF = (p) => ({ x: HOME_X + p.x * SCALE, y: HOME_Y - p.y * SCALE });
 const toPx = (p) => { const q = toPxF(p); return { x: Math.round(q.x), y: Math.round(q.y) }; };
 const seeded = (seed) => () => (seed = (seed * 16807) % 2147483647) / 2147483647;
@@ -142,9 +144,9 @@ export class SimField {
   // ---- Static scene -----------------------------------------------------
 
   // Senior Field from above, in the fall: dry grass, an all-dirt infield,
-  // the straight fence and hedge across right and center, open left field
-  // running into the next diamond, the school roof past right-center, the
-  // parking lot down the first-base side, and the trees around it.
+  // the fence and hedge across right and center with the gap in right-center,
+  // open left field running into the next diamond (its dugouts, bleachers
+  // and backstop), the school past center, the lot down the first-base side.
   drawBackground() {
     const c = document.createElement('canvas');
     c.width = W;
@@ -158,6 +160,7 @@ export class SimField {
     const poly = (pts, fill) => { path(pts); x.fillStyle = fill; x.fill(); };
     const disc = (p, r, fill) => { const q = P(p); x.beginPath(); x.arc(q.x, q.y, r * SCALE, 0, Math.PI * 2); x.fillStyle = fill; x.fill(); };
     const seg = (a, b, color, w) => { const p = P(a); const q = P(b); x.strokeStyle = color; x.lineWidth = w; x.beginPath(); x.moveTo(p.x, p.y); x.lineTo(q.x, q.y); x.stroke(); };
+    const line = (pts, color, w) => { for (let i = 0; i < pts.length - 1; i += 1) seg(pts[i], pts[i + 1], color, w); };
     const speckle = (n, colors, size = 1) => {
       for (let i = 0; i < n; i += 1) {
         x.fillStyle = colors[Math.floor(rand() * colors.length)];
@@ -165,7 +168,7 @@ export class SimField {
       }
     };
     const clipped = (shape, fn) => { x.save(); shape(); x.clip(); fn(); x.restore(); };
-    // A rectangle `len` x `wid` feet centred on p, its length along angle ang (degrees, math convention).
+    // A rectangle len x wid feet centred on p, its length along angle ang (degrees, math convention).
     const box = (p, len, wid, ang, draw) => {
       const q = P(p);
       x.save();
@@ -174,85 +177,128 @@ export class SimField {
       draw(len * SCALE, wid * SCALE);
       x.restore();
     };
+    const angOf = (a, b) => (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI;
+    const mid = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+    const lerpP = (a, b, t) => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+    const bleachers = (p, len, ang) => box(p, len, 8, ang, (l, w) => {
+      x.fillStyle = C.bleacherDark; x.fillRect(-l / 2, -w / 2, l, w);
+      x.fillStyle = C.bleacher;
+      for (let r = 0; r < 4; r += 1) x.fillRect(-l / 2, -w / 2 + (r * w) / 4, l, Math.max(1, w / 8));
+    });
+    const dugout = (p, len, ang) => box(p, len, 7, ang, (l, w) => {
+      x.fillStyle = 'rgba(40,40,40,0.18)'; x.fillRect(-l / 2, -w / 2, l, w);
+      x.fillStyle = C.bench; x.fillRect(-l / 2 + 2, -1, l - 4, 2);
+      x.strokeStyle = C.fence; x.lineWidth = 1; x.strokeRect(-l / 2 + 0.5, -w / 2 + 0.5, l - 1, w - 1);
+    });
+    const posts = (a, b, every) => {
+      const n = Math.max(1, Math.round(Math.hypot(b.x - a.x, b.y - a.y) / every));
+      for (let i = 0; i <= n; i += 1) {
+        const q = P(lerpP(a, b, i / n));
+        x.fillStyle = C.post;
+        x.fillRect(Math.round(q.x) - 1, Math.round(q.y) - 1, 2, 2);
+      }
+    };
 
-    // Grass everywhere, dry and patchy, greener toward left field.
+    // Grass everywhere, dry and patchy, greener toward the left.
     x.fillStyle = C.grass;
     x.fillRect(0, 0, W, H);
-    [[-125, 190, 40], [-140, 95, 32], [-95, 125, 24], [-55, 70, 18], [70, 55, 14], [-20, 160, 22], [40, 200, 14], [-150, 30, 26]]
+    [[-150, 120, 34], [-160, 260, 30], [-55, 228, 18], [-125, 60, 22], [-20, 150, 20], [70, 40, 14], [-70, 290, 24], [90, 160, 18]]
       .forEach(([px, py, r]) => {
-        const q = P({ x: px, y: py });
-        const g = x.createRadialGradient(q.x, q.y, 0, q.x, q.y, r * SCALE);
+        const q = P(far({ x: px, y: py }));
+        const g = x.createRadialGradient(q.x, q.y, 0, q.x, q.y, r * SCALE * FAR);
         g.addColorStop(0, 'rgba(140,152,92,0.45)');
         g.addColorStop(1, 'rgba(140,152,92,0)');
         x.fillStyle = g;
-        x.fillRect(q.x - r * SCALE, q.y - r * SCALE, 2 * r * SCALE, 2 * r * SCALE);
+        x.fillRect(q.x - r * SCALE * FAR, q.y - r * SCALE * FAR, 2 * r * SCALE * FAR, 2 * r * SCALE * FAR);
       });
-    speckle(2600, [C.grassDark, C.grassDark, C.grassDark2, C.grassLight], 2);
+    speckle(3000, [C.grassDark, C.grassDark, C.grassDark2, C.grassLight], 2);
 
-    // The next diamond's infield, out past left-center.
-    const other = [{ x: -170, y: 207 }, { x: -82, y: 205 }, { x: -85, y: 165 }, { x: -90, y: 150 }, { x: -101, y: 142 }, { x: -170, y: 140 }];
-    poly(other, C.dirt);
-    clipped(() => path(other), () => speckle(900, [C.dirtDark, C.dirtLight]));
+    // Walkway along the left side, down to the third-base bleachers.
+    line([{ x: -172, y: 300 }, { x: -166, y: 178 }, { x: -152, y: 155 }, { x: -84, y: 44 }, { x: -66, y: 20 }].map(far), C.path, 5 * SCALE);
 
-    // Walkway down the third-base side.
-    seg({ x: -170, y: 128 }, { x: -66, y: 27 }, C.path, 5 * SCALE);
+    // The next diamond: all dirt, 60-foot bases, facing back toward our left-center.
+    const corners = FIELD.other;
+    const oc = { x: corners.reduce((t, p) => t + p.x, 0) / 4, y: corners.reduce((t, p) => t + p.y, 0) / 4 };
+    const skin = corners.map((p) => lerpP(oc, p, 1.1));
+    const [oh, o1, o2, o3] = corners.map((p) => lerpP(oc, p, 0.86));
+    poly(skin, C.dirt);
+    clipped(() => path(skin), () => speckle(700, [C.dirtDark, C.dirtLight]));
+    const ou = { x: (o2.x - oh.x) / Math.hypot(o2.x - oh.x, o2.y - oh.y), y: (o2.y - oh.y) / Math.hypot(o2.x - oh.x, o2.y - oh.y) };
+    const ow = { x: -ou.y, y: ou.x };
+    x.globalAlpha = 0.85;
+    seg(oh, lerpP(oh, o1, 1.1), C.chalk, 1);
+    seg(oh, lerpP(oh, o3, 1.1), C.chalk, 1);
+    const orub = lerpP(oh, o2, 0.48);
+    const oq = P(orub);
+    x.strokeStyle = C.chalk; x.lineWidth = 1;
+    x.beginPath(); x.arc(oq.x, oq.y, 8 * SCALE, 0, Math.PI * 2); x.stroke();
+    x.globalAlpha = 1;
+    x.fillStyle = '#ffffff';
+    [o1, o2, o3].forEach((b) => { const q = P(b); x.fillRect(Math.round(q.x) - 1, Math.round(q.y) - 1, 4, 4); });
+    const ohq = P(oh);
+    x.fillRect(Math.round(ohq.x) - 2, Math.round(ohq.y) - 1, 4, 3);
+    // Its brick patio, backstop, dugouts and bleachers.
+    box({ x: oh.x - ou.x * 15, y: oh.y - ou.y * 15 }, 44, 11, angOf({ x: 0, y: 0 }, ow), (l, w) => { x.fillStyle = C.clay; x.fillRect(-l / 2, -w / 2, l, w); });
+    const obc = { x: oh.x - ou.x * 9, y: oh.y - ou.y * 9 };
+    line([
+      { x: obc.x + ow.x * 16 + ou.x * 7, y: obc.y + ow.y * 16 + ou.y * 7 },
+      { x: obc.x + ow.x * 10, y: obc.y + ow.y * 10 },
+      { x: obc.x - ow.x * 10, y: obc.y - ow.y * 10 },
+      { x: obc.x - ow.x * 16 + ou.x * 7, y: obc.y - ow.y * 16 + ou.y * 7 }
+    ], C.fence, 2);
+    const [d1a, d1b] = FIELD.dead[1];
+    dugout(mid(d1a, d1b), Math.hypot(d1b.x - d1a.x, d1b.y - d1a.y), angOf(d1a, d1b));
+    const d3a = far({ x: -159.4, y: 235.2 });
+    const d3b = far({ x: -142.8, y: 206.9 });
+    dugout(mid(d3a, d3b), Math.hypot(d3b.x - d3a.x, d3b.y - d3a.y), angOf(d3a, d3b));
+    bleachers(far({ x: -148, y: 251 }), 16, angOf(oh, o3));
+    bleachers(far({ x: -110, y: 144 }), 14, angOf(oh, o1));
 
-    // Parking lot down the first-base side: sidewalk, curb, stalls, cars.
-    const edgeA = { x: 63.4, y: -25 };
-    const edgeB = { x: 160, y: 126 };
-    const along = { x: 0.54, y: 0.841 };
-    const toGrass = { x: -0.841, y: 0.54 };
-    const at = (s, off) => ({ x: edgeA.x + (edgeB.x - edgeA.x) * s - toGrass.x * off, y: edgeA.y + (edgeB.y - edgeA.y) * s - toGrass.y * off });
-    poly([edgeA, edgeB, { x: 160, y: -25 }], C.asphalt);
-    clipped(() => path([edgeA, edgeB, { x: 160, y: -25 }]), () => speckle(700, [C.asphaltDark, C.asphaltLight]));
-    seg(at(0, -3), at(1, -3), C.sidewalk, 4 * SCALE);
-    seg(edgeA, edgeB, C.curb, 1.5);
-    const stallAng = (Math.atan2(along.y, along.x) * 180) / Math.PI + 90;
-    [0.05, 0.25, 0.45, 0.65, 0.85].forEach((s) => seg(at(s, 10), at(s, 28), C.curb, 1));
-    [[0.15, '#f2f2ef'], [0.35, '#8a8f96'], [0.55, '#25375a'], [0.75, '#c8cbcf']].forEach(([s, col]) => {
-      box(at(s, 19), 14, 6.5, stallAng, (l, w) => {
+    // Parking lot down the first-base side.
+    const lotA = { x: 108, y: -24 };
+    const lotB = { x: 160, y: 84 };
+    const lot = [lotA, lotB, { x: 160, y: -24 }];
+    poly(lot, C.asphalt);
+    clipped(() => path(lot), () => speckle(300, [C.asphaltDark, C.asphaltLight]));
+    const lotLen = Math.hypot(lotB.x - lotA.x, lotB.y - lotA.y);
+    const lotDir = { x: (lotB.x - lotA.x) / lotLen, y: (lotB.y - lotA.y) / lotLen };
+    const toGrass = { x: -lotDir.y, y: lotDir.x };
+    seg({ x: lotA.x + toGrass.x * 3, y: lotA.y + toGrass.y * 3 }, { x: lotB.x + toGrass.x * 3, y: lotB.y + toGrass.y * 3 }, C.sidewalk, 4 * SCALE);
+    seg(lotA, lotB, C.curb, 1.5);
+    [[0.18, '#f2f2ef'], [0.45, '#25375a']].forEach(([t, col]) => {
+      const p = { x: lotA.x + (lotB.x - lotA.x) * t - toGrass.x * 14, y: lotA.y + (lotB.y - lotA.y) * t - toGrass.y * 14 };
+      box(p, 14, 6.5, angOf({ x: 0, y: 0 }, toGrass), (l, w) => {
         x.fillStyle = 'rgba(0,0,0,0.3)'; x.fillRect(-l / 2 + 1, -w / 2 + 1, l, w);
         x.fillStyle = col; x.fillRect(-l / 2, -w / 2, l, w);
         x.fillStyle = 'rgba(20,30,40,0.55)'; x.fillRect(-l / 6, -w / 2 + 1, l / 3, w - 2);
       });
     });
 
-    // The school roof past right-center.
-    const roof = [{ x: 82, y: 262 }, { x: 160, y: 262 }, { x: 160, y: 168 }, { x: 118, y: 168 }, { x: 82, y: 224 }];
-    poly(roof.map((p) => ({ x: p.x - 6, y: p.y - 4 })), C.roofShadow);
+    // The school, past center and right-center.
+    const roof = [{ x: 22.6, y: 315 }, { x: 31, y: 254 }, { x: 84, y: 262 }, { x: 110, y: 205 }, { x: 142, y: 157 }, { x: 142, y: 315 }].map(far);
+    poly(roof.map((p) => ({ x: p.x - 7, y: p.y - 3 })), C.roofShadow);
     poly(roof, C.roof);
-    seg(roof[3], roof[4], C.roofEdge, 2);
-    seg(roof[2], roof[3], C.roofEdge, 2);
-    [[132, 232, 9, 6], [146, 200, 6, 6], [108, 240, 5, 4]].forEach(([px, py, l, w]) => box({ x: px, y: py }, l, w, 0, (L, Wd) => {
+    line(roof.slice(0, 5), C.roofEdge, 2);
+    [[60, 285, 10, 6], [100, 245, 7, 7], [125, 205, 6, 5], [45, 300, 6, 4]].forEach(([px, py, l, w]) => box(far({ x: px, y: py }), l, w, 0, (L, Wd) => {
       x.fillStyle = C.roofEdge; x.fillRect(-L / 2 + 1, -Wd / 2 + 1, L, Wd);
       x.fillStyle = C.roofUnit; x.fillRect(-L / 2, -Wd / 2, L, Wd);
     }));
 
-    // Brick patio behind the third-base dugout.
+    // Our side: brick patio, bleachers.
     poly([{ x: -10, y: -9 }, { x: -36, y: -9 }, { x: -52, y: 9 }, { x: -46, y: 17 }, { x: -30, y: 3 }], C.clay);
-
-    // Bleachers on both sides.
-    const bleachers = (p, len, ang) => box(p, len, 8, ang, (l, w) => {
-      x.fillStyle = C.bleacherDark; x.fillRect(-l / 2, -w / 2, l, w);
-      x.fillStyle = C.bleacher;
-      for (let r = 0; r < 4; r += 1) x.fillRect(-l / 2, -w / 2 + (r * w) / 4, l, Math.max(1, w / 8));
-    });
-    bleachers({ x: -60, y: 12 }, 18, 135);
-    bleachers({ x: 52, y: 27 }, 16, 45);
+    bleachers({ x: -80, y: 30 }, 18, 135);
+    bleachers({ x: 43, y: 16 }, 16, 45);
 
     // The infield: all dirt, a wide round skin that stops just foul of the lines.
-    clipped(() => path([{ x: 0, y: -10 }, { x: 230, y: 220 }, { x: -230, y: 220 }]), () => {
+    const skinShape = () => {
       const q = P({ x: 0, y: 44 });
       x.beginPath();
       x.ellipse(q.x, q.y, 50 * SCALE, 54 * SCALE, 0, 0, Math.PI * 2);
-      x.fillStyle = C.dirt;
-      x.fill();
-    });
+    };
+    clipped(() => path([{ x: 0, y: -10 }, { x: 230, y: 220 }, { x: -230, y: 220 }]), () => { skinShape(); x.fillStyle = C.dirt; x.fill(); });
     disc({ x: 0, y: 0 }, 13, C.dirt);
     clipped(() => {
-      const q = P({ x: 0, y: 44 });
-      x.beginPath();
-      x.ellipse(q.x, q.y, 50 * SCALE, 54 * SCALE, 0, 0, Math.PI * 2);
+      skinShape();
       const h = P({ x: 0, y: 0 });
       x.moveTo(h.x + 13 * SCALE, h.y);
       x.arc(h.x, h.y, 13 * SCALE, 0, Math.PI * 2);
@@ -261,26 +307,19 @@ export class SimField {
       disc({ x: 0, y: FIELD.mound }, 6, C.dirtLight);
       disc({ x: 0, y: 0 }, 9, C.dirtDark);
       x.globalAlpha = 1;
-      speckle(1100, [C.dirtDark, C.dirtLight]);
+      speckle(900, [C.dirtDark, C.dirtLight]);
     });
 
-    // Dugouts: fenced benches along each line.
-    const dugout = (p, ang) => box(p, 24, 7, ang, (l, w) => {
-      x.fillStyle = 'rgba(40,40,40,0.18)'; x.fillRect(-l / 2, -w / 2, l, w);
-      x.fillStyle = C.bench; x.fillRect(-l / 2 + 2, w / 2 - 3, l - 4, 2);
-      x.strokeStyle = C.fence; x.lineWidth = 1; x.strokeRect(-l / 2 + 0.5, -w / 2 + 0.5, l - 1, w - 1);
-    });
-    dugout({ x: -27.6, y: 9.2 }, 135);
-    dugout({ x: 27.6, y: 9.2 }, 45);
-
-    // Backstop.
+    // Dugouts and backstop.
+    dugout({ x: -27.6, y: 9.2 }, 24, 135);
+    dugout({ x: 27.6, y: 9.2 }, 24, 45);
     const back = [{ x: -24, y: 4 }, { x: -12, y: -9 }, { x: 12, y: -9 }, { x: 24, y: 4 }];
-    for (let i = 0; i < back.length - 1; i += 1) seg(back[i], back[i + 1], C.fence, 2);
+    line(back, C.fence, 2);
     back.forEach((p) => { const q = P(p); x.fillStyle = C.post; x.fillRect(Math.round(q.x) - 1, Math.round(q.y) - 1, 3, 3); });
 
     // Foul lines and batter's boxes.
     x.globalAlpha = 0.9;
-    seg(BASES[0], polar(-45, 235), C.chalk, 1);
+    seg(BASES[0], polar(-45, deadAt(-45) ?? 200), C.chalk, 1);
     seg(BASES[0], polar(45, fenceAt(45) ?? 160), C.chalk, 1);
     x.globalAlpha = 1;
     x.strokeStyle = C.chalk;
@@ -290,40 +329,39 @@ export class SimField {
       x.strokeRect(Math.round(a.x) + 0.5, Math.round(a.y) + 0.5, Math.round(3 * SCALE), Math.round(7 * SCALE));
     });
 
-    // The fence, with the hedge growing behind it.
-    const [f1, f2] = FIELD.fence;
-    const out = { x: 0.66, y: 0.751 };
-    const behind = (p, d) => ({ x: p.x + out.x * d, y: p.y + out.y * d });
-    seg(behind(f1, 3.5), behind(f2, 3.5), C.hedge, 5 * SCALE);
-    for (let i = 0; i < 260; i += 1) {
-      const t = rand();
-      const q = P(behind({ x: f1.x + (f2.x - f1.x) * t, y: f1.y + (f2.y - f1.y) * t }, 1 + rand() * 6));
-      x.fillStyle = rand() < 0.5 ? C.hedgeLight : C.hedgeDark;
-      x.fillRect(Math.floor(q.x), Math.floor(q.y), 2, 2);
-    }
-    seg(f1, f2, C.fence, 1.5);
-    const fenceLen = Math.hypot(f2.x - f1.x, f2.y - f1.y);
-    for (let d = 0; d <= fenceLen; d += 10) {
-      const q = P({ x: f1.x + ((f2.x - f1.x) * d) / fenceLen, y: f1.y + ((f2.y - f1.y) * d) / fenceLen });
-      x.fillStyle = C.post;
-      x.fillRect(Math.round(q.x) - 1, Math.round(q.y) - 1, 2, 2);
-    }
+    // The fence in two sections (the gap between them), the hedge behind.
+    FIELD.fence.forEach(([f1, f2]) => {
+      const len = Math.hypot(f2.x - f1.x, f2.y - f1.y);
+      let out = { x: (f2.y - f1.y) / len, y: -(f2.x - f1.x) / len };
+      if (out.x * f1.x + out.y * f1.y < 0) out = { x: -out.x, y: -out.y };   // away from home
+      const behind = (p, d) => ({ x: p.x + out.x * d, y: p.y + out.y * d });
+      seg(behind(f1, 3.5), behind(f2, 3.5), C.hedge, 5 * SCALE);
+      for (let i = 0; i < len * 1.6; i += 1) {
+        const q = P(behind(lerpP(f1, f2, rand()), 1 + rand() * 6));
+        x.fillStyle = rand() < 0.5 ? C.hedgeLight : C.hedgeDark;
+        x.fillRect(Math.floor(q.x), Math.floor(q.y), 2, 2);
+      }
+      seg(f1, f2, C.fence, 1.5);
+      posts(f1, f2, 10);
+    });
     const pole = P(polar(45, fenceAt(45) ?? 160));
     x.fillStyle = C.foulPole;
     x.fillRect(Math.round(pole.x) - 1, Math.round(pole.y) - 1, 3, 3);
 
     // Light pole by the right-field corner, and its long shadow.
     x.globalAlpha = 0.35;
-    seg({ x: 122, y: 121 }, { x: 58, y: 121 }, '#1a1a1a', 1.5);
-    [[56, 123], [56, 119], [53, 123], [53, 119]].forEach(([px, py]) => disc({ x: px, y: py }, 1, '#1a1a1a'));
+    seg({ x: 150, y: 133 }, { x: 84, y: 140 }, '#1a1a1a', 1.5);
+    [[81, 142], [81, 138], [78, 142], [78, 138]].forEach(([px, py]) => disc({ x: px, y: py }, 1, '#1a1a1a'));
     x.globalAlpha = 1;
-    disc({ x: 122, y: 121 }, 1.4, C.post);
+    disc({ x: 150, y: 133 }, 1.4, C.post);
 
     // Trees: shadows (cast toward left field) first, then canopies.
     const trees = [
-      [106, 94, 13, 0], [100, 168, 11, 0], [8, 214, 6, 1], [26, 198, 6, 1], [-24, 240, 5, 0],
-      [-118, 40, 16, 0], [-100, 18, 12, 0], [-142, 8, 18, 0], [-80, -14, 13, 0], [-130, -18, 14, 1],
-      [-12, -15, 6, 0], [14, -17, 6, 0], [42, -20, 4, 1]
+      ...[[96, 73, 15, 0], [18, 246, 7, 0], [-156, 201, 5, 1],
+        [-120, 50, 16, 0], [-145, 68, 15, 0], [-100, -13, 13, 0], [-140, 8, 17, 0], [-80, -18, 11, 1], [-158, 110, 10, 0]]
+        .map(([px, py, r, k]) => [px * FAR, py * FAR, r * FAR, k]),
+      [48, 248, 6.5, 1], [71, 238, 6.5, 1],   // the two yellow trees at the gap
+      [-12, -15, 6, 0], [14, -17, 6, 0], [42, -19, 4, 1]
     ];
     trees.forEach(([px, py, r]) => {
       x.globalAlpha = 0.4;
@@ -515,6 +553,8 @@ function buildTimeline(field, play, outcome, speedOf) {
     let [text, color] = BANNERS[key] || ['', '#fff'];
     if (key === 'FO' && outcome.sac) text = 'SAC FLY';
     if (key === 'HR' && play.insidePark) text = 'INSIDE-THE-PARKER!';
+    if (play.grd) text = 'GROUND-RULE DOUBLE';
+    if (play.gap) text = 'AUTOMATIC TRIPLE';
     if (key === '1B' && play.infield) text = 'INFIELD SINGLE';
     add(time, 900, () => { field.banner = { text, color }; });
     return time + 900;
@@ -620,15 +660,18 @@ function buildTimeline(field, play, outcome, speedOf) {
   const caught = ['FO', 'LO', 'PO'].includes(kind);
   const reachBy = caught ? arrive : arrive + (['1B', '2B', '3B', 'HR'].includes(kind) && !play.infield ? 350 : 0);
   const runFrom = contact + 80;
+  // A dead ball (through the gap, past the dugout): he chases, then pulls up.
+  const landR = Math.hypot(land.x, land.y);
+  const chase = play.dead ? { x: (land.x * (landR - 30)) / landR, y: (land.y * (landR - 30)) / landR } : land;
   add(runFrom, reachBy - runFrom, (u) => {
-    F.x = lerp(Fstart.x, land.x, ease(u)); F.y = lerp(Fstart.y, land.y, ease(u));
+    F.x = lerp(Fstart.x, chase.x, ease(u)); F.y = lerp(Fstart.y, chase.y, ease(u));
     F.frame = u < 1 ? (Math.floor(u * 14) % 2 ? 'run1' : 'run2') : 'stand';
   });
   if (!caught) {
     // A hit rolls on a little until he gets there.
     add(arrive, reachBy - arrive, (u) => { if (field.ball) field.ball = { x: land.x, y: land.y, h: 0 }; });
   }
-  add(reachBy, 1, () => { F.ball = true; field.ball = null; F.frame = 'stand'; });
+  add(reachBy, 1, () => { if (!play.dead) { F.ball = true; field.ball = null; } F.frame = 'stand'; });
 
   // Throw
   let throwArrives = reachBy;
@@ -651,7 +694,9 @@ function buildTimeline(field, play, outcome, speedOf) {
     const scores = contact + 120 + ((4 * FIELD.base) / fps) * 1000;
     release = Math.max(release, scores + 250 - throwTime(BASES[0]));
   }
-  if (kind === 'DP') {
+  if (play.dead) {
+    throwArrives = reachBy;
+  } else if (kind === 'DP') {
     const second = throwTo(2, release);
     const relayFrom = BASES[2];
     const dur = 220 + dist(relayFrom, BASES[1]) * 3.2;
