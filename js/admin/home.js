@@ -4,11 +4,14 @@
 //   games past their start with no score, games missing a team's stats,
 //   pending player-link and team-staff requests, rule proposals, new feature
 //   requests, plus the season settings and when stats were last aggregated.
+// Site status also switches the phase (regular / playoffs / offseason) in
+// siteConfig/current, so it doesn't take a trip to the Firebase console.
 // League staff and admins only; admin-only tools are hidden from league staff.
 
 import { initPage, pageReady, siteUrl } from '../core/app.js';
 import { hasRole } from '../core/auth.js';
-import { db, collection, getDocs, doc, getDoc, query, orderBy, limit, where } from '../core/firebase.js';
+import { db, collection, getDocs, doc, getDoc, setDoc, query, orderBy, limit, where } from '../core/firebase.js';
+import { clearSiteConfigCache, PHASES } from '../core/config.js';
 import { getSeasonGames } from '../data/games.js';
 import { normalizeGame } from '../domain/standings.js';
 import { parseGameDateTime, formatGameDate } from '../domain/dates.js';
@@ -16,6 +19,8 @@ import { seasonLabel } from '../domain/season-ids.js';
 import { mountAdminShell } from './shell.js';
 import { escapeHtml as esc } from '../ui/format.js';
 import { icon } from '../ui/icons.js';
+import { confirmModal } from '../ui/modal.js';
+import { showToast } from '../ui/toast.js';
 
 const $ = (id) => document.getElementById(id);
 const href = (p) => siteUrl(p);
@@ -39,8 +44,10 @@ async function gameTodos(seasonId) {
   const now = Date.now();
   const noScore = [];
   const noStats = [];
+  let regularLeft = 0;
   for (const r of raw) {
     const g = normalizeGame(r);
+    if (g && g.type === 'regular' && !g.winner && !g.unmatchedWinner) regularLeft++;
     const start = parseGameDateTime(r.date, r.time);
     if (!start || start.getTime() + GAME_LENGTH_MS > now) continue;
     const decided = !!g.winner || !!g.unmatchedWinner;
@@ -52,7 +59,7 @@ async function gameTodos(seasonId) {
     if (sides.length) noStats.push({ g, r, sides });
   }
   const byDate = (a, b) => (a.g.dateKey < b.g.dateKey ? 1 : -1);
-  return { noScore: noScore.sort(byDate), noStats: noStats.sort(byDate) };
+  return { noScore: noScore.sort(byDate), noStats: noStats.sort(byDate), regularLeft };
 }
 
 async function requestTodos() {
@@ -121,15 +128,67 @@ async function renderTodos(ctx) {
   if (features !== undefined) cards.push(todoCard({ icon: 'message', title: 'New feature requests', count: features, text: `${features} not looked at yet`, href: 'admin/content.html?tab=feedback', action: 'Open feedback' }));
   $('adminTodos').innerHTML = cards.join('');
 
+  renderStatus(ctx, { seasonId, latest, summary, regularLeft: games ? games.regularLeft : null });
+}
+
+// ---------------------------------------------------------------------------
+// Site status and the phase switch
+// ---------------------------------------------------------------------------
+
+const PHASE_LABELS = { [PHASES.REGULAR]: 'Regular season', [PHASES.PLAYOFFS]: 'Playoffs', [PHASES.OFFSEASON]: 'Offseason' };
+
+// What each phase changes, shown in the confirm before switching.
+const PHASE_EFFECTS = {
+  [PHASES.REGULAR]: 'Projections and Clinching come back to the menu and the home page shows the playoff race links.',
+  [PHASES.PLAYOFFS]: 'Projections and Clinching leave the menu, Championship preview can be switched on, and the home page shows the current playoff round. Standings are not affected.',
+  [PHASES.OFFSEASON]: 'The season is treated as finished across the site: the home page shows final standings and the offseason sections, Year in review and Wrapped appear, and stat pages stop defaulting to this season.'
+};
+
+function renderStatus(ctx, info) {
+  const phase = ctx.config?.phase || PHASES.REGULAR;
+  const seg = Object.entries(PHASE_LABELS).map(([key, label]) =>
+    `<button type="button" class="aces-segment${key === phase ? ' is-active' : ''}" data-phase="${key}" aria-pressed="${key === phase}">${esc(label)}</button>`).join('');
+
   $('adminStatus').innerHTML = `
     <dl class="adm-status">
-      <div><dt>Season</dt><dd>${seasonId ? esc(seasonLabel(seasonId)) : 'None set'}</dd></div>
-      <div><dt>Phase</dt><dd>${esc(phase.charAt(0).toUpperCase() + phase.slice(1))}</dd></div>
+      <div><dt>Season</dt><dd>${info.seasonId ? esc(seasonLabel(info.seasonId)) : 'None set'}</dd></div>
       <div><dt>Opening day</dt><dd>${esc(ctx.config?.openingDay || 'Not set')}</dd></div>
-      <div><dt>Stats last aggregated</dt><dd>${esc(ago(latest))}</dd></div>
-      <div><dt>Home page summary</dt><dd>${esc(ago(summary))}</dd></div>
+      <div><dt>Stats last aggregated</dt><dd>${esc(ago(info.latest))}</dd></div>
+      <div><dt>Home page summary</dt><dd>${esc(ago(info.summary))}</dd></div>
     </dl>
-    <p class="adm-hint">Season, phase and opening day are set in <code>siteConfig/current</code>.</p>`;
+    <div class="adm-phase">
+      <h3 class="adm-phase-title">Phase</h3>
+      <div class="aces-segmented" role="group" aria-label="Site phase" id="adminPhase">${seg}</div>
+    </div>
+    <p class="adm-hint">The phase is saved to <code>siteConfig/current</code>. Visitors see a change within 10 minutes.</p>`;
+
+  $('adminPhase').addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-phase]');
+    if (btn && btn.dataset.phase !== phase) changePhase(ctx, info, btn.dataset.phase);
+  });
+}
+
+async function changePhase(ctx, info, next) {
+  const left = next === PHASES.PLAYOFFS && info.regularLeft
+    ? `${info.regularLeft} regular-season game${info.regularLeft === 1 ? ' is' : 's are'} still without a result. Usually the switch waits until they're in and the bracket is locked.` : '';
+  const ok = await confirmModal(
+    [`Switch the site to ${PHASE_LABELS[next]}?`, PHASE_EFFECTS[next], left].filter(Boolean).join('\n\n'),
+    { title: 'Change phase', confirmLabel: `Switch to ${PHASE_LABELS[next]}`, danger: next === PHASES.OFFSEASON || !!left });
+  if (!ok) return;
+
+  const buttons = $('adminPhase').querySelectorAll('button');
+  buttons.forEach(b => { b.disabled = true; });
+  try {
+    await setDoc(doc(db, 'siteConfig', 'current'), { phase: next, phaseUpdatedAt: new Date() }, { merge: true });
+    clearSiteConfigCache();
+    ctx.config = { ...(ctx.config || {}), phase: next };
+    renderStatus(ctx, info);
+    showToast(`Phase set to ${PHASE_LABELS[next]}`, 'success');
+  } catch (err) {
+    console.error('[admin] phase change failed', err);
+    buttons.forEach(b => { b.disabled = false; });
+    showToast(`Couldn't change the phase: ${err.code || err.message}`, 'error');
+  }
 }
 
 // ---------------------------------------------------------------------------
