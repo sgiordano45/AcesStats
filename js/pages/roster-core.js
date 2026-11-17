@@ -17,7 +17,7 @@ export const SEASON_RULES = {
     positions: ['P', 'C', '1B', '2B', '3B', 'SS', 'LF', 'CF', 'RF']
   },
   summer: {
-    name: 'Summer', minPlayers: 8, catcherMinPlayers: 10, battingOrderSize: 17,
+    name: 'Summer', minPlayers: 8, catcherMinPlayers: 9, battingOrderSize: 17,
     positions: ['P', 'C', '1B', '2B', '3B', 'SS', 'LF', 'LCF', 'RCF', 'RF']
   }
 };
