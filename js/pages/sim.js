@@ -114,6 +114,8 @@ const swatch = (color) => `<span class="sim-swatch" style="background:${esc(colo
 function show(phase) {
   for (const id of ['simSetup', 'simDraft', 'simLineup', 'simGame', 'simFinal']) $(id).hidden = true;
   $({ setup: 'simSetup', draft: 'simDraft', lineup: 'simLineup', game: 'simGame', final: 'simFinal' }[phase]).hidden = false;
+  // The how-to steps show on the setup screen only.
+  $('simSteps').hidden = phase !== 'setup';
   // The record sidebar shows between games; the draft and the game need the width.
   const aside = ['setup', 'lineup', 'final'].includes(phase);
   $('simAside').hidden = !aside;
