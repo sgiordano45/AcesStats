@@ -15,6 +15,7 @@
 // manager before committing.
 //
 // Field coordinates are feet: home plate (0,0), y toward center field.
+// The park is Senior Field (the fall field); see FIELD.
 
 import {
   SLOTS, IF_SLOTS, OF_SLOTS, TEAM_SIZE, WILD,
@@ -244,17 +245,44 @@ export function cpuPick(teamIdx, teams, pool, { random = Math.random } = {}) {
 // The game
 // ===========================================================================
 
-// Where fielders stand: angle from straightaway center (degrees, left negative), distance.
+// Senior Field, measured off the aerial photo (cars and the base paths give
+// about 5 px a foot): 65-foot bases, a straight fence from just foul down the
+// right-field line (~160 ft) across center (~213 ft) to left-center, where it
+// ends; left field is open and runs into the next diamond.
+// spots: where fielders stand, as an angle from straightaway center (degrees,
+// left negative) and a distance in feet.
 export const FIELD = Object.freeze({
+  name: 'Senior Field',
   base: 65,
   mound: 50,
-  fence: 285,
+  fence: Object.freeze([Object.freeze({ x: 117.6, y: 109.8 }), Object.freeze({ x: -34, y: 243 })]),
   spots: {
     P: { a: 0, r: 50 }, C: { a: 0, r: -7 },
-    '1B': { a: 38, r: 85 }, '2B': { a: 15, r: 118 }, SS: { a: -15, r: 118 }, '3B': { a: -38, r: 85 },
-    LF: { a: -27, r: 205 }, CF: { a: 0, r: 235 }, RF: { a: 27, r: 205 }
+    '1B': { a: 38, r: 80 }, '2B': { a: 14, r: 108 }, SS: { a: -14, r: 108 }, '3B': { a: -38, r: 80 },
+    LF: { a: -27, r: 160 }, CF: { a: -2, r: 168 }, RF: { a: 26, r: 125 }
   }
 });
+
+// Share of home runs that clear the fence; the rest are inside-the-parkers.
+// 2026 Fall: 6 of 70 home runs were flagged out of the park.
+export const OVER_FENCE_SHARE = 0.09;
+
+/** Feet to the fence along angle a (degrees, 0 = center, + toward right), or null where there is none. */
+export function fenceAt(a) {
+  const rad = (a * Math.PI) / 180;
+  const dx = Math.sin(rad);
+  const dy = Math.cos(rad);
+  const [p, q] = FIELD.fence;
+  const ex = q.x - p.x;
+  const ey = q.y - p.y;
+  const den = dx * ey - dy * ex;
+  if (Math.abs(den) < 1e-9) return null;
+  const t = (p.x * ey - p.y * ex) / den;   // along the ray
+  const s = (p.x * dy - p.y * dx) / den;   // along the fence, 0..1
+  return t > 0 && s >= 0 && s <= 1 ? t : null;
+}
+const FENCE_LEFT = Math.atan2(FIELD.fence[1].x, FIELD.fence[1].y) * 180 / Math.PI;   // where the fence ends, about -8
+const deepAt = (a) => fenceAt(a) ?? Infinity;
 
 export function polar(a, r) {
   const rad = (a * Math.PI) / 180;
@@ -287,8 +315,9 @@ function pickWeighted(weights, random) {
 
 const rnd = (random, lo, hi) => lo + random() * (hi - lo);
 
-/** Outfielder who plays a ball hit at angle a. */
+/** Outfielder who plays a ball hit at angle a, and how deep he plays. */
 const ofAt = (a) => (a < -13 ? 'LF' : a > 13 ? 'RF' : 'CF');
+const ofR = (a) => FIELD.spots[ofAt(a)].r;
 
 // --- Teams ------------------------------------------------------------------
 
@@ -410,11 +439,24 @@ export function planPA(g, { random = Math.random } = {}) {
     }
     play.kind = kind;
     if (kind === 'HR') {
-      const a = rnd(random, -40, 40);
-      play.contact = 'fly';
-      play.land = polar(a, rnd(random, FIELD.fence + 10, FIELD.fence + 45));
+      // Pull side: righties to left (open), lefties to right (the short fence).
+      const [lo, hi] = batter.bats === 'L' ? [-25, 40] : batter.bats === 'R' ? [-40, 25] : [-38, 38];
+      const a = rnd(random, lo, hi);
+      const fence = fenceAt(a);
+      const fenced = Math.max(0, hi - Math.max(lo, FENCE_LEFT)) / (hi - lo);
+      const over = fence !== null && random() < Math.min(1, OVER_FENCE_SHARE / Math.max(fenced, 0.05));
       play.fielder = ofAt(a);
-      play.outcome = homeRun(g, batter);
+      if (over) {
+        play.contact = 'fly';
+        play.land = polar(a, fence + rnd(random, 12, 40));
+      } else {
+        // Past the outfielder: rolls to the fence, or on into open left field.
+        play.contact = 'line';
+        play.insidePark = true;
+        play.throwTo = 4;
+        play.land = polar(a, Math.min(ofR(a) * rnd(random, 1.35, 1.55), deepAt(a) - 5, 235));
+      }
+      play.outcome = homeRun(g, batter, { insidePark: !over, where: fieldWord(play.fielder) });
       return play;
     }
     if (kind === '3B' || kind === '2B') {
@@ -422,7 +464,8 @@ export function planPA(g, { random = Math.random } = {}) {
       const side = random() < 0.5 ? -1 : 1;
       const a = lines ? side * rnd(random, 36, 43) : side * rnd(random, 12, 22);
       play.contact = random() < 0.3 ? 'line' : 'fly';
-      play.land = polar(a, kind === '3B' ? rnd(random, 262, 280) : rnd(random, 228, 265));
+      const d = ofR(a) * (kind === '3B' ? rnd(random, 1.22, 1.38) : rnd(random, 1.06, 1.22));
+      play.land = polar(a, Math.min(d, deepAt(a) - (kind === '3B' ? 4 : 10)));
       play.fielder = ofAt(a);
       return extraBaseHit(g, play, batter, kind, random);
     }
@@ -450,7 +493,7 @@ export function planPA(g, { random = Math.random } = {}) {
     }
     const ofSlot = ofAt(a);
     play.fielder = ofSlot;
-    play.land = polar(a, rnd(random, 150, 185));
+    play.land = polar(a, FIELD.spots[ofSlot].r * rnd(random, 0.7, 0.9));
     return single(g, play, batter, ofSlot, random);
   }
 
@@ -475,7 +518,9 @@ export function planPA(g, { random = Math.random } = {}) {
   if (slot === 'C') {
     play.kind = 'PO';
     play.contact = 'pop';
-    play.land = { x: rnd(random, -40, 40), y: rnd(random, -25, -8) };
+    // Foul, in front of the backstop and dugouts.
+    const fx = (random() < 0.5 ? -1 : 1) * rnd(random, 8, 32);
+    play.land = { x: fx, y: rnd(random, -6, Math.min(Math.abs(fx) - 3, 14)) };
     play.outcome = { moves: [{ id: batter.id, from: 0, to: 1, out: true, how: 'caught' }], text: `${batter.name} pops out to the catcher in foul ground.`, rbi: 0 };
     return play;
   }
@@ -505,7 +550,8 @@ export function planPA(g, { random = Math.random } = {}) {
   play.kind = random() < 0.8 ? 'FO' : 'LO';
   play.contact = play.kind === 'FO' ? 'fly' : 'line';
   const depth = rnd(random, -35, 35);
-  play.land = polar(spot.a + rnd(random, -9, 9), spot.r + depth);
+  const fa = spot.a + rnd(random, -9, 9);
+  play.land = polar(fa, Math.min(spot.r + depth, deepAt(fa) - 6));
   return flyOut(g, play, batter, slot, F, depth, random);
 }
 
@@ -540,13 +586,16 @@ function forceOuts(g, batter, verb, { rbiOnForce = false, hit = false } = {}) {
   return { moves, text: `${batter.name} ${verb}.${scoredText(g, moves)}`, rbi, hit };
 }
 
-function homeRun(g, batter) {
+function homeRun(g, batter, { insidePark = false, where = '' } = {}) {
   const moves = [];
   for (let b = 2; b >= 0; b -= 1) if (g.bases[b]) moves.push({ id: g.bases[b], from: b + 1, to: 4, out: false });
   moves.push({ id: batter.id, from: 0, to: 4, out: false });
   const n = moves.length;
-  const what = n === 4 ? 'a grand slam' : n === 1 ? 'a solo home run' : `a ${n}-run home run`;
-  return { moves, text: `${batter.name} hits ${what}!`, rbi: n, hit: true };
+  const what = n === 4 ? 'grand slam' : n === 1 ? 'solo home run' : `${n}-run home run`;
+  const text = insidePark
+    ? `${batter.name} circles the bases: an inside-the-park ${what}!`
+    : `${batter.name} hits a ${what} over the fence in ${where}!`;
+  return { moves, text, rbi: n, hit: true, insidePark };
 }
 
 /** Chance a runner makes it, for an extra base on a hit or a tag-up. */
