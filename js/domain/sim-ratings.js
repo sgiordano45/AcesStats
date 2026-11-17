@@ -377,3 +377,62 @@ export function reviveLeague(plain) {
   };
   return l;
 }
+
+// ---------------------------------------------------------------------------
+// The Sofa Kings: the hidden final boss (sim.html, after all seven pennants)
+// ---------------------------------------------------------------------------
+// No draft: eight fielders who each hit like BOSS.share (85%) of the model
+// player's season (his hits, extra-base hits and runs scaled down, then rated
+// like anyone else's line, small-sample pull and all), with 85% of his edge
+// over average on defense, plus a pitcher at the league's 85th percentile.
+
+export const BOSS = Object.freeze({
+  key: 'sofakings',
+  name: 'Sofa Kings',
+  model: 'andrew_yasinski',
+  modelName: 'Andrew Yasinski',
+  share: 0.85,
+  pitchPct: 0.85,
+  color: '#6d2e46',
+  blurb: 'No draft, no mercy: eight hitters at 85% of Andrew Yasinski and an 85th-percentile pitcher.'
+});
+
+const SOFA_NAMES = ['Lazy Boy', 'The Recliner', 'Loveseat', 'Ottoman', 'Futon', 'Chaise', 'Sectional', 'Throw Pillow'];
+const SOFA_SLOTS = ['C', '1B', '2B', '3B', 'SS', 'LF', 'CF', 'RF'];
+
+/** One Sofa King's ratings from the model player's season line and ratings. */
+export function sofaKingRatings(line, modelRatings, league) {
+  const k = BOSS.share;
+  const scaled = { ...line, h: line.h * k, d: line.d * k, t: line.t * k, hr: line.hr * k, r: line.r * k };
+  const r = computedRatings(scaled, { slots: ['LF'], wild: null }, league);
+  const edge = (v) => Math.round(SCALE.AVG + k * ((Number(v) || SCALE.AVG) - SCALE.AVG));
+  return { contact: r.contact, power: r.power, speed: r.speed, range: edge(modelRatings?.range), arm: edge(modelRatings?.arm), pitch: DEFAULTS.nonPitcher };
+}
+
+/** Rating at percentile q (0..1) of a list. */
+const percentile = (vals, q) => {
+  const a = [...vals].sort((x, y) => x - y);
+  return a.length ? a[Math.min(a.length - 1, Math.round(q * (a.length - 1)))] : null;
+};
+
+/**
+ * The Sofa Kings' nine, as pool-player-shaped objects (JSON-safe).
+ * @param {object[]} players  the season pool (for the pitching percentile)
+ * @param {object} league
+ * @param {{ line, ratings }} model  the model player's season line and ratings
+ */
+export function buildSofaKings(players, league, model) {
+  const bat = model?.line?.ab > 0
+    ? sofaKingRatings(model.line, model.ratings, league)
+    : { contact: 65, power: 65, speed: 65, range: 60, arm: 60, pitch: DEFAULTS.nonPitcher };
+  const pitched = players.filter((p) => p.line?.ip > 0).map((p) => p.ratings.pitch);
+  const pitch = percentile(pitched, BOSS.pitchPct) ?? 60;
+  const make = (id, name, slot, ratings, bats) => {
+    const pos = { slots: [slot], wild: null, label: slot };
+    const { ovr } = bestOverall(ratings, pos);
+    return { id, name, team: BOSS.name, position: slot, pos, ratings, bats, ovr, bestSlot: slot };
+  };
+  const nine = SOFA_SLOTS.map((slot, i) => make(`sofa_${i + 1}`, SOFA_NAMES[i], slot, { ...bat }, i % 3 === 2 ? 'L' : 'R'));
+  nine.push(make('sofa_p', 'The Couch', 'P', { contact: 50, power: 50, speed: 50, range: 50, arm: 50, pitch }, 'R'));
+  return nine;
+}

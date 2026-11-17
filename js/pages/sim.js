@@ -11,7 +11,7 @@ import { initPage, pageReady } from '../core/app.js';
 import { loadSimPool } from '../data/sim.js';
 import { loadRecord, recordGame } from '../data/sim-records.js';
 import {
-  SLOTS, TEAM_SIZE, RATING_KEYS, RATING_ABBR, RATING_LABELS, positionTag, leagueSummary, reviveLeague
+  SLOTS, TEAM_SIZE, RATING_KEYS, RATING_ABBR, RATING_LABELS, positionTag, leagueSummary, reviveLeague, BOSS
 } from '../domain/sim-ratings.js';
 import {
   pickOwner, legalPicks, cpuPick, assignPositions, battingOrder, makeTeam, newGame,
@@ -62,21 +62,23 @@ function clearSaved() {
 const POOL_SIZES = [[36, '36 random players'], [28, '28 random players (thin)'], [0, 'Everyone']];
 
 function newSave({ name, color, cpuColor, first, homeIsYou, ask, style, favorite, poolIds, conditionsMode }) {
-  const st = CPU_STYLES[style];
+  const boss = style === BOSS.key;
+  const st = boss ? BOSS : CPU_STYLES[style];
   return {
+    boss: boss ? JSON.parse(JSON.stringify(S.pool.boss)) : null,   // the Sofa Kings' fixed nine
     v: 1,
     phase: 'draft',
     seasonId: S.pool.seasonId,
     teams: [
       { name, color, cpu: false },
-      { name: st.name, color: cpuColor, cpu: true }
+      { name: st.name, color: boss ? BOSS.color : cpuColor, cpu: true }
     ],
     style,            // CPU_STYLES key
     favorite,         // the Homer's team
     poolIds,          // dealt pool (null: everyone)
     conditionsMode,   // 'random' or a CONDITIONS key
     conditions: null, // this game's
-    first,            // team index that picks first (0 you, 1 computer)
+    first: boss ? 0 : first,   // team index that picks first (0 you, 1 computer); the Sofa Kings don't draft
     homeIsYou,
     picks: [[], []],  // player ids
     log: [],          // [{ n, team, id }]
@@ -88,14 +90,18 @@ function newSave({ name, color, cpuColor, first, homeIsYou, ask, style, favorite
   };
 }
 
-const P = (id) => S.byId.get(id);
-const picksOf = (ti) => S.save.picks[ti].map(P).filter(Boolean);
+const isBoss = () => S.save?.style === BOSS.key && Array.isArray(S.save?.boss);
+const P = (id) => S.byId.get(id) || (isBoss() ? S.save.boss.find((p) => p.id === id) : undefined);
+// The Sofa Kings don't draft: their nine are fixed.
+const picksOf = (ti) => (ti === 1 && isBoss() ? S.save.boss : S.save.picks[ti].map(P).filter(Boolean));
 const poolLeft = () => {
   const taken = new Set([...S.save.picks[0], ...S.save.picks[1]]);
   const dealt = S.save.poolIds ? new Set(S.save.poolIds) : null;
   return S.pool.players.filter((p) => !taken.has(p.id) && (!dealt || dealt.has(p.id)));
 };
-const styleOf = () => CPU_STYLES[S.save.style] || CPU_STYLES.fundamentals;
+/** Display name for an opponent key, the Sofa Kings included. */
+const oppName = (key) => (key === BOSS.key ? BOSS.name : CPU_STYLES[key]?.name || 'the computer');
+const styleOf = () => (isBoss() ? BOSS : CPU_STYLES[S.save.style] || CPU_STYLES.fundamentals);
 const cpuName = () => S.save.teams[1].name || 'the computer';
 const opponentLine = () => {
   const st = styleOf();
@@ -137,6 +143,27 @@ const PENNANTS = {
   chaos: { short: 'Chaos', color: '#1a1a1a' }
 };
 
+/** All seven managers beaten: the Sofa Kings are open. */
+function bossUnlocked() {
+  const r = S.record;
+  return !!r && Object.keys(PENNANTS).every((k) => r.byStyle?.[k]?.w);
+}
+
+const crownSvg = () => `<svg viewBox="0 0 32 24" width="32" height="24" aria-hidden="true"><path d="M2 20 L4 6 L11 13 L16 3 L21 13 L28 6 L30 20 Z" fill="${BOSS.color}" stroke="#ffd700" stroke-width="1.5"/><rect x="2" y="19" width="28" height="4" fill="#ffd700"/></svg>`;
+
+/** The Sofa Kings' card under the pennants: nothing until it's unlocked. */
+function bossCard(r) {
+  if (!bossUnlocked()) return '';
+  const st = r.byStyle?.[BOSS.key];
+  const vs = st ? recLine({ wins: st.w, losses: st.l, ties: st.t }) : '0-0';
+  if (st?.w) {
+    return `<div class="sim-boss is-won">${crownSvg()}
+      <div><strong>${esc(BOSS.name)} dethroned</strong><span class="sim-dim">${esc(vs)} against them${st.firstWinAt ? `, first on ${esc(new Date(st.firstWinAt).toLocaleDateString())}` : ''}.</span></div></div>`;
+  }
+  return `<div class="sim-boss">${crownSvg()}
+    <div><strong>All seven pennants.</strong><span class="sim-dim">The ${esc(BOSS.name)} are waiting. Pick them as your opponent.${st ? ` ${esc(vs)} so far.` : ''}</span></div></div>`;
+}
+
 const pennantSvg = (color) => `<svg class="sim-pennant-flag" viewBox="0 0 44 26" aria-hidden="true">
   <rect x="1" y="1" width="2" height="24" fill="#6b5a45"/>
   <path d="M3 2 L43 13 L3 24 Z" fill="${color}"/>
@@ -150,9 +177,10 @@ function renderRecordChip() {
   const r = S.record;
   const chip = $('simRecordChip');
   if (!r || !r.games) { chip.hidden = true; return; }
-  const won = Object.values(r.byStyle).filter((s) => s.w).length;
+  const won = Object.keys(PENNANTS).filter((k) => r.byStyle[k]?.w).length;
   chip.hidden = false;
-  chip.innerHTML = `<span class="sim-kicker">Your record</span> <strong>${recLine(r)}</strong> <span class="sim-dim">${won}/${Object.keys(PENNANTS).length} pennants</span>`;
+  const crown = r.byStyle?.[BOSS.key]?.w ? ` <span class="sim-chip-crown" title="${esc(BOSS.name)} dethroned">${crownSvg()}</span>` : '';
+  chip.innerHTML = `<span class="sim-kicker">Your record</span> <strong>${recLine(r)}</strong> <span class="sim-dim">${won}/${Object.keys(PENNANTS).length} pennants</span>${crown}`;
 }
 
 function renderRecord({ fresh = '' } = {}) {
@@ -186,19 +214,19 @@ function renderRecord({ fresh = '' } = {}) {
         const st = r.byStyle[k];
         const has = !!st?.w;
         const vs = st ? recLine({ wins: st.w, losses: st.l, ties: st.t }) : '0-0';
-        const tip = has ? `Beat ${CPU_STYLES[k].name}${st.firstWinAt ? ` (first on ${new Date(st.firstWinAt).toLocaleDateString()})` : ''}. ${vs} against them.` : `Beat ${CPU_STYLES[k].name} to earn this.${st ? ` ${vs} so far.` : ''}`;
+        const tip = has ? `Beat ${oppName(k)}${st.firstWinAt ? ` (first on ${new Date(st.firstWinAt).toLocaleDateString()})` : ''}. ${vs} against them.` : `Beat ${oppName(k)} to earn this.${st ? ` ${vs} so far.` : ''}`;
         return `<li class="sim-pennant${has ? ' is-won' : ''}${fresh === k ? ' is-new' : ''}" title="${esc(tip)}">
           ${pennantSvg(has ? pn.color : '#b9bdb6')}
           <span class="sim-pennant-name">${esc(pn.short)}</span>
           <span class="sim-pennant-rec">${esc(vs)}</span></li>`;
       }).join('')}</ul>
-      ${won === Object.keys(PENNANTS).length ? '<p class="sim-pennant-all">All seven pennants. Nobody in the league can manage like you.</p>' : ''}
+      ${bossCard(r)}
     </section>
     ${r.recent.length ? `<section class="aces-card sim-record">
       <h2 class="aces-card-title">Recent games</h2>
       <ol class="sim-recent">${r.recent.slice(0, 6).map((x) => {
         const res = x.you > x.cpu ? 'W' : x.you < x.cpu ? 'L' : 'T';
-        return `<li><span class="sim-res is-${res}">${res}</span> ${x.you}-${x.cpu} <span class="sim-dim">vs ${esc(CPU_STYLES[x.style]?.name || 'the computer')}${CONDITIONS[x.conditions] && x.conditions !== 'perfect' ? `, ${esc(CONDITIONS[x.conditions].label.toLowerCase())}` : ''}</span></li>`;
+        return `<li><span class="sim-res is-${res}">${res}</span> ${x.you}-${x.cpu} <span class="sim-dim">vs ${esc(oppName(x.style))}${CONDITIONS[x.conditions] && x.conditions !== 'perfect' ? `, ${esc(CONDITIONS[x.conditions].label.toLowerCase())}` : ''}</span></li>`;
       }).join('')}</ol>
     </section>` : ''}`;
 }
@@ -215,10 +243,15 @@ async function saveToRecord(g) {
   };
   try {
     const name = S.profile?.displayName || S.profile?.linkedPlayer || '';
+    const wasUnlocked = bossUnlocked();
     const { record, newPennant } = await recordGame(S.uid, game, { name });
     S.record = record;
     renderRecord({ fresh: newPennant ? game.style : '' });
-    if (newPennant) showToast(`Pennant earned: you beat ${CPU_STYLES[game.style].name}!`);
+    if (newPennant && game.style === BOSS.key) showToast(`You beat the ${BOSS.name}! The couch is yours.`, 'success', { duration: 8000 });
+    else if (newPennant) showToast(`Pennant earned: you beat ${oppName(game.style)}!`);
+    if (!wasUnlocked && bossUnlocked()) {
+      setTimeout(() => showToast(`All seven pennants! A new challenger appears: the ${BOSS.name}. Pick them as your opponent.`, 'success', { duration: 10000 }), 1200);
+    }
   } catch (err) {
     console.error('[sim] record not saved', err);
     showToast('Couldn\u2019t save this game to your record', 'error');
@@ -266,6 +299,7 @@ function renderSetup(profile) {
           <span class="aces-select-wrap"><select class="aces-select" id="suStyle">
             <option value="random">Surprise me</option>
             ${Object.entries(CPU_STYLES).map(([k, st]) => `<option value="${k}">${esc(st.name)}</option>`).join('')}
+            ${bossUnlocked() ? `<option value="${BOSS.key}">${esc(BOSS.name)} (final boss)</option>` : ''}
           </select></span>
           <span class="sim-dim" id="suStyleNote">A random computer manager with its own taste in players.</span></div>
         <div class="aces-field"><label class="aces-label" for="suPool">Draft pool</label>
@@ -290,13 +324,14 @@ function renderSetup(profile) {
     if (act === 'discard') { clearSaved(); renderSetup(profile); }
   };
   $('suStyle').onchange = (e) => {
-    const st = CPU_STYLES[e.target.value];
+    const st = e.target.value === BOSS.key ? BOSS : CPU_STYLES[e.target.value];
     $('suStyleNote').textContent = st ? st.blurb : 'A random computer manager with its own taste in players.';
   };
   $('simSetupForm').onsubmit = (e) => {
     e.preventDefault();
     const sv = $('suStyle').value;
-    const style = CPU_STYLES[sv] ? sv : Object.keys(CPU_STYLES)[Math.floor(Math.random() * Object.keys(CPU_STYLES).length)];
+    const style = sv === BOSS.key && bossUnlocked() ? BOSS.key
+      : CPU_STYLES[sv] ? sv : Object.keys(CPU_STYLES)[Math.floor(Math.random() * Object.keys(CPU_STYLES).length)];
     const realTeams = [...new Set(S.pool.players.map((p) => p.team).filter(Boolean))];
     const favorite = style === 'homer' ? realTeams[Math.floor(Math.random() * realTeams.length)] : '';
     const size = Number($('suPool').value) || 0;
@@ -319,8 +354,8 @@ function renderSetup(profile) {
       conditionsMode: $('suWeather').value
     });
     persist();
-    if (sv === 'random') showToast(`Your opponent: ${CPU_STYLES[style].name}`);
-    if (fv === 'flip') showToast(S.save.first === 0 ? 'You won the coin flip: you pick first' : `${CPU_STYLES[style].name} pick first`);
+    if (sv === 'random') showToast(`Your opponent: ${oppName(style)}`);
+    if (fv === 'flip' && style !== BOSS.key) showToast(S.save.first === 0 ? 'You won the coin flip: you pick first' : `${oppName(style)} pick first`);
     renderDraft();
   };
 }
@@ -336,6 +371,7 @@ const ordinal = (n) => `${n}${['th', 'st', 'nd', 'rd'][(n % 100 > 10 && n % 100 
 
 function resume() {
   const missing = [...S.save.picks[0], ...S.save.picks[1]].filter((id) => !S.byId.has(id));
+  if (S.save.style === BOSS.key && !Array.isArray(S.save.boss)) missing.push(BOSS.key);
   if (missing.length && S.save.phase !== 'game' && S.save.phase !== 'final') {
     showToast('The rosters changed since this draft started, so it starts over', 'error');
     clearSaved();
@@ -355,9 +391,10 @@ function resume() {
 // ---------------------------------------------------------------------------
 
 const pickNo = () => S.save.picks[0].length + S.save.picks[1].length;
-const onClock = () => pickOwner(pickNo(), S.save.first);
-const draftDone = () => pickNo() >= 2 * TEAM_SIZE;
-const draftTeams = () => [{ picks: picksOf(0) }, { picks: picksOf(1) }];
+const onClock = () => (isBoss() ? 0 : pickOwner(pickNo(), S.save.first));
+const draftDone = () => pickNo() >= (isBoss() ? 1 : 2) * TEAM_SIZE;
+// Against the Sofa Kings only your own team has to be fillable from the pool.
+const draftTeams = () => (isBoss() ? [{ picks: picksOf(0) }] : [{ picks: picksOf(0) }, { picks: picksOf(1) }]);
 
 function makePick(ti, player) {
   const n = pickNo();
@@ -391,7 +428,7 @@ function renderDraft() {
   $('simDraft').innerHTML = `
     <div class="aces-card sim-clock${ti === 0 ? ' is-you' : ''}">
       <div>
-        <span class="sim-kicker">Round ${round} of ${TEAM_SIZE}, pick ${n + 1} of ${2 * TEAM_SIZE}</span>
+        <span class="sim-kicker">${isBoss() ? `Pick ${n + 1} of ${TEAM_SIZE}: the whole draft is yours` : `Round ${round} of ${TEAM_SIZE}, pick ${n + 1} of ${2 * TEAM_SIZE}`}</span>
         <h2 class="sim-clock-title">${ti === 0 ? 'You are on the clock' : `On the clock: ${esc(cpuName())}`}</h2>
         ${ti === 0 ? `<p class="sim-dim">Open spots: ${open.map((s) => `<span class="sim-need">${s}</span>`).join(' ') || 'none'}</p>` : ''}
         <p class="sim-dim">Opponent: <strong>${esc(cpuName())}</strong>. ${esc(opponentLine())}${S.save.poolIds ? ` Drafting from ${S.save.poolIds.length} dealt players.` : ''}</p>
@@ -420,14 +457,14 @@ function renderDraft() {
       </section>
       <div class="sim-teams">
         ${teamPanel(0, teams[0].picks)}
-        ${teamPanel(1, teams[1].picks)}
+        ${teamPanel(1, picksOf(1))}
         <section class="aces-card"><h2 class="aces-card-title">Picks</h2><ol class="sim-picks">${[...S.save.log].reverse().map((l) => `<li><span class="sim-dim">${l.n + 1}.</span> ${swatch(S.save.teams[l.team].color)} ${esc(P(l.id)?.name || l.id)} <span class="sim-dim">${esc(positionTag(P(l.id)?.pos || { slots: [], wild: 'UT' }))}</span></li>`).join('') || '<li class="sim-dim">No picks yet.</li>'}</ol></section>
       </div>
     </div>`;
 
   bindDraft();
   clearTimeout(cpuTimer);
-  if (ti === 1) {
+  if (ti === 1 && !isBoss()) {
     cpuTimer = setTimeout(() => {
       const p = cpuPick(1, draftTeams(), poolLeft(), { style: S.save.style || 'fundamentals', favorite: S.save.favorite || '' });
       if (!p) { showToast('The computer has no legal pick left', 'error'); return; }

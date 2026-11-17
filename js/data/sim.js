@@ -12,7 +12,8 @@
 
 import { db, collection, getDocs, doc, getDoc, setDoc, serverTimestamp } from '../core/firebase.js';
 import { getDisplaySeasonId, isSeasonId, seasonSortKey } from '../core/config.js';
-import { buildPool } from '../domain/sim-ratings.js';
+import { buildPool, buildSofaKings, seasonLine, BOSS } from '../domain/sim-ratings.js';
+import { statIdOf } from '../domain/player-id.js';
 
 const seasonOfRosterDoc = (id) => {
   const parts = String(id).split('-');
@@ -75,8 +76,16 @@ export async function loadSimPool(seasonId) {
   const bats = new Map(roster.map((r) => [r.id, r.bats]));
   players.forEach((p) => { p.bats = normBats(bats.get(p.id)); });
 
+  // The Sofa Kings, from the model player's line (rostered this season or not).
+  let model = players.find((p) => p.id === BOSS.model);
+  if (!model) {
+    const doc = statDocs.find((d) => d.migrated !== true && statIdOf(d) === BOSS.model);
+    model = doc ? { line: seasonLine(doc, sid), ratings: saved.players?.[BOSS.model] || {} } : null;
+  }
+  const boss = buildSofaKings(players, league, model);
+
   const savedAt = saved.updatedAt?.toDate ? saved.updatedAt.toDate() : null;
-  return { seasonId: sid, seasons: ids, players, league, savedAt, savedBy: saved.updatedBy || '' };
+  return { seasonId: sid, seasons: ids, players, league, boss, savedAt, savedBy: saved.updatedBy || '' };
 }
 
 const normBats = (v) => {
