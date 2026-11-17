@@ -19,6 +19,7 @@
 //
 // What counts: regular-season games with a winner, dated today or earlier in
 // ET (a game with no date counts). This is current-season.html's rule.
+// Forfeits count as soon as they're entered, even if the game date is ahead.
 // One deliberate difference from the old pages: a winner stored as a team ID
 // ('master_batters', all of 2019 Summer) counts; the old pages dropped it.
 //
@@ -117,10 +118,13 @@ export function normalizeGames(games) {
 /** Has a winner (any non-empty winner, as the old pages counted). */
 export const isDecided = (g) => !!g.winner || !!g.unmatchedWinner;
 
-/** Completed regular-season games as of a day: these are what standings count. */
+/**
+ * Completed regular-season games as of a day: these are what standings count.
+ * A forfeit counts right away, even when its game date is still ahead.
+ */
 export function standingsGames(games, { asOf = todayKey() } = {}) {
   return normalizeGames(games).filter((g) =>
-    g.type === 'regular' && isDecided(g) && (!g.dateKey || g.dateKey <= asOf));
+    g.type === 'regular' && isDecided(g) && (g.forfeit || !g.dateKey || g.dateKey <= asOf));
 }
 
 /** Regular-season games with no winner yet (any date). */
