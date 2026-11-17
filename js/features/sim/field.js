@@ -12,7 +12,7 @@
 // per foot on a 446 x 478 canvas that CSS scales up with crisp pixels. The
 // park is Senior Field (FIELD in sim-engine.js has its fence and spots).
 
-import { FIELD, polar, spotXY, fenceAt, deadAt } from '../../domain/sim-engine.js';
+import { FIELD, polar, spotXY, fenceAt, deadAt, CONDITIONS } from '../../domain/sim-engine.js';
 import { SLOTS } from '../../domain/sim-ratings.js';
 
 export const W = 446;
@@ -127,7 +127,9 @@ export class SimField {
     canvas.height = H;
     this.ctx = canvas.getContext('2d');
     this.ctx.imageSmoothingEnabled = false;
-    this.bg = this.drawBackground();
+    this.base = this.drawBackground();
+    this.bg = this.base;
+    this.cond = CONDITIONS.perfect;
     this.fieldColor = '#1976d2';
     this.batColor = '#d32f2f';
     this.fielders = {};
@@ -394,6 +396,82 @@ export class SimField {
     return c;
   }
 
+  /** Weather: tints the field, adds puddles when wet, wind streaks when windy. */
+  setConditions(id) {
+    const c = CONDITIONS[id] || CONDITIONS.perfect;
+    this.cond = c;
+    const v = document.createElement('canvas');
+    v.width = W;
+    v.height = H;
+    const x = v.getContext('2d');
+    x.imageSmoothingEnabled = false;
+    x.drawImage(this.base, 0, 0);
+    if (c.wet) {
+      x.fillStyle = 'rgba(45,55,40,0.2)';
+      x.fillRect(0, 0, W, H);
+      const rand = seeded(7);
+      // Puddles: on the infield dirt and in the low spots of the grass.
+      [[-22, 30, 7], [24, 58, 6], [-6, 10, 4], [40, 40, 5], [-40, 46, 5],
+        [-70, 130, 10], [85, 150, 8], [-120, 250, 9], [10, 200, 7], [-30, 90, 6]].forEach(([px, py, r]) => {
+        const q = toPxF({ x: px, y: py });
+        const rx = r * SCALE * (0.8 + rand() * 0.5);
+        const ry = rx * (0.45 + rand() * 0.2);
+        x.fillStyle = 'rgba(88,104,112,0.55)';
+        x.beginPath(); x.ellipse(q.x, q.y, rx, ry, rand() * Math.PI, 0, Math.PI * 2); x.fill();
+        x.fillStyle = 'rgba(210,225,232,0.35)';
+        x.fillRect(Math.round(q.x - rx / 3), Math.round(q.y - ry / 3), Math.max(2, Math.round(rx / 2)), 1);
+      });
+    }
+    if (c.tint === 'cold') { x.fillStyle = 'rgba(110,128,148,0.24)'; x.fillRect(0, 0, W, H); }
+    if (c.tint === 'hot') { x.fillStyle = 'rgba(255,196,90,0.10)'; x.fillRect(0, 0, W, H); }
+    this.bg = v;
+    this.draw();
+  }
+
+  drawWind() {
+    const wind = this.cond?.wind;
+    if (!wind) return;
+    const ctx = this.ctx;
+    // Direction in canvas pixels: out = toward the right-field corner, in = from center toward home.
+    const d = wind === 'out' ? { x: Math.SQRT1_2, y: -Math.SQRT1_2 } : { x: 0, y: 1 };
+    const t = performance.now() / 1000;
+    ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 16; i += 1) {
+      const u = ((i * 0.37 + t * 0.35) % 1);
+      const sx = ((i * 97) % W) + d.x * u * 140 - d.x * 70;
+      const sy = ((i * 61) % H) + d.y * u * 140 - d.y * 70;
+      ctx.beginPath();
+      ctx.moveTo(Math.round(sx), Math.round(sy));
+      ctx.lineTo(Math.round(sx + d.x * 9), Math.round(sy + d.y * 9));
+      ctx.stroke();
+    }
+    // Wind sock badge, top left.
+    const label = wind === 'out' ? 'WIND OUT TO RIGHT' : 'WIND BLOWING IN';
+    ctx.font = '600 9px Inter, sans-serif';
+    const w = ctx.measureText(label).width + 30;
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.fillRect(6, 6, Math.round(w), 18);
+    const cx = 16;
+    const cy = 15;
+    ctx.strokeStyle = '#ffd700';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(cx - d.x * 5, cy - d.y * 5);
+    ctx.lineTo(cx + d.x * 5, cy + d.y * 5);
+    ctx.stroke();
+    ctx.fillStyle = '#ffd700';
+    ctx.beginPath();
+    ctx.moveTo(cx + d.x * 6, cy + d.y * 6);
+    ctx.lineTo(cx + d.x * 2 - d.y * 3, cy + d.y * 2 + d.x * 3);
+    ctx.lineTo(cx + d.x * 2 + d.y * 3, cy + d.y * 2 - d.x * 3);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#ffffff';
+    ctx.textAlign = 'left';
+    ctx.fillText(label, 26, 18);
+  }
+
   resetFielders() {
     this.fielders = Object.fromEntries(SLOTS.map((s) => {
       const p = spotXY(s);
@@ -481,6 +559,8 @@ export class SimField {
       ctx.fillStyle = COLORS.ball;
       ctx.fillRect(g.x - 1, yy - 1, 2, 2);
     }
+
+    this.drawWind();
 
     if (this.banner) {
       ctx.font = '20px "Bebas Neue", "Arial Narrow", sans-serif';

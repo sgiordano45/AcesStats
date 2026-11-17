@@ -19,7 +19,7 @@
 
 import {
   SLOTS, IF_SLOTS, OF_SLOTS, TEAM_SIZE, WILD,
-  rateFor, overallAt, batValue, defValue, DEF_WEIGHTS
+  rateFor, batValue, defValue, DEF_WEIGHTS
 } from './sim-ratings.js';
 
 export const INNINGS = 7;
@@ -210,35 +210,114 @@ export function battingOrder(players) {
 // The computer drafter
 // ===========================================================================
 
+// Computer personalities. Each one weighs the ratings its own way, then picks
+// at random among the players it likes, more loosely the higher its
+// temperature (softmax over value): at 4, a player 4 points worse is taken
+// about a third as often as the best one.
+//   w: multipliers on contact, power, speed, defense (range/arm) and pitching
+//   favorite: likes one real team's players (+FAVORITE_BONUS)
+export const CPU_STYLES = Object.freeze({
+  fundamentals: { name: 'The Fundamentals', blurb: 'Takes the best player at a spot it needs.', w: { contact: 1, power: 1, speed: 1, def: 1, pitch: 1 }, temp: 3.5 },
+  sluggers: { name: 'The Long Ball Boys', blurb: 'Power first, second and third.', w: { contact: 0.7, power: 2.4, speed: 0.4, def: 0.6, pitch: 0.8 }, temp: 4.5 },
+  moneyball: { name: 'Moneyball', blurb: 'Contact hitters who never make an out.', w: { contact: 2.3, power: 0.6, speed: 0.8, def: 0.8, pitch: 0.9 }, temp: 4 },
+  smallball: { name: 'Small Ball', blurb: 'Speed and contact. Runs on everything.', w: { contact: 1.5, power: 0.3, speed: 2.4, def: 0.9, pitch: 0.8 }, temp: 4.5 },
+  leather: { name: 'Leather and Arms', blurb: 'Defense and pitching win championships.', w: { contact: 0.8, power: 0.6, speed: 0.7, def: 2.6, pitch: 2 }, temp: 4.5 },
+  homer: { name: 'The Homer', blurb: 'Can\u2019t help taking guys from one team.', w: { contact: 1, power: 1, speed: 1, def: 1, pitch: 1 }, temp: 5, favorite: true },
+  chaos: { name: 'Chaos Agent', blurb: 'Nobody, including the computer, knows what it\u2019s doing.', w: { contact: 1, power: 1, speed: 1, def: 1, pitch: 1 }, temp: 14 }
+});
+export const FAVORITE_BONUS = 8;
+// The user's Auto-pick: close to the best available.
+export const AUTO_PICK = Object.freeze({ w: CPU_STYLES.fundamentals.w, temp: 1.5 });
+
+const dev = (v) => (Number(v) || 50) - 50;
+/** Value at a spot through a personality's eyes. All weights 1 = overallAt. */
+export function styledAt(r, slot, w) {
+  const bat = 0.5 * w.contact * dev(r.contact) + 0.3 * w.power * dev(r.power) + 0.2 * w.speed * dev(r.speed);
+  if (slot === 'P') return 50 + 0.55 * bat + 0.45 * w.pitch * dev(r.pitch);
+  const dw = DEF_WEIGHTS[slot];
+  return 50 + (1 - dw.weight) * bat + dw.weight * w.def * (dw.range * dev(r.range) + dw.arm * dev(r.arm));
+}
+
 /**
- * The computer's pick. Values each legal player at the spots its team
- * still needs, with a bump for spots few players can fill and some noise.
+ * The computer's pick. Values each legal player at the spots its team still
+ * needs (as its personality sees them), with a bump for spots few players
+ * can fill, then draws one at random weighted toward the best.
+ * @param {object} [opts] { random, style: CPU_STYLES key or { w, temp }, favorite: team name }
  */
-export function cpuPick(teamIdx, teams, pool, { random = Math.random } = {}) {
+export function cpuPick(teamIdx, teams, pool, { random = Math.random, style = 'fundamentals', favorite = '' } = {}) {
+  const st = typeof style === 'string' ? (CPU_STYLES[style] || CPU_STYLES.fundamentals) : style;
   const legal = legalPicks(teamIdx, teams, pool);
   const mine = teams[teamIdx].picks;
   const placed = assignPositions(mine) || {};
   const open = SLOTS.filter((s) => !placed[s]);
   const remaining = TEAM_SIZE - mine.length;
-  // How many legal, non-wild players could fill each open spot.
+  // How many non-wild players left could fill each open spot.
   const supply = Object.fromEntries(open.map((s) => [s, pool.filter((p) => !p.pos.wild && p.pos.slots.includes(s)).length]));
+  const fav = String(favorite || '').toLowerCase();
 
-  let best = null;
-  let bestVal = -Infinity;
+  const scored = [];
   for (const p of pool) {
     if (!legal.has(p.id)) continue;
     const fits = p.pos.slots.filter((s) => open.includes(s));
     let val;
     if (fits.length) {
-      val = Math.max(...fits.map((s) => overallAt(p.ratings, s) + (supply[s] <= 3 ? 6 : supply[s] <= 6 ? 2 : 0)));
+      val = Math.max(...fits.map((s) => styledAt(p.ratings, s, st.w) + (supply[s] <= 3 ? 6 : supply[s] <= 6 ? 2 : 0)));
     } else {
-      val = p.ovr - 6; // would have to move someone
+      val = Math.max(...p.pos.slots.map((s) => styledAt(p.ratings, s, st.w))) - 6; // would have to move someone
     }
     if (p.pos.wild) val -= remaining > 3 ? 3 : 0; // keep the wildcard for later
-    val += (random() - 0.5) * 6;
-    if (val > bestVal) { bestVal = val; best = p; }
+    if (fav && String(p.team || '').toLowerCase() === fav) val += FAVORITE_BONUS;
+    scored.push({ p, val });
   }
-  return best;
+  if (!scored.length) return null;
+  const top = Math.max(...scored.map((x) => x.val));
+  const temp = Math.max(0.5, st.temp ?? 3.5);
+  const weights = scored.map((x) => Math.exp((x.val - top) / temp));
+  let r = random() * weights.reduce((a, b) => a + b, 0);
+  for (let i = 0; i < scored.length; i += 1) {
+    r -= weights[i];
+    if (r <= 0) return scored[i].p;
+  }
+  return scored[scored.length - 1].p;
+}
+
+/**
+ * Deal a random draft pool of `size` players that both teams can still
+ * fill all nine spots from. Returns the dealt players (or all of them when
+ * size covers the whole pool).
+ */
+export function dealPool(players, size, { random = Math.random, teams = 2 } = {}) {
+  if (!size || size >= players.length) return [...players];
+  const shuffled = () => {
+    const a = [...players];
+    for (let i = a.length - 1; i > 0; i -= 1) {
+      const j = Math.floor(random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  };
+  const empty = Array.from({ length: teams }, () => ({ picks: [] }));
+  for (let attempt = 0; attempt < 60; attempt += 1) {
+    const order = shuffled();
+    const dealt = [];
+    const have = new Set();
+    // Make sure every spot has a few players who can fill it, scarce spots first.
+    const scarce = [...SLOTS].sort((a, b) => players.filter((p) => !p.pos.wild && p.pos.slots.includes(a)).length
+      - players.filter((p) => !p.pos.wild && p.pos.slots.includes(b)).length);
+    for (const slot of scarce) {
+      let n = dealt.filter((p) => !p.pos.wild && p.pos.slots.includes(slot)).length;
+      for (const p of order) {
+        if (n >= teams + 1) break;
+        if (!have.has(p.id) && !p.pos.wild && p.pos.slots.includes(slot)) { dealt.push(p); have.add(p.id); n += 1; }
+      }
+    }
+    for (const p of order) {
+      if (dealt.length >= size) break;
+      if (!have.has(p.id)) { dealt.push(p); have.add(p.id); }
+    }
+    if (draftFeasible(empty, dealt)) return dealt;
+  }
+  return [...players];
 }
 
 // ===========================================================================
@@ -287,6 +366,27 @@ export const FIELD = Object.freeze({
 // Share of home runs that clear the fence; the rest are inside-the-parkers.
 // 2026 Fall: 6 of 70 home runs were flagged out of the park.
 export const OVER_FENCE_SHARE = 0.09;
+
+// Weather and field conditions, one per game. Multipliers on the batter's
+// hit rate (ba) and extra-base-hit rate (xbh), the share of home runs that
+// clear the fence (over), errors (err), the gap-triple share (gap), and an
+// add-on to the odds of taking an extra base (send). wind: drawn on the field.
+export const CONDITIONS = Object.freeze({
+  perfect: { label: 'Sunny and calm', blurb: 'A perfect fall morning.', ba: 1, xbh: 1, over: 1, err: 1, gap: 1, send: 0 },
+  windOut: { label: 'Wind blowing out to right', blurb: 'Fly balls carry. The short porch in right gets shorter.', ba: 1, xbh: 1.08, over: 2.4, err: 1, gap: 1, send: 0, wind: 'out' },
+  windIn: { label: 'Wind blowing in', blurb: 'Fly balls die. Almost nothing leaves the park.', ba: 0.99, xbh: 0.9, over: 0.3, err: 1, gap: 1, send: 0, wind: 'in' },
+  wet: { label: 'Wet field after rain', blurb: 'Slick ball, soft grass: more errors, fewer extra bases, balls die before the gap.', ba: 1, xbh: 0.93, over: 0.8, err: 1.7, gap: 0.4, send: -0.07, wet: true },
+  hot: { label: 'Hot and humid', blurb: 'The ball jumps off the bat.', ba: 1.01, xbh: 1.07, over: 1.5, err: 1, gap: 1, send: 0.02, tint: 'hot' },
+  cold: { label: 'Cold and gray', blurb: 'Stinging hands and a heavy ball.', ba: 0.98, xbh: 0.92, over: 0.6, err: 1.25, gap: 1, send: -0.02, tint: 'cold' }
+});
+export const conditionsOf = (g) => CONDITIONS[g?.conditions] || CONDITIONS.perfect;
+/** A random condition, sunny most often. */
+export function randomConditions(random = Math.random) {
+  const weights = { perfect: 4, windOut: 2, windIn: 2, wet: 1.5, hot: 1.5, cold: 1.5 };
+  let r = random() * Object.values(weights).reduce((a, b) => a + b, 0);
+  for (const [k, w] of Object.entries(weights)) { r -= w; if (r <= 0) return k; }
+  return 'perfect';
+}
 
 /** Feet from home to segment [p, q] along angle a (degrees, 0 = center, + toward right), or null. */
 function rayTo(a, [p, q]) {
@@ -381,10 +481,11 @@ export function makeTeam({ name, color, cpu = false, players, lineup, field }) {
 }
 
 /** New game. away bats first. league: leagueSummary() (plain JSON). */
-export function newGame({ away, home, league }) {
+export function newGame({ away, home, league, conditions = 'perfect' }) {
   return {
     v: 1,
     league,
+    conditions: CONDITIONS[conditions] ? conditions : 'perfect',
     teams: [away, home],
     inning: 1,
     half: 0,
@@ -412,8 +513,9 @@ export function paOdds(g, batter = currentBatter(g), pitcher = currentPitcher(g)
   const pz = z(pitcher.ratings.pitch);
   const bb = clamp(L.bb * (1 - 0.2 * pz), 0.01, 0.25);
   const k = clamp(L.k * (1 + 0.25 * pz), 0.003, 0.15);
-  const ba = clamp(rateFor('contact', batter.ratings.contact, L) * (1 - pitchEffect(L) * pz), 0.12, 0.88);
-  const xbh = clamp(rateFor('power', batter.ratings.power, L), 0.004, 0.55);
+  const cond = conditionsOf(g);
+  const ba = clamp(rateFor('contact', batter.ratings.contact, L) * (1 - pitchEffect(L) * pz) * cond.ba, 0.12, 0.88);
+  const xbh = clamp(rateFor('power', batter.ratings.power, L) * cond.xbh, 0.004, 0.55);
   return { bb, k, ba, xbh };
 }
 
@@ -482,7 +584,7 @@ export function planPA(g, { random = Math.random } = {}) {
       for (let i = 0; i < 20 && (gapAt(a) !== null || deadAt(a) !== null); i += 1) a = rnd(random, lo, hi);
       if (gapAt(a) !== null || deadAt(a) !== null) a = -20;
       const fence = fenceAt(a);
-      const over = fence !== null && random() < Math.min(1, OVER_FENCE_SHARE / Math.max(fencedShare(lo, hi), 0.05));
+      const over = fence !== null && random() < Math.min(1, (OVER_FENCE_SHARE * conditionsOf(g).over) / Math.max(fencedShare(lo, hi), 0.05));
       play.fielder = ofAt(a);
       if (over) {
         play.contact = 'fly';
@@ -500,7 +602,7 @@ export function planPA(g, { random = Math.random } = {}) {
     if (kind === '3B' || kind === '2B') {
       play.contact = random() < 0.3 ? 'line' : 'fly';
       // Some triples are the automatic triple through the gap in the fence.
-      if (kind === '3B' && random() < 0.35) {
+      if (kind === '3B' && random() < 0.35 * conditionsOf(g).gap) {
         const a = rnd(random, GAP_ANGLES[0] + 0.8, GAP_ANGLES[1] - 0.8);
         play.contact = 'ground';
         play.fielder = ofAt(a);
@@ -561,7 +663,7 @@ export function planPA(g, { random = Math.random } = {}) {
 
   // ---- Not a hit: an out, or an error
   play.fielder = slot;
-  const pErr = clamp((isIF ? 0.04 : 0.025) * (1 - 0.3 * fz.range), 0.005, 0.08);
+  const pErr = clamp((isIF ? 0.04 : 0.025) * (1 - 0.3 * fz.range) * conditionsOf(g).err, 0.005, 0.12);
   if (random() < pErr) {
     play.kind = 'E';
     play.contact = isIF ? 'ground' : 'fly';
@@ -678,7 +780,7 @@ function homeRun(g, batter, { insidePark = false, where = '' } = {}) {
 
 /** Chance a runner makes it, for an extra base on a hit or a tag-up. */
 function sendOdds(base, runner, fielder, g, { slot, bonus = 0 }) {
-  let p = base + 0.12 * z(runner.ratings.speed) - 0.1 * z(fielder.ratings.arm) + bonus;
+  let p = base + 0.12 * z(runner.ratings.speed) - 0.1 * z(fielder.ratings.arm) + bonus + conditionsOf(g).send;
   if (g.outs === 2) p += 0.1; // running on contact
   if (slot === 'LF') p -= 0.04;
   if (slot === 'RF') p += 0.03;

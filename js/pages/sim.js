@@ -14,6 +14,7 @@ import {
 } from '../domain/sim-ratings.js';
 import {
   pickOwner, legalPicks, cpuPick, assignPositions, battingOrder, makeTeam, newGame,
+  CPU_STYLES, AUTO_PICK, CONDITIONS, randomConditions, dealPool,
   planPA, commitPA, simHalf, simToEnd, currentBatter, currentPitcher, battingTeam,
   ipText, starOfGame, INNINGS
 } from '../domain/sim-engine.js';
@@ -57,15 +58,23 @@ function clearSaved() {
   try { localStorage.removeItem(STORE); } catch { /* ignore */ }
 }
 
-function newSave({ name, color, cpuColor, first, homeIsYou, ask }) {
+const POOL_SIZES = [[36, '36 random players'], [28, '28 random players (thin)'], [0, 'Everyone']];
+
+function newSave({ name, color, cpuColor, first, homeIsYou, ask, style, favorite, poolIds, conditionsMode }) {
+  const st = CPU_STYLES[style];
   return {
     v: 1,
     phase: 'draft',
     seasonId: S.pool.seasonId,
     teams: [
       { name, color, cpu: false },
-      { name: 'Computer', color: cpuColor, cpu: true }
+      { name: st.name, color: cpuColor, cpu: true }
     ],
+    style,            // CPU_STYLES key
+    favorite,         // the Homer's team
+    poolIds,          // dealt pool (null: everyone)
+    conditionsMode,   // 'random' or a CONDITIONS key
+    conditions: null, // this game's
     first,            // team index that picks first (0 you, 1 computer)
     homeIsYou,
     picks: [[], []],  // player ids
@@ -82,7 +91,14 @@ const P = (id) => S.byId.get(id);
 const picksOf = (ti) => S.save.picks[ti].map(P).filter(Boolean);
 const poolLeft = () => {
   const taken = new Set([...S.save.picks[0], ...S.save.picks[1]]);
-  return S.pool.players.filter((p) => !taken.has(p.id));
+  const dealt = S.save.poolIds ? new Set(S.save.poolIds) : null;
+  return S.pool.players.filter((p) => !taken.has(p.id) && (!dealt || dealt.has(p.id)));
+};
+const styleOf = () => CPU_STYLES[S.save.style] || CPU_STYLES.fundamentals;
+const cpuName = () => S.save.teams[1].name || 'the computer';
+const opponentLine = () => {
+  const st = styleOf();
+  return `${st.blurb}${S.save.style === 'homer' && S.save.favorite ? ` Favorite team: ${S.save.favorite}.` : ''}`;
 };
 
 // ---------------------------------------------------------------------------
@@ -113,7 +129,7 @@ function renderSetup(profile) {
   $('simSetup').innerHTML = `
     ${canResume ? `<div class="aces-card sim-resume">
       <div><h2 class="aces-card-title">Pick up where you left off?</h2>
-      <p class="sim-dim">${esc(saved.teams[0].name)} vs the Computer, ${esc(phaseWord(saved))}.</p></div>
+      <p class="sim-dim">${esc(saved.teams[0].name)} vs ${esc(saved.teams[1].name || 'the computer')}, ${esc(phaseWord(saved))}.</p></div>
       <div class="sim-actions"><button class="aces-btn is-primary" type="button" data-act="resume">Resume</button>
       <button class="aces-btn is-ghost" type="button" data-act="discard">Start over</button></div>
     </div>` : ''}
@@ -128,16 +144,34 @@ function renderSetup(profile) {
       <div class="sim-row">
         <div class="aces-field"><label class="aces-label" for="suFirst">First pick</label>
           <span class="aces-select-wrap"><select class="aces-select" id="suFirst">
-            <option value="flip">Coin flip</option><option value="0">You pick first</option><option value="1">Computer picks first</option>
+            <option value="flip">Coin flip</option><option value="0">You pick first</option><option value="1">The computer picks first</option>
           </select></span></div>
         <div class="aces-field"><label class="aces-label" for="suHome">Home team</label>
           <span class="aces-select-wrap"><select class="aces-select" id="suHome">
-            <option value="flip">Coin flip</option><option value="you">You (bat last)</option><option value="cpu">Computer</option>
+            <option value="flip">Coin flip</option><option value="you">You (bat last)</option><option value="cpu">The computer</option>
+          </select></span></div>
+      </div>
+      <div class="sim-row">
+        <div class="aces-field"><label class="aces-label" for="suStyle">Opponent</label>
+          <span class="aces-select-wrap"><select class="aces-select" id="suStyle">
+            <option value="random">Surprise me</option>
+            ${Object.entries(CPU_STYLES).map(([k, st]) => `<option value="${k}">${esc(st.name)}</option>`).join('')}
+          </select></span>
+          <span class="sim-dim" id="suStyleNote">A random computer manager with its own taste in players.</span></div>
+        <div class="aces-field"><label class="aces-label" for="suPool">Draft pool</label>
+          <span class="aces-select-wrap"><select class="aces-select" id="suPool">
+            ${POOL_SIZES.map(([n, label]) => `<option value="${n}">${esc(n ? label : `${label} (${S.pool.players.length})`)}</option>`).join('')}
+          </select></span>
+          <span class="sim-dim">A fresh random deal each draft, so the same stars aren't always there.</span></div>
+        <div class="aces-field"><label class="aces-label" for="suWeather">Conditions</label>
+          <span class="aces-select-wrap"><select class="aces-select" id="suWeather">
+            <option value="random">Random each game</option>
+            ${Object.entries(CONDITIONS).map(([k, c]) => `<option value="${k}">${esc(c.label)}</option>`).join('')}
           </select></span></div>
       </div>
       <label class="sim-check"><input type="checkbox" id="suAsk" checked> Ask me to send or hold runners on close plays</label>
       <div class="sim-actions"><button class="aces-btn is-primary" type="submit">Start the draft</button></div>
-      <p class="sim-dim sim-rules">Draft 9 players each, snake order. You need someone who can play every spot (P, C, 1B, 2B, 3B, SS, LF, CF, RF) from their roster position: IF covers any infield spot, OF any outfield spot, IF/OF either. Players with no position are Utility; you can take one Utility and one Flex player, and they can play anywhere. Games are 7 innings with the league mercy rule.</p>
+      <p class="sim-dim sim-rules">Draft 9 players each, snake order. You need someone who can play every spot (P, C, 1B, 2B, 3B, SS, LF, CF, RF) from their roster position: IF covers any infield spot, OF any outfield spot, IF/OF either. Players with no position are Utility; you can take one Utility and one Flex player, and they can play anywhere. Games are 7 innings at Senior Field with the league mercy rule: past the next diamond's first-base dugout is a ground-rule double, through the gap in the fence is an automatic triple.</p>
     </form>`;
 
   $('simSetup').onclick = (e) => {
@@ -145,8 +179,18 @@ function renderSetup(profile) {
     if (act === 'resume') { S.save = saved; resume(); }
     if (act === 'discard') { clearSaved(); renderSetup(profile); }
   };
+  $('suStyle').onchange = (e) => {
+    const st = CPU_STYLES[e.target.value];
+    $('suStyleNote').textContent = st ? st.blurb : 'A random computer manager with its own taste in players.';
+  };
   $('simSetupForm').onsubmit = (e) => {
     e.preventDefault();
+    const sv = $('suStyle').value;
+    const style = CPU_STYLES[sv] ? sv : Object.keys(CPU_STYLES)[Math.floor(Math.random() * Object.keys(CPU_STYLES).length)];
+    const realTeams = [...new Set(S.pool.players.map((p) => p.team).filter(Boolean))];
+    const favorite = style === 'homer' ? realTeams[Math.floor(Math.random() * realTeams.length)] : '';
+    const size = Number($('suPool').value) || 0;
+    const dealt = size ? dealPool(S.pool.players, size) : null;
     const color = document.querySelector('input[name="suColor"]:checked')?.value || defaultColor;
     const others = TEAM_COLORS.map(([, c]) => c).filter((c) => c !== color);
     const cpuColor = others[Math.floor(Math.random() * others.length)];
@@ -158,10 +202,15 @@ function renderSetup(profile) {
       cpuColor,
       first: fv === 'flip' ? (Math.random() < 0.5 ? 0 : 1) : Number(fv),
       homeIsYou: hv === 'flip' ? Math.random() < 0.5 : hv === 'you',
-      ask: $('suAsk').checked
+      ask: $('suAsk').checked,
+      style,
+      favorite,
+      poolIds: dealt && dealt.length < S.pool.players.length ? dealt.map((p) => p.id) : null,
+      conditionsMode: $('suWeather').value
     });
     persist();
-    if (fv === 'flip') showToast(S.save.first === 0 ? 'You won the coin flip: you pick first' : 'The computer picks first');
+    if (sv === 'random') showToast(`Your opponent: ${CPU_STYLES[style].name}`);
+    if (fv === 'flip') showToast(S.save.first === 0 ? 'You won the coin flip: you pick first' : `${CPU_STYLES[style].name} pick first`);
     renderDraft();
   };
 }
@@ -233,8 +282,9 @@ function renderDraft() {
     <div class="aces-card sim-clock${ti === 0 ? ' is-you' : ''}">
       <div>
         <span class="sim-kicker">Round ${round} of ${TEAM_SIZE}, pick ${n + 1} of ${2 * TEAM_SIZE}</span>
-        <h2 class="sim-clock-title">${ti === 0 ? 'You are on the clock' : 'The computer is picking...'}</h2>
+        <h2 class="sim-clock-title">${ti === 0 ? 'You are on the clock' : `On the clock: ${esc(cpuName())}`}</h2>
         ${ti === 0 ? `<p class="sim-dim">Open spots: ${open.map((s) => `<span class="sim-need">${s}</span>`).join(' ') || 'none'}</p>` : ''}
+        <p class="sim-dim">Opponent: <strong>${esc(cpuName())}</strong>. ${esc(opponentLine())}${S.save.poolIds ? ` Drafting from ${S.save.poolIds.length} dealt players.` : ''}</p>
       </div>
       <div class="sim-actions">
         ${ti === 0 ? '<button class="aces-btn" type="button" data-act="autopick" title="Let the computer pick for you this round">Auto-pick</button>' : ''}
@@ -269,7 +319,7 @@ function renderDraft() {
   clearTimeout(cpuTimer);
   if (ti === 1) {
     cpuTimer = setTimeout(() => {
-      const p = cpuPick(1, draftTeams(), poolLeft());
+      const p = cpuPick(1, draftTeams(), poolLeft(), { style: S.save.style || 'fundamentals', favorite: S.save.favorite || '' });
       if (!p) { showToast('The computer has no legal pick left', 'error'); return; }
       makePick(1, p);
       renderDraft();
@@ -316,7 +366,7 @@ function bindDraft() {
     if (slot) { S.draftFilter.slot = slot.dataset.slot; renderDraft(); return; }
     const act = e.target.closest('[data-act]')?.dataset.act;
     if (act === 'autopick' && onClock() === 0) {
-      const p = cpuPick(0, draftTeams(), poolLeft());
+      const p = cpuPick(0, draftTeams(), poolLeft(), { style: AUTO_PICK });
       if (p) { makePick(0, p); showToast(`Auto-pick: ${p.name}`); renderDraft(); }
     }
     if (act === 'restart') restart();
@@ -362,13 +412,20 @@ function renderLineup() {
   const slotOf = Object.fromEntries(Object.entries(mine.field).map(([s, id]) => [id, s]));
   const cpu = S.save.lineups[1];
   const cpuSlot = Object.fromEntries(Object.entries(cpu.field).map(([s, id]) => [id, s]));
-  const homeName = S.save.homeIsYou ? S.save.teams[0].name : 'the Computer';
+  const homeName = S.save.homeIsYou ? S.save.teams[0].name : cpuName();
+  // Conditions are set when the lineup screen first shows (rerolled for each game when random).
+  if (!S.save.conditions) {
+    S.save.conditions = S.save.conditionsMode && CONDITIONS[S.save.conditionsMode] ? S.save.conditionsMode : randomConditions();
+    persist();
+  }
+  const cond = CONDITIONS[S.save.conditions];
 
   $('simLineup').innerHTML = `
     <div class="aces-card sim-clock is-you">
       <div><span class="sim-kicker">Lineup</span>
       <h2 class="sim-clock-title">Set your batting order and positions</h2>
-      <p class="sim-dim">${esc(homeName)} ${S.save.homeIsYou ? 'are' : 'is'} the home team. Change a spot to swap two players; a player can only move to a spot his roster position allows.</p></div>
+      <p class="sim-dim">${esc(homeName)} ${S.save.homeIsYou ? 'are' : 'is'} the home team. Change a spot to swap two players; a player can only move to a spot his roster position allows.</p>
+      <p class="sim-weather" data-cond="${esc(S.save.conditions)}"><strong>Today at Senior Field:</strong> ${esc(cond.label)}. ${esc(cond.blurb)}</p></div>
       <div class="sim-actions"><button class="aces-btn is-primary" type="button" data-act="play">Play ball</button>
       <button class="aces-btn is-ghost" type="button" data-act="restart">Start over</button></div>
     </div>
@@ -393,7 +450,8 @@ function renderLineup() {
         <p class="sim-dim">Ratings shown: contact, power, speed.</p>
       </section>
       <section class="aces-card">
-        <h2 class="aces-card-title">${swatch(S.save.teams[1].color)} Computer</h2>
+        <h2 class="aces-card-title">${swatch(S.save.teams[1].color)} ${esc(cpuName())}</h2>
+        <p class="sim-dim">${esc(opponentLine())}</p>
         <ol class="sim-order is-cpu">${cpu.lineup.map((id, i) => {
           const p = P(id);
           return `<li><span class="sim-bat">${i + 1}</span><span class="sim-oname">${esc(p.name)}</span><span class="sim-spot">${cpuSlot[id]}</span>
@@ -455,7 +513,8 @@ function startGame() {
   const cpu = mk(1);
   you.side = 0; cpu.side = 1;
   const [away, home] = S.save.homeIsYou ? [cpu, you] : [you, cpu];
-  S.save.game = newGame({ away, home, league: leagueSummary(S.pool.league) });
+  if (!S.save.conditions) S.save.conditions = CONDITIONS[S.save.conditionsMode] ? S.save.conditionsMode : randomConditions();
+  S.save.game = newGame({ away, home, league: leagueSummary(S.pool.league), conditions: S.save.conditions });
   S.save.phase = 'game';
   persist();
   startGameView();
@@ -467,6 +526,7 @@ const youIdx = () => (S.save.homeIsYou ? 1 : 0);   // which game team is the use
 function startGameView() {
   show('game');
   if (!S.field) S.field = new SimField($('simCanvas'));
+  S.field.setConditions(G().conditions || 'perfect');
   $('simSpeed').value = String(S.save.speed ?? 1);
   $('simAsk').checked = !!S.save.ask;
   setScene();
@@ -539,6 +599,9 @@ function renderGame() {
     </div>
     <div class="sim-who is-small">
       <span class="sim-kicker">On deck</span><span>${esc(deck.name)}</span>
+    </div>
+    <div class="sim-who is-small sim-weather" data-cond="${esc(g.conditions || 'perfect')}" title="${esc((CONDITIONS[g.conditions] || CONDITIONS.perfect).blurb)}">
+      <span class="sim-kicker">Conditions</span><span>${esc((CONDITIONS[g.conditions] || CONDITIONS.perfect).label)}</span>
     </div>
     <div class="sim-who">
       <span class="sim-kicker">${swatch(fld.color)} Pitching</span>
@@ -662,8 +725,9 @@ function renderFinal() {
   const you = g.score[yi];
   const cpu = g.score[1 - yi];
   const how = g.result?.how;
-  const headline = you > cpu ? 'You win!' : you < cpu ? 'The computer wins.' : 'It ends in a tie.';
-  const note = how === 'mercy' ? `Mercy rule after ${g.result.innings} innings.` : how === 'walk-off' ? 'Walk-off!' : how === 'tie' ? 'Still tied after 10 innings.' : g.result?.innings > INNINGS ? `${g.result.innings} innings.` : '';
+  const headline = you > cpu ? 'You win!' : you < cpu ? `${cpuName()} win.` : 'It ends in a tie.';
+  const note = (how === 'mercy' ? `Mercy rule after ${g.result.innings} innings.` : how === 'walk-off' ? 'Walk-off!' : how === 'tie' ? 'Still tied after 10 innings.' : g.result?.innings > INNINGS ? `${g.result.innings} innings.` : '')
+    + ` ${(CONDITIONS[g.conditions] || CONDITIONS.perfect).label}.`;
   const star = starOfGame(g);
   const rec = S.save.results || [];
   const w = rec.filter((r) => r.you > r.cpu).length;
@@ -688,8 +752,8 @@ function renderFinal() {
     </section>`;
   $('simFinal').onclick = (e) => {
     const act = e.target.closest('[data-act]')?.dataset.act;
-    if (act === 'rematch') { S.save.homeIsYou = !S.save.homeIsYou; S.save.recorded = false; startGame(); }
-    if (act === 'lineup') { S.save.homeIsYou = !S.save.homeIsYou; S.save.recorded = false; S.save.phase = 'lineup'; S.save.game = null; persist(); renderLineup(); }
+    if (act === 'rematch') { S.save.homeIsYou = !S.save.homeIsYou; S.save.recorded = false; S.save.conditions = null; startGame(); }
+    if (act === 'lineup') { S.save.homeIsYou = !S.save.homeIsYou; S.save.recorded = false; S.save.conditions = null; S.save.phase = 'lineup'; S.save.game = null; persist(); renderLineup(); }
     if (act === 'new') { clearSaved(); S.save = null; renderSetup(S.profile); }
   };
 }
