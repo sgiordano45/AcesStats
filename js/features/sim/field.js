@@ -147,6 +147,37 @@ function alongBases(from, d) {
   return { x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t) };
 }
 
+// ---- The road past left field (Field of Dreams) and its traffic ----------
+
+/** The road behind the left-field fence: parallel to it, 80 ft out. Centre line a -> b (feet), unit dir. */
+function roadOf(pk) {
+  const [lf] = pk.poles;
+  const cf = pk.gap ? pk.gap[0] : { x: 0, y: 325 };
+  const len = Math.hypot(cf.x - lf.x, cf.y - lf.y);
+  const dir = { x: (cf.x - lf.x) / len, y: (cf.y - lf.y) / len };
+  const out = { x: -dir.y, y: dir.x };   // away from the field
+  const at = (p, along, off) => ({ x: p.x + dir.x * along + out.x * off, y: p.y + dir.y * along + out.y * off });
+  const a = at(lf, -230, 80);
+  const b = at(cf, 260, 80);
+  return { a, b, dir, out, len: Math.hypot(b.x - a.x, b.y - a.y), half: 15, ang: (Math.atan2(dir.y, dir.x) * 180) / Math.PI, at };
+}
+
+// Cars, pickups, vans, box trucks and the odd school bus. len x wid in feet.
+const VEHICLES = [
+  { kind: 'car', len: 14, wid: 6.5, w: 10 },
+  { kind: 'suv', len: 15.5, wid: 7, w: 5 },
+  { kind: 'pickup', len: 18, wid: 7, w: 4 },
+  { kind: 'van', len: 17, wid: 7, w: 2 },
+  { kind: 'truck', len: 26, wid: 8, w: 1.5 },
+  { kind: 'bus', len: 34, wid: 8, w: 0.6 }
+];
+const CAR_COLORS = ['#f2f2ef', '#25375a', '#8c1d1d', '#3d4247', '#c9ccd0', '#1f1f1f', '#6b7d8f', '#2e5e3e', '#b8862f', '#5a2a5e'];
+const pickVehicle = () => {
+  let r = Math.random() * VEHICLES.reduce((t, v) => t + v.w, 0);
+  for (const v of VEHICLES) { r -= v.w; if (r <= 0) return v; }
+  return VEHICLES[0];
+};
+
 export class SimField {
   constructor(canvas) {
     this.canvas = canvas;
@@ -171,6 +202,10 @@ export class SimField {
     this.umpSay = null;     // speech bubble text
     this.say = null;        // a fielder's call: { who, text }
     this.raf = 0;
+    this.idleRaf = 0;       // a light redraw loop between plays (traffic, wind)
+    this.traffic = null;    // { road, lanes: [{ off, sgn, cars, next }], last, flow }
+    this.brakeUntil = 0;    // cars stop to watch a home run land
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) this.startIdle(); });
     this.resetFielders();
     this.draw();
   }
@@ -450,16 +485,14 @@ export class SimField {
     x.fillStyle = C.rough;
     x.fillRect(0, 0, W, H);
     speckle(1800, [C.roughDark, C.roughLight], 2);
-    const road = [{ x: -330, y: 215 }, { x: -60, y: 420 }, { x: 40, y: 470 }, { x: 40, y: 520 }, { x: -330, y: 520 }];
-    const roadIn = [{ x: -330, y: 250 }, { x: -60, y: 455 }, { x: 40, y: 505 }];
-    poly(road, C.asphalt);
-    clipped(() => path(road), () => speckle(500, [C.asphaltDark, C.asphaltLight]));
-    line([{ x: -330, y: 215 }, { x: -60, y: 420 }, { x: 40, y: 470 }], C.curb, 2);
-    for (let i = 0; i < 12; i += 1) {
-      const a = lerpP(roadIn[0], roadIn[1], i / 12);
-      const b = lerpP(roadIn[0], roadIn[1], (i + 0.45) / 12);
-      seg({ x: a.x, y: a.y - 18 }, { x: b.x, y: b.y - 18 }, C.roadLine, 1.5);
-    }
+    // The road, parallel to the left-field fence and 80 ft past it.
+    const rd = roadOf(pk);
+    const lane = [rd.at(rd.a, 0, -rd.half), rd.at(rd.a, rd.len, -rd.half), rd.at(rd.a, rd.len, rd.half), rd.at(rd.a, 0, rd.half)];
+    poly(lane, C.asphalt);
+    clipped(() => path(lane), () => speckle(500, [C.asphaltDark, C.asphaltLight]));
+    seg(lane[0], lane[1], C.curb, 2);
+    seg(lane[3], lane[2], C.curb, 2);
+    for (let i = 0; i < 40; i += 1) seg(rd.at(rd.a, i * 18, 0), rd.at(rd.a, i * 18 + 8, 0), C.roadLine, 1.5);
 
     // The park: striped grass inside the fence and down both foul sides.
     const park = [{ x: 0, y: -24 }, { x: -96, y: -24 }, { x: -205, y: 120 }, lfPole, ...fencePts.slice(1), rfPole, { x: 172, y: 150 }, { x: 96, y: -24 }];
@@ -476,15 +509,14 @@ export class SimField {
 
     // Trees: a row past the fence from left round to right, thick behind left and center.
     const trees = [];
-    for (let i = 0; i <= 26; i += 1) {
-      const t = i / 26;
+    for (let i = 0; i <= 40; i += 1) {
+      const t = i / 40;
       const seg2 = Math.min(fencePts.length - 2, Math.floor(t * (fencePts.length - 1)));
       const u = t * (fencePts.length - 1) - seg2;
       const p = lerpP(fencePts[seg2], fencePts[seg2 + 1], u);
       const r = Math.hypot(p.x, p.y);
-      const out = 22 + rand() * 14;
-      trees.push([p.x * (r + out) / r, p.y * (r + out) / r, 11 + rand() * 7]);
-      if (p.x < 40) trees.push([p.x * (r + out + 22) / r, p.y * (r + out + 22) / r, 10 + rand() * 6]);
+      const out = 22 + rand() * 12;
+      trees.push([p.x * (r + out) / r, p.y * (r + out) / r, 11 + rand() * 6]);
     }
     [[200, 120, 14], [205, 210, 16], [180, 250, 15], [-215, 90, 13], [-200, 40, 12], [-90, -20, 12], [-140, -10, 10], [150, -16, 11]]
       .forEach((t) => trees.push(t));
@@ -635,8 +667,86 @@ export class SimField {
     if (k === this.park) return;
     this.park = k;
     usePark(k);
+    this.traffic = k === 'dreams' ? { road: roadOf(PARK), lanes: [{ off: -6.5, sgn: 1, cars: [], next: 0 }, { off: 6.5, sgn: -1, cars: [], next: 0 }], last: 0, flow: 1 } : null;
     this.base = this.drawBackground();
     this.setConditions(this.condId || 'perfect');
+  }
+
+  /** Keep redrawing between plays while something is moving (traffic, wind): ~30 fps, never in a hidden tab. */
+  startIdle() {
+    if (this.idleRaf) return;
+    const loop = (now) => {
+      this.idleRaf = 0;
+      const moving = this.traffic || this.cond?.wind;
+      if (!moving || document.hidden || !this.canvas.isConnected || this.canvas.offsetParent === null) return;
+      if (!this.raf && now - (this.idleAt || 0) > 33) { this.idleAt = now; this.draw(); }
+      this.idleRaf = requestAnimationFrame(loop);
+    };
+    this.idleRaf = requestAnimationFrame(loop);
+  }
+
+  /** Move the cars along (and send new ones) up to time now. */
+  updateTraffic(now) {
+    const T = this.traffic;
+    if (!T) return;
+    const dt = T.last ? Math.min(0.1, (now - T.last) / 1000) : 0;
+    T.last = now;
+    // Everyone eases to a stop while a home run comes down, then pulls away.
+    const target = now < this.brakeUntil ? 0 : 1;
+    T.flow += (target - T.flow) * Math.min(1, dt * (target ? 0.8 : 2.5));
+    const L = T.road.len;
+    for (const lane of T.lanes) {
+      if (now >= lane.next) {
+        const v = pickVehicle();
+        const lead = lane.cars[lane.cars.length - 1];
+        const room = !lead || (lane.sgn > 0 ? lead.s - lead.len : L - lead.s - lead.len) > 30;
+        if (room) {
+          const speed = 36 + Math.random() * 14;   // feet a second: 25-34 mph
+          const color = v.kind === 'bus' ? '#f2b705' : v.kind === 'truck' ? '#f4f4f1' : CAR_COLORS[Math.floor(Math.random() * CAR_COLORS.length)];
+          lane.cars.push({ ...v, s: lane.sgn > 0 ? -v.len : L + v.len, v: lead ? Math.min(speed, lead.v) : speed, color });
+        }
+        lane.next = now + 2500 + Math.random() * 7000;
+      }
+      for (const c of lane.cars) c.s += lane.sgn * c.v * T.flow * dt;
+      lane.cars = lane.cars.filter((c) => c.s > -60 && c.s < L + 60);
+    }
+  }
+
+  drawTraffic() {
+    const T = this.traffic;
+    if (!T) return;
+    const ctx = this.ctx;
+    const { road } = T;
+    for (const lane of T.lanes) {
+      for (const c of lane.cars) {
+        const p = toPxF(road.at(road.a, c.s, lane.off));
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate((-(road.ang + (lane.sgn < 0 ? 180 : 0)) * Math.PI) / 180);
+        const l = c.len * SCALE;
+        const w = c.wid * SCALE;
+        ctx.fillStyle = 'rgba(0,0,0,0.3)';
+        ctx.fillRect(-l / 2 + 1, -w / 2 + 1, l, w);
+        ctx.fillStyle = c.color;
+        ctx.fillRect(-l / 2, -w / 2, l, w);
+        ctx.fillStyle = 'rgba(20,30,40,0.6)';
+        if (c.kind === 'truck') {
+          ctx.fillStyle = '#c0392b'; ctx.fillRect(l / 2 - l * 0.22, -w / 2, l * 0.22, w);   // the cab
+          ctx.fillStyle = 'rgba(20,30,40,0.6)'; ctx.fillRect(l / 2 - l * 0.1, -w / 2 + 1, l * 0.06, w - 2);
+        } else if (c.kind === 'pickup') {
+          ctx.fillRect(l * 0.02, -w / 2 + 1, l * 0.14, w - 2);                                    // windshield
+          ctx.fillStyle = 'rgba(0,0,0,0.22)'; ctx.fillRect(-l / 2 + 1, -w / 2 + 1, l * 0.42, w - 2);   // the bed
+        } else if (c.kind === 'bus') {
+          ctx.fillRect(l / 2 - l * 0.08, -w / 2 + 1, l * 0.05, w - 2);
+          ctx.fillStyle = 'rgba(20,30,40,0.35)';
+          for (let i = 0; i < 6; i += 1) ctx.fillRect(-l / 2 + 2 + i * l * 0.13, -w / 2, l * 0.08, 1);
+        } else {
+          ctx.fillRect(l * 0.12, -w / 2 + 1, l * 0.14, w - 2);                                    // windshield
+          ctx.fillRect(-l * 0.32, -w / 2 + 1, l * 0.1, w - 2);                                    // back window
+        }
+        ctx.restore();
+      }
+    }
   }
 
   /** Weather: tints the field, adds puddles when wet, wind streaks when windy. */
@@ -670,6 +780,7 @@ export class SimField {
     if (c.tint === 'hot') { x.fillStyle = 'rgba(255,196,90,0.10)'; x.fillRect(0, 0, W, H); }
     this.bg = v;
     this.draw();
+    this.startIdle();
   }
 
   drawWind() {
@@ -781,6 +892,10 @@ export class SimField {
   draw() {
     const ctx = this.ctx;
     ctx.drawImage(this.bg, 0, 0);
+    if (this.traffic) {
+      this.updateTraffic(performance.now());
+      this.drawTraffic();
+    }
     // Back to front so nearer players overlap farther ones.
     const people = [
       // With eight, the batting team's courtesy catcher stands in (in their colors).
@@ -1078,7 +1193,10 @@ function buildTimeline(field, play, outcome, speedOf) {
     const a = (Math.atan2(land.x, land.y) * 180) / Math.PI;
     const wall = polar(a, (fenceAt(a, PARK) ?? Math.hypot(land.x, land.y)) - 8);
     add(contact, flight * 0.8, (u) => { F.x = lerp(Fstart.x, wall.x, ease(u)); F.y = lerp(Fstart.y, wall.y, ease(u)); F.frame = Math.floor(u * 12) % 2 ? 'run1' : 'run2'; });
-    add(arrive, 1, () => { field.ball = null; F.frame = 'stand'; });
+    add(arrive, 1, () => {
+      field.ball = null; F.frame = 'stand';
+      if (land.x < 40) field.brakeUntil = performance.now() + 2600;   // traffic on the road stops to watch
+    });
     const end = moveRunners(contact + 150);
     return finalize(bannerAt(Math.max(arrive, end - 400), 'HR'));
   }

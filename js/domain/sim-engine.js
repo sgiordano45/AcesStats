@@ -376,9 +376,11 @@ const SENIOR = Object.freeze({
 });
 
 // Field of Dreams (the summer field): fenced all the way around. 280 ft
-// down the left-field line (a tall double-height fence, trees and the road
-// behind), 315 ft to dead center, 235 ft down the right-field line (a lower
-// fence; the tennis courts beyond the right-field line are foul).
+// down the left-field line, with the tall double-height fence (trees and the
+// road behind it) running straight from the left-field pole to dead center
+// (about 277 ft to straightaway left-center, 325 ft to center); then a lower
+// fence round to 235 ft down the right-field line (the tennis courts beyond
+// the right-field line are foul). Most home runs go out to left and left-center.
 //   - Over any fence is a home run.
 //   - The last 6 ft of fence in the right-field corner is open: through it
 //     is a ground-rule double.
@@ -392,14 +394,13 @@ const DREAMS = Object.freeze({
   base: 65,
   mound: 50,
   fence: Object.freeze([
-    Object.freeze([{ x: -198.0, y: 198.0 }, { x: -114.8, y: 277.2 }]),    // left-field pole to left-center
-    Object.freeze([{ x: -114.8, y: 277.2 }, { x: -1.5, y: 315.0 }]),     // to the hole in dead center
-    Object.freeze([{ x: 1.5, y: 315.0 }, { x: 102.6, y: 247.6 }]),       // from the hole to right-center
+    Object.freeze([{ x: -198.0, y: 198.0 }, { x: -1.5, y: 324.0 }]),     // left-field pole straight to the hole in dead center
+    Object.freeze([{ x: 1.5, y: 323.9 }, { x: 102.6, y: 247.6 }]),       // from the hole to right-center
     Object.freeze([{ x: 102.6, y: 247.6 }, { x: 162.5, y: 170.9 }])      // to the opening in the right-field corner
   ]),
   poles: Object.freeze([{ x: -198.0, y: 198.0 }, { x: 166.2, y: 166.2 }]),
   // The hole in dead center (a ground-rule triple), playing the part of Senior Field's gap.
-  gap: Object.freeze([{ x: -1.5, y: 315.0 }, { x: 1.5, y: 315.0 }]),
+  gap: Object.freeze([{ x: -1.5, y: 324.0 }, { x: 1.5, y: 323.9 }]),
   // The opening in the right-field corner, the last 6 ft before the pole (a ground-rule double).
   corner: Object.freeze([{ x: 162.5, y: 170.9 }, { x: 166.2, y: 166.2 }]),
   // The tree branch in right-center: a ball that rolls into it is dead.
@@ -407,9 +408,10 @@ const DREAMS = Object.freeze({
   spots: {
     P: { a: 0, r: 50 }, C: { a: 0, r: -7 },
     '1B': { a: 38, r: 80 }, '2B': { a: 14, r: 108 }, SS: { a: -14, r: 108 }, '3B': { a: -38, r: 80 },
-    LF: { a: -28, r: 205 }, LCF: { a: -10, r: 232 }, CF: { a: 0, r: 235 }, RCF: { a: 11, r: 222 }, RF: { a: 29, r: 178 }
+    LF: { a: -28, r: 205 }, LCF: { a: -10, r: 232 }, CF: { a: 0, r: 240 }, RCF: { a: 11, r: 222 }, RF: { a: 29, r: 178 }
   },
   overShare: 0.48,          // 2026 Summer: 20 of 42 home runs were flagged out of the park
+  overLeft: { R: 0.85, S: 0.7, '': 0.7, L: 0.4 },   // share of those over the fence in left / left-center, by how he bats
   tripleShare: 0.08,        // triples (and a few doubles) that squeeze through the hole in center
   holeDoubles: 0.01,
   tripleText: 'squeezes one through the hole in the center-field fence: a ground-rule triple',
@@ -677,11 +679,20 @@ export function planPA(g, { random = Math.random } = {}) {
       // are triples and doubles), so pick an angle clear of them.
       const [lo, hi] = batter.bats === 'L' ? [-25, 40] : batter.bats === 'R' ? [-35, 25] : [-35, 38];
       const blocked = (x) => gapAt(x, PK) !== null || deadAt(x, PK) !== null || cornerAt(x, PK) !== null;
-      let a = rnd(random, lo, hi);
-      for (let i = 0; i < 20 && blocked(a); i += 1) a = rnd(random, lo, hi);
+      let over = null;
+      let pickA = () => rnd(random, lo, hi);
+      if (PK.overLeft) {
+        // Fenced all round: over or not first, then where. Over the fence is mostly to left and left-center.
+        over = random() < Math.min(1, PK.overShare * conditionsOf(g).over);
+        const left = PK.overLeft[batter.bats] ?? PK.overLeft[''];
+        if (over) pickA = () => (random() < left ? rnd(random, -42, -6) : rnd(random, -4, 42));
+      }
+      let a = pickA();
+      for (let i = 0; i < 20 && blocked(a); i += 1) a = pickA();
       if (blocked(a)) a = -20;
       const fence = fenceAt(a, PK);
-      const over = fence !== null && random() < Math.min(1, (PK.overShare * conditionsOf(g).over) / Math.max(fencedShare(lo, hi, PK), 0.05));
+      if (over === null) over = fence !== null && random() < Math.min(1, (PK.overShare * conditionsOf(g).over) / Math.max(fencedShare(lo, hi, PK), 0.05));
+      else over = over && fence !== null;
       play.fielder = ofAt(g, a);
       if (over) {
         play.contact = 'fly';
