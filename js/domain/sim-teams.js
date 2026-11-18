@@ -285,3 +285,41 @@ export function positionsPlayed(plan, id) {
   }
   return [...new Set(out)].join('-');
 }
+
+/**
+ * A season's league numbers for the game engine (hit rate, walk and
+ * strikeout rates, and the double/triple/home-run mix). When only some teams
+ * kept hit types that season (2026 Summer: black, blue, teal), the
+ * extra-base numbers come from those teams alone.
+ * @returns {object|null} a leagueBaseline, or null when the season has no stats
+ */
+export function seasonLeague(statDocs, seasonId) {
+  const partial = HIT_TYPES_TEAMS[seasonId] || null;
+  const lines = [];
+  const typed = [];
+  for (const d of statDocs) {
+    if (!d || d.migrated === true) continue;
+    const mine = teamsOf(d).filter((t) => t.seasonId === seasonId);
+    if (!mine.length) continue;
+    const l = seasonLine(d, seasonId);
+    if (!(l.ab > 0 || l.ip > 0)) continue;
+    lines.push(l);
+    if (partial && mine.some((t) => partial.includes(t.team))) typed.push(l);
+  }
+  if (lines.length < 20) return null;
+  const league = leagueBaseline(lines, { seasonId });
+  if (partial && typed.length >= 10) {
+    // Doubles and triples from the teams that tracked them; home runs (kept
+    // by every team) from the whole league.
+    const sum = (ls, k) => ls.reduce((n, l) => n + (l[k] || 0), 0);
+    const tAB = sum(typed, 'ab');
+    const d = sum(typed, 'd') / tAB;
+    const t = sum(typed, 't') / tAB;
+    const hr = sum(lines, 'hr') / Math.max(1, sum(lines, 'ab'));
+    league.xbh = d + t + hr;
+    league.mix = { d: d / league.xbh, t: t / league.xbh, hr: hr / league.xbh };
+    league.scale = { ...league.scale, power: leagueBaseline(typed).scale.power };
+  }
+  league.seasonId = seasonId;
+  return league;
+}

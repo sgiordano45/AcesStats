@@ -409,7 +409,7 @@ const DREAMS = Object.freeze({
     '1B': { a: 38, r: 80 }, '2B': { a: 14, r: 108 }, SS: { a: -14, r: 108 }, '3B': { a: -38, r: 80 },
     LF: { a: -28, r: 205 }, LCF: { a: -10, r: 232 }, CF: { a: 0, r: 235 }, RCF: { a: 11, r: 222 }, RF: { a: 29, r: 178 }
   },
-  overShare: 0.4,           // short fences all around: most home runs leave the park
+  overShare: 0.48,          // 2026 Summer: 20 of 42 home runs were flagged out of the park
   tripleShare: 0.08,        // triples (and a few doubles) that squeeze through the hole in center
   holeDoubles: 0.01,
   tripleText: 'squeezes one through the hole in the center-field fence: a ground-rule triple',

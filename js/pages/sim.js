@@ -945,7 +945,9 @@ function buildGame() {
   you.side = 0; cpu.side = 1;
   const [away, home] = S.save.homeIsYou ? [cpu, you] : [you, cpu];
   if (!S.save.conditions) S.save.conditions = CONDITIONS[S.save.conditionsMode] ? S.save.conditionsMode : randomConditions();
-  return newGame({ away, home, league: leagueSummary(S.pool.league), conditions: S.save.conditions, park: fmt().park });
+  // Summer games use the summer league's numbers (lower average, fewer extra-base hits).
+  const league = fmt().key === 'summer' && S.pool.summerLeague ? S.pool.summerLeague : S.pool.league;
+  return newGame({ away, home, league: leagueSummary(league), conditions: S.save.conditions, park: fmt().park });
 }
 
 function startGame() {

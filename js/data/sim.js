@@ -14,7 +14,7 @@ import { db, collection, getDocs, doc, getDoc, setDoc, serverTimestamp } from '.
 import { getDisplaySeasonId, isSeasonId, seasonSortKey } from '../core/config.js';
 import { buildPool, buildSofaKings, seasonLine, BOSS } from '../domain/sim-ratings.js';
 import { statIdOf } from '../domain/player-id.js';
-import { teamCatalog, buildSeasonTeam } from '../domain/sim-teams.js';
+import { teamCatalog, buildSeasonTeam, seasonLeague } from '../domain/sim-teams.js';
 import { getSeasonGames } from './games.js';
 
 const seasonOfRosterDoc = (id) => {
@@ -101,7 +101,11 @@ export async function loadSimPool(seasonId) {
   const buildTeam = (entry) => buildSeasonTeam({ entry, statDocs, rosterEntries, current: players, currentSeason: sid });
 
   const savedAt = saved.updatedAt?.toDate ? saved.updatedAt.toDate() : null;
-  return { seasonId: sid, seasons: ids, players, league, boss, teams, buildTeam, savedAt, savedBy: saved.updatedBy || '' };
+  // Summer-format games play to the latest summer's league numbers (fewer
+  // hits, fewer extra-base hits, more of them doubles), not the fall's.
+  const summerId = ids.filter((id) => /summer/i.test(id)).sort((a, b) => seasonSortKey(b) - seasonSortKey(a))[0];
+  const summerLeague = summerId ? seasonLeague(statDocs, summerId) : null;
+  return { seasonId: sid, seasons: ids, players, league, summerLeague, boss, teams, buildTeam, savedAt, savedBy: saved.updatedBy || '' };
 }
 
 const normBats = (v) => {
