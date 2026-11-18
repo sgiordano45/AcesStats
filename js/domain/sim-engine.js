@@ -15,10 +15,11 @@
 // manager before committing.
 //
 // Field coordinates are feet: home plate (0,0), y toward center field.
-// The park is Senior Field (the fall field); see FIELD.
+// Two parks: Senior Field (the fall field) and Field of Dreams (the summer
+// field); see FIELDS. A game's park is g.park.
 
 import {
-  SLOTS, IF_SLOTS, OF_SLOTS, TEAM_SIZE, WILD,
+  SLOTS, IF_SLOTS, OF_ALL, WILD,
   rateFor, batValue, defValue, DEF_WEIGHTS
 } from './sim-ratings.js';
 
@@ -33,13 +34,16 @@ const z = (rating) => ((Number(rating) || 50) - 50) / 10;
 // Draft rules
 // ===========================================================================
 
-const sigOf = (p) => (p.pos.wild ? `W:${p.pos.wild}` : `S:${p.pos.slots.join(',')}`);
+// The draft and lineup helpers take the format's spots (nine in the fall,
+// ten in the summer); a player's positions are read within them.
+const within = (p, slots) => p.pos.slots.filter((s) => slots.includes(s));
+const sigOf = (p, slots) => (p.pos.wild ? `W:${p.pos.wild}` : `S:${within(p, slots).join(',')}`);
 
-function groupBySig(players) {
+function groupBySig(players, slots) {
   const m = new Map();
   for (const p of players) {
-    const k = sigOf(p);
-    if (!m.has(k)) m.set(k, { sig: k, wild: p.pos.wild, slots: p.pos.slots, count: 0 });
+    const k = sigOf(p, slots);
+    if (!m.has(k)) m.set(k, { sig: k, wild: p.pos.wild, slots: within(p, slots), count: 0 });
     m.get(k).count += 1;
   }
   return [...m.values()];
@@ -84,23 +88,24 @@ class Flow {
  * @param {{ picks: object[] }[]} teams
  * @param {object[]} pool  players not yet drafted
  */
-export function draftFeasible(teams, pool) {
+export function draftFeasible(teams, pool, { slots = SLOTS } = {}) {
+  const size = slots.length;
   for (const t of teams) {
-    if (t.picks.length > TEAM_SIZE) return false;
+    if (t.picks.length > size) return false;
     for (const w of Object.values(WILD)) if (t.picks.filter((p) => p.pos.wild === w).length > 1) return false;
   }
   const f = new Flow();
   const S = f.node();
   const T = f.node();
-  const slotNode = teams.map(() => Object.fromEntries(SLOTS.map((s) => [s, f.node()])));
+  const slotNode = teams.map(() => Object.fromEntries(slots.map((s) => [s, f.node()])));
   const wildNode = teams.map((_, ti) => Object.fromEntries(Object.values(WILD).map((w) => {
     const inN = f.node();
     const outN = f.node();
     f.edge(inN, outN, 1);
-    SLOTS.forEach((s) => f.edge(outN, slotNode[ti][s], 1));
+    slots.forEach((s) => f.edge(outN, slotNode[ti][s], 1));
     return [w, inN];
   })));
-  teams.forEach((_, ti) => SLOTS.forEach((s) => f.edge(slotNode[ti][s], T, 1)));
+  teams.forEach((_, ti) => slots.forEach((s) => f.edge(slotNode[ti][s], T, 1)));
 
   const link = (g, teamIdxs) => {
     const gn = f.node();
@@ -115,14 +120,14 @@ export function draftFeasible(teams, pool) {
   // Drafted players first: each must end up in a spot.
   const own = [];
   let ownCount = 0;
-  teams.forEach((t, ti) => groupBySig(t.picks).forEach((g) => { own.push(link(g, [ti])); ownCount += g.count; }));
+  teams.forEach((t, ti) => groupBySig(t.picks, slots).forEach((g) => { own.push(link(g, [ti])); ownCount += g.count; }));
   const all = teams.map((_, i) => i);
-  const fromPool = groupBySig(pool).map((g) => link(g, all));
+  const fromPool = groupBySig(pool, slots).map((g) => link(g, all));
 
   let flow = 0;
   while (flow < ownCount && f.augment(S, T, own)) flow += 1;
   if (flow < ownCount) return false;
-  const need = teams.length * TEAM_SIZE;
+  const need = teams.length * size;
   while (flow < need && f.augment(S, T, [...own, ...fromPool])) flow += 1;
   return flow === need;
 }
@@ -132,16 +137,16 @@ export function draftFeasible(teams, pool) {
  * player's position group, so it is worked out once per group.
  * @returns {Set<string>} player ids
  */
-export function legalPicks(teamIdx, teams, pool) {
+export function legalPicks(teamIdx, teams, pool, { slots = SLOTS } = {}) {
   const ok = new Set();
-  if (teams[teamIdx].picks.length >= TEAM_SIZE) return ok;
+  if (teams[teamIdx].picks.length >= slots.length) return ok;
   const bySig = new Map();
   for (const p of pool) {
-    const k = sigOf(p);
+    const k = sigOf(p, slots);
     if (!bySig.has(k)) {
       const rest = pool.filter((x) => x !== p);
       const next = teams.map((t, i) => (i === teamIdx ? { picks: [...t.picks, p] } : t));
-      bySig.set(k, draftFeasible(next, rest));
+      bySig.set(k, draftFeasible(next, rest, { slots }));
     }
     if (bySig.get(k)) ok.add(p.id);
   }
@@ -170,13 +175,13 @@ function fitScore(p, slot) {
  * Best assignment of players to distinct spots (all of them placed).
  * Works for a partial team too. Returns { [slot]: playerId } or null.
  */
-export function assignPositions(players) {
-  const list = [...players].sort((a, b) => a.pos.slots.length - b.pos.slots.length);
+export function assignPositions(players, slots = SLOTS) {
+  const list = [...players].sort((a, b) => within(a, slots).length - within(b, slots).length);
   let best = null;
   let bestScore = -Infinity;
   const used = new Set();
   const cur = {};
-  const maxRest = list.map((_, i) => list.slice(i).reduce((s, p) => s + Math.max(...p.pos.slots.map((sl) => fitScore(p, sl))), 0));
+  const maxRest = list.map((_, i) => list.slice(i).reduce((sum, p) => sum + Math.max(0, ...within(p, slots).map((sl) => fitScore(p, sl))), 0));
   const walk = (i, score) => {
     if (i === list.length) {
       if (score > bestScore) { bestScore = score; best = { ...cur }; }
@@ -184,7 +189,7 @@ export function assignPositions(players) {
     }
     if (score + maxRest[i] <= bestScore) return;
     const p = list[i];
-    const options = p.pos.slots.filter((s) => !used.has(s)).sort((a, b) => fitScore(p, b) - fitScore(p, a));
+    const options = within(p, slots).filter((s) => !used.has(s)).sort((a, b) => fitScore(p, b) - fitScore(p, a));
     for (const s of options) {
       used.add(s); cur[s] = p.id;
       walk(i + 1, score + fitScore(p, s));
@@ -244,13 +249,13 @@ export function styledAt(r, slot, w) {
  * can fill, then draws one at random weighted toward the best.
  * @param {object} [opts] { random, style: CPU_STYLES key or { w, temp }, favorite: team name }
  */
-export function cpuPick(teamIdx, teams, pool, { random = Math.random, style = 'fundamentals', favorite = '' } = {}) {
+export function cpuPick(teamIdx, teams, pool, { random = Math.random, style = 'fundamentals', favorite = '', slots = SLOTS } = {}) {
   const st = typeof style === 'string' ? (CPU_STYLES[style] || CPU_STYLES.fundamentals) : style;
-  const legal = legalPicks(teamIdx, teams, pool);
+  const legal = legalPicks(teamIdx, teams, pool, { slots });
   const mine = teams[teamIdx].picks;
-  const placed = assignPositions(mine) || {};
-  const open = SLOTS.filter((s) => !placed[s]);
-  const remaining = TEAM_SIZE - mine.length;
+  const placed = assignPositions(mine, slots) || {};
+  const open = slots.filter((s) => !placed[s]);
+  const remaining = slots.length - mine.length;
   // How many non-wild players left could fill each open spot.
   const supply = Object.fromEntries(open.map((s) => [s, pool.filter((p) => !p.pos.wild && p.pos.slots.includes(s)).length]));
   const fav = String(favorite || '').toLowerCase();
@@ -258,12 +263,12 @@ export function cpuPick(teamIdx, teams, pool, { random = Math.random, style = 'f
   const scored = [];
   for (const p of pool) {
     if (!legal.has(p.id)) continue;
-    const fits = p.pos.slots.filter((s) => open.includes(s));
+    const fits = within(p, slots).filter((s) => open.includes(s));
     let val;
     if (fits.length) {
       val = Math.max(...fits.map((s) => styledAt(p.ratings, s, st.w) + (supply[s] <= 3 ? 6 : supply[s] <= 6 ? 2 : 0)));
     } else {
-      val = Math.max(...p.pos.slots.map((s) => styledAt(p.ratings, s, st.w))) - 6; // would have to move someone
+      val = Math.max(...within(p, slots).map((s) => styledAt(p.ratings, s, st.w))) - 6; // would have to move someone
     }
     if (p.pos.wild) val -= remaining > 3 ? 3 : 0; // keep the wildcard for later
     if (fav && String(p.team || '').toLowerCase() === fav) val += FAVORITE_BONUS;
@@ -286,7 +291,7 @@ export function cpuPick(teamIdx, teams, pool, { random = Math.random, style = 'f
  * fill all nine spots from. Returns the dealt players (or all of them when
  * size covers the whole pool).
  */
-export function dealPool(players, size, { random = Math.random, teams = 2 } = {}) {
+export function dealPool(players, size, { random = Math.random, teams = 2, slots = SLOTS } = {}) {
   if (!size || size >= players.length) return [...players];
   const shuffled = () => {
     const a = [...players];
@@ -302,7 +307,7 @@ export function dealPool(players, size, { random = Math.random, teams = 2 } = {}
     const dealt = [];
     const have = new Set();
     // Make sure every spot has a few players who can fill it, scarce spots first.
-    const scarce = [...SLOTS].sort((a, b) => players.filter((p) => !p.pos.wild && p.pos.slots.includes(a)).length
+    const scarce = [...slots].sort((a, b) => players.filter((p) => !p.pos.wild && p.pos.slots.includes(a)).length
       - players.filter((p) => !p.pos.wild && p.pos.slots.includes(b)).length);
     for (const slot of scarce) {
       let n = dealt.filter((p) => !p.pos.wild && p.pos.slots.includes(slot)).length;
@@ -315,7 +320,7 @@ export function dealPool(players, size, { random = Math.random, teams = 2 } = {}
       if (dealt.length >= size) break;
       if (!have.has(p.id)) { dealt.push(p); have.add(p.id); }
     }
-    if (draftFeasible(empty, dealt)) return dealt;
+    if (draftFeasible(empty, dealt, { slots })) return dealt;
   }
   return [...players];
 }
@@ -337,7 +342,8 @@ export function dealPool(players, size, { random = Math.random, teams = 2 } = {}
 //     about 33 ft fair, from 223 ft out) is a ground-rule double.
 // spots: where fielders stand, as an angle from straightaway center
 // (degrees, left negative) and a distance in feet.
-export const FIELD = Object.freeze({
+const SENIOR = Object.freeze({
+  key: 'senior',
   name: 'Senior Field',
   base: 65,
   mound: 50,
@@ -359,13 +365,69 @@ export const FIELD = Object.freeze({
   spots: {
     P: { a: 0, r: 50 }, C: { a: 0, r: -7 },
     '1B': { a: 38, r: 80 }, '2B': { a: 14, r: 108 }, SS: { a: -14, r: 108 }, '3B': { a: -38, r: 80 },
-    LF: { a: -26, r: 196 }, CF: { a: 2, r: 218 }, RF: { a: 25, r: 172 }
-  }
+    LF: { a: -26, r: 196 }, LCF: { a: -12, r: 212 }, CF: { a: 2, r: 218 }, RCF: { a: 12, r: 205 }, RF: { a: 25, r: 172 }
+  },
+  overShare: 0.09,          // 2026 Fall: 6 of 70 home runs cleared the fence
+  tripleShare: 0.35,        // triples that are the automatic triple through the gap
+  tripleText: 'rolls one through the gap in the center-field fence: an automatic triple',
+  tripleBanner: 'AUTOMATIC TRIPLE',
+  deadOdds: 1,              // every double that gets past the dugout is a ground-rule double
+  deadText: 'rolling past the dugout down the left-field line'
 });
 
-// Share of home runs that clear the fence; the rest are inside-the-parkers.
-// 2026 Fall: 6 of 70 home runs were flagged out of the park.
-export const OVER_FENCE_SHARE = 0.09;
+// Field of Dreams (the summer field): fenced all the way around. 280 ft
+// down the left-field line (a tall double-height fence, trees and the road
+// behind), 315 ft to dead center, 235 ft down the right-field line (a lower
+// fence; the tennis courts beyond the right-field line are foul).
+//   - Over any fence is a home run.
+//   - The last 6 ft of fence in the right-field corner is open: through it
+//     is a ground-rule double.
+//   - A small hole in the fence in dead center: through it is a ground-rule triple.
+//   - A big tree branch lies in right-center near the fence: a ball that
+//     rolls into it is dead, a ground-rule double.
+//   - The light poles are outside the fence.
+const DREAMS = Object.freeze({
+  key: 'dreams',
+  name: 'Field of Dreams',
+  base: 65,
+  mound: 50,
+  fence: Object.freeze([
+    Object.freeze([{ x: -198.0, y: 198.0 }, { x: -114.8, y: 277.2 }]),    // left-field pole to left-center
+    Object.freeze([{ x: -114.8, y: 277.2 }, { x: -1.5, y: 315.0 }]),     // to the hole in dead center
+    Object.freeze([{ x: 1.5, y: 315.0 }, { x: 102.6, y: 247.6 }]),       // from the hole to right-center
+    Object.freeze([{ x: 102.6, y: 247.6 }, { x: 162.5, y: 170.9 }])      // to the opening in the right-field corner
+  ]),
+  poles: Object.freeze([{ x: -198.0, y: 198.0 }, { x: 166.2, y: 166.2 }]),
+  // The hole in dead center (a ground-rule triple), playing the part of Senior Field's gap.
+  gap: Object.freeze([{ x: -1.5, y: 315.0 }, { x: 1.5, y: 315.0 }]),
+  // The opening in the right-field corner, the last 6 ft before the pole (a ground-rule double).
+  corner: Object.freeze([{ x: 162.5, y: 170.9 }, { x: 166.2, y: 166.2 }]),
+  // The tree branch in right-center: a ball that rolls into it is dead.
+  dead: Object.freeze([Object.freeze([{ x: 67.8, y: 253.1 }, { x: 86.5, y: 244.1 }])]),
+  spots: {
+    P: { a: 0, r: 50 }, C: { a: 0, r: -7 },
+    '1B': { a: 38, r: 80 }, '2B': { a: 14, r: 108 }, SS: { a: -14, r: 108 }, '3B': { a: -38, r: 80 },
+    LF: { a: -28, r: 205 }, LCF: { a: -10, r: 232 }, CF: { a: 0, r: 235 }, RCF: { a: 11, r: 222 }, RF: { a: 29, r: 178 }
+  },
+  overShare: 0.4,           // short fences all around: most home runs leave the park
+  tripleShare: 0.08,        // triples (and a few doubles) that squeeze through the hole in center
+  holeDoubles: 0.01,
+  tripleText: 'squeezes one through the hole in the center-field fence: a ground-rule triple',
+  tripleBanner: 'GROUND-RULE TRIPLE',
+  deadOdds: 0.28,           // gappers to right-center that roll all the way into the branch
+  deadText: 'rolling into the tree branch in right-center: dead ball',
+  cornerOdds: 0.3,          // doubles down the right-field line that find the opening
+  cornerText: 'rolling through the opening in the right-field corner'
+});
+
+export const FIELDS = Object.freeze({ senior: SENIOR, dreams: DREAMS });
+export const FIELD = SENIOR;   // the default park
+/** The park a game is played at. */
+export const parkOf = (g) => FIELDS[g?.park] || SENIOR;
+
+// Share of home runs that clear the fence at Senior Field; the rest are
+// inside-the-parkers. 2026 Fall: 6 of 70 home runs were flagged out of the park.
+export const OVER_FENCE_SHARE = SENIOR.overShare;
 
 // Weather and field conditions, one per game. Multipliers on the batter's
 // hit rate (ba) and extra-base-hit rate (xbh), the share of home runs that
@@ -403,19 +465,22 @@ function rayTo(a, [p, q]) {
 }
 const nearest = (a, segs) => segs.reduce((m, sg) => { const t = rayTo(a, sg); return t !== null && (m === null || t < m) ? t : m; }, null);
 
-/** Feet to the fence along angle a, or null where there is none (left field, the gap). */
-export const fenceAt = (a) => nearest(a, FIELD.fence);
-/** Feet to the gap in the fence along angle a, or null. */
-export const gapAt = (a) => rayTo(a, FIELD.gap);
-/** Feet to the ground-rule-double line along angle a, or null. */
-export const deadAt = (a) => nearest(a, FIELD.dead);
-const GAP_ANGLES = [FIELD.gap[1], FIELD.gap[0]].map((p) => (Math.atan2(p.x, p.y) * 180) / Math.PI);   // about [10.2, 15.1]
-/** How far a ball can go at angle a before the fence, the gap or the dead-ball line. */
-const deepAt = (a) => Math.min(fenceAt(a) ?? Infinity, gapAt(a) ?? Infinity, deadAt(a) ?? Infinity, 310);
-/** Share of angles in [lo, hi] with fence (not gap, not open) behind them. */
-function fencedShare(lo, hi) {
+/** Feet to the fence along angle a, or null where there is none (open field, a gap). */
+export const fenceAt = (a, pk = FIELD) => nearest(a, pk.fence);
+/** Feet to the gap in the fence (Senior: right-center; Dreams: the hole in center) along angle a, or null. */
+export const gapAt = (a, pk = FIELD) => (pk.gap ? rayTo(a, pk.gap) : null);
+/** Feet to the dead-ball line (Senior: past the dugout; Dreams: the branch) along angle a, or null. */
+export const deadAt = (a, pk = FIELD) => nearest(a, pk.dead || []);
+/** Feet to the open right-field corner (Dreams) along angle a, or null. */
+export const cornerAt = (a, pk = FIELD) => (pk.corner ? rayTo(a, pk.corner) : null);
+const angleOf = (p) => (Math.atan2(p.x, p.y) * 180) / Math.PI;
+const spanOf = (seg) => seg.map(angleOf).sort((a, b) => a - b);
+/** How far a ball can go at angle a before the fence, a gap or a dead-ball spot. */
+const deepAt = (a, pk = FIELD) => Math.min(fenceAt(a, pk) ?? Infinity, gapAt(a, pk) ?? Infinity, deadAt(a, pk) ?? Infinity, cornerAt(a, pk) ?? Infinity, 310);
+/** Share of angles in [lo, hi] with fence (not a gap, not open) behind them. */
+function fencedShare(lo, hi, pk = FIELD) {
   let n = 0;
-  for (let i = 0; i < 60; i += 1) if (fenceAt(lo + ((hi - lo) * (i + 0.5)) / 60) !== null) n += 1;
+  for (let i = 0; i < 60; i += 1) if (fenceAt(lo + ((hi - lo) * (i + 0.5)) / 60, pk) !== null) n += 1;
   return n / 60;
 }
 
@@ -423,20 +488,21 @@ export function polar(a, r) {
   const rad = (a * Math.PI) / 180;
   return { x: Math.round(r * Math.sin(rad) * 10) / 10, y: Math.round(r * Math.cos(rad) * 10) / 10 };
 }
-export const spotXY = (slot) => {
-  const s = FIELD.spots[slot];
+export const spotXY = (slot, pk = FIELD) => {
+  const s = pk.spots[slot];
   return slot === 'C' ? { x: 0, y: -7 } : polar(s.a, s.r);
 };
 
 // Where balls in play go, by fielder, for a right-handed batter (pulls to left).
 const SPRAY_R = { P: 0.04, C: 0.02, '1B': 0.08, '2B': 0.1, SS: 0.14, '3B': 0.12, LF: 0.19, CF: 0.17, RF: 0.14 };
+// (With four outfielders, balls to center go to left-center or right-center.)
 const MIRROR = { '1B': '3B', '3B': '1B', '2B': 'SS', SS: '2B', LF: 'RF', RF: 'LF', P: 'P', C: 'C', CF: 'CF' };
 
 function sprayFor(bats, powerZ) {
   const out = {};
   for (const s of SLOTS) {
     const base = bats === 'L' ? SPRAY_R[MIRROR[s]] : bats === 'R' ? SPRAY_R[s] : (SPRAY_R[s] + SPRAY_R[MIRROR[s]]) / 2;
-    out[s] = base * (OF_SLOTS.includes(s) ? 1 + 0.08 * powerZ : 1);
+    out[s] = base * (OF_ALL.includes(s) ? 1 + 0.08 * powerZ : 1);
   }
   return out;
 }
@@ -450,9 +516,13 @@ function pickWeighted(weights, random) {
 
 const rnd = (random, lo, hi) => lo + random() * (hi - lo);
 
-/** Outfielder who plays a ball hit at angle a, and how deep he plays. */
-const ofAt = (a) => (a < -13 ? 'LF' : a > 13 ? 'RF' : 'CF');
-const ofR = (a) => FIELD.spots[ofAt(a)].r;
+/** Outfielder who plays a ball hit at angle a (three or four of them out there), and how deep he plays. */
+function ofAt(g, a) {
+  const f = fieldingTeam(g).field;
+  if (f.LCF || f.RCF) return a < -20 ? 'LF' : a < 0 ? 'LCF' : a <= 20 ? 'RCF' : 'RF';
+  return a < -13 ? 'LF' : a > 13 ? 'RF' : 'CF';
+}
+const ofR = (g, a) => parkOf(g).spots[ofAt(g, a)].r;
 
 // --- Teams ------------------------------------------------------------------
 
@@ -485,9 +555,10 @@ export function makeTeam({ name, color, cpu = false, players, lineup, field, pla
 }
 
 /** New game. away bats first. league: leagueSummary() (plain JSON). */
-export function newGame({ away, home, league, conditions = 'perfect' }) {
+export function newGame({ away, home, league, conditions = 'perfect', park = 'senior' }) {
   return {
     v: 1,
+    park: FIELDS[park] ? park : 'senior',
     league,
     conditions: CONDITIONS[conditions] ? conditions : 'perfect',
     teams: [away, home],
@@ -572,16 +643,20 @@ export function planPA(g, { random = Math.random } = {}) {
 
   // Ball in play: who is it hit at?
   const bz = { power: z(batter.ratings.power), speed: z(batter.ratings.speed), contact: z(batter.ratings.contact) };
+  const PK = parkOf(g);
+  const fld = fieldingTeam(g).field;
   let slot = pickWeighted(sprayFor(batter.bats, bz.power), random);
+  // Four outfielders: a ball to center goes to left-center or right-center (lefties pull it right).
+  if (slot === 'CF' && !fld.CF && (fld.LCF || fld.RCF)) slot = random() < (batter.bats === 'L' ? 0.6 : batter.bats === 'R' ? 0.4 : 0.5) ? 'RCF' : 'LCF';
   // Nobody there (the courtesy catcher can't make plays): someone else covers it.
-  if (!fieldingTeam(g).field[slot]) slot = pickWeighted({ P: 1, '1B': 1, '3B': 1 }, random);
+  if (!fld[slot]) slot = pickWeighted({ P: 1, '1B': 1, '3B': 1 }, random);
   const F = fielderAt(g, slot);
   const fz = { range: z(F.ratings.range), arm: z(F.ratings.arm) };
-  const rangeEffect = IF_SLOTS.includes(slot) ? 0.08 : OF_SLOTS.includes(slot) ? 0.06 : 0.03;
+  const rangeEffect = IF_SLOTS.includes(slot) ? 0.08 : OF_ALL.includes(slot) ? 0.06 : 0.03;
   const kOfAB = odds.k / (1 - odds.bb);
   const pHit = clamp((odds.ba * (1 - rangeEffect * fz.range)) / (1 - kOfAB), 0.05, 0.95);
-  const isIF = !OF_SLOTS.includes(slot);
-  const spot = FIELD.spots[slot];
+  const isIF = !OF_ALL.includes(slot);
+  const spot = PK.spots[slot];
 
   if (random() < pHit) {
     // ---- Hit
@@ -597,16 +672,17 @@ export function planPA(g, { random = Math.random } = {}) {
     }
     play.kind = kind;
     if (kind === 'HR') {
-      // Pull side: righties to left (open), lefties to right (the short fence).
-      // Real home runs didn't go through the gap or past the dugout (those
-      // are a triple and a double), so pick an angle clear of both.
+      // Pull side: righties to left, lefties to right.
+      // Real home runs didn't go through a gap or into a dead-ball spot (those
+      // are triples and doubles), so pick an angle clear of them.
       const [lo, hi] = batter.bats === 'L' ? [-25, 40] : batter.bats === 'R' ? [-35, 25] : [-35, 38];
+      const blocked = (x) => gapAt(x, PK) !== null || deadAt(x, PK) !== null || cornerAt(x, PK) !== null;
       let a = rnd(random, lo, hi);
-      for (let i = 0; i < 20 && (gapAt(a) !== null || deadAt(a) !== null); i += 1) a = rnd(random, lo, hi);
-      if (gapAt(a) !== null || deadAt(a) !== null) a = -20;
-      const fence = fenceAt(a);
-      const over = fence !== null && random() < Math.min(1, (OVER_FENCE_SHARE * conditionsOf(g).over) / Math.max(fencedShare(lo, hi), 0.05));
-      play.fielder = ofAt(a);
+      for (let i = 0; i < 20 && blocked(a); i += 1) a = rnd(random, lo, hi);
+      if (blocked(a)) a = -20;
+      const fence = fenceAt(a, PK);
+      const over = fence !== null && random() < Math.min(1, (PK.overShare * conditionsOf(g).over) / Math.max(fencedShare(lo, hi, PK), 0.05));
+      play.fielder = ofAt(g, a);
       if (over) {
         play.contact = 'fly';
         play.land = polar(a, fence + rnd(random, 12, 40));
@@ -615,43 +691,61 @@ export function planPA(g, { random = Math.random } = {}) {
         play.contact = 'line';
         play.insidePark = true;
         play.throwTo = 4;
-        play.land = polar(a, Math.min(ofR(a) * rnd(random, 1.35, 1.55), deepAt(a) - 5, 285));
+        play.land = polar(a, Math.min(ofR(g, a) * rnd(random, 1.35, 1.55), deepAt(a, PK) - 5, 285));
       }
       play.outcome = homeRun(g, batter, { insidePark: !over, where: fieldWord(play.fielder) });
       return play;
     }
     if (kind === '3B' || kind === '2B') {
       play.contact = random() < 0.3 ? 'line' : 'fly';
-      // Some triples are the automatic triple through the gap in the fence.
-      if (kind === '3B' && random() < 0.35 * conditionsOf(g).gap) {
-        const a = rnd(random, GAP_ANGLES[0] + 0.8, GAP_ANGLES[1] - 0.8);
+      // Some triples (and at Field of Dreams a few doubles) are the automatic
+      // triple through the gap / the hole in the center-field fence.
+      const holeOdds = (kind === '3B' ? PK.tripleShare : PK.holeDoubles || 0) * conditionsOf(g).gap;
+      if (PK.gap && random() < holeOdds) {
+        const [g0, g1] = spanOf(PK.gap);
+        const pad = Math.min(0.8, (g1 - g0) / 4);
+        const a = rnd(random, g0 + pad, g1 - pad);
+        play.kind = '3B';
         play.contact = 'ground';
-        play.fielder = ofAt(a);
-        play.land = polar(a, gapAt(a) + rnd(random, 12, 24));
+        play.fielder = ofAt(g, a);
+        play.land = polar(a, gapAt(a, PK) + rnd(random, 12, 24));
         play.dead = true;
         play.gap = true;
+        play.banner = PK.tripleBanner;
         const moves = [];
         for (let b = 2; b >= 0; b -= 1) if (g.bases[b]) moves.push({ id: g.bases[b], from: b + 1, to: 4, out: false });
         moves.push({ id: batter.id, from: 0, to: 3, out: false });
-        play.outcome = { moves, text: `${batter.name} rolls one through the gap in the center-field fence: an automatic triple.${scoredText(g, moves)}`, rbi: moves.length - 1, hit: true };
+        play.outcome = { moves, text: `${batter.name} ${PK.tripleText}.${scoredText(g, moves)}`, rbi: moves.length - 1, hit: true };
         return play;
       }
       const lines = random() < 0.35;
       const side = random() < 0.5 ? -1 : 1;
       let a = lines ? side * rnd(random, 36, 43) : side * rnd(random, 12, 22);
-      // A triple can't go past the dugout (that's a ground-rule double).
-      if (kind === '3B' && deadAt(a) !== null) a = -rnd(random, 28, 35);
-      // Down the left-field line past the dugout: a ground-rule double.
-      if (kind === '2B' && deadAt(a) !== null) {
-        play.fielder = 'LF';
-        play.land = polar(a, deadAt(a) + rnd(random, 10, 22));
+      // Field of Dreams: down the right-field line and through the open corner, a ground-rule double.
+      if (kind === '2B' && PK.corner && lines && side > 0 && random() < PK.cornerOdds) {
+        const [c0, c1] = spanOf(PK.corner);
+        a = rnd(random, c0 + 0.2, c1 - 0.2);
+        play.fielder = ofAt(g, a);
+        play.land = polar(a, cornerAt(a, PK) + rnd(random, 8, 16));
         play.dead = true;
         play.grd = true;
-        return groundRuleDouble(g, play, batter);
+        return groundRuleDouble(g, play, batter, PK.cornerText);
       }
-      const d = ofR(a) * (kind === '3B' ? rnd(random, 1.22, 1.38) : rnd(random, 1.06, 1.22));
-      play.land = polar(a, Math.min(d, deepAt(a) - (kind === '3B' ? 4 : 10)));
-      play.fielder = ofAt(a);
+      // Into the dead-ball spot (Senior: past the dugout, every time; Dreams: the branch, sometimes).
+      if (deadAt(a, PK) !== null && (kind === '2B' || PK.deadOdds < 1) && random() < PK.deadOdds) {
+        play.kind = '2B';
+        play.fielder = PK.deadOdds < 1 ? ofAt(g, a) : 'LF';
+        play.land = polar(a, deadAt(a, PK) + (PK.deadOdds < 1 ? rnd(random, 1, 4) : rnd(random, 10, 22)));
+        play.dead = true;
+        play.grd = true;
+        play.branch = PK.deadOdds < 1;
+        return groundRuleDouble(g, play, batter, PK.deadText);
+      }
+      // A triple can't go past the dugout at Senior Field (that's a ground-rule double).
+      if (kind === '3B' && PK.deadOdds >= 1 && deadAt(a, PK) !== null) a = -rnd(random, 28, 35);
+      const d = ofR(g, a) * (kind === '3B' ? rnd(random, 1.22, 1.38) : rnd(random, 1.06, 1.22));
+      play.land = polar(a, Math.min(d, deepAt(a, PK) - (kind === '3B' ? 4 : 10)));
+      play.fielder = ofAt(g, a);
       return extraBaseHit(g, play, batter, kind, random);
     }
     // Single
@@ -676,9 +770,9 @@ export function planPA(g, { random = Math.random } = {}) {
       a = spot.a + rnd(random, -10, 10);
       play.contact = random() < 0.5 ? 'line' : 'fly';
     }
-    const ofSlot = ofAt(a);
+    const ofSlot = ofAt(g, a);
     play.fielder = ofSlot;
-    play.land = polar(a, FIELD.spots[ofSlot].r * rnd(random, 0.7, 0.9));
+    play.land = polar(a, PK.spots[ofSlot].r * rnd(random, 0.7, 0.9));
     return single(g, play, batter, ofSlot, random);
   }
 
@@ -736,12 +830,12 @@ export function planPA(g, { random = Math.random } = {}) {
   play.contact = play.kind === 'FO' ? 'fly' : 'line';
   const depth = rnd(random, -35, 35);
   const fa = spot.a + rnd(random, -9, 9);
-  play.land = polar(fa, Math.min(spot.r + depth, deepAt(fa) - 6));
+  play.land = polar(fa, Math.min(spot.r + depth, deepAt(fa, PK) - 6));
   return flyOut(g, play, batter, slot, F, depth, random);
 }
 
-const posWord = (slot) => ({ P: 'the pitcher', C: 'the catcher', '1B': 'first', '2B': 'second', '3B': 'third', SS: 'short', LF: 'left', CF: 'center', RF: 'right' }[slot]);
-const fieldWord = (slot) => ({ LF: 'left', CF: 'center', RF: 'right' }[slot] || posWord(slot));
+const posWord = (slot) => ({ P: 'the pitcher', C: 'the catcher', '1B': 'first', '2B': 'second', '3B': 'third', SS: 'short', LF: 'left', LCF: 'left-center', CF: 'center', RCF: 'right-center', RF: 'right' }[slot]);
+const fieldWord = (slot) => ({ LF: 'left', LCF: 'left-center', CF: 'center', RCF: 'right-center', RF: 'right' }[slot] || posWord(slot));
 const nameOf = (g, id) => g.teams[0].roster[id]?.name || g.teams[1].roster[id]?.name || id;
 const runnerOf = (g, id) => g.teams[0].roster[id] || g.teams[1].roster[id];
 
@@ -771,7 +865,7 @@ function forceOuts(g, batter, verb, { rbiOnForce = false, hit = false } = {}) {
   return { moves, text: `${batter.name} ${verb}.${scoredText(g, moves)}`, rbi, hit };
 }
 
-function groundRuleDouble(g, play, batter) {
+function groundRuleDouble(g, play, batter, where = SENIOR.deadText) {
   const b = g.bases;
   const moves = [];
   if (b[2]) moves.push({ id: b[2], from: 3, to: 4, out: false });
@@ -780,7 +874,7 @@ function groundRuleDouble(g, play, batter) {
   moves.push({ id: batter.id, from: 0, to: 2, out: false });
   play.outcome = {
     moves,
-    text: `${batter.name} hits a ground-rule double, rolling past the dugout down the left-field line.${scoredText(g, moves)}`,
+    text: `${batter.name} hits a ground-rule double, ${where}.${scoredText(g, moves)}`,
     rbi: moves.filter((m) => m.to === 4).length,
     hit: true
   };

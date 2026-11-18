@@ -32,14 +32,40 @@ import { battingCounts } from './stats.js';
 import { parseStatSeasonId, inningsValue, seasonHasHitTypes } from './season-ids.js';
 import { statIdOf } from './player-id.js';
 
+// The fall game fields nine (SLOTS); the summer game fields ten, with four
+// outfielders (SUMMER_SLOTS). A player's positions cover both: whoever can
+// play LF or CF can play LCF, and CF or RF can play RCF.
 export const SLOTS = Object.freeze(['P', 'C', '1B', '2B', '3B', 'SS', 'LF', 'CF', 'RF']);
+export const SUMMER_SLOTS = Object.freeze(['P', 'C', '1B', '2B', '3B', 'SS', 'LF', 'LCF', 'RCF', 'RF']);
+export const ALL_SLOTS = Object.freeze(['P', 'C', '1B', '2B', '3B', 'SS', 'LF', 'LCF', 'CF', 'RCF', 'RF']);
 export const IF_SLOTS = Object.freeze(['1B', '2B', '3B', 'SS']);
 export const OF_SLOTS = Object.freeze(['LF', 'CF', 'RF']);
+export const OF_ALL = Object.freeze(['LF', 'LCF', 'CF', 'RCF', 'RF']);
 export const SLOT_LABELS = Object.freeze({
   P: 'Pitcher', C: 'Catcher', '1B': 'First base', '2B': 'Second base', '3B': 'Third base',
-  SS: 'Shortstop', LF: 'Left field', CF: 'Center field', RF: 'Right field'
+  SS: 'Shortstop', LF: 'Left field', LCF: 'Left-center field', CF: 'Center field', RCF: 'Right-center field', RF: 'Right field'
 });
 export const TEAM_SIZE = SLOTS.length;
+
+/**
+ * How a game is played: fall is nine a side at Senior Field, summer ten a
+ * side (four outfielders) at Field of Dreams.
+ */
+export const FORMATS = Object.freeze({
+  fall: Object.freeze({ key: 'fall', label: 'Fall', slots: SLOTS, size: SLOTS.length, park: 'senior' }),
+  summer: Object.freeze({ key: 'summer', label: 'Summer', slots: SUMMER_SLOTS, size: SUMMER_SLOTS.length, park: 'dreams' })
+});
+export const formatOf = (key) => FORMATS[key] || FORMATS.fall;
+/** The format a season was played in ('2026-summer' -> 'summer'). */
+export const formatForSeason = (seasonId) => (/summer/i.test(String(seasonId)) ? 'summer' : 'fall');
+
+/** Add the summer outfield spots a player covers (LCF from LF or CF, RCF from CF or RF), in ALL_SLOTS order. */
+function withSummer(slots) {
+  const set = new Set(slots);
+  if (set.has('LF') || set.has('CF')) set.add('LCF');
+  if (set.has('CF') || set.has('RF')) set.add('RCF');
+  return ALL_SLOTS.filter((x) => set.has(x));
+}
 export const WILD = Object.freeze({ UT: 'UT', FLEX: 'FLEX' });
 export const WILD_LABELS = Object.freeze({ UT: 'Utility', FLEX: 'Flex' });
 
@@ -82,9 +108,9 @@ const posKey = (v) => String(v || '').trim().toUpperCase();
  */
 export function simPosition(raw) {
   const s = posKey(raw);
-  if (!s || s === '-') return { slots: [...SLOTS], wild: WILD.UT, label: 'UT' };
+  if (!s || s === '-') return { slots: [...ALL_SLOTS], wild: WILD.UT, label: 'UT' };
   const parts = s.split(/[/,]/).map((p) => p.trim()).filter(Boolean);
-  if (parts.includes('FLEX')) return { slots: [...SLOTS], wild: WILD.FLEX, label: 'Flex' };
+  if (parts.includes('FLEX')) return { slots: [...ALL_SLOTS], wild: WILD.FLEX, label: 'Flex' };
   const set = new Set();
   for (const p of parts) {
     if (SLOTS.includes(p)) set.add(p);
@@ -94,18 +120,20 @@ export function simPosition(raw) {
     else if (p === 'RCF') ['CF', 'RF'].forEach((x) => set.add(x));
     else if (p === 'ROVER' || p === 'R') OF_SLOTS.forEach((x) => set.add(x));
   }
-  if (!set.size) return { slots: [...SLOTS], wild: WILD.UT, label: 'UT' };
-  return { slots: SLOTS.filter((x) => set.has(x)), wild: null, label: parts.join('/') };
+  if (!set.size) return { slots: [...ALL_SLOTS], wild: WILD.UT, label: 'UT' };
+  return { slots: withSummer([...set]), wild: null, label: parts.join('/') };
 }
 
 /** Short tag for a position, for chips: 'SS', 'IF', 'IF/OF', 'UT', 'Flex'. */
 export function positionTag(pos) {
   if (pos.wild) return pos.wild === WILD.FLEX ? 'Flex' : 'UT';
-  const has = (list) => list.every((x) => pos.slots.includes(x));
-  if (has(IF_SLOTS) && has(OF_SLOTS) && pos.slots.length === 7) return 'IF/OF';
-  if (pos.slots.length === 4 && has(IF_SLOTS)) return 'IF';
-  if (pos.slots.length === 3 && has(OF_SLOTS)) return 'OF';
-  return pos.slots.join('/');
+  // Tag by the fall spots (the summer ones follow from them).
+  const slots = pos.slots.filter((x) => SLOTS.includes(x));
+  const has = (list) => list.every((x) => slots.includes(x));
+  if (has(IF_SLOTS) && has(OF_SLOTS) && slots.length === 7) return 'IF/OF';
+  if (slots.length === 4 && has(IF_SLOTS)) return 'IF';
+  if (slots.length === 3 && has(OF_SLOTS)) return 'OF';
+  return slots.join('/');
 }
 
 export const canPlay = (pos, slot) => pos.slots.includes(slot);
@@ -244,7 +272,9 @@ export const DEF_WEIGHTS = Object.freeze({
   SS: { range: 0.6, arm: 0.4, weight: 0.35 },
   '3B': { range: 0.45, arm: 0.55, weight: 0.3 },
   LF: { range: 0.55, arm: 0.45, weight: 0.3 },
+  LCF: { range: 0.65, arm: 0.35, weight: 0.33 },
   CF: { range: 0.7, arm: 0.3, weight: 0.35 },
+  RCF: { range: 0.65, arm: 0.35, weight: 0.33 },
   RF: { range: 0.5, arm: 0.5, weight: 0.3 }
 });
 
@@ -262,10 +292,11 @@ export function overallAt(r, slot) {
   return (1 - w) * batValue(r) + w * defValue(r, slot);
 }
 
-/** Best overall across the spots the player can play: { ovr, slot }. */
-export function bestOverall(r, pos) {
-  let best = { ovr: -Infinity, slot: pos.slots[0] };
-  for (const slot of pos.slots) {
+/** Best overall across the spots the player can play (in this format's spots): { ovr, slot }. */
+export function bestOverall(r, pos, slots = SLOTS) {
+  const mine = pos.slots.filter((x) => slots.includes(x));
+  let best = { ovr: -Infinity, slot: mine[0] || pos.slots[0] };
+  for (const slot of mine.length ? mine : pos.slots) {
     const o = overallAt(r, slot);
     if (o > best.ovr) best = { ovr: o, slot };
   }

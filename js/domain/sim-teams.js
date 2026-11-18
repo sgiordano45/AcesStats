@@ -23,7 +23,7 @@ import { battingCounts } from './stats.js';
 import { parseStatSeasonId, seasonSortKey, hasCompleteHitTypes, HIT_TYPES_TEAMS } from './season-ids.js';
 import { statIdOf } from './player-id.js';
 import {
-  SLOTS, TEAM_SIZE, seasonLine, leagueBaseline, computedRatings, simPosition, bestOverall, overallAt, defValue
+  SLOTS, SUMMER_SLOTS, TEAM_SIZE, seasonLine, leagueBaseline, computedRatings, simPosition, bestOverall, overallAt, defValue
 } from './sim-ratings.js';
 
 const teamOfKey = (key) => String(key).split('-').slice(2).filter((s) => s !== 'sub').join('-').toLowerCase();
@@ -185,8 +185,16 @@ export function bestNine(players, { slots = fieldSlots(players.length) } = {}) {
 // Season mode: who shows up, and rotating the bench in
 // ===========================================================================
 
-/** The spots to fill: all nine, or with only eight the courtesy catcher takes C. */
-export const fieldSlots = (n) => (n >= SLOTS.length ? [...SLOTS] : SLOTS.filter((s) => s !== 'C'));
+/**
+ * The spots to fill for n players. Fall: all nine, or with eight the
+ * courtesy catcher takes C. Summer: all ten (four outfielders); with nine,
+ * three outfielders and your own catcher; with eight, three outfielders and a
+ * courtesy catcher.
+ */
+export function fieldSlots(n, format = 'fall') {
+  if (format === 'summer' && n >= SUMMER_SLOTS.length) return [...SUMMER_SLOTS];
+  return n >= SLOTS.length ? [...SLOTS] : SLOTS.filter((s) => s !== 'C');
+}
 
 /** Fewest who play: the league needs eight to start in this mode. */
 export const MIN_PLAYERS = 8;
