@@ -23,7 +23,7 @@ import { battingCounts } from './stats.js';
 import { parseStatSeasonId, seasonSortKey, hasCompleteHitTypes, HIT_TYPES_TEAMS } from './season-ids.js';
 import { statIdOf } from './player-id.js';
 import {
-  SLOTS, TEAM_SIZE, seasonLine, leagueBaseline, computedRatings, simPosition, bestOverall, overallAt
+  SLOTS, TEAM_SIZE, seasonLine, leagueBaseline, computedRatings, simPosition, bestOverall, overallAt, defValue
 } from './sim-ratings.js';
 
 const teamOfKey = (key) => String(key).split('-').slice(2).filter((s) => s !== 'sub').join('-').toLowerCase();
@@ -158,16 +158,16 @@ export function buildSeasonTeam({ entry, statDocs, rosterEntries = {}, current =
 }
 
 /**
- * The best nine from a roster and where they play: each spot (scarcest
+ * The best nine (eight when only eight show up) from a roster and where they play: each spot (scarcest
  * first) goes to the best player who can play it; if nobody left can, the
  * best player left plays it out of position.
  * @returns {{ nine: string[], field: Object<string, string> }}
  */
-export function bestNine(players) {
+export function bestNine(players, { slots = fieldSlots(players.length) } = {}) {
   const used = new Set();
   const field = {};
   const can = (p, s) => p.pos.slots.includes(s);
-  const order = [...SLOTS].sort((a, b) => players.filter((p) => !p.pos.wild && can(p, a)).length
+  const order = [...slots].sort((a, b) => players.filter((p) => !p.pos.wild && can(p, a)).length
     - players.filter((p) => !p.pos.wild && can(p, b)).length);
   for (const slot of order) {
     const left = players.filter((p) => !used.has(p.id));
@@ -179,4 +179,101 @@ export function bestNine(players) {
     used.add(best.id);
   }
   return { nine: [...used], field };
+}
+
+// ===========================================================================
+// Season mode: who shows up, and rotating the bench in
+// ===========================================================================
+
+/** The spots to fill: all nine, or with only eight the courtesy catcher takes C. */
+export const fieldSlots = (n) => (n >= SLOTS.length ? [...SLOTS] : SLOTS.filter((s) => s !== 'C'));
+
+/** Fewest who play: the league needs eight to start in this mode. */
+export const MIN_PLAYERS = 8;
+
+/**
+ * Who shows up tonight. Each player comes about as often as he really has this
+ * season (his games over the team's most), between 25% and 95%; if fewer than
+ * MIN_PLAYERS come, the likeliest of the rest are called in.
+ * @returns {string[]} ids, in roster order
+ */
+export function showUp(players, { random = Math.random, min = MIN_PLAYERS } = {}) {
+  const most = Math.max(1, ...players.map((p) => p.line?.g || 0));
+  const chance = (p) => Math.min(0.95, Math.max(0.25, (p.line?.g || 0) / most));
+  const here = new Set(players.filter((p) => random() < chance(p)).map((p) => p.id));
+  const rest = players.filter((p) => !here.has(p.id)).sort((a, b) => chance(b) - chance(a));
+  while (here.size < Math.min(min, players.length) && rest.length) here.add(rest.shift().id);
+  return players.filter((p) => here.has(p.id)).map((p) => p.id);
+}
+
+const OUT_OF_POSITION = 15;   // penalty, in rating points, for playing a spot his roster position doesn't cover
+const STAY_PUT = 20;          // keep players where they were last inning; mostly a sub takes the spot of the man coming out
+
+/** The best way to put these players in these spots (exhaustive; at most 8 of each). */
+function bestFit(players, slots, prev = {}) {
+  const score = players.map((p) => slots.map((s) => defValue(p.ratings, s)
+    - (p.pos.slots.includes(s) ? 0 : OUT_OF_POSITION)
+    + (prev[p.id] === s ? STAY_PUT : 0)));
+  const best = players.map((_, i) => Math.max(...score[i]));
+  let top = -Infinity;
+  let pick = null;
+  const used = new Array(slots.length).fill(false);
+  const cur = [];
+  const walk = (i, sum) => {
+    if (i === players.length) {
+      if (sum > top) { top = sum; pick = [...cur]; }
+      return;
+    }
+    let bound = sum;
+    for (let k = i; k < players.length; k += 1) bound += best[k];
+    if (bound <= top) return;
+    for (let j = 0; j < slots.length; j += 1) {
+      if (used[j]) continue;
+      used[j] = true;
+      cur[i] = j;
+      walk(i + 1, sum + score[i][j]);
+      used[j] = false;
+    }
+  };
+  walk(0, 0);
+  return Object.fromEntries(pick.map((j, i) => [slots[j], players[i].id]));
+}
+
+/**
+ * The fielding by inning when the bench rotates in: the 1st inning is the
+ * field as set, the pitcher pitches the whole game, and from the 2nd inning on
+ * the players who have sat the most go in (ties: the better fielders play).
+ * @param {object[]} players  everyone who showed up
+ * @param {Object<string,string>} field  1st-inning field { slot: id }
+ * @returns {Object<string,string>[]} one field per inning
+ */
+export function rotationPlan(players, field, { innings = 7 } = {}) {
+  const byId = new Map(players.map((p) => [p.id, p]));
+  const pitcher = field.P;
+  const slots = Object.keys(field).filter((s) => s !== 'P');
+  const others = players.filter((p) => p.id !== pitcher);
+  if (others.length <= slots.length) return [{ ...field }];
+  const sat = Object.fromEntries(others.map((p) => [p.id, 0]));
+  const glove = (p) => Math.max(...slots.map((s) => defValue(p.ratings, s) - (p.pos.slots.includes(s) ? 0 : OUT_OF_POSITION)));
+  const plan = [{ ...field }];
+  const on = new Set(Object.values(field));
+  others.forEach((p) => { if (!on.has(p.id)) sat[p.id] += 1; });
+  for (let inn = 2; inn <= innings; inn += 1) {
+    const prev = Object.fromEntries(Object.entries(plan[plan.length - 1]).map(([s, id]) => [id, s]));
+    const going = [...others].sort((a, b) => sat[b.id] - sat[a.id] || glove(b) - glove(a)).slice(0, slots.length);
+    const goingIds = new Set(going.map((p) => p.id));
+    others.forEach((p) => { if (!goingIds.has(p.id)) sat[p.id] += 1; });
+    plan.push({ P: pitcher, ...bestFit(going.map((p) => byId.get(p.id)), slots, prev) });
+  }
+  return plan;
+}
+
+/** Where a player played over a plan: 'SS-2B', or '' if he only batted. */
+export function positionsPlayed(plan, id) {
+  const out = [];
+  for (const f of plan || []) {
+    const s = Object.keys(f).find((k) => f[k] === id);
+    if (s && out[out.length - 1] !== s) out.push(s);
+  }
+  return [...new Set(out)].join('-');
 }

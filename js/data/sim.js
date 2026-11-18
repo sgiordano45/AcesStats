@@ -15,6 +15,7 @@ import { getDisplaySeasonId, isSeasonId, seasonSortKey } from '../core/config.js
 import { buildPool, buildSofaKings, seasonLine, BOSS } from '../domain/sim-ratings.js';
 import { statIdOf } from '../domain/player-id.js';
 import { teamCatalog, buildSeasonTeam } from '../domain/sim-teams.js';
+import { getSeasonGames } from './games.js';
 
 const seasonOfRosterDoc = (id) => {
   const parts = String(id).split('-');
@@ -116,4 +117,34 @@ export async function saveSimRatings(seasonId, players, who = '') {
     updatedAt: serverTimestamp(),
     updatedBy: who
   });
+}
+
+/**
+ * A season's regular-season schedule, oldest first, for Season mode.
+ * @returns {Promise<{ id, at, time, home, away, homeScore, awayScore, done, forfeit }[]>}
+ *   home/away are lowercase team names; at is ms since epoch.
+ */
+export async function loadSimSchedule(seasonId) {
+  const games = await getSeasonGames(seasonId);
+  const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+  return games
+    .filter((g) => /^regular$/i.test(String(g.gameType || g.game_type || 'regular')))
+    .map((g) => {
+      const at = g.date?.seconds ? g.date.seconds * 1000 : Date.parse(g.date) || 0;
+      const homeScore = num(g.homeScore);
+      const awayScore = num(g.awayScore);
+      return {
+        id: g.id,
+        at,
+        time: g.time || '',
+        home: String(g.homeTeam || g.homeTeamName || '').toLowerCase(),
+        away: String(g.awayTeam || g.awayTeamName || '').toLowerCase(),
+        homeScore,
+        awayScore,
+        done: g.status === 'completed' && homeScore !== null && awayScore !== null,
+        forfeit: !!g.forfeit
+      };
+    })
+    .filter((g) => g.home && g.away)
+    .sort((a, b) => a.at - b.at || a.id.localeCompare(b.id));
 }

@@ -8,7 +8,9 @@
 //       streak: { type: 'W'|'L'|'T', n },
 //       byStyle: { [CPU_STYLES key]: { w, l, t, firstWinAt } },   // a win = that pennant
 //       recent: [{ at, you, cpu, style, conditions, how, team?, opp? }], // newest first, up to RECENT_KEEP
-//     Real-team games (style 'teams') also carry the two team names.
+//     Real-team and Season games (style 'teams' / 'season') also carry the two team names.
+//     seasonBests: { [teamKey]: { team, w, l, t, rf, ra, at } }   // best Season-mode run with each team
+//     seasonsPlayed
 //       lastGameAt, updatedAt }
 
 import { db, doc, getDoc, setDoc, serverTimestamp } from '../core/firebase.js';
@@ -18,7 +20,7 @@ export const RECENT_KEEP = 10;
 
 /** An empty record. */
 export function blankRecord() {
-  return { games: 0, wins: 0, losses: 0, ties: 0, runsFor: 0, runsAgainst: 0, streak: { type: '', n: 0 }, byStyle: {}, recent: [] };
+  return { games: 0, wins: 0, losses: 0, ties: 0, runsFor: 0, runsAgainst: 0, streak: { type: '', n: 0 }, byStyle: {}, recent: [], seasonBests: {}, seasonsPlayed: 0 };
 }
 
 /** Fill in anything an older or partial record is missing. */
@@ -28,6 +30,7 @@ function normalize(r) {
   out.streak = { ...b.streak, ...(r?.streak || {}) };
   out.byStyle = { ...(r?.byStyle || {}) };
   out.recent = Array.isArray(r?.recent) ? r.recent : [];
+  out.seasonBests = { ...(r?.seasonBests || {}) };
   return out;
 }
 
@@ -78,13 +81,22 @@ export async function loadRecord(uid) {
  * Signed in: read, add, write back (one person writes their own doc, so no transaction).
  */
 export async function recordGame(uid, game, { name = '' } = {}) {
+  return recordGames(uid, [game], { name });
+}
+
+/**
+ * Add several finished games in one save (a simmed run of Season games).
+ * Returns { record, newPennant } (newPennant: the last game earned one).
+ */
+export async function recordGames(uid, games, { name = '', season = null } = {}) {
+  const current = uid ? await loadRecord(uid) : readLocal();
+  let out = { record: current, newPennant: false };
+  for (const game of games) out = addGame(out.record, game);
+  if (season) out.record = addSeason(out.record, season);
   if (!uid) {
-    const out = addGame(readLocal(), game);
     writeLocal(out.record);
     return out;
   }
-  const current = await loadRecord(uid);
-  const out = addGame(current, game);
   await setDoc(doc(db, 'simRecords', uid), {
     ...out.record,
     name,
@@ -92,4 +104,21 @@ export async function recordGame(uid, game, { name = '' } = {}) {
     updatedAt: serverTimestamp()
   });
   return out;
+}
+
+const seasonPct = (x) => (x.w + x.l + x.t ? (x.w + x.t / 2) / (x.w + x.l + x.t) : 0);
+
+/**
+ * The record with a finished Season-mode run added: counts it, and keeps it
+ * as the best for that team if it beats the old best (win %, then run diff). Pure.
+ * @param {object} season { key, team, w, l, t, rf, ra }
+ */
+export function addSeason(rec, { key, team, w, l, t = 0, rf = 0, ra = 0 }) {
+  const r = normalize(JSON.parse(JSON.stringify(rec || {})));
+  r.seasonsPlayed = (r.seasonsPlayed || 0) + 1;
+  const run = { team, w, l, t, rf, ra, at: new Date().toISOString() };
+  const old = r.seasonBests[key];
+  const better = !old || seasonPct(run) > seasonPct(old) || (seasonPct(run) === seasonPct(old) && rf - ra > old.rf - old.ra);
+  if (better) r.seasonBests[key] = run;
+  return r;
 }

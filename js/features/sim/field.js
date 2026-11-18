@@ -539,7 +539,12 @@ export class SimField {
     ctx.drawImage(this.bg, 0, 0);
     // Back to front so nearer players overlap farther ones.
     const people = [
-      ...Object.values(this.fielders).map((f) => ({ p: f, color: this.fieldColor, id: this.fielderIds?.[f.slot] || f.slot })),
+      // With eight, the batting team's courtesy catcher stands in (in their colors).
+      ...Object.values(this.fielders).map((f) => ({
+        p: f,
+        color: f.slot === 'C' && this.fielderIds && !this.fielderIds.C ? this.batColor : this.fieldColor,
+        id: this.fielderIds?.[f.slot] || f.slot
+      })),
       { p: this.ump, color: COLORS.umpShirt, id: 'ump', pants: COLORS.umpPants },
       ...this.runners.filter((r) => !r.gone).map((r) => ({ p: r, color: this.batColor, id: r.id }))
     ].sort((a, b) => b.p.y - a.p.y);

@@ -458,9 +458,12 @@ const ofR = (a) => FIELD.spots[ofAt(a)].r;
 
 /**
  * A team ready to play.
- * @param {object} t { name, color, cpu, players: [pool player], lineup?: ids, field?: {slot:id} }
+ * @param {object} t { name, color, cpu, players: [pool player], lineup?: ids, field?: {slot:id}, plan?: [{slot:id}] }
+ *   lineup can be longer than nine (everyone who shows up bats). plan is the
+ *   fielding by inning (plan[0] = 1st inning; the last entry carries on into
+ *   extra innings). A missing C is the courtesy catcher, who makes no plays.
  */
-export function makeTeam({ name, color, cpu = false, players, lineup, field }) {
+export function makeTeam({ name, color, cpu = false, players, lineup, field, plan = null }) {
   const roster = {};
   for (const p of players) {
     roster[p.id] = { id: p.id, name: p.name, team: p.team, bats: p.bats || '', pos: p.pos, ratings: { ...p.ratings } };
@@ -470,7 +473,8 @@ export function makeTeam({ name, color, cpu = false, players, lineup, field }) {
     name, color, cpu,
     roster,
     lineup: lineup || battingOrder(players),
-    field: field || assignPositions(players),
+    field: plan?.length ? { ...plan[0] } : field || assignPositions(players),
+    plan: plan?.length ? plan : null,
     box,
     pit: { outs: 0, r: 0, h: 0, bb: 0, so: 0, bf: 0, calls: 0 },
     runs: [],
@@ -569,6 +573,8 @@ export function planPA(g, { random = Math.random } = {}) {
   // Ball in play: who is it hit at?
   const bz = { power: z(batter.ratings.power), speed: z(batter.ratings.speed), contact: z(batter.ratings.contact) };
   let slot = pickWeighted(sprayFor(batter.bats, bz.power), random);
+  // Nobody there (the courtesy catcher can't make plays): someone else covers it.
+  if (!fieldingTeam(g).field[slot]) slot = pickWeighted({ P: 1, '1B': 1, '3B': 1 }, random);
   const F = fielderAt(g, slot);
   const fz = { range: z(F.ratings.range), arm: z(F.ratings.arm) };
   const rangeEffect = IF_SLOTS.includes(slot) ? 0.08 : OF_SLOTS.includes(slot) ? 0.06 : 0.03;
@@ -1084,7 +1090,14 @@ function endHalf(g) {
   }
   g.outs = 0;
   g.bases = [null, null, null];
+  applyPlan(g);
   return null;
+}
+
+/** The team taking the field lines up the way its plan says for this inning. */
+function applyPlan(g) {
+  const t = fieldingTeam(g);
+  if (t.plan?.length) t.field = { ...t.plan[Math.min(g.inning, t.plan.length) - 1] };
 }
 
 function finish(g, how) {

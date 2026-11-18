@@ -2,14 +2,17 @@
 // sim.html: Backyard Aces Softball (the Aces Sim). Setup -> snake draft vs the computer -> lineup -> a
 // 7-inning game on the pixel field -> box score. Everything about the game
 // lives in this browser (localStorage acesSim.v1), so a refresh resumes.
+// Three ways to play: Draft, Real teams (any season's team, no draft) and
+// Season (a team from this season through its real schedule, with
+// attendance that varies; kept separately in acesSim.season.v1).
 //
 // The pool and ratings: js/data/sim.js + js/domain/sim-ratings.js.
 // Draft rules, the computer drafter and the at-bat engine: js/domain/sim-engine.js.
 // The field and animation: js/features/sim/field.js.
 
 import { initPage, pageReady } from '../core/app.js';
-import { loadSimPool } from '../data/sim.js';
-import { loadRecord, recordGame } from '../data/sim-records.js';
+import { loadSimPool, loadSimSchedule } from '../data/sim.js';
+import { loadRecord, recordGame, recordGames } from '../data/sim-records.js';
 import {
   SLOTS, TEAM_SIZE, RATING_KEYS, RATING_ABBR, RATING_LABELS, positionTag, leagueSummary, reviveLeague, BOSS
 } from '../domain/sim-ratings.js';
@@ -19,7 +22,7 @@ import {
   planPA, commitPA, simHalf, simToEnd, currentBatter, currentPitcher, battingTeam,
   ipText, starOfGame, INNINGS
 } from '../domain/sim-engine.js';
-import { bestNine } from '../domain/sim-teams.js';
+import { bestNine, showUp, rotationPlan, positionsPlayed, fieldSlots } from '../domain/sim-teams.js';
 import { SimField } from '../features/sim/field.js';
 import { seasonLabel } from '../domain/season-ids.js';
 import { escapeHtml as esc, fmtAvg } from '../ui/format.js';
@@ -29,6 +32,7 @@ import { showToast } from '../ui/toast.js';
 
 const $ = (id) => document.getElementById(id);
 const STORE = 'acesSim.v1';
+const SEASON_STORE = 'acesSim.season.v1';   // a Season-mode run, kept apart so a quick game doesn't wipe it
 
 const TEAM_COLORS = [
   ['Green', '#2d7d32'], ['Gold', '#CFB53B'], ['Carolina', '#4b9cd3'], ['Teal', '#008080'],
@@ -50,14 +54,15 @@ const S = {
 // Storage
 // ---------------------------------------------------------------------------
 
+const storeOf = (save) => (save?.mode === 'season' ? SEASON_STORE : STORE);
 function persist() {
-  try { localStorage.setItem(STORE, JSON.stringify(S.save)); } catch { /* full or blocked */ }
+  try { localStorage.setItem(storeOf(S.save), JSON.stringify(S.save)); } catch { /* full or blocked */ }
 }
-function readSaved() {
-  try { return JSON.parse(localStorage.getItem(STORE) || 'null'); } catch { return null; }
+function readSaved(key = STORE) {
+  try { return JSON.parse(localStorage.getItem(key) || 'null'); } catch { return null; }
 }
-function clearSaved() {
-  try { localStorage.removeItem(STORE); } catch { /* ignore */ }
+function clearSaved(key = storeOf(S.save)) {
+  try { localStorage.removeItem(key); } catch { /* ignore */ }
 }
 
 const POOL_SIZES = [[36, '36 random players'], [28, '28 random players (thin)'], [0, 'Everyone']];
@@ -145,12 +150,13 @@ function newTeamsSave({ you, opp, homeIsYou, ask, conditionsMode }) {
 }
 
 const isTeams = () => S.save?.mode === 'teams' && Array.isArray(S.save?.rosters);
+const isSeason = () => S.save?.mode === 'season' && Array.isArray(S.save?.schedule);
 const isBoss = () => S.save?.style === BOSS.key && Array.isArray(S.save?.boss);
 const P = (id) => S.byId.get(id)
   || (isBoss() ? S.save.boss.find((p) => p.id === id) : undefined)
   || (isTeams() ? S.save.rosters[String(id).startsWith('1:') ? 1 : 0].find((p) => p.id === id) : undefined);
 // The Sofa Kings don't draft: their nine are fixed. Real teams play the nine in the lineup.
-const picksOf = (ti) => (isTeams() ? S.save.lineups[ti].lineup.map(P).filter(Boolean)
+const picksOf = (ti) => (isTeams() || isSeason() ? S.save.lineups[ti].lineup.map(P).filter(Boolean)
   : ti === 1 && isBoss() ? S.save.boss : S.save.picks[ti].map(P).filter(Boolean));
 const poolLeft = () => {
   const taken = new Set([...S.save.picks[0], ...S.save.picks[1]]);
@@ -162,6 +168,7 @@ const oppName = (key) => (key === BOSS.key ? BOSS.name : CPU_STYLES[key]?.name |
 const styleOf = () => (isBoss() ? BOSS : CPU_STYLES[S.save.style] || CPU_STYLES.fundamentals);
 const cpuName = () => S.save.teams[1].name || 'the computer';
 const opponentLine = () => {
+  if (isSeason()) return `${cpuName()} bat everyone who showed up and play their best nine in the field.`;
   if (isTeams()) return `The real ${cpuName()} roster (${S.save.rosters[1].length} players). The computer plays its best nine.`;
   const st = styleOf();
   return `${st.blurb}${S.save.style === 'homer' && S.save.favorite ? ` Favorite team: ${S.save.favorite}.` : ''}`;
@@ -177,12 +184,12 @@ const posChip = (p) => `<span class="sim-pos${p.pos.wild ? ' is-wild' : ''}" tit
 const swatch = (color) => `<span class="sim-swatch" style="background:${esc(color)}"></span>`;
 
 function show(phase) {
-  for (const id of ['simSetup', 'simDraft', 'simLineup', 'simGame', 'simFinal']) $(id).hidden = true;
-  $({ setup: 'simSetup', draft: 'simDraft', lineup: 'simLineup', game: 'simGame', final: 'simFinal' }[phase]).hidden = false;
+  for (const id of ['simSetup', 'simSeason', 'simDraft', 'simLineup', 'simGame', 'simFinal']) $(id).hidden = true;
+  $({ setup: 'simSetup', season: 'simSeason', draft: 'simDraft', lineup: 'simLineup', game: 'simGame', final: 'simFinal' }[phase]).hidden = false;
   // The how-to steps show on the setup screen only.
   $('simSteps').hidden = phase !== 'setup';
   // The record sidebar shows between games; the draft and the game need the width.
-  const aside = ['setup', 'lineup', 'final'].includes(phase);
+  const aside = ['setup', 'season', 'lineup', 'final'].includes(phase);
   $('simAside').hidden = !aside;
   $('simLayout').classList.toggle('has-aside', aside);
 }
@@ -281,6 +288,13 @@ function renderRecord({ fresh = '' } = {}) {
       }).join('')}</ul>
       ${bossCard(r)}
     </section>
+    ${Object.keys(r.seasonBests || {}).length ? `<section class="aces-card sim-record">
+      <h2 class="aces-card-title">Best seasons</h2>
+      <ol class="sim-recent">${Object.values(r.seasonBests)
+        .sort((a, b) => (b.w - b.l) - (a.w - a.l) || (b.rf - b.ra) - (a.rf - a.ra))
+        .slice(0, 6)
+        .map((x) => `<li><strong>${x.w}-${x.l}${x.t ? `-${x.t}` : ''}</strong> <span class="sim-dim">${esc(x.team)}, ${x.rf}-${x.ra} runs</span></li>`).join('')}</ol>
+    </section>` : ''}
     ${r.recent.length ? `<section class="aces-card sim-record">
       <h2 class="aces-card-title">Recent games</h2>
       <ol class="sim-recent">${r.recent.slice(0, 6).map((x) => {
@@ -290,18 +304,24 @@ function renderRecord({ fresh = '' } = {}) {
     </section>` : ''}`;
 }
 
-/** Add the finished game to the person's record (account or browser). */
-async function saveToRecord(g) {
+/** A finished game as the record keeps it. */
+function recordOf(g) {
   const yi = youIdx();
-  const game = {
+  return {
     you: g.score[yi],
     cpu: g.score[1 - yi],
     style: S.save.style || 'fundamentals',
     conditions: g.conditions || 'perfect',
     how: g.result?.how || '',
-    // Real teams: who played whom (no pennant).
-    ...(isTeams() ? { team: S.save.teams[0].name, opp: S.save.teams[1].name } : {})
+    // Real teams and Season: who played whom (no pennant).
+    ...(isTeams() ? { team: S.save.teams[0].name, opp: S.save.teams[1].name } : {}),
+    ...(isSeason() ? { team: seasonTeamName(S.save.team), opp: seasonTeamName(S.save.teams[1].key || S.save.teams[1].name) } : {})
   };
+}
+
+/** Add the finished game to the person's record (account or browser). */
+async function saveToRecord(g) {
+  const game = recordOf(g);
   try {
     const name = S.profile?.displayName || S.profile?.linkedPlayer || '';
     const wasUnlocked = bossUnlocked();
@@ -336,6 +356,9 @@ function renderSetup(profile) {
   const oldest = catalog.length ? seasonLabel(catalog[catalog.length - 1].seasonId) : '';
   const linked = S.pool.players.find((p) => profile?.linkedPlayer && p.name === profile.linkedPlayer);
   const myTeamKey = (linked && catalog.find((t) => t.seasonId === S.pool.seasonId && t.team === String(linked.team).toLowerCase())?.key) || catalog[0]?.key || '';
+  const nowTeams = catalog.filter((t) => t.seasonId === S.pool.seasonId);
+  const season = readSaved(SEASON_STORE);
+  const seasonOk = season?.mode === 'season' && season.seasonId === S.pool.seasonId && Array.isArray(season.schedule);
   const teamOptions = (selected) => {
     const groups = new Map();
     for (const t of catalog) {
@@ -351,11 +374,18 @@ function renderSetup(profile) {
       <div class="sim-actions"><button class="aces-btn is-primary" type="button" data-act="resume">Resume</button>
       <button class="aces-btn is-ghost" type="button" data-act="discard">Start over</button></div>
     </div>` : ''}
+    ${seasonOk ? `<div class="aces-card sim-resume">
+      <div><h2 class="aces-card-title">Your ${esc(seasonTeamName(season.team))} season</h2>
+      <p class="sim-dim">${esc(recText(seasonRecord(season)))}${season.schedule.every((x) => x.res) ? ', all done' : `, ${season.schedule.filter((x) => x.res).length} of ${season.schedule.length} games played`}.</p></div>
+      <div class="sim-actions"><button class="aces-btn is-primary" type="button" data-act="resume-season">Back to the season</button>
+      <button class="aces-btn is-ghost" type="button" data-act="abandon-season">Throw it out</button></div>
+    </div>` : ''}
     <form class="aces-card sim-setup" id="simSetupForm" novalidate>
       <h2 class="aces-card-title">New game</h2>
       <fieldset class="sim-modes"><legend class="u-sr-only">How to play</legend>
         <label class="sim-mode"><input type="radio" name="suMode" value="draft" checked><span><strong>Draft</strong><span class="sim-dim">Pick nine from this season's players against a computer manager.</span></span></label>
         <label class="sim-mode"><input type="radio" name="suMode" value="teams"${teamsOk ? '' : ' disabled'}><span><strong>Real teams</strong><span class="sim-dim">No draft: play a team as it was, this season or any season back to ${esc(oldest)}.</span></span></label>
+        <label class="sim-mode"><input type="radio" name="suMode" value="season"${nowTeams.length >= 2 ? '' : ' disabled'}><span><strong>Season</strong><span class="sim-dim">Take a ${esc(seasonLabel(S.pool.seasonId))} team through its real schedule and see what record you can get.</span></span></label>
       </fieldset>
       <div class="sim-setup-part" data-mode="draft">
         <p class="sim-dim">Pool: ${S.pool.players.length} players on the ${esc(seasonLabel(S.pool.seasonId))} rosters. Ratings run 20-80 with 50 as league average: contact from AVG, power from extra-base hits, speed from runs per game, plus defense and pitching set by the league.</p>
@@ -397,8 +427,15 @@ function renderSetup(profile) {
             <span class="sim-dim" id="suTheirsNote"></span></div>
         </div>
       </div>
+      <div class="sim-setup-part" data-mode="season" hidden>
+        <div class="sim-row">
+          <div class="aces-field"><label class="aces-label" for="suSeasonTeam">Your team</label>
+            <span class="aces-select-wrap"><select class="aces-select" id="suSeasonTeam">${nowTeams.map((t) => `<option value="${esc(t.key)}"${t.key === myTeamKey ? ' selected' : ''}>${esc(capWords(t.team))}</option>`).join('')}</select></span>
+            <span class="sim-dim" id="suSeasonNote"></span></div>
+        </div>
+      </div>
       <div class="sim-row">
-        <div class="aces-field"><label class="aces-label" for="suHome">Home team</label>
+        <div class="aces-field" data-mode="draft teams"><label class="aces-label" for="suHome">Home team</label>
           <span class="aces-select-wrap"><select class="aces-select" id="suHome">
             <option value="flip">Coin flip</option><option value="you">You (bat last)</option><option value="cpu">The computer</option>
           </select></span></div>
@@ -411,13 +448,20 @@ function renderSetup(profile) {
       <label class="sim-check"><input type="checkbox" id="suAsk" checked> Ask me to send or hold runners on close plays</label>
       <div class="sim-actions"><button class="aces-btn is-primary" type="submit" id="suGo">Start the draft</button></div>
       <p class="sim-dim sim-rules" data-mode="draft">Draft 9 players each, snake order. You need someone who can play every spot (P, C, 1B, 2B, 3B, SS, LF, CF, RF) from their roster position: IF covers any infield spot, OF any outfield spot, IF/OF either. Players with no position are Utility; you can take one Utility and one Flex player, and they can play anywhere. Games are 7 innings at Senior Field with the league mercy rule: past the next diamond's first-base dugout is a ground-rule double, through the gap in the fence is an automatic triple.</p>
+      <p class="sim-dim sim-rules" data-mode="season" hidden>Play your team's real ${esc(seasonLabel(S.pool.seasonId))} schedule against the other teams' real rosters, and see how your record stacks up against the real one. Attendance changes every game: each player shows up about as often as he really has, anywhere from 8 guys to the full roster, and the same goes for the other team. Everyone who shows up bats; nine play the field, and you can rotate the bench in by inning (with only eight, the other team lends a courtesy catcher who can't make plays). Set the lineup and play each game, or sim it.</p>
       <p class="sim-dim sim-rules" data-mode="teams" hidden>Each team plays its real roster: pick your nine, your batting order and who plays where, and bring guys off the bench. Every season is rated against its own league, so 50 is that year's average. Contact and speed come from that season's stats, and pitching too if he pitched. Power comes from that season's extra-base hits where the league tracked them (2026 on); before that, and for defense, a player still in the league gets this season's rating and anyone else is rated average. Games are 7 innings at Senior Field with the league mercy rule. Real-team games count toward your record but not toward pennants.</p>
     </form>`;
 
   $('simSetup').onclick = (e) => {
     const act = e.target.closest('[data-act]')?.dataset.act;
     if (act === 'resume') { S.save = saved; resume(); }
-    if (act === 'discard') { clearSaved(); renderSetup(profile); }
+    if (act === 'discard') { clearSaved(STORE); renderSetup(profile); }
+    if (act === 'resume-season') { S.save = season; resume(); }
+    if (act === 'abandon-season') {
+      confirmModal('Throw out this season?', { danger: true, confirmLabel: 'Throw it out' }).then((ok) => {
+        if (ok) { clearSaved(SEASON_STORE); renderSetup(profile); }
+      });
+    }
   };
   const mode = () => document.querySelector('input[name="suMode"]:checked')?.value || 'draft';
   const byKey = new Map(catalog.map((t) => [t.key, t]));
@@ -429,18 +473,21 @@ function renderSetup(profile) {
   };
   const setMode = () => {
     const m = mode();
-    $('simSetupForm').querySelectorAll('[data-mode]').forEach((el) => { el.hidden = el.dataset.mode !== m; });
-    $('suGo').textContent = m === 'teams' ? 'Set the lineup' : 'Start the draft';
+    $('simSetupForm').querySelectorAll('[data-mode]').forEach((el) => { el.hidden = !el.dataset.mode.split(' ').includes(m); });
+    $('suGo').textContent = { teams: 'Set the lineup', season: 'Start the season' }[m] || 'Start the draft';
     // The how-to steps walk through the draft.
-    $('simSteps').hidden = m === 'teams';
+    $('simSteps').hidden = m !== 'draft';
   };
   const setNotes = () => {
+    const st = byKey.get($('suSeasonTeam').value);
+    $('suSeasonNote').textContent = st ? `${st.ids.length} players on the roster.` : '';
     $('suYoursNote').textContent = teamNote($('suYours').value);
     $('suTheirsNote').textContent = teamNote($('suTheirs').value) || 'Picked when you start.';
   };
   $('simSetupForm').querySelectorAll('input[name="suMode"]').forEach((r) => { r.onchange = setMode; });
   $('suYours').onchange = setNotes;
   $('suTheirs').onchange = setNotes;
+  $('suSeasonTeam').onchange = setNotes;
   setNotes();
   $('suStyle').onchange = (e) => {
     const st = e.target.value === BOSS.key ? BOSS : CPU_STYLES[e.target.value];
@@ -449,6 +496,7 @@ function renderSetup(profile) {
   $('simSetupForm').onsubmit = (e) => {
     e.preventDefault();
     if (mode() === 'teams') { startTeams(); return; }
+    if (mode() === 'season') { startSeason(); return; }
     const sv = $('suStyle').value;
     const style = sv === BOSS.key && bossUnlocked() ? BOSS.key
       : CPU_STYLES[sv] ? sv : Object.keys(CPU_STYLES)[Math.floor(Math.random() * Object.keys(CPU_STYLES).length)];
@@ -502,9 +550,35 @@ function renderSetup(profile) {
     if (tv.startsWith('random')) showToast(`Your opponent: ${S.save.teams[1].name}`);
     renderLineup();
   }
+
+  async function startSeason() {
+    const entry = byKey.get($('suSeasonTeam').value);
+    if (!entry) { showToast('Pick your team', 'error'); return; }
+    if (seasonOk && !(await confirmModal(`Start a new season? Your ${seasonTeamName(season.team)} season will be thrown out.`, { danger: true, confirmLabel: 'Start a new one' }))) return;
+    $('suGo').disabled = true;
+    let games;
+    try {
+      games = await loadSimSchedule(S.pool.seasonId);
+    } catch (err) {
+      console.error('[sim] schedule', err);
+      showToast('Couldn\u2019t load the schedule', 'error');
+      $('suGo').disabled = false;
+      return;
+    }
+    S.save = newSeasonSave(entry, games, { ask: $('suAsk').checked, conditionsMode: $('suWeather').value });
+    if (!S.save.schedule.length) {
+      showToast(`No ${capWords(entry.team)} games on the schedule yet`, 'error');
+      S.save = null;
+      $('suGo').disabled = false;
+      return;
+    }
+    persist();
+    renderSeason();
+  }
 }
 
 function phaseWord(save) {
+  if (save.phase === 'hub') return 'between games';
   if (save.phase === 'draft') return `drafting (${save.picks[0].length + save.picks[1].length} of 18 picks)`;
   if (save.phase === 'lineup') return 'setting the lineup';
   if (save.phase === 'game' && save.game) return `${save.game.half ? 'bottom' : 'top'} of the ${ordinal(save.game.inning)}, ${save.game.score.join('-')}`;
@@ -524,7 +598,8 @@ function resume() {
     return;
   }
   const ph = S.save.phase;
-  if (ph === 'draft') renderDraft();
+  if (ph === 'hub') renderSeason();
+  else if (ph === 'draft') renderDraft();
   else if (ph === 'lineup') renderLineup();
   else if (ph === 'game') startGameView();
   else if (ph === 'final') renderFinal();
@@ -698,6 +773,7 @@ function finishDraft() {
 // ---------------------------------------------------------------------------
 
 function renderLineup() {
+  if (isSeason()) { renderSeasonLineup(); return; }
   show('lineup');
   const mine = S.save.lineups[0];
   const slotOf = Object.fromEntries(Object.entries(mine.field).map(([s, id]) => [id, s]));
@@ -824,21 +900,27 @@ function renderLineup() {
 // Game
 // ---------------------------------------------------------------------------
 
-function startGame() {
+/** A new game from the save's teams and lineups. */
+function buildGame() {
   const mk = (ti) => makeTeam({
     name: S.save.teams[ti].name,
     color: S.save.teams[ti].color,
     cpu: S.save.teams[ti].cpu,
     players: picksOf(ti),
     lineup: S.save.lineups[ti].lineup,
-    field: S.save.lineups[ti].field
+    field: S.save.lineups[ti].field,
+    plan: S.save.lineups[ti].plan || null
   });
   const you = mk(0);
   const cpu = mk(1);
   you.side = 0; cpu.side = 1;
   const [away, home] = S.save.homeIsYou ? [cpu, you] : [you, cpu];
   if (!S.save.conditions) S.save.conditions = CONDITIONS[S.save.conditionsMode] ? S.save.conditionsMode : randomConditions();
-  S.save.game = newGame({ away, home, league: leagueSummary(S.pool.league), conditions: S.save.conditions });
+  return newGame({ away, home, league: leagueSummary(S.pool.league), conditions: S.save.conditions });
+}
+
+function startGame() {
+  S.save.game = buildGame();
   S.save.phase = 'game';
   persist();
   startGameView();
@@ -941,7 +1023,8 @@ function renderGame() {
   $('simEnd').disabled = busy;
 }
 
-const slotOfTeam = (t, id) => Object.entries(t.field).find(([, v]) => v === id)?.[0] || '';
+// EH: an extra hitter, batting but not in the field (Season mode bats everyone who shows up).
+const slotOfTeam = (t, id) => Object.entries(t.field).find(([, v]) => v === id)?.[0] || 'EH';
 
 function askDecision(play) {
   return new Promise((resolve) => {
@@ -1013,11 +1096,13 @@ function finishGame() {
   if (first) {
     S.save.results.push({ you: g.score[yi], cpu: g.score[1 - yi] });
     S.save.recorded = true;
+    if (isSeason()) S.save.schedule[S.save.cur].res = { us: g.score[yi], them: g.score[1 - yi], how: g.result?.how || '' };
   }
   S.save.phase = 'final';
   persist();
   renderFinal();
-  if (first) saveToRecord(g);
+  if (first && isSeason()) saveSeasonGames([recordOf(g)]);
+  else if (first) saveToRecord(g);
 }
 
 // ---------------------------------------------------------------------------
@@ -1027,7 +1112,8 @@ function finishGame() {
 function boxTable(t) {
   const rows = t.lineup.map((id) => {
     const b = t.box[id];
-    return `<tr><th scope="row">${esc(t.roster[id].name)} <span class="sim-dim">${esc(slotOfTeam(t, id))}</span></th>
+    const where = (t.plan ? positionsPlayed(t.plan, id) : slotOfTeam(t, id)) || 'EH';
+    return `<tr><th scope="row">${esc(t.roster[id].name)} <span class="sim-dim">${esc(where)}</span></th>
       <td class="is-num">${b.ab}</td><td class="is-num">${b.r}</td><td class="is-num">${b.h}</td><td class="is-num">${b.d}</td><td class="is-num">${b.t}</td><td class="is-num">${b.hr}</td><td class="is-num">${b.rbi}</td><td class="is-num">${b.bb}</td></tr>`;
   }).join('');
   const sum = (k) => t.lineup.reduce((s, id) => s + t.box[id][k], 0);
@@ -1063,12 +1149,14 @@ function renderFinal() {
       <div>
         <span class="sim-kicker">Final</span>
         <h2 class="sim-clock-title">${esc(headline)} ${you}-${cpu}</h2>
-        <p class="sim-dim">${esc(note)} ${star ? `Player of the game: <strong>${esc(star.name)}</strong> (${esc(todayLine(star.line))}).` : ''} ${rec.length > 1 ? `Series with these teams: ${w}-${l}${rec.length - w - l ? `-${rec.length - w - l}` : ''}.` : ''}</p>
+        <p class="sim-dim">${isSeason() ? `${esc(seasonTeamName(S.save.team))} are ${esc(recText(seasonRecord()))}. ` : ''}${esc(note)} ${star ? `Player of the game: <strong>${esc(star.name)}</strong> (${esc(todayLine(star.line))}).` : ''} ${rec.length > 1 ? `Series with these teams: ${w}-${l}${rec.length - w - l ? `-${rec.length - w - l}` : ''}.` : ''}</p>
       </div>
-      <div class="sim-actions">
+      <div class="sim-actions">${isSeason() ? `
+        ${nextGameIdx() >= 0 ? `<button class="aces-btn is-primary" type="button" data-act="next">Next game: ${esc(gameTitle(S.save.schedule[nextGameIdx()]))}</button>` : ''}
+        <button class="aces-btn${nextGameIdx() >= 0 ? '' : ' is-primary'}" type="button" data-act="hub">Back to the season</button>` : `
         <button class="aces-btn is-primary" type="button" data-act="rematch">Rematch</button>
         <button class="aces-btn" type="button" data-act="lineup">Change lineup and rematch</button>
-        <button class="aces-btn is-ghost" type="button" data-act="new">${isTeams() ? 'New game' : 'New draft'}</button>
+        <button class="aces-btn is-ghost" type="button" data-act="new">${isTeams() ? 'New game' : 'New draft'}</button>`}
       </div>
     </div>
     <section class="aces-card">${lineScore(g)}</section>
@@ -1081,6 +1169,368 @@ function renderFinal() {
     if (act === 'rematch') { S.save.homeIsYou = !S.save.homeIsYou; S.save.recorded = false; S.save.conditions = null; startGame(); }
     if (act === 'lineup') { S.save.homeIsYou = !S.save.homeIsYou; S.save.recorded = false; S.save.conditions = null; S.save.phase = 'lineup'; S.save.game = null; persist(); renderLineup(); }
     if (act === 'new') { clearSaved(); S.save = null; renderSetup(S.profile); }
+    if (act === 'hub') backToSeason();
+    if (act === 'next') { openGame(nextGameIdx()); renderLineup(); }
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Season mode: a team from this season through its real schedule
+// ---------------------------------------------------------------------------
+
+const seasonTeamName = (team) => `${seasonLabel(S.pool.seasonId)} ${capWords(team)}`;
+const teamPlayers = (team) => S.pool.players
+  .filter((p) => String(p.team).toLowerCase() === String(team).toLowerCase())
+  .sort((a, b) => b.line.g - a.line.g || b.ovr - a.ovr);
+const gameDate = (at) => (at ? new Date(at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '');
+const gameTitle = (gm) => `${gm.home ? 'vs' : 'at'} ${capWords(gm.opp)}`;
+const nextGameIdx = (sv = S.save) => sv.schedule.findIndex((x) => !x.res);
+const resText = (us, them) => `${us > them ? 'W' : us < them ? 'L' : 'T'} ${us}-${them}`;
+const recText = (r) => `${r.w}-${r.l}${r.t ? `-${r.t}` : ''}`;
+
+/** W-L-T and runs from the games played so far (sim results, or the real ones with real: true). */
+function seasonRecord(sv = S.save, { real = false } = {}) {
+  const r = { w: 0, l: 0, t: 0, rf: 0, ra: 0, n: 0 };
+  for (const gm of sv.schedule) {
+    const x = real ? gm.real : gm.res;
+    if (!x) continue;
+    r.n += 1;
+    r.rf += x.us;
+    r.ra += x.them;
+    if (x.us > x.them) r.w += 1; else if (x.us < x.them) r.l += 1; else r.t += 1;
+  }
+  return r;
+}
+
+function newSeasonSave(entry, games, { ask, conditionsMode }) {
+  const team = entry.team;
+  const known = new Set((S.pool.teams || []).filter((t) => t.seasonId === S.pool.seasonId).map((t) => t.team));
+  const schedule = games
+    .filter((g) => (g.home === team || g.away === team) && g.home !== g.away)
+    .map((g) => {
+      const home = g.home === team;
+      const opp = home ? g.away : g.home;
+      const us = home ? g.homeScore : g.awayScore;
+      const them = home ? g.awayScore : g.homeScore;
+      return { id: g.id, at: g.at, time: g.time, opp, home, real: g.done ? { us, them, forfeit: g.forfeit } : null, res: null, att: null };
+    })
+    .filter((gm) => known.has(gm.opp));
+  return {
+    v: 1,
+    mode: 'season',
+    phase: 'hub',
+    seasonId: S.pool.seasonId,
+    teamKey: entry.key,
+    team,
+    schedule,
+    cur: -1,
+    rotate: true,
+    teams: [{ name: capWords(team), color: realColor(team), cpu: false }, { name: '', color: '', cpu: true }],
+    style: 'season',
+    favorite: '',
+    poolIds: null,
+    boss: null,
+    conditionsMode,
+    conditions: null,
+    first: 0,
+    homeIsYou: true,
+    picks: [[], []],
+    log: [],
+    lineups: null,
+    game: null,
+    ask,
+    speed: 1,
+    results: [],
+    recorded: false,
+    seasonSaved: false
+  };
+}
+
+/** A lineup for whoever showed up: everyone bats, the best eight or nine field. */
+function autoLineup(ids, { rotate = false } = {}) {
+  const ps = ids.map(P).filter(Boolean);
+  const { field } = bestNine(ps);
+  return { lineup: battingOrder(ps), field, plan: rotate ? rotationPlan(ps, field) : null };
+}
+
+/** Get game i ready: roll who shows up (once per game) and set both lineups. */
+function openGame(i) {
+  const sv = S.save;
+  const gm = sv.schedule[i];
+  if (!gm.att) gm.att = [showUp(teamPlayers(sv.team)), showUp(teamPlayers(gm.opp))];
+  sv.cur = i;
+  let oppColor = realColor(gm.opp);
+  if (oppColor === sv.teams[0].color) oppColor = TEAM_COLORS.map(([, c]) => c).find((c) => c !== oppColor);
+  sv.teams[1] = { name: capWords(gm.opp), key: gm.opp, color: oppColor, cpu: true };
+  sv.homeIsYou = gm.home;
+  sv.lineups = [autoLineup(gm.att[0], { rotate: sv.rotate }), autoLineup(gm.att[1])];
+  sv.conditions = null;
+  sv.results = [];
+  sv.recorded = false;
+  sv.game = null;
+  sv.phase = 'lineup';
+  persist();
+}
+
+function backToSeason() {
+  stopAuto();
+  S.field?.stop();
+  const sv = S.save;
+  sv.cur = -1;
+  sv.game = null;
+  sv.lineups = null;
+  sv.phase = 'hub';
+  persist();
+  renderSeason();
+}
+
+/** Play game i start to finish with the computer's calls (no animation). Returns its record entry. */
+function simGame(i, { keepLineup = false } = {}) {
+  if (!keepLineup) openGame(i);
+  S.save.game = buildGame();
+  const g = S.save.game;
+  simToEnd(g);
+  const yi = youIdx();
+  S.save.schedule[i].res = { us: g.score[yi], them: g.score[1 - yi], how: g.result?.how || '', simmed: true };
+  return recordOf(g);
+}
+
+/** Sim game i, or every game left, then save them to the record together. */
+async function simSeasonGames(which) {
+  const sv = S.save;
+  const left = sv.schedule.map((gm, i) => (gm.res ? -1 : i)).filter((i) => i >= 0);
+  const todo = which === 'rest' ? left : [which];
+  if (which === 'rest' && !(await confirmModal(`Sim the last ${todo.length} game${todo.length === 1 ? '' : 's'}? Lineups are set for you${sv.rotate ? ', with the bench rotating in' : ''}, and close plays use the computer’s call.`, { confirmLabel: 'Sim them' }))) return;
+  const games = todo.map((i) => simGame(i));
+  sv.cur = -1;
+  sv.game = null;
+  sv.lineups = null;
+  sv.phase = 'hub';
+  persist();
+  renderSeason();
+  saveSeasonGames(games);
+}
+
+/** Season games to the record; when the last one is in, the season itself too. */
+async function saveSeasonGames(games) {
+  const sv = S.save;
+  const done = sv.schedule.every((x) => x.res);
+  let season = null;
+  if (done && !sv.seasonSaved) {
+    const r = seasonRecord(sv);
+    season = { key: sv.teamKey, team: seasonTeamName(sv.team), w: r.w, l: r.l, t: r.t, rf: r.rf, ra: r.ra };
+    sv.seasonSaved = true;
+    persist();
+  }
+  try {
+    const name = S.profile?.displayName || S.profile?.linkedPlayer || '';
+    const prevBest = S.record?.seasonBests?.[sv.teamKey];
+    const { record } = await recordGames(S.uid, games, { name, season });
+    S.record = record;
+    renderRecord();
+    if (season) {
+      const best = record.seasonBests[sv.teamKey];
+      const isBest = prevBest && best.at !== prevBest.at;
+      showToast(`Season over: ${season.team} ${recText(season)}${isBest ? '. A new best!' : ''}`, 'success', { duration: 8000 });
+    }
+  } catch (err) {
+    console.error('[sim] record not saved', err);
+    showToast('Couldn’t save to your record', 'error');
+  }
+}
+
+/** How the finished run compares with the real team. */
+function versusReal(r, real, realLeft, me) {
+  if (!real.n) return '';
+  if (realLeft) return `The real ${me} are ${recText(real)} with ${realLeft} to play.`;
+  const d = r.w - real.w;
+  if (d > 0) return `${d} more win${d === 1 ? '' : 's'} than the real ${me}.`;
+  if (d < 0) return `${-d} fewer win${d === -1 ? '' : 's'} than the real ${me}.`;
+  return `Same wins as the real ${me}.`;
+}
+
+function renderSeason() {
+  show('season');
+  const sv = S.save;
+  const me = capWords(sv.team);
+  const r = seasonRecord(sv);
+  const real = seasonRecord(sv, { real: true });
+  const realLeft = sv.schedule.filter((x) => !x.real).length;
+  const ni = nextGameIdx(sv);
+  const next = ni >= 0 ? sv.schedule[ni] : null;
+  const per = (v, n) => (n ? (v / n).toFixed(1) : '-');
+  const best = S.record?.seasonBests?.[sv.teamKey];
+  const realLine = real.n ? `The real ${me}: ${recText(real)}${realLeft ? ` with ${realLeft} to play` : ''}.` : `The real ${me} haven't played yet.`;
+  const roster = teamPlayers(sv.team);
+
+  $('simSeason').innerHTML = `
+    <div class="aces-card sim-clock is-you">
+      <div><span class="sim-kicker">Season · ${esc(seasonLabel(sv.seasonId))}</span>
+      <h2 class="sim-clock-title">${swatch(sv.teams[0].color)} ${esc(me)}: ${esc(recText(r))}</h2>
+      <p class="sim-dim">${r.n ? `${per(r.rf, r.n)} runs a game, ${per(r.ra, r.n)} allowed. ` : ''}${next ? esc(realLine) : ''}${best ? ` Your best ${esc(me)} season: ${esc(recText(best))}.` : ''}</p>
+      ${next ? `<p class="sim-next"><strong>Game ${ni + 1} of ${sv.schedule.length}:</strong> ${esc(gameTitle(next))}, ${esc(gameDate(next.at))}${next.att ? ` <span class="sim-dim">(${next.att[0].length} of ${roster.length} showed up)</span>` : ''}</p>`
+        : `<p class="sim-next"><strong>Final: ${esc(recText(r))}.</strong> ${esc(versusReal(r, real, realLeft, me))}</p>`}
+      <label class="sim-check"><input type="checkbox" id="snRotate"${sv.rotate ? ' checked' : ''}> Rotate the bench into the field by inning</label></div>
+      <div class="sim-actions">${next ? `
+        <button class="aces-btn is-primary" type="button" data-act="open">Set the lineup</button>
+        <button class="aces-btn" type="button" data-act="sim-one">Sim this game</button>
+        <button class="aces-btn" type="button" data-act="sim-rest">Sim the rest</button>` : `
+        <button class="aces-btn is-primary" type="button" data-act="again">Run it back</button>
+        <button class="aces-btn" type="button" data-act="setup">New game</button>`}
+        <button class="aces-btn is-ghost" type="button" data-act="leave">${next ? 'Leave for now' : 'Done'}</button>
+      </div>
+    </div>
+    <section class="aces-card">
+      <h2 class="aces-card-title">Schedule</h2>
+      <div class="aces-table-wrap"><table class="aces-table is-compact sim-sched">
+        <thead><tr><th scope="col">#</th><th scope="col">Date</th><th scope="col">Opponent</th><th scope="col">Yours</th><th scope="col">Real</th></tr></thead>
+        <tbody>${sv.schedule.map((gm, i) => {
+          const mine = gm.res ? resText(gm.res.us, gm.res.them) : '';
+          const theirs = gm.real ? `${resText(gm.real.us, gm.real.them)}${gm.real.forfeit ? ' (forfeit)' : ''}` : '';
+          return `<tr class="${i === ni ? 'is-next' : ''}">
+            <td class="is-num">${i + 1}</td>
+            <td>${esc(gameDate(gm.at))}</td>
+            <th scope="row">${swatch(realColor(gm.opp))} ${esc(gameTitle(gm))}</th>
+            <td>${mine ? `<span class="sim-res is-${mine[0]}">${mine[0]}</span> ${esc(mine.slice(2))}${gm.res.simmed ? ' <span class="sim-dim" title="Simmed">sim</span>' : ''}` : i === ni ? '<span class="sim-dim">Next</span>' : '<span class="sim-dim">-</span>'}</td>
+            <td>${theirs ? `<span class="sim-res is-${theirs[0]}">${theirs[0]}</span> ${esc(theirs.slice(2))}` : '<span class="sim-dim">Not played</span>'}</td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table></div>
+    </section>`;
+
+  $('simSeason').onclick = async (e) => {
+    const act = e.target.closest('[data-act]')?.dataset.act;
+    if (!act) return;
+    if (act === 'open') { openGame(ni); renderLineup(); }
+    if (act === 'sim-one') simSeasonGames(ni);
+    if (act === 'sim-rest') simSeasonGames('rest');
+    if (act === 'again') {
+      const entry = (S.pool.teams || []).find((t) => t.key === sv.teamKey);
+      try {
+        S.save = newSeasonSave(entry, await loadSimSchedule(S.pool.seasonId), { ask: sv.ask, conditionsMode: sv.conditionsMode });
+        S.save.rotate = sv.rotate;
+        persist();
+        renderSeason();
+      } catch (err) {
+        console.error('[sim] schedule', err);
+        showToast('Couldn’t load the schedule', 'error');
+      }
+    }
+    if (act === 'setup' || act === 'leave') { S.save = null; renderSetup(S.profile); }
+  };
+  $('snRotate').onchange = (e) => { sv.rotate = e.target.checked; persist(); };
+}
+
+/** Season lineup: everyone who showed up bats; pick the field; rotate the bench in if you like. */
+function renderSeasonLineup() {
+  show('lineup');
+  const sv = S.save;
+  const gm = sv.schedule[sv.cur];
+  const mine = sv.lineups[0];
+  const cpu = sv.lineups[1];
+  if (!sv.conditions) {
+    sv.conditions = sv.conditionsMode && CONDITIONS[sv.conditionsMode] ? sv.conditionsMode : randomConditions();
+  }
+  const cond = CONDITIONS[sv.conditions];
+  const roster = teamPlayers(sv.team);
+  const out = roster.filter((p) => !gm.att[0].includes(p.id));
+  const oppN = teamPlayers(gm.opp).length;
+  const slots = fieldSlots(mine.lineup.length);
+  const slotOf = Object.fromEntries(Object.entries(mine.field).map(([s, id]) => [id, s]));
+  const cpuSlot = Object.fromEntries(Object.entries(cpu.field).map(([s, id]) => [id, s]));
+  const benchN = mine.lineup.length - slots.length;
+  // The plan follows the field as set (the pitcher stays in all game).
+  mine.plan = sv.rotate && benchN > 0 ? rotationPlan(mine.lineup.map(P), mine.field) : null;
+  persist();
+  const innings = mine.plan ? mine.plan.length : 0;
+  const homeName = sv.homeIsYou ? sv.teams[0].name : cpuName();
+
+  $('simLineup').innerHTML = `
+    <div class="aces-card sim-clock is-you">
+      <div><span class="sim-kicker">Game ${sv.cur + 1} of ${sv.schedule.length} · ${esc(gameDate(gm.at))}</span>
+      <h2 class="sim-clock-title">${esc(sv.teams[0].name)} ${esc(gameTitle(gm))}</h2>
+      <p class="sim-dim"><strong>${gm.att[0].length} of ${roster.length}</strong> showed up${out.length ? `; out tonight: ${esc(out.map((p) => p.name).join(', '))}` : ', the whole roster'}. ${esc(cpuName())} have ${gm.att[1].length} of ${oppN}. ${esc(homeName)} ${sv.homeIsYou ? 'are' : 'is'} the home team.</p>
+      ${slots.length < SLOTS.length ? `<p class="sim-dim"><strong>Only eight:</strong> ${esc(cpuName())} lend you a courtesy catcher, who can't make plays.</p>` : ''}
+      <p class="sim-weather" data-cond="${esc(sv.conditions)}"><strong>Today at Senior Field:</strong> ${esc(cond.label)}. ${esc(cond.blurb)}</p></div>
+      <div class="sim-actions"><button class="aces-btn is-primary" type="button" data-act="play">Play ball</button>
+      <button class="aces-btn" type="button" data-act="sim">Sim it</button>
+      <button class="aces-btn is-ghost" type="button" data-act="hub">Back to the season</button></div>
+    </div>
+    <div class="sim-lineups">
+      <section class="aces-card">
+        <h2 class="aces-card-title">${swatch(sv.teams[0].color)} ${esc(sv.teams[0].name)}</h2>
+        <p class="sim-dim">Everyone bats. Pick a spot to put a player there (whoever had it swaps with him); EH bats only. A * is out of his roster position.</p>
+        <ol class="sim-order">${mine.lineup.map((id, i) => {
+          const p = P(id);
+          const at = slotOf[id] || 'EH';
+          return `<li>
+            <span class="sim-bat">${i + 1}</span>
+            <span class="sim-oname">${esc(p.name)} ${posChip(p)}</span>
+            <span class="aces-select-wrap sim-slotsel"><select class="aces-select" data-slot-for="${esc(id)}" aria-label="${esc(p.name)} position">
+              ${slots.map((s) => `<option value="${s}"${at === s ? ' selected' : ''}>${s}${p.pos.slots.includes(s) ? '' : '*'}</option>`).join('')}
+              <option value="EH"${at === 'EH' ? ' selected' : ' disabled'}>EH</option>
+            </select></span>
+            <span class="sim-ochips">${chip(p.ratings.contact, 'Contact')}${chip(p.ratings.power, 'Power')}${chip(p.ratings.speed, 'Speed')}${at === 'P' ? chip(p.ratings.pitch, 'Pitching') : ''}</span>
+            <span class="sim-move">
+              <button class="aces-btn is-sm is-icon is-ghost" type="button" data-up="${i}" aria-label="Move ${esc(p.name)} up"${i === 0 ? ' disabled' : ''}>▲</button>
+              <button class="aces-btn is-sm is-icon is-ghost" type="button" data-down="${i}" aria-label="Move ${esc(p.name)} down"${i === mine.lineup.length - 1 ? ' disabled' : ''}>▼</button>
+            </span>
+          </li>`;
+        }).join('')}</ol>
+        <p class="sim-dim">Ratings shown: contact, power, speed (and pitching for your pitcher).</p>
+        ${benchN > 0 ? `<label class="sim-check"><input type="checkbox" id="slRotate"${sv.rotate ? ' checked' : ''}> Rotate the bench in by inning (your pitcher stays in)</label>` : ''}
+        ${mine.plan ? `<div class="aces-table-wrap"><table class="aces-table is-compact sim-rot">
+          <thead><tr><th scope="col">Fielding by inning</th>${mine.plan.map((_, k) => `<th scope="col" class="is-num">${k + 1}</th>`).join('')}<th scope="col" class="is-num">Inn</th></tr></thead>
+          <tbody>${mine.lineup.map((id) => {
+            const cells = mine.plan.map((f) => Object.keys(f).find((s) => f[s] === id) || '');
+            return `<tr><th scope="row">${esc(P(id).name)}</th>${cells.map((c) => `<td class="is-num${c ? '' : ' is-sit'}">${c || '-'}</td>`).join('')}<td class="is-num">${cells.filter(Boolean).length}</td></tr>`;
+          }).join('')}</tbody>
+        </table></div>
+        <p class="sim-dim">Inning 1 is the field you set above; after that whoever has sat the most goes in. Extra innings keep the ${innings}th-inning field.</p>` : ''}
+      </section>
+      <section class="aces-card">
+        <h2 class="aces-card-title">${swatch(sv.teams[1].color)} ${esc(cpuName())}</h2>
+        <p class="sim-dim">${esc(opponentLine())}</p>
+        <ol class="sim-order is-cpu">${cpu.lineup.map((id, i) => {
+          const p = P(id);
+          return `<li><span class="sim-bat">${i + 1}</span><span class="sim-oname">${esc(p.name)}</span><span class="sim-spot">${cpuSlot[id] || 'EH'}</span>
+            <span class="sim-ochips">${chip(p.ratings.contact, 'Contact')}${chip(p.ratings.power, 'Power')}${chip(p.ratings.speed, 'Speed')}</span></li>`;
+        }).join('')}</ol>
+      </section>
+    </div>`;
+
+  const root = $('simLineup');
+  root.onclick = (e) => {
+    const up = e.target.closest('[data-up]');
+    const down = e.target.closest('[data-down]');
+    if (up || down) {
+      const i = Number((up || down).dataset[up ? 'up' : 'down']);
+      const j = up ? i - 1 : i + 1;
+      const L = mine.lineup;
+      [L[i], L[j]] = [L[j], L[i]];
+      persist();
+      renderSeasonLineup();
+      return;
+    }
+    const act = e.target.closest('[data-act]')?.dataset.act;
+    if (act === 'play') startGame();
+    if (act === 'sim') { startGame(); simFast(simToEnd); }
+    if (act === 'hub') backToSeason();
+  };
+  root.onchange = (e) => {
+    if (e.target.id === 'slRotate') { sv.rotate = e.target.checked; persist(); renderSeasonLineup(); return; }
+    const sel = e.target.closest('[data-slot-for]');
+    if (!sel || sel.value === 'EH') return;
+    const id = sel.dataset.slotFor;
+    const to = sel.value;
+    const from = slotOf[id];
+    const other = mine.field[to];
+    mine.field[to] = id;
+    if (from) {
+      if (other) mine.field[from] = other; else delete mine.field[from];
+    }
+    persist();
+    renderSeasonLineup();
   };
 }
 
