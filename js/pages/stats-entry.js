@@ -619,7 +619,11 @@ function fillFromPdf() {
   renderGrid();
   setPane('type');
   const skipped = pdfRows.length - used.length;
-  notice('info', `Filled ${plural(used.length, 'player')} from the PDF${skipped ? ` (${skipped} skipped)` : ''}. Players not on the PDF are unticked. Check the grid, then save.`);
+  // Name the rostered players left off, so a dropped PDF line can't hide among the bench.
+  const off = rows.filter(r => !r.played && !r.isSub).map(r => esc(r.name));
+  const filled = `Filled ${plural(used.length, 'player')} from the PDF${skipped ? ` (${skipped} skipped)` : ''}.`;
+  if (off.length) notice('warning', `${filled} <strong>Not on the PDF, unticked:</strong> ${off.join(', ')}. If any of them played, tick them and enter their line, then save.`);
+  else notice('info', `${filled} Check the grid, then save.`);
 }
 
 // ---------------------------------------------------------------------------
