@@ -852,6 +852,7 @@ export class SimField {
     this.marks = [];
     this.umpSay = null;
     this.say = null;
+    this.zuke = null;
     this.draw();
   }
 
@@ -931,6 +932,7 @@ export class SimField {
 
     this.drawUmpBubble();
     if (this.say) this.drawBubble(this.say.who, this.say.text);
+    if (this.zuke !== null && this.zuke !== undefined) this.drawZuke(this.zuke);
     this.drawWind();
 
     if (this.banner) {
@@ -942,6 +944,98 @@ export class SimField {
       ctx.fillStyle = this.banner.color || '#ffd700';
       ctx.fillText(this.banner.text, W / 2, 34);
     }
+  }
+
+  /**
+   * Zuke, the home-run zucchini: pops up in the top-right corner after a
+   * ball clears the fence and dances (shuffle, shuffle, hop, spin, arms up).
+   * @param {number} ms  time since he came out
+   */
+  drawZuke(ms) {
+    const ctx = this.ctx;
+    const S = 2;                                  // one art pixel = 2 x 2 screen pixels
+    const STEPS = ['L', 'R', 'L', 'R', 'hop', 'hop', 'side', 'back', 'side2', 'front', 'up', 'up'];
+    const beat = Math.floor(ms / 280);
+    const step = STEPS[beat % STEPS.length];
+    const inBeat = (ms % 280) / 280;
+    const pop = Math.min(1, ms / 220);            // rises into view
+    const lean = step === 'L' ? -1 : step === 'R' ? 1 : 0;
+    const hop = step === 'hop' ? Math.round(Math.sin(inBeat * Math.PI) * 5) : 0;
+    const narrow = step === 'side' || step === 'side2';
+    const cx = W - 40 + lean * 3;
+    const foot = 74 - hop + Math.round((1 - pop) * 30);
+    const px = (x, y, color, w = 1, h = 1) => { ctx.fillStyle = color; ctx.fillRect(Math.round(cx + x * S), Math.round(foot - y * S), w * S, h * S); };
+    const DARK = '#1f4a1c';
+    const BODY = '#2f6b2a';
+    const LIGHT = '#5d9a45';
+    const STEM = '#7a6a2e';
+
+    ctx.save();
+    ctx.globalAlpha = pop;
+    // A soft spotlight so he stands out on any background.
+    const gy = foot - 22;
+    const glow = ctx.createRadialGradient(cx, gy, 2, cx, gy, 34);
+    glow.addColorStop(0, 'rgba(255,244,190,0.6)');
+    glow.addColorStop(1, 'rgba(255,244,190,0)');
+    ctx.fillStyle = glow;
+    ctx.fillRect(cx - 34, gy - 34, 68, 68);
+    // Shadow on the ground.
+    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    ctx.fillRect(Math.round(cx - 6 * S), 74 + 1, 12 * S, 2);
+
+    // Legs (rows 0-3) and feet.
+    const legL = step === 'R' ? 1 : 0;            // kick the off leg
+    const legR = step === 'L' ? 1 : 0;
+    px(-2, 3 + legL, DARK, 1, 3); px(-3 - legL, 0 + legL, DARK, 2, 1);
+    px(1, 3 + legR, DARK, 1, 3); px(1, 0 + legR, DARK, 2 + legR, 1);
+
+    // Body: a long zucchini (rows 3-20), rounded at both ends, leaning with the beat.
+    const half = narrow ? [1, 2, 2, 2] : [1, 2, 3, 3];
+    for (let r = 3; r <= 20; r += 1) {
+      const fromEnd = Math.min(r - 3, 20 - r);
+      const hw = half[Math.min(3, fromEnd)];
+      const sh = Math.round(lean * ((r - 3) / 17) * 2);
+      px(-hw + sh - 0.5, r + 1, DARK, hw * 2 + 1, 1);                 // outline
+      px(-hw + sh, r + 1, BODY, hw * 2, 1);
+      if ((r + (step === 'back' ? 1 : 0)) % 3 === 0) px(-hw + sh + 1, r + 1, LIGHT, 1, 1);   // speckled stripes
+      if ((r + 1) % 4 === 0 && hw > 1) px(hw + sh - 2, r + 1, LIGHT, 1, 1);
+    }
+    const top = Math.round(lean * 2);
+    px(top - 0.5, 23, STEM, 1, 2);                                      // the stem
+    px(top + 0.5, 24, STEM, 1, 1);
+
+    // Face (not from behind).
+    if (step !== 'back') {
+      const fx = top + (step === 'side' ? 1 : step === 'side2' ? -1 : 0);
+      if (narrow) {
+        px(fx - 0.5, 18, '#ffffff', 1, 2); px(fx - 0.5, 17, '#111111', 1, 1);
+      } else {
+        px(fx - 2, 18, '#ffffff', 2, 2); px(fx + 1, 18, '#ffffff', 2, 2);
+        px(fx - 1, 17, '#111111', 1, 1); px(fx + 2, 17, '#111111', 1, 1);
+        px(fx - 1, 14, '#111111', 3, 1); px(fx - 2, 15, '#111111', 1, 1); px(fx + 2, 15, '#111111', 1, 1);   // a big smile
+      }
+    }
+
+    // Arms, by step.
+    const arm = (side, pose) => {
+      const x0 = side < 0 ? -4 + lean : 3 + lean;
+      if (pose === 'up') { px(x0, 19, DARK, 1, 6); px(x0 + side, 21, DARK, 1, 2); }
+      else if (pose === 'out') { px(side < 0 ? x0 - 3 : x0, 13, DARK, 4, 1); }
+      else { px(x0, 13, DARK, 1, 5); }
+    };
+    if (!narrow) {
+      const pose = (side) => {
+        if (step === 'up' || step === 'hop') return step === 'hop' ? 'out' : 'up';
+        if (step === 'L') return side < 0 ? 'up' : 'down';
+        if (step === 'R') return side > 0 ? 'up' : 'down';
+        return 'down';
+      };
+      arm(-1, pose(-1));
+      arm(1, pose(1));
+    } else {
+      px(step === 'side' ? -1 : 0, 13, DARK, 1, 5);
+    }
+    ctx.restore();
   }
 
   /** The ump's call, in a little speech bubble beside him. */
@@ -1198,6 +1292,10 @@ function buildTimeline(field, play, outcome, speedOf) {
       if (land.x < 40) field.brakeUntil = performance.now() + 2600;   // traffic on the road stops to watch
     });
     const end = moveRunners(contact + 150);
+    // Zuke comes out and dances until the last runner is home.
+    const danceFrom = arrive - 250;
+    const danceFor = Math.max(2600, end - danceFrom + 700);
+    add(danceFrom, danceFor, (u) => { field.zuke = u < 1 ? u * danceFor : null; });
     return finalize(bannerAt(Math.max(arrive, end - 400), 'HR'));
   }
 
