@@ -77,7 +77,8 @@ async function extractPdfLines(file) {
     const sortedYs = [...yGroups.keys()].sort((a, b) => b - a);
     for (const y of sortedYs) {
       const items = yGroups.get(y).sort((a, b) => a.x - b.x);
-      const line = items.map(i => i.str).join(' ').replace(/\s+/g, ' ').trim();
+      // Curly apostrophes ("O\u2019Grady") to straight ones, or the name parsers drop the row
+      const line = items.map(i => i.str).join(' ').replace(/[\u2018\u2019\u02BC\u2032`]/g, "'").replace(/\s+/g, ' ').trim();
       if (line) allLines.push(line);
     }
   }
