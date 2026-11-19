@@ -162,6 +162,13 @@ function roadOf(pk) {
   return { a, b, dir, out, len: Math.hypot(b.x - a.x, b.y - a.y), half: 15, ang: (Math.atan2(dir.y, dir.x) * 180) / Math.PI, at };
 }
 
+// A man grilling behind a dugout: first base at Senior Field, third base at
+// Field of Dreams. Feet: where the grill sits, and where he stands behind it.
+const GRILLS = {
+  senior: { grill: { x: 49, y: 4 }, cook: { x: 53, y: 0 } },
+  dreams: { grill: { x: -41, y: -1 }, cook: { x: -45, y: -5 } }
+};
+
 // Cars, pickups, vans, box trucks and the odd school bus. len x wid in feet.
 const VEHICLES = [
   { kind: 'car', len: 14, wid: 6.5, w: 10 },
@@ -677,7 +684,7 @@ export class SimField {
     if (this.idleRaf) return;
     const loop = (now) => {
       this.idleRaf = 0;
-      const moving = this.traffic || this.cond?.wind;
+      const moving = this.traffic || this.cond?.wind || GRILLS[this.park];   // the grill always smokes
       if (!moving || document.hidden || !this.canvas.isConnected || this.canvas.offsetParent === null) return;
       if (!this.raf && now - (this.idleAt || 0) > 33) { this.idleAt = now; this.draw(); }
       this.idleRaf = requestAnimationFrame(loop);
@@ -897,6 +904,7 @@ export class SimField {
       this.updateTraffic(performance.now());
       this.drawTraffic();
     }
+    this.drawGriller(performance.now());
     // Back to front so nearer players overlap farther ones.
     const people = [
       // With eight, the batting team's courtesy catcher stands in (in their colors).
@@ -1036,6 +1044,55 @@ export class SimField {
       px(step === 'side' ? -1 : 0, 13, DARK, 1, 5);
     }
     ctx.restore();
+  }
+
+  /** The man at the grill: coals glowing, smoke drifting up, a burger flipped every couple of seconds. */
+  drawGriller(now) {
+    const spot = GRILLS[this.park];
+    if (!spot) return;
+    const ctx = this.ctx;
+    const g = toPx(spot.grill);
+    const t = now / 1000;
+    // Smoke: a few puffs rising and fading, leaning with the wind.
+    const drift = this.cond?.wind === 'out' ? 7 : this.cond?.wind === 'in' ? -3 : 2;
+    for (let i = 0; i < 6; i += 1) {
+      const ph = (t * 0.45 + i / 6) % 1;
+      const sx = g.x + Math.sin(ph * 5 + i * 1.7) * 2 + drift * ph;
+      const sy = g.y - 6 - ph * 22;
+      ctx.fillStyle = `rgba(225,225,222,${(0.55 * (1 - ph)).toFixed(3)})`;
+      const r = 1.5 + ph * 3.5;
+      ctx.fillRect(Math.round(sx - r), Math.round(sy - r), Math.round(r * 2), Math.round(r * 2));
+    }
+    // The grill: legs, the kettle, the grate with burgers on glowing coals.
+    ctx.fillStyle = COLORS.shadow;
+    ctx.fillRect(g.x - 5, g.y + 1, 11, 2);
+    ctx.fillStyle = '#1e1e1e';
+    ctx.fillRect(g.x - 4, g.y - 2, 1, 3);
+    ctx.fillRect(g.x + 4, g.y - 2, 1, 3);
+    ctx.fillRect(g.x - 5, g.y - 5, 11, 4);
+    ctx.fillRect(g.x - 5, g.y - 9, 11, 2);                 // the lid, propped open behind
+    const glow = 0.55 + 0.45 * Math.sin(t * 9) * Math.sin(t * 5.3);
+    ctx.fillStyle = `rgba(255,${120 + Math.round(60 * glow)},40,${(0.7 + 0.3 * glow).toFixed(2)})`;
+    ctx.fillRect(g.x - 4, g.y - 6, 9, 1);
+    ctx.fillStyle = '#6b3b1f';
+    ctx.fillRect(g.x - 3, g.y - 7, 2, 1);
+    ctx.fillRect(g.x + 2, g.y - 7, 2, 1);
+    // The cook, and his spatula. Every 2.2 s he flips one: arms up, a patty in the air.
+    const cycle = t % 2.2;
+    const flipping = cycle < 0.55;
+    this.drawPerson({ ...spot.cook, frame: flipping ? 'ready' : 'stand' }, '#c0392b', 'griller', '#b5a37a');
+    const c = toPx(spot.cook);
+    ctx.strokeStyle = '#9aa0a6';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(c.x - 3, c.y - 7);
+    ctx.lineTo(flipping ? c.x - 6 : c.x - 7, flipping ? c.y - 11 : c.y - 8);
+    ctx.stroke();
+    if (flipping) {
+      const u = cycle / 0.55;
+      ctx.fillStyle = '#6b3b1f';
+      ctx.fillRect(Math.round(g.x - 1), Math.round(g.y - 8 - Math.sin(u * Math.PI) * 8), 3, 1);
+    }
   }
 
   /** The ump's call, in a little speech bubble beside him. */
