@@ -13,6 +13,8 @@
 //             matched by auth ID, legacy ID, or the linked player's name
 //   captains  isCaptain or a captain team role
 //   team      linkedTeam / currentTeam is one of the picked teams
+//   pickem    has a Pick'em entry for the season (pickem/{seasonId}/entries/{uid});
+//             fan and family accounts are included here
 
 import { db, functions, collection, getDocs, query, orderBy, limit } from '../core/firebase.js';
 import { httpsCallable } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-functions.js';
@@ -28,6 +30,7 @@ let ctx = null;
 const picked = new Set();
 let users = null;            // users docs, read once
 const rosterCache = new Map();
+const pickemCache = new Map();
 let countSeq = 0;
 
 async function allUsers() {
@@ -52,17 +55,36 @@ async function activeIds(seasonId) {
   return rosterCache.get(seasonId);
 }
 
+// Pick'em entry docs are keyed by the entrant's auth uid (= users doc id).
+async function pickemIds(seasonId) {
+  if (!pickemCache.has(seasonId)) {
+    pickemCache.set(seasonId, getDocs(collection(db, 'pickem', seasonId, 'entries'))
+      .then(snap => new Set(snap.docs.map(d => d.id)))
+      .catch(err => { pickemCache.delete(seasonId); throw err; }));
+  }
+  return pickemCache.get(seasonId);
+}
+
 async function recipients() {
   const aud = $('leAudience').value;
-  let active = null;
+  let active = null, pickem = null;
   if (aud === 'active') {
     if (!$('leSeason').value) throw new Error('Pick a season for active players');
     active = await activeIds($('leSeason').value);
+  }
+  if (aud === 'pickem') {
+    if (!$('leSeason').value) throw new Error("Pick a season for Pick'em players");
+    pickem = await pickemIds($('leSeason').value);
   }
   const out = [];
   for (const d of await allUsers()) {
     const email = d.email || '';
     if (!email.includes('@') || email.endsWith('@placeholder.aces') || d.migrated) continue;
+    if (aud === 'pickem') {
+      if (!pickem.has(d.id)) continue;
+      out.push({ email, name: d.displayName || '' });
+      continue;
+    }
     if (d.userRole === 'fan' || d.userRole === 'family') continue;
     if (aud === 'linked' && !d.linkedPlayer) continue;
     if (aud === 'active') {
@@ -85,12 +107,13 @@ function audienceLabel() {
   if (aud === 'linked') return 'Linked players';
   if (aud === 'active') return `Active players (${seasonLabel($('leSeason').value)})`;
   if (aud === 'captains') return 'Captains';
+  if (aud === 'pickem') return `Pick'em players (${seasonLabel($('leSeason').value)})`;
   return `Teams: ${[...picked].join(', ')}`;
 }
 
 async function updateCount() {
   const aud = $('leAudience').value;
-  $('leSeasonWrap').hidden = aud !== 'active';
+  $('leSeasonWrap').hidden = aud !== 'active' && aud !== 'pickem';
   $('leTeams').hidden = aud !== 'team';
   $('leListWrap').hidden = true;
   const seq = ++countSeq;
