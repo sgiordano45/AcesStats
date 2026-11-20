@@ -6,6 +6,8 @@
 // Both: team filter (or Playoffs), Hide finished, your team's games marked.
 // Signed-in players start filtered to their own team (View As aware).
 // Each game links to its preview, or its recap once it has a result.
+// Playoff slots show as "Gold/Teal Winner" (or the team once decided) while
+// the game doc keeps "G2 Winner" (js/domain/playoff-slots.js).
 // Add to calendar uses the calendar Cloud Function (calendar-subscription.js
 // builds the URL): subscribe, Google Calendar, download .ics, or copy the link.
 //
@@ -25,13 +27,19 @@ import { TEAM_COLORS } from '../ui/stat-columns.js';
 import { normalizeGames, isDecided } from '../domain/standings.js';
 import { formatGameDate, formatTime, todayKey, dateFromKey, timeSortValue } from '../domain/dates.js';
 import { seasonLabel, parseStatSeasonId } from '../domain/season-ids.js';
+import { playoffSlotLabels, isSlotName } from '../domain/playoff-slots.js';
 
 const $ = (id) => document.getElementById(id);
 const cap = (s) => (s ? String(s).charAt(0).toUpperCase() + String(s).slice(1).toLowerCase() : '');
 const PLAYOFFS = '__playoffs__';
 const VIEW_KEY = 'aces-schedule-view';
 
-const state = { seasonId: '', games: [], seasons: [], myTeam: '', team: '', view: 'calendar', hide: false };
+const state = { seasonId: '', games: [], seasons: [], myTeam: '', team: '', view: 'calendar', hide: false, labels: new Map() };
+
+/** What a side shows: a playoff slot's label ("Gold/Teal Winner"), else the team. */
+const shownName = (g, side) => state.labels.get(g.id)?.[side]?.text || cap(g[side]);
+/** The team behind a side, for its color dot (a still-open slot has none). */
+const shownTeam = (g, side) => { const l = state.labels.get(g.id)?.[side]; return l ? l.team : g[side]; };
 
 const dot = (team) => { const k = String(team || '').toLowerCase(); return `<span class="aces-team-dot"${TEAM_COLORS.has(k) ? ` data-team-color="${esc(k)}"` : ''}></span>`; };
 const isMine = (g) => !!state.myTeam && (g.home === state.myTeam || g.away === state.myTeam);
@@ -69,20 +77,20 @@ function renderStats() {
   const today = todayKey();
   const next = state.myTeam ? state.games.filter(g => isMine(g) && !done(g) && g.dateKey >= today)
     .sort((a, b) => a.dateKey.localeCompare(b.dateKey) || timeSortValue(a.time) - timeSortValue(b.time))[0] : null;
-  const opp = next ? (next.home === state.myTeam ? next.away : next.home) : '';
+  const oppSide = next ? (next.home === state.myTeam ? 'away' : 'home') : '';
   const tile = (v, label, meta = '') => `<div class="aces-stat"><span class="aces-stat-value">${esc(v)}</span><span class="aces-stat-label">${esc(label)}</span>${meta ? `<span class="aces-stat-meta">${meta}</span>` : ''}</div>`;
   const label = state.team === PLAYOFFS ? 'Playoff games' : state.team ? `${cap(state.team)} games` : 'Games';
   $('scStats').innerHTML = [
     tile(String(list.length), label),
     tile(String(played), 'Played'),
     tile(String(list.length - played), 'Left'),
-    next ? tile(formatGameDate(next.dateKey, 'monthDay'), 'Your next game', `${next.home === state.myTeam ? 'vs' : 'at'} ${dot(opp)}${esc(cap(opp))}${next.time ? ` &middot; ${esc(formatTime(next.time))}` : ''}`)
+    next ? tile(formatGameDate(next.dateKey, 'monthDay'), 'Your next game', `${next.home === state.myTeam ? 'vs' : 'at'} ${dot(shownTeam(next, oppSide))}${esc(shownName(next, oppSide))}${next.time ? ` &middot; ${esc(formatTime(next.time))}` : ''}`)
       : tile(state.myTeam ? '-' : String(new Set(state.games.flatMap(g => [g.home, g.away]).filter(t => t && t !== 'TBD')).size), state.myTeam ? 'Your next game' : 'Teams', state.myTeam ? 'none left' : '')
   ].join('');
 }
 
 function renderToolbar() {
-  const teams = [...new Set(state.games.filter(g => !g.placeholder).flatMap(g => [g.home, g.away]).filter(t => t && t !== 'TBD'))].sort();
+  const teams = [...new Set(state.games.filter(g => !g.placeholder).flatMap(g => [g.home, g.away]).filter(t => t && t !== 'TBD' && !isSlotName(t)))].sort();
   const hasPlayoffs = state.games.some(g => g.type === 'playoff');
   $('scToolbar').innerHTML = `
     <span class="aces-select-wrap is-inline"><select class="aces-select" id="scTeam" aria-label="Team">
@@ -145,11 +153,11 @@ function chipHtml(g) {
   const color = TEAM_COLORS.has(k) ? ` data-team-color="${esc(k)}"` : '';
   const r = resultFor(g, viewTeam());
   const score = done(g) ? `<span class="sc-chip-score">${r ? `<b class="sc-chip-r">${r}</b> ` : ''}${g.awayScore}-${g.homeScore}</span>` : '';
-  const name = (team, win) => `<span class="${done(g) ? (win ? 'is-win' : g.result === 'tie' ? '' : 'is-loss') : ''}">${esc(cap(team))}</span>`;
+  const name = (which, win) => `<span class="${done(g) ? (win ? 'is-win' : g.result === 'tie' ? '' : 'is-loss') : ''}">${esc(shownName(g, which))}</span>`;
   return `<a class="sc-chip${isMine(g) ? ' is-mine' : ''}${g.type === 'playoff' ? ' is-playoff' : ''}${done(g) ? ' is-done' : ''}${r ? ` is-${r.toLowerCase()}` : ''}"${color} href="${esc(gameHref(g))}"
-      title="${esc(`${cap(g.away)} at ${cap(g.home)}${g.time ? `, ${formatTime(g.time)}` : ''}${done(g) ? `: ${g.awayScore}-${g.homeScore}` : ''}`)}">
+      title="${esc(`${shownName(g, 'away')} at ${shownName(g, 'home')}${g.time ? `, ${formatTime(g.time)}` : ''}${done(g) ? `: ${g.awayScore}-${g.homeScore}` : ''}`)}">
     ${g.time ? `<span class="sc-chip-time">${esc(formatTime(g.time))}</span>` : ''}
-    <span class="sc-chip-match">${name(g.away, g.result === 'away')} @ ${name(g.home, g.result === 'home')}</span>${score}
+    <span class="sc-chip-match">${name('away', g.result === 'away')} @ ${name('home', g.result === 'home')}</span>${score}
   </a>`;
 }
 
@@ -189,7 +197,7 @@ function renderCalendar(list) {
 
 function rowHtml(g) {
   const lost = (which) => done(g) && g.result && g.result !== 'tie' && g.result !== which;
-  const side = (team, score, win, which) => `<span class="sc-side is-${which}${win ? ' is-win' : ''}${lost(which) ? ' is-loss' : ''}">${dot(team)}<span class="sc-team">${esc(cap(team) || 'TBD')}</span>${done(g) ? `<span class="sc-score">${score}</span>` : ''}</span>`;
+  const side = (team, score, win, which) => `<span class="sc-side is-${which}${win ? ' is-win' : ''}${lost(which) ? ' is-loss' : ''}">${dot(shownTeam(g, which))}<span class="sc-team">${esc(shownName(g, which) || 'TBD')}</span>${done(g) ? `<span class="sc-score">${score}</span>` : ''}</span>`;
   const tag = g.type === 'playoff' ? `<span class="aces-badge is-accent">${esc(g.round ? cap(g.round) : 'Playoff')}</span>` : '';
   const mine = isMine(g) ? '<span class="aces-badge is-brand">Your game</span>' : '';
   const status = !done(g) && g.winner ? `<span class="aces-badge is-outline">${esc(g.winner === 'Tie' ? 'Tie' : `${g.winner} won`)}</span>` : '';
@@ -286,6 +294,7 @@ async function main() {
 
   const docs = state.seasonId ? await getSeasonGames(state.seasonId) : [];
   state.games = normalizeGames(docs).map((g, i) => ({ ...g, placeholder: !!docs[i]?.isPlaceholder }));
+  state.labels = playoffSlotLabels(state.games);
   const teams = [...new Set(state.games.flatMap(g => [g.home, g.away]).filter(Boolean))];
   state.myTeam = findMyTeam(profile, teams);
 

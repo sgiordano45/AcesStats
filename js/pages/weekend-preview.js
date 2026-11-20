@@ -9,6 +9,9 @@
 //   Share      one matchup, tonight's games or the week, as an image or text
 //              (weekend-share.js)
 //
+// Playoff slots show as "Gold/Teal Winner" (or the team once decided) while
+// the game doc keeps "G2 Winner" (js/domain/playoff-slots.js).
+//
 // URL: weekend-preview.html (always the current season, today through 7 days out)
 
 import { initPage, pageReady, showPageError } from '../core/app.js';
@@ -25,6 +28,7 @@ import { cap, teamDot, teamLogo, teamHref, gameHref, moneyLine, fmtLine, recordT
 import { normalizeGames, computeStandings, isDecided } from '../domain/standings.js';
 import { formatGameDate, formatTime, todayKey, addDays, timeSortValue, parseTimeMinutes, dateFromKey } from '../domain/dates.js';
 import { seasonLabel } from '../domain/season-ids.js';
+import { playoffSlotLabels } from '../domain/playoff-slots.js';
 import { shareGames, gamesText, tierOf } from './weekend-share.js';
 
 const $ = (id) => document.getElementById(id);
@@ -36,7 +40,12 @@ const WEATHER_API_KEY = 'c26153644bca587d9db1fc0256a01cf0';
 const WEATHER_CACHE = 'weatherCache';
 const WEATHER_MAX_AGE = 30 * 60 * 1000;
 
-const W = { seasonId: '', games: [], upcoming: [], standings: [], watch: null, picks: new Map(), weather: null };
+const W = { seasonId: '', games: [], upcoming: [], standings: [], watch: null, picks: new Map(), weather: null, labels: new Map() };
+
+/** What a side shows: a playoff slot's label ("Gold/Teal Winner"), else the team. */
+const shownName = (g, side) => W.labels.get(g.id)?.[side]?.text || cap(g[side]);
+/** The real team behind a side, or null while it is an open playoff slot. */
+const shownTeam = (g, side) => { const l = W.labels.get(g.id)?.[side]; return l ? l.team : g[side]; };
 
 // ---------------------------------------------------------------------------
 // Data
@@ -146,19 +155,26 @@ function renderWeather() {
 function gameCard(g, i) {
   const line = moneyLine(g.raw?.homeOdds, g.raw?.awayOdds);
   const tier = tierOf(g.type, g.round);
-  const side = (team, which) => `<a class="wp-side" href="${esc(teamHref(team))}">
+  const side = (which) => {
+    const team = shownTeam(g, which);
+    const lineHtml = line ? `<span class="wp-line${line.favorite === which ? ' is-fav' : ''}">${esc(fmtLine(line[which]))}</span>` : '';
+    if (!team) {
+      return `<div class="wp-side">${teamDot('', { lg: true })}<span class="wp-team">${esc(shownName(g, which))}</span>${lineHtml}</div>`;
+    }
+    return `<a class="wp-side" href="${esc(teamHref(team))}">
     ${teamLogo(team, { size: 48 }) || teamDot(team, { lg: true })}
-    <span class="wp-team">${esc(cap(team))}</span>
+    <span class="wp-team">${esc(shownName(g, which))}</span>
     <span class="wp-rec">${esc(recOf(team))}${placeOf(team) ? ` &middot; ${esc(placeOf(team))}` : ''}</span>
-    ${line ? `<span class="wp-line${line.favorite === which ? ' is-fav' : ''}">${esc(fmtLine(line[which]))}</span>` : ''}
+    ${lineHtml}
   </a>`;
+  };
   const tag = tier === 'finals' ? `<span class="aces-badge is-accent">${icon('trophy')}${esc(g.round ? cap(g.round) : 'Championship')}</span>`
     : tier === 'playoff' ? `<span class="aces-badge is-accent">${esc(g.round ? cap(g.round) : 'Playoffs')}</span>` : '';
   const k = lower(g.home);
   return `<article class="aces-card wp-game is-${tier}"${TEAM_COLORS.has(k) ? ` data-team-color="${esc(k)}"` : ''} data-game="${i}">
     <div class="wp-game-top"><span class="wp-time">${esc(g.time ? formatTime(g.time) : 'Time TBD')}</span>${tag}${g.raw?.location ? `<span class="wp-where">${icon('map-pin')}${esc(g.raw.location)}</span>` : ''}</div>
-    <div class="wp-sides">${side(g.away, 'away')}<span class="wp-at">@</span>${side(g.home, 'home')}</div>
-    ${line ? `<div class="wp-odds"><span style="--w:${line.awayPct}%"></span><small>Peter's line: ${esc(cap(line.favorite === 'home' ? g.home : g.away))} about ${Math.max(line.homePct, line.awayPct)}% to win</small></div>` : ''}
+    <div class="wp-sides">${side('away')}<span class="wp-at">@</span>${side('home')}</div>
+    ${line ? `<div class="wp-odds"><span style="--w:${line.awayPct}%"></span><small>Peter's line: ${esc(shownName(g, line.favorite === 'home' ? 'home' : 'away'))} about ${Math.max(line.homePct, line.awayPct)}% to win</small></div>` : ''}
     <div class="wp-watch" data-watch="${i}"><span class="aces-skeleton is-row"></span></div>
     <div class="wp-game-foot">
       <a class="aces-btn is-sm is-primary" href="${esc(gameHref(g, W.seasonId))}">Full preview${icon('chevron-right')}</a>
@@ -185,10 +201,10 @@ function renderGames() {
     const res = await pickPlayers(g);
     const el = document.querySelector(`[data-watch="${i}"]`);
     if (!el) return;
-    const col = (team, r) => `<div><h3>${teamDot(team)}${esc(cap(team))}</h3>${r.players.length
+    const col = (which, r) => `<div><h3>${teamDot(shownTeam(g, which) || '')}${esc(shownName(g, which))}</h3>${r.players.length
       ? `<ul>${r.players.map(p => `<li><a href="${esc(p.href)}">${esc(p.name)}</a></li>`).join('')}</ul>` : '<p class="wp-note">No picks yet</p>'}</div>`;
     const why = res.away.why === res.home.why ? res.away.why : '';
-    el.innerHTML = `<p class="wp-watch-head">Players to watch${why ? ` <small>${esc(why.toLowerCase())}</small>` : ''}</p><div class="wp-watch-cols">${col(g.away, res.away)}${col(g.home, res.home)}</div>`;
+    el.innerHTML = `<p class="wp-watch-head">Players to watch${why ? ` <small>${esc(why.toLowerCase())}</small>` : ''}</p><div class="wp-watch-cols">${col('away', res.away)}${col('home', res.home)}</div>`;
   });
 }
 
@@ -211,12 +227,13 @@ function renderHead() {
 async function shareItem(g) {
   const res = await pickPlayers(g);
   return {
-    away: cap(g.away), home: cap(g.home), dateKey: g.dateKey,
+    away: shownName(g, 'away'), home: shownName(g, 'home'), dateKey: g.dateKey,
     when: [formatGameDate(g.dateKey, 'short'), g.time ? formatTime(g.time) : ''].filter(Boolean).join(', '),
     time: g.time ? formatTime(g.time) : '',
     tier: tierOf(g.type, g.round),
     label: g.type === 'playoff' ? (g.round ? cap(g.round) : 'Playoffs') : 'Regular season',
-    awayRec: recOf(g.away), homeRec: recOf(g.home), awayPlace: placeOf(g.away), homePlace: placeOf(g.home),
+    awayRec: shownTeam(g, 'away') ? recOf(shownTeam(g, 'away')) : '', homeRec: shownTeam(g, 'home') ? recOf(shownTeam(g, 'home')) : '',
+    awayPlace: shownTeam(g, 'away') ? placeOf(shownTeam(g, 'away')) : '', homePlace: shownTeam(g, 'home') ? placeOf(shownTeam(g, 'home')) : '',
     awayPlayers: res.away.players.map(p => p.name), homePlayers: res.home.players.map(p => p.name),
     line: moneyLine(g.raw?.homeOdds, g.raw?.awayOdds)
   };
@@ -297,6 +314,7 @@ async function main() {
     loadWeather()
   ]);
   W.games = normalizeGames(docs).map((g, i) => ({ ...g, raw: docs[i] }));
+  W.labels = playoffSlotLabels(W.games);
   W.standings = computeStandings(W.games, { includeScheduled: true });
   W.upcoming = upcomingGames();
   W.weather = weather;
