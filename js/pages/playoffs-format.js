@@ -2,6 +2,7 @@
 // Playoff bracket shape for playoffs.html: building a bracket for any number
 // of teams (2 to 16) with standard seeding and byes for the top seeds, and the
 // league-staff dialog that sets the format and each game's date and time.
+// Once the bracket is locked, editDates() moves games (date and time only).
 //
 // The bracket doc keeps the shape every reader expects
 // (seasons/{id}/playoffs/bracket): round1, quarterfinals, semifinals and
@@ -352,4 +353,101 @@ export async function editFormat(data, { teamCount, label, seasonId = '' }) {
   if (result !== SAVE) return null;
   readGames();
   return draft;
+}
+
+// ---------------------------------------------------------------------------
+// Dates dialog (league staff, after the bracket is locked)
+// ---------------------------------------------------------------------------
+
+/**
+ * Move games once the bracket is locked (rain, field changes): date and time
+ * only, so game numbers and matchups stay as they are. Games are listed in
+ * schedule order, grouped by day; played games show but can't be moved.
+ * @param {object} data   the locked bracket (not changed here)
+ * @param {object} o
+ * @param {(slot: object) => string} o.label   display text for a team slot
+ * @param {(series: object, game: object) => boolean} [o.isPlayed]
+ * @returns {Promise<Array<{seriesId: string, gameNum: number, date: string, time: string}>|null>}
+ *   the games that moved (possibly none), or null when cancelled
+ */
+export async function editDates(data, { label, isPlayed = () => false }) {
+  const SAVE = Symbol('save');
+  const dbl = isDouble(data);
+  const rows = allSeries(data).flatMap((s) => (s.games || []).map((g) => ({ s, g })));
+  const when = ({ g }) => `${g.date || '9999-99-99'} ${g.time || '99:99'}`;
+  rows.sort((a, b) => when(a).localeCompare(when(b)) || (a.s.num ?? 0) - (b.s.num ?? 0) || a.g.gameNum - b.g.gameNum);
+
+  const days = [];
+  for (const r of rows) {
+    const last = days[days.length - 1];
+    if (last && last.date === (r.g.date || '')) last.rows.push(r);
+    else days.push({ date: r.g.date || '', rows: [r] });
+  }
+  const dayTitle = (d) => {
+    if (!d) return 'No date yet';
+    const [y, m, day] = d.split('-').map(Number);
+    return new Date(y, m - 1, day).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+  };
+
+  const row = ({ s, g }) => {
+    const played = isPlayed(s, g);
+    const name = dbl ? s.id.toUpperCase() : `${s.id.toUpperCase()} G${g.gameNum}`;
+    const off = played ? ' disabled' : '';
+    const tag = played ? '<small>played</small>' : g.ifNecessary ? '<small>if nec.</small>' : '';
+    return `<div class="po-game is-dates" data-series="${esc(s.id)}" data-game="${g.gameNum}">
+      <span class="po-gnum">${esc(name)}${tag}</span>
+      <span class="po-de-match">${esc(label(s.team1))} vs ${esc(label(s.team2))}</span>
+      <input class="aces-input" type="date" value="${esc(g.date || '')}" data-g="date" aria-label="${esc(name)} date"${off}>
+      <input class="aces-input" type="time" value="${esc(g.time || '')}" data-g="time" step="900" aria-label="${esc(name)} time"${off}>
+    </div>`;
+  };
+
+  const body = document.createElement('div');
+  body.className = 'po-format';
+  body.innerHTML = `<p class="po-hint">Move a game for rain or a field change. Saving updates the bracket and the schedule; game numbers and matchups stay the same. Played games can't be moved.</p>
+    <p class="po-hint is-error" data-err hidden></p>
+    <div class="po-format-games">${days.map((d) => `<fieldset class="po-fround"><legend>${esc(dayTitle(d.date))}</legend>${d.rows.map(row).join('')}</fieldset>`).join('')}</div>`;
+
+  // Games whose date or time changed; a blank date or time stops the save.
+  function read() {
+    const moved = [];
+    let blank = 0;
+    body.querySelectorAll('.po-game.is-dates').forEach((el) => {
+      const date = el.querySelector('[data-g="date"]');
+      const time = el.querySelector('[data-g="time"]');
+      if (date.disabled) return;
+      const s = allSeries(data).find((x) => x.id === el.dataset.series);
+      const g = s?.games.find((x) => x.gameNum === Number(el.dataset.game));
+      if (!g) return;
+      if (!date.value || !time.value) { blank += 1; return; }
+      if (date.value !== (g.date || '') || time.value !== (g.time || '')) {
+        moved.push({ seriesId: s.id, gameNum: g.gameNum, date: date.value, time: time.value });
+      }
+    });
+    return { moved, blank };
+  }
+
+  let moved = [];
+  const result = await openModal({
+    title: 'Dates and times',
+    body,
+    wide: true,
+    actions: [
+      { label: 'Cancel', value: null },
+      { label: 'Save', value: SAVE, variant: 'primary' }
+    ],
+    beforeClose: (value) => {
+      if (value !== SAVE) return true;
+      const r = read();
+      if (r.blank) {
+        const err = body.querySelector('[data-err]');
+        err.textContent = `${r.blank} game${r.blank === 1 ? ' has' : 's have'} no date or time. Every game needs both.`;
+        err.hidden = false;
+        return false;
+      }
+      moved = r.moved;
+      return true;
+    }
+  });
+  return result === SAVE ? moved : null;
 }

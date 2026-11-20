@@ -10,6 +10,10 @@
 // League staff (View As aware), current season only: set the format and
 // dates (playoffs-format.js), publish placeholder games, lock the bracket,
 // enter series scores, and pull in scores already entered on the game docs.
+// After the lock, Dates and times moves games (rain, field changes) on both
+// the game docs and the bracket doc. Once locked, the game docs are where a
+// game's date and time come from, so a move made in Admin > Schedule shows
+// here too.
 // Everyone: share the bracket as an image (playoffs-share.js).
 //
 // URL: playoffs.html[?seasonId=2026-summer]. Data: seasons/{id}/playoffs/bracket
@@ -34,7 +38,7 @@ import { formatGameDate, formatTime } from '../domain/dates.js';
 import { seasonLabel, parseStatSeasonId } from '../domain/season-ids.js';
 import {
   ROUND_KEYS, ROUND_TITLES, allSeries, generateBracket, recount, missingDates, editFormat,
-  DE_KEYS, DE_TITLES, DE_TEAMS, isDouble, generateDouble, deColumns
+  DE_KEYS, DE_TITLES, DE_TEAMS, isDouble, generateDouble, deColumns, editDates
 } from './playoffs-format.js';
 import { drawBracket, openShare } from './playoffs-share.js';
 
@@ -158,6 +162,7 @@ async function load() {
     S.saved = false;
   }
   mergeGameScores();
+  mergeGameDates();
   recount(S.data);
 }
 
@@ -174,6 +179,29 @@ function mergeGameScores() {
       g.team1Score = homeSide(s, g) === 1 ? hs : as;
       g.team2Score = homeSide(s, g) === 1 ? as : hs;
       S.unsynced += 1;
+    }
+  }
+}
+
+// Eastern 'YYYY-MM-DD' and 'HH:MM' of a game doc's date (a Firestore Timestamp).
+const ET_PARTS = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit',
+  hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
+});
+function docWhen(d) {
+  const t = typeof d?.date?.toDate === 'function' ? d.date.toDate() : null;
+  if (!t || Number.isNaN(t.getTime())) return null;
+  const p = Object.fromEntries(ET_PARTS.formatToParts(t).map((x) => [x.type, x.value]));
+  return { date: `${p.year}-${p.month}-${p.day}`, time: `${p.hour}:${p.minute}` };
+}
+
+/** Locked bracket: show each game at its game doc's date and time (the schedule's). */
+function mergeGameDates() {
+  if (projected()) return;
+  for (const s of allSeries(S.data)) {
+    for (const g of s.games || []) {
+      const w = docWhen(S.gameDocs.get(gameId(s, g)));
+      if (w) { g.date = w.date; g.time = w.time; }
     }
   }
 }
@@ -326,6 +354,7 @@ function renderStatus() {
       ${locked ? '' : btn('format', 'Format and dates', 'settings', ' is-primary')}
       ${locked ? '' : btn('publish', 'Publish placeholder games', 'calendar')}
       ${locked ? '' : btn('lock', 'Lock bracket', 'lock')}
+      ${locked ? btn('dates', 'Dates and times', 'calendar') : ''}
       ${locked ? btn('scores', S.scoring ? 'Done entering scores' : 'Enter scores', 'edit', S.scoring ? ' is-primary' : '') : ''}
       ${S.unsynced ? btn('sync', `Save ${S.unsynced} score${S.unsynced === 1 ? '' : 's'} from game results`, 'refresh', ' is-accent') : ''}
     </div>
@@ -490,6 +519,59 @@ async function actLock() {
   render();
 }
 
+/**
+ * Move games after the lock (rain, field changes). The game docs go first
+ * (schedule, previews and Pick'em read them), then the stored bracket doc,
+ * re-read so only dates and times change in it. If a step fails, reopening
+ * the dialog and saving again finishes it.
+ */
+async function actDates() {
+  const moved = await editDates(S.data, {
+    label: placeholderOrTeam,
+    isPlayed: (s, g) => scored(g) || !!S.gameDocs.get(gameId(s, g))?.winner
+  });
+  if (!moved) return;
+  if (!moved.length) { showToast('No games were moved.', 'info'); return; }
+
+  const findGame = (data, m) => allSeries(data).find((x) => x.id === m.seriesId)?.games?.find((x) => x.gameNum === m.gameNum) || null;
+  const done = [];
+  for (const m of moved) {
+    const s = findSeries(m.seriesId);
+    if (!s || !findGame(S.data, m)) continue;
+    const id = gameId(s, { gameNum: m.gameNum });
+    const fields = { date: gameTimestamp(m), time: formatTime(m.time) };
+    if (S.gameDocs.get(id)?.status === 'postponed') fields.status = 'scheduled';
+    try {
+      await updateDoc(doc(gamesCol(), id), fields);
+      const d = S.gameDocs.get(id);
+      if (d) Object.assign(d, fields);
+      done.push(m);
+    } catch (err) {
+      console.warn(`[playoffs] couldn't move ${id}`, err);
+    }
+  }
+
+  if (done.length) {
+    try {
+      const snap = await getDoc(bracketRef());
+      if (snap.exists()) {
+        const stored = snap.data();
+        done.forEach((m) => { const g = findGame(stored, m); if (g) { g.date = m.date; g.time = m.time; } });
+        await setDoc(bracketRef(), clean(stored));
+      }
+    } catch (err) {
+      // The schedule already has the new times, and a locked bracket shows them from there.
+      console.warn('[playoffs] bracket doc dates not saved', err);
+    }
+    done.forEach((m) => { const g = findGame(S.data, m); if (g) { g.date = m.date; g.time = m.time; } });
+  }
+
+  const failed = moved.length - done.length;
+  if (failed) showToast(`Moved ${done.length} of ${moved.length} games. ${failed} couldn't be saved; open Dates and times and try again.`, 'error');
+  else showToast(`Moved ${done.length} game${done.length === 1 ? '' : 's'}.`, 'success');
+  render();
+}
+
 /** A team's name once known, else the placeholder ('G5 Winner'). */
 function placeholderOrTeam(slot) {
   const t = team(slot);
@@ -603,6 +685,7 @@ function wire() {
       if (act === 'format') return actFormat();
       if (act === 'publish') return actPublish();
       if (act === 'lock') return actLock();
+      if (act === 'dates') return actDates();
       if (act === 'sync') return actSync();
       if (act === 'scores') { S.scoring = !S.scoring; render(); return; }
     }
