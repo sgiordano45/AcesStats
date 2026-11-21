@@ -365,3 +365,135 @@ export function roundTo(value, digits = 3) {
   const f = 10 ** digits;
   return Math.sign(n) * Math.round(Math.abs(n) * f + Number.EPSILON) / f;
 }
+
+// ---------------------------------------------------------------------------
+// Career totals from a player's seasons map
+// ---------------------------------------------------------------------------
+// Used by the stats pipeline (aggregate-stats) and by account linking
+// (player-links), so both build career the same way.
+
+export function recalculateCareer(seasonsObject) {
+  const career = {
+    games: 0, atBats: 0, hits: 0, runs: 0, walks: 0,
+    doubles: 0, triples: 0, homeRuns: 0, rbi: 0,
+    strikeouts: 0, stolenBases: 0,
+    acesBPITotal: 0, acesBPICount: 0,
+    vsOpponent: {},  // Career vs opponent totals
+    splits: {        // Career splits aggregated from seasons with game-level data
+      home: { games: 0, atBats: 0, hits: 0, runs: 0, walks: 0, doubles: 0, triples: 0, homeRuns: 0, rbi: 0 },
+      away: { games: 0, atBats: 0, hits: 0, runs: 0, walks: 0, doubles: 0, triples: 0, homeRuns: 0, rbi: 0 },
+      regular: { games: 0, atBats: 0, hits: 0, runs: 0, walks: 0, doubles: 0, triples: 0, homeRuns: 0, rbi: 0 },
+      playoff: { games: 0, atBats: 0, hits: 0, runs: 0, walks: 0, doubles: 0, triples: 0, homeRuns: 0, rbi: 0 }
+    }
+  };
+
+  Object.entries(seasonsObject).forEach(([seasonId, season]) => {
+    career.games += season.games || 0;
+    career.atBats += season.atBats || 0;
+    career.hits += season.hits || 0;
+    career.runs += season.runs || 0;
+    career.walks += season.walks || 0;
+    career.doubles += season.doubles || 0;
+    career.triples += season.triples || 0;
+    career.homeRuns += season.homeRuns || 0;
+    career.rbi += season.rbi || 0;
+    career.strikeouts += season.strikeouts || 0;
+    career.stolenBases += season.stolenBases || 0;
+    
+    const sub = (season.sub || '').toLowerCase();
+    if (season.acesBPI && season.acesBPI > 0 && sub !== 'yes') {
+      career.acesBPITotal += season.acesBPI;
+      career.acesBPICount++;
+    }
+    
+    // Aggregate vsOpponent data from seasons that have it (game-based seasons)
+    if (season.vsOpponent) {
+      Object.entries(season.vsOpponent).forEach(([opponent, oppStats]) => {
+        if (!career.vsOpponent[opponent]) {
+          career.vsOpponent[opponent] = {
+            games: 0, atBats: 0, hits: 0, runs: 0, walks: 0,
+            doubles: 0, triples: 0, homeRuns: 0, rbi: 0
+          };
+        }
+        const careerOpp = career.vsOpponent[opponent];
+        careerOpp.games += oppStats.games || 0;
+        careerOpp.atBats += oppStats.atBats || 0;
+        careerOpp.hits += oppStats.hits || 0;
+        careerOpp.runs += oppStats.runs || 0;
+        careerOpp.walks += oppStats.walks || 0;
+        careerOpp.doubles += oppStats.doubles || 0;
+        careerOpp.triples += oppStats.triples || 0;
+        careerOpp.homeRuns += oppStats.homeRuns || 0;
+        careerOpp.rbi += oppStats.rbi || 0;
+      });
+    }
+    
+    // Aggregate splits data from seasons that have it (game-based seasons)
+    if (season.splits) {
+      ['home', 'away', 'regular', 'playoff'].forEach(splitKey => {
+        const seasonSplit = season.splits[splitKey];
+        const careerSplit = career.splits[splitKey];
+        if (seasonSplit) {
+          careerSplit.games += seasonSplit.games || 0;
+          careerSplit.atBats += seasonSplit.atBats || 0;
+          careerSplit.hits += seasonSplit.hits || 0;
+          careerSplit.runs += seasonSplit.runs || 0;
+          careerSplit.walks += seasonSplit.walks || 0;
+          careerSplit.doubles += seasonSplit.doubles || 0;
+          careerSplit.triples += seasonSplit.triples || 0;
+          careerSplit.homeRuns += seasonSplit.homeRuns || 0;
+          careerSplit.rbi += seasonSplit.rbi || 0;
+        }
+      });
+    }
+  });
+
+  career.battingAverage = career.atBats > 0 ? career.hits / career.atBats : 0;
+  career.onBasePercentage = (career.atBats + career.walks) > 0
+    ? (career.hits + career.walks) / (career.atBats + career.walks) : 0;
+  career.acesBPI = career.acesBPICount > 0 ? career.acesBPITotal / career.acesBPICount : 0;
+  
+  // Calculate per-opponent career averages
+  Object.values(career.vsOpponent).forEach(opp => {
+    opp.battingAverage = opp.atBats > 0 ? opp.hits / opp.atBats : 0;
+    opp.onBasePercentage = (opp.atBats + opp.walks) > 0
+      ? (opp.hits + opp.walks) / (opp.atBats + opp.walks) : 0;
+  });
+  
+  // Calculate career splits averages
+  Object.values(career.splits).forEach(split => {
+    split.battingAverage = split.atBats > 0 ? split.hits / split.atBats : 0;
+    split.onBasePercentage = (split.atBats + split.walks) > 0
+      ? (split.hits + split.walks) / (split.atBats + split.walks) : 0;
+  });
+
+  delete career.acesBPITotal;
+  delete career.acesBPICount;
+
+  return career;
+}
+
+export function recalculatePitchingCareer(pitchingSeasonsObject) {
+  const career = {
+    games: 0, inningsPitched: 0, runsAllowed: 0, earnedRuns: 0,
+    strikeouts: 0, walks: 0, hits: 0, wins: 0, losses: 0, saves: 0
+  };
+
+  Object.values(pitchingSeasonsObject).forEach(season => {
+    career.games += season.games || 0;
+    career.inningsPitched += season.inningsPitched || 0;
+    career.runsAllowed += season.runsAllowed || 0;
+    career.earnedRuns += season.earnedRuns || 0;
+    career.strikeouts += season.strikeouts || 0;
+    career.walks += season.walks || 0;
+    career.hits += season.hits || 0;
+    career.wins += season.wins || 0;
+    career.losses += season.losses || 0;
+    career.saves += season.saves || 0;
+  });
+
+  career.earnedRunAverage = career.inningsPitched > 0
+    ? (career.runsAllowed * 7) / career.inningsPitched : 0;
+
+  return career;
+}

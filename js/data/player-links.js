@@ -9,6 +9,7 @@ import { updateProfile } from 'https://www.gstatic.com/firebasejs/10.7.1/firebas
 import { auth, db, doc, getDoc, getDocs, setDoc, updateDoc, collection, serverTimestamp } from '../core/firebase.js';
 import { USER_ROLES, hasPermission } from '../core/auth.js';
 import { toStatId } from '../domain/player-id.js';
+import { recalculateCareer } from '../domain/stats.js';
 
 export async function linkPlayerToUser(userId, playerName, teamId, isCaptain = false) {
   try {
@@ -167,20 +168,6 @@ export async function aggregatePlayerStats(userId, playerName, teamId) {
     const seasonsSnapshot = await getDocs(seasonsRef);
     
     const seasonStatsObject = {};
-    const calculatedCareerStats = {
-      games: 0,
-      atBats: 0,
-      hits: 0,
-      runs: 0,
-      walks: 0,
-      doubles: 0,
-      triples: 0,
-      homeRuns: 0,
-      rbi: 0,
-      acesBPITotal: 0,
-      acesBPICount: 0
-    };
-    
     seasonsSnapshot.forEach(seasonDoc => {
       const data = seasonDoc.data();
       const seasonId = seasonDoc.id;
@@ -197,22 +184,6 @@ export async function aggregatePlayerStats(userId, playerName, teamId) {
       const acesBPI = data.acesBPI || data.acesWar || 0;
       const sub = data.sub || data.Sub || "No";
       const team = data.team || "";
-      
-      // Add to career totals
-      calculatedCareerStats.games += games;
-      calculatedCareerStats.atBats += atBats;
-      calculatedCareerStats.hits += hits;
-      calculatedCareerStats.runs += runs;
-      calculatedCareerStats.walks += walks;
-      calculatedCareerStats.doubles += doubles;
-      calculatedCareerStats.triples += triples;
-      calculatedCareerStats.homeRuns += homeRuns;
-      calculatedCareerStats.rbi += rbi;
-      
-      if (acesBPI !== 0 && sub.toLowerCase() !== "yes") {
-        calculatedCareerStats.acesBPITotal += acesBPI;
-        calculatedCareerStats.acesBPICount++;
-      }
       
       // Store with seasonId as KEY
       seasonStatsObject[seasonId] = {
@@ -232,14 +203,6 @@ export async function aggregatePlayerStats(userId, playerName, teamId) {
         sub: sub
       };
     });
-    
-    // Calculate career batting stats
-    const careerBattingAverage = calculatedCareerStats.atBats > 0
-      ? (calculatedCareerStats.hits / calculatedCareerStats.atBats) : 0;
-    const careerOnBasePercentage = (calculatedCareerStats.atBats + calculatedCareerStats.walks) > 0
-      ? ((calculatedCareerStats.hits + calculatedCareerStats.walks) / (calculatedCareerStats.atBats + calculatedCareerStats.walks)) : 0;
-    const careerAcesBPI = calculatedCareerStats.acesBPICount > 0
-      ? (calculatedCareerStats.acesBPITotal / calculatedCareerStats.acesBPICount) : 0;
     
     // ========================================
     // FETCH PITCHING SEASONS
@@ -284,15 +247,6 @@ export async function aggregatePlayerStats(userId, playerName, teamId) {
         
         const earnedRuns = runsAllowed > 0 ? runsAllowed : (ip > 0 && era > 0 ? (era * ip) / 7 : 0);
         
-        calculatedPitchingCareer.games += games;
-        calculatedPitchingCareer.inningsPitched += ip;
-        calculatedPitchingCareer.earnedRuns += earnedRuns;
-        calculatedPitchingCareer.strikeouts += strikeouts;
-        calculatedPitchingCareer.walks += walks;
-        calculatedPitchingCareer.wins += wins;
-        calculatedPitchingCareer.losses += losses;
-        calculatedPitchingCareer.saves += saves;
-        
         pitchingSeasonStatsObject[seasonId] = {
           team: data.team || '',
           games: games,
@@ -308,9 +262,53 @@ export async function aggregatePlayerStats(userId, playerName, teamId) {
       });
     }
     
+    // ========================================
+    // CARRY OVER SEASONS FROM EXISTING RECORDS
+    // ========================================
+    // playerStats/{id}/seasons only holds the pre-2026 seasons. Seasons built
+    // from game-level stats (2026 Summer on) live only in aggregatedPlayerStats,
+    // on the legacy record (or on this account's record if it already exists).
+    // Copy any season this player has there that isn't built above, so linking
+    // doesn't drop them. Precedence: playerStats > this account's record > legacy record.
+    const readAggregated = async (id) => {
+      try {
+        const snap = await getDoc(doc(db, 'aggregatedPlayerStats', id));
+        return snap.exists() ? snap.data() : null;
+      } catch (error) {
+        return null;
+      }
+    };
+    const legacyAggregated = statsLookupId !== userId ? await readAggregated(statsLookupId) : null;
+    const existingAggregated = await readAggregated(userId);
+
+    const mergedSeasons = {
+      ...(legacyAggregated?.seasons || {}),
+      ...(existingAggregated?.seasons || {}),
+      ...seasonStatsObject
+    };
+    const mergedPitchingSeasons = {
+      ...(legacyAggregated?.pitchingSeasons || {}),
+      ...(existingAggregated?.pitchingSeasons || {}),
+      ...pitchingSeasonStatsObject
+    };
+
+    Object.values(mergedPitchingSeasons).forEach(data => {
+      const ip = data.inningsPitched || data.IP || data.ip || 0;
+      const era = data.era || data.ERA || data.earnedRunAverage || 0;
+      const runsAllowed = data.runsAllowed || 0;
+      calculatedPitchingCareer.games += data.games || 0;
+      calculatedPitchingCareer.inningsPitched += ip;
+      calculatedPitchingCareer.earnedRuns += runsAllowed > 0 ? runsAllowed : (ip > 0 && era > 0 ? (era * ip) / 7 : 0);
+      calculatedPitchingCareer.strikeouts += data.strikeouts || data.K || data.k || data.SO || 0;
+      calculatedPitchingCareer.walks += data.walks || data.BB || data.bb || 0;
+      calculatedPitchingCareer.wins += data.wins || data.W || 0;
+      calculatedPitchingCareer.losses += data.losses || data.L || 0;
+      calculatedPitchingCareer.saves += data.saves || data.SV || 0;
+    });
+
     const careerEarnedRunAverage = calculatedPitchingCareer.inningsPitched > 0
       ? (calculatedPitchingCareer.earnedRuns * 7) / calculatedPitchingCareer.inningsPitched : 0;
-    
+
     // ========================================
     // CREATE AGGREGATED DOCUMENT
     // ========================================
@@ -326,18 +324,7 @@ export async function aggregatePlayerStats(userId, playerName, teamId) {
       
       // Career stats
       career: {
-        games: calculatedCareerStats.games,
-        atBats: calculatedCareerStats.atBats,
-        hits: calculatedCareerStats.hits,
-        runs: calculatedCareerStats.runs,
-        walks: calculatedCareerStats.walks,
-        doubles: calculatedCareerStats.doubles,
-        triples: calculatedCareerStats.triples,
-        homeRuns: calculatedCareerStats.homeRuns,
-        rbi: calculatedCareerStats.rbi,
-        battingAverage: careerBattingAverage,
-        onBasePercentage: careerOnBasePercentage,
-        acesBPI: careerAcesBPI,
+        ...recalculateCareer(mergedSeasons),
         
         pitching: {
           games: calculatedPitchingCareer.games,
@@ -353,12 +340,12 @@ export async function aggregatePlayerStats(userId, playerName, teamId) {
       },
       
       // Store as OBJECT with seasonId keys
-      seasons: seasonStatsObject,
-      pitchingSeasons: pitchingSeasonStatsObject,
+      seasons: mergedSeasons,
+      pitchingSeasons: mergedPitchingSeasons,
       
       // Metadata
-      totalSeasons: Object.keys(seasonStatsObject).length,
-      hasPitchingStats: Object.keys(pitchingSeasonStatsObject).length > 0,
+      totalSeasons: Object.keys(mergedSeasons).length,
+      hasPitchingStats: Object.keys(mergedPitchingSeasons).length > 0,
       lastUpdated: serverTimestamp(),
       aggregatedAt: serverTimestamp()
     };
@@ -390,8 +377,8 @@ export async function aggregatePlayerStats(userId, playerName, teamId) {
     
     return { 
       success: true, 
-      seasons: Object.keys(seasonStatsObject).length,
-      pitchingSeasons: Object.keys(pitchingSeasonStatsObject).length
+      seasons: Object.keys(mergedSeasons).length,
+      pitchingSeasons: Object.keys(mergedPitchingSeasons).length
     };
     
   } catch (error) {
