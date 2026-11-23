@@ -65,7 +65,7 @@ function onSeasonChange() {
   const sid = $('bdgSeason').value;
   const s = seasons.find(x => x.id === sid);
   $('bdgPartial').hidden = !sid.startsWith('2025');
-  // A season that is no longer active is over, so The Streak Lives can be awarded.
+  // A season that is no longer active is over, so Iron Man, Playoff Performer and The Streak Lives can be awarded.
   $('bdgComplete').checked = !!s && !s.isActive;
   const p = new URLSearchParams(location.search);
   p.set('season', sid);
@@ -127,7 +127,7 @@ async function run() {
   running = true;
   $('bdgRun').disabled = true;
   $('bdgResults').hidden = true;
-  log(`${seasonLabel(seasonId)}: ${testMode ? 'test run (playerBadges_test)' : 'production (playerBadges)'}; season complete ${seasonComplete ? 'yes, The Streak Lives can be awarded' : 'no, The Streak Lives skipped'}.`, 'header');
+  log(`${seasonLabel(seasonId)}: ${testMode ? 'test run (playerBadges_test)' : 'production (playerBadges)'}; season complete ${seasonComplete ? 'yes, Iron Man, Playoff Performer and The Streak Lives can be awarded' : 'no, Iron Man, Playoff Performer and The Streak Lives skipped'}.`, 'header');
   progress(10, 'Loading batting stats...');
 
   try {

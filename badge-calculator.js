@@ -360,7 +360,8 @@ export const BADGE_DEFINITIONS = {
     icon: '🏆',
     iconPath: 'assets/badges/milestone/playoff-performer',
     description: 'Get a hit in every playoff game played',
-    requirement: 'Hit in all playoff games (min 2 games)'
+    requirement: 'Hit in all playoff games (min 2 games) — awarded at end of season',
+    seasonEndOnly: true
   },
   
   postseasonAce: {
@@ -406,6 +407,11 @@ function gameDayKey(g) {
   return Number.isNaN(d.getTime()) ? '' : `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
+/** Team key for Iron Man game counting: lowercase, trimmed, spaces as underscores. */
+function ironManTeamKey(t) {
+  return String(t || '').toLowerCase().trim().replace(/\s+/g, '_');
+}
+
 export class BadgeCalculator {
   constructor(db, options = {}) {
     this.db = db;
@@ -437,14 +443,21 @@ export class BadgeCalculator {
 
     console.log(`📊 Loaded ${Object.keys(battingData).length} batters, ${Object.keys(pitchingData).length} pitchers`);
 
-    // Compute total games per team from batting data (unique game IDs across all players on each team).
+    // Compute total games per team (unique game IDs across everyone who played for that team).
     // This covers regular season + playoffs without needing a separate schedule lookup.
+    // Each game counts toward the team on that game's own record, not the player's team,
+    // so a sub appearance or mid-season move doesn't add another team's games to his
+    // team's total (which made Iron Man impossible for everyone on that team).
     const teamGameIds = {};
-    Object.values(battingData).forEach(player => {
-      const tid = (player.teamId || '').toLowerCase().trim();
-      if (!tid) return;
-      if (!teamGameIds[tid]) teamGameIds[tid] = new Set();
-      player.games.forEach(g => teamGameIds[tid].add(g.id));
+    [battingData, pitchingData].forEach(source => {
+      Object.values(source).forEach(player => {
+        player.games.forEach(g => {
+          const tid = ironManTeamKey(g.teamId || player.teamId);
+          if (!tid || !g.id) return;
+          if (!teamGameIds[tid]) teamGameIds[tid] = new Set();
+          teamGameIds[tid].add(g.id);
+        });
+      });
     });
     const teamTotalGames = {};
     Object.entries(teamGameIds).forEach(([tid, ids]) => {
@@ -816,11 +829,23 @@ export class BadgeCalculator {
         earned.bigGames = { ...bigGameBadge, value: maxRunsInGame, gameDate: bigGameEntry?.gameDate || null };
       }
 
-      // Iron Man - played in every team game (regular season + playoffs), end of season only
+      // Iron Man - played in every team game (regular season + playoffs), end of season only.
+      // His team is the one he played the most games for; only his games for that team count,
+      // and a game he only pitched in still counts as an appearance.
       if (seasonComplete) {
-        const tid = (battingData.teamId || '').toLowerCase().trim();
+        const gamesByTeam = {};
+        [battingData, pitchingData].forEach(source => {
+          (source.games || []).forEach(g => {
+            const gtid = ironManTeamKey(g.teamId || source.teamId);
+            if (!gtid || !g.id) return;
+            if (!gamesByTeam[gtid]) gamesByTeam[gtid] = new Set();
+            gamesByTeam[gtid].add(g.id);
+          });
+        });
+        const [tid, myGames] = Object.entries(gamesByTeam)
+          .sort((a, b) => b[1].size - a[1].size)[0] || ['', new Set()];
         const totalTeamGames = teamTotalGames[tid] || 0;
-        const playerAppearances = battingData.games.length;
+        const playerAppearances = myGames.size;
         if (totalTeamGames > 0 && playerAppearances === totalTeamGames) {
           earned.ironMan = {
             badgeId: 'ironMan',
@@ -1024,7 +1049,9 @@ export class BadgeCalculator {
       
       // ===== PLAYOFF HITTING BADGES =====
       const playoffBattingGames = battingData.games.filter(g => g.isPlayoff === true);
-      if (playoffBattingGames.length >= 2) {
+      // Only once the season (playoffs included) is marked over, so it isn't handed
+      // out after the first couple of playoff games.
+      if (seasonComplete && playoffBattingGames.length >= 2) {
         // Playoff Performer - hit in every playoff game
         const playoffGamesWithHit = playoffBattingGames.filter(g => (g.hits || 0) >= 1).length;
         if (playoffGamesWithHit === playoffBattingGames.length) {
