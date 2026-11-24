@@ -60,12 +60,30 @@ const findSeries = (id) => allSeries(S.data).find((s) => s.id === id) || null;
 const dbl = () => isDouble(S.data);
 const scored = (g) => g.team1Score !== null && g.team1Score !== undefined && g.team2Score !== null && g.team2Score !== undefined;
 
-/** Side (1|2) at home: set per game, or 'seed' = the better seed once both are known. */
+/**
+ * Side (1|2) at home. The schedule wins: once both teams are known and the
+ * game doc's home team is one of them (e.g. flipped in Admin > Schedule), use
+ * it. Otherwise the per-game setting, or 'seed' = the better seed.
+ */
 function homeSide(s, g) {
+  const docSide = scheduleHomeSide(s, g);
+  if (docSide) return docSide;
   if (g.homeTeam === 1 || g.homeTeam === 2) return g.homeTeam;
   const a = team(s.team1).seed;
   const b = team(s.team2).seed;
   return a && b && b < a ? 2 : 1;
+}
+
+/** 1|2 if the game doc names one of this game's real teams as home, else 0. */
+function scheduleHomeSide(s, g) {
+  const home = String(S.gameDocs.get(gameId(s, g))?.homeTeamName || '').trim().toLowerCase();
+  if (!home) return 0;
+  const t1 = team(s.team1);
+  const t2 = team(s.team2);
+  if (!t1.real || !t2.real) return 0;
+  if (String(t1.name).trim().toLowerCase() === home) return 1;
+  if (String(t2.name).trim().toLowerCase() === home) return 2;
+  return 0;
 }
 
 /** G21 is only needed when the losers' bracket team (team2) wins G20. */
