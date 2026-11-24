@@ -231,6 +231,7 @@ async function shareItem(g) {
     when: [formatGameDate(g.dateKey, 'short'), g.time ? formatTime(g.time) : ''].filter(Boolean).join(', '),
     time: g.time ? formatTime(g.time) : '',
     tier: tierOf(g.type, g.round),
+    round: g.round || '',
     label: g.type === 'playoff' ? (g.round ? cap(g.round) : 'Playoffs') : 'Regular season',
     awayRec: shownTeam(g, 'away') ? recOf(shownTeam(g, 'away')) : '', homeRec: shownTeam(g, 'home') ? recOf(shownTeam(g, 'home')) : '',
     awayPlace: shownTeam(g, 'away') ? placeOf(shownTeam(g, 'away')) : '', homePlace: shownTeam(g, 'home') ? placeOf(shownTeam(g, 'home')) : '',

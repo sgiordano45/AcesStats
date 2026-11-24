@@ -120,7 +120,7 @@ async function draw({ heading, sub, items, detail }) {
     side(it.away, it.awayRec, it.awayPlace, it.line?.away, W * 0.27);
     side(it.home, it.homeRec, it.homePlace, it.line?.home, W * 0.73);
     g.fillStyle = th.ink; g.font = `400 30px ${DISPLAY}`; g.fillText('@', W / 2, y + 64);
-    if (it.tier !== 'regular') { g.font = `700 10px ${SANS}`; g.fillText('WIN OR GO HOME', W / 2, y + 86); }
+    if (/loser/i.test(it.round || '')) { g.font = `700 10px ${SANS}`; g.fillText('WIN OR GO HOME', W / 2, y + 86); }
     if (detail && (it.awayPlayers?.length || it.homePlayers?.length)) {
       const top = y + 128 + (it.line ? 18 : 0);
       g.strokeStyle = it.tier === 'regular' ? '#e4e7e1' : th.edge; g.beginPath(); g.moveTo(PAD + 16, top); g.lineTo(W - PAD - 16, top); g.stroke();
