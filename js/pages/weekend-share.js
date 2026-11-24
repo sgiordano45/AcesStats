@@ -18,7 +18,7 @@ const SANS = 'Inter, system-ui, -apple-system, sans-serif';
 const DISPLAY = '"Bebas Neue", Impact, sans-serif';
 const THEMES = {
   regular: { head: '#2d5016', head2: '#1f6b47', soft: '#f3f7f1', edge: '#dfe7da', ink: '#2d5016', label: 'Game Preview' },
-  playoff: { head: '#2b1a6e', head2: '#4a148c', soft: '#f4f1fb', edge: '#d9cdf3', ink: '#4a148c', label: 'Playoffs' },
+  playoff: { head: '#5c1a1b', head2: '#8b3a1e', soft: '#fbf3ee', edge: '#ecd2c4', ink: '#7a1f1f', label: 'Playoffs' },
   finals: { head: '#7c5c00', head2: '#b8860b', soft: '#fff9ea', edge: '#f0d58a', ink: '#7c5c00', label: 'Championship' }
 };
 
