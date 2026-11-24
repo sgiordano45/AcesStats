@@ -1426,19 +1426,19 @@ body {
     
     <!-- Winner Legend (only when locked) -->
     <div class="legend winner-legend" id="winnerLegend" style="display: none; margin-top: 0.75rem;">
-      <div class="legend-item">
+      <div class="legend-item" data-period="q1">
         <div class="legend-box" style="background: linear-gradient(135deg, #fecaca 0%, #fca5a5 100%); border-color: #ef4444;"></div>
         <span>1st Qtr</span>
       </div>
-      <div class="legend-item">
+      <div class="legend-item" data-period="half">
         <div class="legend-box" style="background: linear-gradient(135deg, #d8b4fe 0%, #c4b5fd 100%); border-color: #a855f7;"></div>
         <span>Halftime</span>
       </div>
-      <div class="legend-item">
+      <div class="legend-item" data-period="q3">
         <div class="legend-box" style="background: linear-gradient(135deg, #bbf7d0 0%, #86efac 100%); border-color: #22c55e;"></div>
         <span>3rd Qtr</span>
       </div>
-      <div class="legend-item">
+      <div class="legend-item" data-period="final">
         <div class="legend-box" style="background: linear-gradient(135deg, #d4a574 0%, #c9976a 100%); border-color: #92400e;"></div>
         <span>Final</span>
       </div>
@@ -1476,6 +1476,14 @@ body {
         <textarea id="adminDescription" rows="3" placeholder="Pool rules, payout structure..."></textarea>
       </div>
 
+      <div class="form-group">
+        <label>Payout Timing</label>
+        <select id="adminPayoutTiming">
+          <option value="4-period">Every quarter (Q1 / Half / Q3 / Final)</option>
+          <option value="2-period">Halftime / Final only</option>
+        </select>
+      </div>
+
       <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
         <button class="btn btn-primary" onclick="savePoolSettings()">
           💾 Save Settings
@@ -1495,6 +1503,15 @@ body {
         Add games to this pool. Each game has its own teams and numbers. Use the "Numbers Drawn" checkbox to control when numbers are revealed for each game.
       </p>
       
+      <div id="espnToolbar" style="display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; margin-bottom: 1rem; padding: 0.75rem 1rem; border: 1px solid var(--border-color); border-radius: 12px;">
+        <label for="espnDateInput" style="font-size: 0.85rem; font-weight: 600;">NFL game date</label>
+        <input type="date" id="espnDateInput" style="max-width: 170px;">
+        <button class="btn btn-primary" id="espnPullAllBtn" onclick="pullEspnAll()">📡 Pull All from ESPN</button>
+        <div id="espnAllStatus" style="flex-basis: 100%; font-size: 0.8rem; color: var(--text-light);">
+          Fills the winner digits for completed periods only. Nothing is saved until you click Save Games.
+        </div>
+      </div>
+
       <div class="games-editor" id="gamesEditor">
         <!-- Game items will be generated here -->
       </div>
@@ -1630,6 +1647,14 @@ body {
       <label>Description (optional)</label>
       <textarea id="newDescription" rows="2" placeholder="Pool rules, payout structure..."></textarea>
     </div>
+
+    <div class="form-group">
+      <label>Payout Timing</label>
+      <select id="newPayoutTiming">
+        <option value="4-period">Every quarter (Q1 / Half / Q3 / Final)</option>
+        <option value="2-period">Halftime / Final only</option>
+      </select>
+    </div>
     
     <p style="font-size: 0.85rem; color: var(--text-light); margin-top: 1rem;">
       💡 After creating the pool, use the "Games" tab to add individual games with their teams and numbers.
@@ -1694,6 +1719,186 @@ import { getUserProfile } from './js/data/users.js';
   let currentLinkType = 'search';
 
   // ========================================
+  // PAYOUT TIMING ('4-period' = every quarter, '2-period' = Halftime / Final)
+  // ========================================
+
+  const ALL_PERIODS = ['q1', 'half', 'q3', 'final'];
+  const PERIOD_LABELS = { q1: 'Q1', half: 'Half', q3: 'Q3', final: 'Final' };
+
+  function getActivePeriods(pool) {
+    return pool?.payoutTiming === '2-period' ? ['half', 'final'] : ALL_PERIODS;
+  }
+
+  // ========================================
+  // ESPN SCORE PULL (fills winner digits; admin reviews, then Save Games)
+  // ========================================
+
+  function localDateString(d) {
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+
+  async function fetchEspnEvents() {
+    const dateEl = document.getElementById('espnDateInput');
+    if (!dateEl.value) dateEl.value = localDateString(new Date());
+    const url = 'https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?dates=' + dateEl.value.replace(/-/g, '');
+    let data;
+    try {
+      const res = await fetch(url, { cache: 'no-store' });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      data = await res.json();
+    } catch (_) {
+      const proxy = 'https://api.allorigins.win/get?url=' + encodeURIComponent(url) + '&t=' + Date.now();
+      const res = await fetch(proxy);
+      const wrap = await res.json();
+      data = JSON.parse(wrap.contents);
+    }
+    return (data.events || []).map(parseEspnEvent);
+  }
+
+  function parseEspnEvent(ev) {
+    const comp = (ev.competitions || [])[0] || {};
+    const status = comp.status || ev.status || {};
+    const type = status.type || {};
+    return {
+      id: ev.id,
+      state: type.state || 'pre',          // pre | in | post
+      typeName: type.name || '',           // STATUS_HALFTIME, STATUS_END_PERIOD, STATUS_FINAL ...
+      completed: !!type.completed,
+      detail: type.shortDetail || type.detail || '',
+      period: status.period || 0,
+      teams: (comp.competitors || []).map(c => {
+        const t = c.team || {};
+        return {
+          homeAway: c.homeAway,
+          abbr: t.abbreviation || '',
+          names: [t.displayName, t.shortDisplayName, t.name, t.location, t.abbreviation].filter(Boolean),
+          score: parseInt(c.score, 10),
+          lines: (c.linescores || []).map(l => parseInt(l.value ?? l.displayValue, 10))
+        };
+      })
+    };
+  }
+
+  // A quarter only counts once it is over - never fill a quarter still in progress
+  function espnQuarterDone(ev, q) {
+    if (ev.completed) return true;
+    if (ev.state !== 'in') return false;
+    if (ev.period > q) return true;
+    return ev.period === q && (ev.typeName === 'STATUS_HALFTIME' || ev.typeName === 'STATUS_END_PERIOD');
+  }
+
+  function normTeam(s) { return String(s || '').toLowerCase().replace(/[^a-z0-9]/g, ''); }
+  function teamMatches(boxName, espnTeam) {
+    const n = normTeam(boxName);
+    if (!n) return false;
+    return espnTeam.names.some(x => {
+      const m = normTeam(x);
+      return m === n || (n.length >= 3 && m.includes(n)) || (m.length >= 3 && n.includes(m));
+    });
+  }
+
+  // Returns { ev, t1, t2 } - t1 is the ESPN team for Team 1 (top / column digits)
+  function findEspnMatch(team1, team2, events) {
+    const hits = [];
+    events.forEach(ev => {
+      if (ev.teams.length !== 2) return;
+      const [a, b] = ev.teams;
+      const ab = teamMatches(team1, a) && teamMatches(team2, b);
+      const ba = teamMatches(team1, b) && teamMatches(team2, a);
+      if (ab && !ba) hits.push({ ev, t1: a, t2: b });
+      else if (ba && !ab) hits.push({ ev, t1: b, t2: a });
+    });
+    if (hits.length === 1) return hits[0];
+    if (hits.length > 1) return { error: 'Matched ' + hits.length + ' ESPN games - make team names more specific' };
+    return null;
+  }
+
+  // Cumulative score through each period (half = Q1+Q2, q3 = Q1+Q2+Q3, final = total incl. OT)
+  function espnPeriodScores(ev, t) {
+    const sum = n => t.lines.slice(0, n).reduce((a, b) => a + b, 0);
+    const linesOk = n => t.lines.length >= n && t.lines.slice(0, n).every(Number.isFinite);
+    return {
+      q1:    espnQuarterDone(ev, 1) && linesOk(1) ? sum(1) : null,
+      half:  espnQuarterDone(ev, 2) && linesOk(2) ? sum(2) : null,
+      q3:    espnQuarterDone(ev, 3) && linesOk(3) ? sum(3) : null,
+      final: ev.completed && Number.isFinite(t.score) ? t.score : null
+    };
+  }
+
+  function setEspnStatus(idx, msg, color) {
+    const el = document.getElementById('espnStatus_' + idx);
+    if (el) { el.textContent = msg; el.style.color = color || 'var(--text-light)'; }
+  }
+
+  function applyEspnToGame(idx, events) {
+    const item = document.querySelectorAll('#gamesEditor .game-editor-item')[idx];
+    if (!item) return false;
+    const team1 = item.querySelector('.game-team1-input').value.trim();
+    const team2 = item.querySelector('.game-team2-input').value.trim();
+    if (!team1 || !team2) {
+      setEspnStatus(idx, 'Enter both team names first', 'var(--danger-color)');
+      return false;
+    }
+    const match = findEspnMatch(team1, team2, events);
+    if (!match) {
+      setEspnStatus(idx, 'No ESPN game found for ' + team1 + ' vs ' + team2 + ' on ' + document.getElementById('espnDateInput').value, 'var(--danger-color)');
+      return false;
+    }
+    if (match.error) { setEspnStatus(idx, match.error, 'var(--danger-color)'); return false; }
+
+    const { ev, t1, t2 } = match;
+    const s1 = espnPeriodScores(ev, t1);
+    const s2 = espnPeriodScores(ev, t2);
+    const filled = [];
+    getActivePeriods(currentPool).forEach(period => {
+      if (s1[period] === null || s2[period] === null) return;
+      item.querySelector('.' + period + '-score1').value = s1[period] % 10;
+      item.querySelector('.' + period + '-score2').value = s2[period] % 10;
+      filled.push(PERIOD_LABELS[period] + ' ' + s1[period] + '-' + s2[period]);
+    });
+
+    const line = t1.abbr + ' ' + (Number.isFinite(t1.score) ? t1.score : '-') + ', ' +
+                 t2.abbr + ' ' + (Number.isFinite(t2.score) ? t2.score : '-') + ' (' + ev.detail + ')';
+    if (filled.length) {
+      setEspnStatus(idx, line + ' - filled ' + filled.join(', ') + '. Review, then Save Games.', 'var(--success-color)');
+      return true;
+    }
+    setEspnStatus(idx, line + ' - no completed periods yet', 'var(--text-light)');
+    return false;
+  }
+
+  window.pullEspnGame = async function(idx) {
+    setEspnStatus(idx, 'Fetching ESPN...', 'var(--text-light)');
+    try {
+      const events = await fetchEspnEvents();
+      applyEspnToGame(idx, events);
+    } catch (e) {
+      setEspnStatus(idx, 'ESPN fetch failed: ' + e.message, 'var(--danger-color)');
+    }
+  };
+
+  window.pullEspnAll = async function() {
+    const statusEl = document.getElementById('espnAllStatus');
+    const btn = document.getElementById('espnPullAllBtn');
+    btn.disabled = true;
+    statusEl.textContent = 'Fetching ESPN...';
+    statusEl.style.color = 'var(--text-light)';
+    try {
+      const events = await fetchEspnEvents();
+      const count = document.querySelectorAll('#gamesEditor .game-editor-item').length;
+      let updated = 0;
+      for (let i = 0; i < count; i++) { if (applyEspnToGame(i, events)) updated++; }
+      statusEl.textContent = 'ESPN returned ' + events.length + ' game(s) - updated ' + updated + '. Review each game, then Save Games.';
+      statusEl.style.color = updated ? 'var(--success-color)' : 'var(--text-light)';
+    } catch (e) {
+      statusEl.textContent = 'ESPN fetch failed: ' + e.message;
+      statusEl.style.color = 'var(--danger-color)';
+    } finally {
+      btn.disabled = false;
+    }
+  };
+
+  // ========================================
   // INITIALIZATION
   // ========================================
 
@@ -1736,15 +1941,20 @@ import { getUserProfile } from './js/data/users.js';
     
     const userRole = (userProfile.userRole || '').toLowerCase();
     
-    // Check for admin or oddsmaker special role
+    // Check for admin, league-staff, or oddsmaker special role
+    const isLeagueStaff = userRole === USER_ROLES.LEAGUE_STAFF;
     isAdmin = 
       userProfile.isAdmin === true ||
       userRole === 'admin' ||
+      isLeagueStaff ||
       (userProfile.specialRoles && userProfile.specialRoles.oddsmaker === true);
     
     if (isAdmin) {
       document.getElementById('adminBadge').style.display = 'inline-block';
-      document.getElementById('adminBadge').textContent = userProfile.specialRoles?.oddsmaker ? 'Oddsmaker' : 'Admin';
+      const isFullAdmin = userProfile.isAdmin === true || userRole === 'admin';
+      document.getElementById('adminBadge').textContent = isFullAdmin ? 'Admin'
+        : isLeagueStaff ? 'League Staff'
+        : 'Oddsmaker';
       document.getElementById('createPoolBtn').style.display = 'inline-flex';
     }
   }
@@ -1943,7 +2153,8 @@ import { getUserProfile } from './js/data/users.js';
     
     gameTabs.innerHTML = games.map((game, idx) => {
       const winners = game.winners || {};
-      const winnerCount = Object.keys(winners).filter(q => winners[q]?.box).length;
+      const tabPeriods = getActivePeriods(currentPool);
+      const winnerCount = tabPeriods.filter(q => winners[q]?.box).length;
       const numbersDrawn = game.numbersDrawn !== false; // Default to true for backward compat
       
       // Show team names when numbers are drawn (if both teams are set), otherwise show label
@@ -1958,7 +2169,7 @@ import { getUserProfile } from './js/data/users.js';
         <button class="game-tab ${idx === selectedGameIndex ? 'active' : ''} ${!numbersDrawn ? 'numbers-pending' : ''}" 
                 onclick="selectGame(${idx})">
           🏈 ${displayLabel}
-          ${winnerCount > 0 ? `<span class="game-winner-badge">🏆 ${winnerCount}/4</span>` : ''}
+          ${winnerCount > 0 ? `<span class="game-winner-badge">🏆 ${winnerCount}/${tabPeriods.length}</span>` : ''}
         </button>
       `;
     }).join('');
@@ -2031,7 +2242,7 @@ import { getUserProfile } from './js/data/users.js';
     
     // Build a map of box -> which quarters won
     const winnerMap = {};
-    const quarters = ['q1', 'half', 'q3', 'final'];
+    const quarters = getActivePeriods(currentPool);
     quarters.forEach(quarter => {
       if (gameWinners[quarter]?.box) {
         const box = gameWinners[quarter].box;
@@ -2044,6 +2255,10 @@ import { getUserProfile } from './js/data/users.js';
     const winnerLegend = document.getElementById('winnerLegend');
     if (winnerLegend) {
       winnerLegend.style.display = currentPool.locked ? 'flex' : 'none';
+      const legendPeriods = getActivePeriods(currentPool);
+      winnerLegend.querySelectorAll('.legend-item[data-period]').forEach(el => {
+        el.style.display = legendPeriods.includes(el.dataset.period) ? '' : 'none';
+      });
     }
     
     grid.innerHTML = '';
@@ -2343,6 +2558,7 @@ import { getUserProfile } from './js/data/users.js';
     document.getElementById('adminPoolName').value = currentPool.name || '';
     document.getElementById('adminCostPerBox').value = currentPool.costPerBox || 0;
     document.getElementById('adminDescription').value = currentPool.description || '';
+    document.getElementById('adminPayoutTiming').value = currentPool.payoutTiming || '4-period';
     
     // Lock button
     const lockBtn = document.getElementById('toggleLockBtn');
@@ -2375,6 +2591,7 @@ import { getUserProfile } from './js/data/users.js';
         name: document.getElementById('adminPoolName').value,
         costPerBox: parseFloat(document.getElementById('adminCostPerBox').value) || 0,
         description: document.getElementById('adminDescription').value,
+        payoutTiming: document.getElementById('adminPayoutTiming').value,
         updatedAt: serverTimestamp()
       });
       
@@ -2451,6 +2668,9 @@ import { getUserProfile } from './js/data/users.js';
       return;
     }
     
+    const activePeriods = getActivePeriods(currentPool);
+    const hideRow = p => activePeriods.includes(p) ? '' : 'style="display: none;"';
+
     container.innerHTML = games.map((game, idx) => {
       const winners = game.winners || {};
       const team1 = game.team1 || 'Team 1';
@@ -2474,6 +2694,9 @@ import { getUserProfile } from './js/data/users.js';
                      placeholder="Game name...">
             </h4>
             <div style="display: flex; gap: 0.5rem;">
+              <button class="randomize-btn" onclick="pullEspnGame(${idx})">
+                📡 Pull from ESPN
+              </button>
               <button class="randomize-btn" onclick="randomizeGameNumbers(${idx})" ${!numbersDrawn ? '' : ''}>
                 🎲 Randomize
               </button>
@@ -2530,10 +2753,11 @@ import { getUserProfile } from './js/data/users.js';
           </div>
           
           <div class="game-winner-section">
-            <h5>🏆 Winners (enter score last digits for each quarter)</h5>
+            <h5>🏆 Winners (enter score last digits for each ${activePeriods.length === 4 ? 'quarter' : 'period'})</h5>
+            <div id="espnStatus_${idx}" style="font-size: 0.8rem; margin-bottom: 0.5rem;"></div>
             <div class="quarters-grid">
               
-              <div class="quarter-winner-row q1">
+              <div class="quarter-winner-row q1" ${hideRow('q1')}>
                 <div class="quarter-label"><span class="dot"></span> 1st Quarter</div>
                 <div class="quarter-scores">
                   <label>${team1}:</label>
@@ -2546,7 +2770,7 @@ import { getUserProfile } from './js/data/users.js';
                 ${getWinnerName('q1') ? `<div class="quarter-winner-display">🏆 ${getWinnerName('q1')}</div>` : ''}
               </div>
               
-              <div class="quarter-winner-row half">
+              <div class="quarter-winner-row half" ${hideRow('half')}>
                 <div class="quarter-label"><span class="dot"></span> Halftime</div>
                 <div class="quarter-scores">
                   <label>${team1}:</label>
@@ -2559,7 +2783,7 @@ import { getUserProfile } from './js/data/users.js';
                 ${getWinnerName('half') ? `<div class="quarter-winner-display">🏆 ${getWinnerName('half')}</div>` : ''}
               </div>
               
-              <div class="quarter-winner-row q3">
+              <div class="quarter-winner-row q3" ${hideRow('q3')}>
                 <div class="quarter-label"><span class="dot"></span> 3rd Quarter</div>
                 <div class="quarter-scores">
                   <label>${team1}:</label>
@@ -2572,7 +2796,7 @@ import { getUserProfile } from './js/data/users.js';
                 ${getWinnerName('q3') ? `<div class="quarter-winner-display">🏆 ${getWinnerName('q3')}</div>` : ''}
               </div>
               
-              <div class="quarter-winner-row final">
+              <div class="quarter-winner-row final" ${hideRow('final')}>
                 <div class="quarter-label"><span class="dot"></span> Final</div>
                 <div class="quarter-scores">
                   <label>${team1}:</label>
@@ -2666,7 +2890,7 @@ import { getUserProfile } from './js/data/users.js';
       
       // Calculate winners for each quarter
       const winners = {};
-      const quarters = ['q1', 'half', 'q3', 'final'];
+      const quarters = getActivePeriods(currentPool);
       
       quarters.forEach(quarter => {
         const score1Input = item.querySelector(`.${quarter}-score1`);
@@ -3102,6 +3326,7 @@ import { getUserProfile } from './js/data/users.js';
     const name = document.getElementById('newPoolName').value.trim();
     const costPerBox = parseFloat(document.getElementById('newCostPerBox').value) || 0;
     const description = document.getElementById('newDescription').value.trim();
+    const payoutTiming = document.getElementById('newPayoutTiming').value;
     
     if (!name) {
       showToast('Please enter a pool name', 'warning');
@@ -3113,6 +3338,7 @@ import { getUserProfile } from './js/data/users.js';
         name,
         costPerBox,
         description,
+        payoutTiming,
         games: [],  // Games added separately after creation
         entries: {},
         locked: false,
