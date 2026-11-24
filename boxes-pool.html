@@ -1445,6 +1445,12 @@ body {
     </div>
   </div>
 
+  <!-- Winnings Board (locked pools with payout amounts set) -->
+  <div class="grid-container" id="winningsBoard" style="display: none; margin-top: 1.5rem;">
+    <h3 style="margin: 0 0 1rem;">💰 Winnings</h3>
+    <div id="winningsContent"></div>
+  </div>
+
   <!-- Admin Panel -->
   <div class="admin-panel" id="adminPanel">
     <div class="admin-header">
@@ -1478,11 +1484,31 @@ body {
 
       <div class="form-group">
         <label>Payout Timing</label>
-        <select id="adminPayoutTiming">
+        <select id="adminPayoutTiming" onchange="updateAdminPayoutInputs()">
           <option value="4-period">Every quarter (Q1 / Half / Q3 / Final)</option>
           <option value="2-period">Halftime / Final only</option>
         </select>
       </div>
+
+      <div class="form-row" id="adminPayoutAmounts">
+        <div class="form-group" data-period="q1">
+          <label>Q1 Payout ($ per game)</label>
+          <input type="number" id="adminPayoutAmt_q1" min="0" step="1" placeholder="0" oninput="updateAdminPayoutInputs()">
+        </div>
+        <div class="form-group" data-period="half">
+          <label>Halftime Payout ($ per game)</label>
+          <input type="number" id="adminPayoutAmt_half" min="0" step="1" placeholder="0" oninput="updateAdminPayoutInputs()">
+        </div>
+        <div class="form-group" data-period="q3">
+          <label>Q3 Payout ($ per game)</label>
+          <input type="number" id="adminPayoutAmt_q3" min="0" step="1" placeholder="0" oninput="updateAdminPayoutInputs()">
+        </div>
+        <div class="form-group" data-period="final">
+          <label>Final Payout ($ per game)</label>
+          <input type="number" id="adminPayoutAmt_final" min="0" step="1" placeholder="0" oninput="updateAdminPayoutInputs()">
+        </div>
+      </div>
+      <p id="adminPayoutSummary" style="font-size: 0.85rem; color: var(--text-light); margin: -0.5rem 0 1rem;"></p>
 
       <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
         <button class="btn btn-primary" onclick="savePoolSettings()">
@@ -1727,6 +1753,128 @@ import { getUserProfile } from './js/data/users.js';
 
   function getActivePeriods(pool) {
     return pool?.payoutTiming === '2-period' ? ['half', 'final'] : ALL_PERIODS;
+  }
+
+  // $ paid to the winning box for one period of one game (0 if the period isn't paid)
+  function getPayoutAmount(pool, period) {
+    if (!getActivePeriods(pool).includes(period)) return 0;
+    const amt = pool?.payoutAmounts?.[period];
+    return typeof amt === 'number' && amt > 0 ? amt : 0;
+  }
+
+  function fmtMoney(n) {
+    const abs = Math.round(Math.abs(n) * 100) / 100;
+    return (n < 0 ? '-$' : '$') + abs.toLocaleString('en-US', { minimumFractionDigits: abs % 1 ? 2 : 0, maximumFractionDigits: 2 });
+  }
+
+  function escHtml(s) {
+    return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+
+  // Pool Settings: show $ inputs for the selected timing + running summary
+  window.updateAdminPayoutInputs = function() {
+    if (!currentPool) return;
+    const timing = document.getElementById('adminPayoutTiming').value;
+    const active = getActivePeriods({ payoutTiming: timing });
+    document.querySelectorAll('#adminPayoutAmounts .form-group[data-period]').forEach(el => {
+      el.style.display = active.includes(el.dataset.period) ? '' : 'none';
+    });
+    const perGame = active.reduce((sum, p) => sum + (parseFloat(document.getElementById('adminPayoutAmt_' + p).value) || 0), 0);
+    const gameCount = (currentPool.games || []).length;
+    const prizePool = Object.keys(currentPool.entries || {}).length * (currentPool.costPerBox || 0);
+    const totalPayouts = perGame * gameCount;
+    document.getElementById('adminPayoutSummary').textContent =
+      fmtMoney(perGame) + ' per game × ' + gameCount + ' game' + (gameCount === 1 ? '' : 's') + ' = ' + fmtMoney(totalPayouts) +
+      ' in prizes · Prize pool so far ' + fmtMoney(prizePool) + ' · Left for charity ' + fmtMoney(prizePool - totalPayouts);
+  };
+
+  function renderWinnings() {
+    const board = document.getElementById('winningsBoard');
+    const content = document.getElementById('winningsContent');
+    if (!board || !currentPool) return;
+
+    const games = currentPool.games || [];
+    const periods = getActivePeriods(currentPool);
+    const hasAmounts = periods.some(p => getPayoutAmount(currentPool, p) > 0);
+    if (!currentPool.locked || games.length === 0 || !hasAmounts) {
+      board.style.display = 'none';
+      return;
+    }
+    board.style.display = 'block';
+
+    const entries = currentPool.entries || {};
+    const periodNames = { q1: '1st Qtr', half: 'Halftime', q3: '3rd Qtr', final: 'Final' };
+    const totals = {};
+    let awarded = 0, pending = 0, unsold = 0;
+    const cell = 'padding: 0.4rem 0.5rem; border-bottom: 1px solid var(--border-color);';
+
+    const gameHtml = games.map((game, idx) => {
+      const winners = game.winners || {};
+      const title = (game.numbersDrawn !== false && game.team1 && game.team2)
+        ? game.team1 + ' vs ' + game.team2
+        : (game.label || 'Game ' + (idx + 1));
+
+      const rows = periods.map(p => {
+        const amt = getPayoutAmount(currentPool, p);
+        const w = winners[p];
+        if (!w?.box) {
+          pending += amt;
+          return '<tr><td style="' + cell + '">' + periodNames[p] + '</td>'
+            + '<td style="' + cell + ' color: var(--text-light);" colspan="2">Pending</td>'
+            + '<td style="' + cell + ' text-align: right; color: var(--text-light);">' + fmtMoney(amt) + '</td></tr>';
+        }
+        const entry = entries[w.box];
+        const digits = (w.score1 ?? '?') + '-' + (w.score2 ?? '?');
+        if (!entry) {
+          unsold += amt;
+          return '<tr><td style="' + cell + '">' + periodNames[p] + '</td>'
+            + '<td style="' + cell + '">' + digits + '</td>'
+            + '<td style="' + cell + ' color: var(--text-light); font-style: italic;">Unsold box</td>'
+            + '<td style="' + cell + ' text-align: right; color: var(--text-light);">' + fmtMoney(amt) + '</td></tr>';
+        }
+        const key = entry.userId || (entry.pendingEmail || '').toLowerCase() || entry.name || w.box;
+        if (!totals[key]) totals[key] = { name: entry.name || 'Unknown', wins: 0, total: 0, mine: false };
+        totals[key].wins += 1;
+        totals[key].total += amt;
+        if (entry.userId && entry.userId === currentUser?.uid) totals[key].mine = true;
+        awarded += amt;
+        return '<tr><td style="' + cell + '">' + periodNames[p] + '</td>'
+          + '<td style="' + cell + '">' + digits + '</td>'
+          + '<td style="' + cell + ' font-weight: 600;">🏆 ' + escHtml(entry.name || 'Unknown') + '</td>'
+          + '<td style="' + cell + ' text-align: right; font-weight: 600;">' + fmtMoney(amt) + '</td></tr>';
+      }).join('');
+
+      return '<div style="margin-bottom: 1.25rem;">'
+        + '<div style="font-weight: 700; margin-bottom: 0.35rem;">🏈 ' + escHtml(title) + '</div>'
+        + '<table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">' + rows + '</table></div>';
+    }).join('');
+
+    const ranked = Object.values(totals).sort((a, b) => b.total - a.total || b.wins - a.wins);
+    const standingsHtml = ranked.length
+      ? '<table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">'
+        + '<tr><th style="' + cell + ' text-align: left;">Winner</th><th style="' + cell + ' text-align: center;">Wins</th><th style="' + cell + ' text-align: right;">Total</th></tr>'
+        + ranked.map(r => '<tr' + (r.mine ? ' style="font-weight: 700;"' : '') + '>'
+          + '<td style="' + cell + '">' + escHtml(r.name) + (r.mine ? ' (you)' : '') + '</td>'
+          + '<td style="' + cell + ' text-align: center;">' + r.wins + '</td>'
+          + '<td style="' + cell + ' text-align: right;">' + fmtMoney(r.total) + '</td></tr>').join('')
+        + '</table>'
+      : '<p style="color: var(--text-light); margin: 0;">No winners yet.</p>';
+
+    const prizePool = Object.keys(entries).length * (currentPool.costPerBox || 0);
+    const totalPrizes = awarded + pending + unsold;
+    const summaryItem = (label, value) => '<div class="stat-card"><div class="stat-value">' + value + '</div><div class="stat-label">' + label + '</div></div>';
+
+    content.innerHTML =
+      '<div class="pool-stats" style="margin-bottom: 1.25rem;">'
+        + summaryItem('Prize Pool', fmtMoney(prizePool))
+        + summaryItem('Paid Out', fmtMoney(awarded))
+        + summaryItem('Still to Play', fmtMoney(pending))
+        + summaryItem('For Charity', fmtMoney(prizePool - totalPrizes))
+      + '</div>'
+      + (unsold > 0 ? '<p style="font-size: 0.85rem; color: var(--text-light); margin: -0.5rem 0 1rem;">Unsold winning boxes: ' + fmtMoney(unsold) + ' not awarded.</p>' : '')
+      + gameHtml
+      + '<h4 style="margin: 1.5rem 0 0.5rem;">Standings</h4>'
+      + standingsHtml;
   }
 
   // ========================================
@@ -2140,6 +2288,7 @@ import { getUserProfile } from './js/data/users.js';
     
     // Update team labels based on selected game or pool defaults
     updateTeamLabels();
+    renderWinnings();
   }
 
   function renderGameTabs() {
@@ -2559,6 +2708,11 @@ import { getUserProfile } from './js/data/users.js';
     document.getElementById('adminCostPerBox').value = currentPool.costPerBox || 0;
     document.getElementById('adminDescription').value = currentPool.description || '';
     document.getElementById('adminPayoutTiming').value = currentPool.payoutTiming || '4-period';
+    ALL_PERIODS.forEach(p => {
+      const amt = currentPool.payoutAmounts?.[p];
+      document.getElementById('adminPayoutAmt_' + p).value = typeof amt === 'number' && amt > 0 ? amt : '';
+    });
+    updateAdminPayoutInputs();
     
     // Lock button
     const lockBtn = document.getElementById('toggleLockBtn');
@@ -2592,6 +2746,14 @@ import { getUserProfile } from './js/data/users.js';
         costPerBox: parseFloat(document.getElementById('adminCostPerBox').value) || 0,
         description: document.getElementById('adminDescription').value,
         payoutTiming: document.getElementById('adminPayoutTiming').value,
+        payoutAmounts: (() => {
+          const active = getActivePeriods({ payoutTiming: document.getElementById('adminPayoutTiming').value });
+          const amounts = {};
+          ALL_PERIODS.forEach(p => {
+            amounts[p] = active.includes(p) ? (parseFloat(document.getElementById('adminPayoutAmt_' + p).value) || 0) : 0;
+          });
+          return amounts;
+        })(),
         updatedAt: serverTimestamp()
       });
       
