@@ -14,7 +14,9 @@
 //     reassign the opposing pitcher); saving rebuilds the batting lines on the
 //     gameResults doc. Cells of the line score are editable too: a changed
 //     inning becomes a hand-entered run adjustment on that inning.
-//   - Pitching and hit locations save separately, as before.
+//   - Pitching and hit locations save separately, as before. A clean pitching
+//     save stamps pitchingSubmitted on the gameResults doc; converting batting
+//     before that asks for confirmation first.
 // ?season=&id=<gameResults id> opens a game directly.
 
 import { initPage, pageReady } from '../core/app.js';
@@ -254,6 +256,9 @@ function renderChecks() {
   const unmatched = bat.filter(b => !picks[b.playerName || b.name]).length;
   out.push(unmatched ? ['warn', `${plural(unmatched, 'batter')} not matched to the roster. Pick them below or they are skipped.`] : ['ok', `All ${plural(bat.length, 'batter')} matched to the roster.`]);
   if (plays) out.push(['warn', 'You have unsaved play edits. Save them before converting so the batting lines match.']);
+  out.push(r.pitchingSubmitted
+    ? ['ok', `Pitching saved${r.pitchingSubmittedByName ? ` by ${esc(r.pitchingSubmittedByName)}` : ''}.`]
+    : ['warn', 'Pitching has not been saved for this game yet.']);
   $('trChecks').innerHTML = out.map(([k, t]) => `<li class="tr-check is-${k}">${icon(k === 'ok' ? 'check' : 'alert')}<span>${t}</span></li>`).join('');
 }
 
@@ -298,6 +303,7 @@ async function convert() {
   if (!bat.length) { showToast('No batting lines to convert', 'error'); return; }
   if (!game.gameId) { showToast('This tracked game has no schedule game ID', 'error'); return; }
   if (plays && !(await confirmModal('You have unsaved play edits. Convert the saved batting lines anyway?', { confirmLabel: 'Convert anyway' }))) return;
+  if (!game.pitchingSubmitted && !(await confirmModal('Pitching stats have not been saved for this game yet. Convert the batting stats anyway? You can save pitching afterward.', { confirmLabel: 'Convert anyway' }))) return;
   const skip = bat.filter(b => !picks[b.playerName || b.name]).map(b => b.playerName || b.name);
   const chosen = bat.map(b => picks[b.playerName || b.name]).filter(Boolean);
   if (new Set(chosen).size !== chosen.length) { showToast('Two tracked batters point at the same roster player', 'error'); return; }
@@ -699,6 +705,16 @@ async function savePitching() {
       }, { merge: true });
       saved++;
     } catch (err) { console.error(err); errors.push(p?.name || id); }
+  }
+  if (saved && !errors.length) {
+    try {
+      await updateDoc(doc(db, 'gameResults', game.id), {
+        pitchingSubmitted: true, pitchingSubmittedAt: serverTimestamp(),
+        pitchingSubmittedBy: user.uid, pitchingSubmittedByName: user.displayName || user.email
+      });
+      Object.assign(game, { pitchingSubmitted: true, pitchingSubmittedByName: user.displayName || user.email });
+      renderChecks();
+    } catch (err) { console.warn('[tracker-review] could not flag pitching as submitted', err); }
   }
   busy = false;
   $('trPitStatus').textContent = errors.length ? `Saved ${saved}, failed: ${errors.join(', ')}` : `Saved ${plural(saved, 'pitcher')}.`;
