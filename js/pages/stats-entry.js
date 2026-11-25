@@ -554,14 +554,37 @@ function clearPdf() {
   $('ssePdfFill').hidden = true;
 }
 
+// Phone pickers (iOS Files, Android) grey out or hide cloud files such as
+// Dropbox when the input has an accept filter, because the cloud app reports
+// a type the filter doesn't match. So the input takes any file and this checks
+// for the PDF signature, which the spec allows anywhere in the first 1024 bytes.
+async function looksLikePdf(file) {
+  try {
+    const head = new Uint8Array(await file.slice(0, 1024).arrayBuffer());
+    return String.fromCharCode(...head).includes('%PDF-');
+  } catch {
+    return /\.pdf$/i.test(file.name || '') || file.type === 'application/pdf';
+  }
+}
+
 async function readPdf(file) {
   if (!sel || !file) return;
   const status = $('ssePdfStatus');
   status.hidden = false;
-  status.className = 'aces-notice';
-  status.innerHTML = `${icon('clock')}<div>Reading the PDF...</div>`;
   $('ssePdfReview').innerHTML = '';
   $('ssePdfFill').hidden = true;
+  if (!file.size) {
+    status.className = 'aces-notice is-error';
+    status.innerHTML = `${icon('x-circle')}<div>That file came through empty. If it's in Dropbox or another cloud app, open it there first so it downloads to the phone, then choose it again.</div>`;
+    return;
+  }
+  if (!(await looksLikePdf(file))) {
+    status.className = 'aces-notice is-error';
+    status.innerHTML = `${icon('x-circle')}<div>${esc(file.name || 'That file')} isn't a PDF. Choose the scoresheet PDF, or type the stats in instead.</div>`;
+    return;
+  }
+  status.className = 'aces-notice';
+  status.innerHTML = `${icon('clock')}<div>Reading the PDF...</div>`;
   try {
     const { rows: parsed, gameChanger } = await parsePdf(file, rows);
     if (!parsed.length) {
@@ -660,7 +683,11 @@ function bind() {
     $('sseModeCsv').hidden = b.dataset.mode !== 'csv';
   }));
 
-  $('ssePdfFile').addEventListener('change', (e) => readPdf(e.target.files?.[0]));
+  $('ssePdfFile').addEventListener('change', (e) => {
+    const f = e.target.files?.[0];
+    e.target.value = '';  // so picking the same file again (after a failed try) still fires change
+    readPdf(f);
+  });
   const drop = $('ssePdfDrop');
   drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('is-over'); });
   drop.addEventListener('dragleave', () => drop.classList.remove('is-over'));
@@ -668,7 +695,7 @@ function bind() {
     e.preventDefault();
     drop.classList.remove('is-over');
     const f = e.dataTransfer.files[0];
-    if (f && f.name.toLowerCase().endsWith('.pdf')) readPdf(f);
+    if (f) readPdf(f);
     else showToast('Drop a PDF file', 'error');
   });
   $('ssePdfReview').addEventListener('change', (e) => {
