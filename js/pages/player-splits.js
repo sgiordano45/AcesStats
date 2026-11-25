@@ -8,17 +8,22 @@
 //   aggregatedPlayerStats seasons.{key}.splits / vsOpponent  2026 on
 //   season totals (any year)                  summer vs fall for seasons without game-level splits
 //   playerStats/{nameId}/games                game log (2025 on)
+//   historicalGameStats where playerId == nameId  older game lines loaded from a
+//                                             team's own records (admin/historical-import.html):
+//                                             for those seasons they replace the splits above
+//                                             and same-day game log rows; season totals stay
 // 2025 game data is partial except 2025 Fall for Silver and White.
 
-import { db, doc, getDoc } from '../core/firebase.js';
+import { db, doc, getDoc, collection, getDocs, query, where } from '../core/firebase.js';
 import { mountStatTable } from '../ui/table.js';
 import { parseStatSeasonId, sortSeasonIds } from '../domain/season-ids.js';
 import {
   esc, icon, card, empty, emptyCard, seasonLabel, seasonSortKey, ZERO_BAT, addBat, batSplitTable,
-  battingLogConfig, gameLogRows, teamName, cap, slug, baseSeasonId
+  battingLogConfig, gameLogRows, teamName, cap, slug, baseSeasonId, gameDate
 } from './player-shared.js';
 
 const SPLITS_2025 = 'aggregatedPlayerStats2025Splits';
+const HISTORICAL = 'historicalGameStats';
 const COMPLETE_2025_FALL_TEAMS = ['silver', 'white'];
 const KEYS = ['home', 'away', 'regular', 'playoff'];
 
@@ -34,10 +39,13 @@ function addOpp(into, v) {
   Object.entries(v || {}).forEach(([opp, s]) => addBat(into[cap(opp)] ||= blank(), s));
   return into;
 }
+const pad = (n) => String(n).padStart(2, '0');
+const dayKey = (g) => { const d = gameDate(g); return d ? `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` : ''; };
+
 const hasGameSplits = (s) => !!s && (s.home.games > 0 || s.away.games > 0 || s.regular.games > 0 || s.playoff.games > 0);
 
 /** Per base season: { splits | null, opp, totals, team, partial }. */
-function buildSeasons(ctx, s25) {
+function buildSeasons(ctx, s25, imported = []) {
   const out = {};
   const get = (sid) => (out[sid] ||= { splits: null, opp: {}, totals: blank(), teams: new Set() });
   const from25 = new Set();
@@ -64,23 +72,49 @@ function buildSeasons(ctx, s25) {
       addBat(e.totals, s);
     }
   });
+  // Imported seasons: splits from those game lines; summer/fall totals stay the stored ones.
+  const bySeason = {};
+  imported.forEach(g => (bySeason[baseSeasonId(g.seasonId)] ||= []).push(g));
+  Object.entries(bySeason).forEach(([sid, list]) => {
+    const e = get(sid);
+    const splits = blankSplits(), opp = {}, sum = blank();
+    list.forEach(g => {
+      addBat(splits[g.isHome ? 'home' : 'away'], g);
+      addBat(splits[g.isPlayoff ? 'playoff' : 'regular'], g);
+      addBat(opp[cap(g.opponent)] ||= blank(), g);
+      addBat(sum, g);
+      if (g.team) e.teams.add(String(g.team).toLowerCase());
+    });
+    const stored = blank();
+    Object.entries(ctx.player?.seasons || {}).forEach(([key, s]) => { if (parseStatSeasonId(key).id === sid) addBat(stored, s); });
+    Object.assign(e, { splits, opp, imported: true, totals: stored.games ? stored : sum });
+  });
+
   Object.entries(out).forEach(([sid, e]) => {
-    e.partial = sid.startsWith('2025-') && !!e.splits && !(sid === '2025-fall' && [...e.teams].some(t => COMPLETE_2025_FALL_TEAMS.includes(t)));
+    e.partial = !e.imported && sid.startsWith('2025-') && !!e.splits && !(sid === '2025-fall' && [...e.teams].some(t => COMPLETE_2025_FALL_TEAMS.includes(t)));
     if (!e.totals.games && !e.totals.atBats && !hasGameSplits(e.splits)) delete out[sid];
   });
   return out;
 }
 
 export async function render(el, ctx) {
-  let s25 = null, games = [];
-  const [a, b] = await Promise.allSettled([
+  let s25 = null, games = [], imported = [];
+  const [a, b, c] = await Promise.allSettled([
     getDoc(doc(db, SPLITS_2025, ctx.nameId)),
-    ctx.battingGames()
+    ctx.battingGames(),
+    getDocs(query(collection(db, HISTORICAL), where('playerId', '==', ctx.nameId)))
   ]);
   if (a.status === 'fulfilled' && a.value.exists()) s25 = a.value.data();
   if (b.status === 'fulfilled') games = b.value.filter(g => seasonSortKey(g.seasonId) >= seasonSortKey('2025-summer'));
+  if (c.status === 'fulfilled') imported = c.value.docs.map(d => ({ id: d.id, ...d.data() }));
+  else console.warn('[player-splits] historical games unavailable', c.reason);
+  // An imported line replaces a tracked game doc from the same season and day.
+  if (imported.length) {
+    const days = new Set(imported.map(g => `${baseSeasonId(g.seasonId)}|${g.gameDate}`));
+    games = games.filter(g => !days.has(`${baseSeasonId(g.seasonId)}|${dayKey(g)}`)).concat(imported);
+  }
 
-  const seasons = buildSeasons(ctx, s25);
+  const seasons = buildSeasons(ctx, s25, imported);
   const ids = sortSeasonIds(Object.keys(seasons));
   if (!ids.length && !games.length) {
     el.innerHTML = emptyCard('No splits yet', 'Splits appear once this player has game stats.', 'columns');
